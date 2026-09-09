@@ -83,3 +83,24 @@ path (on Linux, `/proc/self/maps`), PyTorch version, driver and GPU model;
 CUDA tensors support rank-1 float32 zeros and metadata views with synchronous
 `.cpu()` / `.to("cpu")` transfers. CPU-to-CUDA copies, CUDA math/autograd,
 nondefault streams, and general CUDA runtime management remain unsupported.
+
+After building the current checkout with `./scripts/test-python.sh`, run this
+smoke check through the repository environment (PyTorch is not required):
+
+```bash
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python - <<'PY'
+import torch_rs as torch
+assert torch.cuda.is_available(), "install a CUDA runtime and NVIDIA driver"
+x = torch.zeros((12,), device="cuda:0").reshape(3, 4).t()
+assert x.is_cuda
+assert x.cpu().tolist() == [[0.0, 0.0, 0.0]] * 4
+print(x.device, x.shape, x.stride(), "roundtrip passed")
+PY
+```
+
+The optional release screening script
+[`scripts/benchmark_rank2_sum_cuda.py`](../scripts/benchmark_rank2_sum_cuda.py)
+compares rank-2 sums and public CUDA allocation, transfer, and roundtrip costs.
+Run it with one visible GPU after verifying the current-worktree release build;
+its JSON output records environment, source hashes, dispersion, and capped
+per-cell parity. Dirty-tree output is local diagnostic data, not release evidence.

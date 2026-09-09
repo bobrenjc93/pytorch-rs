@@ -31,6 +31,10 @@ def command(*args):
     return subprocess.check_output(args, cwd=ROOT, text=True).strip()
 
 
+def materialize(result):
+    return (result.cpu() if result.is_cuda else result).tolist()
+
+
 def measure(call, sync=lambda: None, iterations=50):
     for _ in range(12):
         result = call()
@@ -45,19 +49,19 @@ def measure(call, sync=lambda: None, iterations=50):
         timings.append((time.perf_counter_ns() - start) / iterations)
     # Native eager outputs are already materialized; consume the final output
     # after timing on both sides. Backward calls return the leaf gradient.
-    result.tolist()
+    materialize(result)
     return {"median_ns": statistics.median(timings), "samples_ns": timings, "stdev_ns": statistics.pstdev(timings)}
 
 
 def pair(actual, expected, sync=lambda: None, iterations=50):
-    np.testing.assert_allclose(actual().tolist(), expected().tolist(), atol=1e-4, rtol=1e-4)
+    np.testing.assert_allclose(materialize(actual()), materialize(expected()), atol=1e-4, rtol=1e-4)
     orders = []
     for order in ((0, 1), (1, 0)):
         elapsed = [0, 0]
         for index in order:
             elapsed[index] = measure((actual, expected)[index], sync, iterations)
         orders.append(elapsed)
-    np.testing.assert_allclose(actual().tolist(), expected().tolist(), atol=1e-4, rtol=1e-4)
+    np.testing.assert_allclose(materialize(actual()), materialize(expected()), atol=1e-4, rtol=1e-4)
     native, reference = [statistics.median(row[index]["median_ns"] for row in orders) for index in (0, 1)]
     return {"native_ns": native, "pytorch_ns": reference,
             "slowdown": native / reference, "capped_parity": min(1, reference / native),
@@ -78,12 +82,16 @@ def main():
         torch.set_num_threads(threads)
         for shape in ((32, 32), (256, 256), (1024, 1024), (2048, 2048), (193, 1031), (2053, 67)):
             values = rng.normal(size=shape).astype(np.float32)
-            for layout in ("contiguous", "transposed", "offset"):
+            for layout in ("contiguous", "transposed", "offset", "selected"):
                 a, b = torch_rs.tensor(values.tolist()), torch.tensor(values)
                 if layout == "transposed":
                     a, b = a.t(), b.t()
                 elif layout == "offset":
                     a, b = a[:, 3:-2], b[:, 3:-2]
+                elif layout == "selected":
+                    backing = np.stack((values, -values, values), axis=2)
+                    a = torch_rs.tensor(backing.tolist()).select(2, 1)
+                    b = torch.tensor(backing).select(2, 1)
                 for axis in (0, 1):
                     cells.append({"shape": shape, "layout": layout, "axis": axis, "pytorch_threads": threads, "native_threads": torch_rs.get_num_threads(),
                                   "kind": "sum", **pair(lambda: a.sum(axis), lambda: b.sum(axis))})
@@ -98,12 +106,21 @@ def main():
     if torch.cuda.is_available():
         if os.environ.get("CUDA_VISIBLE_DEVICES") != "0":
             raise RuntimeError("run with CUDA_VISIBLE_DEVICES=0")
-        for elements in (0, 1024, 1048576):
+        for elements in (0, 1024, 65537, 1048576, 1048583):
             def actual():
                 return torch_rs.zeros((elements,), device="cuda:0").cpu()
             def expected():
                 return torch.zeros((elements,), device="cuda:0").cpu()
-            gpu_cells.append({"elements": elements, **pair(actual, expected, torch.cuda.synchronize, iterations=20)})
+            gpu_cells.append({"kind": "roundtrip", "elements": elements,
+                              **pair(actual, expected, torch.cuda.synchronize, iterations=20)})
+            gpu_cells.append({"kind": "zeros", "elements": elements,
+                              **pair(lambda: torch_rs.zeros((elements,), device="cuda:0"),
+                                     lambda: torch.zeros((elements,), device="cuda:0"),
+                                     torch.cuda.synchronize, iterations=20)})
+            a = torch_rs.zeros((elements,), device="cuda:0")
+            b = torch.zeros((elements,), device="cuda:0")
+            gpu_cells.append({"kind": "to_cpu", "elements": elements,
+                              **pair(a.cpu, b.cpu, torch.cuda.synchronize, iterations=20)})
     tracked_sources = command("git", "ls-files", "src", "python", "Cargo.toml", "Cargo.lock").splitlines()
     hashes = {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in tracked_sources}
     for name in ("src/cuda.rs", "src/reduction.rs", "scripts/benchmark_rank2_sum_cuda.py"):
@@ -123,6 +140,9 @@ def main():
               "cpu_capped_geomean_parity_by_reference_threads": {
                   str(threads): math.exp(statistics.mean(math.log(cell["capped_parity"]) for cell in cells if cell["pytorch_threads"] == threads))
                   for threads in (1, 4)
+              }, "cuda_capped_geomean_parity_by_operation": {
+                  kind: math.exp(statistics.mean(math.log(cell["capped_parity"]) for cell in gpu_cells if cell["kind"] == kind))
+                  for kind in ("zeros", "to_cpu", "roundtrip") if gpu_cells
               }, "timing_scope": "steady state only; build and dependency installation excluded", "reference_environment_setup_seconds": None}
     print(json.dumps(report, indent=2))
 

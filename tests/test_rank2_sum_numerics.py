@@ -51,3 +51,34 @@ class RankTwoSumNumerics(unittest.TestCase):
             (ar * native.tensor(weights.tolist())).sum().backward()
             (br * torch.tensor(weights)).sum().backward()
             np.testing.assert_equal(a.grad.tolist(), b.grad.tolist())
+
+    def test_selected_views_with_two_nonunit_strides(self):
+        rng = np.random.default_rng(1894)
+        patterns = ([1e8, 1, -1e8, 1], [3e38, 3e38, -3e38, -3e38])
+        for count in (5, 16, 31, 127, 512, 8193):
+            for width in (4, 5, 8, 33):
+                for pattern in patterns:
+                    values = rng.choice(np.array(pattern, dtype=np.float32),
+                                        size=(count, width, 3))
+                    a, b = native.tensor(values.tolist()), torch.tensor(values)
+                    for transpose in (False, True):
+                        av, bv = a.select(2, 1), b.select(2, 1)
+                        if transpose:
+                            av, bv = av.t(), bv.t()
+                        for dim in (0, 1):
+                            for keepdim in (False, True):
+                                with self.subTest(count=count, width=width, pattern=pattern,
+                                                  transpose=transpose, dim=dim, keepdim=keepdim):
+                                    expected = bv.sum(dim, keepdim=keepdim).tolist()
+                                    np.testing.assert_equal(av.sum(dim, keepdim=keepdim).tolist(), expected)
+                                    np.testing.assert_equal(native.sum(av, dim, keepdim=keepdim).tolist(), expected)
+
+        for dim in (0, 1):
+            values = rng.normal(size=(13, 37, 3)).astype(np.float32)
+            a = native.tensor(values.tolist(), requires_grad=True)
+            b = torch.tensor(values, requires_grad=True)
+            av, bv = a.select(2, 1).t(), b.select(2, 1).t()
+            weights = rng.normal(size=av.shape[1 - dim]).astype(np.float32)
+            (av.sum(dim) * native.tensor(weights.tolist())).sum().backward()
+            (bv.sum(dim) * torch.tensor(weights)).sum().backward()
+            np.testing.assert_equal(a.grad.tolist(), b.grad.tolist())

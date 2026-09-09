@@ -114,6 +114,14 @@ fn dimension_sum_impl<const CONTIGUOUS: bool>(
             let start = index * output_stride;
             *value = inner(&values[start..start + count]);
         }
+    } else if !CONTIGUOUS && reduce_stride < output_stride {
+        // A strided inner reduction uses four scalar accumulators along the
+        // reduced axis. A strided outer reduction groups independent outputs
+        // instead. Preserve that distinction for selected rank-three views
+        // whose two remaining strides are both greater than 1.
+        for (index, value) in output.iter_mut().enumerate() {
+            *value = scalar_row(&values[index * output_stride..], count, reduce_stride);
+        }
     } else {
         // Adjacent outputs share a traversal of the reduced axis, avoiding a
         // full cache-line walk per column. Fixed lanes let LLVM vectorize adds.
