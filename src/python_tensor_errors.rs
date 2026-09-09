@@ -50,6 +50,7 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::DimensionOutOfRange { .. } => PyIndexError::new_err(error.to_string()),
         TensorError::UnsupportedDevice { .. }
         | TensorError::UnsupportedCudaZeroTensor { .. }
+        | TensorError::UnsupportedCudaAddition { .. }
         | TensorError::UnsupportedCudaTransfer { .. } => {
             PyNotImplementedError::new_err(error.to_string())
         }
