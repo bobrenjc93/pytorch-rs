@@ -11,6 +11,13 @@ import unittest
 
 import torch_rs as torch
 
+def assert_cuda_runtime_probe_matches_visibility(test_case):
+    count = torch.cuda.device_count()
+    test_case.assertIs(type(count), int)
+    test_case.assertGreaterEqual(count, 0)
+    test_case.assertIs(torch.cuda.is_available(), count > 0)
+
+
 try:
     import torch as reference_torch
 except ImportError:
@@ -285,14 +292,12 @@ class GetDeviceModuleReferenceTests(unittest.TestCase):
         self.assertEqual(probe.item(), 1.0)
         reference_torch.cuda.synchronize(0)
 
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        assert_cuda_runtime_probe_matches_visibility(self)
         self.assertIs(sys.modules["torch_rs.cuda"], torch.cuda)
         self.assertIs(importlib.import_module("torch_rs.cuda"), torch.cuda)
-        with self.assertRaises(RuntimeError):
-            torch.get_device_module("cuda")
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        self.assertIs(torch.get_device_module("cuda"), torch.cuda)
+        self.assertIs(torch.get_device_module("cuda:0"), torch.cuda)
+        assert_cuda_runtime_probe_matches_visibility(self)
         self.assertIs(sys.modules["torch_rs.cuda"], torch.cuda)
 
 

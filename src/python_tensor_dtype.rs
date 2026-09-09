@@ -1,14 +1,15 @@
 //! Python dtype descriptors for native tensors.
 
 use pyo3::IntoPyObjectExt;
-use pyo3::exceptions::PyTypeError;
+use pyo3::exceptions::{PyNotImplementedError, PyTypeError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyString, PyTuple};
 
 use crate::{
-    DType,
+    DType, Device,
     python::{PyTensor, PyTensorBase, dispatch_tensorbase_method_mode, python_type_name},
     python_dtype::{PyDType, dtype_object},
+    python_tensor_errors::tensor_error,
 };
 
 struct TypeCallArgument<'py> {
@@ -101,20 +102,86 @@ fn bind_type_arguments<'py>(
     Ok(dtype)
 }
 
-fn validate_identity_type_target(dtype: &Bound<'_, PyAny>) -> PyResult<()> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TypeTarget {
+    DTypeFloat32,
+    CpuFloat32,
+    CudaFloat32,
+}
+
+fn parse_type_target(dtype: &Bound<'_, PyAny>) -> PyResult<TypeTarget> {
     if let Ok(dtype) = dtype.cast::<PyDType>()
         && dtype.try_borrow()?.inner() == DType::Float32
     {
-        return Ok(());
+        return Ok(TypeTarget::DTypeFloat32);
     }
-    if let Ok(name) = dtype.cast::<PyString>()
-        && name.to_str()? == "torch.FloatTensor"
-    {
-        return Ok(());
+    if let Ok(name) = dtype.cast::<PyString>() {
+        return match name.to_str()? {
+            "torch.FloatTensor" => Ok(TypeTarget::CpuFloat32),
+            "torch.cuda.FloatTensor" => Ok(TypeTarget::CudaFloat32),
+            _ => Err(PyTypeError::new_err(
+                "type(): only torch.float32, 'torch.FloatTensor', and 'torch.cuda.FloatTensor' are supported",
+            )),
+        };
     }
 
     Err(PyTypeError::new_err(
-        "type(): only torch.float32 and 'torch.FloatTensor' are supported",
+        "type(): only torch.float32, 'torch.FloatTensor', and 'torch.cuda.FloatTensor' are supported",
+    ))
+}
+
+fn tensor_type_name(device: Device) -> &'static str {
+    if device.is_cuda() {
+        "torch.cuda.FloatTensor"
+    } else {
+        "torch.FloatTensor"
+    }
+}
+
+fn unsupported_cuda_type_conversion() -> PyErr {
+    PyNotImplementedError::new_err(
+        "type(): CUDA tensor conversions are not supported; only existing CUDA float32 tensors and CUDA-to-CPU copies are implemented",
+    )
+}
+
+fn apply_type_target(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    target: TypeTarget,
+) -> PyResult<Py<PyAny>> {
+    let source_device = tensor.try_borrow()?.inner().device();
+    match target {
+        TypeTarget::DTypeFloat32 => Ok(tensor.clone().unbind().into_any()),
+        TypeTarget::CpuFloat32 => {
+            if source_device.is_cpu() {
+                Ok(tensor.clone().unbind().into_any())
+            } else {
+                let inner = tensor
+                    .try_borrow()?
+                    .inner()
+                    .try_copy_cuda_to_cpu()
+                    .map_err(|error| tensor_error(&error))?;
+                Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+            }
+        }
+        TypeTarget::CudaFloat32 => {
+            if source_device.is_cuda() {
+                Ok(tensor.clone().unbind().into_any())
+            } else {
+                Err(unsupported_cuda_type_conversion())
+            }
+        }
+    }
+}
+
+fn query_type_name(tensor: &Bound<'_, PyTensor>) -> PyResult<&'static str> {
+    let source_device = tensor.try_borrow()?.inner().device();
+    if source_device.is_cpu() || source_device.is_cuda() {
+        return Ok(tensor_type_name(source_device));
+    }
+
+    Err(PyTypeError::new_err(
+        "type(): only torch.float32, 'torch.FloatTensor', and 'torch.cuda.FloatTensor' are supported",
     ))
 }
 
@@ -148,15 +215,12 @@ impl PyTensorBase {
         if let Some(dtype) = dtype.as_ref()
             && !dtype.is_none()
         {
-            validate_identity_type_target(dtype)?;
-            // Float32 on CPU is the only supported dtype/device pair, so every
-            // accepted conversion is the exact receiver. This avoids borrowing
-            // or changing storage, layout metadata, or autograd state.
-            return Ok(tensor.clone().unbind().into_any());
+            let target = parse_type_target(dtype)?;
+            return apply_type_target(slf.py(), tensor, target);
         }
 
         // An omitted or explicit-None dtype remains the legacy type-name query.
-        "torch.FloatTensor".into_py_any(slf.py())
+        query_type_name(tensor)?.into_py_any(slf.py())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.

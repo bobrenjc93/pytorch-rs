@@ -11,22 +11,25 @@ import torch_rs.nn.functional as functional
 METHOD_DOC = """
 to(*args, **kwargs) -> Tensor
 
-Converts an exact native CPU ``float32`` Tensor to equivalent supported
-metadata. Requests that leave dtype and device unchanged return ``self`` unless
-``copy=True`` or an indexed CPU device such as ``"cpu:0"`` is requested; copy
-requests return a fresh Tensor and record ``ToCopyBackward0`` when autograd is
-active.
+Converts an exact native ``float32`` Tensor to equivalent supported metadata or
+storage. CPU requests that leave dtype and device unchanged return ``self``
+unless ``copy=True`` or an indexed CPU device such as ``"cpu:0"`` is requested;
+CPU copy requests return a fresh Tensor and record ``ToCopyBackward0`` when
+autograd is active. CUDA tensors created by the public 1-D float32
+``torch.zeros`` path support synchronized transfer to CPU.
 
 Supported forms include ``to()``, ``to(torch.float32)``, ``to(torch.float)``,
 ``to("cpu")``, ``to(torch.device("cpu"))``, ``to(device="cpu")``,
 ``to("cpu", torch.float32)``, ``to(device="cpu", dtype=torch.float32)``, and
-``to(other)`` when ``other`` is another exact native CPU ``float32`` Tensor.
-``copy`` may be ``True`` or ``False``; ``non_blocking`` must be ``False``;
-``memory_format`` may be omitted, ``None``, or ``torch.preserve_format``.
+``to(other)`` when ``other`` is another exact native ``float32`` Tensor on CPU
+or the same narrow CUDA storage path. ``copy`` may be ``True`` or ``False``;
+``non_blocking`` must be ``False``; ``memory_format`` may be omitted, ``None``,
+or ``torch.preserve_format``.
 
-Unsupported: dtype-changing conversions such as ``torch.float64``, non-CPU
-devices including CUDA and meta, ``non_blocking=True``, memory formats other
-than ``torch.preserve_format``, Tensor subclasses, and non-native tensors.
+Unsupported: dtype-changing conversions such as ``torch.float64``, CPU-to-CUDA
+transfers, CUDA-to-CUDA copies, devices other than CPU and the narrow CUDA
+zero-tensor storage path, ``non_blocking=True``, memory formats other than
+``torch.preserve_format``, Tensor subclasses, and non-native tensors.
 
 Example::
 
@@ -217,7 +220,11 @@ class TensorToTests(unittest.TestCase):
     def test_unsupported_forms_fail_closed(self):
         tensor = torch.tensor([1.0], dtype=torch.float32)
         unsupported = (
-            (lambda: tensor.to("cuda"), RuntimeError, "only 'cpu' is implemented"),
+            (
+                lambda: tensor.to("cuda"),
+                NotImplementedError,
+                "unindexed CUDA devices are not supported",
+            ),
             (lambda: tensor.to("cuda:0"), RuntimeError, "only 'cpu' is implemented"),
             (lambda: tensor.to("meta"), RuntimeError, "only 'cpu' is implemented"),
             (
@@ -280,7 +287,9 @@ class TensorToTests(unittest.TestCase):
         self.assertEqual(DeviceString.calls, [])
 
         DeviceString.calls.clear()
-        with self.assertRaisesRegex(RuntimeError, r"only 'cpu' is implemented"):
+        with self.assertRaisesRegex(
+            NotImplementedError, "unindexed CUDA devices are not supported"
+        ):
             tensor.to(device=DeviceString("cuda"))
         self.assertEqual(DeviceString.calls, [])
 

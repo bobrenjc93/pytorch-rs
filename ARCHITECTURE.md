@@ -2,15 +2,18 @@
 
 `pytorch-rs` exposes a PyTorch-shaped Python package backed by a native Rust
 tensor core. The native implementation is intentionally small today: tensors
-carry strided CPU `float32` storage, Python-facing metadata objects, selected
-operators, and limited eager reverse-mode autograd.
+carry strided CPU `float32` storage and optional native CUDA zero storage,
+Python-facing metadata objects, selected CPU operators, and limited eager
+reverse-mode autograd. CUDA storage and transfers work without Python.
 
 ## Source Map
 
 | Area | Source files | Notes |
 | --- | --- | --- |
 | Crate entry | [src/lib.rs](src/lib.rs) | Declares the Rust modules and re-exports `Tensor`, `TensorError`, `DType`, `Device`, and `MemoryFormat`. Python-only modules are gated behind `python-bindings`. |
-| Storage | [src/storage.rs](src/storage.rs) | Owns `Storage`, the CPU `f32` payload, inline scalar storage, owned vectors, and mutex-backed leaf-gradient buffers. |
+| Storage | [src/storage.rs](src/storage.rs) | Owns `Storage`, native CPU/CUDA payload dispatch, the CPU `f32` payload, inline scalar storage, owned vectors, and mutex-backed leaf-gradient buffers. |
+| CUDA backend | [src/cuda.rs](src/cuda.rs) | Loads the optional CUDA runtime, owns device allocations, restores the calling thread's device, and performs blocking device-to-host transfers directly into Rust buffers. A bounded per-device allocation cache retains at most 32 buffers / 64 MiB across devices. Python only discovers optional wheel library paths. |
+| Dimension reduction kernels | [src/reduction.rs](src/reduction.rs) | Uses layout-aware slices and four-level float32 accumulation for rank-2 single-axis sums, with existing tensor autograd metadata. |
 | Tensor layout | [src/tensor.rs](src/tensor.rs) | `Tensor` stores shared storage plus shape, strides, storage offset, element count, output number, view grad state, and optional autograd metadata. It also implements contiguity, view, stride, indexing, and materialization helpers. |
 | Metadata types | [src/dtype.rs](src/dtype.rs), [src/device.rs](src/device.rs), [src/memory_format.rs](src/memory_format.rs) | Define the currently compiled native dtype/device/memory-format enums and query behavior. |
 | Tensor operations | [src/tensor.rs](src/tensor.rs) | Constructors, unary and binary kernels, reductions, matrix multiply, layout transforms, and backward kernels live with the core tensor representation. |
@@ -107,3 +110,35 @@ VIRTUAL_ENV="$PWD/.venv" PYO3_PYTHON="$PWD/.venv/bin/python" \
   .venv/bin/maturin develop --release --locked
 .venv/bin/python -m unittest tests.test_sqrt tests.test_top_level_sqrt tests.test_autograd_backward
 ```
+
+## Native CUDA storage boundary
+
+`Tensor::cuda_zeros_float32` and `Tensor::try_copy_cuda_to_cpu` are available
+without `python-bindings`. Shared `Arc<Storage>` ownership keeps allocations
+alive through narrow/select/reshape/transpose views. CPU copies preserve dense
+strides and pack non-dense views; empty views perform no device transfer.
+Sparse transfers allocate the packed output plus layout metadata. Logical
+contiguous runs copy directly into that output; regularly spaced runs batch
+through `cudaMemcpy2D`. Tall selections with short, closely spaced runs use
+at most 256 KiB of staging and at most eight times the logical transfer size
+to avoid the copy engine's per-row cost. Large gaps are always skipped; no
+allocation or transfer grows with an arbitrary backing span. Packed outputs
+retain CPU clone's dimension ordering, including transposed and selected views.
+Unsupported CUDA materialization and arithmetic reject at the operation boundary.
+The public allocation surface remains rank-1 float32 zeros without autograd.
+
+Native `cat`, `stack`, backward, and gradient mutation reject unsupported devices
+before accessing storage or modifying graph state. Use `try_sum`, `try_equal`,
+and `try_with_requires_grad` for fallible native dispatch; they return
+`TensorError::UnsupportedDevice` for unsupported CUDA operations. Existing CPU
+convenience APIs (`sum`, `PartialEq`, and `with_requires_grad`) retain their
+signatures and panic at the operation boundary on unsupported devices, as
+`Clone` does when `try_clone` fails. CUDA `Debug` displays metadata without
+reading device storage. None of these operations implicitly transfers to CPU.
+
+All CUDA ABI calls and their safety invariants live in `src/cuda.rs`. The runtime
+library remains loaded for the process lifetime. Zero-fill uses the legacy default
+stream; blocking D2H copies establish host visibility without a separate
+whole-device synchronization. Allocation reuse never occurs while an alias is
+alive. The cache is bounded and does not expose a public allocator API.
+See [optional runtime setup](docs/troubleshooting.md#optional-native-cuda-runtime).

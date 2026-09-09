@@ -20,6 +20,13 @@ FUNCTION_DOC = """
     """
 
 
+def assert_cuda_runtime_probe_matches_visibility(test_case):
+    count = torch.cuda.device_count()
+    test_case.assertIs(type(count), int)
+    test_case.assertGreaterEqual(count, 0)
+    test_case.assertIs(torch.cuda.is_available(), count > 0)
+
+
 class GetDeviceModuleTests(unittest.TestCase):
     def setUp(self):
         torch.get_device_module.cache_clear()
@@ -263,8 +270,7 @@ class GetDeviceModuleTests(unittest.TestCase):
         ):
             self.assertIs(function(), torch.cpu)
 
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        assert_cuda_runtime_probe_matches_visibility(self)
         self.assertIs(sys.modules["torch_rs.cuda"], torch.cuda)
         self.assertIs(importlib.import_module("torch_rs.cuda"), torch.cuda)
 
@@ -287,8 +293,9 @@ import torch_rs
 
 assert torch_rs.get_device_module() is torch_rs.cpu
 assert torch_rs.get_device_module("cpu:7") is torch_rs.cpu
-assert torch_rs.cuda.is_available() is False
-assert torch_rs.cuda.device_count() == 0
+device_count = torch_rs.cuda.device_count()
+assert type(device_count) is int and device_count >= 0
+assert torch_rs.cuda.is_available() is (device_count > 0)
 assert sys.modules["torch_rs.cuda"] is torch_rs.cuda
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """

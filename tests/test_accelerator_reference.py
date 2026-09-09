@@ -16,6 +16,13 @@ from collections import OrderedDict
 
 import torch_rs as torch
 
+def assert_cuda_runtime_probe_matches_visibility(test_case):
+    count = torch.cuda.device_count()
+    test_case.assertIs(type(count), int)
+    test_case.assertGreaterEqual(count, 0)
+    test_case.assertIs(torch.cuda.is_available(), count > 0)
+
+
 try:
     import torch as reference_torch
 except ImportError:
@@ -689,8 +696,7 @@ assert not reference_torch._C._accelerator_isAllocatorInitialized()
             ),
             torch_rs_build_metadata,
         )
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        assert_cuda_runtime_probe_matches_visibility(self)
         self.assertIs(sys.modules["torch_rs.cuda"], torch.cuda)
 
     def test_empty_cache_cuda_differential_preserves_cpu_build_behavior(self):
@@ -776,8 +782,10 @@ assert (
     torch._C._has_cuda,
     torch.version.cuda,
 ) == torch_rs_state
-assert torch.cuda.is_available() is False
-assert torch.cuda.device_count() == 0
+device_count = torch.cuda.device_count()
+assert type(device_count) is int
+assert device_count >= 0
+assert torch.cuda.is_available() is (device_count > 0)
 '''
         completed = subprocess.run(
             [sys.executable, "-c", script],
@@ -1047,8 +1055,10 @@ torch_rs_max_reserved_released = [
 ]
 assert torch_rs_max_reserved_released == [0, 0, 0]
 assert all(type(value) is int for value in torch_rs_max_reserved_released)
-assert torch.cuda.is_available() is False
-assert torch.cuda.device_count() == 0
+device_count = torch.cuda.device_count()
+assert type(device_count) is int
+assert device_count >= 0
+assert torch.cuda.is_available() is (device_count > 0)
 assert torch._C._has_cuda is False
 assert torch.version.cuda is None
 '''
@@ -1207,8 +1217,10 @@ assert (
     reference_torch.accelerator.max_memory_reserved(device_index),
 ) == public_before
 assert torch_rs_counters(ExplodingDeviceToken()) == torch_rs_zero
-assert torch.cuda.is_available() is False
-assert torch.cuda.device_count() == 0
+device_count = torch.cuda.device_count()
+assert type(device_count) is int
+assert device_count >= 0
+assert torch.cuda.is_available() is (device_count > 0)
 assert torch._C._has_cuda is False
 assert torch.version.cuda is None
 '''
@@ -1344,8 +1356,10 @@ assert reference_after_reset[1] == reference_after_reset[0]
 assert reference_after_reset[2] == reference_before_reset[2]
 assert reference_after_reset[3] == reference_after_reset[2]
 assert torch_rs_counters(ExplodingDeviceToken()) == torch_rs_zero
-assert torch.cuda.is_available() is False
-assert torch.cuda.device_count() == 0
+device_count = torch.cuda.device_count()
+assert type(device_count) is int
+assert device_count >= 0
+assert torch.cuda.is_available() is (device_count > 0)
 assert torch._C._has_cuda is False
 assert torch.version.cuda is None
 '''
@@ -1967,14 +1981,15 @@ assert torch.version.cuda is None
             with self.subTest(memory_name=name):
                 self.assertFalse(hasattr(actual_memory, name))
 
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        assert_cuda_runtime_probe_matches_visibility(self)
         self.assertTrue(hasattr(reference_torch, "cuda"))
+        self.assertEqual(str(torch.device("cuda")), "cuda")
+        self.assertEqual(str(torch.device("cuda:0")), "cuda:0")
         for specification in ("cuda", "cuda:0"):
             with self.subTest(specification=specification):
-                with self.assertRaises(RuntimeError):
-                    torch.device(specification)
-                with self.assertRaises(RuntimeError):
+                with self.assertRaisesRegex(
+                    RuntimeError, r"only 'cpu' is implemented"
+                ):
                     torch.tensor([1.0], device=specification)
 
 

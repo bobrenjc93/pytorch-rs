@@ -11,6 +11,13 @@ import unittest
 
 import torch_rs as torch
 
+def assert_cuda_runtime_probe_matches_visibility(test_case):
+    count = torch.cuda.device_count()
+    test_case.assertIs(type(count), int)
+    test_case.assertGreaterEqual(count, 0)
+    test_case.assertIs(torch.cuda.is_available(), count > 0)
+
+
 try:
     import torch as reference_torch
 except ImportError:
@@ -188,8 +195,7 @@ class CudaFlashAttentionAvailabilityReferenceTests(unittest.TestCase):
         self.assertIs(torch.backends.cuda.is_flash_attention_available(), False)
         self.assertIs(torch._C._is_flash_attention_available(), False)
         self.assertIs(torch.backends.cuda.is_built(), False)
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        assert_cuda_runtime_probe_matches_visibility(self)
 
 
 if __name__ == "__main__":
