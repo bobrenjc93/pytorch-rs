@@ -1,0 +1,147 @@
+# Marker-free CUDA addition graph capture
+
+The generic bytecode compiler accepts exact native contiguous float32 CUDA
+Tensors for one- and two-input addition graphs with
+`torch.compile(fn, backend="eager", fullgraph=True)`. This is graph capture and
+native operation execution, with one Rust/CUDA addition per graph operation.
+It does not provide Inductor-style fusion, general default-backend CUDA
+compilation, or a new CUDA performance score.
+
+```python
+import torch_rs as torch
+
+def combine(left, right):
+    intermediate = right + left
+    return intermediate.add(left)
+
+compiled = torch.compile(combine, backend="eager", fullgraph=True)
+x = torch.tensor([1., 2., 3.]).to("cuda:0")
+y = torch.tensor([4., 5., 6.]).to("cuda:0")
+assert compiled(x, y).cpu().tolist() == [6., 9., 12.]
+```
+
+The existing operator `+` and positional `.add(tensor)` syntax supports
+self-addition, chains, scalar tensors, empty tensors, and contiguous views with
+nonzero offsets. Exact same-module helpers, live global tensor captures, and
+tuple/list tensor outputs retain the existing bytecode restrictions. Names and
+markers do not select execution paths. The original Python function is never
+called by native compiled execution, and installed PyTorch is used only as a
+test reference.
+
+The existing no-break `backend="eager", fullgraph=False` option also accepts
+this subset with `dynamic=None`; unsupported bytecode still raises without
+eager fallback. `fullgraph=True` retains `dynamic=None/False/True`. Dynamic
+variants guard rank and exact strides; a reused graph recomputes operation
+shapes and requires equal CUDA addition operand shapes before executing any
+operation. Dynamic shapes do not enable broadcasting.
+
+CUDA graphs reject unary operations (including `float` and `detach`), scalar
+number operands, broadcasting, noncontiguous layouts, gradients, mixed CPU/CUDA
+inputs, and mixed CUDA ordinals. Keyword method arguments, other operations,
+mutations, unsupported bytecode, and unsupported compiler options retain their
+existing rejection behavior. Float64 CUDA tensors and CUDA tensors requiring
+gradients cannot currently be constructed by the native substrate; the
+compiler metadata boundary also explicitly rejects those properties.
+
+## Metadata and cache contract
+
+The Rust metadata hook reads dtype, device including ordinal, shape, strides,
+requires-grad, and storage offset from the actual tensor, without Python
+property dispatch. Python no longer labels CUDA storage as CPU. CUDA input and
+capture metadata guard the exact offset as well as shape/stride/dtype/device;
+addition outputs have canonical contiguous strides and offset zero. CPU traces
+retain their established offset-polymorphic behavior (`storage_offset=None`
+in trace metadata), while the raw native metadata hook reports their real offset.
+
+CPU, CUDA:0, and CUDA:1 specializations cannot share cache entries. Global
+identity and metadata remain part of the key, including globals loaded by a
+helper. Every call checks current input and capture devices and layouts.
+Rebinding a global creates a specialization or hits the existing recompile
+limit; an incompatible device transition is rejected. Rejected calls leave the
+graph cache unchanged. A new graph is published only after successful native
+execution, and the entire graph is validated before executing any operation.
+Private metadata-only recorders can still describe CUDA unary graphs, but such
+graphs cannot execute. Native unary hooks retain PR1909's CPU guard.
+
+## Reproduction and evidence
+
+Run from the worktree with a freshly built release wheel, PyTorch 2.13.0,
+and caches/temp directories inside the worktree:
+
+```bash
+mkdir -p target/tmp target/cache
+export TMPDIR="$PWD/target/tmp" XDG_CACHE_HOME="$PWD/target/cache"
+export CUDA_CACHE_PATH="$PWD/target/cache/cuda"
+export TORCHINDUCTOR_CACHE_DIR="$PWD/target/cache/inductor"
+export TRITON_CACHE_DIR="$PWD/target/cache/triton"
+export CUDA_VISIBLE_DEVICES=0
+.venv/bin/python .github/scripts/verify_native_extension.py
+.venv/bin/python -m unittest tests.test_compile_cuda_boundary
+.venv/bin/python scripts/diagnose_compile_cuda_add.py \
+  --output target/compile-cuda-add-single.json
+CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m unittest \
+  tests.test_compile_cuda_boundary.CompileCudaDeviceTests
+CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python scripts/diagnose_compile_cuda_add.py \
+  --output target/compile-cuda-add-multi.json
+```
+
+The diagnostic is separate from the frozen 38-case coverage corpus and all
+scoring registries. It records reference eligibility by comparing stock
+`torch.compile(..., backend="eager", fullgraph=...)` with stock eager execution
+under both declared fullgraph settings. Each case uses two seeded input data
+sets, materializes output, records metadata and value hashes, and detects calls
+to the original function by the native compiler. Unsupported native behavior
+is explicit, including rejection during input construction. Reference-ineligible
+mixed-device operations are recorded separately. No timings or scores are
+computed. The unit tests separately prove cache reuse, IEEE edge behavior,
+layout/offset guards, global transitions, failures without cache publication,
+PyTorch import independence, and restoration of current device on GPUs 0/1.
+
+Checked-in reports in `docs/diagnostics/compile-cuda-add-*.json` bind evidence to
+source hashes and the installed extension hash. They record Python, Rust,
+PyTorch, driver, GPU, native runtime, and release build configuration. Native
+addition uses embedded PTX 6.0 targeting sm_50, JIT-compiled by the NVIDIA driver;
+CUDA 12.6 nvcc is available on this host but is not used by this native path.
+
+The H100 differential reports contain 82 single-device cases per interpreter:
+56 supported passes and 26 explicit unsupported outcomes, with 80 cases eligible
+on reference PyTorch. The additional reference-eligible mixed-device case uses a
+CPU scalar tensor and a CUDA scalar tensor, which PyTorch permits and this
+bounded compiler rejects. The six-case two-device report has four eligible
+passes and two mixed-ordinal rejections that are also reference-ineligible.
+These are diagnostic counts, not a coverage score or an expanded denominator.
+
+A host-specific baseline issue was also checked without changing this feature:
+on GCC-built CPython 3.12.13, two noncanonical boolean-buffer subcases fail in
+both this wheel and a release wheel rebuilt from unmodified base `e5a8a9c`.
+The existing native buffer decoder uses the low bit; that matches Clang-built
+CPython 3.12.12's memoryview behavior but not this GCC build's nonzero-byte
+behavior. CUDA graph diagnostics pass on the GCC interpreter too. The stack
+benchmark smoke test additionally requires canonical package paths and an
+interpreter under `.venv`; managed validation environments were placed at
+`.venv/compat312` and `.venv/compat314` to meet that existing contract. No buffer
+implementation, benchmark validator, or scoring corpus was changed.
+
+The managed Python 3.12 full run also exposed existing `nn.factory_kwargs`
+dictionary-order comparisons: both implementations iterate a set of keys, and
+three ordering assertions failed in that run. The unchanged baseline wheel
+also reproduces an ordering mismatch with `PYTHONHASHSEED=6`; isolated reruns
+can pass. The `nn.factory_kwargs` source and its tests are unchanged by this
+branch; the ordering issue remains a separate baseline failure.
+
+Final checks on the release abi3 wheel:
+
+- Python 3.14.5: full suite, 5,230 tests, passed with nine skips.
+- Python 3.12.12: full suite, 5,230 tests, nine skips; only the three baseline
+  `nn.factory_kwargs` ordering assertions described above failed. All compiler
+  tests passed. The focused compiler/unchanged-corpus run also passed (73 tests,
+  one two-device skip under the single-device mask).
+- Rust: formatting and Clippy with warnings denied passed; all-target tests
+  passed both without Python bindings (352 tests) and with them (363 tests).
+- All three H100 differential reports passed their declared supported/rejected
+  outcomes. Six CUDA/compiler multi-device tests passed on Python 3.12; the
+  compiler multi-device test also passed on Python 3.14 with the final wheel.
+- Native-extension provenance passed for both managed environments. All 59
+  packaged Python files matched the working tree and installed wheel; the
+  installed extension matched the wheel. The wheel's SHA-256 is
+  `d17b73a381e65ec95a7bc58f5d48fad7d352190ec2a2a6ed3a797f42cac4121c`.

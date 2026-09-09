@@ -124,6 +124,9 @@ class CompileTraceTensorMetadata:
     dtype: CompileTraceDType
     device: CompileTraceDevice
     requires_grad: bool
+    # CPU traces historically accept any storage offset for a shape/stride.
+    # CUDA specializations guard the exact offset; None leaves it unspecified.
+    storage_offset: int | None = None
 
     def __post_init__(self):
         object.__setattr__(self, "device", _parse_device_metadata(self.device))
@@ -503,6 +506,7 @@ def _unary_output_metadata(input_metadata, target, *, grad_enabled=None):
             dtype=input_metadata.dtype,
             device=input_metadata.device,
             requires_grad=False,
+            storage_offset=input_metadata.storage_offset,
         )
     if target in _SUPPORTED_IDENTITY_UNARY_TARGETS:
         return CompileTraceTensorMetadata(
@@ -511,6 +515,7 @@ def _unary_output_metadata(input_metadata, target, *, grad_enabled=None):
             dtype=input_metadata.dtype,
             device=input_metadata.device,
             requires_grad=input_metadata.requires_grad,
+            storage_offset=input_metadata.storage_offset,
         )
     if target not in _SUPPORTED_VALUE_UNARY_TARGETS:
         _unsupported_operation(f"Tensor.{target}")
@@ -534,6 +539,14 @@ def _binary_output_metadata(left_metadata, right_metadata, *, grad_enabled=None)
         raise CompileTraceUnsupportedError(
             "torch.compile trace Tensor.add only supports matching devices"
         )
+    if left_metadata.device.type == "cuda":
+        _validate_cuda_metadata(left_metadata)
+        _validate_cuda_metadata(right_metadata)
+        if left_metadata.shape != right_metadata.shape:
+            raise CompileTraceUnsupportedError(
+                "torch.compile trace CUDA addition requires the same shape; "
+                "broadcasting is unsupported"
+            )
     if grad_enabled is None:
         grad_enabled = _grad_enabled()
     shape = _broadcast_shape(left_metadata.shape, right_metadata.shape)
@@ -546,6 +559,7 @@ def _binary_output_metadata(left_metadata, right_metadata, *, grad_enabled=None)
             left_metadata.requires_grad or right_metadata.requires_grad
         )
         and grad_enabled,
+        storage_offset=0 if left_metadata.device.type == "cuda" else None,
     )
 
 
@@ -577,15 +591,34 @@ def _require_native_tensor(value, value_name):
         )
 
 
+def _validate_cuda_metadata(metadata):
+    if metadata.device.type != "cuda":
+        return
+    if metadata.device.index is None:
+        raise CompileTraceUnsupportedError("torch.compile trace CUDA requires a device ordinal")
+    if metadata.dtype is not float32:
+        raise CompileTraceUnsupportedError("torch.compile trace CUDA only supports float32")
+    if metadata.requires_grad:
+        raise CompileTraceUnsupportedError("torch.compile trace CUDA gradients are unsupported")
+    if not _layout_is_contiguous(metadata.shape, metadata.stride):
+        raise CompileTraceUnsupportedError("torch.compile trace CUDA requires contiguous layout")
+
+
 def _metadata_from_native_tensor(tensor):
-    shape, stride, requires_grad = _native._compile_trace_tensor_metadata(tensor)
-    return CompileTraceTensorMetadata(
+    shape, stride, requires_grad, dtype, device, offset = (
+        _native._compile_trace_tensor_metadata(tensor)
+    )
+    device = _normalize_device(device)
+    metadata = CompileTraceTensorMetadata(
         shape=_normalize_shape(shape),
         stride=_normalize_shape(stride),
-        dtype=float32,
-        device=cpu,
+        dtype=_normalize_dtype(dtype),
+        device=device,
         requires_grad=_normalize_requires_grad(requires_grad),
+        storage_offset=offset if device.type == "cuda" else None,
     )
+    _validate_cuda_metadata(metadata)
+    return metadata
 
 
 def _require_matching_metadata(
@@ -600,7 +633,7 @@ def _require_matching_metadata(
         return
 
     mismatches = []
-    fields = ["stride", "dtype", "device"]
+    fields = ["stride", "dtype", "device", "storage_offset"]
     if dynamic_shape:
         if len(actual.shape) != len(expected.shape):
             mismatches.append(
@@ -844,6 +877,10 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled):
                 f"{operation.name!r}"
             )
         (input_name,) = operation.inputs
+        if metadata_values[input_name].device.type == "cuda":
+            raise CompileTraceUnsupportedError(
+                f"torch.compile trace CUDA unary operation {operation.target!r} is unsupported"
+            )
         return _unary_output_metadata(
             metadata_values[input_name],
             operation.target,
@@ -919,14 +956,17 @@ def execute_compile_trace_graph(graph, *inputs):
         values[graph_input.name] = input
         metadata_values[graph_input.name] = input_metadata
     grad_enabled = _grad_enabled()
+    # Validate every operation before launching any work. In particular a
+    # dynamic cache hit may have individually valid inputs whose shapes no
+    # longer agree at an addition later in the graph.
     for operation in graph.operations:
-        if operation.name in values:
+        if operation.name in metadata_values:
             raise CompileTraceUnsupportedError(
                 "torch.compile trace execution encountered duplicate value "
                 f"name {operation.name!r}"
             )
         for input_name in operation.inputs:
-            if input_name not in values:
+            if input_name not in metadata_values:
                 raise CompileTraceUnsupportedError(
                     "torch.compile trace execution operation "
                     f"{operation.name!r} references unknown value {input_name!r}"
@@ -936,11 +976,21 @@ def execute_compile_trace_graph(graph, *inputs):
             metadata_values,
             grad_enabled=grad_enabled,
         )
+        if not graph.dynamic:
+            _require_matching_metadata(
+                expected_metadata,
+                operation.metadata,
+                value_name=operation.name,
+                check_requires_grad=False,
+            )
+        metadata_values[operation.name] = expected_metadata
+
+    for operation in graph.operations:
         output = _execute_operation(operation, values)
         output_metadata = _metadata_from_native_tensor(output)
         _require_matching_metadata(
             output_metadata,
-            expected_metadata,
+            metadata_values[operation.name],
             value_name=operation.name,
         )
         if not graph.dynamic:
@@ -1135,6 +1185,7 @@ class CompileTraceRecorder:
         dtype=float32,
         device="cpu",
         requires_grad=False,
+        storage_offset=None,
     ):
         self._ensure_open()
         input_name = (
@@ -1151,12 +1202,18 @@ class CompileTraceRecorder:
                 raise ValueError(
                     "torch.compile trace input stride rank must match shape rank"
                 )
+        device = _normalize_device(device)
+        if device.type == "cuda" and storage_offset is None:
+            storage_offset = 0
         metadata = CompileTraceTensorMetadata(
             shape=shape,
             stride=stride,
             dtype=_normalize_dtype(dtype),
-            device=_normalize_device(device),
+            device=device,
             requires_grad=_normalize_requires_grad(requires_grad),
+            storage_offset=(
+                None if storage_offset is None else _normalize_dimension(storage_offset)
+            ),
         )
         compile_input = CompileTraceInput(
             name=input_name,
