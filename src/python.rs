@@ -6425,6 +6425,12 @@ fn apply_mean_reduction(
         }
         BoundSumReduction::Dimension { dimension, keepdim } => {
             let dimension = extract_bound_mean_dimension(dimension)?;
+            if input.shape().len() == 2 {
+                let dimension = normalize_dimension(dimension, input.shape().len())?;
+                return input
+                    .mean_rank_two_dimension(dimension, *keepdim)
+                    .map_err(|error| tensor_error(&error));
+            }
             if input.shape().len() != 1 {
                 return Err(mean_unsupported_reduction());
             }
@@ -7354,8 +7360,6 @@ fn apply_top_level_addition(
         (BoundAddOperand::Tensor(input), BoundAddOperand::Tensor(other)) => {
             let input = input.try_borrow()?;
             let other = other.try_borrow()?;
-            validate_top_level_add_tensor(&input)?;
-            validate_top_level_add_tensor(&other)?;
             BinaryOperation::Add.apply_tensors(&input.inner, &other.inner)
         }
         (BoundAddOperand::Tensor(input), BoundAddOperand::Scalar(scalar)) => {
@@ -9534,6 +9538,18 @@ fn _backward_leaf_roots(roots: &Bound<'_, PyAny>) -> PyResult<()> {
     CoreTensor::backward_leaf_roots(&native_roots).map_err(|error| tensor_error(&error))
 }
 
+// The public eager compiler is CPU-only. Check the real storage device before
+// constructing its CPU metadata (including live global captures), and also at
+// execution entrypoints so direct private calls cannot bypass that boundary.
+fn require_compile_cpu_tensor(tensor: &CoreTensor) -> PyResult<()> {
+    if !tensor.device().is_cpu() {
+        return Err(PyNotImplementedError::new_err(
+            "torch.compile eager tracing only supports CPU tensors; CUDA inputs and captures are unsupported",
+        ));
+    }
+    Ok(())
+}
+
 #[pyfunction(
     name = "_compile_trace_tensor_metadata",
     signature = (input, /),
@@ -9548,6 +9564,7 @@ fn compile_trace_tensor_metadata(py: Python<'_>, input: &Bound<'_, PyAny>) -> Py
     }
 
     let tensor = input.cast::<PyTensor>()?.try_borrow()?;
+    require_compile_cpu_tensor(&tensor.inner)?;
     let shape = PyTuple::new(py, tensor.inner.shape().iter().copied())?;
     let stride = PyTuple::new(py, tensor.inner.stride().iter().copied())?;
     (shape, stride, tensor.inner.requires_grad()).into_py_any(py)
@@ -9576,6 +9593,7 @@ fn compile_trace_unary(input: &Bound<'_, PyAny>, target: &str) -> PyResult<Py<Py
     }
 
     let tensor = input.cast::<PyTensor>()?;
+    require_compile_cpu_tensor(&tensor.try_borrow()?.inner)?;
     if target == "float" {
         return Ok(tensor.clone().unbind());
     }
@@ -9624,6 +9642,8 @@ fn compile_trace_binary(
 
     let left = left.cast::<PyTensor>()?.try_borrow()?;
     let right = right.cast::<PyTensor>()?.try_borrow()?;
+    require_compile_cpu_tensor(&left.inner)?;
+    require_compile_cpu_tensor(&right.inner)?;
     let output = match target {
         "add" => left.inner.add(&right.inner),
         _ => {
@@ -17383,7 +17403,7 @@ fn mean_method_invalid_combination(
 
 fn mean_unsupported_reduction() -> PyErr {
     PyNotImplementedError::new_err(
-        "mean(): only full reductions with dim=None and rank-1 dim=0/-1 reductions are supported; broader dim reductions, concrete out, and dtype conversions are not supported",
+        "mean(): only full reductions with dim=None and single-dimension rank-1/rank-2 reductions are supported; broader dim reductions, concrete out, and dtype conversions are not supported",
     )
 }
 
@@ -25683,11 +25703,57 @@ fn _cuda_is_initialized() -> bool {
     crate::cuda::is_initialized()
 }
 
-#[pymodule]
-fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
+#[pyfunction(signature = (*args, **kwargs), text_signature = None)]
+fn set_num_threads(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
+    if kwargs.is_some_and(|values| !values.is_empty()) {
+        return Err(PyTypeError::new_err(
+            "torch.set_num_threads() takes no keyword arguments",
+        ));
+    }
+    if args.len() != 1 {
+        return Err(PyTypeError::new_err(format!(
+            "torch.set_num_threads() takes exactly one argument ({} given)",
+            args.len()
+        )));
+    }
+    let value = args.get_item(0)?;
+    if !value.is_instance_of::<PyInt>() || value.is_instance_of::<PyBool>() {
+        return Err(PyRuntimeError::new_err(format!(
+            "set_num_threads expects an int, but got {}",
+            python_type_name(&value)?
+        )));
+    }
+    // PyTorch unpacks int64 first, then checks the C int range. Preserve the
+    // distinct overflow errors before validating positivity or changing pools.
+    let unpacked = value
+        .extract::<i64>()
+        .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"))?;
+    let threads = i32::try_from(unpacked)
+        .map_err(|_| PyValueError::new_err("Overflow when unpacking long"))?;
+    if threads <= 0 {
+        return Err(PyRuntimeError::new_err(
+            "set_num_threads expects a positive integer",
+        ));
+    }
+    // Workers execute only Rust arithmetic. Configuration can wait for old
+    // worker teardown without holding the Python interpreter lock.
+    value
+        .py()
+        .detach(|| crate::set_num_threads(usize::try_from(threads).expect("positive thread count")))
+        .map_err(PyRuntimeError::new_err)
+}
+
+fn add_runtime_configuration_functions(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_function(wrap_pyfunction!(set_num_threads, module)?)?;
     module.add_function(wrap_pyfunction!(_cuda_configure_runtime, module)?)?;
     module.add_function(wrap_pyfunction!(_cuda_device_count, module)?)?;
     module.add_function(wrap_pyfunction!(_cuda_is_initialized, module)?)?;
+    Ok(())
+}
+
+#[pymodule]
+fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    add_runtime_configuration_functions(module)?;
     let py = module.py();
     cpython_compat::initialize_torch_function_descriptor_caller(py)?;
     for (name, enabled) in NATIVE_BUILD_CAPABILITIES {

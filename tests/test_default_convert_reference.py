@@ -1,7 +1,8 @@
 import importlib
 import inspect
+import struct
 import unittest
-from collections import OrderedDict, namedtuple
+from collections import OrderedDict, defaultdict, namedtuple
 
 import numpy as np
 import torch_rs as torch
@@ -13,6 +14,29 @@ except ImportError:
 
 
 Point = namedtuple("Point", ["x", "y"])
+SCALAR_LEAVES = (
+    None,
+    False,
+    True,
+    0,
+    1,
+    -1,
+    2**63,
+    -(2**63) - 1,
+    2**200 + 1,
+    -(2**200) - 1,
+    0.0,
+    -0.0,
+    1.25,
+    float("inf"),
+    float("-inf"),
+    float("nan"),
+    complex(1.25, -2.5),
+    complex(-0.0, 0.0),
+    complex(0.0, -0.0),
+    complex(float("inf"), float("-inf")),
+    complex(float("nan"), -0.0),
+)
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -23,6 +47,70 @@ class DefaultConvertReferenceTests(unittest.TestCase):
             raise AssertionError(
                 "default_convert differentials require pinned PyTorch 2.13.0"
             )
+
+    def assert_scalar_preserved(self, actual, expected, source):
+        self.assertIs(actual, source)
+        self.assertIs(expected, source)
+        self.assertIs(type(actual), type(expected))
+        self.assertIs(type(actual), type(source))
+        if type(source) is float:
+            # Compare bits so NaNs and the sign of zero are covered.
+            self.assertEqual(struct.pack("!d", actual), struct.pack("!d", expected))
+        elif type(source) is complex:
+            self.assertEqual(
+                struct.pack("!dd", actual.real, actual.imag),
+                struct.pack("!dd", expected.real, expected.imag),
+            )
+        else:
+            self.assertEqual(actual, expected)
+
+    def test_exact_python_scalar_identity_and_types_match_pytorch_2_13(self):
+        for value in SCALAR_LEAVES:
+            with self.subTest(value=value, value_type=type(value).__name__):
+                self.assert_scalar_preserved(
+                    torch.utils.data.default_convert(value),
+                    reference_torch.utils.data.default_convert(value),
+                    value,
+                )
+
+    def test_nested_python_scalar_leaves_match_pytorch_2_13(self):
+        class SampleList(list):
+            pass
+
+        class SampleTuple(tuple):
+            pass
+
+        def assert_converted(actual, expected, source):
+            self.assertIs(type(actual), type(expected))
+            if isinstance(source, dict):
+                self.assertIsNot(actual, source)
+                self.assertEqual(list(actual), list(expected))
+                self.assertEqual(list(actual), list(source))
+                if isinstance(source, defaultdict):
+                    self.assertIs(actual.default_factory, source.default_factory)
+                    self.assertIs(expected.default_factory, source.default_factory)
+                for key in source:
+                    assert_converted(actual[key], expected[key], source[key])
+            elif isinstance(source, (list, tuple)):
+                self.assertIsNot(actual, source)
+                self.assertEqual(len(actual), len(source))
+                for a, e, s in zip(actual, expected, source, strict=True):
+                    assert_converted(a, e, s)
+            else:
+                self.assert_scalar_preserved(actual, expected, source)
+
+        data = OrderedDict(
+            [
+                ("z", [Point(value, (value,)) for value in SCALAR_LEAVES]),
+                ("a", {"scalars": defaultdict(list, values=SampleList(SCALAR_LEAVES))}),
+                ("tuple", SampleTuple(SCALAR_LEAVES)),
+            ]
+        )
+        assert_converted(
+            torch.utils.data.default_convert(data),
+            reference_torch.utils.data.default_convert(data),
+            data,
+        )
 
     def assert_tensor_matches(self, actual, expected):
         with self.subTest(metadata=True):
@@ -119,37 +207,30 @@ class DefaultConvertReferenceTests(unittest.TestCase):
         self.assert_tensor_matches(actual["z"][1][1].x, expected["z"][1][1].x)
 
     def test_pytorch_supported_conversion_paths_fail_closed(self):
-        unsupported_actual_values = (
+        unsupported_values = (
             np.asarray([1.0], dtype=np.float32),
             np.float32(1.0),
             np.int64(1),
-            1.0,
-            1,
+            np.bool_(True),
+            np.float64(1.0),
+            np.complex128(1 + 2j),
+            reference_torch.tensor([1.0], dtype=reference_torch.float32),
             object(),
-            None,
-        )
-        unsupported_expected_values = (
-            np.asarray([1.0], dtype=np.float32),
-            np.float32(1.0),
-            np.int64(1),
-            1.0,
-            1,
-            object(),
-            None,
         )
 
-        for actual_value, expected_value in zip(
-            unsupported_actual_values, unsupported_expected_values, strict=True
-        ):
-            with self.subTest(value_type=type(actual_value).__name__):
-                with self.assertRaises(TypeError):
-                    torch.utils.data.default_convert(actual_value)
-                reference_torch.utils.data.default_convert(expected_value)
-
-        foreign = reference_torch.tensor([1.0], dtype=reference_torch.float32)
-        with self.assertRaisesRegex(TypeError, "exact native tensors"):
-            torch.utils.data.default_convert(foreign)
-        self.assertIs(reference_torch.utils.data.default_convert(foreign), foreign)
+        for value in unsupported_values:
+            for data in (value, {"nested": [Point(None, (value,))]}):
+                with self.subTest(
+                    value_type=type(value).__name__, nested=data is not value
+                ):
+                    with self.assertRaisesRegex(TypeError, "exact native tensors"):
+                        torch.utils.data.default_convert(data)
+                    expected = reference_torch.utils.data.default_convert(data)
+                    leaf = expected if data is value else expected["nested"][0].y[0]
+                    if isinstance(value, (np.ndarray, np.generic)):
+                        self.assertIsInstance(leaf, reference_torch.Tensor)
+                    else:
+                        self.assertIs(leaf, value)
 
     def test_default_collate_boundary_remains_fail_closed(self):
         with self.assertRaises(TypeError):

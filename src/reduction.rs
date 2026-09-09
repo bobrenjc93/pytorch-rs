@@ -163,6 +163,28 @@ fn dimension_sum_impl<const CONTIGUOUS: bool>(
         // Adjacent outputs share a traversal of the reduced axis, avoiding a
         // full cache-line walk per column. Fixed lanes let LLVM vectorize adds.
         let mut index = 0;
+        // Traverse more adjacent columns together to amortize strided cache
+        // misses. Every lane keeps exactly the same cascade and row order.
+        while output.len() - index >= 128 {
+            let sums = cascade::<128, CONTIGUOUS>(
+                &values[index * output_stride..],
+                count,
+                reduce_stride,
+                output_stride,
+            );
+            output[index..index + 128].copy_from_slice(&sums);
+            index += 128;
+        }
+        if output.len() - index >= 64 {
+            let sums = cascade::<64, CONTIGUOUS>(
+                &values[index * output_stride..],
+                count,
+                reduce_stride,
+                output_stride,
+            );
+            output[index..index + 64].copy_from_slice(&sums);
+            index += 64;
+        }
         while output.len() - index >= 32 {
             let sums = cascade::<32, CONTIGUOUS>(
                 &values[index * output_stride..],
@@ -202,6 +224,54 @@ fn dimension_sum_impl<const CONTIGUOUS: bool>(
 // Runtime dispatch preserves portable binaries while allowing the fixed-lane
 // kernels to compile to AVX2 on capable hosts.
 pub(crate) fn dimension_sum(
+    values: &[f32],
+    output: &mut [f32],
+    count: usize,
+    reduce_stride: usize,
+    output_stride: usize,
+) {
+    // Parallelize independent outputs, never partial sums of one output.
+    // Tile boundaries preserve the existing 32-column accumulation grouping.
+    // Small workloads avoid scheduler overhead and keep the serial fast path.
+    if count.saturating_mul(output.len()) >= 256 * 1024
+        && output.len() > 1
+        && let Some(pool) = crate::parallel::pool()
+    {
+        let width = output.len();
+        let alignment = if reduce_stride == 1 { 1 } else { 32 };
+        let grain = width
+            .div_ceil(pool.current_num_threads() + 1)
+            .div_ceil(alignment)
+            * alignment;
+        if grain < width {
+            let reduce = |tile: usize, chunk: &mut [f32]| {
+                let values = &values[tile * grain * output_stride..];
+                // A short final outer tile must retain the full operation's
+                // vector-tail ordering, not switch to four-output sums.
+                if output_stride == 1 && reduce_stride != 1 && width >= 8 && chunk.len() < 8 {
+                    vectorized_outer_tail(values, chunk, count, reduce_stride);
+                } else {
+                    dimension_sum_serial(values, chunk, count, reduce_stride, output_stride);
+                }
+            };
+            let (first, rest) = output.split_at_mut(grain);
+            // Run the first partition on the calling thread. Scoped jobs borrow
+            // disjoint outputs and finish before storage or the pool is released.
+            // No extra coordinator job has to wake a worker before dispatching.
+            pool.in_place_scope(|scope| {
+                for (index, chunk) in rest.chunks_mut(grain).enumerate() {
+                    let reduce = &reduce;
+                    scope.spawn(move |_| reduce(index + 1, chunk));
+                }
+                reduce(0, first);
+            });
+            return;
+        }
+    }
+    dimension_sum_serial(values, output, count, reduce_stride, output_stride);
+}
+
+fn dimension_sum_serial(
     values: &[f32],
     output: &mut [f32],
     count: usize,
@@ -252,6 +322,28 @@ unsafe fn avx2_sum(
         }
     } else if output_stride == 1 {
         let mut index = 0;
+        // Traverse more adjacent columns together to amortize strided cache
+        // misses. Every lane keeps exactly the same cascade and row order.
+        while output.len() - index >= 128 {
+            let sums = cascade::<128, true>(
+                &values[index * output_stride..],
+                count,
+                reduce_stride,
+                output_stride,
+            );
+            output[index..index + 128].copy_from_slice(&sums);
+            index += 128;
+        }
+        if output.len() - index >= 64 {
+            let sums = cascade::<64, true>(
+                &values[index * output_stride..],
+                count,
+                reduce_stride,
+                output_stride,
+            );
+            output[index..index + 64].copy_from_slice(&sums);
+            index += 64;
+        }
         while output.len() - index >= 32 {
             // SAFETY: AVX2 is enabled and the helper checks the source bounds.
             // The destination tile contains 32 writable floats.

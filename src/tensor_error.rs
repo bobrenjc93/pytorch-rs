@@ -96,6 +96,9 @@ pub enum TensorError {
     UnsupportedCudaZeroTensor {
         reason: &'static str,
     },
+    UnsupportedCudaAddition {
+        reason: &'static str,
+    },
     UnsupportedCudaTransfer {
         reason: &'static str,
     },
@@ -213,6 +216,7 @@ impl Display for TensorError {
             }
             error @ (Self::UnsupportedDevice { .. }
             | Self::UnsupportedCudaZeroTensor { .. }
+            | Self::UnsupportedCudaAddition { .. }
             | Self::UnsupportedCudaTransfer { .. }
             | Self::CudaRuntimeError { .. }) => format_device_error(formatter, error),
             error @ (Self::UnsupportedMemoryFormat { .. }
@@ -378,6 +382,9 @@ fn format_device_error(formatter: &mut Formatter<'_>, error: &TensorError) -> st
         ),
         TensorError::CudaRuntimeError { operation, message } => {
             write!(formatter, "{operation}(): CUDA runtime error: {message}")
+        }
+        TensorError::UnsupportedCudaAddition { reason } => {
+            write!(formatter, "add(): unsupported CUDA addition ({reason})")
         }
         TensorError::UnsupportedCudaTransfer { reason } => {
             write!(formatter, "to(): unsupported CUDA transfer ({reason})")

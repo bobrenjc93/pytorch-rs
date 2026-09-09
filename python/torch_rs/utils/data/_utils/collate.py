@@ -14,7 +14,8 @@ _UNSUPPORTED_TENSOR_MESSAGE = (
     "default_collate(): only exact native CPU float32 Tensor batches are supported"
 )
 _UNSUPPORTED_CONVERT_TYPE_MESSAGE = (
-    "default_convert(): only exact native tensors, strings, bytes, and "
+    "default_convert(): only exact native tensors, exact Python bool, int, "
+    "float, complex, None, strings, bytes, and "
     "list, tuple, namedtuple, or dict containers are supported; found {}"
 )
 
@@ -132,6 +133,8 @@ def _convert_sequence(data):
 def _convert(data):
     if type(data) is torch.Tensor:
         return data
+    if data is None or type(data) in (bool, int, float, complex):
+        return data
     if isinstance(data, (str, bytes)):
         return data
     if isinstance(data, dict):
@@ -177,12 +180,14 @@ def default_collate(batch):
 def default_convert(data):
     r"""Convert a supported single data point without batching.
 
-    Exact native tensor, string, and bytes leaves are returned unchanged. Lists,
-    plain tuples, namedtuples, and dicts are traversed recursively; lists,
-    namedtuples, and dicts preserve container type and dict key order, while
-    plain tuples return lists for PyTorch compatibility.
+    Exact native tensors, exact Python bool, int, float, and complex values,
+    None, strings, and bytes are returned unchanged without constructing
+    tensors. Lists, plain tuples, namedtuples, and dicts are traversed
+    recursively; lists, namedtuples, and dicts preserve container type and dict
+    key order, while plain tuples return lists for PyTorch compatibility.
 
-    NumPy arrays, numeric scalars, arbitrary objects, batch stacking, and the
-    broader :func:`default_collate` conversion surface remain unsupported.
+    NumPy arrays and scalars, numeric scalar subclasses, foreign tensors,
+    arbitrary objects, batch stacking, and the broader :func:`default_collate`
+    conversion surface remain unsupported.
     """
     return _convert(data)

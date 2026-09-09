@@ -826,8 +826,8 @@ class TensorMeanTests(unittest.TestCase):
                     call()
 
         unsupported_cases = (
-            ("positional dim", lambda: tensor.mean(0)),
-            ("keyword dim", lambda: tensor.mean(dim=0)),
+            ("rank-three positional dim", lambda: torch.ones((2, 3, 4)).mean(0)),
+            ("rank-three keyword dim", lambda: torch.ones((2, 3, 4)).mean(dim=0)),
             ("tuple dim", lambda: tensor.mean((0, 1))),
             ("list dim", lambda: tensor.mean(dim=[0, 1])),
             (
@@ -843,7 +843,7 @@ class TensorMeanTests(unittest.TestCase):
             with self.subTest(case=case):
                 with self.assertRaisesRegex(
                     NotImplementedError,
-                    r"^mean\(\): only full reductions with dim=None and rank-1 dim=0/-1 reductions are supported; broader dim reductions, concrete out, and dtype conversions are not supported$",
+                    r"^mean\(\): only full reductions with dim=None and single-dimension rank-1/rank-2 reductions are supported; broader dim reductions, concrete out, and dtype conversions are not supported$",
                 ):
                     call()
 
@@ -908,11 +908,11 @@ class TensorMeanTests(unittest.TestCase):
                     call()
 
         unsupported_cases = (
-            ("positional dim", lambda: torch.mean(tensor, 0)),
-            ("keyword dim", lambda: torch.mean(input=tensor, dim=0)),
+            ("rank-three positional dim", lambda: torch.mean(torch.ones((2, 3, 4)), 0)),
+            ("rank-three keyword dim", lambda: torch.mean(input=torch.ones((2, 3, 4)), dim=0)),
             ("tuple dim", lambda: torch.mean(tensor, (0, 1))),
             ("list dim", lambda: torch.mean(tensor, [0, 1])),
-            ("keepdim", lambda: torch.mean(tensor, 0, keepdim=True)),
+            ("rank-three keepdim", lambda: torch.mean(torch.ones((2, 3, 4)), 0, keepdim=True)),
             (
                 "none dim keepdim true concrete out",
                 lambda: torch.mean(tensor, None, keepdim=True, out=destination),
@@ -941,7 +941,7 @@ class TensorMeanTests(unittest.TestCase):
             with self.subTest(case=case):
                 with self.assertRaisesRegex(
                     NotImplementedError,
-                    r"^mean\(\): only full reductions with dim=None and rank-1 dim=0/-1 reductions are supported; broader dim reductions, concrete out, and dtype conversions are not supported$",
+                    r"^mean\(\): only full reductions with dim=None and single-dimension rank-1/rank-2 reductions are supported; broader dim reductions, concrete out, and dtype conversions are not supported$",
                 ):
                     call()
         self.assertEqual(destination.tolist(), [17.0, 19.0, 23.0])

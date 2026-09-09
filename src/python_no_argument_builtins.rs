@@ -245,7 +245,7 @@ fn get_num_threads(
             args.len()
         )));
     }
-    Ok(1)
+    Ok(crate::get_num_threads())
 }
 
 // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.

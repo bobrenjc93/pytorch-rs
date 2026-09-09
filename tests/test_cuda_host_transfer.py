@@ -197,7 +197,7 @@ class CudaHostTransferTests(unittest.TestCase):
                         source.to("cuda:0")
             uploaded = x.detach().to("cuda:0")
             for call in (lambda: uploaded.to("cuda:0", copy=True),
-                         lambda: uploaded.to("cuda:1"), lambda: uploaded + uploaded,
+                         lambda: uploaded.to("cuda:1"), lambda: uploaded * uploaded,
                          lambda: uploaded.requires_grad_()):
                 with self.assertRaises(NotImplementedError):
                     call()
@@ -266,7 +266,7 @@ class CudaHostTransferDeviceGuardTests(unittest.TestCase):
         try:
             for current, destination in ((1, 0), (0, 1)):
                 torch.cuda.set_device(current)
-                for shape in ((), (0,), (17,), (17 * 1024 * 1024,)):
+                for shape in ((), (0,), (17,), (17 * 1024 * 1024,), (65 * 1024 * 1024,)):
                     source = native.full(shape, -3.25)
                     uploaded = source.to(f"cuda:{destination}")
                     ordinal = ctypes.c_int()
@@ -278,7 +278,7 @@ class CudaHostTransferDeviceGuardTests(unittest.TestCase):
                     expected_values = reference[:17].cpu() if len(shape) else reference.cpu()
                     np.testing.assert_array_equal(actual_values.tolist(), expected_values.tolist())
                     del reference
-                    del uploaded  # Large storage bypasses the cache and invokes cudaFree.
+                    del uploaded  # Large storage exercises the backing allocator release.
                     gc.collect()
                     for device in ("cuda:2",):
                         with self.assertRaisesRegex(RuntimeError, "CUDA runtime error"):

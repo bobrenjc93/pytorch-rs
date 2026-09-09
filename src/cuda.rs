@@ -9,9 +9,14 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+mod pointwise;
+mod pool;
+mod replay;
+
 type Status = c_int;
 struct Runtime {
     _library: Library,
+    pool: Option<pool::Api>,
     count: unsafe extern "C" fn(*mut c_int) -> Status,
     get_device: unsafe extern "C" fn(*mut c_int) -> Status,
     set_device: unsafe extern "C" fn(c_int) -> Status,
@@ -35,9 +40,12 @@ struct Runtime {
 static CANDIDATES: OnceLock<Vec<String>> = OnceLock::new();
 static RUNTIME: OnceLock<Result<Runtime, String>> = OnceLock::new();
 static INITIALIZED: AtomicBool = AtomicBool::new(false);
-// At most 32 allocations and 64 MiB retained. Entries are inaccessible to live
+// At most 32 allocations and 64 MiB retained in the front cache. Entries are inaccessible to live
 // tensors; storage Arc ownership prevents reuse while any view still exists.
-static CACHE: Mutex<Vec<(usize, usize, usize)>> = Mutex::new(Vec::new());
+static CACHE: Mutex<Vec<(usize, usize, usize, bool)>> = Mutex::new(Vec::new());
+// A failed launch/completion disables reuse. Ordinary allocations are freed;
+// uncertain stream-ordered allocations are quarantined.
+static CACHE_HEALTHY: AtomicBool = AtomicBool::new(true);
 const CACHE_BYTES: usize = 64 * 1024 * 1024;
 const COPY_STAGING_ELEMENTS: usize = 256 * 1024 / size_of::<f32>();
 
@@ -111,6 +119,7 @@ impl Runtime {
         unsafe {
             let library = Library::new(path)?;
             Ok(Self {
+                pool: pool::Api::load(&library).ok(),
                 count: *library.get(b"cudaGetDeviceCount\0")?,
                 get_device: *library.get(b"cudaGetDevice\0")?,
                 set_device: *library.get(b"cudaSetDevice\0")?,
@@ -197,6 +206,8 @@ pub(crate) struct CudaFloat32Storage {
     pub(crate) elements: usize,
     pub(crate) device_index: usize,
     pub(crate) data_ptr: usize,
+    allocation_bytes: usize,
+    pooled: bool,
     runtime: &'static Runtime,
 }
 impl CudaFloat32Storage {
@@ -239,6 +250,63 @@ impl CudaFloat32Storage {
         Ok(result)
     }
 
+    pub(crate) fn add(
+        &self,
+        left_offset: usize,
+        other: &Self,
+        right_offset: usize,
+        elements: usize,
+    ) -> Result<Self, TensorError> {
+        if self.device_index != other.device_index {
+            return Err(TensorError::UnsupportedCudaAddition {
+                reason: "mixed devices",
+            });
+        }
+        // Empty views may point beyond storage; no pointer is formed or read.
+        if elements != 0 {
+            for (storage, offset) in [(self, left_offset), (other, right_offset)] {
+                if offset
+                    .checked_add(elements)
+                    .is_none_or(|end| end > storage.elements)
+                {
+                    return Err(TensorError::IndexCalculationOverflow);
+                }
+            }
+        }
+        let (result, _guard) = Self::allocate(elements, self.device_index)?;
+        if elements != 0 {
+            // SAFETY: bounds and device checked above, output is fresh and all
+            // three storages remain borrowed/owned until stream completion.
+            let (launched, replay) = unsafe {
+                pointwise::launch_add(
+                    (self.data_ptr + left_offset * 4) as u64,
+                    (other.data_ptr + right_offset * 4) as u64,
+                    result.data_ptr as u64,
+                    elements,
+                )
+            };
+            // Always wait, including after a launch error, before any borrowed
+            // input or unpublished output can be dropped or cached. Explicit
+            // legacy-stream launch composes with native zero-fill and copies.
+            let completed = self.runtime.check(
+                unsafe { (self.runtime.stream_synchronize)(std::ptr::without_provenance_mut(1)) },
+                "cudaStreamSynchronize",
+            );
+            if completed.is_err() {
+                // Completion is uncertain: quarantine executable metadata too.
+                std::mem::forget(replay);
+            } else {
+                drop(replay);
+            }
+            if launched.is_err() || completed.is_err() {
+                CACHE_HEALTHY.store(false, Ordering::Relaxed);
+            }
+            launched?;
+            completed?;
+        }
+        Ok(result)
+    }
+
     // Only the initializing constructors above may publish this allocation.
     // Retain one guard across allocation and initialization, including errors.
     fn allocate(elements: usize, device_index: usize) -> Result<(Self, DeviceGuard), TensorError> {
@@ -248,17 +316,37 @@ impl CudaFloat32Storage {
             .ok_or(TensorError::AllocationFailed { elements })?;
         let runtime = runtime()?;
         let guard = runtime.guard(device_index)?;
-        let cached = {
+        let cached = if CACHE_HEALTHY.load(Ordering::Relaxed) {
             let mut cache = CACHE
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             cache
                 .iter()
-                .position(|&(device, size, _)| device == device_index && size == bytes)
-                .map(|index| cache.swap_remove(index).2)
+                .enumerate()
+                // Best fit accommodates nearby sizes without keeping a live
+                // alias or exposing padding as logical tensor elements. Bound
+                // excess capacity to avoid pinning a huge block for tiny work.
+                .filter(|(_, entry)| {
+                    entry.0 == device_index && entry.1 >= bytes && entry.1 - bytes <= bytes / 4
+                })
+                .min_by_key(|(_, entry)| entry.1)
+                .map(|(index, _)| index)
+                .map(|index| cache.remove(index))
+        } else {
+            None
         };
-        let mut pointer = cached.unwrap_or(0) as *mut c_void;
-        if bytes != 0 && cached.is_none() {
+        let mut pointer = cached.map_or(0, |entry| entry.2) as *mut c_void;
+        let mut pooled = cached.is_some_and(|entry| entry.3);
+        if bytes != 0
+            && cached.is_none()
+            && CACHE_HEALTHY.load(Ordering::Relaxed)
+            && let Some(api) = &runtime.pool
+            && let Some(allocation) = api.allocate(runtime, device_index, bytes)?
+        {
+            pointer = allocation as *mut c_void;
+            pooled = true;
+        }
+        if bytes != 0 && cached.is_none() && !pooled {
             // SAFETY: valid output pointer; size checked above.
             runtime.check(
                 unsafe { (runtime.malloc)(&raw mut pointer, bytes) },
@@ -269,6 +357,8 @@ impl CudaFloat32Storage {
             elements,
             device_index,
             data_ptr: pointer as usize,
+            allocation_bytes: cached.map_or(bytes, |entry| entry.1),
+            pooled,
             runtime,
         };
         INITIALIZED.store(true, Ordering::Relaxed);
@@ -451,23 +541,52 @@ impl Drop for CudaFloat32Storage {
         if self.data_ptr == 0 {
             return;
         }
-        let bytes = self.elements * 4;
+        let bytes = self.allocation_bytes;
+        let mut evicted = Vec::new();
         {
             let mut cache = CACHE
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if cache.len() < 32
-                && bytes <= CACHE_BYTES
-                && cache.iter().map(|entry| entry.1).sum::<usize>() <= CACHE_BYTES - bytes
-            {
-                cache.push((self.device_index, bytes, self.data_ptr));
-                return;
+            if CACHE_HEALTHY.load(Ordering::Relaxed) && bytes <= CACHE_BYTES {
+                // Replace the least recently returned allocations instead of
+                // permanently rejecting new sizes after mixed-size workloads.
+                while cache.len() >= 32
+                    || cache.iter().map(|entry| entry.1).sum::<usize>() > CACHE_BYTES - bytes
+                {
+                    evicted.push(cache.remove(0));
+                }
+                cache.push((self.device_index, bytes, self.data_ptr, self.pooled));
+            } else {
+                evicted.push((self.device_index, bytes, self.data_ptr, self.pooled));
             }
         }
-        if let Ok(_guard) = self.runtime.guard(self.device_index) {
-            // SAFETY: this pointer is uniquely owned and no longer exposed.
-            unsafe {
-                (self.runtime.free)(self.data_ptr as *mut c_void);
+        for (device, capacity, pointer, pooled) in evicted {
+            if let Ok(_guard) = self.runtime.guard(device) {
+                if pooled {
+                    // Never recycle pool memory after a failed launch/wait.
+                    // Quarantine it if completion could not be established.
+                    if CACHE_HEALTHY.load(Ordering::Relaxed) {
+                        // SAFETY: no owner remains; zero-fill, transfers, add
+                        // and release are ordered on this device's legacy
+                        // stream, even when their host threads differ. Add
+                        // still completes before return; host readback blocks.
+                        let status = unsafe {
+                            self.runtime
+                                .pool
+                                .as_ref()
+                                .expect("pooled allocation")
+                                .free(pointer, capacity, device)
+                        };
+                        if status != 0 {
+                            CACHE_HEALTHY.store(false, Ordering::Relaxed);
+                        }
+                    }
+                } else {
+                    // SAFETY: removed cache entries have no live owners.
+                    unsafe {
+                        (self.runtime.free)(pointer as *mut c_void);
+                    }
+                }
             }
         }
     }
@@ -507,6 +626,59 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn addition_checks_storage_bounds_and_restores_device() {
+        if super::device_count() == 0 {
+            eprintln!("skipping CUDA addition bounds: no CUDA runtime/device");
+            return;
+        }
+        let left = super::CudaFloat32Storage::from_host(&[1.25, -2.5, 4.0], 0).unwrap();
+        let right = super::CudaFloat32Storage::from_host(&[3.0, 7.5, -8.0], 0).unwrap();
+        for (a, b, n) in [(3, 0, 1), (0, 3, 1), (usize::MAX, 0, 2), (0, 0, 4)] {
+            assert!(matches!(
+                left.add(a, &right, b, n),
+                Err(crate::TensorError::IndexCalculationOverflow)
+            ));
+        }
+        assert_eq!(
+            left.add(1, &right, 0, 2).unwrap().copy_range(0, 2).unwrap(),
+            [0.5, 11.5]
+        );
+        assert_eq!(
+            left.add(usize::MAX, &right, usize::MAX, 0)
+                .unwrap()
+                .elements,
+            0
+        );
+        if std::env::var("CUDA_VISIBLE_DEVICES").as_deref() != Ok("0,1")
+            || super::device_count() < 2
+        {
+            eprintln!(
+                "skipping two-device CUDA addition guard check: requires CUDA_VISIBLE_DEVICES=0,1"
+            );
+            return;
+        }
+        let runtime = super::runtime().unwrap();
+        let _current = runtime.guard(1).unwrap();
+        let output = left.add(0, &right, 0, 3).unwrap();
+        let other_device = super::CudaFloat32Storage::zeros(3, 1).unwrap();
+        assert!(matches!(
+            left.add(0, &other_device, 0, 3),
+            Err(crate::TensorError::UnsupportedCudaAddition { .. })
+        ));
+        assert_eq!(output.copy_range(0, 3).unwrap(), [4.25, 5.0, -4.0]);
+        drop(output);
+        let mut current = -1;
+        // SAFETY: writable output pointer and the loaded runtime's device ABI.
+        runtime
+            .check(
+                unsafe { (runtime.get_device)(&raw mut current) },
+                "cudaGetDevice",
+            )
+            .unwrap();
+        assert_eq!(current, 1);
     }
 
     #[test]

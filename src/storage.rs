@@ -194,6 +194,28 @@ impl Storage {
         })
     }
 
+    pub(crate) fn cuda_add_float32(
+        &self,
+        left_offset: usize,
+        other: &Self,
+        right_offset: usize,
+        elements: usize,
+    ) -> Result<Self, TensorError> {
+        match (&self.payload, &other.payload) {
+            (StoragePayload::CudaFloat32(left), StoragePayload::CudaFloat32(right)) => Ok(Self {
+                payload: StoragePayload::CudaFloat32(left.add(
+                    left_offset,
+                    right,
+                    right_offset,
+                    elements,
+                )?),
+            }),
+            _ => Err(TensorError::UnsupportedCudaAddition {
+                reason: "mixed devices",
+            }),
+        }
+    }
+
     pub(crate) fn len(&self) -> usize {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.len(),
