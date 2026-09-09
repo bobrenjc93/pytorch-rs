@@ -85,6 +85,12 @@ def inputs_for(case, seed):
     return [values(shape) for shape in case["input_shapes"]]
 
 
+def valid_seeds(seeds):
+    # random.Random aliases negative integer seeds to their absolute values.
+    return (len(seeds) >= 2 and all(type(seed) is int and seed >= 0 for seed in seeds)
+            and len(set(seeds)) == len(seeds))
+
+
 def flatten(value):
     if isinstance(value, list):
         return [item for child in value for item in flatten(child)]
@@ -228,6 +234,13 @@ def worker(role, request):
         public = output.cpu()
         if str(public.device) != "cpu" or flatten(public.tolist()) != result["output"]["values"]:
             raise RuntimeError("public materialization disagrees with CUDA storage")
+        result["inputs_after"] = [
+            inspector.materialize(tensor, shape, module.Tensor)
+            for tensor, shape in zip(inputs, case["input_shapes"])
+        ]
+        for index, (before, after) in enumerate(zip(result["inputs"], result["inputs_after"])):
+            if after != before:
+                raise RuntimeError(f"operation mutated input {index}")
         if blocker:
             blocker.check()
         result["status"] = "passed"
@@ -287,7 +300,8 @@ def valid_execution(row, case, seed, role):
             return False
     elif not row.get("gpu") or str(row.get("version")).split("+")[0] != "2.13.0":
         return False
-    if not isinstance(row.get("inputs"), list):
+    if (not isinstance(row.get("inputs"), list)
+            or row.get("inputs_after") != row["inputs"]):
         return False
     tensors = row["inputs"] + [row.get("output")]
     shapes = case["input_shapes"] + [case["output_shape"]]
@@ -332,8 +346,8 @@ def account(case_set, seeds, trials, build_record, source):
                       or not cand.get("extension", {}).get("sha256")
                       or ref["pid"] == cand["pid"]):
                     verdict["reason"] = "unbound_candidate_build_or_process"
-                elif len(seeds) < 2 or len(set(seeds)) != len(seeds):
-                    verdict["reason"] = "insufficient_distinct_seeds"
+                elif not valid_seeds(seeds):
+                    verdict["reason"] = "invalid_or_insufficient_distinct_seeds"
                 else:
                     expected, actual = ref["output"]["values"], cand["output"]["values"]
                     correct = all(abs(a - b) <= case_set["atol"] + case_set["rtol"] * abs(b)
@@ -349,7 +363,7 @@ def account(case_set, seeds, trials, build_record, source):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--seed", type=int, action="append", help="repeat for at least two distinct evaluator seeds")
+    parser.add_argument("--seed", type=int, action="append", help="repeat for at least two distinct nonnegative evaluator seeds")
     parser.add_argument("--reference-python", default=sys.executable)
     parser.add_argument("--candidate-python", default=sys.executable)
     parser.add_argument("--build-record", type=Path, help="evaluator's fresh native build receipt (required for credit)")
@@ -363,8 +377,8 @@ def main():
     if os.environ.get("CUDA_VISIBLE_DEVICES") != "0":
         parser.error("run with CUDA_VISIBLE_DEVICES=0")
     seeds = args.seed if args.seed is not None else [secrets.randbits(63) for _ in range(3)]
-    if len(seeds) < 2 or len(set(seeds)) != len(seeds):
-        parser.error("at least two distinct seeds are required")
+    if not valid_seeds(seeds):
+        parser.error("at least two distinct nonnegative integer seeds are required")
     if not math.isfinite(args.timeout) or args.timeout <= 0:
         parser.error("timeout must be positive")
     if args.output and (not args.output.resolve().is_relative_to(ROOT)

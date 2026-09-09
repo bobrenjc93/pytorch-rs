@@ -41,6 +41,7 @@ class FixedDenominatorTests(unittest.TestCase):
                            case["input_shapes"], evaluator.inputs_for(case, seed))],
                        "output": tensor(case["output_shape"], [0.25] * math.prod(case["output_shape"])),
                        "cuda_runtimes": [{"path": "/fixture/libcudart.so", "version": 13000, "status": 0}]}
+                row["inputs_after"] = copy.deepcopy(row["inputs"])
                 reference = {**copy.deepcopy(row), "role": "reference", "pid": 101,
                              "version": "2.13.0+cu130", "gpu": {"name": "unit fixture"}}
                 candidate = {**copy.deepcopy(row), "role": "candidate", "pid": 202,
@@ -167,6 +168,36 @@ class FixedDenominatorTests(unittest.TestCase):
         self.seeds = self.seeds[:1]
         self.assertZero()
 
+    def test_opposite_signed_seeds_cannot_earn_credit_for_duplicate_workloads(self):
+        # Keep otherwise valid rows for both signed seeds so the seed guard,
+        # rather than a missing trial or mismatched input, must reject credit.
+        positive = [t for t in self.trials if t["seed"] == 9173]
+        negative = copy.deepcopy(positive)
+        for trial in negative:
+            trial["seed"] = -9173
+            for role in ("reference", "candidate"):
+                trial[role]["seed"] = -9173
+        self.seeds = [9173, -9173]
+        self.trials = positive + negative
+        for case in self.corpus["cases"]:
+            self.assertEqual(evaluator.inputs_for(case, 9173),
+                             evaluator.inputs_for(case, -9173))
+        self.assertZero()
+
+    def test_missing_or_mutated_post_operation_inputs_cannot_earn_credit(self):
+        original = copy.deepcopy(self.trials)
+        for mutation in ("missing", "first_operand", "last_operand"):
+            with self.subTest(mutation=mutation):
+                self.trials = copy.deepcopy(original)
+                for trial in self.trials:
+                    candidate = trial["candidate"]
+                    if mutation == "missing":
+                        del candidate["inputs_after"]
+                    else:
+                        index = 0 if mutation == "first_operand" else -1
+                        candidate["inputs_after"][index]["values"][0] += 1
+                self.assertZero()
+
     def test_inputs_are_evaluator_selected_and_reproducible(self):
         case = self.corpus["cases"][0]
         a = evaluator.inputs_for(case, 17)
@@ -178,6 +209,18 @@ class FixedDenominatorTests(unittest.TestCase):
 
 
 class IsolationTests(unittest.TestCase):
+    def test_cli_rejects_negative_and_opposite_signed_seeds(self):
+        for seeds in ((9173, -9173), (-9173, 1459)):
+            with self.subTest(seeds=seeds):
+                result = subprocess.run(
+                    [sys.executable, "-I", "-B", str(ROOT / "scripts/evaluate_cuda_math.py"),
+                     "--seed", str(seeds[0]), "--seed", str(seeds[1])],
+                    env={**os.environ, "CUDA_VISIBLE_DEVICES": "0"}, cwd=ROOT,
+                    capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn("nonnegative", result.stderr)
+                self.assertEqual(result.stdout, "")
+
     def test_candidate_worker_rejects_a_forwarding_package(self):
         work = ROOT / "target/cuda-math-tests"
         work.mkdir(parents=True, exist_ok=True)
@@ -246,6 +289,55 @@ else:
 @unittest.skipUnless(os.environ.get("CUDA_VISIBLE_DEVICES") == "0",
                      "CUDA math hardware checks require CUDA_VISIBLE_DEVICES=0")
 class CudaReferenceTests(unittest.TestCase):
+    def test_candidate_worker_rejects_operand_mutation_on_cuda(self):
+        if not any((ROOT / "python/torch_rs").glob("torch_rs*.so")):
+            self.skipTest("requires this checkout's locally built native extension")
+        work = ROOT / "target/cuda-math-tests"
+        work.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=work) as temp:
+            env = {**os.environ, "TMPDIR": temp, "CUDA_CACHE_PATH": temp,
+                   "XDG_CACHE_HOME": temp, "PYTHONDONTWRITEBYTECODE": "1"}
+            case = evaluator.corpus()["cases"][0]
+            reference = evaluator.launch("reference", case, 9173, sys.executable, 60, env)
+            if (reference["status"] == "skipped"
+                    or "No module named 'torch'" in reference.get("error", "")):
+                self.skipTest("NVIDIA CUDA PyTorch reference unavailable")
+            self.assertTrue(evaluator.valid_execution(reference, case, 9173, "reference"), reference)
+            baseline = evaluator.launch("candidate", case, 9173, sys.executable, 60, env)
+            self.assertTrue(evaluator.valid_execution(baseline, case, 9173, "candidate"), baseline)
+            self.assertEqual(baseline["output"]["values"], reference["output"]["values"])
+            for operand, return_operand in ((0, True), (1, False)):
+                with self.subTest(operand=operand, return_operand=return_operand):
+                    code = f"""
+import ctypes, json, sys
+sys.path.insert(0, {str(ROOT / 'scripts')!r})
+import evaluate_cuda_math as e
+original = e.operation
+def mutate(module, case, inputs):
+    output = original(module, case, inputs)
+    inspector = e.CudaInspector()
+    inspector.call('cuCtxSynchronize')
+    copy = inspector.driver.cuMemcpyDtoD_v2
+    copy.argtypes = [ctypes.c_uint64, ctypes.c_uint64, ctypes.c_size_t]
+    copy.restype = ctypes.c_int
+    inspector.call('cuMemcpyDtoD_v2', inputs[{operand}].data_ptr(), output.data_ptr(), 7 * 13 * 4)
+    return inputs[{operand}] if {return_operand!r} else output
+e.operation = mutate
+print(json.dumps(e.worker('candidate', {{'case': e.corpus()['cases'][0], 'seed': 9173}})))
+"""
+                    completed = subprocess.run([sys.executable, "-I", "-B", "-c", code],
+                                               cwd=ROOT, env=env, capture_output=True,
+                                               text=True, timeout=60)
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    result = json.loads(completed.stdout)
+                    self.assertEqual(result["output"]["values"], reference["output"]["values"])
+                    self.assertEqual(result["status"], "failed", result)
+                    self.assertIn(f"operation mutated input {operand}", result["error"])
+                    self.assertNotEqual(result["inputs_after"][operand], result["inputs"][operand])
+                    self.assertEqual(result["inputs_after"][1 - operand], result["inputs"][1 - operand])
+                    self.assertEqual(result["blocked_imports"], [])
+                    self.assertFalse(evaluator.valid_execution(result, case, 9173, "candidate"))
+
     def test_six_reference_cases_run_in_isolated_processes_on_real_cuda(self):
         work = ROOT / "target/cuda-math-tests"
         work.mkdir(parents=True, exist_ok=True)

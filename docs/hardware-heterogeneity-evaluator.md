@@ -102,8 +102,10 @@ set, capability weights, existing cases, or breadth requirements.
 All inputs and outputs are contiguous float32 tensors on logical `cuda:0`.
 The evaluator generates nonzero, mixed-sign inputs independently of either
 framework, using Python `random.Random(seed).uniform(-2, 2)` rounded to float32.
-At least two distinct evaluator-selected seeds are required. Without `--seed`,
-the runner selects three random seeds and records them for reproduction. Each
+At least two distinct, nonnegative evaluator-selected integer seeds are required;
+negative seeds are rejected because Python aliases them to their absolute values.
+Without `--seed`, the runner selects three random seeds and records them for
+reproduction. Each
 case must pass every seed to earn one of the six slots. TF32 is disabled in the
 reference; output tolerances are `atol=1e-6`, `rtol=1e-5`. Shapes, operations,
 tolerances, and input generation are versioned; changing these requires a new
@@ -118,8 +120,10 @@ retain even swallowed forwarding attempts as zero-credit evidence. Inputs are
 created through public APIs. An evaluator-owned CUDA driver probe checks input
 and output pointer memory type and device ordinal, synchronizes execution, and
 copies the output into host memory. The public `.cpu().tolist()` observation
-must also agree. This setup does not award transfer, layout, compilation,
-autograd, or performance credit.
+must also agree. Every input is re-materialized afterward and must match its
+original snapshot, since these operations must preserve their operands. Missing
+or changed post-operation snapshots earn zero. This setup does not award
+transfer, layout, compilation, autograd, or performance credit.
 
 Missing, failed, skipped, unsupported, forwarded, malformed, incorrect, and
 unbound candidate trials earn zero. Reference failure also leaves the slot in
