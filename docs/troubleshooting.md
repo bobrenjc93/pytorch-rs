@@ -52,11 +52,17 @@ If tests import an older `torch-rs` wheel, rebuild and reinstall from this
 checkout instead of relying on the previous environment state:
 
 ```bash
-VIRTUAL_ENV="$PWD/.venv" PYO3_PYTHON="$PWD/.venv/bin/python" \
-  .venv/bin/maturin develop --release --locked
-.venv/bin/python .github/scripts/verify_native_extension.py
+unset PYTHONPATH
+./scripts/test-python.sh
 ```
 
-`./scripts/test-python.sh` performs the stricter path: it builds one release
-wheel from the current worktree, force-installs it into `.venv`, verifies native
-extension provenance, and then runs the suite.
+The script builds one release wheel from the current worktree, force-installs
+it into `.venv`, verifies native extension provenance, and then runs the Python
+suite. Clearing `PYTHONPATH` prevents source files from shadowing that wheel.
+
+`maturin develop --release --locked` remains valid for editable development:
+it resolves `torch_rs` under `python/torch_rs` so Python edits take effect
+immediately. The wheel-only `.github/scripts/verify_native_extension.py` check
+intentionally rejects that layout; it requires both `torch_rs` and the native
+`torch_rs.torch_rs` extension to resolve inside `.venv`. Use the workflow above
+when recovering a stale wheel or preparing an install for wheel verification.

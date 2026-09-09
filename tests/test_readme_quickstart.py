@@ -933,6 +933,27 @@ class ReadmeQuickstartTests(unittest.TestCase):
             with self.subTest(troubleshooting=snippet):
                 self.assertIn(snippet, troubleshooting)
 
+    def test_stale_wheel_recovery_uses_wheel_test_workflow(self):
+        troubleshooting = TROUBLESHOOTING.read_text(encoding="utf-8")
+        match = re.search(
+            r"^## Stale Wheel Installs\n(?P<section>.*?)(?=^## |\Z)",
+            troubleshooting,
+            flags=re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(match, "stale-wheel recovery section is missing")
+        commands = re.findall(
+            r"^```bash\n(.*?)^```$",
+            match.group("section"),
+            flags=re.MULTILINE | re.DOTALL,
+        )
+        # A mention in prose is insufficient: the runnable recovery must build
+        # and install a wheel, not feed an editable install to the verifier.
+        self.assertEqual(
+            [block.strip() for block in commands],
+            ["unset PYTHONPATH\n./scripts/test-python.sh"],
+        )
+        self.assertTrue((REPOSITORY_ROOT / "scripts/test-python.sh").is_file())
+
     def test_readme_routes_to_supported_surface_anchors(self):
         readme = README.read_text(encoding="utf-8")
         route = "docs/supported-surface.md"
