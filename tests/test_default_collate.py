@@ -12,7 +12,51 @@ from torch_rs.utils.data import default_collate
 Point = namedtuple("Point", ["x", "y"])
 
 
+class StringSubclass(str):
+    pass
+
+
+class BytesSubclass(bytes):
+    pass
+
+
 class DefaultCollateTests(unittest.TestCase):
+    def test_text_batches_are_returned_unchanged(self):
+        for values in (["雪/🙂.png", "", "café"], [b"\x00\xff", b"", b"file"]):
+            for batch_type in (list, tuple):
+                batch = batch_type(values)
+                with self.subTest(text_type=type(values[0]), batch_type=batch_type):
+                    result = default_collate(batch)
+                    self.assertIs(result, batch)
+                    for actual, source in zip(result, values, strict=True):
+                        self.assertIs(actual, source)
+
+    def test_mixed_text_batches_fail_closed_at_any_depth(self):
+        tensor = torch.tensor([1.0])
+        for text in ("label", b"label"):
+            for other in (
+                b"other" if type(text) is str else "other",
+                StringSubclass("label"), BytesSubclass(b"label"),
+                np.str_("label"), np.bytes_(b"label"),
+                1, 1.0, True, 1j, None, object(), tensor,
+                np.array([1.0]), [text], (text,), {"label": text},
+            ):
+                for values in ([text, other], [other, text]):
+                    for wrap in (
+                        lambda value: value,
+                        lambda value: {"label": value},
+                        lambda value: [value],
+                        lambda value: (value,),
+                        lambda value: Point(tensor, value),
+                    ):
+                        batch = [wrap(value) for value in values]
+                        with self.subTest(
+                            text_type=type(text), other_type=type(other),
+                            container_type=type(batch[0]),
+                        ):
+                            with self.assertRaises(TypeError):
+                                default_collate(batch)
+
     def assert_tensor_matches(self, actual, expected_values, *, shape, case):
         expected = np.asarray(expected_values, dtype=np.float32)
         with self.subTest(case=case, metadata=True):
@@ -156,8 +200,12 @@ class DefaultCollateTests(unittest.TestCase):
             [np.float32(1.0)],
             [1.0],
             [1],
-            ["sample"],
-            [b"sample"],
+            [True],
+            [1j],
+            [StringSubclass("sample")],
+            [BytesSubclass(b"sample")],
+            [np.str_("sample")],
+            [np.bytes_(b"sample")],
             [object()],
             [None],
         )
@@ -194,8 +242,9 @@ class DefaultCollateTests(unittest.TestCase):
                 with self.assertRaisesRegex(error_type, regex):
                     call()
 
-        with self.assertRaises(IndexError):
-            default_collate([])
+        for batch in ([], ()):
+            with self.assertRaises(IndexError):
+                default_collate(batch)
 
     def test_imports_exports_signature_and_unsupported_neighbors(self):
         data_module = importlib.import_module("torch_rs.utils.data")

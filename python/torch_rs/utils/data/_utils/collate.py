@@ -7,7 +7,8 @@ import torch_rs as torch
 
 _CPU_DEVICE = torch.device("cpu")
 _UNSUPPORTED_TYPE_MESSAGE = (
-    "default_collate(): only batches of exact native CPU float32 tensors and "
+    "default_collate(): only batches of exact native CPU float32 tensors, "
+    "exact Python str or bytes leaves, and "
     "matching list, tuple, namedtuple, or dict containers are supported; found {}"
 )
 _UNSUPPORTED_TENSOR_MESSAGE = (
@@ -151,6 +152,14 @@ def _collate(batch):
     if type(elem) is torch.Tensor:
         _ensure_tensor_batch(batch)
         return torch.stack(batch, dim=0)
+    if type(elem) in (str, bytes):
+        for index, value in enumerate(batch):
+            if type(value) is not type(elem):
+                raise TypeError(
+                    f"default_collate(): expected exact Python {type(elem).__name__} "
+                    f"as element {index} in batch, but got {type(value).__name__}"
+                )
+        return batch
     if isinstance(elem, dict):
         return _collate_dict(batch, elem)
     if _is_namedtuple(elem):
@@ -161,18 +170,23 @@ def _collate(batch):
 
 
 def default_collate(batch):
-    r"""Collate a non-empty tensor batch or matching tensor container batch.
+    r"""Collate a non-empty tensor or text batch, including matching containers.
 
     The supported subset mirrors PyTorch's tensor default-collation behavior for
     exact native CPU float32 tensor leaves by returning ``torch.stack(batch,
-    dim=0)``. Lists, plain tuples, namedtuples, and dicts are traversed
-    recursively when every batch element has the same structure. Lists,
-    namedtuples, and dicts preserve container type and dict key order; plain
+    dim=0)``. Homogeneous batches of exact Python ``str`` or ``bytes`` leaves
+    are returned unchanged, preserving batch type and leaf identity. Lists,
+    plain tuples, namedtuples, and dicts are traversed recursively when every
+    batch element has the same structure. Lists, namedtuples, and dicts
+    preserve container type and dict key order; plain
     tuples return lists for PyTorch compatibility.
 
-    NumPy arrays, strings, bytes, numeric scalars, arbitrary objects, worker
-    shared-memory collation, and tensors outside the exact native CPU float32
-    subset remain unsupported.
+    Text fields collected from dicts are lists; those transposed from sequences
+    or namedtuples are tuples, matching PyTorch.
+
+    NumPy inputs, numeric scalars, text subclasses, mixed leaf batches,
+    arbitrary objects, worker shared-memory collation, and tensors outside the
+    exact native CPU float32 subset remain unsupported.
     """
     return _collate(batch)
 
