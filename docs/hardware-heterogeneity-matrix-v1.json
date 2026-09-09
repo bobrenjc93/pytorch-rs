@@ -54,7 +54,119 @@
     },
     {
       "id": "math_reductions_linalg",
-      "weight": 15
+      "weight": 15,
+      "case_sets": [
+        {
+          "version": "cuda_float32_math_v1",
+          "backend": "cuda_nvidia",
+          "dtype": "float32",
+          "device": "cuda:0",
+          "case_aggregation": "equal_fraction_fixed_denominator",
+          "input_distribution": "Python random.Random(seed).uniform(-2, 2), rounded to IEEE float32",
+          "seed_policy": "Evaluator selects at least two distinct seeds; every trial must pass for case credit.",
+          "rtol": 1e-05,
+          "atol": 1e-06,
+          "cases": [
+            {
+              "id": "cuda_f32_add_same_shape",
+              "operation": "add",
+              "input_shapes": [
+                [
+                  7,
+                  13
+                ],
+                [
+                  7,
+                  13
+                ]
+              ],
+              "output_shape": [
+                7,
+                13
+              ]
+            },
+            {
+              "id": "cuda_f32_add_trailing_vector",
+              "operation": "add",
+              "input_shapes": [
+                [
+                  7,
+                  13
+                ],
+                [
+                  13
+                ]
+              ],
+              "output_shape": [
+                7,
+                13
+              ]
+            },
+            {
+              "id": "cuda_f32_neg",
+              "operation": "neg",
+              "input_shapes": [
+                [
+                  7,
+                  13
+                ]
+              ],
+              "output_shape": [
+                7,
+                13
+              ]
+            },
+            {
+              "id": "cuda_f32_mul_scalar",
+              "operation": "mul_scalar",
+              "input_shapes": [
+                [
+                  7,
+                  13
+                ]
+              ],
+              "scalar": -1.75,
+              "output_shape": [
+                7,
+                13
+              ]
+            },
+            {
+              "id": "cuda_f32_sum_axis",
+              "operation": "sum",
+              "input_shapes": [
+                [
+                  7,
+                  13
+                ]
+              ],
+              "dim": 1,
+              "keepdim": false,
+              "output_shape": [
+                7
+              ]
+            },
+            {
+              "id": "cuda_f32_matmul",
+              "operation": "matmul",
+              "input_shapes": [
+                [
+                  7,
+                  13
+                ],
+                [
+                  13,
+                  5
+                ]
+              ],
+              "output_shape": [
+                7,
+                5
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "autograd_training",
