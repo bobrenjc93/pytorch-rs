@@ -102,5 +102,42 @@ The optional release screening script
 [`scripts/benchmark_rank2_sum_cuda.py`](../scripts/benchmark_rank2_sum_cuda.py)
 compares rank-2 sums and public CUDA allocation, transfer, and roundtrip costs.
 Run it with one visible GPU after verifying the current-worktree release build;
-its JSON output records environment, source hashes, dispersion, and capped
-per-cell parity. Dirty-tree output is local diagnostic data, not release evidence.
+its JSON output records environment, source hashes, dispersion, and output
+metadata. Only matched native/PyTorch thread counts contribute to capped parity;
+unmatched counts are labeled `scaling_diagnostic` and excluded from parity
+aggregates. Dtype, device, shape, strides, storage offset, layout, gradient
+metadata, and values are checked before and after timing. Invalid cells receive
+zero credit, remain in the matched-cell denominator, and cause a nonzero exit.
+Missing CUDA hardware also retains requested CUDA cells with zero credit.
+
+The default 115-cell public matrix in
+[`scripts/campaigns/rank2_sum_cuda_diagnostic.json`](../scripts/campaigns/rank2_sum_cuda_diagnostic.json)
+produces `diagnostic_parity` only. `--quick` selects its declared strict subset;
+both modes use identical per-cell inputs derived from the seed and cell ID.
+Dirty-tree output is local diagnostic data, not release evidence.
+
+For independent scoring, the reviewer or evaluation runner owns a campaign JSON
+outside the candidate worktree and supplies a held-out seed:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/benchmark_rank2_sum_cuda.py \
+  --campaign /path/to/reviewer-owned/campaign.json --seed "$HELD_OUT_SEED" \
+  > target/reviewer-screen.json
+```
+
+Set `HELD_OUT_SEED` to a fresh reviewer-selected nonnegative integer distinct
+from the public diagnostic seed. The runner reads this contract without modifying it;
+it records its SHA-256, seed, full/quick membership, and selected IDs. Ownership
+and seed secrecy belong to the independent runner. Candidate-local campaign
+paths (including symlinks resolving inside the worktree) cannot produce the
+`parity` scoring section; use `--diagnostic-campaign PATH` for local fixtures.
+Burner's evaluator definitions and scoring remain separate and unchanged.
+
+Campaign schema version 1 has `id`, `full` (explicit cell objects), and `quick`
+(unique IDs forming a nonempty strict subset of `full`). Each cell has unique
+`id`, `kind`, and positive `pytorch_threads`. CPU `sum` and
+`backward_accumulate` cells specify rank-2 `shape`, `axis` (0 or 1), and `layout`
+(`contiguous`, `transposed`, `offset`, or `selected`; backward uses contiguous
+leaves). CUDA `zeros`, `to_cpu`, and `roundtrip` cells specify `elements`.
+The public diagnostic file illustrates the contract; it is not a held-out
+scoring corpus. Workload changes require independent campaign review.
