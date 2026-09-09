@@ -2,7 +2,7 @@
   "schema": "marker_free_cuda_add_diagnostic_v1",
   "purpose": "correctness only; no coverage or performance score",
   "seed": 19092675,
-  "base_commit": "e4cddf0ecb45c23c683953fa2f8c45904b170a80",
+  "base_commit": "c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b",
   "source_sha256": {
     "python/torch_rs/__init__.py": "e97f33f54b654983f4cee7f895b992e2fe288b69256150f7e289973eefe6d460",
     "python/torch_rs/_compile_trace.py": "3d1c58d6800b184e4d1bd14da0f1422963cc819937acb0832855429dc0534e1f",

@@ -1,4 +1,6 @@
-PASS: stable production fingerprint and source extension; installed compiler sources match in both wheel environments.
-PASS: frozen evaluator, matrix, definitions, and benchmark hashes unchanged.
-PASS: CUDA math source stable, 2/6 fixed cases; performance 4/4 fixed shapes.
-PASS: unchanged addition diagnostic differs only in the two expected negation acceptances (fullgraph true/false).
+PASS: clean commit c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b throughout fresh builds and all measurements.
+PASS: complete tracked source tree, compiler imports, native extensions and frozen evaluators unchanged.
+PASS: current evidence workspace paths belong to this worktree.
+PASS: compile 38/38; CUDA math 2/6 across all three original seeds; both four-shape performance protocols retained.
+PASS: only the unchanged addition diagnostic reject_neg expectations mismatch; both negation executions match reference.
+PASS: all 22 preserved historical/unchanged evidence files retain their original bytes.

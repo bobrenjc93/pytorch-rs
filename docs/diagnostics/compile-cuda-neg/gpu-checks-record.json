@@ -1,103 +1,304 @@
-[
-  {
-    "name": "focused",
-    "command": [
-      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/bin/python",
-      "-m",
-      "unittest",
-      "-v",
-      "tests.test_compile_cuda_neg",
-      "tests.test_compile_cuda_boundary",
-      "tests.test_cuda_neg",
-      "tests.test_cuda_add",
-      "tests.test_cuda_native_views",
-      "tests.test_top_level_compile",
-      "tests.test_readme_quickstart",
-      "tests.test_cuda_math_evaluator",
-      "tests.test_hardware_heterogeneity_evaluation"
-    ],
-    "cuda_visible_devices": "0",
-    "started": "2026-09-09T20:40:36.887710+00:00",
-    "exit_code": 1,
-    "finished": "2026-09-09T20:41:23.512750+00:00"
-  },
-  {
-    "name": "two-device-final",
-    "command": [
-      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/bin/python",
-      "-m",
-      "unittest",
-      "-v",
-      "tests.test_compile_cuda_neg.CompileCudaNegDeviceTests",
-      "tests.test_compile_cuda_boundary.CompileCudaDeviceTests",
-      "tests.test_cuda_neg.CudaNegDeviceTests",
-      "tests.test_cuda_add.CudaAddDeviceTests"
-    ],
-    "cuda_visible_devices": "0,1",
-    "started": "2026-09-09T20:41:23.513654+00:00",
-    "exit_code": 0,
-    "finished": "2026-09-09T20:41:34.816872+00:00"
-  },
-  {
-    "name": "cuda-math",
-    "command": [
-      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/bin/python",
-      "-B",
-      "scripts/evaluate_cuda_math.py",
-      "--seed",
-      "9173",
-      "--seed",
-      "260909",
-      "--seed",
-      "903217",
-      "--build-record",
-      "target/validation/build-record.json",
-      "--output",
-      "target/validation/cuda-math.json"
-    ],
-    "cuda_visible_devices": "0",
-    "started": "2026-09-09T20:41:34.817252+00:00",
-    "exit_code": 0,
-    "finished": "2026-09-09T20:42:24.908516+00:00"
-  },
-  {
-    "name": "cuda-performance",
-    "command": [
-      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/bin/python",
-      "scripts/benchmark_compile_cuda.py",
-      "--include-unprepared-comparison",
-      "--output",
-      "target/validation/cuda-performance.json"
-    ],
-    "cuda_visible_devices": "0",
-    "started": "2026-09-09T20:42:24.909579+00:00",
-    "exit_code": 0,
-    "finished": "2026-09-09T20:42:38.718947+00:00"
-  },
-  {
-    "name": "addition-diagnostic",
-    "command": [
-      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/bin/python",
-      "scripts/diagnose_compile_cuda_add.py",
-      "--output",
-      "target/validation/addition-diagnostic.json"
-    ],
-    "cuda_visible_devices": "0",
-    "started": "2026-09-09T20:42:38.720330+00:00",
-    "exit_code": 1,
-    "finished": "2026-09-09T20:42:48.234777+00:00"
-  },
-  {
-    "name": "addition-diagnostic-multi",
-    "command": [
-      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/bin/python",
-      "scripts/diagnose_compile_cuda_add.py",
-      "--output",
-      "target/validation/addition-diagnostic-multi.json"
-    ],
-    "cuda_visible_devices": "0,1",
-    "started": "2026-09-09T20:42:48.235111+00:00",
-    "exit_code": 0,
-    "finished": "2026-09-09T20:42:55.708825+00:00"
-  }
-]
+{
+  "measured_commit": "c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b",
+  "clean_checkout": true,
+  "runs": [
+    {
+      "name": "preflight",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/bin/python",
+        "-c",
+        "import torch; import sys; print(sys.executable,sys.version); print(torch.__file__,torch.__version__,torch.version.cuda,torch.cuda.is_available(),torch.cuda.get_device_name(0)); assert torch.__version__.split(\"+\")[0]==\"2.13.0\""
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8",
+      "started_at": "2026-09-09T20:47:33.898886+00:00",
+      "ended_at": "2026-09-09T20:47:35.651824+00:00",
+      "wall_seconds": 1.7529425229877234,
+      "exit_status": 0,
+      "log": "preflight.log",
+      "log_sha256": "2450a15d7b58a5dba0a6bab8129fbc90dd4db8ecb12cd4de1794ad09b76edc95",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "environment_overrides": {},
+      "source_before": {
+        "commit": "c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b",
+        "source_sha256": "dc19b9bcf20755c05245eb42de9064b944092332eb97a40976fa0645c4a0592d",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "source_after": {
+        "commit": "c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b",
+        "source_sha256": "dc19b9bcf20755c05245eb42de9064b944092332eb97a40976fa0645c4a0592d",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "git_status_before": "",
+      "git_status_after": ""
+    },
+    {
+      "name": "candidate-provenance",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/bin/python",
+        ".github/scripts/verify_native_extension.py"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8",
+      "started_at": "2026-09-09T20:48:22.006668+00:00",
+      "ended_at": "2026-09-09T20:48:22.317255+00:00",
+      "wall_seconds": 0.31058778427541256,
+      "exit_status": 0,
+      "log": "candidate-provenance.log",
+      "log_sha256": "a134c898767e8f18ce77a02da25ee31cfef7f52058f1906fb93b5b094c4f3819",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "environment_overrides": {},
+      "source_before": {
+        "commit": "c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b",
+        "source_sha256": "dc19b9bcf20755c05245eb42de9064b944092332eb97a40976fa0645c4a0592d",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "source_after": {
+        "commit": "c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b",
+        "source_sha256": "dc19b9bcf20755c05245eb42de9064b944092332eb97a40976fa0645c4a0592d",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "git_status_before": "",
+      "git_status_after": ""
+    },
+    {
+      "name": "focused-final",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_compile_cuda_neg",
+        "tests.test_compile_cuda_boundary",
+        "tests.test_cuda_neg",
+        "tests.test_cuda_add",
+        "tests.test_cuda_native_views",
+        "tests.test_top_level_compile",
+        "tests.test_readme_quickstart",
+        "tests.test_cuda_math_evaluator",
+        "tests.test_hardware_heterogeneity_evaluation"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8",
+      "started_at": "2026-09-09T20:49:19.286027+00:00",
+      "ended_at": "2026-09-09T20:50:04.090803+00:00",
+      "wall_seconds": 44.80477604828775,
+      "exit_status": 0,
+      "log": "focused-final.log",
+      "log_sha256": "c3c20b663beb8fd4634b9b1cfb1a4f8ce07118aaecb0d0fcb0b025608b25b0d7",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "environment_overrides": {},
+      "source_before": {
+        "commit": "c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b",
+        "source_sha256": "dc19b9bcf20755c05245eb42de9064b944092332eb97a40976fa0645c4a0592d",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "source_after": {
+        "commit": "c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b",
+        "source_sha256": "dc19b9bcf20755c05245eb42de9064b944092332eb97a40976fa0645c4a0592d",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "git_status_before": "",
+      "git_status_after": ""
+    },
+    {
+      "name": "two-device-final",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_compile_cuda_neg.CompileCudaNegDeviceTests",
+        "tests.test_compile_cuda_boundary.CompileCudaDeviceTests",
+        "tests.test_cuda_neg.CudaNegDeviceTests",
+        "tests.test_cuda_add.CudaAddDeviceTests"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8",
+      "started_at": "2026-09-09T20:50:04.409235+00:00",
+      "ended_at": "2026-09-09T20:50:14.771027+00:00",
+      "wall_seconds": 10.36179087124765,
+      "exit_status": 0,
+      "log": "two-device-final.log",
+      "log_sha256": "5fa4bf63e93feaaaf114c3df7d3cabe6ec8db45eff59c97b5f3636832ced5d12",
+      "CUDA_VISIBLE_DEVICES": "0,1",
+      "environment_overrides": {},
+      "source_before": {
+        "commit": "c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b",
+        "source_sha256": "dc19b9bcf20755c05245eb42de9064b944092332eb97a40976fa0645c4a0592d",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "source_after": {
+        "commit": "c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b",
+        "source_sha256": "dc19b9bcf20755c05245eb42de9064b944092332eb97a40976fa0645c4a0592d",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "git_status_before": "",
+      "git_status_after": ""
+    },
+    {
+      "name": "cuda-math",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/bin/python",
+        "scripts/evaluate_cuda_math.py",
+        "--seed",
+        "9173",
+        "--seed",
+        "260909",
+        "--seed",
+        "903217",
+        "--build-record",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/target/post-commit-c29e953/reports/build-record.json",
+        "--output",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/target/post-commit-c29e953/reports/cuda-math.json"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8",
+      "started_at": "2026-09-09T20:50:15.075785+00:00",
+      "ended_at": "2026-09-09T20:51:02.132681+00:00",
+      "wall_seconds": 47.056894931942225,
+      "exit_status": 0,
+      "log": "cuda-math.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "environment_overrides": {},
+      "source_before": {
+        "commit": "c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b",
+        "source_sha256": "dc19b9bcf20755c05245eb42de9064b944092332eb97a40976fa0645c4a0592d",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "source_after": {
+        "commit": "c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b",
+        "source_sha256": "dc19b9bcf20755c05245eb42de9064b944092332eb97a40976fa0645c4a0592d",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "git_status_before": "",
+      "git_status_after": ""
+    },
+    {
+      "name": "cuda-performance-fresh",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/bin/python",
+        "scripts/benchmark_compile_cuda.py",
+        "--include-unprepared-comparison",
+        "--output",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/target/post-commit-c29e953/reports/cuda-performance-fresh.json"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8",
+      "started_at": "2026-09-09T20:51:02.442073+00:00",
+      "ended_at": "2026-09-09T20:51:18.910066+00:00",
+      "wall_seconds": 16.46799481473863,
+      "exit_status": 0,
+      "log": "cuda-performance-fresh.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "environment_overrides": {
+        "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/target/post-commit-c29e953/performance-cuda",
+        "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/target/post-commit-c29e953/performance-inductor",
+        "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/target/post-commit-c29e953/performance-triton"
+      },
+      "source_before": {
+        "commit": "c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b",
+        "source_sha256": "dc19b9bcf20755c05245eb42de9064b944092332eb97a40976fa0645c4a0592d",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "source_after": {
+        "commit": "c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b",
+        "source_sha256": "dc19b9bcf20755c05245eb42de9064b944092332eb97a40976fa0645c4a0592d",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "git_status_before": "",
+      "git_status_after": ""
+    },
+    {
+      "name": "cuda-performance",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/bin/python",
+        "scripts/benchmark_compile_cuda.py",
+        "--include-unprepared-comparison",
+        "--output",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/target/post-commit-c29e953/reports/cuda-performance.json"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8",
+      "started_at": "2026-09-09T20:51:19.211832+00:00",
+      "ended_at": "2026-09-09T20:51:32.138684+00:00",
+      "wall_seconds": 12.926852764561772,
+      "exit_status": 0,
+      "log": "cuda-performance.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "environment_overrides": {
+        "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/target/post-commit-c29e953/performance-cuda",
+        "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/target/post-commit-c29e953/performance-inductor",
+        "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/target/post-commit-c29e953/performance-triton"
+      },
+      "source_before": {
+        "commit": "c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b",
+        "source_sha256": "dc19b9bcf20755c05245eb42de9064b944092332eb97a40976fa0645c4a0592d",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "source_after": {
+        "commit": "c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b",
+        "source_sha256": "dc19b9bcf20755c05245eb42de9064b944092332eb97a40976fa0645c4a0592d",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "git_status_before": "",
+      "git_status_after": ""
+    },
+    {
+      "name": "addition-diagnostic",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/bin/python",
+        "scripts/diagnose_compile_cuda_add.py",
+        "--output",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/target/post-commit-c29e953/reports/addition-diagnostic.json"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8",
+      "started_at": "2026-09-09T20:51:32.452320+00:00",
+      "ended_at": "2026-09-09T20:51:42.878770+00:00",
+      "wall_seconds": 10.426455686800182,
+      "exit_status": 1,
+      "log": "addition-diagnostic.log",
+      "log_sha256": "b0c86a93ad74fe04c4a6777e5cdf8c13da7809242a7cc011f9dc5fd770dbc9d8",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "environment_overrides": {},
+      "source_before": {
+        "commit": "c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b",
+        "source_sha256": "dc19b9bcf20755c05245eb42de9064b944092332eb97a40976fa0645c4a0592d",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "source_after": {
+        "commit": "c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b",
+        "source_sha256": "dc19b9bcf20755c05245eb42de9064b944092332eb97a40976fa0645c4a0592d",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "git_status_before": "",
+      "git_status_after": ""
+    },
+    {
+      "name": "addition-diagnostic-multi",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/bin/python",
+        "scripts/diagnose_compile_cuda_add.py",
+        "--output",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/target/post-commit-c29e953/reports/addition-diagnostic-multi.json"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8",
+      "started_at": "2026-09-09T20:51:43.202079+00:00",
+      "ended_at": "2026-09-09T20:51:51.802436+00:00",
+      "wall_seconds": 8.600356644019485,
+      "exit_status": 0,
+      "log": "addition-diagnostic-multi.log",
+      "log_sha256": "e74fe79f2059954da97e2968483c02c0b83d9a3d7cf9dc08f1e3754fbf85658d",
+      "CUDA_VISIBLE_DEVICES": "0,1",
+      "environment_overrides": {},
+      "source_before": {
+        "commit": "c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b",
+        "source_sha256": "dc19b9bcf20755c05245eb42de9064b944092332eb97a40976fa0645c4a0592d",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "source_after": {
+        "commit": "c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b",
+        "source_sha256": "dc19b9bcf20755c05245eb42de9064b944092332eb97a40976fa0645c4a0592d",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "git_status_before": "",
+      "git_status_after": ""
+    }
+  ]
+}

@@ -6,6 +6,6 @@ test_device_restoration_success_failure_and_drop (tests.test_cuda_add.CudaAddDev
 test_replay_eviction_restores_context_across_devices (tests.test_cuda_add.CudaAddDeviceTests.test_replay_eviction_restores_context_across_devices) ... ok
 
 ----------------------------------------------------------------------
-Ran 6 tests in 8.713s
+Ran 6 tests in 7.775s
 
 OK

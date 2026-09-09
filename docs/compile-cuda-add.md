@@ -82,7 +82,8 @@ a subprocess additionally blocks installed-PyTorch imports.
 Run `tests.test_compile_cuda_neg` on GPU 0 and
 `tests.test_compile_cuda_neg.CompileCudaNegDeviceTests` on GPUs 0,1 alongside the
 existing boundary tests below. See [candidate validation](compile-cuda-neg-validation.md)
-for raw logs, fresh-build provenance and the pending Burner clean-commit step.
+for raw logs and fresh-build evidence measured at clean commit
+`c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b`.
 The fixed scoring corpora, diagnostic scripts, and historical measurements are
 unchanged. The older addition diagnostic still labels its negation case
 `reject_neg`; successful execution of that case is now expected.
