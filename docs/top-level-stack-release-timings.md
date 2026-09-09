@@ -7,6 +7,9 @@ The raw JSON records empty `git.status_short` and `git.diff_stat` at capture.
 Interpreter, imports, and generated kernel paths belong to this composite
 worktree. Only benchmark evidence and reports were updated after measurement.
 
+Setup costs: [same-code setup rerun](benchmark-setup/2026-09-09-e2f40ff/setup.json)
+([timings and limitations](benchmark-setup.md)); original setup timings are unavailable.
+
 The benchmark used the worktree-local `.venv` and a release wheel built from
 this clean checkout, with Rust 1.92.0, thin LTO, and one codegen unit. Native
 extension provenance was verified before measurement. Dependency caches, build

@@ -1,0 +1,2 @@
+Using CPython 3.12.13 interpreter at: /usr/bin/python3.12
+Creating virtual environment at: .venv
