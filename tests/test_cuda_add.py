@@ -179,12 +179,13 @@ class CudaAddTests(Comparison, unittest.TestCase):
         # launches warm each key; later keys evict metadata on other threads.
         from concurrent.futures import ThreadPoolExecutor
         sources = [native.full((1027,), i / 8).to("cuda:0") for i in range(80)]
-        lib = runtime()
         def repeat(index):
             x = sources[index]
             for _ in range(8):
                 result = x + x
-                self.assertEqual(lib.cudaStreamQuery(ctypes.c_void_p(1)), 0)
+                # Another worker can enqueue on the shared legacy stream after
+                # this addition completes. Check stream idleness only in the
+                # isolated completion test, not between concurrent submissions.
                 self.assertEqual(result[:5].cpu().tolist(), [index / 4] * 5)
                 del result
             return (x + x)[1:6]
