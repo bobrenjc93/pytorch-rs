@@ -66,6 +66,91 @@ class DefaultCollateReferenceTests(unittest.TestCase):
                 self.assertFalse(actual.is_set_to(source))
                 self.assertNotEqual(actual.data_ptr(), source.data_ptr())
 
+    def test_text_batch_identity_matches_pytorch_2_13(self):
+        cases = (
+            ["filename.png"], [""], ["", ""],
+            ["雪/🙂.png", "café", "e\u0301", "", "雪/🙂.png"],
+            [b"filename.png"], [b""], [b"", b""],
+            [b"\x00\xff", b"", b"file", b"\x00\xff"],
+        )
+        for values in cases:
+            for batch_type in (list, tuple):
+                with self.subTest(values=values, batch_type=batch_type):
+                    actual_batch = batch_type(values)
+                    expected_batch = batch_type(values)
+                    actual = torch.utils.data.default_collate(actual_batch)
+                    expected = reference_torch.utils.data.default_collate(expected_batch)
+                    self.assertIs(actual, actual_batch)
+                    self.assertIs(expected, expected_batch)
+                    self.assertIs(type(actual), type(expected))
+                    self.assertEqual(actual, expected)
+                    self.assertEqual(list(actual_batch), values)
+                    self.assertEqual(list(expected_batch), values)
+                    for left, right, source in zip(actual, expected, values, strict=True):
+                        self.assertIs(left, source)
+                        self.assertIs(right, source)
+
+    def test_nested_tensor_and_text_records_match_pytorch_2_13(self):
+        # Both implementations receive the same immutable metadata objects.
+        filenames = ["雪/🙂.png", ""]
+        payloads = [b"\x00\xff", b""]
+
+        def make_batch(module, batch_type):
+            records = []
+            for index, (filename, payload) in enumerate(zip(filenames, payloads)):
+                fields = [
+                    ("filename", filename),
+                    ("payload", payload),
+                    ("record", [
+                        Point(module.tensor([float(index)]), filename),
+                        (module.tensor(float(index)), payload),
+                    ]),
+                    ("metadata", {"label": filename, "raw": payload}),
+                ]
+                # Output ordering follows the first record's key order.
+                records.append(OrderedDict(fields if index == 0 else reversed(fields)))
+            return batch_type(records)
+
+        def snapshot(value):
+            if isinstance(value, dict):
+                contents = tuple((key, snapshot(child)) for key, child in value.items())
+            elif isinstance(value, (list, tuple)):
+                contents = tuple(snapshot(child) for child in value)
+            elif isinstance(value, (torch.Tensor, reference_torch.Tensor)):
+                contents = (tuple(value.shape), value.stride(), value.tolist())
+            else:
+                contents = value
+            return (type(value), id(value), contents)
+
+        def assert_tree_matches(actual, expected, path=()):
+            if isinstance(actual, torch.Tensor):
+                self.assert_tensor_matches(actual, expected, case=path)
+                return
+            self.assertIs(type(actual), type(expected), path)
+            if isinstance(actual, dict):
+                self.assertEqual(list(actual), list(expected), path)
+                for key in actual:
+                    assert_tree_matches(actual[key], expected[key], (*path, key))
+            elif isinstance(actual, (list, tuple)):
+                self.assertEqual(len(actual), len(expected), path)
+                for index, (left, right) in enumerate(zip(actual, expected, strict=True)):
+                    assert_tree_matches(left, right, (*path, index))
+            else:
+                self.assertEqual(actual, expected, path)
+                self.assertIs(actual, expected, path)
+
+        for batch_type in (list, tuple):
+            with self.subTest(batch_type=batch_type):
+                actual_batch = make_batch(torch, batch_type)
+                expected_batch = make_batch(reference_torch, batch_type)
+                actual_before = snapshot(actual_batch)
+                expected_before = snapshot(expected_batch)
+                actual = torch.utils.data.default_collate(actual_batch)
+                expected = reference_torch.utils.data.default_collate(expected_batch)
+                assert_tree_matches(actual, expected)
+                self.assertEqual(snapshot(actual_batch), actual_before)
+                self.assertEqual(snapshot(expected_batch), expected_before)
+
     def test_tensor_values_metadata_and_autograd_match_pytorch_2_13(self):
         cases = (
             ("scalar", (), 3),
@@ -233,16 +318,14 @@ class DefaultCollateReferenceTests(unittest.TestCase):
             [np.float32(1.0), np.float32(2.0)],
             [1.0, 2.0],
             [1, 2],
-            ["a", "b"],
-            [b"a", b"b"],
+            [True, False],
         )
         unsupported_expected_batches = (
             [np.asarray([1.0], dtype=np.float32), np.asarray([2.0], dtype=np.float32)],
             [np.float32(1.0), np.float32(2.0)],
             [1.0, 2.0],
             [1, 2],
-            ["a", "b"],
-            [b"a", b"b"],
+            [True, False],
         )
 
         for actual_batch, expected_batch in zip(

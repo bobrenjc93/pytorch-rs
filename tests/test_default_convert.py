@@ -121,7 +121,7 @@ class DefaultConvertTests(unittest.TestCase):
         self.assertIs(converted[1], right)
         self.assertEqual(collated.shape, (2, 1))
 
-        for value in (True, 1, 1.0, 1 + 2j, None, "a", b"a"):
+        for value in (True, 1, 1.0, 1 + 2j, None):
             with self.subTest(value_type=type(value).__name__):
                 with self.assertRaisesRegex(
                     TypeError,
