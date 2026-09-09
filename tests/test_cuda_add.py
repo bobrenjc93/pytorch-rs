@@ -236,7 +236,7 @@ class CudaAddDeviceTests(Comparison, unittest.TestCase):
         try:
             for current, target in ((1, 0), (0, 1)):
                 torch.cuda.set_device(current)
-                for shape in ((), (0,), (113,), (17 * 1024 * 1024,)):
+                for shape in ((), (0,), (113,), (17 * 1024 * 1024,), (65 * 1024 * 1024,)):
                     x = native.full(shape, 3.25).to(f"cuda:{target}")
                     y = native.full(shape, -7.5).to(f"cuda:{target}")
                     result = x + y
@@ -254,9 +254,34 @@ class CudaAddDeviceTests(Comparison, unittest.TestCase):
                         with self.assertRaisesRegex(NotImplementedError, "mixed devices"):
                             call()
                     del x, y, result, other_device
-                    gc.collect()  # Large allocations exceed the cache and call cudaFree.
+                    gc.collect()  # Large allocations exercise releases outside the front cache.
                     self.assertEqual(lib.cudaGetDevice(ctypes.byref(ordinal)), 0)
                     self.assertEqual(ordinal.value, current)
                     self.assertEqual(torch.cuda.current_device(), current)
         finally:
             torch.cuda.set_device(previous)
+
+
+    def test_cross_thread_pool_release_on_both_devices(self):
+        from concurrent.futures import ThreadPoolExecutor
+        lib = runtime()
+        original = torch.cuda.current_device()
+
+        def worker(target):
+            current = 1 - target
+            torch.cuda.set_device(current)
+            x = native.full((17_000_003,), float(target + 1)).to(f"cuda:{target}")
+            for _ in range(12):
+                out = x + x
+                ordinal = ctypes.c_int()
+                self.assertEqual(lib.cudaGetDevice(ctypes.byref(ordinal)), 0)
+                self.assertEqual(ordinal.value, current)
+            del x
+            self.assertEqual(torch.cuda.current_device(), current)
+            return out
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(worker, (0, 1)))
+        for target, result in enumerate(results):
+            self.assertEqual(result[:13].cpu().tolist(), [float(2 * (target + 1))] * 13)
+            self.assertEqual(torch.cuda.current_device(), original)

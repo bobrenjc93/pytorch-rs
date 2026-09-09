@@ -38,3 +38,59 @@ loop:
 end:
     ret;
 }
+
+// Aligned four-float vectors reduce blocks and address instructions. Arbitrary
+// counts retain a scalar tail; unaligned storage offsets use add_f32 above.
+.visible .entry add_f32x4(
+    .param .u64 left, .param .u64 right, .param .u64 output, .param .u64 count
+) {
+    .reg .pred done;
+    .reg .b32 tid, block, width, blocks;
+    .reg .b64 a, b, c, n, vectors, i, step, offset, pa, pb, pc, lane, first;
+    .reg .f32 x<4>, y<4>, z<4>;
+    ld.param.u64 a, [left];
+    ld.param.u64 b, [right];
+    ld.param.u64 c, [output];
+    ld.param.u64 n, [count];
+    shr.u64 vectors, n, 2;
+    mov.u32 tid, %tid.x;
+    mov.u32 block, %ctaid.x;
+    mov.u32 width, %ntid.x;
+    mov.u32 blocks, %nctaid.x;
+    mul.wide.u32 i, block, width;
+    cvt.u64.u32 lane, tid;
+    add.u64 i, i, lane;
+    mov.u64 first, i;
+    mul.wide.u32 step, blocks, width;
+vloop:
+    setp.ge.u64 done, i, vectors;
+    @done bra tail;
+    shl.b64 offset, i, 4;
+    add.u64 pa, a, offset;
+    add.u64 pb, b, offset;
+    add.u64 pc, c, offset;
+    ld.global.v4.f32 {x0,x1,x2,x3}, [pa];
+    ld.global.v4.f32 {y0,y1,y2,y3}, [pb];
+    add.rn.f32 z0, x0, y0;
+    add.rn.f32 z1, x1, y1;
+    add.rn.f32 z2, x2, y2;
+    add.rn.f32 z3, x3, y3;
+    st.global.v4.f32 [pc], {z0,z1,z2,z3};
+    add.u64 i, i, step;
+    bra vloop;
+tail:
+    shl.b64 i, vectors, 2;
+    add.u64 i, i, first;
+    setp.ge.u64 done, i, n;
+    @done bra vend;
+    shl.b64 offset, i, 2;
+    add.u64 pa, a, offset;
+    add.u64 pb, b, offset;
+    add.u64 pc, c, offset;
+    ld.global.f32 x0, [pa];
+    ld.global.f32 y0, [pb];
+    add.rn.f32 z0, x0, y0;
+    st.global.f32 [pc], z0;
+vend:
+    ret;
+}

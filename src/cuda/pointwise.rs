@@ -24,7 +24,7 @@ struct Driver {
     error_name: unsafe extern "C" fn(c_int, *mut *const c_char) -> Status,
     // Context, module, function handles. Successful modules and the driver
     // library remain live for the process lifetime, like the CUDA runtime.
-    modules: Mutex<Vec<(usize, usize, usize)>>,
+    modules: Mutex<Vec<(usize, usize, usize, usize)>>,
 }
 static DRIVER: OnceLock<Result<Driver, String>> = OnceLock::new();
 
@@ -79,7 +79,7 @@ impl Driver {
         Err(TensorError::CudaRuntimeError { operation, message })
     }
 
-    fn add_function(&self) -> Result<usize, TensorError> {
+    fn add_function(&self, vectorized: bool) -> Result<usize, TensorError> {
         let mut context = std::ptr::null_mut();
         // SAFETY: writable context handle; the caller holds the runtime device guard.
         self.check(
@@ -104,13 +104,14 @@ impl Driver {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(entry) = modules.iter().find(|entry| entry.0 == context as usize) {
-            return Ok(entry.2);
+            return Ok(if vectorized { entry.3 } else { entry.2 });
         }
         modules
             .try_reserve(1)
             .map_err(|_| TensorError::AllocationFailed { elements: 1 })?;
         let mut module = std::ptr::null_mut();
         let mut function = std::ptr::null_mut();
+        let mut vector_function = std::ptr::null_mut();
         // SAFETY: static NUL-terminated PTX and entry name; writable handles.
         unsafe {
             self.check(
@@ -128,8 +129,27 @@ impl Driver {
                 return Err(error);
             }
         }
-        modules.push((context as usize, module as usize, function as usize));
-        Ok(function as usize)
+        // SAFETY: the module is live and defines this NUL-terminated entry.
+        if let Err(error) = self.check(
+            unsafe { (self.function)(&raw mut vector_function, module, c"add_f32x4".as_ptr()) },
+            "cuModuleGetFunction",
+        ) {
+            unsafe {
+                (self.unload)(module);
+            }
+            return Err(error);
+        }
+        modules.push((
+            context as usize,
+            module as usize,
+            function as usize,
+            vector_function as usize,
+        ));
+        Ok(if vectorized {
+            vector_function as usize
+        } else {
+            function as usize
+        })
     }
 }
 
@@ -144,7 +164,8 @@ pub(super) unsafe fn launch_add(
     elements: usize,
 ) -> Result<(), TensorError> {
     let driver = driver()?;
-    let function = driver.add_function()?;
+    let vectorized = (left | right | output).is_multiple_of(16);
+    let function = driver.add_function(vectorized)?;
     let mut count = elements as u64;
     let mut arguments = [
         (&raw mut left).cast(),
@@ -152,7 +173,12 @@ pub(super) unsafe fn launch_add(
         (&raw mut output).cast(),
         (&raw mut count).cast(),
     ];
-    let blocks = u32::try_from(elements.div_ceil(256).min(4096)).expect("bounded grid");
+    let lanes = if vectorized {
+        elements.div_ceil(4)
+    } else {
+        elements
+    };
+    let blocks = u32::try_from(lanes.div_ceil(256).min(4096)).expect("bounded grid");
     // SAFETY: parameters live through launch's argument copy. Handle is cached
     // in this context. CU_STREAM_LEGACY (1) explicitly matches runtime copies
     // and zero-fill even when another CUDA user uses a per-thread default.

@@ -10,10 +10,12 @@ use std::sync::{
 };
 
 mod pointwise;
+mod pool;
 
 type Status = c_int;
 struct Runtime {
     _library: Library,
+    pool: Option<pool::Api>,
     count: unsafe extern "C" fn(*mut c_int) -> Status,
     get_device: unsafe extern "C" fn(*mut c_int) -> Status,
     set_device: unsafe extern "C" fn(c_int) -> Status,
@@ -37,10 +39,11 @@ struct Runtime {
 static CANDIDATES: OnceLock<Vec<String>> = OnceLock::new();
 static RUNTIME: OnceLock<Result<Runtime, String>> = OnceLock::new();
 static INITIALIZED: AtomicBool = AtomicBool::new(false);
-// At most 32 allocations and 64 MiB retained. Entries are inaccessible to live
+// At most 32 allocations and 64 MiB retained in the front cache. Entries are inaccessible to live
 // tensors; storage Arc ownership prevents reuse while any view still exists.
-static CACHE: Mutex<Vec<(usize, usize, usize)>> = Mutex::new(Vec::new());
-// A failed launch/completion disables reuse; cudaFree handles later drops.
+static CACHE: Mutex<Vec<(usize, usize, usize, bool)>> = Mutex::new(Vec::new());
+// A failed launch/completion disables reuse. Ordinary allocations are freed;
+// uncertain stream-ordered allocations are quarantined.
 static CACHE_HEALTHY: AtomicBool = AtomicBool::new(true);
 const CACHE_BYTES: usize = 64 * 1024 * 1024;
 const COPY_STAGING_ELEMENTS: usize = 256 * 1024 / size_of::<f32>();
@@ -115,6 +118,7 @@ impl Runtime {
         unsafe {
             let library = Library::new(path)?;
             Ok(Self {
+                pool: pool::Api::load(&library).ok(),
                 count: *library.get(b"cudaGetDeviceCount\0")?,
                 get_device: *library.get(b"cudaGetDevice\0")?,
                 set_device: *library.get(b"cudaSetDevice\0")?,
@@ -201,6 +205,8 @@ pub(crate) struct CudaFloat32Storage {
     pub(crate) elements: usize,
     pub(crate) device_index: usize,
     pub(crate) data_ptr: usize,
+    allocation_bytes: usize,
+    pooled: bool,
     runtime: &'static Runtime,
 }
 impl CudaFloat32Storage {
@@ -282,7 +288,7 @@ impl CudaFloat32Storage {
             // input or unpublished output can be dropped or cached. Explicit
             // legacy-stream launch composes with native zero-fill and copies.
             let completed = self.runtime.check(
-                unsafe { (self.runtime.stream_synchronize)(std::ptr::null_mut()) },
+                unsafe { (self.runtime.stream_synchronize)(std::ptr::without_provenance_mut(1)) },
                 "cudaStreamSynchronize",
             );
             if launched.is_err() || completed.is_err() {
@@ -309,13 +315,31 @@ impl CudaFloat32Storage {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             cache
                 .iter()
-                .position(|&(device, size, _)| device == device_index && size == bytes)
-                .map(|index| cache.swap_remove(index).2)
+                .enumerate()
+                // Best fit accommodates nearby sizes without keeping a live
+                // alias or exposing padding as logical tensor elements. Bound
+                // excess capacity to avoid pinning a huge block for tiny work.
+                .filter(|(_, entry)| {
+                    entry.0 == device_index && entry.1 >= bytes && entry.1 - bytes <= bytes / 4
+                })
+                .min_by_key(|(_, entry)| entry.1)
+                .map(|(index, _)| index)
+                .map(|index| cache.remove(index))
         } else {
             None
         };
-        let mut pointer = cached.unwrap_or(0) as *mut c_void;
-        if bytes != 0 && cached.is_none() {
+        let mut pointer = cached.map_or(0, |entry| entry.2) as *mut c_void;
+        let mut pooled = cached.is_some_and(|entry| entry.3);
+        if bytes != 0
+            && cached.is_none()
+            && CACHE_HEALTHY.load(Ordering::Relaxed)
+            && let Some(api) = &runtime.pool
+            && let Some(allocation) = api.allocate(runtime, device_index, bytes)?
+        {
+            pointer = allocation as *mut c_void;
+            pooled = true;
+        }
+        if bytes != 0 && cached.is_none() && !pooled {
             // SAFETY: valid output pointer; size checked above.
             runtime.check(
                 unsafe { (runtime.malloc)(&raw mut pointer, bytes) },
@@ -326,6 +350,8 @@ impl CudaFloat32Storage {
             elements,
             device_index,
             data_ptr: pointer as usize,
+            allocation_bytes: cached.map_or(bytes, |entry| entry.1),
+            pooled,
             runtime,
         };
         INITIALIZED.store(true, Ordering::Relaxed);
@@ -508,24 +534,52 @@ impl Drop for CudaFloat32Storage {
         if self.data_ptr == 0 {
             return;
         }
-        let bytes = self.elements * 4;
+        let bytes = self.allocation_bytes;
+        let mut evicted = Vec::new();
         {
             let mut cache = CACHE
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if CACHE_HEALTHY.load(Ordering::Relaxed)
-                && cache.len() < 32
-                && bytes <= CACHE_BYTES
-                && cache.iter().map(|entry| entry.1).sum::<usize>() <= CACHE_BYTES - bytes
-            {
-                cache.push((self.device_index, bytes, self.data_ptr));
-                return;
+            if CACHE_HEALTHY.load(Ordering::Relaxed) && bytes <= CACHE_BYTES {
+                // Replace the least recently returned allocations instead of
+                // permanently rejecting new sizes after mixed-size workloads.
+                while cache.len() >= 32
+                    || cache.iter().map(|entry| entry.1).sum::<usize>() > CACHE_BYTES - bytes
+                {
+                    evicted.push(cache.remove(0));
+                }
+                cache.push((self.device_index, bytes, self.data_ptr, self.pooled));
+            } else {
+                evicted.push((self.device_index, bytes, self.data_ptr, self.pooled));
             }
         }
-        if let Ok(_guard) = self.runtime.guard(self.device_index) {
-            // SAFETY: this pointer is uniquely owned and no longer exposed.
-            unsafe {
-                (self.runtime.free)(self.data_ptr as *mut c_void);
+        for (device, capacity, pointer, pooled) in evicted {
+            if let Ok(_guard) = self.runtime.guard(device) {
+                if pooled {
+                    // Never recycle pool memory after a failed launch/wait.
+                    // Quarantine it if completion could not be established.
+                    if CACHE_HEALTHY.load(Ordering::Relaxed) {
+                        // SAFETY: no owner remains; zero-fill, transfers, add
+                        // and release are ordered on this device's legacy
+                        // stream, even when their host threads differ. Add
+                        // still completes before return; host readback blocks.
+                        let status = unsafe {
+                            self.runtime
+                                .pool
+                                .as_ref()
+                                .expect("pooled allocation")
+                                .free(pointer, capacity, device)
+                        };
+                        if status != 0 {
+                            CACHE_HEALTHY.store(false, Ordering::Relaxed);
+                        }
+                    }
+                } else {
+                    // SAFETY: removed cache entries have no live owners.
+                    unsafe {
+                        (self.runtime.free)(pointer as *mut c_void);
+                    }
+                }
             }
         }
     }

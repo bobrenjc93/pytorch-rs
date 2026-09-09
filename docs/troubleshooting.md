@@ -115,7 +115,7 @@ CUDA_VISIBLE_DEVICES=0 cargo test --locked cuda
 
 Hardware-only tests skip clearly when the reference runtime or required devices
 are unavailable. The two-device test checks current-device restoration after
-copies, addition, invalid ordinals/mixed devices, cached drops and direct frees. GPU transfer diagnostics
+copies, addition, invalid ordinals/mixed devices, cached drops and backing-allocation releases. GPU transfer diagnostics
 must warm both implementations equally, synchronize timing boundaries,
 materialize outputs, and use matching shapes/layouts, threads and sampling.
 
@@ -135,6 +135,9 @@ assert x.cpu().tolist() == [[0.0, 0.0, 0.0]] * 4
 print(x.device, x.shape, x.stride(), "roundtrip passed")
 PY
 ```
+
+For public CUDA-add latency, sustained-throughput and allocation-cache
+diagnostics, see [CUDA-add diagnostics](cuda-add-diagnostics.md).
 
 The optional release screening script
 [`scripts/benchmark_rank2_sum_cuda.py`](../scripts/benchmark_rank2_sum_cuda.py)
