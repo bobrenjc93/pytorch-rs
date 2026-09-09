@@ -7,7 +7,7 @@ specific validation runs; they are not performance or coverage scores.
 ## Composite evidence
 
 The retained reports measure committed composite implementation
-`0ae48da` (the full commit is recorded in each report), which includes both
+`606e1ff9d71033b425fd281c56a276bfbd31377c`, which includes both
 marker-free CUDA addition capture and `torch.hstack`. They were regenerated
 with the unchanged `scripts/diagnose_compile_cuda_add.py` in a clean detached
 checkout at `target/validation` inside the composite worktree. Its HEAD and
@@ -22,15 +22,16 @@ under ignored `target/` before being copied into `docs/diagnostics/`.
 | [Python 3.12.13, GPUs 0/1](diagnostics/compile-cuda-add-h100-multidevice.json) | 6 | 4 | 4 | 2 |
 
 Every case, output fingerprint, reference eligibility, rejection phase, and
-unsupported error matches the source reports exactly. Only the measured commit,
-combined Rust source hash, rebuilt extension hash, and local runtime paths
-changed. All recorded source hashes match both the committed implementation
+unsupported error matches the compiler source-branch reports exactly. Compared
+with those source reports, only provenance changed: the measured commit,
+combined Rust source hash, rebuilt extension hash, and local runtime paths.
+All recorded source hashes match both the committed implementation
 and the integrated files. All runtime paths resolve inside this composite
 worktree; no leaf-worktree runtime paths remain in these reports.
 
 The release abi3 wheel was built using Rust 1.92.0 and
 `maturin build --release --locked`; its SHA-256 is
-`1a2c669ecc55c91746f0d52354c394348947356541aef17ee8c767412dbbe05b`.
+`3555fdd68a093aee9ba889f90033a3462c876f04c6a44547d2ca3a8aee338a09`.
 All 59 packaged Python files matched the source and installed packages, and
 the installed extension matched the wheel and all three reports. Canonical
 native-extension provenance checks passed on both Python versions. The H100
@@ -43,7 +44,31 @@ evaluation definitions and weights, and Burner-managed progress artifacts
 are unchanged. These refreshed correctness diagnostics add no CUDA performance
 claim and preserve every unsupported outcome.
 
+## Post-commit evidence checks
+
+After Burner committed the integration, the native release artifacts were
+cleared and rebuilt in the clean measurement checkout, and the new wheel was
+installed for both Python versions. All three diagnostics ran before any
+retained evidence changed. Their JSON differs from the preceding composite
+reports only in `base_commit`: every source digest, extension digest, case,
+output fingerprint, reference eligibility, rejection, and runtime path is
+unchanged. The new wheel includes the committed README; its metadata, build
+SBOM, and archive record changed, while all packaged Python files and the native
+extension are identical to the author-validated wheel.
+
+On both Python versions, the focused CUDA boundary suite passed 11 tests with
+one two-device skip under `CUDA_VISIBLE_DEVICES=0`; the device/cache/restoration
+test then passed with `CUDA_VISIBLE_DEVICES=0,1`. Wheel/source/extension hashes,
+canonical import provenance, and clean-checkout status also passed. This step
+reran only evidence-related checks; the full-suite and Rust results below
+remain the earlier author validation, including its baseline failure caveats.
+
 ## Composite validation checks
+
+These checks were completed during author integration using wheel SHA-256
+`1a2c669ecc55c91746f0d52354c394348947356541aef17ee8c767412dbbe05b`.
+They are retained as historical validation, separate from the post-commit
+measurement batch above.
 
 - Python 3.14.5: the final full suite passed all 5,242 tests with nine skips.
 - Python 3.12.13: the final full suite ran 5,242 tests with nine skips and only
