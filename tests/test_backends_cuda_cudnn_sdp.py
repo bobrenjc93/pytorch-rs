@@ -565,8 +565,12 @@ print(json.dumps({
             r"^tensor\(\): device 'cuda:0' is not supported; only 'cpu' is implemented$",
         ):
             torch.tensor([1.0], device="cuda:0")
-        with self.assertRaisesRegex(RuntimeError, r"only 'cpu' is implemented"):
-            torch.tensor([1.0]).to("cuda:0")
+        # Explicit float32 transfers are supported; autograd and asynchronous
+        # transfers still reject before probing the optional CUDA runtime.
+        with self.assertRaisesRegex(NotImplementedError, "requires_grad is true"):
+            torch.tensor([1.0], requires_grad=True).to("cuda:0")
+        with self.assertRaisesRegex(NotImplementedError, "non_blocking=True"):
+            torch.tensor([1.0]).to("cuda:0", non_blocking=True)
 
 
 if __name__ == "__main__":

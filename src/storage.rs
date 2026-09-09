@@ -182,6 +182,18 @@ impl Storage {
         })
     }
 
+    pub(crate) fn cuda_from_host_float32(
+        values: &[f32],
+        device_index: usize,
+    ) -> Result<Self, TensorError> {
+        Ok(Self {
+            payload: StoragePayload::CudaFloat32(CudaFloat32Storage::from_host(
+                values,
+                device_index,
+            )?),
+        })
+    }
+
     pub(crate) fn len(&self) -> usize {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.len(),

@@ -48,7 +48,9 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::TooManyIndices { .. }
         | TensorError::IndexOutOfBounds { .. }
         | TensorError::DimensionOutOfRange { .. } => PyIndexError::new_err(error.to_string()),
-        TensorError::UnsupportedDevice { .. } | TensorError::UnsupportedCudaZeroTensor { .. } => {
+        TensorError::UnsupportedDevice { .. }
+        | TensorError::UnsupportedCudaZeroTensor { .. }
+        | TensorError::UnsupportedCudaTransfer { .. } => {
             PyNotImplementedError::new_err(error.to_string())
         }
     }

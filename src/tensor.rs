@@ -2681,14 +2681,7 @@ impl Tensor {
         let elements = self.elements;
         let shape = try_clone_result_shape(&self.shape, elements)?;
         let strides = match memory_format {
-            MemoryFormat::Preserve if elements == 0 || self.is_non_overlapping_and_dense() => {
-                try_clone_result_shape(&self.strides, elements)?
-            }
-            MemoryFormat::Preserve => elementwise_output_strides(
-                &shape,
-                &[ElementwiseLayout::from_tensor(self)],
-                elements,
-            )?,
+            MemoryFormat::Preserve => self.preserve_format_strides()?,
             MemoryFormat::Contiguous => contiguous_strides(&shape, elements)?,
             MemoryFormat::ChannelsLast => channels_last_strides(&shape, elements)?,
             MemoryFormat::ChannelsLast3d => channels_last_3d_strides(&shape, elements)?,
@@ -2748,6 +2741,66 @@ impl Tensor {
         self.try_contiguous_impl(memory_format, false, AutogradNode::Copy)
     }
 
+    fn preserve_format_strides(&self) -> Result<Vec<usize>, TensorError> {
+        if self.elements == 0 || self.is_non_overlapping_and_dense() {
+            try_clone_result_shape(&self.strides, self.elements)
+        } else {
+            elementwise_output_strides(
+                &self.shape,
+                &[ElementwiseLayout::from_tensor(self)],
+                self.elements,
+            )
+        }
+    }
+
+    /// Copies a CPU float32 tensor to CUDA, preserving dense strides and
+    /// packing non-dense views in preserve-format dimension order. Only the
+    /// logical payload is allocated and transferred. The copy completes before
+    /// returning; the source and its metadata are unchanged.
+    ///
+    /// # Errors
+    /// Rejects non-CPU sources, non-CUDA destinations and gradient tracking.
+    /// Returns checked layout, allocation, or CUDA runtime errors.
+    pub fn try_copy_cpu_to_cuda(&self, device: Device) -> Result<Self, TensorError> {
+        if !self.device().is_cpu() {
+            return Err(TensorError::UnsupportedCudaTransfer {
+                reason: "source must be CPU",
+            });
+        }
+        let Device::Cuda(device_index) = device else {
+            return Err(TensorError::UnsupportedCudaTransfer {
+                reason: "destination must be CUDA",
+            });
+        };
+        if self.requires_grad() {
+            return Err(TensorError::UnsupportedCudaTransfer {
+                reason: "requires_grad is true",
+            });
+        }
+        let shape = try_clone_result_shape(&self.shape, self.elements)?;
+        let strides = self.preserve_format_strides()?;
+        let storage = if self.elements == 0 {
+            // Empty views may have offsets beyond their backing storage.
+            Storage::cuda_from_host_float32(&[], device_index)?
+        } else if let Some(values) = self.dense_physical_slice() {
+            Storage::cuda_from_host_float32(values, device_index)?
+        } else {
+            let packed = self.materialize_with_strides(&strides, |value| value)?;
+            Storage::cuda_from_host_float32(&packed, device_index)?
+        };
+        Ok(Self {
+            storage: Arc::new(storage),
+            shape,
+            strides,
+            offset: 0,
+            elements: self.elements,
+            output_nr: 0,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
+            autograd: None,
+        })
+    }
+
     /// Copies a CUDA tensor or view to CPU, preserving dense strides.
     ///
     /// # Errors
@@ -2763,15 +2816,7 @@ impl Tensor {
         }
         let shape = try_clone_result_shape(&self.shape, self.elements)?;
         let dense = self.elements == 0 || self.is_non_overlapping_and_dense();
-        let strides = if dense {
-            try_clone_result_shape(&self.strides, self.elements)?
-        } else {
-            elementwise_output_strides(
-                &shape,
-                &[ElementwiseLayout::from_tensor(self)],
-                self.elements,
-            )?
-        };
+        let strides = self.preserve_format_strides()?;
         let data = if dense {
             self.storage
                 .copy_cuda_to_cpu_float32(self.offset, self.elements)?
@@ -3008,6 +3053,50 @@ impl Tensor {
         };
 
         let lengths = Self::chunk_lengths(size, chunks)?;
+        let node = if size == 0 {
+            AutogradNode::SplitWithSizes
+        } else {
+            AutogradNode::Split
+        };
+        self.partition_dimension(dimension, lengths, node)
+    }
+
+    /// Splits a normalized dimension into views of at most `split_size` elements.
+    /// The caller validates that `split_size` is positive unless the dimension
+    /// is empty. An empty dimension always produces one empty view.
+    #[cfg_attr(not(any(feature = "python-bindings", test)), allow(dead_code))]
+    pub(crate) fn split_dimension(
+        &self,
+        dimension: usize,
+        split_size: usize,
+    ) -> Result<Vec<Self>, TensorError> {
+        let Some(&size) = self.shape.get(dimension) else {
+            return Err(TensorError::InvalidScalarIndex);
+        };
+        debug_assert!(split_size > 0 || size == 0);
+        let count = if size == 0 {
+            1
+        } else {
+            size.div_ceil(split_size)
+        };
+        let mut lengths = try_result_vector(count, size)?;
+        let mut remaining = size;
+        for _ in 0..count {
+            let length = split_size.min(remaining);
+            lengths.push(length);
+            remaining -= length;
+        }
+        self.partition_dimension(dimension, lengths, AutogradNode::Split)
+    }
+
+    // All outputs share one backward node; recording separate slice histories
+    // would lose output numbering and multi-output gradient assembly.
+    fn partition_dimension(
+        &self,
+        dimension: usize,
+        lengths: Vec<usize>,
+        node: AutogradNode,
+    ) -> Result<Vec<Self>, TensorError> {
         let mut outputs = try_result_vector(lengths.len(), self.elements)?;
         let mut start = 0_usize;
         for &length in &lengths {
@@ -3018,11 +3107,6 @@ impl Tensor {
         }
 
         if self.records_grad() && !outputs.is_empty() {
-            let node = if size == 0 {
-                AutogradNode::SplitWithSizes
-            } else {
-                AutogradNode::Split
-            };
             let autograd = Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
                     grad_fn: Mutex::new(Some(GradFn::Chunk {
@@ -14127,6 +14211,70 @@ mod tests {
     }
 
     #[test]
+    fn split_views_preserve_offset_strides_and_share_one_backward_node() {
+        let leaf = Tensor::from_vec((0_u8..30).map(f32::from).collect(), [2, 3, 5])
+            .unwrap()
+            .with_requires_grad(true);
+        let source = leaf.index_integer(1).unwrap().transpose(0, 1).unwrap();
+        let outputs = source.split_dimension(0, 2).unwrap();
+        assert_eq!(outputs.len(), 3);
+        for (index, output) in outputs.iter().enumerate() {
+            assert!(output.shares_storage_with(&leaf));
+            assert_eq!(output.shape(), [if index == 2 { 1 } else { 2 }, 3]);
+            assert_eq!(output.stride(), [1, 5]);
+            assert_eq!(output.storage_offset(), 15 + index * 2);
+            assert_eq!(output.output_nr, index);
+            assert!(Arc::ptr_eq(
+                outputs[0].autograd.as_ref().unwrap(),
+                output.autograd.as_ref().unwrap()
+            ));
+        }
+        // An output with nonzero output_nr is itself split, and its first
+        // child contributes twice. Unused sibling outputs must contribute zero.
+        let nested = outputs[1].split_dimension(0, 1).unwrap();
+        nested[0]
+            .sum()
+            .add(&nested[0].sum())
+            .unwrap()
+            .add(&outputs[2].sum())
+            .unwrap()
+            .backward()
+            .unwrap();
+        let mut expected = vec![0.0; 30];
+        for row in 0..3 {
+            expected[15 + row * 5 + 2] = 2.0;
+            expected[15 + row * 5 + 4] = 1.0;
+        }
+        assert_eq!(leaf.grad().unwrap().unwrap().as_slice(), expected);
+    }
+
+    #[test]
+    fn split_empty_and_oversized_dimensions() {
+        let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+        for split_size in [0, 1, usize::MAX] {
+            let outputs = empty.split_dimension(1, split_size).unwrap();
+            assert_eq!(outputs.len(), 1);
+            assert_eq!(outputs[0].shape(), [2, 0, 3]);
+            assert_eq!(outputs[0].stride(), empty.stride());
+            assert!(outputs[0].shares_storage_with(&empty));
+            assert_eq!(outputs[0].output_nr, 0);
+            #[cfg(feature = "python-bindings")]
+            assert_eq!(outputs[0].grad_fn_name(), Some("SplitBackward0"));
+            outputs[0].sum().backward().unwrap();
+            assert_eq!(empty.grad().unwrap().unwrap().shape(), [2, 0, 3]);
+        }
+        let chunks = empty.chunk_dimension(1, 3).unwrap();
+        assert_eq!(chunks.len(), 3);
+        #[cfg(feature = "python-bindings")]
+        assert_eq!(chunks[0].grad_fn_name(), Some("SplitWithSizesBackward0"));
+        let source = Tensor::zeros([3]).unwrap();
+        let outputs = source.split_dimension(0, usize::MAX).unwrap();
+        assert_eq!(outputs.len(), 1);
+        assert!(outputs[0].shares_storage_with(&source));
+        assert_eq!(outputs[0].shape(), [3]);
+    }
+
+    #[test]
     fn chunk_backward_preserves_signed_zero_when_outputs_contribute() {
         let source = Tensor::from_vec(vec![1.0, 2.0], [2])
             .unwrap()
@@ -18421,5 +18569,34 @@ mod tests {
         let loss = output.sum();
         loss.backward().unwrap();
         loss.backward().unwrap();
+    }
+}
+
+#[cfg(test)]
+mod cuda_upload_tests {
+    use super::*;
+
+    #[test]
+    fn sparse_upload_allocates_only_logical_payload() {
+        if crate::cuda::device_count() == 0 {
+            eprintln!("skipping sparse upload: no CUDA runtime/device");
+            return;
+        }
+        let mut values = vec![0.0; 2 * 1024 * 1024];
+        values[7] = 3.25;
+        values[1024 * 1024 + 7] = -9.5;
+        let source = Tensor::from_vec(values, [2, 1024 * 1024])
+            .unwrap()
+            .select_dimension(1, 7)
+            .unwrap();
+        let output = source.try_copy_cpu_to_cuda(Device::Cuda(0)).unwrap();
+        assert_eq!(output.storage.len(), 2);
+        assert_eq!(output.stride(), [1]);
+        assert_eq!(source.stride(), [1024 * 1024]);
+        assert_eq!(source.storage_offset(), 7);
+        assert_eq!(
+            output.try_copy_cuda_to_cpu().unwrap().try_to_vec().unwrap(),
+            [3.25, -9.5]
+        );
     }
 }

@@ -486,7 +486,7 @@ class TensorTypeReferenceTests(unittest.TestCase):
             expected,
         )
 
-    def test_h100_cuda_type_name_bounds_the_unsupported_device_surface(self):
+    def test_h100_cuda_type_name_and_transfer_boundary(self):
         if not reference_torch.cuda.is_available():
             self.skipTest("requires a CUDA-visible reference PyTorch runtime")
         device_name = reference_torch.cuda.get_device_name(0)
@@ -511,8 +511,16 @@ class TensorTypeReferenceTests(unittest.TestCase):
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
         with self.assertRaises(RuntimeError):
             torch.tensor([1.0, 2.0], device="cuda:0")
-        with self.assertRaisesRegex(RuntimeError, r"only 'cpu' is implemented"):
-            torch.tensor([1.0, 2.0]).to("cuda:0")
+        source = torch.tensor([1.0, 2.0])
+        actual = source.to("cuda:0")
+        expected = reference_torch.tensor([1.0, 2.0]).to("cuda:0")
+        self.assertEqual(str(actual.device), str(expected.device))
+        self.assertEqual(str(actual.dtype), str(expected.dtype))
+        self.assertEqual(tuple(actual.shape), tuple(expected.shape))
+        self.assertEqual(actual.stride(), expected.stride())
+        self.assertEqual(actual.cpu().tolist(), expected.cpu().tolist())
+        with self.assertRaisesRegex(NotImplementedError, "requires_grad is true"):
+            source.requires_grad_().to("cuda:0")
 
 
 if __name__ == "__main__":
