@@ -200,6 +200,7 @@ class SequentialSamplerReferenceTests(unittest.TestCase):
             "Subset",
             "TensorDataset",
             "default_collate",
+            "default_convert",
             "get_worker_info",
         }
         supported_sampler = {"BatchSampler", "Sampler", "SequentialSampler"}
