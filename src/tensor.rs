@@ -2677,14 +2677,7 @@ impl Tensor {
         let elements = self.elements;
         let shape = try_clone_result_shape(&self.shape, elements)?;
         let strides = match memory_format {
-            MemoryFormat::Preserve if elements == 0 || self.is_non_overlapping_and_dense() => {
-                try_clone_result_shape(&self.strides, elements)?
-            }
-            MemoryFormat::Preserve => elementwise_output_strides(
-                &shape,
-                &[ElementwiseLayout::from_tensor(self)],
-                elements,
-            )?,
+            MemoryFormat::Preserve => self.preserve_format_strides()?,
             MemoryFormat::Contiguous => contiguous_strides(&shape, elements)?,
             MemoryFormat::ChannelsLast => channels_last_strides(&shape, elements)?,
             MemoryFormat::ChannelsLast3d => channels_last_3d_strides(&shape, elements)?,
@@ -2744,6 +2737,66 @@ impl Tensor {
         self.try_contiguous_impl(memory_format, false, AutogradNode::Copy)
     }
 
+    fn preserve_format_strides(&self) -> Result<Vec<usize>, TensorError> {
+        if self.elements == 0 || self.is_non_overlapping_and_dense() {
+            try_clone_result_shape(&self.strides, self.elements)
+        } else {
+            elementwise_output_strides(
+                &self.shape,
+                &[ElementwiseLayout::from_tensor(self)],
+                self.elements,
+            )
+        }
+    }
+
+    /// Copies a CPU float32 tensor to CUDA, preserving dense strides and
+    /// packing non-dense views in preserve-format dimension order. Only the
+    /// logical payload is allocated and transferred. The copy completes before
+    /// returning; the source and its metadata are unchanged.
+    ///
+    /// # Errors
+    /// Rejects non-CPU sources, non-CUDA destinations and gradient tracking.
+    /// Returns checked layout, allocation, or CUDA runtime errors.
+    pub fn try_copy_cpu_to_cuda(&self, device: Device) -> Result<Self, TensorError> {
+        if !self.device().is_cpu() {
+            return Err(TensorError::UnsupportedCudaTransfer {
+                reason: "source must be CPU",
+            });
+        }
+        let Device::Cuda(device_index) = device else {
+            return Err(TensorError::UnsupportedCudaTransfer {
+                reason: "destination must be CUDA",
+            });
+        };
+        if self.requires_grad() {
+            return Err(TensorError::UnsupportedCudaTransfer {
+                reason: "requires_grad is true",
+            });
+        }
+        let shape = try_clone_result_shape(&self.shape, self.elements)?;
+        let strides = self.preserve_format_strides()?;
+        let storage = if self.elements == 0 {
+            // Empty views may have offsets beyond their backing storage.
+            Storage::cuda_from_host_float32(&[], device_index)?
+        } else if let Some(values) = self.dense_physical_slice() {
+            Storage::cuda_from_host_float32(values, device_index)?
+        } else {
+            let packed = self.materialize_with_strides(&strides, |value| value)?;
+            Storage::cuda_from_host_float32(&packed, device_index)?
+        };
+        Ok(Self {
+            storage: Arc::new(storage),
+            shape,
+            strides,
+            offset: 0,
+            elements: self.elements,
+            output_nr: 0,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
+            autograd: None,
+        })
+    }
+
     /// Copies a CUDA tensor or view to CPU, preserving dense strides.
     ///
     /// # Errors
@@ -2759,15 +2812,7 @@ impl Tensor {
         }
         let shape = try_clone_result_shape(&self.shape, self.elements)?;
         let dense = self.elements == 0 || self.is_non_overlapping_and_dense();
-        let strides = if dense {
-            try_clone_result_shape(&self.strides, self.elements)?
-        } else {
-            elementwise_output_strides(
-                &shape,
-                &[ElementwiseLayout::from_tensor(self)],
-                self.elements,
-            )?
-        };
+        let strides = self.preserve_format_strides()?;
         let data = if dense {
             self.storage
                 .copy_cuda_to_cpu_float32(self.offset, self.elements)?
@@ -18308,5 +18353,34 @@ mod tests {
         let loss = output.sum();
         loss.backward().unwrap();
         loss.backward().unwrap();
+    }
+}
+
+#[cfg(test)]
+mod cuda_upload_tests {
+    use super::*;
+
+    #[test]
+    fn sparse_upload_allocates_only_logical_payload() {
+        if crate::cuda::device_count() == 0 {
+            eprintln!("skipping sparse upload: no CUDA runtime/device");
+            return;
+        }
+        let mut values = vec![0.0; 2 * 1024 * 1024];
+        values[7] = 3.25;
+        values[1024 * 1024 + 7] = -9.5;
+        let source = Tensor::from_vec(values, [2, 1024 * 1024])
+            .unwrap()
+            .select_dimension(1, 7)
+            .unwrap();
+        let output = source.try_copy_cpu_to_cuda(Device::Cuda(0)).unwrap();
+        assert_eq!(output.storage.len(), 2);
+        assert_eq!(output.stride(), [1]);
+        assert_eq!(source.stride(), [1024 * 1024]);
+        assert_eq!(source.storage_offset(), 7);
+        assert_eq!(
+            output.try_copy_cuda_to_cpu().unwrap().try_to_vec().unwrap(),
+            [3.25, -9.5]
+        );
     }
 }
