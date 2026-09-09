@@ -9538,6 +9538,18 @@ fn _backward_leaf_roots(roots: &Bound<'_, PyAny>) -> PyResult<()> {
     CoreTensor::backward_leaf_roots(&native_roots).map_err(|error| tensor_error(&error))
 }
 
+// The public eager compiler is CPU-only. Check the real storage device before
+// constructing its CPU metadata (including live global captures), and also at
+// execution entrypoints so direct private calls cannot bypass that boundary.
+fn require_compile_cpu_tensor(tensor: &CoreTensor) -> PyResult<()> {
+    if !tensor.device().is_cpu() {
+        return Err(PyNotImplementedError::new_err(
+            "torch.compile eager tracing only supports CPU tensors; CUDA inputs and captures are unsupported",
+        ));
+    }
+    Ok(())
+}
+
 #[pyfunction(
     name = "_compile_trace_tensor_metadata",
     signature = (input, /),
@@ -9552,6 +9564,7 @@ fn compile_trace_tensor_metadata(py: Python<'_>, input: &Bound<'_, PyAny>) -> Py
     }
 
     let tensor = input.cast::<PyTensor>()?.try_borrow()?;
+    require_compile_cpu_tensor(&tensor.inner)?;
     let shape = PyTuple::new(py, tensor.inner.shape().iter().copied())?;
     let stride = PyTuple::new(py, tensor.inner.stride().iter().copied())?;
     (shape, stride, tensor.inner.requires_grad()).into_py_any(py)
@@ -9580,6 +9593,7 @@ fn compile_trace_unary(input: &Bound<'_, PyAny>, target: &str) -> PyResult<Py<Py
     }
 
     let tensor = input.cast::<PyTensor>()?;
+    require_compile_cpu_tensor(&tensor.try_borrow()?.inner)?;
     if target == "float" {
         return Ok(tensor.clone().unbind());
     }
@@ -9628,6 +9642,8 @@ fn compile_trace_binary(
 
     let left = left.cast::<PyTensor>()?.try_borrow()?;
     let right = right.cast::<PyTensor>()?.try_borrow()?;
+    require_compile_cpu_tensor(&left.inner)?;
+    require_compile_cpu_tensor(&right.inner)?;
     let output = match target {
         "add" => left.inner.add(&right.inner),
         _ => {
