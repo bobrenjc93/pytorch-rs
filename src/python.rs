@@ -99,6 +99,11 @@ const PRIVATE_NATIVE_EXPORTS: [&str; 8] = [
 const NATIVE_CPU_CAPABILITY: &str = "DEFAULT";
 const NATIVE_CK_SDPA_AVAILABLE: bool = false;
 const NATIVE_FLASH_ATTENTION_AVAILABLE: bool = false;
+const SOFTSIGN_EXACT_TENSOR_ERROR: &str = "softsign() only supports an exact native Tensor input";
+const SOFTSIGN_CPU_FLOAT32_ERROR: &str =
+    "torch_rs.nn.functional.softsign only supports CPU float32 tensors";
+const SOFTSIGN_TORCH_FUNCTION_MODE_ERROR: &str =
+    "softsign() does not support an active TorchFunctionMode";
 
 #[pyfunction(name = "_get_cpu_capability", signature = (), text_signature = None)]
 fn get_cpu_capability_native() -> &'static str {
@@ -1110,6 +1115,22 @@ Example::
                 .map_err(|error| tensor_error(&error))?
         };
         Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+    }
+
+    // Preserve PyTorch-style public docstring formatting rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nsoftsign() -> Tensor\n\nSee :func:`torch.nn.functional.softsign`\n"]
+    #[pyo3(text_signature = None)]
+    fn softsign(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        if !torch_function_mode_stack::is_empty() {
+            return Err(PyTypeError::new_err(SOFTSIGN_TORCH_FUNCTION_MODE_ERROR));
+        }
+        let receiver = slf.as_any();
+        if !receiver.is_exact_instance_of::<PyTensor>() {
+            return Err(PyTypeError::new_err(SOFTSIGN_EXACT_TENSOR_ERROR));
+        }
+        let tensor = receiver.cast::<PyTensor>()?;
+        apply_softsign_tensor(slf.py(), tensor)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -2595,6 +2616,15 @@ pub(crate) fn sigmoid_variable_function(
     unary_out_variable_function(UnaryOutOperation::SIGMOID, py, args, kwargs)
 }
 
+pub(crate) fn softsign_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let call = bind_softsign_arguments(args, kwargs)?;
+    dispatch_top_level_softsign(py, &call)
+}
+
 pub(crate) fn square_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -3454,6 +3484,14 @@ impl UnaryOutOperation {
         apply: CoreTensor::sigmoid,
     };
 
+    const SOFTSIGN: Self = Self {
+        name: "softsign",
+        qualified_name: "torch.softsign",
+        dispatch_allocation_error: "unable to allocate softsign dispatch operands",
+        out_unsupported_error: "softsign(): the 'out' argument is not supported",
+        apply: CoreTensor::softsign,
+    };
+
     const SQUARE: Self = Self {
         name: "square",
         qualified_name: "torch.square",
@@ -3474,6 +3512,11 @@ impl UnaryOutOperation {
 struct BoundUnaryOutCall<'py> {
     input: BoundTensorOrTorchFunction<'py>,
     out: Option<BoundTensorOrTorchFunction<'py>>,
+}
+
+struct BoundSoftsignCall<'py> {
+    input: Bound<'py, PyTensor>,
+    out: Option<Bound<'py, PyAny>>,
 }
 
 enum BoundTopLevelSumDType<'py> {
@@ -5658,6 +5701,33 @@ fn apply_top_level_unary_out(
     };
     let input = input.try_borrow()?;
     let output = (operation.apply)(&input.inner).map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(output))?.into_any())
+}
+
+fn dispatch_top_level_softsign(
+    py: Python<'_>,
+    call: &BoundSoftsignCall<'_>,
+) -> PyResult<Py<PyAny>> {
+    if call.out.is_some() {
+        return Err(PyRuntimeError::new_err(
+            UnaryOutOperation::SOFTSIGN.out_unsupported_error,
+        ));
+    }
+    if !torch_function_mode_stack::is_empty() {
+        return Err(PyTypeError::new_err(SOFTSIGN_TORCH_FUNCTION_MODE_ERROR));
+    }
+    apply_softsign_tensor(py, &call.input)
+}
+
+fn apply_softsign_tensor(py: Python<'_>, input: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
+    let input = input.try_borrow()?;
+    if input.inner().dtype() != DType::Float32 || input.inner().device() != Device::Cpu {
+        return Err(PyNotImplementedError::new_err(SOFTSIGN_CPU_FLOAT32_ERROR));
+    }
+    let output = input
+        .inner()
+        .softsign()
+        .map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, PyTensor::new(output))?.into_any())
 }
 
@@ -18537,6 +18607,35 @@ fn bind_unary_out_arguments<'py>(
     Ok(BoundUnaryOutCall { input, out })
 }
 
+fn bind_softsign_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundSoftsignCall<'py>> {
+    let operation = UnaryOutOperation::SOFTSIGN;
+    let selection = select_legacy_single_argument(operation.name, positional, keywords)?;
+    let input = parse_exact_native_softsign_argument(&selection.input)?.clone();
+    let out = match keywords
+        .map(|values| values.get_item("out"))
+        .transpose()?
+        .flatten()
+    {
+        Some(out) if !out.is_none() => {
+            parse_tensor_argument(
+                operation.name,
+                "out",
+                &ParsedCallArgument {
+                    value: out.clone(),
+                    position: None,
+                },
+            )?;
+            Some(out)
+        }
+        Some(_) | None => None,
+    };
+    validate_unary_out_keywords(operation, &selection, keywords)?;
+    Ok(BoundSoftsignCall { input, out })
+}
+
 fn validate_unary_out_keywords(
     operation: UnaryOutOperation,
     selection: &LegacySingleArgumentSelection<'_>,
@@ -20789,6 +20888,21 @@ fn parse_tensor_argument<'a, 'py>(
         )));
     };
     Ok(tensor)
+}
+
+fn parse_exact_native_softsign_argument<'a, 'py>(
+    value: &'a ParsedCallArgument<'py>,
+) -> PyResult<&'a Bound<'py, PyTensor>> {
+    if value.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(value
+            .value
+            .cast::<PyTensor>()
+            .expect("an exact PyTensor instance must downcast"));
+    }
+    if value.value.is_instance_of::<PyTensor>() {
+        return Err(PyTypeError::new_err(SOFTSIGN_EXACT_TENSOR_ERROR));
+    }
+    parse_tensor_argument("softsign", "input", value)
 }
 
 fn parse_exact_native_like_factory_tensor_argument<'a, 'py>(
