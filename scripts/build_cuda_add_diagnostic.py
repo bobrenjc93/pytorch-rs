@@ -2,7 +2,7 @@
 """Build an isolated source export for diagnose_cuda_add.py without changing Git.
 
 --revision HEAD exports a committed baseline. Without --revision, overlay the
-current tracked files and the diagnostic integration files onto that export. The latter
+current tracked and unignored source files onto that export. The latter
 is an immutable, hashed source snapshot, NOT a claim that dirty code is HEAD.
 No commits, Git index/object writes, or paths outside this worktree are needed.
 """
@@ -49,10 +49,7 @@ def main():
     status = run(["git", "status", "--short"], text=True)
     patch = run(["git", "diff", "HEAD", "--binary"])
     if not args.revision:
-        paths = run(["git", "ls-files", "-z"]).decode().split("\0")[:-1]
-        paths += ["scripts/build_cuda_add_diagnostic.py", "scripts/diagnose_cuda_add.py",
-                  "tests/test_composite_cuda_mean_convert.py", "docs/cuda-add-diagnostics.md",
-                  "src/cuda/pool.rs"]
+        paths = run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"]).decode().split("\0")[:-1]
         for name in paths:
             # Burner owns these artifacts; they are irrelevant to this build.
             if name in ("docs/burner-evaluation-history.json", "docs/burner-evaluation-progress.svg"):

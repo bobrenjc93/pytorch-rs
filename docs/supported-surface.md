@@ -1199,11 +1199,16 @@ the CPU-only compatibility boundary remains visible.
 - The CPU helpers do not probe hardware, environment variables, or PyTorch. CPU
   device mutation beyond the compatibility no-ops, capabilities, AMP, and the
   rest of the `torch.cpu` namespace remain unsupported.
-- `torch.get_num_threads()` reports the native engine's fixed single intra-op
-  worker as the exact integer `1`. `torch.get_num_interop_threads()` likewise
-  returns the exact integer `1`, reflecting the absence of a separate inter-op
-  executor. Neither query probes hardware, environment variables, or PyTorch;
-  both thread setters and parallel execution remain unsupported.
+- `torch.get_num_threads()` reports the configured intra-op worker budget,
+  initially `1`. `torch.set_num_threads(n)` accepts a positive integer and
+  configures a process-wide native worker pool. Large rank-2 single-dimension
+  CPU `sum` and `mean` partition independent outputs across that pool, including
+  transposed layouts, while retaining each output's serial accumulation order.
+  Small reductions and operations without a parallel implementation remain
+  serial. Neither the default nor the queries probe environment variables,
+  hardware, or PyTorch. `torch.get_num_interop_threads()` remains the exact
+  integer `1`; `torch.set_num_interop_threads()` and a separate inter-op executor
+  remain unsupported.
 - `torch.backends.cpu.get_cpu_capability()` returns the invariant string
   `"DEFAULT"`, truthfully identifying the engine's unspecialized CPU dispatch
   without probing host instruction sets or environment overrides.

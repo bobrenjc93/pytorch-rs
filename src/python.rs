@@ -25687,11 +25687,51 @@ fn _cuda_is_initialized() -> bool {
     crate::cuda::is_initialized()
 }
 
-#[pymodule]
-fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
+#[pyfunction(signature = (*args, **kwargs), text_signature = None)]
+fn set_num_threads(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
+    if kwargs.is_some_and(|values| !values.is_empty()) {
+        return Err(PyTypeError::new_err(
+            "torch.set_num_threads() takes no keyword arguments",
+        ));
+    }
+    if args.len() != 1 {
+        return Err(PyTypeError::new_err(format!(
+            "torch.set_num_threads() takes exactly one argument ({} given)",
+            args.len()
+        )));
+    }
+    let value = args.get_item(0)?;
+    if !value.is_instance_of::<PyInt>() || value.is_instance_of::<PyBool>() {
+        return Err(PyRuntimeError::new_err(format!(
+            "set_num_threads expects an int, but got {}",
+            python_type_name(&value)?
+        )));
+    }
+    let threads = value.extract::<i32>()?;
+    if threads <= 0 {
+        return Err(PyRuntimeError::new_err(
+            "set_num_threads expects a positive integer",
+        ));
+    }
+    // Workers execute only Rust arithmetic. Configuration can wait for old
+    // worker teardown without holding the Python interpreter lock.
+    value
+        .py()
+        .detach(|| crate::set_num_threads(usize::try_from(threads).expect("positive thread count")))
+        .map_err(PyRuntimeError::new_err)
+}
+
+fn add_runtime_configuration_functions(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_function(wrap_pyfunction!(set_num_threads, module)?)?;
     module.add_function(wrap_pyfunction!(_cuda_configure_runtime, module)?)?;
     module.add_function(wrap_pyfunction!(_cuda_device_count, module)?)?;
     module.add_function(wrap_pyfunction!(_cuda_is_initialized, module)?)?;
+    Ok(())
+}
+
+#[pymodule]
+fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    add_runtime_configuration_functions(module)?;
     let py = module.py();
     cpython_compat::initialize_torch_function_descriptor_caller(py)?;
     for (name, enabled) in NATIVE_BUILD_CAPABILITIES {

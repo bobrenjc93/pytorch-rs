@@ -155,8 +155,8 @@ class GetNumThreadsTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_thread_setters_remain_unsupported(self):
-        unsupported = ("set_num_threads", "set_num_interop_threads")
+    def test_interop_setter_remains_unsupported(self):
+        unsupported = ("set_num_interop_threads",)
         for name in unsupported:
             with self.subTest(name=name):
                 self.assertFalse(hasattr(torch, name))
@@ -186,7 +186,10 @@ result = torch.get_num_threads()
 assert type(result) is int
 assert result == 1
 assert torch.get_num_interop_threads() == 1
-assert not hasattr(torch, "set_num_threads")
+assert torch.set_num_threads(2) is None
+assert torch.get_num_threads() == 2
+assert torch.get_num_interop_threads() == 1
+torch.set_num_threads(1)
 assert not hasattr(torch, "set_num_interop_threads")
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """

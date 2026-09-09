@@ -11,6 +11,7 @@ mod device;
 mod dtype;
 mod grad_mode;
 mod memory_format;
+mod parallel;
 // Python API docstrings intentionally contain Python examples and are tested
 // through the Python suite. They are private Rust implementation modules, so
 // omit them while rustdoc is collecting Rust doctests.
@@ -80,5 +81,6 @@ pub use device::Device;
 pub use dtype::{DType, FloatingPointInfo};
 pub use grad_mode::{EnableGradGuard, NoGradGuard, enable_grad, is_grad_enabled, no_grad};
 pub use memory_format::MemoryFormat;
+pub use parallel::{get_num_threads, set_num_threads};
 pub use tensor::{LogicalValues, Tensor};
 pub use tensor_error::TensorError;

@@ -72,7 +72,13 @@ immediate input/output drops, aliases, cross-thread use and synchronous CPU
 copies. It also leaves a per-call completion cost that PyTorch can amortize in
 sustained batches. Performance claims must retain that limitation.
 
-## Measured repair results
+## Retained allocation-repair results
+
+These reports measure the earlier committed allocation repair, before the
+subsequent graph-replay and parallel-mean review changes. They are not evidence
+for the current uncommitted implementation. Regenerate candidate evidence with
+`--revision HEAD` once Burner has committed the implementation and diagnostic
+runner; keep that follow-up limited to evidence and documentation.
 
 The [baseline raw report](benchmark-data/cuda-add-before.json) and
 [candidate raw report](benchmark-data/cuda-add-candidate.json) use the same
@@ -129,11 +135,12 @@ The candidate is a clean export of `3c167233398803251121b8f1a9b7e0ab55ee54c5`,
 rebuilt with `--revision HEAD` from a clean composite worktree. Its report records
 that commit in `measured_code_commit`, `source_matches_commit: true`, and an empty
 `origin_status`. The installed native extension matches the release wheel, and
-the runner matches the committed source. Only regenerated evidence and this
-report documentation change after the measured commit; implementation and
-benchmark-harness files remain unchanged. Burner owns the subsequent delivery.
+the runner matches that committed source. Its evidence refresh changed only
+reports and documentation after the measured commit. The later implementation
+review requires a new clean committed-source measurement; the older report
+must not be presented as validating those later changes.
 
-## Integration validation
+## Allocation-repair integration validation
 
 For the committed-source provenance refresh, wheel/import verification passed,
 as did 55 focused documentation/CUDA tests (four single-GPU skips) and all three

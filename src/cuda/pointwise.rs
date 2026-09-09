@@ -162,42 +162,66 @@ pub(super) unsafe fn launch_add(
     mut right: u64,
     mut output: u64,
     elements: usize,
-) -> Result<(), TensorError> {
-    let driver = driver()?;
-    let vectorized = (left | right | output).is_multiple_of(16);
-    let function = driver.add_function(vectorized)?;
-    let mut count = elements as u64;
-    let mut arguments = [
-        (&raw mut left).cast(),
-        (&raw mut right).cast(),
-        (&raw mut output).cast(),
-        (&raw mut count).cast(),
-    ];
-    let lanes = if vectorized {
-        elements.div_ceil(4)
-    } else {
-        elements
-    };
-    let blocks = u32::try_from(lanes.div_ceil(256).min(4096)).expect("bounded grid");
-    // SAFETY: parameters live through launch's argument copy. Handle is cached
-    // in this context. CU_STREAM_LEGACY (1) explicitly matches runtime copies
-    // and zero-fill even when another CUDA user uses a per-thread default.
-    driver.check(
-        unsafe {
-            (driver.launch)(
-                function as *mut c_void,
-                blocks,
-                1,
-                1,
-                256,
-                1,
-                1,
-                0,
-                std::ptr::without_provenance_mut(1),
-                arguments.as_mut_ptr(),
-                std::ptr::null_mut(),
+) -> (
+    Result<(), TensorError>,
+    Option<std::sync::Arc<super::replay::Replay>>,
+) {
+    let mut keepalive = None;
+    let result = (|| {
+        let driver = driver()?;
+        let vectorized = (left | right | output).is_multiple_of(16);
+        let function = driver.add_function(vectorized)?;
+        let mut count = elements as u64;
+        let mut arguments = [
+            (&raw mut left).cast(),
+            (&raw mut right).cast(),
+            (&raw mut output).cast(),
+            (&raw mut count).cast(),
+        ];
+        let lanes = if vectorized {
+            elements.div_ceil(4)
+        } else {
+            elements
+        };
+        let blocks = u32::try_from(lanes.div_ceil(256).min(4096)).expect("bounded grid");
+        let kernel = super::replay::Kernel {
+            function: function as *mut c_void,
+            grid: [blocks, 1, 1],
+            block: [256, 1, 1],
+            shared_bytes: 0,
+            arguments: arguments.as_mut_ptr(),
+            extra: std::ptr::null_mut(),
+        };
+        keepalive = unsafe {
+            super::replay::get(
+                super::replay::Key(function, left, right, output, elements),
+                &kernel,
             )
-        },
-        "cuLaunchKernel",
-    )
+        };
+        if let Some(replay) = &keepalive {
+            return driver.check(unsafe { replay.launch() }, "cuGraphLaunch");
+        }
+        // SAFETY: parameters live through launch's argument copy. Handle is cached
+        // in this context. CU_STREAM_LEGACY (1) explicitly matches runtime copies
+        // and zero-fill even when another CUDA user uses a per-thread default.
+        driver.check(
+            unsafe {
+                (driver.launch)(
+                    function as *mut c_void,
+                    blocks,
+                    1,
+                    1,
+                    256,
+                    1,
+                    1,
+                    0,
+                    std::ptr::without_provenance_mut(1),
+                    arguments.as_mut_ptr(),
+                    std::ptr::null_mut(),
+                )
+            },
+            "cuLaunchKernel",
+        )
+    })();
+    (result, keepalive)
 }

@@ -23,6 +23,8 @@ artifacts are generated at merge time and are not source documentation.
 - [Contributing guide](../CONTRIBUTING.md): Locked setup, environment expectations, test selection, draft workflow, and documentation ownership.
 - [Setup troubleshooting](troubleshooting.md): Short fixes for common environment, import, reference dependency, and stale wheel failures.
 - [Architecture map](../ARCHITECTURE.md): Source map for the Rust core, Python bindings, wrappers, and test layout.
+- [CUDA-add diagnostics](cuda-add-diagnostics.md): Latency, sustained throughput, cache saturation, and release provenance.
+- [Rank-2 mean diagnostics](rank2-mean-diagnostics.md): Both reduction axes and layouts at matched CPU worker budgets.
 
 ## Historical Timing Evidence
 

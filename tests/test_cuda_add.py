@@ -174,6 +174,35 @@ class CudaAddTests(Comparison, unittest.TestCase):
         torch.testing.assert_close(copied, expected, rtol=0, atol=0)
         self.compare(out, expected)
 
+    def test_repeated_launch_eviction_aliases_and_immediate_drops(self):
+        # More live argument sets than the bounded replay cache. Repeated
+        # launches warm each key; later keys evict metadata on other threads.
+        from concurrent.futures import ThreadPoolExecutor
+        sources = [native.full((1027,), i / 8).to("cuda:0") for i in range(80)]
+        lib = runtime()
+        def repeat(index):
+            x = sources[index]
+            for _ in range(8):
+                result = x + x
+                self.assertEqual(lib.cudaStreamQuery(ctypes.c_void_p(1)), 0)
+                self.assertEqual(result[:5].cpu().tolist(), [index / 4] * 5)
+                del result
+            return (x + x)[1:6]
+        with ThreadPoolExecutor(max_workers=4) as workers:
+            retained = list(workers.map(repeat, range(len(sources))))
+        del sources
+        gc.collect()
+        # Force pointer reuse with different values after the graph's original
+        # sources die. Cached addresses must never confer ownership or values.
+        for i in range(80):
+            x = native.full((1027,), -i / 16).to("cuda:0")
+            for _ in range(5):
+                result = x + x
+                self.assertEqual(result[:5].cpu().tolist(), [-i / 8] * 5)
+                del result
+        for i, view in enumerate(retained):
+            self.assertEqual(view.cpu().tolist(), [i / 4] * 5)
+
     def test_invalid_and_unsupported_inputs(self):
         for shape in ((), (0,), (2, 3)):
             x = native.ones(shape).to("cuda:0")
@@ -261,6 +290,25 @@ class CudaAddDeviceTests(Comparison, unittest.TestCase):
         finally:
             torch.cuda.set_device(previous)
 
+
+    def test_replay_eviction_restores_context_across_devices(self):
+        lib = runtime()
+        original = torch.cuda.current_device()
+        sources = [native.full((1031,), i / 8).to(f"cuda:{i % 2}") for i in range(80)]
+        try:
+            for i, x in enumerate(sources):
+                current = 1 - i % 2
+                torch.cuda.set_device(current)
+                for _ in range(8):
+                    result = x + x
+                    self.assertEqual(result[:3].cpu().tolist(), [i / 4] * 3)
+                    del result
+                    ordinal = ctypes.c_int()
+                    self.assertEqual(lib.cudaGetDevice(ctypes.byref(ordinal)), 0)
+                    self.assertEqual(ordinal.value, current)
+                    self.assertEqual(torch.cuda.current_device(), current)
+        finally:
+            torch.cuda.set_device(original)
 
     def test_cross_thread_pool_release_on_both_devices(self):
         from concurrent.futures import ThreadPoolExecutor

@@ -11,6 +11,7 @@ use std::sync::{
 
 mod pointwise;
 mod pool;
+mod replay;
 
 type Status = c_int;
 struct Runtime {
@@ -276,7 +277,7 @@ impl CudaFloat32Storage {
         if elements != 0 {
             // SAFETY: bounds and device checked above, output is fresh and all
             // three storages remain borrowed/owned until stream completion.
-            let launched = unsafe {
+            let (launched, replay) = unsafe {
                 pointwise::launch_add(
                     (self.data_ptr + left_offset * 4) as u64,
                     (other.data_ptr + right_offset * 4) as u64,
@@ -291,6 +292,12 @@ impl CudaFloat32Storage {
                 unsafe { (self.runtime.stream_synchronize)(std::ptr::without_provenance_mut(1)) },
                 "cudaStreamSynchronize",
             );
+            if completed.is_err() {
+                // Completion is uncertain: quarantine executable metadata too.
+                std::mem::forget(replay);
+            } else {
+                drop(replay);
+            }
             if launched.is_err() || completed.is_err() {
                 CACHE_HEALTHY.store(false, Ordering::Relaxed);
             }

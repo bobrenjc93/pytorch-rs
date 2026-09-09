@@ -13,7 +13,7 @@ reverse-mode autograd. CUDA storage, transfers, and same-shape contiguous additi
 | Crate entry | [src/lib.rs](src/lib.rs) | Declares the Rust modules and re-exports `Tensor`, `TensorError`, `DType`, `Device`, and `MemoryFormat`. Python-only modules are gated behind `python-bindings`. |
 | Storage | [src/storage.rs](src/storage.rs) | Owns `Storage`, native CPU/CUDA payload dispatch, the CPU `f32` payload, inline scalar storage, owned vectors, and mutex-backed leaf-gradient buffers. |
 | CUDA backend | [src/cuda.rs](src/cuda.rs), [src/cuda/pointwise.rs](src/cuda/pointwise.rs), [src/cuda/pool.rs](src/cuda/pool.rs), [src/cuda/add.ptx](src/cuda/add.ptx) | Loads the optional CUDA runtime, owns device allocations, restores the calling thread's device, and performs synchronous host-to-device and device-to-host transfers from/to Rust buffers. A front cache retains at most 32 buffers / 64 MiB across devices; optional private pools budget another 256 MiB of unused backing per device, as detailed below. The optional driver loads an embedded general float32 addition kernel. Python only discovers optional wheel library paths. |
-| Dimension reduction kernels | [src/reduction.rs](src/reduction.rs) | Uses layout-aware slices and four-level float32 accumulation for rank-2 single-axis sums, with existing tensor autograd metadata. |
+| Dimension reduction kernels | [src/reduction.rs](src/reduction.rs) | Uses layout-aware slices and four-level float32 accumulation for rank-2 single-axis sums and means. [src/parallel.rs](src/parallel.rs) manages an explicit worker budget; large reductions split independent outputs without changing their accumulation order. |
 | Tensor layout | [src/tensor.rs](src/tensor.rs) | `Tensor` stores shared storage plus shape, strides, storage offset, element count, output number, view grad state, and optional autograd metadata. It also implements contiguity, view, stride, indexing, and materialization helpers. Integer-size split and chunk reuse slice views and one shared multi-output backward node per call. |
 | Metadata types | [src/dtype.rs](src/dtype.rs), [src/device.rs](src/device.rs), [src/memory_format.rs](src/memory_format.rs) | Define the currently compiled native dtype/device/memory-format enums and query behavior. |
 | Tensor operations | [src/tensor.rs](src/tensor.rs) | Constructors, unary and binary kernels, reductions, matrix multiply, layout transforms, and backward kernels live with the core tensor representation. |
@@ -198,7 +198,15 @@ External context destruction
 or device reset while native state exists is unsupported.
 
 Launch uses the explicit legacy default stream, ordered after native zero-fill
-and transfers. The caller synchronizes that stream even after a launch failure,
+and transfers. Repeated exact argument sets may use the bounded graph replay
+cache in [src/cuda/replay.rs](src/cuda/replay.rs). It holds at most 64 executable
+entries and 64 recent signatures globally. A hit requires matching current live
+input/output pointers, element count, and context-specific function; metadata
+never owns tensor storage. Callers retain the executable through the stream
+wait, and per-executable host launch locks protect concurrent graph access.
+Eviction destroys metadata in its owning context and restores the caller's
+context. Optional graph setup failures fall back to direct kernel launch.
+The caller synchronizes that stream even after a launch failure,
 while all three allocations are still live. Thus chained additions, immediate
 drops, and cache reuse need no deferred ownership or event bookkeeping. A launch
 or completion error disables allocation reuse; later ordinary allocations use
