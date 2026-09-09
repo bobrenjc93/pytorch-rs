@@ -1,3 +1,6 @@
+import subprocess
+import sys
+import textwrap
 import unittest
 
 import numpy as np
@@ -5,6 +8,49 @@ import torch_rs as torch
 
 
 class TopLevelColumnStackTests(unittest.TestCase):
+    def test_large_empty_columns_forward_and_backward_finish(self):
+        # A subprocess bounds a regression that would otherwise hold the GIL
+        # while iterating over a trillion rows, preventing an in-process timer.
+        script = textwrap.dedent("""
+            import unittest
+            import torch_rs as torch
+
+            check = unittest.TestCase()
+            rows = 1 << 40
+            for shape in ((rows, 0), (0, rows)):
+                for requires_grad in (False, True):
+                    for count in (1, 3):
+                        source = torch.zeros(shape, requires_grad=requires_grad)
+                        view = source.transpose(0, 1).transpose(0, 1)
+                        other = torch.zeros(shape, requires_grad=requires_grad)
+                        inputs = [source] if count == 1 else [view, other, view]
+                        result = torch.column_stack(inputs)
+                        check.assertEqual(result.shape, (shape[0], shape[1] * len(inputs)))
+                        check.assertEqual(result.numel(), 0)
+                        check.assertEqual(result.storage_offset(), 0)
+                        check.assertTrue(result.is_contiguous())
+                        check.assertFalse(result.is_set_to(source))
+                        check.assertEqual(result.requires_grad, requires_grad)
+                        check.assertEqual(result.is_leaf, not requires_grad)
+                        if requires_grad:
+                            result.sum().backward()
+                            for leaf in ([source] if count == 1 else [source, other]):
+                                check.assertIsNotNone(leaf.grad)
+                                check.assertEqual(leaf.grad.shape, shape)
+                                check.assertEqual(leaf.grad.numel(), 0)
+                    with torch.no_grad():
+                        result = torch.column_stack([view, source])
+                    check.assertFalse(result.requires_grad)
+
+            # Empty data must not bypass incompatible-shape validation.
+            with check.assertRaises(RuntimeError):
+                torch.column_stack([torch.zeros((rows, 0)), torch.zeros((rows - 1, 0))])
+        """)
+        completed = subprocess.run(
+            [sys.executable, "-c", script], capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
     def test_scalars_vectors_and_columns(self):
         result = torch.column_stack(tensors=(torch.tensor(-0.0), torch.tensor([2.0]), torch.tensor([[3.0, 4.0]])), out=None)
         self.assertEqual(result.shape, (1, 4))
