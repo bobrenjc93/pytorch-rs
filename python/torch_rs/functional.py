@@ -40,10 +40,12 @@ def split(
     split_size_or_sections: int | list[int],
     dim: int = 0,
 ) -> tuple[Tensor, ...]:
-    """Split a tensor into shared-storage views of at most the given size.
+    """Split an exact native CPU float32 tensor into shared-storage views.
 
-    Only integer split sizes on exact native CPU float32 tensors are supported.
-    The last view may be shorter. Section lists remain unsupported.
+    An integer gives the maximum view size; the last view may be shorter.
+    A list or tuple gives nonnegative section sizes summing to the dimension
+    size. Zero-length sections are preserved; an empty sequence requires an
+    empty dimension.
     """
     return _dispatch_unary_torch_function(
         split,

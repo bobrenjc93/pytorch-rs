@@ -1,0 +1,233 @@
+{
+  "schema_version": 1,
+  "measurement_kind": "same-code-setup-rerun",
+  "original_setup_timings": "unavailable",
+  "source": {
+    "commit": "e2f40ff16f8aba5216bc51699b56571e7e82a3e4",
+    "tree": "10adcb530c4ac6e231914f019248c05fe6632f66",
+    "archive_command": [
+      "git",
+      "archive",
+      "e2f40ff16f8aba5216bc51699b56571e7e82a3e4"
+    ],
+    "archive_sha256": "6c0b456621dce5da6f982208664a8fade882b4d186be266164596425d3890bd5",
+    "capture_checkout_commit": "f45675de20fe613dc0c1201a9ac46d6d679d87ff",
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fa7eaa33/target/setup-rerun/source",
+    "files_sha256": {
+      "Cargo.toml": "2e0caee82e013463057332ec43edffd58608d23b76c84de58af3e23e936e966d",
+      "Cargo.lock": "0b084e5d2577346ad59d0067a9d6576ff7348b68aef8cc3a6b1ebea75a52e402",
+      "pyproject.toml": "451bb2a5f20316268a5b2a095002e77b5402844bdcd8e38322486e255fb071c9",
+      "uv.lock": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced",
+      "rust-toolchain.toml": "47ea224b44388390e7509b601af18d3c6509a8cac86a3bb51c81558949f7355e"
+    },
+    "files_unchanged_after_setup": true,
+    "archive_files_verified_unchanged": 831
+  },
+  "environment": {
+    "PATH": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:/usr/local/cuda-12.6/bin:/usr/bin:/bin",
+    "LANG": "C.UTF-8",
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fa7eaa33/target/setup-rerun/cargo-home",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fa7eaa33/target/setup-rerun/build",
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fa7eaa33/target/setup-rerun/uv-cache",
+    "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fa7eaa33/target/setup-rerun/uv-python",
+    "UV_PYTHON_DOWNLOADS": "never",
+    "UV_NO_CONFIG": "1",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fa7eaa33/target/setup-rerun/tmp",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fa7eaa33/target/setup-rerun/xdg-cache",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fa7eaa33/target/setup-rerun/torchinductor-cache",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fa7eaa33/target/setup-rerun/triton-cache",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fa7eaa33/target/setup-rerun/cuda-cache",
+    "PYTHONNOUSERSITE": "1",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "VIRTUAL_ENV": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fa7eaa33/target/setup-rerun/source/.venv",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fa7eaa33/target/setup-rerun/source/.venv/bin/python",
+    "OMP_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "NUMEXPR_NUM_THREADS": "1",
+    "CUDA_VISIBLE_DEVICES": "0"
+  },
+  "platform": "Linux-6.13.2-0_fbk12_0_g0b66b3635210-x86_64-with-glibc2.34",
+  "build_profile": {
+    "profile": "release",
+    "lto": "thin",
+    "codegen_units": 1,
+    "features": [
+      "extension-module"
+    ],
+    "strip": true
+  },
+  "timing_method": "time.perf_counter_ns around subprocess.run; UTC timestamps bracket each command; seconds include process startup and exit",
+  "cache_baseline": "New virtualenv, empty UV and Cargo caches, absent build output; no host caches copied. OS page cache and remote caches uncontrolled. Installed Python, Rust, uv, CUDA and system toolchain provisioning excluded.",
+  "steps": [
+    {
+      "id": "tools",
+      "category": "provenance",
+      "command": [
+        "/bin/bash",
+        "-c",
+        "/home/bobren/.local/bin/uv --version; rustc --version; cargo --version; /usr/bin/python3.12 --version; cc --version; nvcc --version; nvidia-smi --query-gpu=index,name,memory.total,driver_version,compute_cap --format=csv -i 0"
+      ],
+      "started_at": "2026-09-09T17:29:47.984310+00:00",
+      "ended_at": "2026-09-09T17:29:48.144719+00:00",
+      "wall_seconds": 0.160375305,
+      "exit_status": 0,
+      "cache_state": "Read-only tool and host inventory",
+      "log": "logs/tools.txt",
+      "log_sha256": "2fcb2a797861e4fac74ec5c2efc9cd62060cd84b84aadda08aba36de5a34c230"
+    },
+    {
+      "id": "venv",
+      "category": "environment",
+      "command": [
+        "/home/bobren/.local/bin/uv",
+        "venv",
+        "--python",
+        "/usr/bin/python3.12"
+      ],
+      "started_at": "2026-09-09T17:29:48.146230+00:00",
+      "ended_at": "2026-09-09T17:29:48.202307+00:00",
+      "wall_seconds": 0.056061125,
+      "exit_status": 0,
+      "cache_state": "cold: no virtualenv",
+      "log": "logs/venv.txt",
+      "log_sha256": "85ea025d955453c6fcafdc15040ded6c482e077944625a8d7d239ce7a16b8e58"
+    },
+    {
+      "id": "python-dependencies",
+      "category": "dependency-installation",
+      "command": [
+        "/home/bobren/.local/bin/uv",
+        "sync",
+        "--locked",
+        "--no-install-project",
+        "--group",
+        "dev",
+        "--group",
+        "reference"
+      ],
+      "started_at": "2026-09-09T17:29:48.204126+00:00",
+      "ended_at": "2026-09-09T17:30:02.831331+00:00",
+      "wall_seconds": 14.627186131,
+      "exit_status": 0,
+      "cache_state": "cold: empty UV cache and new virtualenv; network downloads included",
+      "log": "logs/python-dependencies.txt",
+      "log_sha256": "e844fd5883873d239759807ff6292df1f3607f6f9345702616e20b6884a8aa68"
+    },
+    {
+      "id": "rust-dependencies",
+      "category": "dependency-installation",
+      "command": [
+        "cargo",
+        "fetch",
+        "--locked"
+      ],
+      "started_at": "2026-09-09T17:30:02.833238+00:00",
+      "ended_at": "2026-09-09T17:30:03.531395+00:00",
+      "wall_seconds": 0.698135035,
+      "exit_status": 0,
+      "cache_state": "cold: empty Cargo registry; network downloads included",
+      "log": "logs/rust-dependencies.txt",
+      "log_sha256": "22b864cb638e46e024dfaf103912abcbf96dd2840eed34dd6b501c1b78623f8c"
+    },
+    {
+      "id": "release-build",
+      "category": "compile",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fa7eaa33/target/setup-rerun/source/.venv/bin/maturin",
+        "build",
+        "--release",
+        "--locked",
+        "--offline",
+        "--out",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fa7eaa33/target/setup-rerun/wheels"
+      ],
+      "started_at": "2026-09-09T17:30:03.533401+00:00",
+      "ended_at": "2026-09-09T17:30:48.641576+00:00",
+      "wall_seconds": 45.108150147,
+      "exit_status": 0,
+      "cache_state": "cold build: no target output; dependency sources cached by preceding fetch; offline",
+      "log": "logs/release-build.txt",
+      "log_sha256": "1e4cb9097b84c4831621a47fb4c6c241a86299674e38e5a8c921020b5324fe0a"
+    },
+    {
+      "id": "wheel-install",
+      "category": "project-installation",
+      "command": [
+        "/home/bobren/.local/bin/uv",
+        "pip",
+        "install",
+        "--python",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fa7eaa33/target/setup-rerun/source/.venv/bin/python",
+        "--force-reinstall",
+        "--no-deps",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fa7eaa33/target/setup-rerun/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl"
+      ],
+      "started_at": "2026-09-09T17:30:48.644242+00:00",
+      "ended_at": "2026-09-09T17:30:48.778243+00:00",
+      "wall_seconds": 0.133985694,
+      "exit_status": 0,
+      "cache_state": "fresh project install into dependency-populated virtualenv; local wheel",
+      "log": "logs/wheel-install.txt",
+      "log_sha256": "1490b369f9022043931c999641d2d71be04dde4426252f52a351659209a6f984"
+    },
+    {
+      "id": "verify-native",
+      "category": "verification",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fa7eaa33/target/setup-rerun/source/.venv/bin/python",
+        ".github/scripts/verify_native_extension.py"
+      ],
+      "started_at": "2026-09-09T17:30:48.779351+00:00",
+      "ended_at": "2026-09-09T17:30:48.932105+00:00",
+      "wall_seconds": 0.152737744,
+      "exit_status": 0,
+      "cache_state": "installed release wheel; no workload benchmarks",
+      "log": "logs/verify-native.txt",
+      "log_sha256": "656401419951ab38efa361f48b03155147daf64f6310aecb0d9db857536fcb77"
+    },
+    {
+      "id": "runtime",
+      "category": "provenance",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fa7eaa33/target/setup-rerun/source/.venv/bin/python",
+        "-c",
+        "import hashlib, json, pathlib, sys, numpy, torch, torch_rs, torch_rs.torch_rs as native; p=pathlib.Path(native.__file__); print(json.dumps(dict(python=sys.version, executable=sys.executable, numpy=numpy.__version__, torch=torch.__version__, cuda_runtime=torch.version.cuda, cuda_available=torch.cuda.is_available(), visible_devices=torch.cuda.device_count(), gpu=torch.cuda.get_device_name(0), torch_rs=torch_rs.__file__, native=str(p), native_sha256=hashlib.sha256(p.read_bytes()).hexdigest()), indent=2))"
+      ],
+      "started_at": "2026-09-09T17:30:48.933240+00:00",
+      "ended_at": "2026-09-09T17:30:52.505533+00:00",
+      "wall_seconds": 3.57227021,
+      "exit_status": 0,
+      "cache_state": "installed dependencies and release wheel; GPU metadata probe only",
+      "log": "logs/runtime.txt",
+      "log_sha256": "dcbc7a46a42d841103f9f6ceeca130e1d8790d391f2f1a386182ae0411349d27"
+    }
+  ],
+  "wheel": {
+    "filename": "torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "sha256": "943d4f36c023fc7d5d8ce4fcfa3343291d1308b391b8c8eb55354f96685afab9"
+  },
+  "reports": {
+    "docs/top-level-stack-release-timings.md": {
+      "artifact": "docs/benchmark-data/top-level-stack-release-timings.json",
+      "artifact_sha256": "0a59bd96737df13a9230024e4f0052207aa745884fc2b8e44474a7a74fc0ce3a",
+      "results_sha256": "bb19c65c0a7e6c9d95d95f69df654f074ee11ca3f976ee25577828ad99bf238e"
+    },
+    "docs/top-level-subtract-release-timings.md": {
+      "artifact": "docs/benchmark-data/top-level-subtract-release-timings.json",
+      "artifact_sha256": "b78c812dbe0a66d5d04939d0da7390f70775304f060958138eda63c2d50faa38",
+      "results_sha256": "1b723e0e1b4791cf3c6076d2edf4f0a1d9bea00ff841353513d817470921abb5"
+    },
+    "docs/torch-compile-cpu-release-timings.md": {
+      "artifact": "docs/benchmark-data/torch-compile-cpu-v4.json",
+      "artifact_sha256": "262f162361cb0c36e1d591b9d9ddeb4c3ed46cd68862358eda14259a14796961",
+      "results_sha256": "545facd51d406dd63954698ccd156c82666bc5cecaf7b9b701363b2977424b7b"
+    },
+    "docs/torch-compile-cuda-h100-release-timings.md": {
+      "artifact": "docs/benchmark-data/torch-compile-cuda-h100-shape-matrix-v11.json",
+      "artifact_sha256": "e939543114037b96fb1724c0df43fa5d2a74fe5e26e77b7521aacb2c85a26629",
+      "results_sha256": "18970899a62437ed062034499497648120aff79432c6be83bc519879663b8620"
+    }
+  },
+  "cpu": "AMD EPYC 9654 96-Core Processor"
+}
