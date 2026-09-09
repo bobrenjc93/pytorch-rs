@@ -135,8 +135,14 @@ including offsets, scalars and empty tensors. Native float32 CUDA negation
 also accepts contiguous inputs, offsets, scalars, and empties. The
 [src/cuda/neg.ptx](src/cuda/neg.ptx) sign-bit kernel uses the shared 64-bit
 grid-stride launcher, fresh device storage, device guards, and synchronized
-completion. Noncontiguous CUDA negation, CUDA autograd, and compiled CUDA
-negation remain unsupported; see [validation](docs/cuda-neg-validation.md).
+completion. The shared unary graph operation also executes negation under
+bounded marker-free eager capture, composing with CUDA addition without fusion.
+Native metadata guards device, layout, dtype, autograd and offsets; value outputs
+have canonical contiguous strides and fresh CUDA storage at offset zero. The
+executor preflights the whole graph before launching any operation, including
+on dynamic cache hits. This is not a general Inductor compiler or a performance
+parity claim. Noncontiguous CUDA negation and CUDA autograd remain unsupported;
+see [capture scope](docs/compile-cuda-add.md) and [kernel validation](docs/cuda-neg-validation.md).
 Other CUDA materialization and
 arithmetic reject at the operation boundary.
 Direct public CUDA factory allocation remains rank-1 float32 zeros without

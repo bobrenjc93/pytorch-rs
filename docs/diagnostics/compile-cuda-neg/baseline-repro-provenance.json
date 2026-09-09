@@ -1,0 +1,5 @@
+{
+  "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/target/baseline-env/lib/python3.12/site-packages/torch_rs/__init__.py",
+  "extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/target/baseline-env/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+  "extension_sha256": "3ed24401080b51dd53081d2ec809ac70df4ba3c82c3dbed3769c9352fb48bdb6"
+}

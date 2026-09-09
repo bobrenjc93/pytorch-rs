@@ -445,7 +445,7 @@ README_SCOPE_REQUIRED_SNIPPETS = (
     "1-D zeros only",
     "No general CUDA math or accelerator training",
     "Bounded eager CPU capture",
-    "[CUDA addition capture](docs/compile-cuda-add.md)",
+    "[CUDA neg/add capture](docs/compile-cuda-add.md)",
     "without fusion",
     "No full Inductor compiler",
     "general graph capture, or eager fallback",
@@ -508,6 +508,8 @@ SUPPORTED_SURFACE_DETAIL_SNIPPETS = (
     "no-grad inference ReLU graphlets",
     "CUDA cache keys additionally guard the exact storage offset and device ordinal",
     "native Rust/CUDA addition kernel without fusion",
+    "Negation outputs own fresh CUDA storage with canonical contiguous strides and offset zero",
+    "not a general Inductor compiler or a performance-parity claim",
     "private benchmark-only H100 pointwise-reduce workload",
     '`backend="inductor"`, `fullgraph=True`, and `dynamic=False`',
     "global binding identity, and global metadata",
@@ -554,7 +556,7 @@ DOCS_INDEX_EXAMPLES = (
 )
 DOCS_INDEX_GUIDES = (
     (
-        "CUDA addition graph capture",
+        "CUDA neg/add graph capture",
         "compile-cuda-add.md",
         "Public bounded eager compilation, device/cache guards, unsupported cases, and reproduction.",
     ),

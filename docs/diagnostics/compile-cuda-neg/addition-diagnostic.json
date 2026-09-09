@@ -1,0 +1,5390 @@
+{
+  "schema": "marker_free_cuda_add_diagnostic_v1",
+  "purpose": "correctness only; no coverage or performance score",
+  "seed": 19092675,
+  "base_commit": "c29e953e5cf3c74fe5fbcbd38177ecc0181dc08b",
+  "source_sha256": {
+    "python/torch_rs/__init__.py": "e97f33f54b654983f4cee7f895b992e2fe288b69256150f7e289973eefe6d460",
+    "python/torch_rs/_compile_trace.py": "3d1c58d6800b184e4d1bd14da0f1422963cc819937acb0832855429dc0534e1f",
+    "python/torch_rs/_compile_bytecode.py": "462ac09b9d8f01e8673a5d6a3b547f6d7093274c0906d47797a6ae472479ab9e",
+    "src/python.rs": "8b7c8fc37da2e6da2f6e45ef2a0756e0ff2955619d7719c404bbe998c8436cfc",
+    "src/cuda/add.ptx": "4575664439d826d19ba9ebe23fbcca53280c07d39371b5e19aea5a306a48e33e",
+    "src/cuda/pointwise.rs": "c08d18a07cc7f4250d7be08800977fa57965029357df88f0777c4954ecd01555",
+    "scripts/diagnose_compile_cuda_add.py": "5d4f0ae7b73a5439229b01b2108a6f6d7bb710c7ecf66f9746f5606d619ee02b",
+    "tests/test_compile_cuda_boundary.py": "899a97c9e51f67ebba037bc703e31db54b0955e6387249bd3824e62dc9599980"
+  },
+  "native_extension_sha256": "d745ebe2e11e9e8ccc08ae2a1c9d50022c65498681a5c77e622b1caf75606f7d",
+  "environment": {
+    "python": "3.12.14",
+    "torch": "2.13.0+cu130",
+    "torch_cuda": "13.0",
+    "cuda_visible_devices": "0",
+    "gpus": "0, NVIDIA H100, 580.82.07, 9.0\n1, NVIDIA H100, 580.82.07, 9.0\n2, NVIDIA H100, 580.82.07, 9.0\n3, NVIDIA H100, 580.82.07, 9.0\n4, NVIDIA H100, 580.82.07, 9.0\n5, NVIDIA H100, 580.82.07, 9.0\n6, NVIDIA H100, 580.82.07, 9.0\n7, NVIDIA H100, 580.82.07, 9.0",
+    "native_runtime_library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "native_runtime_version": 13000,
+    "nvcc_available": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0",
+    "native_kernel_compiler": "NVIDIA driver JIT of embedded PTX 6.0/sm_50; nvcc unused",
+    "rust": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+    "build": "maturin --release --locked; abi3-py310; thin LTO; codegen-units=1"
+  },
+  "summary": {
+    "cases": 82,
+    "reference_eligible": 80,
+    "native_pass": 58,
+    "native_unsupported": 24
+  },
+  "cases": [
+    {
+      "program": "silver",
+      "shape": [],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "0f86a322fe61262ef4283bc2524516a42e5dbf25bb8a8a2759c007c4138de0f9"
+        },
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "78909e66bb38dcc1f28e49488f2a67edf3c700219c97d3ebb053ee60463fb38a"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "0f86a322fe61262ef4283bc2524516a42e5dbf25bb8a8a2759c007c4138de0f9"
+        },
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "78909e66bb38dcc1f28e49488f2a67edf3c700219c97d3ebb053ee60463fb38a"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "silver",
+      "shape": [],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "0f86a322fe61262ef4283bc2524516a42e5dbf25bb8a8a2759c007c4138de0f9"
+        },
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "78909e66bb38dcc1f28e49488f2a67edf3c700219c97d3ebb053ee60463fb38a"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "0f86a322fe61262ef4283bc2524516a42e5dbf25bb8a8a2759c007c4138de0f9"
+        },
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "78909e66bb38dcc1f28e49488f2a67edf3c700219c97d3ebb053ee60463fb38a"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        0
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        0
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        3,
+        0,
+        2
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        3,
+        0,
+        2
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        257
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "4680819b6826ceb9a1fe60faa9bc9cb78126cca244414cafadf7e6e01c4a9c05"
+        },
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "114e7bf3a6d3e61f8e979c289d473369bba0461f9285347020e5e65ea08d4817"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "4680819b6826ceb9a1fe60faa9bc9cb78126cca244414cafadf7e6e01c4a9c05"
+        },
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "114e7bf3a6d3e61f8e979c289d473369bba0461f9285347020e5e65ea08d4817"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        257
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "4680819b6826ceb9a1fe60faa9bc9cb78126cca244414cafadf7e6e01c4a9c05"
+        },
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "114e7bf3a6d3e61f8e979c289d473369bba0461f9285347020e5e65ea08d4817"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "4680819b6826ceb9a1fe60faa9bc9cb78126cca244414cafadf7e6e01c4a9c05"
+        },
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "114e7bf3a6d3e61f8e979c289d473369bba0461f9285347020e5e65ea08d4817"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        17,
+        31
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "925304612c3b200cc0d33dd029d7f9601754da44d7ab5c80d444517e9d85fae8"
+        },
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "9b4a89039d61c012624ab3843b7b82678f19fb6f3bcb33ddd1fc8b3d1bfcba5f"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "925304612c3b200cc0d33dd029d7f9601754da44d7ab5c80d444517e9d85fae8"
+        },
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "9b4a89039d61c012624ab3843b7b82678f19fb6f3bcb33ddd1fc8b3d1bfcba5f"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        17,
+        31
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "925304612c3b200cc0d33dd029d7f9601754da44d7ab5c80d444517e9d85fae8"
+        },
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "9b4a89039d61c012624ab3843b7b82678f19fb6f3bcb33ddd1fc8b3d1bfcba5f"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "925304612c3b200cc0d33dd029d7f9601754da44d7ab5c80d444517e9d85fae8"
+        },
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "9b4a89039d61c012624ab3843b7b82678f19fb6f3bcb33ddd1fc8b3d1bfcba5f"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        65539
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "46b4639ee9b453248eda503d8b2565a734b909d4f75647435c4b3c44254a3f23"
+        },
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "1d13669482ae4ef638cabf68793ae448c4a97cbc52f0057915e29b539cee033e"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "46b4639ee9b453248eda503d8b2565a734b909d4f75647435c4b3c44254a3f23"
+        },
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "1d13669482ae4ef638cabf68793ae448c4a97cbc52f0057915e29b539cee033e"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        65539
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "46b4639ee9b453248eda503d8b2565a734b909d4f75647435c4b3c44254a3f23"
+        },
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "1d13669482ae4ef638cabf68793ae448c4a97cbc52f0057915e29b539cee033e"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "46b4639ee9b453248eda503d8b2565a734b909d4f75647435c4b3c44254a3f23"
+        },
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "1d13669482ae4ef638cabf68793ae448c4a97cbc52f0057915e29b539cee033e"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        3,
+        10,
+        8
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "c83819b1c812a6e60de29c8cbe87921b3882ae11c98baf6ba54eaed60700fb0a"
+        },
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "1652e5bfb5106871817377f6312c708b2917989c7e4763b36cc3ca58a82626cf"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "c83819b1c812a6e60de29c8cbe87921b3882ae11c98baf6ba54eaed60700fb0a"
+        },
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "1652e5bfb5106871817377f6312c708b2917989c7e4763b36cc3ca58a82626cf"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        3,
+        10,
+        8
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "c83819b1c812a6e60de29c8cbe87921b3882ae11c98baf6ba54eaed60700fb0a"
+        },
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "1652e5bfb5106871817377f6312c708b2917989c7e4763b36cc3ca58a82626cf"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "c83819b1c812a6e60de29c8cbe87921b3882ae11c98baf6ba54eaed60700fb0a"
+        },
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "1652e5bfb5106871817377f6312c708b2917989c7e4763b36cc3ca58a82626cf"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        9,
+        2,
+        12
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "ac511964d3162766ded1d3b2ced5ad3190df2e3ab151d85a1a806aec8cd69ec8"
+        },
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "d3a30dc79229a90be1abeedce99d4a72cd21d044e9849a62c7fa56c95b20353b"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "ac511964d3162766ded1d3b2ced5ad3190df2e3ab151d85a1a806aec8cd69ec8"
+        },
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "d3a30dc79229a90be1abeedce99d4a72cd21d044e9849a62c7fa56c95b20353b"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        9,
+        2,
+        12
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "ac511964d3162766ded1d3b2ced5ad3190df2e3ab151d85a1a806aec8cd69ec8"
+        },
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "d3a30dc79229a90be1abeedce99d4a72cd21d044e9849a62c7fa56c95b20353b"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "ac511964d3162766ded1d3b2ced5ad3190df2e3ab151d85a1a806aec8cd69ec8"
+        },
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "d3a30dc79229a90be1abeedce99d4a72cd21d044e9849a62c7fa56c95b20353b"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        11,
+        8,
+        1
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e2ccc150ef5760f90515eb2dbaa1a91595da28a2c550da7b82147d2686fd891e"
+        },
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "fdaa4f28c08dc34a38a2ba0a6608b73d7051799681ca61f6bf8206b7da31f3dd"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e2ccc150ef5760f90515eb2dbaa1a91595da28a2c550da7b82147d2686fd891e"
+        },
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "fdaa4f28c08dc34a38a2ba0a6608b73d7051799681ca61f6bf8206b7da31f3dd"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        11,
+        8,
+        1
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e2ccc150ef5760f90515eb2dbaa1a91595da28a2c550da7b82147d2686fd891e"
+        },
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "fdaa4f28c08dc34a38a2ba0a6608b73d7051799681ca61f6bf8206b7da31f3dd"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e2ccc150ef5760f90515eb2dbaa1a91595da28a2c550da7b82147d2686fd891e"
+        },
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "fdaa4f28c08dc34a38a2ba0a6608b73d7051799681ca61f6bf8206b7da31f3dd"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "orchard",
+      "shape": [],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "01c59812308f28e5084760e3a0c00796b8b8bdf7d867270994f721e8856138fb"
+        },
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "fe1b3bbb17866c56ac5eeaaa569f0a707417f7d9553a0105f8c76777bd0455bb"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "01c59812308f28e5084760e3a0c00796b8b8bdf7d867270994f721e8856138fb"
+        },
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "fe1b3bbb17866c56ac5eeaaa569f0a707417f7d9553a0105f8c76777bd0455bb"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "orchard",
+      "shape": [],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "01c59812308f28e5084760e3a0c00796b8b8bdf7d867270994f721e8856138fb"
+        },
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "fe1b3bbb17866c56ac5eeaaa569f0a707417f7d9553a0105f8c76777bd0455bb"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "01c59812308f28e5084760e3a0c00796b8b8bdf7d867270994f721e8856138fb"
+        },
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "fe1b3bbb17866c56ac5eeaaa569f0a707417f7d9553a0105f8c76777bd0455bb"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "orchard",
+      "shape": [
+        0
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "orchard",
+      "shape": [
+        0
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "orchard",
+      "shape": [
+        3,
+        0,
+        2
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "orchard",
+      "shape": [
+        3,
+        0,
+        2
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "orchard",
+      "shape": [
+        257
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "0ea30ac016d2a5823a900e177092fba4c4fdfa9d03facc49bdb1352e59540296"
+        },
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "d5137ea17b914a34f2a4cb2b7c98f94993c505b9ed655ac89cd12e6a96aa9283"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "0ea30ac016d2a5823a900e177092fba4c4fdfa9d03facc49bdb1352e59540296"
+        },
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "d5137ea17b914a34f2a4cb2b7c98f94993c505b9ed655ac89cd12e6a96aa9283"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "orchard",
+      "shape": [
+        257
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "0ea30ac016d2a5823a900e177092fba4c4fdfa9d03facc49bdb1352e59540296"
+        },
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "d5137ea17b914a34f2a4cb2b7c98f94993c505b9ed655ac89cd12e6a96aa9283"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "0ea30ac016d2a5823a900e177092fba4c4fdfa9d03facc49bdb1352e59540296"
+        },
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "d5137ea17b914a34f2a4cb2b7c98f94993c505b9ed655ac89cd12e6a96aa9283"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "orchard",
+      "shape": [
+        17,
+        31
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "4a66e95270cd985631be429c9fff92190c7c3d16fdf0999085668e41e5c138b4"
+        },
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5621e09342c10010cbdc97831b8fc7d3020249c5578bd1eb52132cd02b41b512"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "4a66e95270cd985631be429c9fff92190c7c3d16fdf0999085668e41e5c138b4"
+        },
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5621e09342c10010cbdc97831b8fc7d3020249c5578bd1eb52132cd02b41b512"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "orchard",
+      "shape": [
+        17,
+        31
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "4a66e95270cd985631be429c9fff92190c7c3d16fdf0999085668e41e5c138b4"
+        },
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5621e09342c10010cbdc97831b8fc7d3020249c5578bd1eb52132cd02b41b512"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "4a66e95270cd985631be429c9fff92190c7c3d16fdf0999085668e41e5c138b4"
+        },
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5621e09342c10010cbdc97831b8fc7d3020249c5578bd1eb52132cd02b41b512"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "orchard",
+      "shape": [
+        65539
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "1c904ef8f46165042ab092d71bf8bcf577af14a95313d3bf8e5603faa7219254"
+        },
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "9b6f97f912f8e22d5356606e8b460ebd45f09c208d1996ed422b7aa5de2b4072"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "1c904ef8f46165042ab092d71bf8bcf577af14a95313d3bf8e5603faa7219254"
+        },
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "9b6f97f912f8e22d5356606e8b460ebd45f09c208d1996ed422b7aa5de2b4072"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "orchard",
+      "shape": [
+        65539
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "1c904ef8f46165042ab092d71bf8bcf577af14a95313d3bf8e5603faa7219254"
+        },
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "9b6f97f912f8e22d5356606e8b460ebd45f09c208d1996ed422b7aa5de2b4072"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "1c904ef8f46165042ab092d71bf8bcf577af14a95313d3bf8e5603faa7219254"
+        },
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "9b6f97f912f8e22d5356606e8b460ebd45f09c208d1996ed422b7aa5de2b4072"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "orchard",
+      "shape": [
+        3,
+        10,
+        8
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5cbe29ef479cc55dba8743ccb4f199d7dacb39351e92f941bdc0074f94f7c273"
+        },
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "4fdde4c5b53422370b264911db0b7bb5a9ee86d9acc6fccb5877c395697c0b23"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5cbe29ef479cc55dba8743ccb4f199d7dacb39351e92f941bdc0074f94f7c273"
+        },
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "4fdde4c5b53422370b264911db0b7bb5a9ee86d9acc6fccb5877c395697c0b23"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "orchard",
+      "shape": [
+        3,
+        10,
+        8
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5cbe29ef479cc55dba8743ccb4f199d7dacb39351e92f941bdc0074f94f7c273"
+        },
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "4fdde4c5b53422370b264911db0b7bb5a9ee86d9acc6fccb5877c395697c0b23"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5cbe29ef479cc55dba8743ccb4f199d7dacb39351e92f941bdc0074f94f7c273"
+        },
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "4fdde4c5b53422370b264911db0b7bb5a9ee86d9acc6fccb5877c395697c0b23"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "orchard",
+      "shape": [
+        9,
+        2,
+        12
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "308279349195756beffeb1c5b72476e39184731ccc03581faad5e5db4b66f3e7"
+        },
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e95d78dcb2f95aa7eb2664d87392c1141cc96b3db428fdb524114f941cd66f97"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "308279349195756beffeb1c5b72476e39184731ccc03581faad5e5db4b66f3e7"
+        },
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e95d78dcb2f95aa7eb2664d87392c1141cc96b3db428fdb524114f941cd66f97"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "orchard",
+      "shape": [
+        9,
+        2,
+        12
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "308279349195756beffeb1c5b72476e39184731ccc03581faad5e5db4b66f3e7"
+        },
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e95d78dcb2f95aa7eb2664d87392c1141cc96b3db428fdb524114f941cd66f97"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "308279349195756beffeb1c5b72476e39184731ccc03581faad5e5db4b66f3e7"
+        },
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e95d78dcb2f95aa7eb2664d87392c1141cc96b3db428fdb524114f941cd66f97"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "orchard",
+      "shape": [
+        11,
+        8,
+        1
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "f47e4f46e052915750ac9bff01a387b6f11bd295992a9d9d890c969e1d8fe92b"
+        },
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "89ed590981235a620edfb472db92ea4fcf149351ac90577135c1dc8a53a9f294"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "f47e4f46e052915750ac9bff01a387b6f11bd295992a9d9d890c969e1d8fe92b"
+        },
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "89ed590981235a620edfb472db92ea4fcf149351ac90577135c1dc8a53a9f294"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "orchard",
+      "shape": [
+        11,
+        8,
+        1
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "f47e4f46e052915750ac9bff01a387b6f11bd295992a9d9d890c969e1d8fe92b"
+        },
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "89ed590981235a620edfb472db92ea4fcf149351ac90577135c1dc8a53a9f294"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "f47e4f46e052915750ac9bff01a387b6f11bd295992a9d9d890c969e1d8fe92b"
+        },
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "89ed590981235a620edfb472db92ea4fcf149351ac90577135c1dc8a53a9f294"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "estuary",
+      "shape": [],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "6ca483793f8a69976b84ef9bf342c2465324580493324f54e3c26edfcbfee329"
+        },
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "cb8d9f8612641d588d3ed6ad4b372e0adae34628de719a3037bd727a5e0a61a5"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "6ca483793f8a69976b84ef9bf342c2465324580493324f54e3c26edfcbfee329"
+        },
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "cb8d9f8612641d588d3ed6ad4b372e0adae34628de719a3037bd727a5e0a61a5"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "estuary",
+      "shape": [],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "6ca483793f8a69976b84ef9bf342c2465324580493324f54e3c26edfcbfee329"
+        },
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "cb8d9f8612641d588d3ed6ad4b372e0adae34628de719a3037bd727a5e0a61a5"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "6ca483793f8a69976b84ef9bf342c2465324580493324f54e3c26edfcbfee329"
+        },
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "cb8d9f8612641d588d3ed6ad4b372e0adae34628de719a3037bd727a5e0a61a5"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "estuary",
+      "shape": [
+        0
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "estuary",
+      "shape": [
+        0
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            0
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "estuary",
+      "shape": [
+        3,
+        0,
+        2
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "estuary",
+      "shape": [
+        3,
+        0,
+        2
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "shape": [
+            3,
+            0,
+            2
+          ],
+          "stride": [
+            2,
+            2,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "estuary",
+      "shape": [
+        257
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "fa60e118780a8b486601eff5791daa9dd339efca90470c12a739b91775db1fa9"
+        },
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "d29ef0f083b4324605c4e01b41681f911d59eaa87c6b6d12804112f08b6f145c"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "fa60e118780a8b486601eff5791daa9dd339efca90470c12a739b91775db1fa9"
+        },
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "d29ef0f083b4324605c4e01b41681f911d59eaa87c6b6d12804112f08b6f145c"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "estuary",
+      "shape": [
+        257
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "fa60e118780a8b486601eff5791daa9dd339efca90470c12a739b91775db1fa9"
+        },
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "d29ef0f083b4324605c4e01b41681f911d59eaa87c6b6d12804112f08b6f145c"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "fa60e118780a8b486601eff5791daa9dd339efca90470c12a739b91775db1fa9"
+        },
+        {
+          "shape": [
+            257
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "d29ef0f083b4324605c4e01b41681f911d59eaa87c6b6d12804112f08b6f145c"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "estuary",
+      "shape": [
+        17,
+        31
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "cfd5f9ee34e06db63ca01df195f5e1359ddbaa619739169d8d043b18bd10b844"
+        },
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "88ce96864446a5c4f9e7238b7ba324edc20669d3fde798448414817127a713d0"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "cfd5f9ee34e06db63ca01df195f5e1359ddbaa619739169d8d043b18bd10b844"
+        },
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "88ce96864446a5c4f9e7238b7ba324edc20669d3fde798448414817127a713d0"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "estuary",
+      "shape": [
+        17,
+        31
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "cfd5f9ee34e06db63ca01df195f5e1359ddbaa619739169d8d043b18bd10b844"
+        },
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "88ce96864446a5c4f9e7238b7ba324edc20669d3fde798448414817127a713d0"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "cfd5f9ee34e06db63ca01df195f5e1359ddbaa619739169d8d043b18bd10b844"
+        },
+        {
+          "shape": [
+            17,
+            31
+          ],
+          "stride": [
+            31,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "88ce96864446a5c4f9e7238b7ba324edc20669d3fde798448414817127a713d0"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "estuary",
+      "shape": [
+        65539
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "285e5bd9a7c7185731f3cebce72d757edad6b05f15a2d9c26995e51044cb6a9c"
+        },
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5a96130c0891b715b3158364861b09549d6a438cd7a8c32423231de896803491"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "285e5bd9a7c7185731f3cebce72d757edad6b05f15a2d9c26995e51044cb6a9c"
+        },
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5a96130c0891b715b3158364861b09549d6a438cd7a8c32423231de896803491"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "estuary",
+      "shape": [
+        65539
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "285e5bd9a7c7185731f3cebce72d757edad6b05f15a2d9c26995e51044cb6a9c"
+        },
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5a96130c0891b715b3158364861b09549d6a438cd7a8c32423231de896803491"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "285e5bd9a7c7185731f3cebce72d757edad6b05f15a2d9c26995e51044cb6a9c"
+        },
+        {
+          "shape": [
+            65539
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5a96130c0891b715b3158364861b09549d6a438cd7a8c32423231de896803491"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "estuary",
+      "shape": [
+        3,
+        10,
+        8
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e7da9fcbeed5f791d9b8cf1763763cca9b8d756455f7c5ad3f110ef629f898eb"
+        },
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5e6fa141aaa919d6ca7441e1d3f581169b919a18f4c7b464912cb58a650b097d"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e7da9fcbeed5f791d9b8cf1763763cca9b8d756455f7c5ad3f110ef629f898eb"
+        },
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5e6fa141aaa919d6ca7441e1d3f581169b919a18f4c7b464912cb58a650b097d"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "estuary",
+      "shape": [
+        3,
+        10,
+        8
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e7da9fcbeed5f791d9b8cf1763763cca9b8d756455f7c5ad3f110ef629f898eb"
+        },
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5e6fa141aaa919d6ca7441e1d3f581169b919a18f4c7b464912cb58a650b097d"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "e7da9fcbeed5f791d9b8cf1763763cca9b8d756455f7c5ad3f110ef629f898eb"
+        },
+        {
+          "shape": [
+            3,
+            10,
+            8
+          ],
+          "stride": [
+            80,
+            8,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5e6fa141aaa919d6ca7441e1d3f581169b919a18f4c7b464912cb58a650b097d"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "estuary",
+      "shape": [
+        9,
+        2,
+        12
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "659f39881d21de9c63210998618df35cafa04a00b3dd5ea7a8aaf0029c4caecb"
+        },
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "ff114f9588f0999e63a0c06bc218c6112fdc63511a95afd123939dfbaa08b2d0"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "659f39881d21de9c63210998618df35cafa04a00b3dd5ea7a8aaf0029c4caecb"
+        },
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "ff114f9588f0999e63a0c06bc218c6112fdc63511a95afd123939dfbaa08b2d0"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "estuary",
+      "shape": [
+        9,
+        2,
+        12
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "659f39881d21de9c63210998618df35cafa04a00b3dd5ea7a8aaf0029c4caecb"
+        },
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "ff114f9588f0999e63a0c06bc218c6112fdc63511a95afd123939dfbaa08b2d0"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "659f39881d21de9c63210998618df35cafa04a00b3dd5ea7a8aaf0029c4caecb"
+        },
+        {
+          "shape": [
+            9,
+            2,
+            12
+          ],
+          "stride": [
+            24,
+            12,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "ff114f9588f0999e63a0c06bc218c6112fdc63511a95afd123939dfbaa08b2d0"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "estuary",
+      "shape": [
+        11,
+        8,
+        1
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "84f015fe8a78674337a8d903f752213e17e62e93f573cdf4df31c3cf9d5a0756"
+        },
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "62339c3d93036fa94ea4a75d005c1ae899727f4fa6114076597d1ab90e869c93"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "84f015fe8a78674337a8d903f752213e17e62e93f573cdf4df31c3cf9d5a0756"
+        },
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "62339c3d93036fa94ea4a75d005c1ae899727f4fa6114076597d1ab90e869c93"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "estuary",
+      "shape": [
+        11,
+        8,
+        1
+      ],
+      "kind": "offset",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "84f015fe8a78674337a8d903f752213e17e62e93f573cdf4df31c3cf9d5a0756"
+        },
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "62339c3d93036fa94ea4a75d005c1ae899727f4fa6114076597d1ab90e869c93"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "84f015fe8a78674337a8d903f752213e17e62e93f573cdf4df31c3cf9d5a0756"
+        },
+        {
+          "shape": [
+            11,
+            8,
+            1
+          ],
+          "stride": [
+            8,
+            1,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "62339c3d93036fa94ea4a75d005c1ae899727f4fa6114076597d1ab90e869c93"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "with_global",
+      "shape": [
+        17
+      ],
+      "kind": "capture",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            17
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "14ea76fb5ba84dd370147c6d018a2da9611606f1abb38eb107ea91f24f42da17"
+        },
+        {
+          "shape": [
+            17
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "12bf61f731f0eeeb99fe56f829e410c668b6bd7fddb2c353ebcfefd889e8c8ad"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            17
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "14ea76fb5ba84dd370147c6d018a2da9611606f1abb38eb107ea91f24f42da17"
+        },
+        {
+          "shape": [
+            17
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "12bf61f731f0eeeb99fe56f829e410c668b6bd7fddb2c353ebcfefd889e8c8ad"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "with_global",
+      "shape": [
+        17
+      ],
+      "kind": "capture",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            17
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "14ea76fb5ba84dd370147c6d018a2da9611606f1abb38eb107ea91f24f42da17"
+        },
+        {
+          "shape": [
+            17
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "12bf61f731f0eeeb99fe56f829e410c668b6bd7fddb2c353ebcfefd889e8c8ad"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            17
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "14ea76fb5ba84dd370147c6d018a2da9611606f1abb38eb107ea91f24f42da17"
+        },
+        {
+          "shape": [
+            17
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "12bf61f731f0eeeb99fe56f829e410c668b6bd7fddb2c353ebcfefd889e8c8ad"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "reject_neg",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "plain",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "968aceb185135a075f83777fec958c14584a49bea1f82dfe74541de51e2718d6"
+        },
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "fdcd42c5bb692e0f5cabef398a234b780677f37697fbab1a78c3569127362c26"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "968aceb185135a075f83777fec958c14584a49bea1f82dfe74541de51e2718d6"
+        },
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "fdcd42c5bb692e0f5cabef398a234b780677f37697fbab1a78c3569127362c26"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "reject_neg",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "plain",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "968aceb185135a075f83777fec958c14584a49bea1f82dfe74541de51e2718d6"
+        },
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "fdcd42c5bb692e0f5cabef398a234b780677f37697fbab1a78c3569127362c26"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "968aceb185135a075f83777fec958c14584a49bea1f82dfe74541de51e2718d6"
+        },
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "fdcd42c5bb692e0f5cabef398a234b780677f37697fbab1a78c3569127362c26"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "reject_detach",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "plain",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 5,
+          "requires_grad": false,
+          "sha256": "72d6b8559e56c481633cab5ef0fec4d67018dd4a0c5ca1bfa7cba7fdf0d38e80"
+        },
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 5,
+          "requires_grad": false,
+          "sha256": "bdcb516edd7b2db0c4e3b91e069a064884faaebe68b27ad9f6d21b70579f6856"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace CUDA unary operation 'detach' is unsupported"
+    },
+    {
+      "program": "reject_detach",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "plain",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 5,
+          "requires_grad": false,
+          "sha256": "72d6b8559e56c481633cab5ef0fec4d67018dd4a0c5ca1bfa7cba7fdf0d38e80"
+        },
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 5,
+          "requires_grad": false,
+          "sha256": "bdcb516edd7b2db0c4e3b91e069a064884faaebe68b27ad9f6d21b70579f6856"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace CUDA unary operation 'detach' is unsupported"
+    },
+    {
+      "program": "reject_float",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "plain",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 5,
+          "requires_grad": false,
+          "sha256": "72d6b8559e56c481633cab5ef0fec4d67018dd4a0c5ca1bfa7cba7fdf0d38e80"
+        },
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 5,
+          "requires_grad": false,
+          "sha256": "bdcb516edd7b2db0c4e3b91e069a064884faaebe68b27ad9f6d21b70579f6856"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace CUDA unary operation 'float' is unsupported"
+    },
+    {
+      "program": "reject_float",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "plain",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 5,
+          "requires_grad": false,
+          "sha256": "72d6b8559e56c481633cab5ef0fec4d67018dd4a0c5ca1bfa7cba7fdf0d38e80"
+        },
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 5,
+          "requires_grad": false,
+          "sha256": "bdcb516edd7b2db0c4e3b91e069a064884faaebe68b27ad9f6d21b70579f6856"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace CUDA unary operation 'float' is unsupported"
+    },
+    {
+      "program": "reject_multiply",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "plain",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "a346723f50b589e0b13360efe0226e0cac8a88f7b1b050eb71f48f1b5c85e6c1"
+        },
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "853e3686118003cf8a1ff05075d75dac7715c42ea37d208617b8de46cae07f55"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace bytecode lowering does not support binary operator '*' in 'reject_multiply': BINARY_OP"
+    },
+    {
+      "program": "reject_multiply",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "plain",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "a346723f50b589e0b13360efe0226e0cac8a88f7b1b050eb71f48f1b5c85e6c1"
+        },
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "853e3686118003cf8a1ff05075d75dac7715c42ea37d208617b8de46cae07f55"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace bytecode lowering does not support binary operator '*' in 'reject_multiply': BINARY_OP"
+    },
+    {
+      "program": "reject_reduce",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "plain",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "84b0af01eb9009011fd09bcd3547d8c080cf23fb84bc8cc847a822f2f0686ad8"
+        },
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "92b022723214fa3f4c87b7c6d082ec48f01ef7b3babd33d047ceae5a6387603f"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace does not support Tensor.sum; only Tensor.neg, Tensor.negative, Tensor.abs, Tensor.absolute, Tensor.relu, Tensor.square, Tensor.detach, Tensor.float, Tensor.__add__, Tensor.add are implemented"
+    },
+    {
+      "program": "reject_reduce",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "plain",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "84b0af01eb9009011fd09bcd3547d8c080cf23fb84bc8cc847a822f2f0686ad8"
+        },
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "92b022723214fa3f4c87b7c6d082ec48f01ef7b3babd33d047ceae5a6387603f"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace does not support Tensor.sum; only Tensor.neg, Tensor.negative, Tensor.abs, Tensor.absolute, Tensor.relu, Tensor.square, Tensor.detach, Tensor.float, Tensor.__add__, Tensor.add are implemented"
+    },
+    {
+      "program": "reject_scalar",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "plain",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "45b4e1fca7f48fd24a9a745f75c3fe40a1a022bd1a35eea5f7b6f1d25a6d2561"
+        },
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "3f60c5d12e0303edc71358eb9dc75fd2d1ad4cb22684634b8e37f47234d75a09"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace bytecode lowering does not support non-Tensor right operand in 'reject_scalar': BINARY_OP"
+    },
+    {
+      "program": "reject_scalar",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "plain",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "45b4e1fca7f48fd24a9a745f75c3fe40a1a022bd1a35eea5f7b6f1d25a6d2561"
+        },
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "3f60c5d12e0303edc71358eb9dc75fd2d1ad4cb22684634b8e37f47234d75a09"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace bytecode lowering does not support non-Tensor right operand in 'reject_scalar': BINARY_OP"
+    },
+    {
+      "program": "reject_keyword",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "plain",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "67a905008d8db1cc5bbba92e85dbaaf15e4bee80605d90c51978141966e029e9"
+        },
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "b56917c8368a66150b1d84d1d5a92de23b4b86b4a56170004ab9ae576849cc1f"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace bytecode lowering does not support keyword arguments in 'reject_keyword': KW_NAMES"
+    },
+    {
+      "program": "reject_keyword",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "plain",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "67a905008d8db1cc5bbba92e85dbaaf15e4bee80605d90c51978141966e029e9"
+        },
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "b56917c8368a66150b1d84d1d5a92de23b4b86b4a56170004ab9ae576849cc1f"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace bytecode lowering does not support keyword arguments in 'reject_keyword': KW_NAMES"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "transpose",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            4,
+            3
+          ],
+          "stride": [
+            1,
+            4
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "ea30b46c03fc3cf59daf09da26ff942afc1ad49c98ea3fbb6db7950c6727d8fc"
+        },
+        {
+          "shape": [
+            4,
+            3
+          ],
+          "stride": [
+            1,
+            4
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "da87cd62c926363ffe9b4f4df99ca0b503125d9ec74b6d00e8f74d67ea639b44"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace CUDA requires contiguous layout"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "transpose",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            4,
+            3
+          ],
+          "stride": [
+            1,
+            4
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "ea30b46c03fc3cf59daf09da26ff942afc1ad49c98ea3fbb6db7950c6727d8fc"
+        },
+        {
+          "shape": [
+            4,
+            3
+          ],
+          "stride": [
+            1,
+            4
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "da87cd62c926363ffe9b4f4df99ca0b503125d9ec74b6d00e8f74d67ea639b44"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace CUDA requires contiguous layout"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "broadcast",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "fe7dbff25659f7050acd7553d927a23096aa09017c2cac342e59ebf02897f9d0"
+        },
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "0c37b37527aae3e69824cee8494d1e693ebdbbbad374158472b9117b373bf960"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace CUDA addition requires the same shape; broadcasting is unsupported"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "broadcast",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "fe7dbff25659f7050acd7553d927a23096aa09017c2cac342e59ebf02897f9d0"
+        },
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "0c37b37527aae3e69824cee8494d1e693ebdbbbad374158472b9117b373bf960"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace CUDA addition requires the same shape; broadcasting is unsupported"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "gradient",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": true,
+          "sha256": "67a905008d8db1cc5bbba92e85dbaaf15e4bee80605d90c51978141966e029e9"
+        },
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": true,
+          "sha256": "b56917c8368a66150b1d84d1d5a92de23b4b86b4a56170004ab9ae576849cc1f"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "input_construction",
+      "native_error": "NotImplementedError: to(): unsupported CUDA transfer (requires_grad is true)"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "gradient",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": true,
+          "sha256": "67a905008d8db1cc5bbba92e85dbaaf15e4bee80605d90c51978141966e029e9"
+        },
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": true,
+          "sha256": "b56917c8368a66150b1d84d1d5a92de23b4b86b4a56170004ab9ae576849cc1f"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "input_construction",
+      "native_error": "NotImplementedError: to(): unsupported CUDA transfer (requires_grad is true)"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "float64",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float64",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "eb9b20c9d14c6eccde243f77b581980078db064fefb3db93607d14058ab205b7"
+        },
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float64",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "9c6a8380fdad6b07875c0762293bc198d3728970cb2f5cfcc5f3c12fa2991b53"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "input_construction",
+      "native_error": "AttributeError: module 'torch_rs' has no attribute 'float64'"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "float64",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float64",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "eb9b20c9d14c6eccde243f77b581980078db064fefb3db93607d14058ab205b7"
+        },
+        {
+          "shape": [
+            3,
+            4
+          ],
+          "stride": [
+            4,
+            1
+          ],
+          "dtype": "torch.float64",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "9c6a8380fdad6b07875c0762293bc198d3728970cb2f5cfcc5f3c12fa2991b53"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "input_construction",
+      "native_error": "AttributeError: module 'torch_rs' has no attribute 'float64'"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "mixed_cpu",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": false,
+      "reference_eligible": false,
+      "reference_error": "RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!",
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace CUDA inputs and captures require matching devices"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        3,
+        4
+      ],
+      "kind": "mixed_cpu",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": false,
+      "reference_eligible": false,
+      "reference_error": "RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!",
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace CUDA inputs and captures require matching devices"
+    },
+    {
+      "program": "silver",
+      "shape": [],
+      "kind": "mixed_cpu",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "0f86a322fe61262ef4283bc2524516a42e5dbf25bb8a8a2759c007c4138de0f9"
+        },
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "78909e66bb38dcc1f28e49488f2a67edf3c700219c97d3ebb053ee60463fb38a"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace CUDA inputs and captures require matching devices"
+    },
+    {
+      "program": "silver",
+      "shape": [],
+      "kind": "mixed_cpu",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": false,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "0f86a322fe61262ef4283bc2524516a42e5dbf25bb8a8a2759c007c4138de0f9"
+        },
+        {
+          "shape": [],
+          "stride": [],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "78909e66bb38dcc1f28e49488f2a67edf3c700219c97d3ebb053ee60463fb38a"
+        }
+      ],
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace CUDA inputs and captures require matching devices"
+    }
+  ]
+}
