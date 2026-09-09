@@ -551,6 +551,7 @@ def _dynamic_metadata_key(input_metadatas):
             input_metadata.dtype,
             input_metadata.device,
             input_metadata.requires_grad,
+            input_metadata.storage_offset,
         )
         for input_metadata in input_metadatas
     )
@@ -577,6 +578,14 @@ def prepare_compile_cache_request(
         descriptor,
         input_metadatas,
     )
+    all_metadatas = (*input_metadatas, *(d.metadata for d in global_tensor_dependencies))
+    if any(m.device.type == "cuda" for m in all_metadatas):
+        for metadata in all_metadatas:
+            _trace._validate_cuda_metadata(metadata)
+            if metadata.device != all_metadatas[0].device:
+                raise _trace.CompileTraceUnsupportedError(
+                    "torch.compile trace CUDA inputs and captures require matching devices"
+                )
     metadata_key = (
         _dynamic_metadata_key(input_metadatas) if dynamic else input_metadatas
     )
@@ -1277,6 +1286,7 @@ def lower_compile_graph(program, input_metadatas, *, name=None, compile_request=
             dtype=input_metadata.dtype,
             device=input_metadata.device,
             requires_grad=input_metadata.requires_grad,
+            storage_offset=input_metadata.storage_offset,
         )
     global_tensor_proxies = {}
     for dependency in compile_request.global_tensor_dependencies:

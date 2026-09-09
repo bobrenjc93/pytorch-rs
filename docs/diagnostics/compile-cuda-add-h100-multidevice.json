@@ -1,0 +1,340 @@
+{
+  "schema": "marker_free_cuda_add_diagnostic_v1",
+  "purpose": "correctness only; no coverage or performance score",
+  "seed": 19092675,
+  "base_commit": "278c9b1eb90f6d4d2bcdc518572c2d3992b41261",
+  "source_sha256": {
+    "python/torch_rs/__init__.py": "598f15319cd8e5ded974bb7bc04ea59a49ef705ea65498008bbcd3e50657afed",
+    "python/torch_rs/_compile_trace.py": "20a27e2dbd450d00e74c640d0d3adce175b6f82e63177c365d3e211faa3ca245",
+    "python/torch_rs/_compile_bytecode.py": "462ac09b9d8f01e8673a5d6a3b547f6d7093274c0906d47797a6ae472479ab9e",
+    "src/python.rs": "8dd5f3e3234204045fd607ada2666742aa151e58ef6ea85a9563741e5b482bd3",
+    "src/cuda/add.ptx": "4575664439d826d19ba9ebe23fbcca53280c07d39371b5e19aea5a306a48e33e",
+    "src/cuda/pointwise.rs": "80a07d2a0ae3e5bdf005d081c02bd8547fb50bf444fa54fc2c573900320702b3",
+    "scripts/diagnose_compile_cuda_add.py": "5d4f0ae7b73a5439229b01b2108a6f6d7bb710c7ecf66f9746f5606d619ee02b",
+    "tests/test_compile_cuda_boundary.py": "a899fdc8cdbd83e618622b1bcfa7b3ab2cbb1741d08ab56c44cdca9a48bb28d8"
+  },
+  "native_extension_sha256": "34f37cfdc33535703cb8dbf9883be7e6fc7d16af0206f850546b136dd8f42cde",
+  "environment": {
+    "python": "3.12.13",
+    "torch": "2.13.0+cu130",
+    "torch_cuda": "13.0",
+    "cuda_visible_devices": "0,1",
+    "gpus": "0, NVIDIA H100, 580.82.07, 9.0\n1, NVIDIA H100, 580.82.07, 9.0\n2, NVIDIA H100, 580.82.07, 9.0\n3, NVIDIA H100, 580.82.07, 9.0\n4, NVIDIA H100, 580.82.07, 9.0\n5, NVIDIA H100, 580.82.07, 9.0\n6, NVIDIA H100, 580.82.07, 9.0\n7, NVIDIA H100, 580.82.07, 9.0",
+    "native_runtime_library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_2675ceb9/.venv/lib64/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "native_runtime_version": 13000,
+    "nvcc_available": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0",
+    "native_kernel_compiler": "NVIDIA driver JIT of embedded PTX 6.0/sm_50; nvcc unused",
+    "rust": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+    "build": "maturin --release --locked; abi3-py310; thin LTO; codegen-units=1"
+  },
+  "summary": {
+    "cases": 6,
+    "reference_eligible": 4,
+    "native_pass": 4,
+    "native_unsupported": 2
+  },
+  "cases": [
+    {
+      "program": "silver",
+      "shape": [
+        19
+      ],
+      "kind": "ordinal1",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "6035fa7c1d095dec25f96b709d4102e6292520a8acc783f7b832c58f0ab20191"
+        },
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "19a6300f5d867119cd817ae99dd42e838b3d99752c6170ede2e121e851a8cbb7"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "6035fa7c1d095dec25f96b709d4102e6292520a8acc783f7b832c58f0ab20191"
+        },
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "19a6300f5d867119cd817ae99dd42e838b3d99752c6170ede2e121e851a8cbb7"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        19
+      ],
+      "kind": "ordinal1",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "6035fa7c1d095dec25f96b709d4102e6292520a8acc783f7b832c58f0ab20191"
+        },
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "19a6300f5d867119cd817ae99dd42e838b3d99752c6170ede2e121e851a8cbb7"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "6035fa7c1d095dec25f96b709d4102e6292520a8acc783f7b832c58f0ab20191"
+        },
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "19a6300f5d867119cd817ae99dd42e838b3d99752c6170ede2e121e851a8cbb7"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "with_global",
+      "shape": [
+        19
+      ],
+      "kind": "capture",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5c4ed8421d43a36113902efa24bc8c096c93a530643fac9457037400e572ee5c"
+        },
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "caec1e8a170be5b5fbcd7f33c2d3f2101cbb0d37ce993bf609fd0f9545376de2"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5c4ed8421d43a36113902efa24bc8c096c93a530643fac9457037400e572ee5c"
+        },
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "caec1e8a170be5b5fbcd7f33c2d3f2101cbb0d37ce993bf609fd0f9545376de2"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "with_global",
+      "shape": [
+        19
+      ],
+      "kind": "capture",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5c4ed8421d43a36113902efa24bc8c096c93a530643fac9457037400e572ee5c"
+        },
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "caec1e8a170be5b5fbcd7f33c2d3f2101cbb0d37ce993bf609fd0f9545376de2"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5c4ed8421d43a36113902efa24bc8c096c93a530643fac9457037400e572ee5c"
+        },
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "caec1e8a170be5b5fbcd7f33c2d3f2101cbb0d37ce993bf609fd0f9545376de2"
+        }
+      ],
+      "native_outcome": "pass"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        19
+      ],
+      "kind": "mixed_ordinals",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": false,
+      "reference_eligible": false,
+      "reference_error": "RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:1 and cuda:0!",
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace CUDA inputs and captures require matching devices"
+    },
+    {
+      "program": "silver",
+      "shape": [
+        19
+      ],
+      "kind": "mixed_ordinals",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": false,
+      "reference_eligible": false,
+      "reference_error": "RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:1 and cuda:0!",
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace CUDA inputs and captures require matching devices"
+    }
+  ]
+}

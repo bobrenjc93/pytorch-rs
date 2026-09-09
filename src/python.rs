@@ -9538,13 +9538,12 @@ fn _backward_leaf_roots(roots: &Bound<'_, PyAny>) -> PyResult<()> {
     CoreTensor::backward_leaf_roots(&native_roots).map_err(|error| tensor_error(&error))
 }
 
-// The public eager compiler is CPU-only. Check the real storage device before
-// constructing its CPU metadata (including live global captures), and also at
-// execution entrypoints so direct private calls cannot bypass that boundary.
+// CUDA tracing supports addition only. Keep unary execution guarded even for
+// alias/identity operations that the public eager Tensor API can perform.
 fn require_compile_cpu_tensor(tensor: &CoreTensor) -> PyResult<()> {
     if !tensor.device().is_cpu() {
         return Err(PyNotImplementedError::new_err(
-            "torch.compile eager tracing only supports CPU tensors; CUDA inputs and captures are unsupported",
+            "torch.compile eager unary tracing only supports CPU tensors; CUDA unary operations are unsupported",
         ));
     }
     Ok(())
@@ -9564,10 +9563,17 @@ fn compile_trace_tensor_metadata(py: Python<'_>, input: &Bound<'_, PyAny>) -> Py
     }
 
     let tensor = input.cast::<PyTensor>()?.try_borrow()?;
-    require_compile_cpu_tensor(&tensor.inner)?;
     let shape = PyTuple::new(py, tensor.inner.shape().iter().copied())?;
     let stride = PyTuple::new(py, tensor.inner.stride().iter().copied())?;
-    (shape, stride, tensor.inner.requires_grad()).into_py_any(py)
+    (
+        shape,
+        stride,
+        tensor.inner.requires_grad(),
+        format!("torch.{}", tensor.inner.dtype()),
+        tensor.inner.device().to_string(),
+        tensor.inner.storage_offset(),
+    )
+        .into_py_any(py)
 }
 
 #[pyfunction(
@@ -9642,8 +9648,8 @@ fn compile_trace_binary(
 
     let left = left.cast::<PyTensor>()?.try_borrow()?;
     let right = right.cast::<PyTensor>()?.try_borrow()?;
-    require_compile_cpu_tensor(&left.inner)?;
-    require_compile_cpu_tensor(&right.inner)?;
+    // CoreTensor::add validates device, dtype, shape, layout and autograd before
+    // allocating or launching CUDA work. No other CUDA target is admitted.
     let output = match target {
         "add" => left.inner.add(&right.inner),
         _ => {
