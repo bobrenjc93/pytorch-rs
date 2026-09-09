@@ -1,0 +1,7 @@
+Using CPython 3.12.14 interpreter at: .venv/bin/python
+Creating virtual environment at: target/baseline-env
+Activate with: source target/baseline-env/bin/activate
+Using Python 3.12.14 environment at: target/baseline-env
+Resolved 1 package in 2ms
+Installed 1 package in 38ms
+ + torch-rs==0.1.0 (from file:///data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6387d2b8/target/baseline-wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl)

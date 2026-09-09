@@ -9552,8 +9552,8 @@ fn _backward_leaf_roots(roots: &Bound<'_, PyAny>) -> PyResult<()> {
     CoreTensor::backward_leaf_roots(&native_roots).map_err(|error| tensor_error(&error))
 }
 
-// CUDA tracing supports addition only. Keep unary execution guarded even for
-// alias/identity operations that the public eager Tensor API can perform.
+// CUDA tracing supports addition and negation. Keep other unary execution
+// guarded even for alias/identity operations supported by public eager APIs.
 fn require_compile_cpu_tensor(tensor: &CoreTensor) -> PyResult<()> {
     if !tensor.device().is_cpu() {
         return Err(PyNotImplementedError::new_err(
@@ -9613,7 +9613,12 @@ fn compile_trace_unary(input: &Bound<'_, PyAny>, target: &str) -> PyResult<Py<Py
     }
 
     let tensor = input.cast::<PyTensor>()?;
-    require_compile_cpu_tensor(&tensor.try_borrow()?.inner)?;
+    // CoreTensor::negate validates CUDA layout/dtype/autograd and reuses the
+    // native kernel, fresh allocation and device/completion guards. Captured
+    // execution remains unfused; all other unary targets stay CPU-only.
+    if target != "neg" {
+        require_compile_cpu_tensor(&tensor.try_borrow()?.inner)?;
+    }
     if target == "float" {
         return Ok(tensor.clone().unbind());
     }

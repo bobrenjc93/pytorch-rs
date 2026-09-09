@@ -1,0 +1,4 @@
+PASS: stable production fingerprint and source extension; installed compiler sources match in both wheel environments.
+PASS: frozen evaluator, matrix, definitions, and benchmark hashes unchanged.
+PASS: CUDA math source stable, 2/6 fixed cases; performance 4/4 fixed shapes.
+PASS: unchanged addition diagnostic differs only in the two expected negation acceptances (fullgraph true/false).

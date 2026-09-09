@@ -119,7 +119,7 @@ class CudaNegTests(Comparison, unittest.TestCase):
         self.assertEqual(result[-3:].cpu().tolist(), [-1.25] * 3)
         self.assertEqual(replacement[-3:].cpu().tolist(), [7.5] * 3)
 
-    def test_unsupported_layout_autograd_and_compilation(self):
+    def test_layout_autograd_rejection_and_compiled_negation(self):
         base = native.ones((3, 5)).to("cuda:0")
         for x in (base.t(), base[:, 1:4], base.select(1, 2)):
             for call in FORMS:
@@ -136,8 +136,7 @@ class CudaNegTests(Comparison, unittest.TestCase):
             self.assertFalse(x.requires_grad)
             for fullgraph in (True, False):
                 compiled = native.compile(lambda a: -a, backend="eager", fullgraph=fullgraph)
-                with self.assertRaisesRegex(NotImplementedError, "CUDA unary operation.*unsupported"):
-                    compiled(x)
+                self.compare(compiled(x), -torch.ones(shape, device="cuda:0"))
 
     def test_no_pytorch_forwarding(self):
         script = '''

@@ -184,7 +184,7 @@ class CompileCudaBoundaryTests(Comparison, unittest.TestCase):
     def test_unsupported_fresh_and_cpu_warmed_leave_cache_unchanged(self):
         cpu = native.ones((3, 4))
         cuda = cpu.to("cuda:0")
-        unary = (lambda x: -x, lambda x: x.abs(), lambda x: x.relu(),
+        unary = (lambda x: x.abs(), lambda x: x.relu(),
                  lambda x: x.square(), lambda x: x.detach(), lambda x: x.float())
         for program in unary:
             for warmed in (False, True):
@@ -256,7 +256,10 @@ class CompileCudaBoundaryTests(Comparison, unittest.TestCase):
         self.assertEqual(backend._compile_trace_tensor_metadata(cuda),
                          ((3,), (1,), False, "torch.float32", "cuda:0", 0))
         self.assertEqual(backend._compile_trace_binary(cuda, cuda, "add").cpu().tolist(), [2., 4., 6.])
-        for target in ("float", "detach", "neg", "abs", "square", "relu"):
+        self.assertEqual(backend._compile_trace_unary(cuda, "neg").cpu().tolist(), [-1., -2., -3.])
+        with self.assertRaisesRegex(NotImplementedError, "contiguous"):
+            backend._compile_trace_unary(native.ones((2, 3)).to("cuda:0").t(), "neg")
+        for target in ("float", "detach", "abs", "square", "relu"):
             with self.assertRaisesRegex(NotImplementedError, "CPU.*CUDA"):
                 backend._compile_trace_unary(cuda, target)
         for left, right in ((cpu, cuda), (cuda, cpu), (cuda, cuda[:1])):
@@ -285,6 +288,14 @@ for i in range(3):
     a = m.tensor([float(i), 2.]).to("cuda:0")
     b = m.tensor([1., -3.]).to("cuda:0")
     assert f(a, b).cpu().tolist() == [float(2*i+1), 1.]
+def another_name(a, b):
+    return -(a.neg() + b.negative())
+g = m.compile(another_name, backend="eager", fullgraph=True)
+def reject_both(frame, event, arg):
+    if event == "call" and frame.f_code in (unrelated_name.__code__, another_name.__code__):
+        raise AssertionError("original executed")
+sys.setprofile(reject_both)
+assert g(a, b).cpu().tolist() == [3., -1.]
 assert "torch" not in sys.modules
 '''
         result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=60)

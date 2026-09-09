@@ -1,0 +1,61 @@
+diff --git a/python/torch_rs/_compile_trace.py b/python/torch_rs/_compile_trace.py
+index 54cdfd9..efe64ca 100644
+--- a/python/torch_rs/_compile_trace.py
++++ b/python/torch_rs/_compile_trace.py
+@@ -499,6 +499,8 @@ def _grad_enabled():
+ 
+ 
+ def _unary_output_metadata(input_metadata, target, *, grad_enabled=None):
++    if input_metadata.device.type == "cuda" and target == "neg":
++        _validate_cuda_metadata(input_metadata)
+     if target in _SUPPORTED_ALIAS_UNARY_TARGETS:
+         return CompileTraceTensorMetadata(
+             shape=input_metadata.shape,
+@@ -527,6 +529,9 @@ def _unary_output_metadata(input_metadata, target, *, grad_enabled=None):
+         dtype=input_metadata.dtype,
+         device=input_metadata.device,
+         requires_grad=input_metadata.requires_grad and grad_enabled,
++        # Value operations allocate fresh CUDA storage, including offset views.
++        # CPU traces retain their established offset-polymorphic contract.
++        storage_offset=0 if input_metadata.device.type == "cuda" else None,
+     )
+ 
+ 
+@@ -877,7 +882,7 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled):
+                 f"{operation.name!r}"
+             )
+         (input_name,) = operation.inputs
+-        if metadata_values[input_name].device.type == "cuda":
++        if metadata_values[input_name].device.type == "cuda" and operation.target != "neg":
+             raise CompileTraceUnsupportedError(
+                 f"torch.compile trace CUDA unary operation {operation.target!r} is unsupported"
+             )
+diff --git a/src/python.rs b/src/python.rs
+index 091f5aa..54ab729 100644
+--- a/src/python.rs
++++ b/src/python.rs
+@@ -9552,8 +9552,8 @@ fn _backward_leaf_roots(roots: &Bound<'_, PyAny>) -> PyResult<()> {
+     CoreTensor::backward_leaf_roots(&native_roots).map_err(|error| tensor_error(&error))
+ }
+ 
+-// CUDA tracing supports addition only. Keep unary execution guarded even for
+-// alias/identity operations that the public eager Tensor API can perform.
++// CUDA tracing supports addition and negation. Keep other unary execution
++// guarded even for alias/identity operations supported by public eager APIs.
+ fn require_compile_cpu_tensor(tensor: &CoreTensor) -> PyResult<()> {
+     if !tensor.device().is_cpu() {
+         return Err(PyNotImplementedError::new_err(
+@@ -9613,7 +9613,12 @@ fn compile_trace_unary(input: &Bound<'_, PyAny>, target: &str) -> PyResult<Py<Py
+     }
+ 
+     let tensor = input.cast::<PyTensor>()?;
+-    require_compile_cpu_tensor(&tensor.try_borrow()?.inner)?;
++    // CoreTensor::negate validates CUDA layout/dtype/autograd and reuses the
++    // native kernel, fresh allocation and device/completion guards. Captured
++    // execution remains unfused; all other unary targets stay CPU-only.
++    if target != "neg" {
++        require_compile_cpu_tensor(&tensor.try_borrow()?.inner)?;
++    }
+     if target == "float" {
+         return Ok(tensor.clone().unbind());
+     }

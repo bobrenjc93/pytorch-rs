@@ -499,6 +499,8 @@ def _grad_enabled():
 
 
 def _unary_output_metadata(input_metadata, target, *, grad_enabled=None):
+    if input_metadata.device.type == "cuda" and target == "neg":
+        _validate_cuda_metadata(input_metadata)
     if target in _SUPPORTED_ALIAS_UNARY_TARGETS:
         return CompileTraceTensorMetadata(
             shape=input_metadata.shape,
@@ -527,6 +529,9 @@ def _unary_output_metadata(input_metadata, target, *, grad_enabled=None):
         dtype=input_metadata.dtype,
         device=input_metadata.device,
         requires_grad=input_metadata.requires_grad and grad_enabled,
+        # Value operations allocate fresh CUDA storage, including offset views.
+        # CPU traces retain their established offset-polymorphic contract.
+        storage_offset=0 if input_metadata.device.type == "cuda" else None,
     )
 
 
@@ -877,7 +882,7 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled):
                 f"{operation.name!r}"
             )
         (input_name,) = operation.inputs
-        if metadata_values[input_name].device.type == "cuda":
+        if metadata_values[input_name].device.type == "cuda" and operation.target != "neg":
             raise CompileTraceUnsupportedError(
                 f"torch.compile trace CUDA unary operation {operation.target!r} is unsupported"
             )

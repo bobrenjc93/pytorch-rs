@@ -134,14 +134,14 @@ and empties. Native `-x`, `Tensor.neg`, `Tensor.negative`, `torch.neg`, and
 `torch.negative` also support contiguous float32 CUDA tensors, including
 scalars, empties, and contiguous offset views. Results have fresh contiguous
 storage and complete before return. See the [CUDA negation validation guide](docs/cuda-neg-validation.md).
-Noncontiguous CUDA negation, compiled CUDA negation, CUDA broadcasting,
+Noncontiguous CUDA negation, CUDA broadcasting,
 noncontiguous addition, scalar arithmetic, nondefault alpha,
 and other CUDA math remain unsupported. Dtype changes, autograd inputs
 (including under `no_grad`), asynchronous transfers, CUDA-to-CUDA copies, unindexed CUDA targets, broader
 CUDA factories and autograd, device selection APIs, streams, events,
 synchronization APIs, allocator APIs, memory APIs, general runtime management,
 and general `torch.compile` CUDA execution remain unsupported beyond the
-[bounded native CUDA addition capture](docs/compile-cuda-add.md) and private
+[bounded native CUDA neg/add capture](docs/compile-cuda-add.md) and private
 benchmark-only H100 pointwise-reduce compile evidence paths. See the
 [exact transfer contract](docs/supported-surface.md) for supported argument
 forms, layout guarantees, and operation boundaries.
@@ -198,10 +198,12 @@ changing the configured default backend. Unsupported compiler programs and
 fallback, callable backend invocation, or unguarded graph caching.
 
 The generic eager compiler also captures unmarked one- and two-input native
-CUDA float32 addition graphs with equal operand shapes and contiguous layouts,
-including scalar/empty/offset inputs, self-addition, chains, and global captures.
+CUDA float32 negation/addition graphs with equal addition operand shapes and contiguous layouts,
+including unary `-`, `Tensor.neg()`/`negative()`, scalar/empty/offset inputs,
+self-addition, chains, and global captures. Negation allocates fresh contiguous
+CUDA storage with offset zero.
 CUDA metadata and caches guard the actual device ordinal and storage offset.
-CUDA unary operations, broadcasting, gradients, mixed devices, and other layouts
+Other CUDA unary operations, closures, broadcasting, gradients, mixed devices, and other layouts
 remain unsupported. This is bounded graph capture under explicit
 `backend="eager"` and the existing fullgraph options, with no new fusion or
 CUDA performance claim. See [scope and differential diagnostics](docs/compile-cuda-add.md).
