@@ -1,12 +1,79 @@
-//! Python leaf-gradient descriptors for native tensors.
+//! Python leaf-gradient descriptors and mutators for native tensors.
 
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
+use pyo3::{
+    exceptions::{PyRuntimeError, PyTypeError},
+    prelude::*,
+    types::{PyBool, PyDict, PyTuple},
+};
 
 use crate::{
-    python::{PyTensor, PyTensorBase, dispatch_tensorbase_getset_mode},
+    python::{
+        PyTensor, PyTensorBase, dispatch_tensorbase_getset_mode, dispatch_tensorbase_method_mode,
+        python_type_name,
+    },
     python_dtype::dtype_object,
     python_tensor_errors::tensor_error,
 };
+
+fn requires_grad_inplace_type_error(
+    value: &Bound<'_, PyAny>,
+    position: Option<usize>,
+) -> PyResult<PyErr> {
+    let type_name = python_type_name(value)?;
+    let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
+    Ok(PyTypeError::new_err(format!(
+        "requires_grad_(): argument 'requires_grad'{position} must be bool, not {type_name}"
+    )))
+}
+
+fn parse_requires_grad_inplace_argument(
+    value: &Bound<'_, PyAny>,
+    position: Option<usize>,
+) -> PyResult<bool> {
+    if value.is_exact_instance_of::<PyBool>() {
+        return value.is_truthy();
+    }
+    Err(requires_grad_inplace_type_error(value, position)?)
+}
+
+fn bind_requires_grad_inplace_arguments(
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<bool> {
+    if args.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "requires_grad_() takes from 0 to 1 positional arguments but {} were given",
+            args.len()
+        )));
+    }
+
+    let mut requires_grad = if args.is_empty() {
+        None
+    } else {
+        Some(parse_requires_grad_inplace_argument(
+            &args.get_item(0)?,
+            Some(1),
+        )?)
+    };
+    if let Some(kwargs) = kwargs {
+        for (key, value) in kwargs {
+            let key = key.extract::<String>()?;
+            if key != "requires_grad" {
+                return Err(PyTypeError::new_err(format!(
+                    "requires_grad_() got an unexpected keyword argument '{key}'"
+                )));
+            }
+            if requires_grad.is_some() {
+                return Err(PyTypeError::new_err(
+                    "requires_grad_() got multiple values for argument 'requires_grad'",
+                ));
+            }
+            requires_grad = Some(parse_requires_grad_inplace_argument(&value, None)?);
+        }
+    }
+
+    Ok(requires_grad.unwrap_or(true))
+}
 
 #[pymethods]
 impl PyTensorBase {
@@ -32,6 +99,36 @@ impl PyTensorBase {
         Ok(dtype_object(slf.py(), dtype)?
             .clone_ref(slf.py())
             .into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nrequires_grad_(requires_grad=True) -> Tensor\n\nChange if autograd should record operations on this tensor: sets this tensor's\n:attr:`requires_grad` attribute in-place. Returns this tensor.\n\n:func:`requires_grad_`'s main use case is to tell autograd to begin recording\noperations on a Tensor ``tensor``. If ``tensor`` has ``requires_grad=False``\n(because it was obtained through a DataLoader, or required preprocessing or\ninitialization), ``tensor.requires_grad_()`` makes it so that autograd will\nbegin to record operations on ``tensor``.\n\nArgs:\n    requires_grad (bool): If autograd should record operations on this tensor.\n        Default: ``True``.\n\nExample::\n\n    >>> # Let's say we want to preprocess some saved weights and use\n    >>> # the result as new weights.\n    >>> saved_weights = [0.1, 0.2, 0.3, 0.25]\n    >>> loaded_weights = torch.tensor(saved_weights)\n    >>> weights = preprocess(loaded_weights)  # some function\n    >>> weights\n    tensor([-0.5503,  0.4926, -2.1158, -0.8303])\n\n    >>> # Now, start to record operations done to weights\n    >>> weights.requires_grad_()\n    >>> out = weights.pow(2).sum()\n    >>> out.backward()\n    >>> weights.grad\n    tensor([-1.1007,  0.9853, -4.2316, -1.6606])\n\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn requires_grad_(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let requires_grad = bind_requires_grad_inplace_arguments(args, kwargs)?;
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "requires_grad_",
+            "torch.Tensor.requires_grad_",
+            args,
+            kwargs,
+        )? {
+            return Ok(result);
+        }
+
+        tensor
+            .try_borrow_mut()?
+            .inner_mut()
+            .requires_grad_(requires_grad)
+            .map_err(|error| tensor_error(&error))?;
+        Ok(tensor.clone().unbind().into_any())
     }
 }
 
