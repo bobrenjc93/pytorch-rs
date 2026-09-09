@@ -106,6 +106,44 @@ class TensorMeanTests(unittest.TestCase):
         )
 
     @staticmethod
+    def rank_one_strided_vector(values, *, requires_grad=False):
+        rows = len(values)
+        columns = 5
+        selected_column = 2
+        matrix = np.full((rows, columns), np.float32(0.5), dtype=np.float32)
+        matrix[:, selected_column] = np.asarray(values, dtype=np.float32)
+        source = torch.tensor(
+            matrix.tolist(), dtype=torch.float32, requires_grad=requires_grad
+        )
+        return (
+            source,
+            source.transpose(0, 1)[selected_column],
+            matrix[:, selected_column],
+        )
+
+    @staticmethod
+    def rank_one_dim_cases():
+        contiguous_base = torch.tensor([-5.0, 1.0, -2.0, 3.0, 4.0], dtype=torch.float32)
+        noncontiguous_base, noncontiguous, selected = (
+            TensorMeanTests.rank_one_strided_vector([1.0, -2.0, 3.0, -4.0])
+        )
+        return (
+            (
+                "empty",
+                torch.zeros((0, 5), dtype=torch.float32).transpose(0, 1)[2],
+                [],
+            ),
+            ("singleton", torch.tensor([[[7.0]]], dtype=torch.float32)[0][0], [7.0]),
+            ("offset", contiguous_base[1:], [1.0, -2.0, 3.0, 4.0]),
+            ("noncontiguous", noncontiguous, selected),
+            (
+                "noncontiguous base",
+                noncontiguous_base.transpose(0, 1)[0],
+                [0.5, 0.5, 0.5, 0.5],
+            ),
+        )
+
+    @staticmethod
     def supported_method_calls(source):
         return (
             ("default", lambda: source.mean()),
@@ -199,6 +237,118 @@ class TensorMeanTests(unittest.TestCase):
             ),
         )
 
+    @staticmethod
+    def supported_rank_one_dim_method_calls(source):
+        class IntSubclass(int):
+            pass
+
+        class IndexOnly:
+            def __index__(self):
+                return 0
+
+        return (
+            ("positional dim zero", False, lambda: source.mean(0)),
+            ("positional dim negative", False, lambda: source.mean(-1)),
+            (
+                "keyword dim zero dtype none",
+                False,
+                lambda: source.mean(dim=0, keepdim=False, dtype=None),
+            ),
+            (
+                "keyword dim negative dtype none",
+                False,
+                lambda: source.mean(dim=-1, keepdim=False, dtype=None),
+            ),
+            (
+                "keyword dim zero keepdim dtype none",
+                True,
+                lambda: source.mean(dim=0, keepdim=True, dtype=None),
+            ),
+            (
+                "keyword dim negative keepdim",
+                True,
+                lambda: source.mean(dim=-1, keepdim=True, dtype=None),
+            ),
+            ("integer subclass dim", False, lambda: source.mean(IntSubclass(0))),
+            (
+                "numpy integer dim keepdim",
+                True,
+                lambda: source.mean(dim=np.int64(-1), keepdim=True),
+            ),
+            ("tuple integer protocol dim", False, lambda: source.mean((IndexOnly(),))),
+            (
+                "list numpy integer dim keepdim",
+                True,
+                lambda: source.mean([np.int64(-1)], keepdim=True),
+            ),
+            ("dtype float32 identity", False, lambda: source.mean(dim=0, dtype=torch.float32)),
+        )
+
+    @staticmethod
+    def supported_rank_one_dim_top_level_calls(source):
+        class IntSubclass(int):
+            pass
+
+        class IndexOnly:
+            def __index__(self):
+                return 0
+
+        return (
+            ("positional dim zero", False, lambda: torch.mean(source, 0)),
+            ("positional dim negative", False, lambda: torch.mean(source, -1)),
+            (
+                "keyword dim zero dtype none",
+                False,
+                lambda: torch.mean(input=source, dim=0, keepdim=False, dtype=None),
+            ),
+            (
+                "keyword dim negative dtype none",
+                False,
+                lambda: torch.mean(input=source, dim=-1, keepdim=False, dtype=None),
+            ),
+            (
+                "keyword dim zero keepdim dtype none",
+                True,
+                lambda: torch.mean(input=source, dim=0, keepdim=True, dtype=None),
+            ),
+            (
+                "keyword dim negative keepdim",
+                True,
+                lambda: torch.mean(source, dim=-1, keepdim=True, dtype=None),
+            ),
+            (
+                "dim out none",
+                False,
+                lambda: torch.mean(source, dim=0, keepdim=False, dtype=None, out=None),
+            ),
+            (
+                "dim keepdim out none",
+                True,
+                lambda: torch.mean(source, dim=-1, keepdim=True, dtype=None, out=None),
+            ),
+            ("integer subclass dim", False, lambda: torch.mean(source, IntSubclass(0))),
+            (
+                "numpy integer dim keepdim",
+                True,
+                lambda: torch.mean(input=source, dim=np.int64(-1), keepdim=True),
+            ),
+            (
+                "tuple integer protocol dim",
+                False,
+                lambda: torch.mean(source, (IndexOnly(),)),
+            ),
+            (
+                "list numpy integer dim keepdim",
+                True,
+                lambda: torch.mean(source, [np.int64(-1)], keepdim=True),
+            ),
+            (
+                "dtype float32 identity",
+                False,
+                lambda: torch.mean(source, dim=0, dtype=torch.float32),
+            ),
+        )
+
     def test_supported_forms_match_sum_divided_by_count_metadata_and_storage(self):
         for name, source, expected_values in self.value_cases():
             expected = self.sequential_float32_mean(expected_values)
@@ -218,6 +368,57 @@ class TensorMeanTests(unittest.TestCase):
                 self.assert_keepdim_scalar(
                     call(), expected, source, case=(name, "top-level", form)
                 )
+
+    def test_rank_one_dim_reductions_reuse_full_mean_values_and_metadata(self):
+        for case, source, expected_values in self.rank_one_dim_cases():
+            expected = self.sequential_float32_mean(expected_values)
+            for form, keepdim, call in self.supported_rank_one_dim_method_calls(source):
+                if keepdim:
+                    self.assert_keepdim_scalar(
+                        call(), expected, source, case=(case, "method", form)
+                    )
+                else:
+                    self.assert_scalar(
+                        call(), expected, source, case=(case, "method", form)
+                    )
+            for form, keepdim, call in self.supported_rank_one_dim_top_level_calls(source):
+                if keepdim:
+                    self.assert_keepdim_scalar(
+                        call(), expected, source, case=(case, "top-level", form)
+                    )
+                else:
+                    self.assert_scalar(
+                        call(), expected, source, case=(case, "top-level", form)
+                    )
+
+    def test_rank_one_transpose_selected_offset_mean_edges(self):
+        cases = (
+            ("signed zero", [-0.0, 0.0, -0.0, 0.0]),
+            ("nan", [1.0, np.nan, 2.0, -3.0]),
+            ("positive infinity", [1.0, np.inf, 2.0, 3.0]),
+            ("negative infinity", [1.0, -np.inf, 2.0, 3.0]),
+            ("sequential cancellation", [1.0e20, -1.0e20, 3.0, -0.0]),
+        )
+
+        for case, values in cases:
+            _, view, selected = self.rank_one_strided_vector(values)
+            expected = self.sequential_float32_mean(selected)
+            self.assertEqual(view.shape, (len(values),))
+            self.assertEqual(view.stride(), (5,))
+            self.assertEqual(view.storage_offset(), 2)
+            self.assertFalse(view.is_contiguous())
+            self.assert_scalar(
+                view.mean(dim=0),
+                expected,
+                view,
+                case=("method", "rank-one offset", case),
+            )
+            self.assert_scalar(
+                torch.mean(view, dim=-1),
+                expected,
+                view,
+                case=("top-level", "rank-one offset", case),
+            )
 
     def test_mean_preserves_first_order_autograd_and_no_grad(self):
         for form, make_loss in (
@@ -325,6 +526,95 @@ class TensorMeanTests(unittest.TestCase):
         self.assertFalse(untracked.requires_grad)
         self.assertTrue(untracked.is_leaf)
         self.assertIsNone(leaf.grad)
+
+    def test_rank_one_dim_reductions_reuse_full_mean_vjp(self):
+        empty = torch.zeros((0, 5), dtype=torch.float32, requires_grad=True)
+        empty_view = empty.transpose(0, 1)[2]
+        empty_view.mean(dim=0).backward()
+        self.assertEqual(empty.grad.shape, empty.shape)
+        self.assertEqual(empty.grad.tolist(), [])
+
+        leaf, view, _ = self.rank_one_strided_vector(
+            np.arange(1, 21, dtype=np.float32).reshape(4, 5)[:, 2],
+            requires_grad=True,
+        )
+        loss = view.mean(dim=-1)
+        self.assertTrue(loss.requires_grad)
+        self.assertFalse(loss.is_leaf)
+        loss.backward()
+        loss.backward()
+        expected_gradient = np.zeros((4, 5), dtype=np.float32)
+        expected_gradient[:, 2] = np.float32(2.0 / 4.0)
+        np.testing.assert_array_equal(np.asarray(leaf.grad), expected_gradient)
+
+        kept_leaf, kept_view, _ = self.rank_one_strided_vector(
+            [1.0, -2.0, 3.0], requires_grad=True
+        )
+        kept = torch.mean(kept_view, dim=0, keepdim=True)
+        self.assert_keepdim_scalar(
+            kept, np.float32(2.0 / 3.0), kept_view, case="kept"
+        )
+        kept.sum().backward()
+        expected_kept_gradient = np.zeros((3, 5), dtype=np.float32)
+        expected_kept_gradient[:, 2] = np.float32(1.0 / 3.0)
+        np.testing.assert_array_equal(
+            np.asarray(kept_leaf.grad), expected_kept_gradient
+        )
+
+    def test_rank_one_dim_error_ordering(self):
+        tensor = torch.ones((2,), dtype=torch.float32)
+        invalid = "mean() received an invalid combination of arguments - got "
+        cases = (
+            (
+                lambda: tensor.mean(2**100, "bad"),
+                TypeError,
+                "mean(): argument 'keepdim' (position 2) must be bool, not str",
+            ),
+            (
+                lambda: tensor.mean(2**100, dtype=1),
+                TypeError,
+                "mean(): argument 'dtype' must be torch.dtype, not int",
+            ),
+            (
+                lambda: tensor.mean(2**100),
+                ValueError,
+                "Overflow when unpacking long long",
+            ),
+            (
+                lambda: tensor.mean("bad", "bad"),
+                TypeError,
+                "mean(): argument 'dim' (position 1) must be tuple of ints, not str",
+            ),
+            (
+                lambda: torch.mean(tensor, 2**100, "bad"),
+                TypeError,
+                "mean(): argument 'keepdim' (position 3) must be bool, not str",
+            ),
+            (
+                lambda: torch.mean(tensor, 2**100, dtype=1),
+                TypeError,
+                "mean(): argument 'dtype' must be torch.dtype, not int",
+            ),
+            (
+                lambda: torch.mean(tensor, 2**100, out=[]),
+                TypeError,
+                "mean(): argument 'out' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.mean(tensor, 2**100),
+                ValueError,
+                "Overflow when unpacking long long",
+            ),
+            (
+                lambda: torch.mean(tensor, "bad", "bad"),
+                TypeError,
+                f"{invalid}(Tensor, str, str), {EXPECTED_TOP_LEVEL_OVERLOADS}",
+            ),
+        )
+        for call, error_type, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(error_type, f"^{re.escape(message)}"):
+                    call()
 
     def test_top_level_modes_and_overrides_observe_calls_before_native_limits(self):
         tensor = torch.tensor([[1.0, -2.0], [3.0, 4.0]], requires_grad=True)
@@ -502,6 +792,10 @@ class TensorMeanTests(unittest.TestCase):
                 "mean(): argument 'dtype' must be torch.dtype, not object",
             ),
             (
+                lambda: torch.ones((2,), dtype=torch.float32).mean(dim=0, dtype=object()),
+                "mean(): argument 'dtype' must be torch.dtype, not object",
+            ),
+            (
                 lambda: tensor.mean(torch.float32),
                 f"{invalid}(torch.dtype), {EXPECTED_METHOD_OVERLOADS}",
             ),
@@ -536,12 +830,20 @@ class TensorMeanTests(unittest.TestCase):
             ("keyword dim", lambda: tensor.mean(dim=0)),
             ("tuple dim", lambda: tensor.mean((0, 1))),
             ("list dim", lambda: tensor.mean(dim=[0, 1])),
+            (
+                "rank-one multidim tuple",
+                lambda: torch.ones((2,), dtype=torch.float32).mean((0, -1)),
+            ),
+            (
+                "rank-one multidim list",
+                lambda: torch.ones((2,), dtype=torch.float32).mean(dim=[0, -1]),
+            ),
         )
         for case, call in unsupported_cases:
             with self.subTest(case=case):
                 with self.assertRaisesRegex(
                     NotImplementedError,
-                    r"^mean\(\): only full reductions with dim=None support keepdim; dim, out, and dtype conversion reductions are not supported$",
+                    r"^mean\(\): only full reductions with dim=None and rank-1 dim=0/-1 reductions are supported; broader dim reductions, concrete out, and dtype conversions are not supported$",
                 ):
                     call()
 
@@ -580,6 +882,10 @@ class TensorMeanTests(unittest.TestCase):
                 "mean(): argument 'dtype' must be torch.dtype, not int",
             ),
             (
+                lambda: torch.mean(torch.ones((2,), dtype=torch.float32), dim=0, dtype=object()),
+                "mean(): argument 'dtype' must be torch.dtype, not object",
+            ),
+            (
                 lambda: torch.mean(tensor, torch.float32),
                 f"{invalid}(Tensor, torch.dtype), {EXPECTED_TOP_LEVEL_OVERLOADS}",
             ),
@@ -613,13 +919,29 @@ class TensorMeanTests(unittest.TestCase):
             ),
             ("out", lambda: torch.mean(tensor, out=destination)),
             ("none dim concrete out", lambda: torch.mean(tensor, None, out=destination)),
-            ("dtype plus dim", lambda: torch.mean(tensor, 0, dtype=torch.float32)),
+            (
+                "rank-one concrete out",
+                lambda: torch.mean(
+                    torch.ones((2,), dtype=torch.float32),
+                    dim=0,
+                    keepdim=True,
+                    out=torch.ones((1,), dtype=torch.float32),
+                ),
+            ),
+            (
+                "rank-one multidim tuple",
+                lambda: torch.mean(torch.ones((2,), dtype=torch.float32), (0, -1)),
+            ),
+            (
+                "rank-one multidim list",
+                lambda: torch.mean(torch.ones((2,), dtype=torch.float32), [0, -1]),
+            ),
         )
         for case, call in unsupported_cases:
             with self.subTest(case=case):
                 with self.assertRaisesRegex(
                     NotImplementedError,
-                    r"^mean\(\): only full reductions with dim=None support keepdim; dim, out, and dtype conversion reductions are not supported$",
+                    r"^mean\(\): only full reductions with dim=None and rank-1 dim=0/-1 reductions are supported; broader dim reductions, concrete out, and dtype conversions are not supported$",
                 ):
                     call()
         self.assertEqual(destination.tolist(), [17.0, 19.0, 23.0])

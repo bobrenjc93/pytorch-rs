@@ -184,7 +184,7 @@ class VersionCudaTests(unittest.TestCase):
                 self.assertIs(type(restored), str)
                 self.assertEqual(restored, version.__version__)
 
-    def test_import_does_not_import_pytorch_or_probe_runtimes_or_git(self):
+    def test_import_does_not_import_pytorch_or_external_python_runtimes_or_git(self):
         script = r"""
 import os
 import subprocess as subprocess_module
@@ -235,8 +235,9 @@ assert git_version is version.git_version is None
 assert hip is version.hip is None
 assert rocm is version.rocm is None
 assert xpu is version.xpu is None
-assert torch.cuda.is_available() is False
-assert torch.cuda.device_count() == 0
+device_count = torch.cuda.device_count()
+assert type(device_count) is int and device_count >= 0
+assert torch.cuda.is_available() is (device_count > 0)
 assert not hasattr(torch, "debug")
 assert not any(
     name.split(".", 1)[0] in RejectExternalRuntimeImport.blocked

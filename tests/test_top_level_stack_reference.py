@@ -18,6 +18,23 @@ class TopLevelStackReferenceTests(unittest.TestCase):
                 "torch.stack differentials require pinned PyTorch 2.13.0"
             )
 
+    @staticmethod
+    def tensor_from_array(module, array, *, requires_grad=False):
+        kwargs = {"dtype": module.float32, "requires_grad": requires_grad}
+        if array.shape == ():
+            return module.tensor(float(array.reshape(()).item()), **kwargs)
+        if any(dimension == 0 for dimension in array.shape):
+            return module.zeros(tuple(array.shape), **kwargs)
+        return module.tensor(array.tolist(), **kwargs)
+
+    @staticmethod
+    def generated_array(shape, seed):
+        if shape == ():
+            return np.asarray((seed % 17) - 8.5, dtype=np.float32)
+        elements = int(np.prod(shape))
+        values = np.arange(elements, dtype=np.float32).reshape(shape)
+        return values * np.float32(0.25) + np.float32((seed % 11) - 5)
+
     def assert_matches(self, actual, expected, *, case):
         with self.subTest(case=case, metadata=True):
             self.assertEqual(actual.shape, tuple(expected.shape))
@@ -121,6 +138,86 @@ class TopLevelStackReferenceTests(unittest.TestCase):
                     self.fresh_storage_observation(actual, actual_inputs),
                     self.fresh_storage_observation(expected, expected_inputs),
                 )
+
+    def test_generated_same_shape_matrix_matches_pytorch_2_13(self):
+        generated_cases = (
+            ("rank0_four_inputs", (), 4, (0,)),
+            ("rank1_three_inputs", (5,), 3, (0, 1)),
+            ("rank2_two_inputs", (2, 3), 2, (0, 1, 2)),
+            ("rank3_three_inputs", (2, 1, 3), 3, (0, 2, 3)),
+            ("empty_rank3", (1, 0, 2), 2, (0, 1, 3)),
+        )
+        for case, shape, input_count, dimensions in generated_cases:
+            arrays = [
+                self.generated_array(shape, 20260908 + index * 17 + len(shape))
+                for index in range(input_count)
+            ]
+            for dimension in dimensions:
+                with self.subTest(case=case, dimension=dimension):
+                    actual_inputs = [
+                        self.tensor_from_array(torch, array) for array in arrays
+                    ]
+                    expected_inputs = [
+                        self.tensor_from_array(reference_torch, array)
+                        for array in arrays
+                    ]
+                    actual = torch.stack(actual_inputs, dim=dimension)
+                    expected = reference_torch.stack(expected_inputs, dim=dimension)
+                    self.assert_matches(actual, expected, case=(case, dimension))
+
+        actual_base = self.tensor_from_array(
+            torch,
+            self.generated_array((4, 2, 3), 20261001),
+        )
+        expected_base = self.tensor_from_array(
+            reference_torch,
+            self.generated_array((4, 2, 3), 20261001),
+        )
+        actual_offset_inputs = [actual_base[1], actual_base[2]]
+        expected_offset_inputs = [expected_base[1], expected_base[2]]
+        actual = torch.stack(actual_offset_inputs, dim=1)
+        expected = reference_torch.stack(expected_offset_inputs, dim=1)
+        self.assert_matches(actual, expected, case="held-out offset dim 1")
+
+        actual_transposed = [
+            self.tensor_from_array(torch, self.generated_array((2, 3), 20261011)).transpose(0, 1),
+            self.tensor_from_array(torch, self.generated_array((2, 3), 20261012)).transpose(0, 1),
+        ]
+        expected_transposed = [
+            self.tensor_from_array(
+                reference_torch,
+                self.generated_array((2, 3), 20261011),
+            ).transpose(0, 1),
+            self.tensor_from_array(
+                reference_torch,
+                self.generated_array((2, 3), 20261012),
+            ).transpose(0, 1),
+        ]
+        for dimension in (0, 1, 2):
+            with self.subTest(case="held-out transposed", dimension=dimension):
+                actual = torch.stack(actual_transposed, dim=dimension)
+                expected = reference_torch.stack(expected_transposed, dim=dimension)
+                self.assert_matches(actual, expected, case=("held-out transposed", dimension))
+
+        actual_autograd_inputs = [
+            self.tensor_from_array(
+                torch,
+                self.generated_array((3, 4), 20261021 + index),
+                requires_grad=True,
+            )
+            for index in range(3)
+        ]
+        expected_autograd_inputs = [
+            self.tensor_from_array(
+                reference_torch,
+                self.generated_array((3, 4), 20261021 + index),
+                requires_grad=True,
+            )
+            for index in range(3)
+        ]
+        actual = torch.stack(actual_autograd_inputs, dim=2)
+        expected = reference_torch.stack(expected_autograd_inputs, dim=2)
+        self.assert_matches(actual, expected, case="held-out autograd forward dim 2")
 
     def test_autograd_repeated_inputs_and_no_grad_match_pytorch_2_13(self):
         actual_left = torch.tensor(

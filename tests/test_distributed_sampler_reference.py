@@ -478,6 +478,8 @@ class DistributedSamplerReferenceTests(unittest.TestCase):
             "StackDataset",
             "Subset",
             "TensorDataset",
+            "default_collate",
+            "default_convert",
             "get_worker_info",
         }
 

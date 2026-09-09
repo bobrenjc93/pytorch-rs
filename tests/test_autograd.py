@@ -1,5 +1,7 @@
+import copy
 import gc
 import inspect
+import pickle
 import statistics
 import threading
 import time
@@ -173,6 +175,252 @@ class AutogradApiTests(unittest.TestCase):
         self.assertEqual(failures, [])
         self.assertEqual(worker_states, [True, False, True, False, True])
         self.assertIs(torch.is_grad_enabled(), True)
+
+    def test_set_grad_enabled_sets_recording_immediately_and_restores_state(self):
+        value = torch.tensor([2.0], requires_grad=True)
+        self.assertIs(torch.is_grad_enabled(), True)
+
+        torch.set_grad_enabled(False)
+        self.assertIs(torch.is_grad_enabled(), False)
+        self.assertFalse((value * value).requires_grad)
+        torch.set_grad_enabled(True)
+        self.assertIs(torch.is_grad_enabled(), True)
+        self.assertTrue((value * value).requires_grad)
+
+        context = torch.set_grad_enabled(False)
+        try:
+            self.assertIs(torch.is_grad_enabled(), False)
+            self.assertFalse((value * value).requires_grad)
+            self.assertIsNone(context.__enter__())
+            self.assertFalse((value * value).requires_grad)
+        finally:
+            context.__exit__(None, None, None)
+        self.assertIs(torch.is_grad_enabled(), True)
+        self.assertTrue((value * value).requires_grad)
+
+        with torch.set_grad_enabled(False) as entered:
+            self.assertIsNone(entered)
+            self.assertIs(torch.is_grad_enabled(), False)
+            self.assertFalse((value * value).requires_grad)
+            with torch.set_grad_enabled(True):
+                self.assertIs(torch.is_grad_enabled(), True)
+                self.assertTrue((value * value).requires_grad)
+                with torch.no_grad():
+                    self.assertIs(torch.is_grad_enabled(), False)
+                    self.assertFalse((value * value).requires_grad)
+                self.assertIs(torch.is_grad_enabled(), True)
+            self.assertIs(torch.is_grad_enabled(), False)
+        self.assertIs(torch.is_grad_enabled(), True)
+
+        outer = torch.set_grad_enabled(False)
+        try:
+            self.assertIs(torch.is_grad_enabled(), False)
+            with torch.enable_grad():
+                self.assertIs(torch.is_grad_enabled(), True)
+                with outer:
+                    self.assertIs(torch.is_grad_enabled(), False)
+                self.assertIs(torch.is_grad_enabled(), True)
+            self.assertIs(torch.is_grad_enabled(), False)
+        finally:
+            outer.__exit__(None, None, None)
+        self.assertIs(torch.is_grad_enabled(), True)
+
+        with torch.no_grad():
+            context = torch.set_grad_enabled(True)
+            try:
+                self.assertIs(torch.is_grad_enabled(), True)
+                self.assertTrue((value * value).requires_grad)
+            finally:
+                context.__exit__(None, None, None)
+            self.assertIs(torch.is_grad_enabled(), False)
+        self.assertIs(torch.is_grad_enabled(), True)
+
+        with self.assertRaisesRegex(RuntimeError, "restore grad mode"):
+            with torch.set_grad_enabled(False):
+                self.assertIs(torch.is_grad_enabled(), False)
+                raise RuntimeError("restore grad mode")
+        self.assertIs(torch.is_grad_enabled(), True)
+
+        @torch.set_grad_enabled(False)
+        def disabled(input_value: object, scale: float = 1.0) -> object:
+            """A metadata-bearing set-grad callable."""
+            return input_value * scale
+
+        self.assertIs(torch.is_grad_enabled(), True)
+        self.assertFalse(disabled(value, scale=3.0).requires_grad)
+        self.assertIs(torch.is_grad_enabled(), True)
+        self.assertEqual(disabled.__name__, "disabled")
+        self.assertEqual(disabled.__doc__, "A metadata-bearing set-grad callable.")
+        self.assertEqual(
+            disabled.__annotations__,
+            {"input_value": object, "scale": float, "return": object},
+        )
+        self.assertEqual(
+            inspect.signature(disabled), inspect.signature(disabled.__wrapped__)
+        )
+
+        with torch.no_grad():
+            @torch.set_grad_enabled(True)
+            def enabled_decorated(input_value):
+                return input_value * input_value
+
+            self.assertIs(torch.is_grad_enabled(), False)
+            self.assertTrue(enabled_decorated(value).requires_grad)
+            self.assertIs(torch.is_grad_enabled(), False)
+        self.assertIs(torch.is_grad_enabled(), True)
+
+        events = []
+
+        @torch.set_grad_enabled(False)
+        def generate():
+            events.append(("next", torch.is_grad_enabled()))
+            request = yield value * value
+            events.append(("send", request, torch.is_grad_enabled()))
+            try:
+                yield value * value
+            except ValueError as error:
+                events.append(("throw", str(error), torch.is_grad_enabled()))
+                yield value * value
+            finally:
+                events.append(("close", torch.is_grad_enabled()))
+
+        generator = generate()
+        self.assertFalse(next(generator).requires_grad)
+        self.assertIs(torch.is_grad_enabled(), True)
+        self.assertFalse(generator.send("request").requires_grad)
+        self.assertIs(torch.is_grad_enabled(), True)
+        self.assertFalse(generator.throw(ValueError("injected")).requires_grad)
+        self.assertIs(torch.is_grad_enabled(), True)
+        self.assertIsNone(generator.close())
+        self.assertEqual(
+            events,
+            [
+                ("next", False),
+                ("send", "request", False),
+                ("throw", "injected", False),
+                ("close", False),
+            ],
+        )
+
+        shared_context = torch.set_grad_enabled(False)
+        worker_states = []
+        failures = []
+
+        def worker():
+            try:
+                worker_states.append(torch.is_grad_enabled())
+                with shared_context:
+                    worker_states.append(torch.is_grad_enabled())
+                worker_states.append(torch.is_grad_enabled())
+            except BaseException as error:
+                failures.append(error)
+
+        try:
+            self.assertIs(torch.is_grad_enabled(), False)
+            thread = threading.Thread(target=worker)
+            thread.start()
+            thread.join()
+            self.assertIs(torch.is_grad_enabled(), False)
+        finally:
+            shared_context.__exit__(None, None, None)
+        self.assertEqual(failures, [])
+        self.assertEqual(worker_states, [True, False, True])
+        self.assertIs(torch.is_grad_enabled(), True)
+
+    def test_set_grad_enabled_copy_and_pickle_do_not_mutate_grad_mode(self):
+        for context_factory, expected_state, requested_mode in (
+            (torch.enable_grad, True, False),
+            (torch.no_grad, False, True),
+        ):
+            with context_factory():
+                context = torch.set_grad_enabled(requested_mode)
+                self.assertIs(torch.is_grad_enabled(), requested_mode)
+
+                for operation in (copy.copy, copy.deepcopy):
+                    with self.subTest(
+                        context=context_factory.__name__,
+                        operation=operation.__name__,
+                        active=True,
+                    ):
+                        restored = operation(context)
+                        self.assertIs(torch.is_grad_enabled(), requested_mode)
+                        self.assertIs(type(restored), torch.set_grad_enabled)
+                        self.assertIs(restored.mode, requested_mode)
+                        self.assertIs(restored.prev, expected_state)
+                        restored.__exit__(None, None, None)
+                        self.assertIs(torch.is_grad_enabled(), expected_state)
+                        torch.set_grad_enabled(requested_mode)
+
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                    with self.subTest(
+                        context=context_factory.__name__,
+                        protocol=protocol,
+                        active=True,
+                    ):
+                        restored = pickle.loads(
+                            pickle.dumps(context, protocol=protocol)
+                        )
+                        self.assertIs(torch.is_grad_enabled(), requested_mode)
+                        self.assertIs(type(restored), torch.set_grad_enabled)
+                        self.assertIs(restored.mode, requested_mode)
+                        self.assertIs(restored.prev, expected_state)
+                        restored.__exit__(None, None, None)
+                        self.assertIs(torch.is_grad_enabled(), expected_state)
+                        torch.set_grad_enabled(requested_mode)
+
+                context.__exit__(None, None, None)
+                self.assertIs(torch.is_grad_enabled(), expected_state)
+
+                for operation in (copy.copy, copy.deepcopy):
+                    with self.subTest(
+                        context=context_factory.__name__,
+                        operation=operation.__name__,
+                        active=False,
+                    ):
+                        restored = operation(context)
+                        self.assertIs(torch.is_grad_enabled(), expected_state)
+                        self.assertIs(type(restored), torch.set_grad_enabled)
+                        self.assertIs(restored.mode, requested_mode)
+                        self.assertIs(restored.prev, expected_state)
+                        with restored:
+                            self.assertIs(torch.is_grad_enabled(), requested_mode)
+                        self.assertIs(torch.is_grad_enabled(), expected_state)
+
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                    with self.subTest(
+                        context=context_factory.__name__,
+                        protocol=protocol,
+                        active=False,
+                    ):
+                        restored = pickle.loads(
+                            pickle.dumps(context, protocol=protocol)
+                        )
+                        self.assertIs(torch.is_grad_enabled(), expected_state)
+                        self.assertIs(type(restored), torch.set_grad_enabled)
+                        self.assertIs(restored.mode, requested_mode)
+                        self.assertIs(restored.prev, expected_state)
+                        with restored:
+                            self.assertIs(torch.is_grad_enabled(), requested_mode)
+                        self.assertIs(torch.is_grad_enabled(), expected_state)
+
+    def test_set_grad_enabled_rejects_non_bool_modes_without_changing_state(self):
+        class Truthy:
+            def __bool__(self):
+                return True
+
+        for grad_context, expected_state in (
+            (torch.enable_grad, True),
+            (torch.no_grad, False),
+        ):
+            with grad_context():
+                for mode in (1, 0, None, "true", np.bool_(True), Truthy()):
+                    with self.subTest(
+                        context=grad_context.__name__, mode=repr(mode)
+                    ):
+                        self.assertIs(torch.is_grad_enabled(), expected_state)
+                        with self.assertRaisesRegex(TypeError, "must be bool"):
+                            torch.set_grad_enabled(mode)
+                        self.assertIs(torch.is_grad_enabled(), expected_state)
 
     def test_is_grad_enabled_public_contract_and_argument_errors(self):
         function = torch.is_grad_enabled
@@ -1301,6 +1549,289 @@ class AutogradReferenceTests(unittest.TestCase):
                     generator_results,
                     events,
                     worker_states,
+                )
+            )
+
+        self.assertEqual(outcomes[0], outcomes[1])
+
+    def test_set_grad_enabled_contexts_match_pytorch_2_13(self):
+        class Truthy:
+            def __bool__(self):
+                return True
+
+        outcomes = []
+        for module in (torch, reference_torch):
+            value = module.tensor([2.0], requires_grad=True)
+            states = [module.is_grad_enabled(), (value * value).requires_grad]
+
+            module.set_grad_enabled(False)
+            states.append(module.is_grad_enabled())
+            states.append((value * value).requires_grad)
+            module.set_grad_enabled(True)
+            states.append(module.is_grad_enabled())
+            states.append((value * value).requires_grad)
+
+            context = module.set_grad_enabled(False)
+            try:
+                states.append(module.is_grad_enabled())
+                states.append((value * value).requires_grad)
+                states.append(context.__enter__())
+                states.append(module.is_grad_enabled())
+            finally:
+                context.__exit__(None, None, None)
+            states.append(module.is_grad_enabled())
+            states.append((value * value).requires_grad)
+
+            with module.set_grad_enabled(False) as entered:
+                states.append(entered)
+                states.append(module.is_grad_enabled())
+                states.append((value * value).requires_grad)
+                with module.set_grad_enabled(True):
+                    states.append(module.is_grad_enabled())
+                    states.append((value * value).requires_grad)
+                    with module.no_grad():
+                        states.append(module.is_grad_enabled())
+                        states.append((value * value).requires_grad)
+                    states.append(module.is_grad_enabled())
+                states.append(module.is_grad_enabled())
+            states.append(module.is_grad_enabled())
+
+            outer = module.set_grad_enabled(False)
+            try:
+                states.append(module.is_grad_enabled())
+                with module.enable_grad():
+                    states.append(module.is_grad_enabled())
+                    with outer:
+                        states.append(module.is_grad_enabled())
+                    states.append(module.is_grad_enabled())
+                states.append(module.is_grad_enabled())
+            finally:
+                outer.__exit__(None, None, None)
+            states.append(module.is_grad_enabled())
+
+            with module.no_grad():
+                context = module.set_grad_enabled(True)
+                try:
+                    states.append(module.is_grad_enabled())
+                    states.append((value * value).requires_grad)
+                finally:
+                    context.__exit__(None, None, None)
+                states.append(module.is_grad_enabled())
+            states.append(module.is_grad_enabled())
+
+            try:
+                with module.set_grad_enabled(False):
+                    states.append(module.is_grad_enabled())
+                    raise RuntimeError("restore grad mode")
+            except RuntimeError:
+                states.append(module.is_grad_enabled())
+
+            @module.set_grad_enabled(False)
+            def disabled(input_value: object, scale: float = 1.0) -> object:
+                """decorated docs"""
+                return input_value * scale
+
+            states.append(module.is_grad_enabled())
+
+            with module.no_grad():
+                @module.set_grad_enabled(True)
+                def enabled_decorated(input_value):
+                    return input_value * input_value
+
+                enabled_decorator_state = (
+                    module.is_grad_enabled(),
+                    enabled_decorated(value).requires_grad,
+                    module.is_grad_enabled(),
+                )
+
+            disabled_decorator_state = (
+                disabled(value, scale=3.0).requires_grad,
+                module.is_grad_enabled(),
+                disabled.__name__,
+                disabled.__doc__,
+                disabled.__annotations__,
+                str(inspect.signature(disabled)),
+                disabled.__wrapped__.__name__,
+            )
+
+            events = []
+
+            @module.set_grad_enabled(False)
+            def generate():
+                events.append(("next", module.is_grad_enabled()))
+                request = yield value * value
+                events.append(("send", request, module.is_grad_enabled()))
+                try:
+                    yield value * value
+                except ValueError as error:
+                    events.append(("throw", str(error), module.is_grad_enabled()))
+                    yield value * value
+                finally:
+                    events.append(("close", module.is_grad_enabled()))
+
+            generator = generate()
+            generator_results = [
+                inspect.isgeneratorfunction(generate),
+                next(generator).requires_grad,
+                module.is_grad_enabled(),
+                generator.send("request").requires_grad,
+                module.is_grad_enabled(),
+                generator.throw(ValueError("injected")).requires_grad,
+                module.is_grad_enabled(),
+                generator.close(),
+                module.is_grad_enabled(),
+            ]
+
+            shared_context = module.set_grad_enabled(False)
+            worker_states = []
+
+            def worker():
+                worker_states.append(module.is_grad_enabled())
+                with shared_context:
+                    worker_states.append(module.is_grad_enabled())
+                worker_states.append(module.is_grad_enabled())
+
+            try:
+                thread = threading.Thread(target=worker)
+                thread.start()
+                thread.join()
+                states.append(module.is_grad_enabled())
+            finally:
+                shared_context.__exit__(None, None, None)
+            states.append(module.is_grad_enabled())
+
+            copy_results = []
+            for context_factory, expected_state, requested_mode in (
+                (module.enable_grad, True, False),
+                (module.no_grad, False, True),
+            ):
+                with context_factory():
+                    context = module.set_grad_enabled(requested_mode)
+                    copy_results.append(module.is_grad_enabled())
+
+                    for operation in (copy.copy, copy.deepcopy):
+                        restored = operation(context)
+                        copy_results.append(
+                            (
+                                module.is_grad_enabled(),
+                                type(restored) is module.set_grad_enabled,
+                                restored.mode,
+                                restored.prev,
+                            )
+                        )
+                        restored.__exit__(None, None, None)
+                        copy_results.append(module.is_grad_enabled())
+                        module.set_grad_enabled(requested_mode)
+                        copy_results.append(module.is_grad_enabled())
+
+                    protocol_results = []
+                    for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                        restored = pickle.loads(
+                            pickle.dumps(context, protocol=protocol)
+                        )
+                        protocol_results.append(
+                            (
+                                module.is_grad_enabled(),
+                                type(restored) is module.set_grad_enabled,
+                                restored.mode,
+                                restored.prev,
+                            )
+                        )
+                        restored.__exit__(None, None, None)
+                        protocol_results.append(module.is_grad_enabled())
+                        module.set_grad_enabled(requested_mode)
+                        protocol_results.append(module.is_grad_enabled())
+                    copy_results.append(tuple(protocol_results))
+
+                    context.__exit__(None, None, None)
+                    copy_results.append(module.is_grad_enabled())
+
+                    shallow = copy.copy(context)
+                    copy_results.append(
+                        (
+                            module.is_grad_enabled(),
+                            type(shallow) is module.set_grad_enabled,
+                            shallow.mode,
+                            shallow.prev,
+                        )
+                    )
+                    with shallow:
+                        copy_results.append(module.is_grad_enabled())
+                    copy_results.append(module.is_grad_enabled())
+
+                    deep = copy.deepcopy(context)
+                    copy_results.append(
+                        (
+                            module.is_grad_enabled(),
+                            type(deep) is module.set_grad_enabled,
+                            deep.mode,
+                            deep.prev,
+                        )
+                    )
+                    with deep:
+                        copy_results.append(module.is_grad_enabled())
+                    copy_results.append(module.is_grad_enabled())
+
+                    protocol_results = []
+                    for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                        restored = pickle.loads(
+                            pickle.dumps(context, protocol=protocol)
+                        )
+                        protocol_results.append(
+                            (
+                                module.is_grad_enabled(),
+                                type(restored) is module.set_grad_enabled,
+                                restored.mode,
+                                restored.prev,
+                            )
+                        )
+                        with restored:
+                            protocol_results.append(module.is_grad_enabled())
+                        protocol_results.append(module.is_grad_enabled())
+                    copy_results.append(tuple(protocol_results))
+
+            errors = []
+            for mode in (1, 0, None, "true", np.bool_(True), Truthy()):
+                before = module.is_grad_enabled()
+                try:
+                    module.set_grad_enabled(mode)
+                except TypeError as error:
+                    errors.append(
+                        (
+                            before,
+                            module.is_grad_enabled(),
+                            type(error).__name__,
+                            str(error),
+                        )
+                    )
+                else:
+                    self.fail(
+                        f"{module.__name__}.set_grad_enabled accepted {mode!r}"
+                    )
+
+            namespace = (
+                module.autograd.set_grad_enabled is module.set_grad_enabled,
+                module.autograd.grad_mode.set_grad_enabled is module.set_grad_enabled,
+                module.set_grad_enabled.__name__,
+                module.set_grad_enabled.__qualname__,
+                module.set_grad_enabled.__module__.removeprefix(module.__name__),
+                str(inspect.signature(module.set_grad_enabled)),
+                "set_grad_enabled" in module.__all__,
+                "set_grad_enabled" in module.autograd.__all__,
+                "set_grad_enabled" in module.autograd.grad_mode.__all__,
+            )
+
+            outcomes.append(
+                (
+                    states,
+                    disabled_decorator_state,
+                    enabled_decorator_state,
+                    generator_results,
+                    events,
+                    worker_states,
+                    copy_results,
+                    errors,
+                    namespace,
                 )
             )
 

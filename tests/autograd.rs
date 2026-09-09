@@ -4888,6 +4888,84 @@ fn no_grad_views_preserve_requires_grad_without_recording_history() {
 }
 
 #[test]
+fn no_grad_descendants_of_tracked_views_inherit_source_requires_grad_flag() {
+    let mut transpose_base = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    let tracked_transpose = transpose_base.transpose(0, 1).unwrap();
+    let transpose_child = {
+        let _guard = no_grad();
+        tracked_transpose.transpose(0, 1).unwrap()
+    };
+    assert!(tracked_transpose.requires_grad());
+    assert!(!tracked_transpose.is_leaf());
+    assert!(transpose_child.requires_grad());
+    assert!(transpose_child.is_leaf());
+
+    transpose_base.requires_grad_(false).unwrap();
+    assert!(tracked_transpose.requires_grad());
+    assert!(!transpose_child.requires_grad());
+    assert!(
+        !transpose_child
+            .mul_scalar(2.0)
+            .unwrap()
+            .sum()
+            .requires_grad()
+    );
+    transpose_base.requires_grad_(true).unwrap();
+    assert!(transpose_child.requires_grad());
+
+    let mut reshape_base = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    let tracked_reshape = reshape_base.reshape([4]).unwrap();
+    let reshape_child = {
+        let _guard = no_grad();
+        tracked_reshape.reshape([2, 2]).unwrap()
+    };
+    reshape_base.requires_grad_(false).unwrap();
+    assert!(tracked_reshape.requires_grad());
+    assert!(!reshape_child.requires_grad());
+
+    let mut promoted_base = Tensor::from_vec(vec![5.0, 6.0, 7.0, 8.0], [2, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    let promoted_first = promoted_base.transpose(0, 1).unwrap();
+    let mut promoted_child = {
+        let _guard = no_grad();
+        promoted_first.transpose(0, 1).unwrap()
+    };
+    promoted_child.requires_grad_(true).unwrap();
+    let promoted_loss = promoted_child.mul_scalar(3.0).unwrap().sum();
+    promoted_child.requires_grad_(false).unwrap();
+    promoted_base.requires_grad_(false).unwrap();
+    assert!(!promoted_child.requires_grad());
+    assert!(promoted_loss.requires_grad());
+    promoted_loss.backward().unwrap();
+    assert!(promoted_base.grad().unwrap().is_none());
+    assert!(promoted_child.grad().unwrap().is_none());
+
+    let mut non_view_base = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    let ordinary_non_leaf = non_view_base.mul_scalar(2.0).unwrap();
+    let non_view_child = {
+        let _guard = no_grad();
+        ordinary_non_leaf.reshape([4]).unwrap()
+    };
+    non_view_base.requires_grad_(false).unwrap();
+    assert!(ordinary_non_leaf.requires_grad());
+    assert!(non_view_child.requires_grad());
+    assert!(
+        non_view_child
+            .mul_scalar(2.0)
+            .unwrap()
+            .sum()
+            .requires_grad()
+    );
+}
+
+#[test]
 fn leaf_status_reflects_recorded_autograd_history() {
     let ordinary = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2]).unwrap();
     assert!(ordinary.is_leaf());

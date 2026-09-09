@@ -5,6 +5,13 @@ import unittest
 
 import torch_rs as torch
 
+def assert_cuda_runtime_probe_matches_visibility(test_case):
+    count = torch.cuda.device_count()
+    test_case.assertIs(type(count), int)
+    test_case.assertGreaterEqual(count, 0)
+    test_case.assertIs(torch.cuda.is_available(), count > 0)
+
+
 try:
     import torch as reference_torch
 except ImportError:
@@ -436,7 +443,6 @@ class TensorTypeReferenceTests(unittest.TestCase):
         )
         unsupported_calls = (
             lambda: actual.type("torch.DoubleTensor"),
-            lambda: actual.type("torch.cuda.FloatTensor"),
             lambda: actual.type(reference_torch.float32),
             lambda: actual.type(reference_torch.float64),
             lambda: actual.type(torch.Tensor),
@@ -458,6 +464,19 @@ class TensorTypeReferenceTests(unittest.TestCase):
                     actual.is_leaf,
                 )
                 self.assertEqual(after, before)
+
+        with self.assertRaises(NotImplementedError):
+            actual.type("torch.cuda.FloatTensor")
+        after = (
+            actual.tolist(),
+            actual.data_ptr(),
+            actual.shape,
+            actual.stride(),
+            actual.storage_offset(),
+            actual.requires_grad,
+            actual.is_leaf,
+        )
+        self.assertEqual(after, before)
 
         expected = reference_torch.tensor(
             [1.0], dtype=reference_torch.float32
@@ -488,12 +507,12 @@ class TensorTypeReferenceTests(unittest.TestCase):
             "torch.FloatTensor",
         )
         self.assertEqual(torch.tensor([1.0]).type(), "torch.FloatTensor")
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        assert_cuda_runtime_probe_matches_visibility(self)
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
-        self.assertFalse(hasattr(torch.Tensor, "to"))
         with self.assertRaises(RuntimeError):
             torch.tensor([1.0, 2.0], device="cuda:0")
+        with self.assertRaisesRegex(RuntimeError, r"only 'cpu' is implemented"):
+            torch.tensor([1.0, 2.0]).to("cuda:0")
 
 
 if __name__ == "__main__":

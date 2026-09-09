@@ -439,7 +439,8 @@ class ZerosTests(unittest.TestCase):
             (
                 lambda: torch.zeros(2, 3, device="cuda"),
                 RuntimeError,
-                "zeros(): device 'cuda' is not supported; only 'cpu' is implemented",
+                "zeros(): CUDA storage is only implemented for 1-D float32 "
+                "tensors with requires_grad=False (shape rank is not 1)",
             ),
             (
                 lambda: torch.zeros(2, layout=object(), out=None),

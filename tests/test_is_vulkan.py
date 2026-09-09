@@ -210,9 +210,8 @@ class TensorIsVulkanTests(unittest.TestCase):
                             function((1,), device=specification)
 
         tensor = torch.tensor([1.0])
-        self.assertFalse(hasattr(torch.Tensor, "to"))
         self.assertFalse(hasattr(torch.Tensor, "vulkan"))
-        with self.assertRaises(AttributeError):
+        with self.assertRaisesRegex(RuntimeError, r"only 'cpu' is implemented"):
             tensor.to("vulkan")
         with self.assertRaises(AttributeError):
             tensor.vulkan()

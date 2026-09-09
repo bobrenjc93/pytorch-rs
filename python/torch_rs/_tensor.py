@@ -25,9 +25,9 @@ def _require_default_backward_graph_option(name, value, *, allow_none):
 
 def _is_shared_implementation(input):
     if type(input) is Tensor:
-        # Native tensors use process-local owned or mutex-backed gradient
-        # storage. Neither representation is operating-system shared memory.
-        return False
+        # CUDA storage is always considered shared; native CPU storage is
+        # process-local, including mutex-backed gradient storage.
+        return input.is_cuda
     # Preserve PyTorch's unbound-call behavior without adding storage methods
     # to the native Tensor API.
     return input._typed_storage()._is_shared()

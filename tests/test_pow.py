@@ -170,6 +170,27 @@ class TensorPowTests(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "not an acceptable base type"):
             type("TensorSubclass", (torch.Tensor,), {})
 
+    def test_scalar_only_top_level_pow_rejects_before_torch_function_mode(self):
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        for call in (
+            lambda: torch.pow(2, 2),
+            lambda: torch.pow(2, 2.0),
+            lambda: torch.pow(2, 2, out=torch.tensor(0.0)),
+        ):
+            mode = RecordingMode()
+            with self.subTest(call=call), mode, self.assertRaises(TypeError):
+                call()
+            self.assertEqual(mode.calls, [])
+
     def test_operator_reflected_fallback_for_foreign_rhs(self):
         tensor = torch.tensor([2.0])
         marker = object()
@@ -282,6 +303,30 @@ class TensorPowTests(unittest.TestCase):
                 self.assertEqual(len(args), 2)
                 self.assertIs(args[0], tensor)
                 self.assertIs(args[1], rhs)
+                self.assertEqual(kwargs, {})
+
+        class ModuloOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append((func, types, args, kwargs))
+                return marker
+
+        for form, call in (
+            ("dunder positional modulo override", lambda modulo: tensor.__pow__(2, modulo)),
+            ("builtin positional modulo override", lambda modulo: pow(tensor, 2, modulo)),
+        ):
+            with self.subTest(form=form):
+                events.clear()
+                modulo = ModuloOverride()
+                self.assertIs(call(modulo), marker)
+                self.assertEqual(len(events), 1)
+                function, dispatch_types, args, kwargs = events[0]
+                self.assertIs(function, descriptor)
+                self.assertEqual(dispatch_types, (torch.Tensor, ModuloOverride))
+                self.assertEqual(len(args), 3)
+                self.assertIs(args[0], tensor)
+                self.assertEqual(args[1], 2)
+                self.assertIs(args[2], modulo)
                 self.assertEqual(kwargs, {})
 
     def test_malformed_calls_and_public_metadata(self):

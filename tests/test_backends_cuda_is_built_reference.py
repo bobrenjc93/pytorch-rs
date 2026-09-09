@@ -11,6 +11,13 @@ import unittest
 
 import torch_rs as torch
 
+def assert_cuda_runtime_probe_matches_visibility(test_case):
+    count = torch.cuda.device_count()
+    test_case.assertIs(type(count), int)
+    test_case.assertGreaterEqual(count, 0)
+    test_case.assertIs(torch.cuda.is_available(), count > 0)
+
+
 try:
     import torch as reference_torch
 except ImportError:
@@ -257,12 +264,12 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
         reference_torch.cuda.synchronize(device)
         self.assertEqual(result.cpu().tolist(), [4.0, 9.0])
 
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        assert_cuda_runtime_probe_matches_visibility(self)
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
-        self.assertFalse(hasattr(torch.Tensor, "to"))
         with self.assertRaises(RuntimeError):
             torch.tensor([2.0, 3.0], device="cuda:0")
+        with self.assertRaisesRegex(RuntimeError, r"only 'cpu' is implemented"):
+            torch.tensor([2.0, 3.0]).to("cuda:0")
 
     def test_only_the_supported_cuda_build_queries_are_exposed(self):
         actual_module = torch.backends.cuda
@@ -303,8 +310,7 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
                 "cufft_plan_cache",
             }.issubset(expected_public - actual_public)
         )
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        assert_cuda_runtime_probe_matches_visibility(self)
         self.assertTrue(hasattr(reference_torch, "cuda"))
 
 

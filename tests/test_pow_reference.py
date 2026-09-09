@@ -346,6 +346,53 @@ class TensorPowReferenceTests(unittest.TestCase):
             self.assertIs(args[1], rhs)
             self.assertEqual(kwargs, {})
 
+    def test_positional_modulo_torch_function_dispatch_matches_pytorch_2_13(self):
+        def override_call(module, tensor, result, call):
+            events = []
+
+            class ModuloOverride:
+                @classmethod
+                def __torch_function__(cls, func, types, args=(), kwargs=None):
+                    events.append((func, types, args, kwargs))
+                    return result
+
+            modulo = ModuloOverride()
+            output = call(tensor, modulo)
+            return output, modulo, ModuloOverride, events[0]
+
+        actual_tensor = torch.tensor([2.0])
+        expected_tensor = reference_torch.tensor([2.0], dtype=reference_torch.float32)
+        actual_marker = object()
+        expected_marker = object()
+
+        cases = (
+            ("direct dunder", lambda tensor, modulo: tensor.__pow__(2, modulo)),
+            ("builtin ternary", lambda tensor, modulo: pow(tensor, 2, modulo)),
+        )
+        for form, pow_call in cases:
+            with self.subTest(form=form):
+                actual = override_call(torch, actual_tensor, actual_marker, pow_call)
+                expected = override_call(
+                    reference_torch, expected_tensor, expected_marker, pow_call
+                )
+                self.assertIs(actual[0], actual_marker)
+                self.assertIs(expected[0], expected_marker)
+
+                for module, tensor, (_, modulo, override_type, call) in (
+                    (torch, actual_tensor, actual),
+                    (reference_torch, expected_tensor, expected),
+                ):
+                    function, dispatch_types, args, kwargs = call
+                    self.assertIs(
+                        function, inspect.getattr_static(module.Tensor, "__pow__")
+                    )
+                    self.assertEqual(dispatch_types, (module.Tensor, override_type))
+                    self.assertEqual(len(args), 3)
+                    self.assertIs(args[0], tensor)
+                    self.assertEqual(args[1], 2)
+                    self.assertIs(args[2], modulo)
+                    self.assertEqual(kwargs, {})
+
 
 if __name__ == "__main__":
     unittest.main()

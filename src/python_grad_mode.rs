@@ -5,10 +5,14 @@ use std::ffi::CStr;
 use std::sync::Mutex;
 use std::thread::{self, ThreadId};
 
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyModule};
+use pyo3::types::{PyAny, PyBool, PyModule};
 
-use crate::{enter_enable_grad, enter_no_grad, exit_grad_mode, grad_mode::GradModeToken};
+use crate::{
+    enter_enable_grad, enter_no_grad, exit_grad_mode, grad_mode::GradModeToken,
+    python::python_type_name, set_grad_enabled as core_set_grad_enabled,
+};
 
 const GRAD_MODE_WRAPPER_SOURCE: &CStr = cr#"
 import functools
@@ -99,6 +103,50 @@ def _make_enable_grad(context_base):
     enable_grad.__module__ = "torch_rs.autograd.grad_mode"
     enable_grad.__qualname__ = "enable_grad"
     return enable_grad
+
+
+def _make_set_grad_enabled(set_grad_enabled_native):
+    def _set_grad_enabled_signature(mode: bool) -> None:
+        pass
+
+    class set_grad_enabled:
+        def __init__(self, mode: bool) -> None:
+            self.prev = set_grad_enabled_native(mode)
+            self.mode = mode
+
+        def __call__(self, function):
+            set_grad_enabled_native(self.prev)
+            return _decorate_grad_mode(lambda: type(self)(self.mode), function)
+
+        def __enter__(self) -> None:
+            set_grad_enabled_native(self.mode)
+
+        def __exit__(self, exc_type, exc_value, traceback) -> None:
+            set_grad_enabled_native(self.prev)
+
+        def __reduce__(self):
+            from torch_rs.autograd.grad_mode import _reduce_set_grad_enabled
+
+            return _reduce_set_grad_enabled(self, 0)
+
+        def __reduce_ex__(self, protocol):
+            from torch_rs.autograd.grad_mode import _reduce_set_grad_enabled
+
+            return _reduce_set_grad_enabled(self, protocol)
+
+        def __str__(self):
+            return f"torch_rs.autograd.grad_mode.set_grad_enabled(mode={self.mode})"
+
+        def __repr__(self):
+            return str(self)
+
+        def clone(self):
+            return type(self)(self.mode)
+
+    set_grad_enabled.__module__ = "torch_rs.autograd.grad_mode"
+    set_grad_enabled.__qualname__ = "set_grad_enabled"
+    set_grad_enabled.__signature__ = inspect.signature(_set_grad_enabled_signature)
+    return set_grad_enabled
 "#;
 
 fn push_context_token(
@@ -206,10 +254,22 @@ impl PyEnableGrad {
     }
 }
 
+#[pyfunction(name = "_set_grad_enabled", signature = (enabled, /), text_signature = None)]
+fn set_grad_enabled_native(enabled: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if !enabled.is_exact_instance_of::<PyBool>() {
+        let type_name = python_type_name(enabled)?;
+        return Err(PyTypeError::new_err(format!(
+            "set_grad_enabled(): argument 'enabled' (position 1) must be bool, not {type_name}"
+        )));
+    }
+    Ok(core_set_grad_enabled(enabled.is_truthy()?))
+}
+
 pub(crate) fn add_grad_mode_contexts(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
     module.add_class::<PyNoGrad>()?;
     module.add_class::<PyEnableGrad>()?;
+    module.add_function(wrap_pyfunction!(set_grad_enabled_native, module)?)?;
     let grad_mode_helpers = PyModule::from_code(
         py,
         GRAD_MODE_WRAPPER_SOURCE,
@@ -222,13 +282,18 @@ pub(crate) fn add_grad_mode_contexts(module: &Bound<'_, PyModule>) -> PyResult<(
     let enable_grad_class = grad_mode_helpers
         .getattr("_make_enable_grad")?
         .call1((module.getattr("_EnableGradContext")?,))?;
+    let set_grad_enabled_class = grad_mode_helpers
+        .getattr("_make_set_grad_enabled")?
+        .call1((module.getattr("_set_grad_enabled")?,))?;
     let exports = module.getattr("__all__")?;
-    for name in ["_NoGradContext", "_EnableGradContext"] {
+    for name in ["_NoGradContext", "_EnableGradContext", "_set_grad_enabled"] {
         exports.call_method1("remove", (name,))?;
     }
     module.delattr("_NoGradContext")?;
     module.delattr("_EnableGradContext")?;
+    module.delattr("_set_grad_enabled")?;
     module.add("no_grad", no_grad_class)?;
     module.add("enable_grad", enable_grad_class)?;
+    module.add("set_grad_enabled", set_grad_enabled_class)?;
     Ok(())
 }

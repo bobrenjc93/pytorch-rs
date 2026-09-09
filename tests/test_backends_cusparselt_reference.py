@@ -14,6 +14,13 @@ from unittest import mock
 
 import torch_rs as torch
 
+def assert_cuda_runtime_probe_matches_visibility(test_case):
+    count = torch.cuda.device_count()
+    test_case.assertIs(type(count), int)
+    test_case.assertGreaterEqual(count, 0)
+    test_case.assertIs(torch.cuda.is_available(), count > 0)
+
+
 try:
     import torch as reference_torch
 except ImportError:
@@ -341,8 +348,7 @@ class CuSparseLtAvailabilityReferenceTests(unittest.TestCase):
         self.assertFalse(hasattr(torch.backends.cusparselt, "version"))
         self.assertFalse(hasattr(torch.backends.cusparselt, "get_max_alg_id"))
         self.assertFalse(hasattr(torch._C, "_cusparselt"))
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        assert_cuda_runtime_probe_matches_visibility(self)
 
     def test_execution_version_and_algorithm_apis_remain_unsupported(self):
         actual = torch.backends.cusparselt

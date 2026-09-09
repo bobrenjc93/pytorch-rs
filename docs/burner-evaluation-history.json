@@ -43,6 +43,10 @@
     "eval_d4c0b71e": {
       "name": "Repository polish",
       "color": "#6c757d"
+    },
+    "eval_b7f2a91c": {
+      "name": "Hardware heterogeneity",
+      "color": "#ef476f"
     }
   },
   "points": [
@@ -10525,6 +10529,181 @@
         "eval_a61c0e71": 100,
         "eval_6f98c42d": 100,
         "eval_d4c0b71e": 96
+      }
+    },
+    {
+      "key": "pr:1877",
+      "recordedAt": "2026-09-08T07:06:19.441Z",
+      "label": "PR #1877",
+      "kind": "composite",
+      "prNumber": 1877,
+      "title": "YOLO generation 242: 2 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 96,
+        "eval_39340456": 53,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 94,
+        "eval_a61c0e71": 100,
+        "eval_6f98c42d": 100,
+        "eval_d4c0b71e": 96
+      }
+    },
+    {
+      "key": "pr:1878",
+      "recordedAt": "2026-09-08T08:36:19.572Z",
+      "label": "PR #1878",
+      "kind": "composite",
+      "prNumber": 1878,
+      "title": "YOLO generation 243: 2 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 97,
+        "eval_39340456": 55,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 95,
+        "eval_a61c0e71": 100,
+        "eval_6f98c42d": 100,
+        "eval_d4c0b71e": 96
+      }
+    },
+    {
+      "key": "pr:1881",
+      "recordedAt": "2026-09-08T10:08:16.025Z",
+      "label": "PR #1881",
+      "kind": "composite",
+      "prNumber": 1881,
+      "title": "YOLO generation 244: 2 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 97,
+        "eval_39340456": 58,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 95,
+        "eval_a61c0e71": 100,
+        "eval_6f98c42d": 100,
+        "eval_d4c0b71e": 96
+      }
+    },
+    {
+      "key": "pr:1886",
+      "recordedAt": "2026-09-08T13:59:50.146Z",
+      "label": "PR #1886",
+      "kind": "composite",
+      "prNumber": 1886,
+      "title": "YOLO generation 245: 2 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 97,
+        "eval_39340456": 62,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 95,
+        "eval_a61c0e71": 100,
+        "eval_6f98c42d": 100,
+        "eval_d4c0b71e": 96
+      }
+    },
+    {
+      "key": "pr:1887",
+      "recordedAt": "2026-09-08T16:06:07.404Z",
+      "label": "PR #1887",
+      "kind": "composite",
+      "prNumber": 1887,
+      "title": "YOLO generation 246: 2 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 97,
+        "eval_39340456": 66,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 95,
+        "eval_a61c0e71": 100,
+        "eval_6f98c42d": 100,
+        "eval_d4c0b71e": 96
+      }
+    },
+    {
+      "key": "base:8d1f642cc0722171867791c352c587a81ab09325",
+      "commit": "8d1f642cc0722171867791c352c587a81ab09325",
+      "recordedAt": "2026-09-08T20:44:27.496Z",
+      "label": "base 8d1f642",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 97,
+        "eval_39340456": 66,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 95,
+        "eval_a61c0e71": 100,
+        "eval_6f98c42d": 100,
+        "eval_d4c0b71e": 96,
+        "eval_b7f2a91c": 0.3
+      }
+    },
+    {
+      "key": "pr:1891",
+      "recordedAt": "2026-09-08T20:44:27.496Z",
+      "label": "PR #1891",
+      "kind": "composite",
+      "prNumber": 1891,
+      "title": "YOLO generation 247: 2 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 97,
+        "eval_39340456": 68,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 95,
+        "eval_a61c0e71": 100,
+        "eval_6f98c42d": 100,
+        "eval_d4c0b71e": 96,
+        "eval_b7f2a91c": 0.3
+      }
+    },
+    {
+      "key": "pr:1896",
+      "recordedAt": "2026-09-08T23:55:57.943Z",
+      "label": "PR #1896",
+      "kind": "composite",
+      "prNumber": 1896,
+      "title": "YOLO generation 249: 2 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 97,
+        "eval_39340456": 70,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 95,
+        "eval_a61c0e71": 100,
+        "eval_6f98c42d": 100,
+        "eval_d4c0b71e": 96,
+        "eval_b7f2a91c": 0.3
+      }
+    },
+    {
+      "key": "pr:1898",
+      "recordedAt": "2026-09-09T04:45:33.812Z",
+      "label": "PR #1898",
+      "kind": "composite",
+      "prNumber": 1898,
+      "title": "YOLO generation 251: CUDA storage and rank-2 reductions",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 97,
+        "eval_39340456": 72,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96,
+        "eval_a61c0e71": 100,
+        "eval_6f98c42d": 100,
+        "eval_d4c0b71e": 96,
+        "eval_b7f2a91c": 0.8
       }
     }
   ]

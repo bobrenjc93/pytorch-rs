@@ -21,6 +21,13 @@ FUNCTION_DOC = """
     """
 
 
+def assert_cuda_runtime_probe_matches_visibility(test_case):
+    count = torch.cuda.device_count()
+    test_case.assertIs(type(count), int)
+    test_case.assertGreaterEqual(count, 0)
+    test_case.assertIs(torch.cuda.is_available(), count > 0)
+
+
 class CudaIsBuiltTests(unittest.TestCase):
     def test_returns_exact_false_native_build_metadata_without_runtime_probes(self):
         function = torch.backends.cuda.is_built
@@ -155,8 +162,7 @@ class CudaIsBuiltTests(unittest.TestCase):
         self.assertIs(child_wildcard["is_built"], function)
 
         self.assertNotIn("backends", torch.__all__)
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        assert_cuda_runtime_probe_matches_visibility(self)
         top_level_wildcard = {}
         exec("from torch_rs import *", top_level_wildcard)
         self.assertNotIn("backends", top_level_wildcard)
@@ -237,19 +243,19 @@ class CudaIsBuiltTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(cuda_backend, name))
 
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        assert_cuda_runtime_probe_matches_visibility(self)
         self.assertIs(sys.modules["torch_rs.cuda"], torch.cuda)
         self.assertIs(importlib.import_module("torch_rs.cuda"), torch.cuda)
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
-        self.assertFalse(hasattr(torch.Tensor, "to"))
         with self.assertRaisesRegex(
             RuntimeError,
             r"^tensor\(\): device 'cuda:0' is not supported; only 'cpu' is implemented$",
         ):
             torch.tensor([1.0], device="cuda:0")
+        with self.assertRaisesRegex(RuntimeError, r"only 'cpu' is implemented"):
+            torch.tensor([1.0]).to("cuda:0")
 
-    def test_importing_and_calling_does_not_probe_or_import_external_runtimes(self):
+    def test_importing_and_calling_does_not_import_external_python_runtimes(self):
         script = r'''
 import os
 import sys
@@ -277,8 +283,9 @@ assert cuda.is_built is is_built
 assert is_built.__code__.co_names == ("torch", "_C", "_has_cuda")
 assert is_built() is torch._C._has_cuda is False
 assert not hasattr(torch, "_has_cuda")
-assert torch.cuda.is_available() is False
-assert torch.cuda.device_count() == 0
+device_count = torch.cuda.device_count()
+assert type(device_count) is int and device_count >= 0
+assert torch.cuda.is_available() is (device_count > 0)
 assert not any(
     name.split(".", 1)[0] in RejectExternalRuntimeImport.blocked
     for name in sys.modules

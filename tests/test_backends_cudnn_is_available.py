@@ -13,6 +13,13 @@ from unittest import mock
 import torch_rs as torch
 
 
+def assert_cuda_runtime_probe_matches_visibility(test_case):
+    count = torch.cuda.device_count()
+    test_case.assertIs(type(count), int)
+    test_case.assertGreaterEqual(count, 0)
+    test_case.assertIs(torch.cuda.is_available(), count > 0)
+
+
 IS_AVAILABLE_DOC = "Return a bool indicating if CUDNN is currently available."
 VERSION_DOC = "Return the version of cuDNN."
 
@@ -283,17 +290,17 @@ class CudnnIsAvailableTests(unittest.TestCase):
             with self.subTest(native_name=name):
                 self.assertFalse(hasattr(torch._C, name))
 
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        assert_cuda_runtime_probe_matches_visibility(self)
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
-        self.assertFalse(hasattr(torch.Tensor, "to"))
         with self.assertRaisesRegex(
             RuntimeError,
             r"^tensor\(\): device 'cuda:0' is not supported; only 'cpu' is implemented$",
         ):
             torch.tensor([1.0], device="cuda:0")
+        with self.assertRaisesRegex(RuntimeError, r"only 'cpu' is implemented"):
+            torch.tensor([1.0]).to("cuda:0")
 
-    def test_importing_and_calling_does_not_probe_or_import_external_runtimes(self):
+    def test_importing_and_calling_does_not_import_external_python_runtimes(self):
         script = r'''
 import os
 import sys
@@ -370,8 +377,9 @@ cudnn.benchmark_limit = 10
 cudnn.deterministic = False
 cudnn.allow_tf32 = True
 assert not hasattr(torch, "_has_cudnn")
-assert torch.cuda.is_available() is False
-assert torch.cuda.device_count() == 0
+device_count = torch.cuda.device_count()
+assert type(device_count) is int and device_count >= 0
+assert torch.cuda.is_available() is (device_count > 0)
 assert set_flags() == (True, False, 10, False, True, "none", "auto")
 with flags(False, True, 11, True, False):
     assert cudnn.enabled is False

@@ -1307,7 +1307,11 @@ __doc__ = _native.__doc__
 # attributes that the extension itself owns. PyTorch keeps ``__version__``
 # directly importable but excludes it from package wildcard imports.
 __all__ = [
-    *(name for name in _native.__all__ if name != "__version__"),
+    *(
+        name
+        for name in _native.__all__
+        if name not in {"__version__", "set_grad_enabled"}
+    ),
     "are_deterministic_algorithms_enabled",
     "use_deterministic_algorithms",
     "get_deterministic_debug_mode",

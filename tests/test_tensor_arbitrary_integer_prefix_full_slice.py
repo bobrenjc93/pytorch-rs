@@ -234,7 +234,7 @@ class TensorArbitraryIntegerPrefixFullSliceTests(unittest.TestCase):
         events.clear()
         mixed = tuple(IndexValue(index, 0) for index in range(6))
         with self.assertRaisesRegex(IndexError, "only integers"):
-            torch.zeros((2,) * 7)[(mixed[0], None, *mixed[2:], slice(None))]
+            torch.zeros((2,) * 7)[(mixed[0], None, None, *mixed[3:], slice(None))]
         self.assertEqual(events, [0])
 
         events.clear()
