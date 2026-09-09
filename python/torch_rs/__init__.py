@@ -1340,6 +1340,7 @@ __all__ = [
     "nan",
     "inf",
     "newaxis",
+    "split",
 ]
 # PyTorch lists ``matmul`` once among its hand-written package exports and once
 # among generated variable functions. Preserve that observable duplicate while
@@ -1371,6 +1372,7 @@ from .functional import atleast_2d as atleast_2d
 from .functional import atleast_3d as atleast_3d
 from .functional import broadcast_shapes as broadcast_shapes
 from .functional import broadcast_tensors as broadcast_tensors
+from .functional import split as split
 
 del (
     _copyreg,

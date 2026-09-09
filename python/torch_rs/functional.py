@@ -23,7 +23,35 @@ __all__ = [
     "atleast_3d",
     "broadcast_shapes",
     "broadcast_tensors",
+    "split",
 ]
+
+
+def _split_impl(tensor, split_size_or_sections, dim):
+    if type(tensor) is not Tensor:
+        raise NotImplementedError(
+            "split(): only exact native CPU float32 Tensor inputs are supported"
+        )
+    return tensor.split(split_size_or_sections, dim)
+
+
+def split(
+    tensor: Tensor,
+    split_size_or_sections: int | list[int],
+    dim: int = 0,
+) -> tuple[Tensor, ...]:
+    """Split a tensor into shared-storage views of at most the given size.
+
+    Only integer split sizes on exact native CPU float32 tensors are supported.
+    The last view may be shorter. Section lists remain unsupported.
+    """
+    return _dispatch_unary_torch_function(
+        split,
+        _split_impl,
+        tensor,
+        {"dim": dim},
+        positional_arguments=(split_size_or_sections,),
+    )
 
 
 _ATLEAST_1D_SEQUENCE_UNSUPPORTED = (
