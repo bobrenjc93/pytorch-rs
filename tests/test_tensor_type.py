@@ -286,7 +286,6 @@ class TensorTypeTests(unittest.TestCase):
 
         unsupported_targets = (
             "torch.DoubleTensor",
-            "torch.cuda.FloatTensor",
             "torch.FloatTensor ",
             torch.Tensor,
             float,
@@ -297,11 +296,18 @@ class TensorTypeTests(unittest.TestCase):
             with self.subTest(target=target):
                 with self.assertRaisesRegex(
                     TypeError,
-                    r"^type\(\): only torch\.float32 and "
-                    r"'torch\.FloatTensor' are supported$",
+                    r"^type\(\): only torch\.float32, "
+                    r"'torch\.FloatTensor', and 'torch\.cuda\.FloatTensor' are supported$",
                 ):
                     tensor.type(target)
                 self.assertEqual(self.metadata(tensor), before)
+
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^type\(\): CUDA tensor conversions are not supported",
+        ):
+            tensor.type("torch.cuda.FloatTensor")
+        self.assertEqual(self.metadata(tensor), before)
 
     def test_torch_function_modes_receive_descriptor_and_forward(self):
         tensor = torch.tensor([1.0])

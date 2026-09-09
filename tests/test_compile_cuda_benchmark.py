@@ -45,6 +45,13 @@ sys.modules[spec.name] = benchmark_compile_cuda
 spec.loader.exec_module(benchmark_compile_cuda)
 
 
+def assert_cuda_runtime_probe_matches_visibility(test_case):
+    count = torch.cuda.device_count()
+    test_case.assertIs(type(count), int)
+    test_case.assertGreaterEqual(count, 0)
+    test_case.assertIs(torch.cuda.is_available(), count > 0)
+
+
 def _reference_cuda_probe(cuda_visible_devices="0"):
     script = r"""
 import json
@@ -406,6 +413,9 @@ def _fake_input_tensor(runtime, name, shape):
 
 
 class CompileCudaBenchmarkTests(unittest.TestCase):
+    def setUp(self):
+        self.public_cuda_initialized_before = torch.cuda.is_initialized()
+
     def _require_h100_reference_torch(self):
         probe = _reference_cuda_probe()
         if not probe.get("imported"):
@@ -629,13 +639,18 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
         self.assertIn("does not receive compile credit", row["reason"])
 
         probes = row["cuda_probes"]
-        self.assertIs(probes["cuda_is_available"], False)
-        self.assertEqual(probes["cuda_device_count"], 0)
-        self.assertIs(probes["cuda_is_initialized"], False)
+        self.assertIs(type(probes["cuda_device_count"]), int)
+        self.assertGreaterEqual(probes["cuda_device_count"], 0)
+        self.assertIs(
+            probes["cuda_is_available"],
+            probes["cuda_device_count"] > 0,
+        )
+        self.assertIs(
+            probes["cuda_is_initialized"], self.public_cuda_initialized_before
+        )
         self.assertIs(probes["accelerator_is_available"], False)
         self.assertEqual(probes["accelerator_device_count"], 0)
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
+        assert_cuda_runtime_probe_matches_visibility(self)
 
     def test_cuda_compile_shape_matrix_is_fixed_and_weighted(self):
         cells = benchmark_compile_cuda.WORKLOAD_MATRIX
@@ -711,9 +726,10 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
             torch.cuda.__all__,
             ["device_count", "is_available", "is_initialized"],
         )
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
-        self.assertIs(torch.cuda.is_initialized(), False)
+        assert_cuda_runtime_probe_matches_visibility(self)
+        self.assertIs(
+            torch.cuda.is_initialized(), self.public_cuda_initialized_before
+        )
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
         self.assertIs(torch.is_tensor(CudaBenchmarkTensor), False)
 
@@ -846,9 +862,10 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
         self.assertNotIn("_cuda_driver_probe", torch.__all__)
         self.assertFalse(hasattr(torch.cuda, "_cuda_driver_probe"))
         self.assertFalse(hasattr(torch.cuda, "driver_probe"))
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
-        self.assertIs(torch.cuda.is_initialized(), False)
+        assert_cuda_runtime_probe_matches_visibility(self)
+        self.assertIs(
+            torch.cuda.is_initialized(), self.public_cuda_initialized_before
+        )
 
         probe = _cuda_driver_probe.probe_cuda_driver_device0()
         self.assertEqual(
@@ -861,9 +878,10 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
         self.assertIn("driver", probe)
         self.assertIn("runtime", probe)
         self.assertIn("cuda_visible_devices", probe)
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
-        self.assertIs(torch.cuda.is_initialized(), False)
+        assert_cuda_runtime_probe_matches_visibility(self)
+        self.assertIs(
+            torch.cuda.is_initialized(), self.public_cuda_initialized_before
+        )
 
     def test_private_cuda_float32_buffer_is_not_public_cuda_support(self):
         self.assertNotIn("_cuda_buffer", torch.__all__)
@@ -885,9 +903,10 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
         self.assertIs(metadata["is_contiguous"], True)
         self.assertEqual(_cuda_buffer.element_count((2, 3)), 6)
         self.assertEqual(_cuda_buffer.contiguous_stride((2, 3, 4)), (12, 4, 1))
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
-        self.assertIs(torch.cuda.is_initialized(), False)
+        assert_cuda_runtime_probe_matches_visibility(self)
+        self.assertIs(
+            torch.cuda.is_initialized(), self.public_cuda_initialized_before
+        )
 
     def test_private_cuda_runtime_roundtrip_is_not_public_cuda_support(self):
         self.assertNotIn("_cuda_runtime_roundtrip", torch.__all__)
@@ -897,9 +916,10 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
             _cuda_runtime_roundtrip.DEFAULT_ROUNDTRIP_CHECKSUM,
             "89c5ee9507c6f91487b4bad190da4a7f",
         )
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
-        self.assertIs(torch.cuda.is_initialized(), False)
+        assert_cuda_runtime_probe_matches_visibility(self)
+        self.assertIs(
+            torch.cuda.is_initialized(), self.public_cuda_initialized_before
+        )
 
     def test_private_cuda_pointwise_kernel_is_not_public_cuda_support(self):
         self.assertNotIn("_cuda_pointwise_kernel", torch.__all__)
@@ -909,9 +929,10 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
             _cuda_pointwise_kernel.DEFAULT_POINTWISE_CHECKSUM,
             "859e8e6c64e796d56eee827f79e23386",
         )
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
-        self.assertIs(torch.cuda.is_initialized(), False)
+        assert_cuda_runtime_probe_matches_visibility(self)
+        self.assertIs(
+            torch.cuda.is_initialized(), self.public_cuda_initialized_before
+        )
 
     def test_private_cuda_pointwise_reduce_workload_is_not_public_cuda_support(self):
         self.assertNotIn("_cuda_pointwise_reduce_workload", torch.__all__)
@@ -922,9 +943,10 @@ class CompileCudaBenchmarkTests(unittest.TestCase):
             benchmark_compile_cuda.WORKLOAD_SHAPE,
         )
         self.assertEqual(_cuda_pointwise_reduce_workload.OUTPUT_SHAPE, (1024,))
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
-        self.assertIs(torch.cuda.is_initialized(), False)
+        assert_cuda_runtime_probe_matches_visibility(self)
+        self.assertIs(
+            torch.cuda.is_initialized(), self.public_cuda_initialized_before
+        )
 
     def test_private_cuda_runtime_roundtrip_reports_no_visible_cuda_cleanly(self):
         script = r"""
@@ -1017,8 +1039,12 @@ print(json.dumps({
         self.assertIs(probe["device_pointer_nonzero"], False)
         self.assertIs(probe["checksum_match"], False)
         self.assertEqual(probe["calls"], {})
-        self.assertIs(probe["public_cuda_is_available"], False)
-        self.assertEqual(probe["public_cuda_device_count"], 0)
+        self.assertIs(type(probe["public_cuda_device_count"]), int)
+        self.assertGreaterEqual(probe["public_cuda_device_count"], 0)
+        self.assertIs(
+            probe["public_cuda_is_available"],
+            probe["public_cuda_device_count"] > 0,
+        )
         self.assertIs(probe["public_cuda_is_initialized"], False)
 
     def test_private_cuda_pointwise_kernel_reports_no_visible_cuda_cleanly(self):
@@ -1246,9 +1272,10 @@ print(json.dumps({
             str,
         )
         self.assertIsInstance(roundtrip["runtime"]["runtime_version_text"], str)
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
-        self.assertIs(torch.cuda.is_initialized(), False)
+        assert_cuda_runtime_probe_matches_visibility(self)
+        self.assertIs(
+            torch.cuda.is_initialized(), self.public_cuda_initialized_before
+        )
 
     def test_private_cuda_pointwise_kernel_launches_and_syncs_on_h100(self):
         probe = _reference_cuda_probe()
@@ -1350,9 +1377,10 @@ print(json.dumps({
         self.assertIn("Cuda compilation tools", pointwise["nvcc"]["version"]["stdout"])
         self.assertEqual(pointwise["build"]["architecture"], "sm_90")
         self.assertIs(pointwise["kernel_library"]["loaded"], True)
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
-        self.assertIs(torch.cuda.is_initialized(), False)
+        assert_cuda_runtime_probe_matches_visibility(self)
+        self.assertIs(
+            torch.cuda.is_initialized(), self.public_cuda_initialized_before
+        )
 
     def test_private_cuda_pointwise_reduce_matches_pytorch_compile_on_h100(self):
         probe = _reference_cuda_probe()
@@ -1522,9 +1550,10 @@ print(json.dumps({
         )
         self.assertEqual(pointwise_reduce["build"]["architecture"], "sm_90")
         self.assertIs(pointwise_reduce["kernel_library"]["loaded"], True)
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
-        self.assertIs(torch.cuda.is_initialized(), False)
+        assert_cuda_runtime_probe_matches_visibility(self)
+        self.assertIs(
+            torch.cuda.is_initialized(), self.public_cuda_initialized_before
+        )
 
     def test_torch_compile_inductor_pointwise_reduce_runs_native_cuda_on_h100(self):
         reference_torch = self._require_h100_reference_torch()
@@ -1630,9 +1659,10 @@ print(json.dumps({
         self.assertIs(classification["eligible_cuda_compile_evidence"], True)
         self.assertEqual(classification["score_credit"], 1.0)
         self.assertEqual(classification["rejection_reasons"], [])
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
-        self.assertIs(torch.cuda.is_initialized(), False)
+        assert_cuda_runtime_probe_matches_visibility(self)
+        self.assertIs(
+            torch.cuda.is_initialized(), self.public_cuda_initialized_before
+        )
 
     def test_torch_compile_inductor_pointwise_reduce_shape_family_on_h100(self):
         reference_torch = self._require_h100_reference_torch()
@@ -1774,9 +1804,10 @@ print(json.dumps({
                     )
                     self.assertIs(comparison["exact_bytes_match"], True)
                     self.assertEqual(comparison["mismatched_element_count"], 0)
-                    self.assertIs(torch.cuda.is_available(), False)
-                    self.assertEqual(torch.cuda.device_count(), 0)
-                    self.assertIs(torch.cuda.is_initialized(), False)
+                    assert_cuda_runtime_probe_matches_visibility(self)
+                    self.assertIs(
+                        torch.cuda.is_initialized(), self.public_cuda_initialized_before
+                    )
                 finally:
                     if output is not None:
                         output._torch_rs_close_private_cuda_buffer()
@@ -3287,9 +3318,10 @@ print(json.dumps({
             compiled._torch_rs_cuda_compile_executor.metadata(),
             expected_invocation_count=3,
         )
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
-        self.assertIs(torch.cuda.is_initialized(), False)
+        assert_cuda_runtime_probe_matches_visibility(self)
+        self.assertIs(
+            torch.cuda.is_initialized(), self.public_cuda_initialized_before
+        )
 
     def test_torch_compile_inductor_pointwise_reduce_reprepares_after_reset_on_h100(
         self,
@@ -3815,9 +3847,10 @@ print(json.dumps({
         )
         with self.assertRaisesRegex(NotImplementedError, "CUDA compilation"):
             compiled(*input_bundle.inputs)
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
-        self.assertIs(torch.cuda.is_initialized(), False)
+        assert_cuda_runtime_probe_matches_visibility(self)
+        self.assertIs(
+            torch.cuda.is_initialized(), self.public_cuda_initialized_before
+        )
 
     def test_torch_compile_inductor_pointwise_reduce_rejects_wrong_shape_on_h100(
         self,
@@ -3846,9 +3879,10 @@ print(json.dumps({
         )
         with self.assertRaisesRegex(NotImplementedError, "x metadata mismatch"):
             compiled(*input_bundle.inputs)
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
-        self.assertIs(torch.cuda.is_initialized(), False)
+        assert_cuda_runtime_probe_matches_visibility(self)
+        self.assertIs(
+            torch.cuda.is_initialized(), self.public_cuda_initialized_before
+        )
 
     def test_torch_compile_inductor_pointwise_reduce_rejects_cpu_inputs_on_h100(
         self,
@@ -3865,9 +3899,10 @@ print(json.dumps({
         cpu_bias = torch.tensor([0.25, -0.5], dtype=torch.float32)
         with self.assertRaisesRegex(NotImplementedError, "CudaBenchmarkTensor"):
             compiled(cpu_x, cpu_bias)
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
-        self.assertIs(torch.cuda.is_initialized(), False)
+        assert_cuda_runtime_probe_matches_visibility(self)
+        self.assertIs(
+            torch.cuda.is_initialized(), self.public_cuda_initialized_before
+        )
 
     def test_private_cuda_pointwise_kernel_honors_caller_visibility_mask(self):
         cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
@@ -3963,8 +3998,12 @@ print(json.dumps({{
         self.assertIs(pointwise["checksum_match"], True)
         self.assertIn("H100", pointwise["gpu_name"])
         self.assertEqual(pointwise["compute_capability"], [9, 0])
-        self.assertIs(pointwise["public_cuda_is_available"], False)
-        self.assertEqual(pointwise["public_cuda_device_count"], 0)
+        self.assertIs(type(pointwise["public_cuda_device_count"]), int)
+        self.assertGreaterEqual(pointwise["public_cuda_device_count"], 0)
+        self.assertIs(
+            pointwise["public_cuda_is_available"],
+            pointwise["public_cuda_device_count"] > 0,
+        )
         self.assertIs(pointwise["public_cuda_is_initialized"], False)
 
     def test_private_cuda_pointwise_kernel_empty_override_skips_env_string_check(self):
@@ -4003,9 +4042,10 @@ print(json.dumps({{
             _cuda_pointwise_kernel.DEFAULT_POINTWISE_CHECKSUM,
         )
         self.assertIs(pointwise["checksum_match"], True)
-        self.assertIs(torch.cuda.is_available(), False)
-        self.assertEqual(torch.cuda.device_count(), 0)
-        self.assertIs(torch.cuda.is_initialized(), False)
+        assert_cuda_runtime_probe_matches_visibility(self)
+        self.assertIs(
+            torch.cuda.is_initialized(), self.public_cuda_initialized_before
+        )
 
     def test_private_cuda_pointwise_build_directory_rejects_symlinked_parent(self):
         target_root = REPOSITORY_ROOT / "target"

@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
+use crate::Device;
 use crate::memory_format::MemoryFormat;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -87,6 +88,17 @@ pub enum TensorError {
     },
     AllocationFailed {
         elements: usize,
+    },
+    UnsupportedDevice {
+        operation: &'static str,
+        device: Device,
+    },
+    UnsupportedCudaZeroTensor {
+        reason: &'static str,
+    },
+    CudaRuntimeError {
+        operation: &'static str,
+        message: String,
     },
     UnsupportedMemoryFormat {
         memory_format: MemoryFormat,
@@ -196,6 +208,9 @@ impl Display for TensorError {
             error @ (Self::StorageCapacityOverflow { .. } | Self::AllocationFailed { .. }) => {
                 format_storage_error(formatter, error)
             }
+            error @ (Self::UnsupportedDevice { .. }
+            | Self::UnsupportedCudaZeroTensor { .. }
+            | Self::CudaRuntimeError { .. }) => format_device_error(formatter, error),
             error @ (Self::UnsupportedMemoryFormat { .. }
             | Self::ContiguousPreserveFormatUnsupported
             | Self::ContiguousMemoryFormatRankMismatch { .. }) => {
@@ -344,6 +359,23 @@ fn format_storage_error(formatter: &mut Formatter<'_>, error: &TensorError) -> s
             )
         }
         _ => unreachable!("only storage allocation errors are formatted here"),
+    }
+}
+
+fn format_device_error(formatter: &mut Formatter<'_>, error: &TensorError) -> std::fmt::Result {
+    match error {
+        TensorError::UnsupportedDevice { operation, device } => write!(
+            formatter,
+            "{operation}(): device '{device}' is not supported; only 'cpu' is implemented"
+        ),
+        TensorError::UnsupportedCudaZeroTensor { reason } => write!(
+            formatter,
+            "zeros(): CUDA storage is only implemented for 1-D float32 tensors with requires_grad=False ({reason})"
+        ),
+        TensorError::CudaRuntimeError { operation, message } => {
+            write!(formatter, "{operation}(): CUDA runtime error: {message}")
+        }
+        _ => unreachable!("only device errors are formatted here"),
     }
 }
 

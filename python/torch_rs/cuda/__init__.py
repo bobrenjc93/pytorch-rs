@@ -1,5 +1,5 @@
 r"""
-CPU-build CUDA compatibility probes.
+CUDA availability probes for the narrow public tensor storage path.
 """
 
 __all__ = ["device_count", "is_available", "is_initialized"]
@@ -7,14 +7,20 @@ __all__ = ["device_count", "is_available", "is_initialized"]
 
 def is_available() -> bool:
     r"""Returns a bool indicating if CUDA is currently available."""
-    return False
+    from torch_rs import _cuda_public_storage
+
+    return _cuda_public_storage.is_available()
 
 
 def device_count() -> int:
     r"""Returns the number of GPUs available."""
-    return 0
+    from torch_rs import _cuda_public_storage
+
+    return _cuda_public_storage.device_count()
 
 
 def is_initialized():
     r"""Return whether PyTorch's CUDA state has been initialized."""
-    return False
+    from torch_rs import _cuda_public_storage
+
+    return _cuda_public_storage.is_initialized()
