@@ -307,6 +307,40 @@ impl CudaFloat32Storage {
         Ok(result)
     }
 
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn negate(&self, offset: usize, elements: usize) -> Result<Self, TensorError> {
+        // Empty views may have offsets beyond storage; never form their pointer.
+        if elements != 0
+            && offset
+                .checked_add(elements)
+                .is_none_or(|end| end > self.elements)
+        {
+            return Err(TensorError::IndexCalculationOverflow);
+        }
+        let (result, _guard) = Self::allocate(elements, self.device_index)?;
+        if elements != 0 {
+            // SAFETY: checked contiguous bounds, guarded device and fresh output.
+            // Both allocations remain live through completion, also on errors.
+            let launched = unsafe {
+                pointwise::launch_negate(
+                    (self.data_ptr + offset * 4) as u64,
+                    result.data_ptr as u64,
+                    elements,
+                )
+            };
+            let completed = self.runtime.check(
+                unsafe { (self.runtime.stream_synchronize)(std::ptr::without_provenance_mut(1)) },
+                "cudaStreamSynchronize",
+            );
+            if launched.is_err() || completed.is_err() {
+                CACHE_HEALTHY.store(false, Ordering::Relaxed);
+            }
+            launched?;
+            completed?;
+        }
+        Ok(result)
+    }
+
     // Only the initializing constructors above may publish this allocation.
     // Retain one guard across allocation and initialization, including errors.
     fn allocate(elements: usize, device_index: usize) -> Result<(Self, DeviceGuard), TensorError> {
@@ -626,6 +660,58 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn negation_bounds_and_bitwise_values_without_python() {
+        if super::device_count() == 0 {
+            eprintln!("skipping native CUDA negation: no CUDA runtime/device");
+            return;
+        }
+        let bits = [
+            0,
+            0x8000_0000,
+            1,
+            0x8000_0001,
+            0x007f_ffff,
+            0x0080_0000,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc1_2345,
+            0x7f80_0001,
+        ];
+        let input = Tensor::from_vec(bits.map(f32::from_bits).to_vec(), [bits.len()])
+            .unwrap()
+            .try_copy_cpu_to_cuda(Device::Cuda(0))
+            .unwrap();
+        let result = input.negate().unwrap();
+        let read_bits = |tensor: &Tensor| {
+            tensor
+                .try_copy_cuda_to_cpu()
+                .unwrap()
+                .try_to_vec()
+                .unwrap()
+                .into_iter()
+                .map(f32::to_bits)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(read_bits(&input), bits);
+        drop(input);
+        assert_eq!(read_bits(&result), bits.map(|bit| bit ^ 0x8000_0000));
+
+        let input = super::CudaFloat32Storage::from_host(&[9.0, 1.25, -2.5], 0).unwrap();
+        for (offset, elements) in [(3, 1), (usize::MAX, 2), (0, 4)] {
+            assert!(matches!(
+                input.negate(offset, elements),
+                Err(crate::TensorError::IndexCalculationOverflow)
+            ));
+        }
+        assert_eq!(
+            input.negate(1, 2).unwrap().copy_range(0, 2).unwrap(),
+            [-1.25, 2.5]
+        );
+        assert_eq!(input.negate(usize::MAX, 0).unwrap().elements, 0);
     }
 
     #[test]

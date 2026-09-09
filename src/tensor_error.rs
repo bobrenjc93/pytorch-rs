@@ -99,6 +99,9 @@ pub enum TensorError {
     UnsupportedCudaAddition {
         reason: &'static str,
     },
+    UnsupportedCudaNegation {
+        reason: &'static str,
+    },
     UnsupportedCudaTransfer {
         reason: &'static str,
     },
@@ -154,12 +157,10 @@ impl Display for TensorError {
             Self::SliceCannotApplyToScalar => {
                 formatter.write_str("slice() cannot be applied to a 0-dim tensor.")
             }
-            Self::TooManyIndices { dimensions } => {
-                write!(
-                    formatter,
-                    "too many indices for tensor of dimension {dimensions}"
-                )
-            }
+            Self::TooManyIndices { dimensions } => write!(
+                formatter,
+                "too many indices for tensor of dimension {dimensions}"
+            ),
             Self::IndexOutOfBounds {
                 index,
                 dimension,
@@ -217,6 +218,7 @@ impl Display for TensorError {
             error @ (Self::UnsupportedDevice { .. }
             | Self::UnsupportedCudaZeroTensor { .. }
             | Self::UnsupportedCudaAddition { .. }
+            | Self::UnsupportedCudaNegation { .. }
             | Self::UnsupportedCudaTransfer { .. }
             | Self::CudaRuntimeError { .. }) => format_device_error(formatter, error),
             error @ (Self::UnsupportedMemoryFormat { .. }
@@ -385,6 +387,9 @@ fn format_device_error(formatter: &mut Formatter<'_>, error: &TensorError) -> st
         }
         TensorError::UnsupportedCudaAddition { reason } => {
             write!(formatter, "add(): unsupported CUDA addition ({reason})")
+        }
+        TensorError::UnsupportedCudaNegation { reason } => {
+            write!(formatter, "neg(): unsupported CUDA negation ({reason})")
         }
         TensorError::UnsupportedCudaTransfer { reason } => {
             write!(formatter, "to(): unsupported CUDA transfer ({reason})")

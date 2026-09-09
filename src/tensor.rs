@@ -4929,12 +4929,45 @@ impl Tensor {
     }
 
     /// Negates every element by toggling its IEEE 754 sign bit.
+    /// CUDA supports contiguous float32 inputs without autograd and completes
+    /// before returning fresh storage, including for contiguous offset views.
     ///
     /// # Errors
     ///
-    /// Returns an error when result metadata or storage allocation fails.
+    /// Returns an error when result metadata or storage allocation fails, CUDA
+    /// input layout or autograd is unsupported, or the CUDA launch fails.
     #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn negate(&self) -> Result<Self, TensorError> {
+        if self.is_cuda() {
+            let reason = if self.dtype() != DType::Float32 {
+                Some("only float32 is supported")
+            } else if self.requires_grad() {
+                Some("autograd is unsupported")
+            } else if !self.is_contiguous() {
+                Some("input must be contiguous")
+            } else {
+                None
+            };
+            if let Some(reason) = reason {
+                return Err(TensorError::UnsupportedCudaNegation { reason });
+            }
+            let shape = try_clone_result_shape(&self.shape, self.elements)?;
+            let strides = contiguous_strides(&shape, self.elements)?;
+            let storage = self
+                .storage
+                .cuda_negate_float32(self.offset, self.elements)?;
+            return Ok(Self {
+                storage: Arc::new(storage),
+                shape,
+                strides,
+                offset: 0,
+                elements: self.elements,
+                output_nr: 0,
+                leaf_requires_grad: requires_grad_flag(false),
+                view_requires_grad: None,
+                autograd: None,
+            });
+        }
         let output = self.unary_map(negate_value)?;
         self.finish_negate_vjp(output, AutogradNode::Negate)
     }
