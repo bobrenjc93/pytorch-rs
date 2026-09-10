@@ -5,44 +5,148 @@
   "capability": "math_reductions_linalg",
   "scope": "correctness evidence for this six-case cell only; no overall score or transfer credit",
   "source": {
-    "commit": "d2542a42315c871c0dd2fa71305eae1b95a7d4c1",
+    "commit": "6d240ceef6ee719a041852c904506622995ef4c7",
     "source_sha256": "ef5e875cb9e9b40018772fdafacb333a4173d152f06d7352a569bb07712e5683",
-    "production_diff_sha256": "7bef9903be085103418612aee590277d7990da19be8a8a89ec2484bc09b3ac1f"
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
   "source_unchanged_during_run": true,
   "evaluator_sha256": "29a97d07bad0d82c261e28aa880de68cdf46df0731d5ff0aa9802ec5bb8e605b",
   "matrix_sha256": "a077f00f5eb50e2dceb2bd41a8453977955a8114fed203b7235f3a8befb24698",
   "build_record": {
-    "commit": "d2542a42315c871c0dd2fa71305eae1b95a7d4c1",
+    "commit": "6d240ceef6ee719a041852c904506622995ef4c7",
     "source_sha256": "ef5e875cb9e9b40018772fdafacb333a4173d152f06d7352a569bb07712e5683",
-    "production_diff_sha256": "7bef9903be085103418612aee590277d7990da19be8a8a89ec2484bc09b3ac1f",
-    "build_command": "CARGO_HOME=\"$PWD/target/cargo-home\" CARGO_TARGET_DIR=\"$PWD/target/sum-release\" TMPDIR=\"$PWD/target/tmp\" PYO3_PYTHON=/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python PYTHONDONTWRITEBYTECODE=1 cargo build --offline --release --features extension-module",
-    "install_command": "cp target/sum-release/release/libpytorch_rs.so target/torch_rs.final.so && mv target/torch_rs.final.so python/torch_rs/torch_rs.abi3.so",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "git_status_before_build": "",
+    "clean_checkout": true,
+    "measurement_kind": "clean-code",
+    "build_command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/maturin",
+      "build",
+      "--release",
+      "--locked",
+      "--offline",
+      "--out",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-6d240cee/native-build/wheels"
+    ],
+    "commands": [
+      {
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/maturin",
+          "build",
+          "--release",
+          "--locked",
+          "--offline",
+          "--out",
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-6d240cee/native-build/wheels"
+        ],
+        "started_at": "2026-09-10T10:40:38.732370+00:00",
+        "ended_at": "2026-09-10T10:41:23.850780+00:00",
+        "wall_seconds": 45.11840803641826,
+        "exit_status": 0,
+        "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-6d240cee/native-build/build.log",
+        "log_sha256": "97971caae6e3b2d6c36b4c3a692be53e48cb555d561ac6975849129af35aa62e"
+      },
+      {
+        "command": [
+          "uv",
+          "pip",
+          "install",
+          "--python",
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
+          "--force-reinstall",
+          "--no-deps",
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-6d240cee/native-build/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl"
+        ],
+        "started_at": "2026-09-10T10:41:23.852225+00:00",
+        "ended_at": "2026-09-10T10:41:24.006722+00:00",
+        "wall_seconds": 0.15450723469257355,
+        "exit_status": 0,
+        "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-6d240cee/native-build/install.log",
+        "log_sha256": "7b3b72ef9de103d7d133e3521b15ea6c1009829868bea4522d82a65575583a47"
+      }
+    ],
+    "source_unchanged_during_build": true,
+    "extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+    "extension_sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9",
+    "source_extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
+    "wheel_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-6d240cee/native-build/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "wheel_sha256": "2edd7b6ef5eb98428954648a1b444ddb6c0d7ad1fac349c164add67f5a009f25",
+    "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+    "python_executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
+    "interpreter_path": "/usr/local/fbcode/platform010/bin/python3.12",
+    "interpreter_sha256": "b0ad78acc9bb32f4aa41356fa35ceab75736ddca5ec0900c830f61203431b646",
     "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)\nbinary: rustc\ncommit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234\ncommit-date: 2025-12-08\nhost: x86_64-unknown-linux-gnu\nrelease: 1.92.0\nLLVM version: 21.1.3\n",
-    "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)",
-    "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-    "python_executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
-    "extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-    "extension_sha256": "c8cb388f6f57a37e0b2641a7025e893b50d65e429deac1fe1cebe1f5ab7475e3",
-    "build_output_sha256": "c8cb388f6f57a37e0b2641a7025e893b50d65e429deac1fe1cebe1f5ab7475e3",
-    "build_log_sha256": "505f74108ddcb43f877b646465c990a0a79cf85c9a7af66da44eeec41f7100e0",
-    "configuration": "release, thin LTO, codegen-units=1, extension-module, abi3-py310; target/sum-release absent before final build",
-    "nvcc_selected": "none; embedded PTX is JIT-compiled by the NVIDIA driver",
-    "nvcc_available": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0\n",
-    "CUDA_VISIBLE_DEVICES": "0",
-    "TORCH_RS_CUDART": null,
-    "evaluator_sha256": "29a97d07bad0d82c261e28aa880de68cdf46df0731d5ff0aa9802ec5bb8e605b",
-    "matrix_sha256": "a077f00f5eb50e2dceb2bd41a8453977955a8114fed203b7235f3a8befb24698",
-    "git_status": " M src/cuda.rs\n M src/cuda/pointwise.rs\n M src/python.rs\n M src/python_tensor_errors.rs\n M src/storage.rs\n M src/tensor.rs\n M src/tensor_error.rs\n?? docs/cuda-sum-rows.md\n?? src/cuda/sum_rows.ptx\n?? tests/cuda_sum_rows.rs\n?? tests/test_cuda_sum_rows.py\n",
-    "evaluator_command": "CUDA_VISIBLE_DEVICES=0 /data/users/bobren/a/pytorch-rs-burner/.venv/bin/python -B scripts/evaluate_cuda_math.py --seed 7763153567161607008 --seed 2618969910755569448 --build-record docs/diagnostics/cuda-sum-rows/build-record.json --output docs/diagnostics/cuda-sum-rows/cuda-math.json",
-    "seed_selection": "First two secrets.randbits(63) seeds selected by the unchanged evaluator in its preliminary run; neither selected using numerical results."
+    "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)\n",
+    "rustc_path": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustc",
+    "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0\n",
+    "nvcc_used": false,
+    "cuda_compilation": "driver JIT of embedded PTX",
+    "profile": {
+      "name": "release",
+      "lto": "thin",
+      "codegen_units": 1,
+      "features": [
+        "extension-module"
+      ]
+    },
+    "uv_lock_sha256": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced",
+    "dependencies": {
+      "cuda-toolkit": "13.0.3.0",
+      "typing_extensions": "4.16.0",
+      "MarkupSafe": "3.0.3",
+      "nvidia-cufile": "1.15.1.6",
+      "Jinja2": "3.1.6",
+      "maturin": "1.14.1",
+      "filelock": "3.32.2",
+      "cuda-pathfinder": "1.6.0",
+      "nvidia-nvtx": "13.0.85",
+      "fsspec": "2026.7.0",
+      "nvidia-cusparse": "12.6.3.3",
+      "nvidia-cusparselt-cu13": "0.8.1",
+      "nvidia-nvjitlink": "13.3.33",
+      "mpmath": "1.3.0",
+      "cuda-bindings": "13.3.1",
+      "nvidia-curand": "10.4.0.35",
+      "nvidia-cuda-cupti": "13.0.85",
+      "nvidia-cuda-runtime": "13.0.96",
+      "nvidia-nccl-cu13": "2.29.7",
+      "setuptools": "84.0.0",
+      "networkx": "3.6.1",
+      "numpy": "2.5.1",
+      "nvidia-cuda-nvrtc": "13.0.88",
+      "sympy": "1.14.0",
+      "nvidia-cufft": "12.0.0.61",
+      "nvidia-cusolver": "12.0.4.66",
+      "nvidia-cublas": "13.1.1.3",
+      "nvidia-cudnn-cu13": "9.20.0.48",
+      "nvidia-nvshmem-cu13": "3.4.5",
+      "triton": "3.7.1",
+      "torch": "2.13.0",
+      "torch-rs": "0.1.0"
+    },
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-6d240cee/native-build/build",
+      "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
+      "VIRTUAL_ENV": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/tmp",
+      "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/cache",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/cuda-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/uv-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+      "RUSTFLAGS": null,
+      "CARGO_BUILD_RUSTFLAGS": null
+    },
+    "cache_state": "empty build target; populated local Cargo registry and locked .venv; offline build",
+    "rustc_sha256": "028fd60b0e0add5505c661cd3ccde91393d615c8729bd95d94ab1e91409b36a1"
   },
   "seeds": [
     7763153567161607008,
     2618969910755569448
   ],
   "CUDA_VISIBLE_DEVICES": "0",
-  "gpu_inventory": "index, uuid, name, memory.total [MiB], memory.used [MiB], driver_version, compute_cap\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 97871 MiB, 1167 MiB, 580.82.07, 9.0\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 97871 MiB, 130 MiB, 580.82.07, 9.0\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 97871 MiB, 4 MiB, 580.82.07, 9.0\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 97871 MiB, 4 MiB, 580.82.07, 9.0\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 97871 MiB, 102 MiB, 580.82.07, 9.0\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 97871 MiB, 108 MiB, 580.82.07, 9.0\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 97871 MiB, 60 MiB, 580.82.07, 9.0\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 97871 MiB, 114 MiB, 580.82.07, 9.0\n",
+  "gpu_inventory": "index, uuid, name, memory.total [MiB], memory.used [MiB], driver_version, compute_cap\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 97871 MiB, 116 MiB, 580.82.07, 9.0\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 97871 MiB, 130 MiB, 580.82.07, 9.0\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 97871 MiB, 4 MiB, 580.82.07, 9.0\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 97871 MiB, 4 MiB, 580.82.07, 9.0\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 97871 MiB, 102 MiB, 580.82.07, 9.0\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 97871 MiB, 108 MiB, 580.82.07, 9.0\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 97871 MiB, 60 MiB, 580.82.07, 9.0\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 97871 MiB, 114 MiB, 580.82.07, 9.0\n",
   "trials": [
     {
       "case_id": "cuda_f32_add_same_shape",
@@ -52,10 +156,10 @@
         "role": "reference",
         "case_id": "cuda_f32_add_same_shape",
         "seed": 7763153567161607008,
-        "pid": 2924957,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
-        "package": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/torch/__init__.py",
+        "pid": 3385654,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
+        "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
         "version": "2.13.0+cu130",
         "pytorch_cuda": "13.0",
         "gpu": {
@@ -68,7 +172,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          100312809472,
+          101415452672,
           102085492736
         ],
         "inputs": [
@@ -607,13 +711,13 @@
         ],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       },
       "candidate": {
@@ -621,14 +725,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_add_same_shape",
         "seed": 7763153567161607008,
-        "pid": 2929146,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
+        "pid": 3395254,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "c8cb388f6f57a37e0b2641a7025e893b50d65e429deac1fe1cebe1f5ab7475e3"
+          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
         },
         "inputs": [
           {
@@ -1168,13 +1272,13 @@
         "loaded_torch_modules": [],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       }
     },
@@ -1186,10 +1290,10 @@
         "role": "reference",
         "case_id": "cuda_f32_add_same_shape",
         "seed": 2618969910755569448,
-        "pid": 2932341,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
-        "package": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/torch/__init__.py",
+        "pid": 3396015,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
+        "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
         "version": "2.13.0+cu130",
         "pytorch_cuda": "13.0",
         "gpu": {
@@ -1741,13 +1845,13 @@
         ],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       },
       "candidate": {
@@ -1755,14 +1859,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_add_same_shape",
         "seed": 2618969910755569448,
-        "pid": 2936531,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
+        "pid": 3401593,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "c8cb388f6f57a37e0b2641a7025e893b50d65e429deac1fe1cebe1f5ab7475e3"
+          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
         },
         "inputs": [
           {
@@ -2302,13 +2406,13 @@
         "loaded_torch_modules": [],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       }
     },
@@ -2320,10 +2424,10 @@
         "role": "reference",
         "case_id": "cuda_f32_add_trailing_vector",
         "seed": 7763153567161607008,
-        "pid": 2937031,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
-        "package": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/torch/__init__.py",
+        "pid": 3402788,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
+        "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
         "version": "2.13.0+cu130",
         "pytorch_cuda": "13.0",
         "gpu": {
@@ -2717,13 +2821,13 @@
         ],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       },
       "candidate": {
@@ -2731,14 +2835,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_add_trailing_vector",
         "seed": 7763153567161607008,
-        "pid": 2940180,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
+        "pid": 3407554,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "c8cb388f6f57a37e0b2641a7025e893b50d65e429deac1fe1cebe1f5ab7475e3"
+          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
         },
         "inputs": [
           {
@@ -3120,13 +3224,13 @@
         "loaded_torch_modules": [],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       }
     },
@@ -3138,10 +3242,10 @@
         "role": "reference",
         "case_id": "cuda_f32_add_trailing_vector",
         "seed": 2618969910755569448,
-        "pid": 2942165,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
-        "package": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/torch/__init__.py",
+        "pid": 3407942,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
+        "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
         "version": "2.13.0+cu130",
         "pytorch_cuda": "13.0",
         "gpu": {
@@ -3535,13 +3639,13 @@
         ],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       },
       "candidate": {
@@ -3549,14 +3653,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_add_trailing_vector",
         "seed": 2618969910755569448,
-        "pid": 2945624,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
+        "pid": 3411560,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "c8cb388f6f57a37e0b2641a7025e893b50d65e429deac1fe1cebe1f5ab7475e3"
+          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
         },
         "inputs": [
           {
@@ -3938,13 +4042,13 @@
         "loaded_torch_modules": [],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       }
     },
@@ -3956,10 +4060,10 @@
         "role": "reference",
         "case_id": "cuda_f32_neg",
         "seed": 7763153567161607008,
-        "pid": 2945879,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
-        "package": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/torch/__init__.py",
+        "pid": 3413091,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
+        "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
         "version": "2.13.0+cu130",
         "pytorch_cuda": "13.0",
         "gpu": {
@@ -4299,13 +4403,13 @@
         ],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       },
       "candidate": {
@@ -4313,14 +4417,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_neg",
         "seed": 7763153567161607008,
-        "pid": 2947350,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
+        "pid": 3419669,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "c8cb388f6f57a37e0b2641a7025e893b50d65e429deac1fe1cebe1f5ab7475e3"
+          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
         },
         "inputs": [
           {
@@ -4648,13 +4752,13 @@
         "loaded_torch_modules": [],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       }
     },
@@ -4666,10 +4770,10 @@
         "role": "reference",
         "case_id": "cuda_f32_neg",
         "seed": 2618969910755569448,
-        "pid": 2947562,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
-        "package": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/torch/__init__.py",
+        "pid": 3420211,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
+        "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
         "version": "2.13.0+cu130",
         "pytorch_cuda": "13.0",
         "gpu": {
@@ -5009,13 +5113,13 @@
         ],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       },
       "candidate": {
@@ -5023,14 +5127,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_neg",
         "seed": 2618969910755569448,
-        "pid": 2953489,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
+        "pid": 3425135,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "c8cb388f6f57a37e0b2641a7025e893b50d65e429deac1fe1cebe1f5ab7475e3"
+          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
         },
         "inputs": [
           {
@@ -5358,13 +5462,13 @@
         "loaded_torch_modules": [],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       }
     },
@@ -5376,10 +5480,10 @@
         "role": "reference",
         "case_id": "cuda_f32_mul_scalar",
         "seed": 7763153567161607008,
-        "pid": 2955753,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
-        "package": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/torch/__init__.py",
+        "pid": 3426388,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
+        "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
         "version": "2.13.0+cu130",
         "pytorch_cuda": "13.0",
         "gpu": {
@@ -5719,13 +5823,13 @@
         ],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       },
       "candidate": {
@@ -5733,14 +5837,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_mul_scalar",
         "seed": 7763153567161607008,
-        "pid": 2960935,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
+        "pid": 3432443,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "c8cb388f6f57a37e0b2641a7025e893b50d65e429deac1fe1cebe1f5ab7475e3"
+          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
         },
         "inputs": [
           {
@@ -6068,13 +6172,13 @@
         "loaded_torch_modules": [],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       }
     },
@@ -6086,10 +6190,10 @@
         "role": "reference",
         "case_id": "cuda_f32_mul_scalar",
         "seed": 2618969910755569448,
-        "pid": 2961783,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
-        "package": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/torch/__init__.py",
+        "pid": 3433373,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
+        "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
         "version": "2.13.0+cu130",
         "pytorch_cuda": "13.0",
         "gpu": {
@@ -6102,7 +6206,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          101415452672,
+          100734337024,
           102085492736
         ],
         "inputs": [
@@ -6429,13 +6533,13 @@
         ],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       },
       "candidate": {
@@ -6443,14 +6547,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_mul_scalar",
         "seed": 2618969910755569448,
-        "pid": 2965198,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
+        "pid": 3441039,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "c8cb388f6f57a37e0b2641a7025e893b50d65e429deac1fe1cebe1f5ab7475e3"
+          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
         },
         "inputs": [
           {
@@ -6778,13 +6882,13 @@
         "loaded_torch_modules": [],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       }
     },
@@ -6796,10 +6900,10 @@
         "role": "reference",
         "case_id": "cuda_f32_sum_axis",
         "seed": 7763153567161607008,
-        "pid": 2966598,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
-        "package": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/torch/__init__.py",
+        "pid": 3441735,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
+        "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
         "version": "2.13.0+cu130",
         "pytorch_cuda": "13.0",
         "gpu": {
@@ -6812,7 +6916,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          101415452672,
+          100734337024,
           102085492736
         ],
         "inputs": [
@@ -7054,13 +7158,13 @@
         ],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       },
       "candidate": {
@@ -7068,14 +7172,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_sum_axis",
         "seed": 7763153567161607008,
-        "pid": 2968504,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
+        "pid": 3444546,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "c8cb388f6f57a37e0b2641a7025e893b50d65e429deac1fe1cebe1f5ab7475e3"
+          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
         },
         "inputs": [
           {
@@ -7318,13 +7422,13 @@
         "loaded_torch_modules": [],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       }
     },
@@ -7336,10 +7440,10 @@
         "role": "reference",
         "case_id": "cuda_f32_sum_axis",
         "seed": 2618969910755569448,
-        "pid": 2969516,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
-        "package": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/torch/__init__.py",
+        "pid": 3445518,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
+        "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
         "version": "2.13.0+cu130",
         "pytorch_cuda": "13.0",
         "gpu": {
@@ -7594,13 +7698,13 @@
         ],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       },
       "candidate": {
@@ -7608,14 +7712,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_sum_axis",
         "seed": 2618969910755569448,
-        "pid": 2972147,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
+        "pid": 3453037,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "c8cb388f6f57a37e0b2641a7025e893b50d65e429deac1fe1cebe1f5ab7475e3"
+          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
         },
         "inputs": [
           {
@@ -7858,13 +7962,13 @@
         "loaded_torch_modules": [],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       }
     },
@@ -7876,10 +7980,10 @@
         "role": "reference",
         "case_id": "cuda_f32_matmul",
         "seed": 7763153567161607008,
-        "pid": 2973037,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
-        "package": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/torch/__init__.py",
+        "pid": 3455061,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
+        "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
         "version": "2.13.0+cu130",
         "pytorch_cuda": "13.0",
         "gpu": {
@@ -8323,13 +8427,13 @@
         ],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       },
       "candidate": {
@@ -8337,14 +8441,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_matmul",
         "seed": 7763153567161607008,
-        "pid": 2975310,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
+        "pid": 3463558,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "c8cb388f6f57a37e0b2641a7025e893b50d65e429deac1fe1cebe1f5ab7475e3"
+          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
         },
         "inputs": [
           {
@@ -8539,13 +8643,13 @@
         "loaded_torch_modules": [],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       }
     },
@@ -8557,10 +8661,10 @@
         "role": "reference",
         "case_id": "cuda_f32_matmul",
         "seed": 2618969910755569448,
-        "pid": 2975894,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
-        "package": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/torch/__init__.py",
+        "pid": 3464125,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
+        "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
         "version": "2.13.0+cu130",
         "pytorch_cuda": "13.0",
         "gpu": {
@@ -9004,13 +9108,13 @@
         ],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       },
       "candidate": {
@@ -9018,14 +9122,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_matmul",
         "seed": 2618969910755569448,
-        "pid": 2977167,
-        "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
-        "executable": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
+        "pid": 3472085,
+        "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+        "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "c8cb388f6f57a37e0b2641a7025e893b50d65e429deac1fe1cebe1f5ab7475e3"
+          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
         },
         "inputs": [
           {
@@ -9220,13 +9324,13 @@
         "loaded_torch_modules": [],
         "cuda_runtimes": [
           {
-            "path": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+            "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
             "version": 13000,
             "status": 0
           }
         ],
         "nvcc": "unused (no CUDA compilation by evaluator)",
-        "TORCH_RS_CUDART": null,
+        "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
         "stderr": ""
       }
     }

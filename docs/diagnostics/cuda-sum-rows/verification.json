@@ -1,0 +1,52 @@
+{
+  "checked_at": "2026-09-10T10:43:23.283556+00:00",
+  "measured_commit": "6d240ceef6ee719a041852c904506622995ef4c7",
+  "measurement_root": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5",
+  "source": {
+    "commit": "6d240ceef6ee719a041852c904506622995ef4c7",
+    "source_sha256": "ef5e875cb9e9b40018772fdafacb333a4173d152f06d7352a569bb07712e5683",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "clean_before_and_after_all_commands": true,
+  "source_unchanged_during_build_and_evaluation": true,
+  "evaluator_and_matrix_unchanged_from_candidate_capture": true,
+  "evaluator_accounting_recomputed_and_equal": true,
+  "seed_policy": "Preserved both evaluator-selected seeds from the candidate capture; no seed selection based on post-commit results.",
+  "candidate_and_reference_packages_executables_and_cuda_runtimes_inside_worktree": true,
+  "installed_source_and_wheel_extension_sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9",
+  "wheel_python_sources_checked_against_checkout": 59,
+  "command_exit_statuses": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "artifact_sha256": {
+    "build-record.json": "47159b2677ac3f6e806e2bd39a58838bc06c0570daec35b2e1234f4831c68db4",
+    "build.log": "97971caae6e3b2d6c36b4c3a692be53e48cb555d561ac6975849129af35aa62e",
+    "install.log": "7b3b72ef9de103d7d133e3521b15ea6c1009829868bea4522d82a65575583a47",
+    "cuda-math.json": "4092ae1fc1048d82511903a04df3d171d8fb2ef8b40f3292460b34ef9235ebb1",
+    "commands.json": "7c4b1225e96ec9f4f5b1bb28810fa1c81e12ddb5061c8fee65c89329bd359707",
+    "gpu-inventory.log": "ae77f0270383cc8ae72d8dd27f89b08671b97dd3c41fbd86e9e6ced58153c316",
+    "reference-preflight.log": "82842a9d328e1174165fbe0184305c47b46e13a75fc8cfc3e0b75476d45e20a4",
+    "build-capture.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evaluator.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "python-tests.log": "771f7d63adb921db77a8bbdeb41c7eabb52c9d90b06eb26c8755389b5828fc9e",
+    "two-device.log": "070f5db26e3c77f59c4c643e5541da5271eaf7b484acf1d1d3b5634b85720b60",
+    "no-gpu.log": "37d16b2f34d4c702b6b1497ac9b3606b96afbe36024fcec29613db92ac3b98a4",
+    "rust-tests.log": "110e0217cb322f98e727b2fd0c7eebf2f0c9d1179f3fc85831f51fa93ebb20fa",
+    "rust-bounds.log": "de3aa320b74591386e392be79cfc1e7a50edd2dde7a5044b503f5a461a9411a5",
+    "clippy.log": "acfc3ce7f9ef7684c5cf848866a584e952a92ba95d21a0236534388a09b2ef3f",
+    "format.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "diff.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "scope": "Evidence refresh only; focused row-sum tests and unchanged six-case CUDA math evaluator. Not an independent review or merge approval."
+}

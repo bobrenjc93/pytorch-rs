@@ -47,51 +47,74 @@ without Python. Internal CUDA storage tests check overflowing products and bound
 empty offsets, and injected launch failure cleanup. Hardware-only tests clearly
 skip when their required CUDA devices are unavailable.
 
-## H100 results and reproduction
+## Clean-commit H100 results and reproduction
+
+The post-commit capture measures implementation commit
+`6d240ceef6ee719a041852c904506622995ef4c7` from this worktree with an empty
+`git status --porcelain` before and after every build, evaluation, and test
+command. Reports were copied into `docs` only after all captures completed.
+These records replace the candidate's pre-commit measurements.
 
 The [unchanged math evaluator result](diagnostics/cuda-sum-rows/cuda-math.json)
 credits `cuda_f32_sum_axis` at both evaluator-selected seeds
-`7763153567161607008` and `2618969910755569448`, with its existing `rtol=1e-5`,
-`atol=1e-6`. All six cases remain in the denominator: five pass, and unsupported
-CUDA matrix multiplication receives zero. Candidate workers blocked PyTorch
-imports, independently inspected device pointers, materialized outputs with the
-CUDA driver, and verified unchanged inputs. This is correctness evidence only.
+`7763153567161607008` and `2618969910755569448`, retaining the original seeds,
+six-case matrix, `rtol=1e-5`, and `atol=1e-6`. Five cases pass; unsupported CUDA
+matrix multiplication still receives zero. Candidate workers block PyTorch
+imports, independently inspect device pointers, materialize outputs with the
+CUDA driver, and verify unchanged inputs. This is correctness evidence only.
 
-The [build receipt](diagnostics/cuda-sum-rows/build-record.json) binds the dirty
-worktree's complete production-source fingerprint to a fresh release extension;
-`source_unchanged_during_run` is true. The extension SHA-256 is
-`c8cb388f6f57a37e0b2641a7025e893b50d65e429deac1fe1cebe1f5ab7475e3`.
-The receipt records exact build/install/evaluator commands, Rust/Cargo 1.92.0,
-Python 3.12.12, release/thin-LTO configuration, evaluator and matrix hashes.
-The release target was absent before building. All build outputs and caches
-were worktree-local; the installed reference Python environment was read-only.
+The repository's existing `scripts/capture_depth_concat_build.py` built a fresh
+release wheel offline from the clean checkout into an initially absent Cargo
+target, then installed it into this worktree's real `.venv`. The
+[build receipt](diagnostics/cuda-sum-rows/build-record.json) records
+`clean_checkout=true`, unchanged source hashes, the wheel and extension hashes,
+compiler versions, dependency versions, commands, timestamps, and cache state.
+The installed wheel and checkout's source package contain identical extension
+bytes; the unchanged evaluator imports the source package. Its
+`source_unchanged_during_run` is true and the production diff is empty.
+
+The fresh extension SHA-256 is
+`ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9`.
+Rust/Cargo were 1.92.0, with release optimization, thin LTO, one codegen unit,
+and the `extension-module` feature. The reference interpreter was Python
+3.12.14+meta, with stable PyTorch `2.13.0+cu130` installed from the unchanged
+lockfile. Candidate/reference packages, extension paths, build targets, and
+caches are inside this worktree; the Python interpreter and Rust/CUDA tools are shared
+system installations used read-only.
 
 Hardware was NVIDIA H100 (97,871 MiB, compute capability 9.0), driver 580.82.07.
-Reference PyTorch was `2.13.0+cu130`; both evaluator workers actually loaded
-`nvidia/cu13/lib/libcudart.so.13`, runtime version 13000. The available nvcc was
-12.6.85, but no CUDA compiler was invoked: the driver compiled embedded PTX.
+Both evaluator workers loaded the worktree-local
+`.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13`; their actual
+runtime version was 13000 (CUDA 13.0). Rust tests explicitly selected that library with `TORCH_RS_CUDART`. The available nvcc was 12.6.85,
+but no CUDA compiler was invoked: the driver JIT-compiled embedded PTX.
 Ordinary GPU checks used `CUDA_VISIBLE_DEVICES=0`; only the device-restoration
 check used `0,1`.
 
-Passed checks (commands use the reference interpreter recorded in the receipt,
-`PYTHONPATH=$PWD/python`, and worktree-local temporary/cache paths):
+[Command receipts](diagnostics/cuda-sum-rows/commands.json) preserve the exact
+commands, working directories, environments, timestamps, exit statuses, clean
+status checks, and log hashes. The [verification record](diagnostics/cuda-sum-rows/verification.json)
+also binds the preserved artifacts and checks all 59 wheel Python sources
+against the checkout. The post-commit refresh reran the focused row-sum checks:
 
-- `cargo test --offline --lib --test cuda_sum_rows --test cuda_native_boundaries
-  --test cuda_mul_scalar --test cuda_add --test cuda_same_device_copy`: 180 passed.
-  The final run explicitly selected the same CUDA 13 runtime with
-  `TORCH_RS_CUDART`; see [Rust log](diagnostics/cuda-sum-rows/rust-tests.log).
-- `python -B -m unittest tests.test_cuda_sum_rows tests.test_cuda_add
-  tests.test_cuda_add_trailing_vector tests.test_cuda_neg tests.test_cuda_mul_scalar
-  tests.test_tensor_sum tests.test_top_level_sum tests.test_rank2_sum_numerics -v`:
-  73 passed, 8 mask-specific two-device cases skipped;
-  [Python log](diagnostics/cuda-sum-rows/python-tests.log).
-- `CUDA_VISIBLE_DEVICES=0,1 python -B -m unittest
-  tests.test_cuda_sum_rows.CudaSumRowsDeviceTests -v`: 1 passed;
-  [two-device log](diagnostics/cuda-sum-rows/two-device.log).
+- `cargo test --locked --offline --test cuda_sum_rows -- --nocapture`:
+  two public Rust tests passed; [log](diagnostics/cuda-sum-rows/rust-tests.log).
+- `cargo test --locked --offline --lib
+  cuda::tests::row_sum_bounds_empty_inputs_and_failure_cleanup -- --exact --nocapture`:
+  one storage-bounds/failure-cleanup test passed;
+  [log](diagnostics/cuda-sum-rows/rust-bounds.log).
+- `.venv/bin/python -B -m unittest tests.test_cuda_sum_rows.CudaSumRowsTests -v`:
+  six single-GPU differential tests passed;
+  [log](diagnostics/cuda-sum-rows/python-tests.log).
+- With `CUDA_VISIBLE_DEVICES=0,1`,
+  `.venv/bin/python -B -m unittest tests.test_cuda_sum_rows.CudaSumRowsDeviceTests -v`:
+  one device-restoration test passed;
+  [log](diagnostics/cuda-sum-rows/two-device.log).
 - With no visible devices, all seven new Python hardware tests skip clearly;
-  [skip log](diagnostics/cuda-sum-rows/no-gpu.log).
-- `cargo clippy --offline --all-targets --features python-bindings -- -D warnings`,
+  [log](diagnostics/cuda-sum-rows/no-gpu.log).
+- `cargo clippy --locked --offline --all-targets --features python-bindings -- -D warnings`,
   `cargo fmt --all -- --check`, and `git diff --check` passed.
 
-Evaluator definitions, scoring corpora, existing benchmark evidence, and
-Burner-managed progress artifacts were not changed.
+Evaluator definitions, scoring corpora, implementation, tests, dependencies,
+historical benchmark evidence, and Burner-managed progress artifacts were not
+changed by this evidence refresh. This capture does not replace independent
+review or merge gates.
