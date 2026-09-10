@@ -1,0 +1,46 @@
+import hashlib, json, pathlib, subprocess
+root=pathlib.Path.cwd(); out=root/'target/validation-recovery'
+sha=lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
+records={}
+for suffix, expected in [('312',(104,102,84,20)),('314',(104,102,84,20)),('two-device',(8,6,6,2))]:
+    path=out/f'final-mul-diagnostic-{suffix}.json'
+    data=json.loads(path.read_text())
+    assert 'setup_error' not in data
+    assert data['grammar_seed']==791406 and data['input_seeds']==[19092675,19092676]
+    assert data['reference_backend']=='eager'
+    cases=data['cases']
+    observed=(len(cases),sum(c['reference_eligible'] for c in cases),sum(c['native_outcome']=='pass' for c in cases),sum(c['native_outcome']=='unsupported' for c in cases))
+    assert observed==expected,(suffix,observed)
+    assert data['summary']==dict(zip(('cases','reference_eligible','native_pass','native_unsupported','expectation_failures'),(*expected,0)))
+    for case in cases:
+        assert case['expectation_met']
+        if case['expected_supported']:
+            assert case['reference_eligible'] and case['native_outcome']=='pass'
+            assert len(case['native_outputs'])==len(case['reference_outputs'])==2
+            assert case['native_outputs']==case['reference_outputs']
+        else:
+            assert case['native_outcome']=='unsupported'
+            assert case['reference_eligible'] or case['kind'] in ('mixed_cpu','mixed_ordinals')
+    for p, digest in data['source_sha256'].items(): assert sha(root/p)==digest,p
+    for generated in data['generated_programs'].values():
+        assert hashlib.sha256(generated['source'].encode()).hexdigest()==generated['sha256']
+    provenance=json.loads((out/f"final-provenance-{'314' if suffix=='314' else '312'}.json").read_text())
+    assert data['native_extension_sha256']==provenance['native_extension_sha256']
+    assert sha(pathlib.Path(data['native_extension']))==data['native_extension_sha256']
+    if suffix!='two-device':
+        historical=json.loads((root/'target/recovery/mul-diagnostic.json').read_text())
+        assert data['generated_programs']==historical['generated_programs']
+        for current, previous in zip(cases,historical['cases'],strict=True):
+            for key in ('program','shape','kind','fullgraph','expected_supported','reference_eligible','native_outcome','reference_outputs','native_outputs'):
+                assert current.get(key)==previous.get(key),(suffix,key)
+    records[path.name]={'summary':data['summary'],'source_and_native_hashes_match':True,'complete_outputs_match':True}
+neg=json.loads((out/'final-neg-add-diagnostic-312.json').read_text())
+assert neg['summary']=={'cases':168,'reference_eligible':164,'native_pass':128,'native_unsupported':40,'expectation_failures':0}
+assert all(c['expectation_met'] for c in neg['cases'])
+protected=['uv.lock','Cargo.lock','scripts/evaluate_torch_compile_coverage.py','tests/test_compile_corpus.py','scripts/diagnose_compile_cuda_add.py','scripts/diagnose_compile_cuda_neg_add.py','scripts/benchmark_compile_cuda.py','tests/test_compile_cuda_benchmark.py']
+for p in protected: assert (root/p).read_bytes()==subprocess.check_output(['git','show',f'f88b7e8:{p}']),p
+for version in ('312','314'):
+    p=json.loads((out/f'final-provenance-{version}.json').read_text())
+    for path,digest in p['source_sha256'].items(): assert sha(root/path)==digest,path
+(out/'evidence-integrity.json').write_text(json.dumps({'scalar_reports':records,'neg_add_summary':neg['summary'],'frozen_inputs_byte_identical_to_main':{p:sha(root/p) for p in protected},'provenance_source_hashes_match_final_tree':True},indent=2)+'\n')
+print('All diagnostic records, complete output hashes, generated programs, source/native provenance and frozen inputs verified.')

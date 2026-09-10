@@ -1,0 +1,55 @@
+{
+  "scalar_reports": {
+    "final-mul-diagnostic-312.json": {
+      "summary": {
+        "cases": 104,
+        "reference_eligible": 102,
+        "native_pass": 84,
+        "native_unsupported": 20,
+        "expectation_failures": 0
+      },
+      "source_and_native_hashes_match": true,
+      "complete_outputs_match": true
+    },
+    "final-mul-diagnostic-314.json": {
+      "summary": {
+        "cases": 104,
+        "reference_eligible": 102,
+        "native_pass": 84,
+        "native_unsupported": 20,
+        "expectation_failures": 0
+      },
+      "source_and_native_hashes_match": true,
+      "complete_outputs_match": true
+    },
+    "final-mul-diagnostic-two-device.json": {
+      "summary": {
+        "cases": 8,
+        "reference_eligible": 6,
+        "native_pass": 6,
+        "native_unsupported": 2,
+        "expectation_failures": 0
+      },
+      "source_and_native_hashes_match": true,
+      "complete_outputs_match": true
+    }
+  },
+  "neg_add_summary": {
+    "cases": 168,
+    "reference_eligible": 164,
+    "native_pass": 128,
+    "native_unsupported": 40,
+    "expectation_failures": 0
+  },
+  "frozen_inputs_byte_identical_to_main": {
+    "uv.lock": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced",
+    "Cargo.lock": "5adbfbc4753473099a887c270512ec919d8e0c53cd442750709e7a4e93d905b4",
+    "scripts/evaluate_torch_compile_coverage.py": "7dd5607216116c29a53405abe61be8a9ab6253e89ddee32b5f1a1de4cb19a9c3",
+    "tests/test_compile_corpus.py": "3821efb12c45c38fcb70c42fc625fb188ff5ab5511ed438c775728cae3e500c8",
+    "scripts/diagnose_compile_cuda_add.py": "5d4f0ae7b73a5439229b01b2108a6f6d7bb710c7ecf66f9746f5606d619ee02b",
+    "scripts/diagnose_compile_cuda_neg_add.py": "d2843aae45eeea228574480379000676665e1455a70797cfa36f88d6a76a5592",
+    "scripts/benchmark_compile_cuda.py": "a1401b964e58a01a6bacc8bb941b7de37021c2a7861c3ef901a2fc8a5c784959",
+    "tests/test_compile_cuda_benchmark.py": "435e6283e785e3f896f027c161de9c7b00a17901de60932413ef1bfd06d56111"
+  },
+  "provenance_source_hashes_match_final_tree": true
+}

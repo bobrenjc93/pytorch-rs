@@ -1,0 +1,25 @@
+test_ownership_restoration_and_cache_separation (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarDeviceTests.test_ownership_restoration_and_cache_separation) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_binding_guards_and_code_replacement (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_binding_guards_and_code_replacement) ... ok
+test_dynamic_static_guards_cpu_separation_and_nested_aliases (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_dynamic_static_guards_cpu_separation_and_nested_aliases) ... ok
+test_generated_graphlets_and_operator_method_top_level_forms (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_generated_graphlets_and_operator_method_top_level_forms) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/.venv/lib64/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ok
+test_guarded_globals_helper_rebinding_and_limit (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_guarded_globals_helper_rebinding_and_limit) ... ok
+test_ieee_scalar_conversion_singleton_strides_offsets_and_empty_views (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_ieee_scalar_conversion_singleton_strides_offsets_and_empty_views) ... ok
+test_large_complete_data_and_no_pytorch_import (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_large_complete_data_and_no_pytorch_import) ... ok
+test_malformed_late_nodes_and_execution_failure (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_malformed_late_nodes_and_execution_failure) ... ok
+test_reject_before_execution_cache_and_native_hooks (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_reject_before_execution_cache_and_native_hooks) ... ERROR
+
+======================================================================
+ERROR: test_reject_before_execution_cache_and_native_hooks (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_reject_before_execution_cache_and_native_hooks)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/tests/test_compile_cuda_mul_scalar.py", line 222, in test_reject_before_execution_cache_and_native_hooks
+    self.assertEqual(cache.graphs, before)
+                                           
+AttributeError: module 'torch_rs' has no attribute 'int64'
+
+----------------------------------------------------------------------
+Ran 9 tests in 47.954s
+
+FAILED (errors=1, skipped=1)

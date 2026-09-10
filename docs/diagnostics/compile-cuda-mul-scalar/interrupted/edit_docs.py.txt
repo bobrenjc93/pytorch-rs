@@ -1,0 +1,43 @@
+from pathlib import Path
+p=Path('README.md');s=p.read_text().replace('[CUDA neg/add capture]', '[CUDA mul/neg/add capture]');p.write_text(s)
+p=Path('docs/README.md');s=p.read_text().replace('[CUDA neg/add graph capture]', '[CUDA mul/neg/add graph capture]');s=s.replace('- [Compiled CUDA negation validation]', '- [Compiled CUDA scalar multiplication validation](compile-cuda-mul-scalar-validation.md): Guarded scalar grammar, independent diagnostics, and H100 checks.\n- [Compiled CUDA negation validation]');p.write_text(s)
+p=Path('docs/compile-cuda-add.md');s=p.read_text();s=s.replace('# Marker-free CUDA negation and addition graph capture', '# Ordinary CUDA scalar-multiply, negation and addition graph capture').replace('Tensors for one- and two-input negation/addition graphs', 'Tensors for one- and two-input scalar-multiply/negation/addition graphs').replace('with one Rust/CUDA kernel per negation or addition.', 'with one Rust/CUDA kernel per recorded operation.')
+s=s.replace('    intermediate = -right + left.neg()\n    return intermediate.negative().add(left)', '    intermediate = -right + left.mul(0.5)\n    return 2 * intermediate').replace('== [6., 9., 12.]', '== [-7., -8., -9.]')
+s=s.replace('Unary `-`, zero-argument', '''`x * scalar`, `scalar * x`, positional `.mul(scalar)`/`.multiply(scalar)`
+and positional `torch_rs.mul`/`torch_rs.multiply` calls (including imported
+aliases) compose with negation and addition. Scalars must be exact Python
+`bool`, `int`, or `float` literals, local constants, or module globals, including
+globals read by the existing same-module helper. Conversion uses the public
+scalar multiplication parser, including integer overflow and float32 rounding.
+Scalar function arguments, closures, numeric subclasses/NumPy scalars, complex
+values, arithmetic on captured scalars, kwargs and `out` remain unsupported.
+Top-level calls require the native callable identity; patched bindings reject.
+
+Unary `-`, zero-argument''')
+s=s.replace('number operands, broadcasting', 'number operands outside multiplication, broadcasting').replace('closures, mutations, top-level `torch.neg`/`negative` calls', 'closures, mutations, top-level `torch.neg`/`negative` calls')
+s=s.replace('Eager [CUDA scalar multiplication](cuda-mul-scalar-validation.md) does not change\nthis grammar: scalar multiplication still rejects before execution or cache insertion.', 'The compiler reuses [native CUDA scalar multiplication](cuda-mul-scalar-validation.md);\nCPU multiplication capture and tensor-tensor multiplication remain unsupported.')
+s=s.replace('strides and offset zero, including scalar, empty, and offset-view inputs. CPU traces', 'strides and offset zero, including scalar, empty, and offset-view inputs. Scalar\nmultiplication instead uses the shared scalar layout planner, which can preserve\nnoncanonical singleton stride ordering. CPU traces')
+s=s.replace('helper. Every call checks', '''helper. Scalar globals also guard exact type and value (binary64 bits for floats,
+including signed zero and NaNs); literals are guarded by the function code.
+A specialization stores the validated float32 scalar value. Scalar and callable
+bindings are reread on every call before cache lookup; helper dependencies use
+the same snapshots. Changed values specialize subject to `recompile_limit`,
+and unsupported replacements reject. Every call checks''')
+s=s.replace('## Negation validation', '''## Scalar multiplication validation
+
+[Scalar capture validation](compile-cuda-mul-scalar-validation.md) describes the
+independent generated graphlets, concrete programs, cache/alias/fail-closed tests,
+and `mul_neg_add_v1` non-scoring diagnostic. Reference tracing uses PyTorch 2.13
+`backend="eager"`; it provides correctness coverage, not Inductor performance parity.
+The frozen 38-case compile corpus, addition-only and neg/add diagnostics, private
+four-workload benchmark, scores and historical reports remain unchanged.
+
+## Negation validation''')
+p.write_text(s)
+p=Path('docs/cuda-mul-scalar-validation.md');s=p.read_text().replace('in-place variants, and scalar-multiply\ncompiler capture remain rejected.', 'and in-place variants remain rejected. Bounded\n[compiled scalar multiplication](compile-cuda-add.md) accepts a narrower scalar\nand argument grammar than the public eager API.').replace('Eager multiplication\nadds no compiler capture or cache-preflight support.', 'Compiler support is validated separately in the\n[scalar capture guide](compile-cuda-mul-scalar-validation.md).').replace('and compiler rejection before graph execution or cache insertion.', 'and unsupported compiler rejection before graph execution or cache insertion.');p.write_text(s)
+p=Path('docs/troubleshooting.md');s=p.read_text().replace('Bounded eager native neg/add capture', 'Bounded eager native scalar-multiply/neg/add capture');p.write_text(s)
+p=Path('docs/supported-surface.md');s=p.read_text().replace('[CUDA neg/add guide]', '[CUDA mul/neg/add guide]').replace('bounded eager neg/add capture', 'bounded eager mul/neg/add capture').replace('bounded contiguous CUDA neg/add subset', 'bounded contiguous CUDA mul/neg/add subset').replace('bounded addition capture', 'bounded mul/neg/add capture').replace('marker-free CUDA neg/add graphs', 'ordinary CUDA mul/neg/add graphs')
+s=s.replace('in-place operations, and scalar-multiply\ncompiler capture remain unsupported. Eager support does not expand compiler\npreflight or caching.', 'and in-place operations remain unsupported.\n[Compiled CUDA multiplication](compile-cuda-add.md) accepts exact Python scalar\nconstants with guarded module globals and positional operator/method/top-level forms;\nscalar call arguments, closures, NumPy scalars and CPU multiplication capture reject.')
+s=s.replace('Negation outputs own fresh CUDA storage with canonical contiguous strides and offset zero.', 'Negation outputs own fresh CUDA storage with canonical contiguous strides and offset zero. Scalar multiplication accepts `x * scalar`, `scalar * x`, positional `Tensor.mul`/`multiply` and identity-guarded `torch.mul`/`multiply` calls and imported aliases. Exact Python `bool`/`int`/`float` literals, local constants and live module globals use the existing scalar conversion contract; global guards preserve type and float bits (including signed zero and NaNs), and literals are guarded by code. Multiplication uses `Tensor::mul_scalar` with fresh storage, offset zero and the shared scalar stride planner, including singleton strides. Scalar globals are checked on every call and changes count against `recompile_limit`.')
+s=s.replace('non-Tensor globals,', 'non-Tensor globals outside the documented CUDA scalar/callable captures,').replace('scalar-number operands, CUDA broadcasting', 'scalar-number operands outside CUDA multiplication, scalar call arguments, numeric subclasses/NumPy scalars, CPU multiplication capture, CUDA broadcasting')
+p.write_text(s)

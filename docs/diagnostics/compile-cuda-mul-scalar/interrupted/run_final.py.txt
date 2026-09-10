@@ -1,0 +1,29 @@
+import json, os, pathlib, subprocess, sys, time
+root=pathlib.Path.cwd(); out=root/'target/validation'
+checks=[
+ ('python-final', [sys.executable,'-m','unittest','-v',
+   'tests.test_compile_cuda_mul_scalar','tests.test_top_level_compile','tests.test_compile_corpus',
+   'tests.test_compile_cuda_boundary','tests.test_compile_cuda_neg','tests.test_cuda_mul_scalar',
+   'tests.test_cuda_add','tests.test_cuda_neg','tests.test_cuda_host_transfer','tests.test_cuda_native_views',
+   'tests.test_mul','tests.test_mul_reference','tests.test_multiply','tests.test_multiply_reference',
+   'tests.test_top_level_mul','tests.test_top_level_mul_reference','tests.test_top_level_multiply',
+   'tests.test_top_level_multiply_reference','tests.test_readme_quickstart','tests.test_tensor_buffer_reference'], {}),
+ ('factory-final', [sys.executable,'-m','unittest','tests.test_nn_factory_kwargs_reference','-v'], {'PYTHONHASHSEED':'6'}),
+ ('mul-diagnostic', [sys.executable,'-m','scripts.diagnose_compile_cuda_mul_scalar','--case-set','mul_neg_add_v1','--output',str(out/'mul-diagnostic.json')], {}),
+ ('neg-add-diagnostic', [sys.executable,'scripts/diagnose_compile_cuda_neg_add.py','--case-set','neg_add_v1','--output',str(out/'neg-add-diagnostic.json')], {}),
+ ('compile-evaluation', [sys.executable,'scripts/evaluate_torch_compile_coverage.py'], {}),
+ ('two-device', [sys.executable,'-m','unittest','-v','tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarDeviceTests','tests.test_compile_cuda_neg.CompileCudaNegDeviceTests','tests.test_compile_cuda_boundary.CompileCudaDeviceTests','tests.test_cuda_mul_scalar.CudaMulScalarDeviceTests'], {'CUDA_VISIBLE_DEVICES':'0,1'}),
+ ('rust-final', ['cargo','test','--release','--locked','--all-targets'], {'CARGO_TARGET_DIR':str(root/'target/final-build')}),
+ ('format-final', ['cargo','fmt','--all','--check'], {}),
+ ('diff-final', ['git','diff','--check'], {}),
+]
+records=[]
+for name,command,overrides in checks:
+    print('START',name,flush=True)
+    started=time.time()
+    with (out/(name+'.log')).open('w') as log:
+        result=subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,env={**os.environ,**overrides})
+    records.append({'name':name,'command':command,'environment_overrides':overrides,'exit_code':result.returncode,'elapsed_seconds':time.time()-started,'log':name+'.log'})
+    (out/'final-checks.json').write_text(json.dumps(records,indent=2)+'\n')
+    print('END',name,result.returncode,flush=True)
+raise SystemExit(any(r['exit_code'] for r in records))

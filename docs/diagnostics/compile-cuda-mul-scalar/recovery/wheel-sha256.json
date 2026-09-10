@@ -1,0 +1,6 @@
+{
+  "target/final-wheels312/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl": "c53403833a11953d2a1698ef9dbc2a771796f8f34c238ee5245ce4abeefdda9c",
+  "target/final-wheels314/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl": "ba9fe93caad9ed1d3797b34d0d9adda136ca747f3ebfa58c049596a9863008ab",
+  "target/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl": "d9b74718d79565d75008f4bd667717ecf78a4999389051a5044e36ec655afb88",
+  "target/wheels314/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl": "f95433d011f0fe647a83e1a30459f55182601b91c85275d7760bf3bc91f4ad10"
+}

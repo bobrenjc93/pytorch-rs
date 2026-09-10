@@ -1,0 +1,153 @@
+[
+  {
+    "name": "python-final",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/.venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_compile_cuda_mul_scalar",
+      "tests.test_top_level_compile",
+      "tests.test_compile_corpus",
+      "tests.test_compile_cuda_boundary",
+      "tests.test_compile_cuda_neg",
+      "tests.test_cuda_mul_scalar",
+      "tests.test_cuda_add",
+      "tests.test_cuda_neg",
+      "tests.test_cuda_host_transfer",
+      "tests.test_cuda_native_views",
+      "tests.test_mul",
+      "tests.test_mul_reference",
+      "tests.test_multiply",
+      "tests.test_multiply_reference",
+      "tests.test_top_level_mul",
+      "tests.test_top_level_mul_reference",
+      "tests.test_top_level_multiply",
+      "tests.test_top_level_multiply_reference",
+      "tests.test_readme_quickstart",
+      "tests.test_tensor_buffer_reference"
+    ],
+    "environment_overrides": {},
+    "exit_code": 1,
+    "elapsed_seconds": 89.00240802764893,
+    "log": "python-final.log"
+  },
+  {
+    "name": "factory-final",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/.venv/bin/python",
+      "-m",
+      "unittest",
+      "tests.test_nn_factory_kwargs_reference",
+      "-v"
+    ],
+    "environment_overrides": {
+      "PYTHONHASHSEED": "6"
+    },
+    "exit_code": 0,
+    "elapsed_seconds": 1.514256477355957,
+    "log": "factory-final.log"
+  },
+  {
+    "name": "mul-diagnostic",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/.venv/bin/python",
+      "-m",
+      "scripts.diagnose_compile_cuda_mul_scalar",
+      "--case-set",
+      "mul_neg_add_v1",
+      "--output",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/target/validation/mul-diagnostic.json"
+    ],
+    "environment_overrides": {},
+    "exit_code": 0,
+    "elapsed_seconds": 12.160190105438232,
+    "log": "mul-diagnostic.log"
+  },
+  {
+    "name": "neg-add-diagnostic",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/.venv/bin/python",
+      "scripts/diagnose_compile_cuda_neg_add.py",
+      "--case-set",
+      "neg_add_v1",
+      "--output",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/target/validation/neg-add-diagnostic.json"
+    ],
+    "environment_overrides": {},
+    "exit_code": 0,
+    "elapsed_seconds": 13.618941068649292,
+    "log": "neg-add-diagnostic.log"
+  },
+  {
+    "name": "compile-evaluation",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/.venv/bin/python",
+      "scripts/evaluate_torch_compile_coverage.py"
+    ],
+    "environment_overrides": {},
+    "exit_code": 0,
+    "elapsed_seconds": 9.707113265991211,
+    "log": "compile-evaluation.log"
+  },
+  {
+    "name": "two-device",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/.venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarDeviceTests",
+      "tests.test_compile_cuda_neg.CompileCudaNegDeviceTests",
+      "tests.test_compile_cuda_boundary.CompileCudaDeviceTests",
+      "tests.test_cuda_mul_scalar.CudaMulScalarDeviceTests"
+    ],
+    "environment_overrides": {
+      "CUDA_VISIBLE_DEVICES": "0,1"
+    },
+    "exit_code": 1,
+    "elapsed_seconds": 10.011070251464844,
+    "log": "two-device.log"
+  },
+  {
+    "name": "rust-final",
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "--locked",
+      "--all-targets"
+    ],
+    "environment_overrides": {
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/target/final-build"
+    },
+    "exit_code": 101,
+    "elapsed_seconds": 32.519747495651245,
+    "log": "rust-final.log"
+  },
+  {
+    "name": "format-final",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--check"
+    ],
+    "environment_overrides": {},
+    "exit_code": 0,
+    "elapsed_seconds": 0.506385326385498,
+    "log": "format-final.log"
+  },
+  {
+    "name": "diff-final",
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "environment_overrides": {},
+    "exit_code": 0,
+    "elapsed_seconds": 0.052851200103759766,
+    "log": "diff-final.log"
+  }
+]

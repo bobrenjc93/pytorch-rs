@@ -1,0 +1,64 @@
+{
+  "note": "Initial commands predate the receipt runner. Exit statuses observed from completed tool sessions; no elapsed times reconstructed. All source target/validation-recovery/env.sh.",
+  "commands": [
+    {
+      "name": "uv-sync-312",
+      "command": [
+        "uv",
+        "sync",
+        "--locked",
+        "--no-install-project",
+        "--group",
+        "dev",
+        "--group",
+        "reference",
+        "--python",
+        "/usr/bin/python3.12"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e",
+      "environment_overrides": {},
+      "exit_code": 0,
+      "log": "uv-sync-312.log"
+    },
+    {
+      "name": "uv-sync-314",
+      "command": [
+        "uv",
+        "sync",
+        "--locked",
+        "--no-install-project",
+        "--group",
+        "dev",
+        "--group",
+        "reference",
+        "--python",
+        "3.14",
+        "--managed-python"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e",
+      "environment_overrides": {
+        "UV_PROJECT_ENVIRONMENT": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/venv314"
+      },
+      "exit_code": 0,
+      "log": "uv-sync-314.log"
+    },
+    {
+      "name": "build-312",
+      "command": [
+        ".venv/bin/maturin",
+        "build",
+        "--release",
+        "--locked",
+        "--out",
+        "target/wheels"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e",
+      "environment_overrides": {
+        "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/.venv/bin/python",
+        "VIRTUAL_ENV": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/.venv"
+      },
+      "exit_code": 0,
+      "log": "build-312.log"
+    }
+  ]
+}

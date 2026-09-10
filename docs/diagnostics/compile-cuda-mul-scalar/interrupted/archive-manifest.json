@@ -1,0 +1,180 @@
+{
+  "archive": "interrupted-compiler-checkpoint.tar.gz",
+  "archive_sha256": "fa6052b1170f1afcdf5826d073e4246fc541f5d055b6e6c262c68fc549548fd9",
+  "checkpoint_commit": "9a1512de97392beadde70875f58f35f76f4cbe7e",
+  "note": "Original validation files retained byte-for-byte. Archived scripts are inert .txt data, never executed. Exploratory dependencies were not uv.lock-pinned; these are historical outcomes, not final validation.",
+  "files": {
+    "target/validation/baseline-buffer.log": {
+      "retained_as": "baseline-buffer.log",
+      "sha256": "91ef760d9a4cf5f22f6155458eb9632760a13a084c6f5deefe06c9118a301020"
+    },
+    "target/validation/baseline-build.log": {
+      "retained_as": "baseline-build.log",
+      "sha256": "28f556b2a38a02bfba94a02c4770b7d86b1f5a0e42a3cfb7239ce2162911b928"
+    },
+    "target/validation/baseline-factory.log": {
+      "retained_as": "baseline-factory.log",
+      "sha256": "bdf1fbfb847b5160269b73eaf3c9be20ff2a54dcd642b3419e7c0365a3dd3d99"
+    },
+    "target/validation/baseline-install.log": {
+      "retained_as": "baseline-install.log",
+      "sha256": "6c8f528b3eb067209c6071eaad453bcecba304bfcfc647f879cef8d0c76f98bf"
+    },
+    "target/validation/baseline-provenance.json": {
+      "retained_as": "baseline-provenance.json",
+      "sha256": "e0c3387f29dcc34b85391327f15279f4244f7c239ec59b0a5fe7d8bfc6ed95e0"
+    },
+    "target/validation/baseline-provenance.log": {
+      "retained_as": "baseline-provenance.log",
+      "sha256": "9eed5be076e8e40a192f689d039a815f516183be25eb3177f8e52ed688edf35b"
+    },
+    "target/validation/candidate-build.log": {
+      "retained_as": "candidate-build.log",
+      "sha256": "2d3cd9ae7f82ee7cba9001c0cf30f3d89dcf2ecf130c8bb13f6f9a9a0652d7db"
+    },
+    "target/validation/candidate-build2.log": {
+      "retained_as": "candidate-build2.log",
+      "sha256": "981f1f8876d27fc4d29bae86a08de149107c72162bc0de2cd9c3abe29624aa65"
+    },
+    "target/validation/candidate-install.log": {
+      "retained_as": "candidate-install.log",
+      "sha256": "a3b9b68668ae6d6c8ee7759fdff329a47e1d711fffc33607c301c4b2550b2e1f"
+    },
+    "target/validation/candidate-install2.log": {
+      "retained_as": "candidate-install2.log",
+      "sha256": "822a38b530bbcf3005fdabb80f643cffdc2a9d44fffd94da2ff66f64c4160c47"
+    },
+    "target/validation/compile-evaluation.log": {
+      "retained_as": "compile-evaluation.log",
+      "sha256": "fd386594ae04f88df5f677505530fc330d708a79f6060471ea3c9183e646e8d1"
+    },
+    "target/validation/compile-second.log": {
+      "retained_as": "compile-second.log",
+      "sha256": "26ba35b45dcf5ecdab3644975ccb51a8e2acafb4acd06f9a7058a1dd8a279a88"
+    },
+    "target/validation/diff-final.log": {
+      "retained_as": "diff-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "target/validation/docs-final.log": {
+      "retained_as": "docs-final.log",
+      "sha256": "13b04dba3f22d64dfceb52851d481ee05a86603d8272be120060782afc72a7bc"
+    },
+    "target/validation/edit_bytecode.py": {
+      "retained_as": "edit_bytecode.py.txt",
+      "sha256": "11ea54b6081b2ccbbe0124d14662763875a34c7754b75da9f745a4783033d451"
+    },
+    "target/validation/edit_compiler.py": {
+      "retained_as": "edit_compiler.py.txt",
+      "sha256": "3d5210615b2216cbcfc9d20683ec12eec0ccc1578bb22bfe927629b2b6b0eb2e"
+    },
+    "target/validation/edit_docs.py": {
+      "retained_as": "edit_docs.py.txt",
+      "sha256": "3a4ada80ce4c93d2a7946a541b8c0b980e3382dc11d3c262facf2866f0d80076"
+    },
+    "target/validation/edit_native.py": {
+      "retained_as": "edit_native.py.txt",
+      "sha256": "3246a16b602c8df7603dfbfc14f38d42bc175397875120a8bdff810d59793108"
+    },
+    "target/validation/env.sh": {
+      "retained_as": "env.sh.txt",
+      "sha256": "a9bad672a7397c7fff0c69fdafbc1fda7501722f6b974d48c4aa2b4faa122bca"
+    },
+    "target/validation/environment.log": {
+      "retained_as": "environment.log",
+      "sha256": "a213dd325aac575e348413d14eea40f39e48b27493d87e09e654c2dabfd9e1bf"
+    },
+    "target/validation/factory-final.log": {
+      "retained_as": "factory-final.log",
+      "sha256": "bdf1fbfb847b5160269b73eaf3c9be20ff2a54dcd642b3419e7c0365a3dd3d99"
+    },
+    "target/validation/final-build-record.json": {
+      "retained_as": "final-build-record.json",
+      "sha256": "5e350b3ad79a43ffc803380d2f5821dba0b9e027c2091886b9ad21b868d79fed"
+    },
+    "target/validation/final-build.log": {
+      "retained_as": "final-build.log",
+      "sha256": "437b017bc4d3c98b383ea6d41006705d726d53b3072eb5b6696b1e4a93632ea9"
+    },
+    "target/validation/final-checks.json": {
+      "retained_as": "final-checks.json",
+      "sha256": "aad2ba64e3a67af175ba7fabbbcf0aa91ae1c9ddf2b482355abdc71066acc290"
+    },
+    "target/validation/final-import.log": {
+      "retained_as": "final-import.log",
+      "sha256": "717ee53c02de3d07a373314cbd02c4e633348c76aaaa824f7b6dc93e491d0a32"
+    },
+    "target/validation/final-install.log": {
+      "retained_as": "final-install.log",
+      "sha256": "0abbaa0616b767de0ff3d415a5a00d66247d4086e515dc6efda8138a963f3c9d"
+    },
+    "target/validation/final-provenance.json": {
+      "retained_as": "final-provenance.json",
+      "sha256": "1ca34be512f870f099a21b2a2e89a99caf32f4b577bc1cf5c935ec979494fe1e"
+    },
+    "target/validation/final-run.log": {
+      "retained_as": "final-run.log",
+      "sha256": "8c1f8922ded2931e4f9d11ddc9389b08aa46bdecf8365dbb6fdc38b1102ae888"
+    },
+    "target/validation/format-final.log": {
+      "retained_as": "format-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "target/validation/mul-diagnostic-current.log": {
+      "retained_as": "mul-diagnostic-current.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "target/validation/mul-diagnostic.json": {
+      "retained_as": "mul-diagnostic.json",
+      "sha256": "dafa9dfb2ed2307dc7f20ca6903c10d881c53b1649ef1f0c32ba71592aed32b6"
+    },
+    "target/validation/mul-diagnostic.log": {
+      "retained_as": "mul-diagnostic.log",
+      "sha256": "0d64d8de29c821e97a72328c4deada8d11fea97ba3039c558d4100a93225b488"
+    },
+    "target/validation/mul-initial.log": {
+      "retained_as": "mul-initial.log",
+      "sha256": "fde8e0d189e77bab9232d432d97e5bff8fca0e60732afdddd708baae5b19bba3"
+    },
+    "target/validation/neg-add-diagnostic.json": {
+      "retained_as": "neg-add-diagnostic.json",
+      "sha256": "dcaf3a8abe9e6c2dfe708a8bb0e96bce4f7a9a5d60879e4ea69120fed2f7ff5d"
+    },
+    "target/validation/neg-add-diagnostic.log": {
+      "retained_as": "neg-add-diagnostic.log",
+      "sha256": "2a73a65d8dec00cd2148b967cb5f03bdc19a1c5b9a3e2d2fbeb3bc66c3c5fa60"
+    },
+    "target/validation/portable-initial.log": {
+      "retained_as": "portable-initial.log",
+      "sha256": "6130ed93d6c536f5911c739e515cbeb5a532b358516f59b131a9b2beb03ab145"
+    },
+    "target/validation/python-final.log": {
+      "retained_as": "python-final.log",
+      "sha256": "cb0bb352ff9d7eb783076fd634c5bb00756e13f61933f6c78091370ab0d50a99"
+    },
+    "target/validation/regression-initial.log": {
+      "retained_as": "regression-initial.log",
+      "sha256": "6e9e980f20ae50fffe375476272a60e8e16b026719d15529d496ce52c3b75669"
+    },
+    "target/validation/run_final.py": {
+      "retained_as": "run_final.py.txt",
+      "sha256": "422a08711b15a4e4c62531e22aac24b0c165a5ca945993587299c7c08fbdc5aa"
+    },
+    "target/validation/rust-final.log": {
+      "retained_as": "rust-final.log",
+      "sha256": "4d0e376e86f3b1285a7d23e3ad26768c66eb8dd4071b4fdb2b655f7b7f4a50a1"
+    },
+    "target/validation/stride-fixture-correction.log": {
+      "retained_as": "stride-fixture-correction.log",
+      "sha256": "24528b3d36ef75a5d30318fb9a1611cfda6e5cb48efc529765d4a7ed60e12dca"
+    },
+    "target/validation/two-device-corrected.log": {
+      "retained_as": "two-device-corrected.log",
+      "sha256": "ef8680cd7a424e5d805ab80c060cecd157bef886241db0409a3bb47229ba2c79"
+    },
+    "target/validation/two-device.log": {
+      "retained_as": "two-device.log",
+      "sha256": "1c6479b9a376f6bf548ad9cad1c0238321144c61c02509df76a0ca2e7c2c1ccf"
+    }
+  }
+}
