@@ -147,41 +147,56 @@ class Atleast1dReferenceTests(unittest.TestCase):
                 self.assertIs(type(expected), tuple)
                 self.assertEqual(actual, expected)
 
-    def test_variadic_values_layouts_and_aliasing_match_pytorch_2_13(self):
-        actual_cases = self.make_layout_cases(torch)
-        expected_cases = self.make_layout_cases(reference_torch)
-        actual_results = torch.atleast_1d(
-            *(source for _, source in actual_cases)
-        )
-        expected_results = reference_torch.atleast_1d(
-            *(source for _, source in expected_cases)
-        )
-        self.assertIs(type(actual_results), tuple)
-        self.assertIs(type(expected_results), tuple)
-        self.assertEqual(len(actual_results), len(expected_results))
+    def variadic_call(self, module, *sources, delegate=False):
+        if not delegate:
+            return module.atleast_1d(*sources)
 
-        for (
-            (name, actual_source),
-            (expected_name, expected_source),
-            actual_result,
-            expected_result,
-        ) in zip(
-            actual_cases,
-            expected_cases,
-            actual_results,
-            expected_results,
-            strict=True,
-        ):
-            with self.subTest(case=name):
-                self.assertEqual(name, expected_name)
-                actual = self.observe_result(
-                    torch, actual_source, actual_result
+        class DelegatingMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                return func(*args, **kwargs)
+
+        with DelegatingMode():
+            return module.atleast_1d(*sources)
+
+    def test_variadic_values_layouts_and_aliasing_match_pytorch_2_13(self):
+        for delegate in (False, True):
+            with self.subTest(delegate=delegate):
+                actual_cases = self.make_layout_cases(torch)
+                expected_cases = self.make_layout_cases(reference_torch)
+                actual_results = self.variadic_call(
+                    torch, *(source for _, source in actual_cases),
+                    delegate=delegate,
                 )
-                expected = self.observe_result(
-                    reference_torch, expected_source, expected_result
+                expected_results = self.variadic_call(
+                    reference_torch, *(source for _, source in expected_cases),
+                    delegate=delegate,
                 )
-                self.assertEqual(actual[:-1], expected[:-1])
-                np.testing.assert_array_equal(actual[-1], expected[-1])
+                self.assertIs(type(actual_results), tuple)
+                self.assertIs(type(expected_results), tuple)
+                self.assertEqual(len(actual_results), len(expected_results))
+
+                for (
+                    (name, actual_source),
+                    (expected_name, expected_source),
+                    actual_result,
+                    expected_result,
+                ) in zip(
+                    actual_cases,
+                    expected_cases,
+                    actual_results,
+                    expected_results,
+                    strict=True,
+                ):
+                    with self.subTest(case=name):
+                        self.assertEqual(name, expected_name)
+                        actual = self.observe_result(
+                            torch, actual_source, actual_result
+                        )
+                        expected = self.observe_result(
+                            reference_torch, expected_source, expected_result
+                        )
+                        self.assertEqual(actual[:-1], expected[:-1])
+                        np.testing.assert_array_equal(actual[-1], expected[-1])
 
     def autograd_outcome(self, module):
         leaf = module.tensor(
@@ -283,12 +298,12 @@ class Atleast1dReferenceTests(unittest.TestCase):
             ),
         )
 
-    def variadic_autograd_outcome(self, module):
+    def variadic_autograd_outcome(self, module, delegate=False):
         leaf = module.tensor(
             [1.0, 2.0, 3.0], dtype=module.float32, requires_grad=True
         )
         scalar = leaf[1]
-        results = module.atleast_1d(scalar, leaf)
+        results = self.variadic_call(module, scalar, leaf, delegate=delegate)
         scalar_result, vector_result = results
         metadata = (
             type(results) is tuple,
@@ -306,14 +321,14 @@ class Atleast1dReferenceTests(unittest.TestCase):
         loss.backward()
         return metadata, self.tensor_array(leaf.grad, module).copy()
 
-    def variadic_no_grad_outcome(self, module):
+    def variadic_no_grad_outcome(self, module, delegate=False):
         scalar = module.tensor(3.0, dtype=module.float32, requires_grad=True)
         vector_leaf = module.tensor(
             [1.0, 2.0], dtype=module.float32, requires_grad=True
         )
         vector = vector_leaf * 2.0
         with module.no_grad():
-            results = module.atleast_1d(scalar, vector)
+            results = self.variadic_call(module, scalar, vector, delegate=delegate)
         scalar_result, vector_result = results
         (scalar_result * scalar_result).sum().backward()
         return (
@@ -364,16 +379,20 @@ class Atleast1dReferenceTests(unittest.TestCase):
                 )
 
     def test_variadic_autograd_and_no_grad_match_pytorch_2_13(self):
-        actual_metadata, actual_grad = self.variadic_autograd_outcome(torch)
-        expected_metadata, expected_grad = self.variadic_autograd_outcome(
-            reference_torch
-        )
-        self.assertEqual(actual_metadata, expected_metadata)
-        np.testing.assert_array_equal(actual_grad, expected_grad)
-        self.assertEqual(
-            self.variadic_no_grad_outcome(torch),
-            self.variadic_no_grad_outcome(reference_torch),
-        )
+        for delegate in (False, True):
+            with self.subTest(delegate=delegate):
+                actual_metadata, actual_grad = self.variadic_autograd_outcome(
+                    torch, delegate
+                )
+                expected_metadata, expected_grad = self.variadic_autograd_outcome(
+                    reference_torch, delegate
+                )
+                self.assertEqual(actual_metadata, expected_metadata)
+                np.testing.assert_array_equal(actual_grad, expected_grad)
+                self.assertEqual(
+                    self.variadic_no_grad_outcome(torch, delegate),
+                    self.variadic_no_grad_outcome(reference_torch, delegate),
+                )
 
     def mode_contract(self, module):
         function = module.atleast_1d
@@ -457,6 +476,186 @@ class Atleast1dReferenceTests(unittest.TestCase):
             self.mode_contract(torch),
             self.mode_contract(reference_torch),
         )
+
+    def variadic_mode_contract(self, module):
+        function = module.atleast_1d
+        sources = (
+            module.tensor(1.0, dtype=module.float32, requires_grad=True),
+            module.tensor(
+                [2.0, 3.0], dtype=module.float32, requires_grad=True
+            ),
+            module.zeros((0,), dtype=module.float32, requires_grad=True),
+            module.zeros((2, 0, 3), dtype=module.float32, requires_grad=True),
+        )
+        marker = object()
+
+        def mode_stack():
+            return module.overrides._get_current_function_mode_stack()
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append(
+                    (func, types, args, kwargs, len(mode_stack()))
+                )
+                return self.result
+
+        def normalize_call(call):
+            func, dispatch_types, args, kwargs, stack_depth = call
+            return (
+                func is function,
+                tuple(item.__name__ for item in dispatch_types),
+                len(args),
+                tuple(
+                    argument is source
+                    for argument, source in zip(args, sources, strict=True)
+                ),
+                kwargs,
+                stack_depth,
+            )
+
+        accepting = RecordingMode(marker)
+        with accepting:
+            accepting_result = function(*sources)
+            accepting_restored = mode_stack() == [accepting]
+
+        forwarding_calls = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                forwarding_calls.append(
+                    (
+                        self.label,
+                        func,
+                        types,
+                        args,
+                        kwargs,
+                        len(mode_stack()),
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        lower = ForwardingMode("lower")
+        upper = ForwardingMode("upper")
+        with lower:
+            with upper:
+                forwarded = function(*sources)
+                forwarding_restored = mode_stack() == [lower, upper]
+
+        forwarded_metadata = tuple(
+            (
+                result is source,
+                tuple(result.shape),
+                result.stride(),
+                result.storage_offset(),
+                result.data_ptr() == source.data_ptr(),
+                result.requires_grad,
+                result.is_leaf,
+            )
+            for result, source in zip(forwarded, sources, strict=True)
+        )
+        for result in forwarded:
+            result.sum().backward()
+        forwarded_gradients = tuple(
+            self.tensor_array(source.grad, module).copy() for source in sources
+        )
+
+        declining = RecordingMode(NotImplemented)
+        fallback = RecordingMode(marker)
+        with fallback, declining:
+            try:
+                function(*sources)
+            except Exception as error:
+                declining_error = (
+                    type(error).__name__,
+                    re.sub(
+                        r"0x[0-9a-f]+",
+                        "0x<address>",
+                        self.normalize_error(error),
+                    ),
+                    error.args == (str(error),),
+                )
+            else:
+                self.fail(f"{module.__name__} accepted a declining mode")
+            declining_restored = mode_stack() == [fallback, declining]
+
+        expected_error = ValueError("mode failed")
+
+        class RaisingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append(
+                    (func, types, args, kwargs, len(mode_stack()))
+                )
+                raise expected_error
+
+        raising = RaisingMode()
+        with raising, upper:
+            try:
+                function(*sources)
+            except Exception as error:
+                raising_error = (
+                    error is expected_error,
+                    type(error).__name__,
+                    str(error),
+                    error.args,
+                )
+            else:
+                self.fail(f"{module.__name__} accepted a raising mode")
+            raising_restored = mode_stack() == [raising, upper]
+
+        return {
+            "accepting": (
+                accepting_result is marker,
+                tuple(map(normalize_call, accepting.calls)),
+                accepting_restored,
+            ),
+            "forwarding": tuple(
+                (
+                    label,
+                    normalize_call((func, types, args, kwargs, stack_depth)),
+                )
+                for label, func, types, args, kwargs, stack_depth in forwarding_calls
+            ),
+            "forwarded_is_tuple": type(forwarded) is tuple,
+            "forwarded_metadata": forwarded_metadata,
+            "forwarded_gradients": forwarded_gradients,
+            "forwarding_restored": forwarding_restored,
+            "declining": (
+                declining_error,
+                tuple(map(normalize_call, declining.calls)),
+                declining_restored,
+                tuple(map(normalize_call, fallback.calls)),
+            ),
+            "raising": (
+                raising_error,
+                tuple(map(normalize_call, raising.calls)),
+                raising_restored,
+            ),
+            "stack_depth": len(mode_stack()),
+        }
+
+    def test_variadic_torch_function_modes_match_pytorch_2_13(self):
+        actual = self.variadic_mode_contract(torch)
+        expected = self.variadic_mode_contract(reference_torch)
+        self.assertEqual(actual.keys(), expected.keys())
+        for key in actual.keys() - {"forwarded_gradients"}:
+            with self.subTest(contract=key):
+                self.assertEqual(actual[key], expected[key])
+        for actual_grad, expected_grad in zip(
+            actual["forwarded_gradients"],
+            expected["forwarded_gradients"],
+            strict=True,
+        ):
+            np.testing.assert_array_equal(actual_grad, expected_grad)
 
     def override_contract(self, module):
         function = module.atleast_1d
@@ -614,6 +813,32 @@ class Atleast1dReferenceTests(unittest.TestCase):
 
         with self.assertRaises(TypeError):
             reference_torch.atleast_1d((expected, None))
+
+    def test_foreign_cuda_variadic_inputs_remain_rejected_before_modes(self):
+        if not reference_torch.cuda.is_available():
+            self.skipTest("requires an NVIDIA GPU")
+        source = torch.tensor(1.0)
+        foreign = reference_torch.tensor(2.0, device="cuda:0")
+        self.assertEqual(foreign.cpu().item(), 2.0)
+        calls = []
+
+        class Mode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                calls.append((func, types, args, kwargs))
+                return object()
+
+        mode = Mode()
+        for sources in ((source, foreign), (foreign, source), (foreign, foreign)):
+            with mode:
+                with self.assertRaisesRegex(
+                    TypeError, "^atleast_1d\\(\\) only supports a single Tensor input$"
+                ):
+                    torch.atleast_1d(*sources)
+                self.assertEqual(
+                    torch.overrides._get_current_function_mode_stack(), [mode]
+                )
+        self.assertEqual(calls, [])
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
 
     def test_inner_overrides_remain_unsupported_and_outer_dispatch_matches(self):
         sequence_error = (

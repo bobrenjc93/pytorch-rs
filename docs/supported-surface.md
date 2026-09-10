@@ -562,6 +562,21 @@ assert cpu_nhwc.is_contiguous(memory_format=torch.channels_last)
 
 #### Metadata and views
 
+`torch.atleast_1d(*tensors)` supports variadic exact native CPU `float32`
+tensors under `TorchFunctionMode`, using the same dispatcher as `atleast_2d`
+and `atleast_3d`. Modes receive the public `torch.atleast_1d` function, original
+positional tensor objects in order, and empty keyword arguments. Intercepting
+modes return their result unchanged; delegating modes run from the innermost
+to the outermost mode before native execution. Delegation returns a tuple of
+length-one shared-storage views for scalars and the original objects for
+nonscalar inputs, including empty and noncontiguous tensors, with existing
+gradient and `no_grad` behavior preserved. PyTorch 2.13's `NotImplemented`
+retry and error behavior apply, and mode stacks are restored after delegation
+or exceptions. Foreign tensors, tensor subclasses, operand overrides, and
+mixed tensor/non-tensor variadic inputs remain rejected before mode dispatch.
+Single-input, tuple/list-input, and zero-input behavior is unchanged. The
+focused checks are `tests/test_atleast_1d.py` and its PyTorch 2.13 reference suite.
+
 The CPU core provides `float32` tensors, checked construction including copied
 one-dimensional numeric PEP 3118 buffers, constant-filled creation, and layout
 queries. Tensor metadata coverage includes `Tensor.dense_dim()` and
