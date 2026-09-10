@@ -1,0 +1,98 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running unittests src/lib.rs (target/build/debug/deps/pytorch_rs-545e4fdb10cc861f)
+
+running 175 tests
+Could not find platform independent libraries <prefix>
+Could not find platform dependent libraries <exec_prefix>
+test cuda::tests::cuda_allocation_checks_byte_overflow_before_loading_runtime ... ok
+test dtype::tests::casting_relation_covers_every_current_dtype_pair ... ok
+test dtype::tests::float32_limits_are_native_f32_metadata ... ok
+test dtype::tests::promotion_relation_covers_every_current_dtype_pair ... ok
+test grad_mode::tests::set_grad_enabled_updates_current_state_without_pushing_context_entries ... ok
+test python::tests::half_precision_buffer_values_convert_to_float32 ... ok
+test python::tests::libcxx_string_hash_matches_reference_boundaries ... ok
+test parallel::tests::pool_replacement_keeps_active_workers_alive ... ok
+test storage::tests::inline_float32_payload_preserves_pointer_and_copy_paths ... ok
+test storage::tests::owned_float32_payload_preserves_pointer_and_copy_paths ... ok
+test storage::tests::saved_storage_reuses_owned_payload_and_snapshots_shared_gradient ... ok
+test storage::tests::shared_gradient_float32_payload_preserves_pointer_and_accumulates ... ok
+test storage::tests::shared_gradient_operations_recover_from_poison ... ok
+test tensor::tests::absolute_difference_broadcast_matches_the_established_composition ... ok
+test tensor::tests::absolute_difference_channels_last_fast_path_rejects_other_dense_layouts ... ok
+test tensor::tests::absolute_difference_channels_last_fast_path_matches_shared_fallback ... ok
+test tensor::tests::absolute_difference_matching_dense_fast_path_matches_shared_fallback ... ok
+test tensor::tests::absolute_difference_same_shape_contiguous_fast_path_matches_composition ... ok
+test tensor::tests::absolute_difference_same_shape_matches_the_established_composition ... ok
+test tensor::tests::absolute_difference_sum_rank_two_trailing_vector_fast_path_matches_fallback ... ok
+test tensor::tests::absolute_difference_sum_rank_two_trailing_vector_fast_path_rejects_other_layouts ... ok
+test tensor::tests::absolute_difference_rank_zero_contiguous_fast_path_matches_composition ... ok
+test tensor::tests::absolute_difference_sum_rank_zero_fast_path_rejects_other_layouts ... ok
+test tensor::tests::absolute_difference_uses_pytorch_l1_nan_payload_precedence ... ok
+test tensor::tests::absolute_difference_sum_rank_zero_contiguous_fast_path_matches_composition ... ok
+test tensor::tests::binary_result_reservation_failures_return_tensor_errors ... ok
+test tensor::tests::cat_empty_rank_3_preserves_storage_and_view_gradients ... ok
+test tensor::tests::cat_rank_1_fast_path_matches_shared_gradient_fallback_for_views ... ok
+test tensor::tests::broadcast_multiply_snapshots_live_gradient_operands_for_backward ... ok
+test tensor::tests::cat_rank_2_fast_path_matches_shared_gradient_fallback_for_rows ... ok
+test tensor::tests::cat_rank_2_fast_path_matches_shared_gradient_fallback_for_columns ... ok
+test tensor::tests::chunk_backward_preserves_signed_zero_when_outputs_contribute ... ok
+test tensor::tests::contiguous_matmul_is_bitwise_identical_to_shared_gradient_fallback ... ok
+test tensor::tests::contiguous_matmul_preserves_empty_dimension_outputs ... ok
+test tensor::tests::dense_materialization_fast_path_requires_owned_matching_strides ... ok
+test reduction::tests::outer_remainder_cancellation_matches_reference ... ok
+test tensor::tests::equality_fast_path_compares_matching_dense_edge_values_and_mismatches ... ok
+test tensor::tests::contiguous_trailing_vector_broadcast_is_bitwise_identical_to_fallback ... ok
+test tensor::tests::equality_fast_path_matches_logical_iteration_semantics ... ok
+test tensor::tests::full_slice_is_an_identity_view_and_rejects_scalars ... ok
+test tensor::tests::inference_unary_functions_propagate_result_allocation_overflow ... ok
+test tensor::tests::equality_fast_path_compares_permuted_and_channels_last_layouts ... ok
+test tensor::tests::leaf_root_batch_aggregates_duplicate_seeds_before_existing_gradient ... ok
+test tensor::tests::contiguous_trailing_singleton_broadcast_is_bitwise_identical_to_fallback ... ok
+test tensor::tests::leaf_root_batch_rejects_no_grad_view_before_committing ... ok
+test tensor::tests::logarithm_matches_pytorch_float32_edge_bits ... ok
+test tensor::tests::logical_values_preserve_contiguous_shared_and_rank_boundaries ... ok
+test tensor::tests::negation_toggles_every_float_sign_bit ... ok
+test tensor::tests::mean_reuses_sum_and_division_for_values_and_gradients ... ok
+test tensor::tests::multiply_snapshots_live_gradient_operands_for_backward ... ok
+test tensor::tests::negation_gradient_edge_is_reusable_shared_and_bitwise ... ok
+test tensor::tests::owned_dense_binary_fast_path_is_bitwise_identical_to_shared_gradient_fallback ... ok
+test tensor::tests::owned_dense_materialization_is_bitwise_identical_to_shared_gradient_fallback ... ok
+test tensor::tests::owned_general_broadcast_is_bitwise_identical_to_shared_gradient_fallback ... ok
+test tensor::tests::owned_rank_1_sum_matches_fallback_for_transpose_selected_offset_vectors ... ok
+test tensor::tests::owned_rank_6_logical_values_preserve_partial_and_edge_iteration ... ok
+test tensor::tests::owned_rank_10_sum_preserves_singleton_materialization_and_unary_iteration ... ok
+test tensor::tests::blocked_contiguous_matmul_preserves_each_result_bit_pattern ... ok
+test tensor::tests::owned_rank_7_sum_preserves_singleton_materialization_and_unary_iteration ... ok
+test tensor::tests::owned_rank_8_sum_preserves_singleton_materialization_and_unary_iteration ... ok
+test tensor::tests::owned_strided_matmul_preserves_fallback_index_errors ... ok
+test tensor::tests::owned_strided_matmul_is_bitwise_identical_to_shared_gradient_fallback ... ok
+test tensor::tests::owned_rank_7_sum_preserves_empty_and_rank_boundaries ... ok
+test tensor::tests::range_slice_preserves_noncontiguous_strides_and_empty_offsets ... ok
+test tensor::tests::reciprocal_square_root_matches_pytorch_float32_edge_bits ... ok
+test tensor::tests::cat_rank_3_depth_fast_path_matches_fallback_for_generated_views ... ok
+test tensor::tests::row_biased_matmul_seeds_signed_zero_accumulators ... ok
+test tensor::tests::owned_rank_9_sum_preserves_singleton_materialization_and_unary_iteration ... ok
+test tensor::tests::saved_contiguous_slice_borrows_an_offset_range_and_rejects_strides ... ok
+test tensor::tests::saved_unary_nodes_preserve_operation_specific_python_names ... ok
+test tensor::tests::small_rank_logical_values_match_rank_2_fallback_bitwise ... ok
+test tensor::tests::small_rank_logical_values_match_rank_3_fallback_for_every_permutation ... ok
+test tensor::tests::owned_rank_8_sum_preserves_empty_contiguous_shared_and_rank_boundaries ... ok
+test tensor::tests::owned_rank_11_sum_preserves_singleton_materialization_and_unary_iteration ... okFatal Python error: 
+Failed to import encodings module
+Python runtime state: core initialized
+test tensor::tests::small_rank_logical_values_preserve_rank_3_partial_and_edge_iteration ... ok
+test tensor::tests::small_rank_logical_values_preserve_rank_4_partial_and_edge_iteration ... ok
+ModuleNotFoundError: No module named 'encodings'
+
+test tensor::tests::small_rank_logical_values_preserve_rank_5_partial_and_edge_iteration ... Current thread 0xok00007f4f9eff7640
+ [python::tests::] (most recent call first):
+  <no Python frame>
+test tensor::tests::softsign_matches_primitive_composition_and_rejects_grad_recording ... ok
+test tensor::tests::square_root_matches_pytorch_float32_edge_bits ... ok
+test tensor::tests::squared_difference_broadcasts_rank_zero_in_both_operand_orders ... ok
+test tensor::tests::squared_difference_canonicalizes_singleton_output_broadcast_strides ... ok
+error: test failed, to rerun pass `--lib`
+
+Caused by:
+  process didn't exit successfully: `/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/target/build/debug/deps/pytorch_rs-545e4fdb10cc861f` (exit status: 1)
+note: test exited abnormally; to see the full output pass --no-capture to the harness.

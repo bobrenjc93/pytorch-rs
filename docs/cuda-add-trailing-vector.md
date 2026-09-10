@@ -18,7 +18,12 @@ Other broadcasts, noncontiguous inputs, mixed devices, other dtypes, nonunit
 requires equal shapes, including the private native trace entrypoint. This
 change adds no compiler, reduction, matrix multiplication, or performance claim.
 
-## Validation
+## Historical source validation (PR #1936)
+
+The records below measure the original source PR, not the integrated composite.
+Their original source/build identities and paths remain pinned and unchanged.
+See [combined validation](composite-cuda-vector-dstack.md) for integration checks
+and the remaining clean-commit delivery gate.
 
 `tests/test_cuda_add_trailing_vector.py` compares against real PyTorch CUDA for
 generated rectangles, grid-stride loop tails, both operand orders, public call
@@ -35,7 +40,7 @@ in [the validation report](diagnostics/cuda-add-trailing-vector/evaluation.json)
 [build receipt](diagnostics/cuda-add-trailing-vector/build-record.json), and
 [run receipt](diagnostics/cuda-add-trailing-vector/run-record.json).
 The post-commit capture freshly built clean implementation commit
-`953309445979c1340a9adffde93b2d1aef09893c` in the current worktree. The receipt
+`953309445979c1340a9adffde93b2d1aef09893c` in its original source worktree. The receipt
 records clean checkout status, an empty production diff, and hashes for every
 production source file. Build, evaluation, and focused checks all completed
 before any tracked evidence was replaced. Outputs were first written under

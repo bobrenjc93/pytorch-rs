@@ -1,0 +1,4671 @@
+{
+  "schema": "depth_concat_diagnostic_v1",
+  "started_at": "2026-09-10T06:44:26.245119+00:00",
+  "source": {
+    "commit": "444faba3f8f793c68a069d65355c46fe3f650417",
+    "source_sha256": "5cf0651daeb2577d3a0816620cf54e92a7620bbace9f6782ff7818456bd8b967",
+    "production_diff_sha256": "80c11a8cdd3163236f1840f7e44d842d93c9fb69edec7ab06a45d227b647e4c8"
+  },
+  "git": {
+    "head": "444faba3f8f793c68a069d65355c46fe3f650417",
+    "status_short": "M ARCHITECTURE.md\n M FEATURES.md\n M README.md\n M docs/README.md\n M docs/cuda-add-trailing-vector.md\n M docs/supported-surface.md\n M src/tensor.rs\n M tests/test_readme_quickstart.py\n?? docs/composite-cuda-vector-dstack.md\n?? docs/diagnostics/composite-cuda-vector-dstack/\n?? scripts/benchmark_depth_concat.py\n?? scripts/capture_depth_concat_build.py",
+    "diff_stat": "ARCHITECTURE.md                  |  13 +++-\n FEATURES.md                      |  21 ++++--\n README.md                        |   2 +-\n docs/README.md                   |   1 +\n docs/cuda-add-trailing-vector.md |   9 ++-\n docs/supported-surface.md        |  17 +++--\n src/tensor.rs                    | 149 +++++++++++++++++++++++++++++++++++++++\n tests/test_readme_quickstart.py  |   5 +-\n 8 files changed, 198 insertions(+), 19 deletions(-)"
+  },
+  "measurement_kind": "precommit-diagnostic",
+  "build_record": {
+    "commit": "444faba3f8f793c68a069d65355c46fe3f650417",
+    "source_sha256": "5cf0651daeb2577d3a0816620cf54e92a7620bbace9f6782ff7818456bd8b967",
+    "production_diff_sha256": "80c11a8cdd3163236f1840f7e44d842d93c9fb69edec7ab06a45d227b647e4c8",
+    "git_status_before_build": " M ARCHITECTURE.md\n M FEATURES.md\n M README.md\n M docs/cuda-add-trailing-vector.md\n M docs/supported-surface.md\n M src/tensor.rs\n?? scripts/benchmark_depth_concat.py\n?? scripts/capture_depth_concat_build.py\n",
+    "clean_checkout": false,
+    "measurement_kind": "precommit-diagnostic",
+    "build_command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/.venv/bin/maturin",
+      "build",
+      "--release",
+      "--locked",
+      "--offline",
+      "--out",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/target/final-release/wheels"
+    ],
+    "commands": [
+      {
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/.venv/bin/maturin",
+          "build",
+          "--release",
+          "--locked",
+          "--offline",
+          "--out",
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/target/final-release/wheels"
+        ],
+        "started_at": "2026-09-10T06:34:35.969779+00:00",
+        "ended_at": "2026-09-10T06:35:21.236836+00:00",
+        "wall_seconds": 45.267061040736735,
+        "exit_status": 0,
+        "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/target/final-release/build.log",
+        "log_sha256": "559a24a4b0d6c3c2d86d3d9f48598114c0b4c8848e261dfd2844f5e47061e7ae"
+      },
+      {
+        "command": [
+          "uv",
+          "pip",
+          "install",
+          "--python",
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/.venv/bin/python",
+          "--force-reinstall",
+          "--no-deps",
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/target/final-release/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl"
+        ],
+        "started_at": "2026-09-10T06:35:21.237838+00:00",
+        "ended_at": "2026-09-10T06:35:21.369320+00:00",
+        "wall_seconds": 0.13150097895413637,
+        "exit_status": 0,
+        "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/target/final-release/install.log",
+        "log_sha256": "c822491a9a0f032a557a51dba8517e04600bc45d8bc6860c87043b5d933a5bab"
+      }
+    ],
+    "source_unchanged_during_build": true,
+    "extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/.venv/lib/python3.14/site-packages/torch_rs/torch_rs.abi3.so",
+    "extension_sha256": "5a2ee9083b4343da4c49544215f0966b8a99aca73c8bec32f23cc24cda9cb038",
+    "wheel_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/target/final-release/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "wheel_sha256": "20301ae767cf7583c3caf9a0ec5826893eb06ba3089e8e9cb35e3ee45dbcb9f2",
+    "python": "3.14.5 (main, May 10 2026, 19:28:16) [Clang 22.1.3 ]",
+    "python_executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/.venv/bin/python",
+    "interpreter_path": "/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/bin/python3.14",
+    "interpreter_sha256": "a1512f9a07029c4a9b02a1bb63bbd156d36b0dcb26f49cb7f5ee175f19b222da",
+    "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)\nbinary: rustc\ncommit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234\ncommit-date: 2025-12-08\nhost: x86_64-unknown-linux-gnu\nrelease: 1.92.0\nLLVM version: 21.1.3\n",
+    "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)\n",
+    "rustc_path": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustc",
+    "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0\n",
+    "nvcc_used": false,
+    "cuda_compilation": "driver JIT of embedded PTX",
+    "profile": {
+      "name": "release",
+      "lto": "thin",
+      "codegen_units": 1,
+      "features": [
+        "extension-module"
+      ]
+    },
+    "uv_lock_sha256": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced",
+    "dependencies": {
+      "typing_extensions": "4.16.0",
+      "MarkupSafe": "3.0.3",
+      "nvidia-cufile": "1.15.1.6",
+      "cuda-pathfinder": "1.6.0",
+      "fsspec": "2026.7.0",
+      "nvidia-curand": "10.4.0.35",
+      "networkx": "3.6.1",
+      "cuda-toolkit": "13.0.3.0",
+      "Jinja2": "3.1.6",
+      "filelock": "3.32.2",
+      "nvidia-nvtx": "13.0.85",
+      "maturin": "1.14.1",
+      "mpmath": "1.3.0",
+      "nvidia-cuda-runtime": "13.0.96",
+      "nvidia-cusparse": "12.6.3.3",
+      "nvidia-nvjitlink": "13.3.33",
+      "nvidia-cusparselt-cu13": "0.8.1",
+      "setuptools": "84.0.0",
+      "nvidia-nccl-cu13": "2.29.7",
+      "nvidia-cuda-nvrtc": "13.0.88",
+      "nvidia-cufft": "12.0.0.61",
+      "nvidia-cusolver": "12.0.4.66",
+      "nvidia-cuda-cupti": "13.0.85",
+      "nvidia-cublas": "13.1.1.3",
+      "nvidia-cudnn-cu13": "9.20.0.48",
+      "nvidia-nvshmem-cu13": "3.4.5",
+      "cuda-bindings": "13.3.1",
+      "triton": "3.7.1",
+      "numpy": "2.5.1",
+      "sympy": "1.14.0",
+      "torch": "2.13.0",
+      "torch-rs": "0.1.0"
+    },
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/target/final-release/build",
+      "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/.venv/bin/python",
+      "VIRTUAL_ENV": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/.venv",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/target/tmp",
+      "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/target/cache",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/target/cache/cuda",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/target/uv-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/.venv/lib/python3.14/site-packages/nvidia/cu13/lib/libcudart.so.13",
+      "RUSTFLAGS": null,
+      "CARGO_BUILD_RUSTFLAGS": null
+    },
+    "cache_state": "empty build target; populated local Cargo registry and locked .venv; offline build",
+    "rustc_sha256": "028fd60b0e0add5505c661cd3ccde91393d615c8729bd95d94ab1e91409b36a1"
+  },
+  "build_record_sha256": "372e96530f29236da204333f66082633aef7d186c18b1262eb6fd0a54c42bd04",
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/.venv/bin/python",
+    "scripts/benchmark_depth_concat.py",
+    "--samples",
+    "21",
+    "--repeats",
+    "3",
+    "--build-record",
+    "target/final-release/build-record.json",
+    "--output",
+    "target/evidence/depth-confirmation.json"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d",
+  "python": "3.14.5 (main, May 10 2026, 19:28:16) [Clang 22.1.3 ]",
+  "python_executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/.venv/bin/python",
+  "interpreter_realpath": "/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/bin/python3.14",
+  "interpreter_sha256": "a1512f9a07029c4a9b02a1bb63bbd156d36b0dcb26f49cb7f5ee175f19b222da",
+  "extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/.venv/lib/python3.14/site-packages/torch_rs/torch_rs.abi3.so",
+  "extension_sha256": "5a2ee9083b4343da4c49544215f0966b8a99aca73c8bec32f23cc24cda9cb038",
+  "harness_sha256": "104e357d6e5b7f7f59e04ec4cf7e44324c7608fc44682a5a26d24b0532df205a",
+  "common_harness_sha256": "18b2bf4dc94ad0b1793876c8863f126032933f80691ddd44c503fef693df6f9e",
+  "uv_lock_sha256": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced",
+  "dependencies": {
+    "typing_extensions": "4.16.0",
+    "MarkupSafe": "3.0.3",
+    "nvidia-cufile": "1.15.1.6",
+    "cuda-pathfinder": "1.6.0",
+    "fsspec": "2026.7.0",
+    "nvidia-curand": "10.4.0.35",
+    "networkx": "3.6.1",
+    "cuda-toolkit": "13.0.3.0",
+    "Jinja2": "3.1.6",
+    "filelock": "3.32.2",
+    "nvidia-nvtx": "13.0.85",
+    "maturin": "1.14.1",
+    "mpmath": "1.3.0",
+    "nvidia-cuda-runtime": "13.0.96",
+    "nvidia-cusparse": "12.6.3.3",
+    "nvidia-nvjitlink": "13.3.33",
+    "nvidia-cusparselt-cu13": "0.8.1",
+    "setuptools": "84.0.0",
+    "nvidia-nccl-cu13": "2.29.7",
+    "nvidia-cuda-nvrtc": "13.0.88",
+    "nvidia-cufft": "12.0.0.61",
+    "nvidia-cusolver": "12.0.4.66",
+    "nvidia-cuda-cupti": "13.0.85",
+    "nvidia-cublas": "13.1.1.3",
+    "nvidia-cudnn-cu13": "9.20.0.48",
+    "nvidia-nvshmem-cu13": "3.4.5",
+    "cuda-bindings": "13.3.1",
+    "triton": "3.7.1",
+    "numpy": "2.5.1",
+    "sympy": "1.14.0",
+    "torch": "2.13.0",
+    "torch-rs": "0.1.0"
+  },
+  "module_paths": {
+    "numpy": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/.venv/lib/python3.14/site-packages/numpy/__init__.py",
+    "torch_rs": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/.venv/lib/python3.14/site-packages/torch_rs/__init__.py",
+    "torch": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/.venv/lib/python3.14/site-packages/torch/__init__.py"
+  },
+  "cpu": "AMD EPYC 9654 96-Core Processor",
+  "affinity": {
+    "requested_cpu": null,
+    "selected_cpu": 0,
+    "initial_affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70,
+      71,
+      72,
+      73,
+      74,
+      75,
+      76,
+      77,
+      78,
+      79,
+      80,
+      81,
+      82,
+      83,
+      84,
+      85,
+      86,
+      87,
+      88,
+      89,
+      90,
+      91,
+      92,
+      93,
+      94,
+      95,
+      96,
+      97,
+      98,
+      99,
+      100,
+      101,
+      102,
+      103,
+      104,
+      105,
+      106,
+      107,
+      108,
+      109,
+      110,
+      111,
+      112,
+      113,
+      114,
+      115,
+      116,
+      117,
+      118,
+      119,
+      120,
+      121,
+      122,
+      123,
+      124,
+      125,
+      126,
+      127,
+      128,
+      129,
+      130,
+      131,
+      132,
+      133,
+      134,
+      135,
+      136,
+      137,
+      138,
+      139,
+      140,
+      141,
+      142,
+      143,
+      144,
+      145,
+      146,
+      147,
+      148,
+      149,
+      150,
+      151,
+      152,
+      153,
+      154,
+      155,
+      156,
+      157,
+      158,
+      159,
+      160,
+      161,
+      162,
+      163,
+      164,
+      165,
+      166,
+      167,
+      168,
+      169,
+      170,
+      171,
+      172,
+      173,
+      174,
+      175,
+      176,
+      177,
+      178,
+      179,
+      180,
+      181,
+      182,
+      183,
+      184,
+      185,
+      186,
+      187,
+      188,
+      189,
+      190,
+      191,
+      192,
+      193,
+      194,
+      195,
+      196,
+      197,
+      198,
+      199,
+      200,
+      201,
+      202,
+      203,
+      204,
+      205,
+      206,
+      207,
+      208,
+      209,
+      210,
+      211,
+      212,
+      213,
+      214,
+      215,
+      216,
+      217,
+      218,
+      219,
+      220,
+      221,
+      222,
+      223,
+      224,
+      225,
+      226,
+      227,
+      228,
+      229,
+      230,
+      231,
+      232,
+      233,
+      234,
+      235,
+      236,
+      237,
+      238,
+      239,
+      240,
+      241,
+      242,
+      243,
+      244,
+      245,
+      246,
+      247,
+      248,
+      249,
+      250,
+      251,
+      252,
+      253,
+      254,
+      255,
+      256,
+      257,
+      258,
+      259,
+      260,
+      261,
+      262,
+      263,
+      264,
+      265,
+      266,
+      267,
+      268,
+      269,
+      270,
+      271,
+      272,
+      273,
+      274,
+      275,
+      276,
+      277,
+      278,
+      279,
+      280,
+      281,
+      282,
+      283,
+      284,
+      285,
+      286,
+      287,
+      288,
+      289,
+      290,
+      291,
+      292,
+      293,
+      294,
+      295,
+      296,
+      297,
+      298,
+      299,
+      300,
+      301,
+      302,
+      303,
+      304,
+      305,
+      306,
+      307,
+      308,
+      309,
+      310,
+      311,
+      312,
+      313,
+      314,
+      315,
+      316,
+      317,
+      318,
+      319,
+      320,
+      321,
+      322,
+      323,
+      324,
+      325,
+      326,
+      327,
+      328,
+      329,
+      330,
+      331,
+      332,
+      333,
+      334,
+      335,
+      336,
+      337,
+      338,
+      339,
+      340,
+      341,
+      342,
+      343,
+      344,
+      345,
+      346,
+      347,
+      348,
+      349,
+      350,
+      351,
+      352,
+      353,
+      354,
+      355,
+      356,
+      357,
+      358,
+      359,
+      360,
+      361,
+      362,
+      363,
+      364,
+      365,
+      366,
+      367,
+      368,
+      369,
+      370,
+      371,
+      372,
+      373,
+      374,
+      375,
+      376,
+      377,
+      378,
+      379,
+      380,
+      381,
+      382,
+      383
+    ],
+    "pinned_affinity": [
+      0
+    ]
+  },
+  "threads": {
+    "native": 1,
+    "reference": 1,
+    "native_interop": 1,
+    "reference_interop": 1
+  },
+  "device": "cpu",
+  "warmups": 15,
+  "samples": 21,
+  "repeats": 3,
+  "seed": 19351936,
+  "timing_scope": "API call only; eager outputs materialized and bit-checked after every block; symmetric warmups and reversed orders; construction excluded",
+  "credit": "targeted diagnostic only; no repository-wide percentage",
+  "rows": [
+    {
+      "name": "scalar",
+      "api": "dstack",
+      "inputs": [
+        {
+          "shape": [],
+          "stride": [],
+          "storage_offset": 0,
+          "numel": 1,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        },
+        {
+          "shape": [],
+          "stride": [],
+          "storage_offset": 0,
+          "numel": 1,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        }
+      ],
+      "passes": [
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 0.9416666666666667,
+          "mad_us": 0.01633333333333331,
+          "variance_us2": 7.015368683799446,
+          "sample_count": 21,
+          "samples_us": [
+            0.9483333333333334,
+            0.9683333333333334,
+            0.958,
+            0.9213333333333333,
+            0.958,
+            0.9346666666666666,
+            0.9683333333333334,
+            0.9383333333333334,
+            0.9713333333333334,
+            0.9613333333333334,
+            0.9113333333333333,
+            0.9413333333333334,
+            0.9346666666666666,
+            0.9146666666666666,
+            0.9883333333333334,
+            0.9646666666666667,
+            0.9416666666666667,
+            13.383666666666667,
+            0.928,
+            0.938,
+            0.9413333333333334
+          ],
+          "min_us": 0.9113333333333333,
+          "max_us": 13.383666666666667
+        },
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch",
+          "median_us": 2.6006666666666667,
+          "mad_us": 0.09033333333333315,
+          "variance_us2": 0.017004538674729164,
+          "sample_count": 21,
+          "samples_us": [
+            2.6006666666666667,
+            2.6876666666666664,
+            2.8076666666666665,
+            2.7173333333333334,
+            2.5436666666666663,
+            2.6173333333333333,
+            2.781,
+            2.6173333333333333,
+            3.0013333333333336,
+            2.791,
+            2.504,
+            2.7573333333333334,
+            2.5706666666666664,
+            2.584,
+            2.5103333333333335,
+            2.4803333333333333,
+            2.4836666666666667,
+            2.5903333333333336,
+            2.5036666666666667,
+            2.5506666666666664,
+            2.6473333333333335
+          ],
+          "min_us": 2.4803333333333333,
+          "max_us": 3.0013333333333336
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch",
+          "median_us": 2.5636666666666663,
+          "mad_us": 0.05033333333333356,
+          "variance_us2": 0.006970301335348957,
+          "sample_count": 21,
+          "samples_us": [
+            2.6006666666666667,
+            2.7743333333333333,
+            2.5903333333333336,
+            2.4906666666666664,
+            2.5636666666666663,
+            2.6673333333333336,
+            2.7706666666666666,
+            2.527,
+            2.5136666666666665,
+            2.594,
+            2.587,
+            2.5003333333333333,
+            2.4973333333333336,
+            2.614,
+            2.547,
+            2.6206666666666667,
+            2.4936666666666665,
+            2.5873333333333335,
+            2.4836666666666667,
+            2.4673333333333334,
+            2.524
+          ],
+          "min_us": 2.4673333333333334,
+          "max_us": 2.7743333333333333
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 0.9783333333333334,
+          "mad_us": 0.029999999999999916,
+          "variance_us2": 0.0018968919123204821,
+          "sample_count": 21,
+          "samples_us": [
+            0.9616666666666667,
+            1.0013333333333334,
+            0.9913333333333334,
+            0.965,
+            0.9883333333333334,
+            1.0083333333333333,
+            0.9713333333333334,
+            0.9783333333333334,
+            0.9616666666666667,
+            1.015,
+            1.0283333333333333,
+            0.9816666666666666,
+            1.0883333333333332,
+            1.0116666666666667,
+            0.945,
+            0.9213333333333333,
+            0.948,
+            0.9046666666666666,
+            0.9083333333333333,
+            0.9813333333333334,
+            0.908
+          ],
+          "min_us": 0.9046666666666666,
+          "max_us": 1.0883333333333332
+        }
+      ]
+    },
+    {
+      "name": "vector",
+      "api": "dstack",
+      "inputs": [
+        {
+          "shape": [
+            263
+          ],
+          "stride": [
+            1
+          ],
+          "storage_offset": 0,
+          "numel": 263,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        },
+        {
+          "shape": [
+            263
+          ],
+          "stride": [
+            1
+          ],
+          "storage_offset": 0,
+          "numel": 263,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        },
+        {
+          "shape": [
+            263
+          ],
+          "stride": [
+            1
+          ],
+          "storage_offset": 0,
+          "numel": 263,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        }
+      ],
+      "passes": [
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 2.046333333333333,
+          "mad_us": 0.06666666666666643,
+          "variance_us2": 0.05386477147896196,
+          "sample_count": 21,
+          "samples_us": [
+            2.063,
+            2.0933333333333333,
+            2.046666666666667,
+            2.0733333333333337,
+            2.3033333333333337,
+            1.956,
+            1.9726666666666668,
+            2.0496666666666665,
+            2.2533333333333334,
+            2.1166666666666667,
+            2.006333333333333,
+            2.046333333333333,
+            1.9796666666666667,
+            2.0163333333333333,
+            3.0246666666666666,
+            2.2836666666666665,
+            2.0163333333333333,
+            1.9963333333333333,
+            1.9063333333333332,
+            1.9426666666666668,
+            1.9596666666666667
+          ],
+          "min_us": 1.9063333333333332,
+          "max_us": 3.0246666666666666
+        },
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch",
+          "median_us": 5.398333333333333,
+          "mad_us": 0.05333333333333368,
+          "variance_us2": 0.048248680776014116,
+          "sample_count": 21,
+          "samples_us": [
+            5.288,
+            5.368,
+            6.079,
+            5.455,
+            5.351666666666667,
+            5.334666666666667,
+            5.351333333333333,
+            5.411666666666667,
+            5.361333333333333,
+            5.345,
+            5.995666666666667,
+            5.428333333333333,
+            5.848666666666667,
+            5.418333333333333,
+            5.572,
+            5.361666666666667,
+            5.291333333333333,
+            5.508333333333333,
+            5.411333333333333,
+            5.288,
+            5.398333333333333
+          ],
+          "min_us": 5.288,
+          "max_us": 6.079
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch",
+          "median_us": 5.381333333333333,
+          "mad_us": 0.043333333333333,
+          "variance_us2": 5.824145628621817,
+          "sample_count": 21,
+          "samples_us": [
+            5.341333333333333,
+            5.394666666666667,
+            5.311333333333333,
+            5.361333333333333,
+            5.425,
+            5.348333333333333,
+            5.915333333333333,
+            5.508333333333333,
+            5.775666666666667,
+            5.318,
+            5.341333333333333,
+            5.338,
+            5.328,
+            5.288,
+            5.388,
+            16.72533333333333,
+            5.381333333333333,
+            5.398333333333333,
+            5.331333333333333,
+            5.411333333333333,
+            5.388
+          ],
+          "min_us": 5.288,
+          "max_us": 16.72533333333333
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 2.1633333333333336,
+          "mad_us": 0.18699999999999983,
+          "variance_us2": 0.23481715243134293,
+          "sample_count": 21,
+          "samples_us": [
+            2.6206666666666667,
+            2.704,
+            3.2816666666666667,
+            2.6706666666666665,
+            3.6723333333333334,
+            2.33,
+            2.5303333333333335,
+            3.2583333333333333,
+            2.3503333333333334,
+            2.1633333333333336,
+            2.0833333333333335,
+            2.1066666666666665,
+            2.2266666666666666,
+            2.0233333333333334,
+            2.0196666666666667,
+            1.913,
+            2.11,
+            1.9863333333333333,
+            2.0433333333333334,
+            1.973,
+            1.9463333333333332
+          ],
+          "min_us": 1.913,
+          "max_us": 3.6723333333333334
+        }
+      ]
+    },
+    {
+      "name": "matrix_3x7_dense",
+      "api": "dstack",
+      "inputs": [
+        {
+          "shape": [
+            3,
+            7
+          ],
+          "stride": [
+            7,
+            1
+          ],
+          "storage_offset": 0,
+          "numel": 21,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        },
+        {
+          "shape": [
+            3,
+            7
+          ],
+          "stride": [
+            7,
+            1
+          ],
+          "storage_offset": 0,
+          "numel": 21,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        }
+      ],
+      "passes": [
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 0.9616666666666667,
+          "mad_us": 0.02299999999999991,
+          "variance_us2": 0.0005510753338372385,
+          "sample_count": 21,
+          "samples_us": [
+            0.9783333333333334,
+            0.998,
+            0.9616666666666667,
+            0.9946666666666666,
+            0.9746666666666667,
+            0.935,
+            0.9583333333333334,
+            0.9716666666666667,
+            0.9613333333333334,
+            0.998,
+            0.9583333333333334,
+            1.0016666666666667,
+            0.958,
+            0.938,
+            0.9846666666666666,
+            0.9346666666666666,
+            0.988,
+            0.9646666666666667,
+            0.948,
+            0.918,
+            0.938
+          ],
+          "min_us": 0.918,
+          "max_us": 1.0016666666666667
+        },
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch",
+          "median_us": 2.8643333333333336,
+          "mad_us": 0.06999999999999984,
+          "variance_us2": 0.014978137566137554,
+          "sample_count": 21,
+          "samples_us": [
+            2.9043333333333337,
+            2.7976666666666663,
+            3.1146666666666665,
+            2.9913333333333334,
+            2.704,
+            2.928,
+            2.781,
+            2.664,
+            2.8643333333333336,
+            2.9343333333333335,
+            2.9976666666666665,
+            2.911,
+            2.8643333333333336,
+            2.8376666666666663,
+            2.7573333333333334,
+            3.158,
+            2.8443333333333336,
+            2.891,
+            2.851,
+            2.734,
+            2.754
+          ],
+          "min_us": 2.664,
+          "max_us": 3.158
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch",
+          "median_us": 2.6943333333333337,
+          "mad_us": 0.0636666666666672,
+          "variance_us2": 0.008242598639455779,
+          "sample_count": 21,
+          "samples_us": [
+            2.7276666666666665,
+            2.644,
+            2.801,
+            2.594,
+            2.6473333333333335,
+            2.6306666666666665,
+            2.8676666666666666,
+            2.8143333333333334,
+            2.6473333333333335,
+            2.5936666666666666,
+            2.851,
+            2.7173333333333334,
+            2.7173333333333334,
+            2.6706666666666665,
+            2.6206666666666667,
+            2.6943333333333337,
+            2.754,
+            2.587,
+            2.7676666666666665,
+            2.8876666666666666,
+            2.6706666666666665
+          ],
+          "min_us": 2.587,
+          "max_us": 2.8876666666666666
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 0.988,
+          "mad_us": 0.026666666666666616,
+          "variance_us2": 0.0031091035525321236,
+          "sample_count": 21,
+          "samples_us": [
+            0.9913333333333334,
+            0.9783333333333334,
+            0.9613333333333334,
+            1.015,
+            0.958,
+            0.9916666666666666,
+            1.0213333333333334,
+            0.988,
+            1.0013333333333334,
+            1.0283333333333333,
+            1.0483333333333333,
+            1.0013333333333334,
+            1.192,
+            0.968,
+            0.968,
+            0.938,
+            0.9183333333333333,
+            0.9916666666666666,
+            0.9416666666666667,
+            0.9246666666666666,
+            0.9713333333333334
+          ],
+          "min_us": 0.9183333333333333,
+          "max_us": 1.192
+        }
+      ]
+    },
+    {
+      "name": "matrix_3x7_transpose",
+      "api": "dstack",
+      "inputs": [
+        {
+          "shape": [
+            3,
+            7
+          ],
+          "stride": [
+            1,
+            3
+          ],
+          "storage_offset": 0,
+          "numel": 21,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        },
+        {
+          "shape": [
+            3,
+            7
+          ],
+          "stride": [
+            1,
+            3
+          ],
+          "storage_offset": 0,
+          "numel": 21,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        }
+      ],
+      "passes": [
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 0.925,
+          "mad_us": 0.017000000000000015,
+          "variance_us2": 0.000785107079868985,
+          "sample_count": 21,
+          "samples_us": [
+            0.928,
+            1.0016666666666667,
+            0.9046666666666666,
+            0.938,
+            0.9213333333333333,
+            0.9513333333333334,
+            0.918,
+            0.935,
+            0.9013333333333333,
+            0.988,
+            0.9146666666666666,
+            0.9346666666666666,
+            0.945,
+            0.908,
+            0.9313333333333333,
+            0.905,
+            0.878,
+            0.9313333333333333,
+            0.925,
+            0.9046666666666666,
+            0.8983333333333333
+          ],
+          "min_us": 0.878,
+          "max_us": 1.0016666666666667
+        },
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch",
+          "median_us": 3.856,
+          "mad_us": 0.09033333333333315,
+          "variance_us2": 0.04767832249937014,
+          "sample_count": 21,
+          "samples_us": [
+            3.8526666666666665,
+            3.7656666666666667,
+            4.356666666666667,
+            4.136333333333333,
+            3.8926666666666665,
+            3.856,
+            3.6956666666666664,
+            4.099333333333333,
+            3.8656666666666664,
+            3.9293333333333336,
+            3.936,
+            3.819,
+            3.7223333333333333,
+            3.7523333333333335,
+            3.6686666666666663,
+            4.5536666666666665,
+            3.936,
+            3.789,
+            3.6953333333333336,
+            3.719,
+            3.8723333333333336
+          ],
+          "min_us": 3.6686666666666663,
+          "max_us": 4.5536666666666665
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch",
+          "median_us": 3.719,
+          "mad_us": 0.0566666666666662,
+          "variance_us2": 5.26709146989166,
+          "sample_count": 21,
+          "samples_us": [
+            3.6523333333333334,
+            3.6586666666666665,
+            3.7923333333333336,
+            3.719,
+            14.498666666666667,
+            3.7823333333333333,
+            3.8323333333333336,
+            3.739,
+            3.8993333333333333,
+            3.6856666666666666,
+            3.7256666666666667,
+            3.6823333333333337,
+            3.7523333333333335,
+            3.7423333333333333,
+            3.6856666666666666,
+            3.6486666666666667,
+            3.6556666666666664,
+            3.669,
+            3.896,
+            3.6623333333333337,
+            3.669
+          ],
+          "min_us": 3.6486666666666667,
+          "max_us": 14.498666666666667
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 0.9746666666666667,
+          "mad_us": 0.03966666666666663,
+          "variance_us2": 0.004644863693625596,
+          "sample_count": 21,
+          "samples_us": [
+            1.0813333333333333,
+            0.9513333333333334,
+            0.9883333333333334,
+            1.0083333333333333,
+            0.9746666666666667,
+            0.9846666666666666,
+            0.9613333333333334,
+            0.9846666666666666,
+            0.9883333333333334,
+            1.028,
+            1.0283333333333333,
+            0.995,
+            1.2183333333333333,
+            0.9346666666666666,
+            0.965,
+            0.928,
+            0.935,
+            0.9046666666666666,
+            0.918,
+            0.928,
+            0.9146666666666666
+          ],
+          "min_us": 0.9046666666666666,
+          "max_us": 1.2183333333333333
+        }
+      ]
+    },
+    {
+      "name": "matrix_3x7_offset",
+      "api": "dstack",
+      "inputs": [
+        {
+          "shape": [
+            3,
+            7
+          ],
+          "stride": [
+            7,
+            1
+          ],
+          "storage_offset": 21,
+          "numel": 21,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        },
+        {
+          "shape": [
+            3,
+            7
+          ],
+          "stride": [
+            7,
+            1
+          ],
+          "storage_offset": 21,
+          "numel": 21,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        }
+      ],
+      "passes": [
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 0.935,
+          "mad_us": 0.01966666666666661,
+          "variance_us2": 0.0009378659611992948,
+          "sample_count": 21,
+          "samples_us": [
+            1.0316666666666667,
+            0.9916666666666666,
+            0.928,
+            0.938,
+            0.935,
+            0.9583333333333334,
+            0.9213333333333333,
+            0.898,
+            0.9113333333333333,
+            0.975,
+            0.9546666666666667,
+            0.9413333333333334,
+            0.9246666666666666,
+            0.9246666666666666,
+            0.9046666666666666,
+            0.928,
+            0.9146666666666666,
+            0.9546666666666667,
+            0.935,
+            0.968,
+            0.9246666666666666
+          ],
+          "min_us": 0.898,
+          "max_us": 1.0316666666666667
+        },
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch",
+          "median_us": 2.8943333333333334,
+          "mad_us": 0.08000000000000007,
+          "variance_us2": 7.988036860166288,
+          "sample_count": 21,
+          "samples_us": [
+            2.9443333333333337,
+            2.6873333333333336,
+            3.2883333333333336,
+            2.8776666666666664,
+            2.8943333333333334,
+            2.7876666666666665,
+            2.9243333333333337,
+            3.2816666666666667,
+            2.8943333333333334,
+            2.7206666666666663,
+            2.841,
+            2.764,
+            16.167666666666666,
+            3.2013333333333334,
+            2.8476666666666666,
+            2.8943333333333334,
+            2.8743333333333334,
+            3.1946666666666665,
+            2.8143333333333334,
+            2.9413333333333336,
+            2.7376666666666667
+          ],
+          "min_us": 2.6873333333333336,
+          "max_us": 16.167666666666666
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch",
+          "median_us": 2.7806666666666664,
+          "mad_us": 0.046333333333333115,
+          "variance_us2": 4.550257131267321,
+          "sample_count": 21,
+          "samples_us": [
+            2.671,
+            2.821,
+            2.7343333333333333,
+            2.7876666666666665,
+            2.754,
+            2.9443333333333337,
+            3.185,
+            2.704,
+            2.714,
+            3.702,
+            3.4216666666666664,
+            2.7476666666666665,
+            2.7173333333333334,
+            2.7406666666666664,
+            12.806,
+            2.7976666666666663,
+            2.811,
+            2.751,
+            2.7906666666666666,
+            2.7806666666666664,
+            2.654
+          ],
+          "min_us": 2.654,
+          "max_us": 12.806
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 0.978,
+          "mad_us": 0.02966666666666662,
+          "variance_us2": 0.005314887881078355,
+          "sample_count": 21,
+          "samples_us": [
+            0.9816666666666666,
+            0.9916666666666666,
+            0.9713333333333334,
+            0.9483333333333334,
+            1.018,
+            0.9916666666666666,
+            0.9613333333333334,
+            1.0016666666666667,
+            0.9646666666666667,
+            1.0483333333333333,
+            1.0116666666666667,
+            0.9983333333333334,
+            1.2853333333333332,
+            0.948,
+            0.9416666666666667,
+            1.0483333333333333,
+            0.948,
+            0.938,
+            0.9346666666666666,
+            0.978,
+            0.958
+          ],
+          "min_us": 0.9346666666666666,
+          "max_us": 1.2853333333333332
+        }
+      ]
+    },
+    {
+      "name": "matrix_3x7_strided",
+      "api": "dstack",
+      "inputs": [
+        {
+          "shape": [
+            3,
+            7
+          ],
+          "stride": [
+            14,
+            2
+          ],
+          "storage_offset": 1,
+          "numel": 21,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        },
+        {
+          "shape": [
+            3,
+            7
+          ],
+          "stride": [
+            14,
+            2
+          ],
+          "storage_offset": 1,
+          "numel": 21,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        }
+      ],
+      "passes": [
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 0.9483333333333334,
+          "mad_us": 0.01633333333333331,
+          "variance_us2": 0.0019968072562358266,
+          "sample_count": 21,
+          "samples_us": [
+            0.948,
+            1.0983333333333332,
+            0.978,
+            0.9646666666666667,
+            0.9316666666666666,
+            0.9413333333333334,
+            0.9546666666666667,
+            0.9513333333333334,
+            0.9483333333333334,
+            0.985,
+            0.9346666666666666,
+            0.915,
+            0.948,
+            0.9613333333333334,
+            0.9146666666666666,
+            0.928,
+            0.955,
+            0.9183333333333333,
+            0.965,
+            1.0716666666666668,
+            0.948
+          ],
+          "min_us": 0.9146666666666666,
+          "max_us": 1.0983333333333332
+        },
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch",
+          "median_us": 3.8056666666666663,
+          "mad_us": 0.1599999999999997,
+          "variance_us2": 0.4853079536407155,
+          "sample_count": 21,
+          "samples_us": [
+            3.6456666666666666,
+            3.602,
+            4.149666666666667,
+            3.8056666666666663,
+            3.672,
+            3.689,
+            3.6456666666666666,
+            3.689,
+            4.1963333333333335,
+            3.8993333333333333,
+            3.669,
+            3.6086666666666667,
+            3.6286666666666667,
+            4.246333333333333,
+            6.403,
+            4.116333333333333,
+            3.6323333333333334,
+            3.9026666666666667,
+            3.9026666666666667,
+            5.722,
+            3.8426666666666667
+          ],
+          "min_us": 3.602,
+          "max_us": 6.403
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch",
+          "median_us": 3.7223333333333333,
+          "mad_us": 0.09999999999999964,
+          "variance_us2": 0.015470927185689102,
+          "sample_count": 21,
+          "samples_us": [
+            3.8093333333333335,
+            3.7456666666666667,
+            3.6223333333333336,
+            3.799,
+            3.609,
+            3.5686666666666667,
+            3.7993333333333337,
+            3.5486666666666666,
+            3.8226666666666667,
+            3.966,
+            3.7823333333333333,
+            3.7223333333333333,
+            3.7656666666666667,
+            3.6923333333333335,
+            3.5586666666666664,
+            3.7556666666666665,
+            3.7123333333333335,
+            3.5853333333333337,
+            3.6056666666666666,
+            3.5686666666666667,
+            3.986
+          ],
+          "min_us": 3.5486666666666666,
+          "max_us": 3.986
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 0.9713333333333334,
+          "mad_us": 0.030000000000000027,
+          "variance_us2": 0.0037829725371630145,
+          "sample_count": 21,
+          "samples_us": [
+            0.9846666666666666,
+            1.0483333333333333,
+            0.9946666666666666,
+            0.945,
+            1.008,
+            0.948,
+            0.948,
+            0.978,
+            1.068,
+            1.015,
+            0.978,
+            0.9583333333333334,
+            1.1816666666666666,
+            0.9713333333333334,
+            0.9616666666666667,
+            0.9246666666666666,
+            0.9046666666666666,
+            0.9413333333333334,
+            1.0116666666666667,
+            0.9246666666666666,
+            0.9046666666666666
+          ],
+          "min_us": 0.9046666666666666,
+          "max_us": 1.1816666666666666
+        }
+      ]
+    },
+    {
+      "name": "matrix_257x263_dense",
+      "api": "dstack",
+      "inputs": [
+        {
+          "shape": [
+            257,
+            263
+          ],
+          "stride": [
+            263,
+            1
+          ],
+          "storage_offset": 0,
+          "numel": 67591,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        },
+        {
+          "shape": [
+            257,
+            263
+          ],
+          "stride": [
+            263,
+            1
+          ],
+          "storage_offset": 0,
+          "numel": 67591,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        }
+      ],
+      "passes": [
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 108.21366666666667,
+          "mad_us": 5.1013333333333435,
+          "variance_us2": 42.4706514240363,
+          "sample_count": 21,
+          "samples_us": [
+            115.64466666666667,
+            103.11233333333332,
+            112.58033333333333,
+            99.84433333333332,
+            114.06266666666667,
+            113.80533333333332,
+            96.23533333333333,
+            106.26733333333333,
+            100.21833333333333,
+            100.90933333333332,
+            112.27633333333333,
+            111.14133333333334,
+            121.80733333333333,
+            108.30733333333333,
+            102.06433333333332,
+            103.74033333333333,
+            105.426,
+            106.70133333333332,
+            108.21366666666667,
+            109.095,
+            118.853
+          ],
+          "min_us": 96.23533333333333,
+          "max_us": 121.80733333333333
+        },
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch",
+          "median_us": 243.18433333333334,
+          "mad_us": 6.623333333333306,
+          "variance_us2": 128.85362864852607,
+          "sample_count": 21,
+          "samples_us": [
+            243.044,
+            265.5516666666667,
+            243.85166666666666,
+            238.871,
+            248.68933333333334,
+            246.08533333333335,
+            244.18566666666666,
+            251.223,
+            262.647,
+            233.52633333333335,
+            239.929,
+            228.58533333333335,
+            228.27166666666665,
+            243.18433333333334,
+            249.80766666666665,
+            238.11666666666665,
+            245.34766666666667,
+            253.75366666666665,
+            227.56066666666666,
+            220.80733333333333,
+            226.813
+          ],
+          "min_us": 220.80733333333333,
+          "max_us": 265.5516666666667
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch",
+          "median_us": 238.71766666666664,
+          "mad_us": 3.6689999999999827,
+          "variance_us2": 736.0069646520537,
+          "sample_count": 21,
+          "samples_us": [
+            246.00833333333335,
+            238.01666666666665,
+            249.20333333333335,
+            238.77766666666665,
+            244.65966666666665,
+            235.82633333333334,
+            235.04866666666666,
+            232.75866666666667,
+            240.844,
+            241.141,
+            238.71766666666664,
+            236.95133333333334,
+            222.24933333333334,
+            237.39233333333334,
+            235.09533333333334,
+            266.87666666666667,
+            325.225,
+            326.814,
+            255.85333333333335,
+            237.262,
+            220.62
+          ],
+          "min_us": 220.62,
+          "max_us": 326.814
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 109.72933333333333,
+          "mad_us": 6.379666666666665,
+          "variance_us2": 241.40024765381702,
+          "sample_count": 21,
+          "samples_us": [
+            100.208,
+            103.483,
+            120.72266666666667,
+            121.95433333333332,
+            117.865,
+            109.41866666666667,
+            106.39733333333332,
+            125.71333333333332,
+            109.72933333333333,
+            105.62633333333333,
+            155.50166666666667,
+            116.109,
+            157.545,
+            100.298,
+            126.35433333333333,
+            104.84166666666667,
+            104.87833333333333,
+            100.445,
+            110.57033333333332,
+            107.843,
+            112.11966666666667
+          ],
+          "min_us": 100.208,
+          "max_us": 157.545
+        }
+      ]
+    },
+    {
+      "name": "matrix_257x263_transpose",
+      "api": "dstack",
+      "inputs": [
+        {
+          "shape": [
+            257,
+            263
+          ],
+          "stride": [
+            1,
+            257
+          ],
+          "storage_offset": 0,
+          "numel": 67591,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        },
+        {
+          "shape": [
+            257,
+            263
+          ],
+          "stride": [
+            1,
+            257
+          ],
+          "storage_offset": 0,
+          "numel": 67591,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        }
+      ],
+      "passes": [
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 208.15466666666666,
+          "mad_us": 25.952333333333314,
+          "variance_us2": 1180.9808126198038,
+          "sample_count": 21,
+          "samples_us": [
+            180.23566666666665,
+            208.15466666666666,
+            243.39133333333334,
+            192.21733333333333,
+            194.35733333333334,
+            203.431,
+            175.609,
+            252.38166666666666,
+            188.08766666666665,
+            177.278,
+            192.80166666666665,
+            239.76566666666665,
+            247.85133333333334,
+            241.51533333333333,
+            227.287,
+            222.72666666666666,
+            221.71833333333333,
+            274.5316666666667,
+            182.20233333333334,
+            216.454,
+            117.89833333333333
+          ],
+          "min_us": 117.89833333333333,
+          "max_us": 274.5316666666667
+        },
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch",
+          "median_us": 163.17333333333335,
+          "mad_us": 11.821333333333314,
+          "variance_us2": 476.889973664903,
+          "sample_count": 21,
+          "samples_us": [
+            176.70366666666666,
+            173.56566666666666,
+            163.17333333333335,
+            147.63,
+            167.53333333333333,
+            160.85,
+            160.10533333333333,
+            126.97866666666667,
+            175.95933333333335,
+            127.47266666666667,
+            120.78266666666667,
+            138.70633333333333,
+            143.43366666666665,
+            219.976,
+            164.30833333333334,
+            183.594,
+            174.99466666666666,
+            174.74733333333333,
+            158.18933333333334,
+            159.658,
+            168.912
+          ],
+          "min_us": 120.78266666666667,
+          "max_us": 219.976
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch",
+          "median_us": 165.32666666666665,
+          "mad_us": 17.489666666666693,
+          "variance_us2": 576.0132729891661,
+          "sample_count": 21,
+          "samples_us": [
+            151.302,
+            148.017,
+            159.44766666666666,
+            190.785,
+            200.39633333333333,
+            149.34233333333333,
+            138.92666666666665,
+            154.904,
+            187.38666666666666,
+            136.57633333333334,
+            146.705,
+            151.222,
+            191.77633333333335,
+            204.21533333333335,
+            182.81633333333335,
+            214.501,
+            165.34,
+            213.022,
+            165.32666666666665,
+            157.99533333333335,
+            176.83066666666664
+          ],
+          "min_us": 136.57633333333334,
+          "max_us": 214.501
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 195.73233333333334,
+          "mad_us": 15.53666666666669,
+          "variance_us2": 659.5841065457295,
+          "sample_count": 21,
+          "samples_us": [
+            195.73233333333334,
+            162.786,
+            204.79633333333334,
+            265.281,
+            227.68066666666667,
+            175.61866666666666,
+            165.91066666666666,
+            197.32833333333335,
+            177.338,
+            193.90666666666667,
+            186.45833333333334,
+            209.24966666666666,
+            196.93433333333334,
+            230.83233333333334,
+            194.534,
+            187.49333333333334,
+            219.69533333333334,
+            166.90533333333335,
+            180.19566666666665,
+            242.41666666666666,
+            202.45933333333335
+          ],
+          "min_us": 162.786,
+          "max_us": 265.281
+        }
+      ]
+    },
+    {
+      "name": "matrix_257x263_offset",
+      "api": "dstack",
+      "inputs": [
+        {
+          "shape": [
+            257,
+            263
+          ],
+          "stride": [
+            263,
+            1
+          ],
+          "storage_offset": 67591,
+          "numel": 67591,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        },
+        {
+          "shape": [
+            257,
+            263
+          ],
+          "stride": [
+            263,
+            1
+          ],
+          "storage_offset": 67591,
+          "numel": 67591,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        }
+      ],
+      "passes": [
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 102.60833333333333,
+          "mad_us": 4.286666666666662,
+          "variance_us2": 77.57169399294526,
+          "sample_count": 21,
+          "samples_us": [
+            102.97566666666667,
+            120.826,
+            107.152,
+            103.61666666666667,
+            106.895,
+            95.95866666666667,
+            96.10866666666666,
+            99.45033333333333,
+            97.23366666666666,
+            102.19133333333333,
+            97.86433333333333,
+            99.20333333333333,
+            105.159,
+            115.60133333333333,
+            103.88033333333333,
+            131.93266666666665,
+            105.61633333333333,
+            102.60833333333333,
+            94.71966666666667,
+            96.39266666666667,
+            101.81066666666668
+          ],
+          "min_us": 94.71966666666667,
+          "max_us": 131.93266666666665
+        },
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch",
+          "median_us": 237.22866666666667,
+          "mad_us": 5.878666666666675,
+          "variance_us2": 340.0286811690604,
+          "sample_count": 21,
+          "samples_us": [
+            304.5436666666667,
+            243.77533333333335,
+            235.71966666666665,
+            231.37633333333335,
+            255.773,
+            244.77,
+            249.15666666666667,
+            254.241,
+            233.25933333333333,
+            243.10733333333334,
+            240.577,
+            237.165,
+            235.703,
+            236.95833333333334,
+            233.533,
+            246.733,
+            236.54066666666665,
+            288.129,
+            237.22866666666667,
+            230.91233333333335,
+            224.88333333333335
+          ],
+          "min_us": 224.88333333333335,
+          "max_us": 304.5436666666667
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch",
+          "median_us": 240.32666666666665,
+          "mad_us": 8.86699999999999,
+          "variance_us2": 2583.9305953136814,
+          "sample_count": 21,
+          "samples_us": [
+            224.10233333333335,
+            226.065,
+            238.65066666666667,
+            253.80366666666666,
+            238.68433333333334,
+            227.84433333333334,
+            228.68566666666666,
+            242.383,
+            249.47033333333334,
+            257.309,
+            243.02733333333333,
+            230.43833333333333,
+            231.45966666666666,
+            474.504,
+            248.33866666666665,
+            238.16666666666666,
+            240.32666666666665,
+            252.752,
+            242.02933333333334,
+            238.24333333333334,
+            240.93766666666664
+          ],
+          "min_us": 224.10233333333335,
+          "max_us": 474.504
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 114.44633333333333,
+          "mad_us": 4.677333333333337,
+          "variance_us2": 41.03139463995969,
+          "sample_count": 21,
+          "samples_us": [
+            127.81333333333333,
+            109.88633333333333,
+            116.74,
+            114.82033333333332,
+            113.69166666666668,
+            116.58966666666667,
+            103.256,
+            114.44633333333333,
+            107.78966666666668,
+            106.36066666666667,
+            108.64066666666668,
+            111.32833333333333,
+            118.10833333333333,
+            116.27266666666667,
+            121.29666666666667,
+            107.666,
+            106.628,
+            123.94066666666667,
+            105.57633333333332,
+            119.09,
+            119.12366666666667
+          ],
+          "min_us": 103.256,
+          "max_us": 127.81333333333333
+        }
+      ]
+    },
+    {
+      "name": "matrix_257x263_strided",
+      "api": "dstack",
+      "inputs": [
+        {
+          "shape": [
+            257,
+            263
+          ],
+          "stride": [
+            526,
+            2
+          ],
+          "storage_offset": 1,
+          "numel": 67591,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        },
+        {
+          "shape": [
+            257,
+            263
+          ],
+          "stride": [
+            526,
+            2
+          ],
+          "storage_offset": 1,
+          "numel": 67591,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        }
+      ],
+      "passes": [
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 115.25766666666667,
+          "mad_us": 3.859333333333339,
+          "variance_us2": 32.55397432350718,
+          "sample_count": 21,
+          "samples_us": [
+            111.39833333333333,
+            126.07066666666667,
+            119.04333333333332,
+            119.88766666666668,
+            112.677,
+            112.64666666666668,
+            121.861,
+            107.18566666666668,
+            104.655,
+            118.56233333333333,
+            113.43166666666667,
+            114.009,
+            115.25766666666667,
+            125.16266666666667,
+            125.206,
+            113.47466666666668,
+            110.35,
+            117.28733333333332,
+            120.76566666666668,
+            116.476,
+            111.06466666666667
+          ],
+          "min_us": 104.655,
+          "max_us": 126.07066666666667
+        },
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch",
+          "median_us": 101.707,
+          "mad_us": 7.390999999999991,
+          "variance_us2": 103.24120720534137,
+          "sample_count": 21,
+          "samples_us": [
+            108.51066666666667,
+            104.20433333333332,
+            95.48766666666667,
+            101.707,
+            107.292,
+            89.929,
+            92.22633333333333,
+            98.56233333333333,
+            94.316,
+            129.95,
+            94.346,
+            105.03866666666667,
+            92.29933333333332,
+            110.46366666666667,
+            115.301,
+            111.562,
+            95.995,
+            94.20233333333333,
+            113.56833333333333,
+            117.52733333333333,
+            97.46733333333333
+          ],
+          "min_us": 89.929,
+          "max_us": 129.95
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch",
+          "median_us": 118.54933333333332,
+          "mad_us": 2.8243333333333425,
+          "variance_us2": 41.32402778080125,
+          "sample_count": 21,
+          "samples_us": [
+            118.54933333333332,
+            135.56833333333336,
+            116.22233333333332,
+            112.69033333333333,
+            116.58966666666667,
+            129.636,
+            123.914,
+            118.93,
+            119.13366666666667,
+            121.37366666666667,
+            118.80966666666667,
+            117.25733333333334,
+            114.353,
+            116.99,
+            120.37533333333333,
+            110.831,
+            109.21533333333333,
+            106.454,
+            120.38866666666667,
+            123.58333333333333,
+            113.161
+          ],
+          "min_us": 106.454,
+          "max_us": 135.56833333333336
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 119.85433333333333,
+          "mad_us": 4.409999999999997,
+          "variance_us2": 50.587915582766435,
+          "sample_count": 21,
+          "samples_us": [
+            109.54533333333333,
+            122.51866666666668,
+            110.487,
+            110.50033333333333,
+            122.482,
+            114.70333333333333,
+            133.45833333333334,
+            111.792,
+            115.755,
+            121.19633333333333,
+            111.65866666666668,
+            120.61566666666667,
+            108.43033333333332,
+            124.26433333333333,
+            121.971,
+            124.24466666666667,
+            111.51866666666668,
+            119.85433333333333,
+            122.031,
+            133.65866666666665,
+            118.04833333333333
+          ],
+          "min_us": 108.43033333333332,
+          "max_us": 133.65866666666665
+        }
+      ]
+    },
+    {
+      "name": "matrix_129x521_dense",
+      "api": "dstack",
+      "inputs": [
+        {
+          "shape": [
+            129,
+            521
+          ],
+          "stride": [
+            521,
+            1
+          ],
+          "storage_offset": 0,
+          "numel": 67209,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        },
+        {
+          "shape": [
+            129,
+            521
+          ],
+          "stride": [
+            521,
+            1
+          ],
+          "storage_offset": 0,
+          "numel": 67209,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        }
+      ],
+      "passes": [
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 104.46466666666667,
+          "mad_us": 5.411666666666676,
+          "variance_us2": 58.717711433610475,
+          "sample_count": 21,
+          "samples_us": [
+            118.26533333333333,
+            104.46466666666667,
+            104.52133333333333,
+            99.053,
+            105.937,
+            107.79966666666667,
+            108.721,
+            112.63366666666667,
+            97.40066666666667,
+            94.83,
+            96.142,
+            99.79733333333333,
+            123.90066666666667,
+            103.38966666666667,
+            95.608,
+            101.824,
+            99.09666666666668,
+            105.663,
+            98.50566666666667,
+            113.68833333333333,
+            112.914
+          ],
+          "min_us": 94.83,
+          "max_us": 123.90066666666667
+        },
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch",
+          "median_us": 236.087,
+          "mad_us": 8.185666666666634,
+          "variance_us2": 147.12259881078353,
+          "sample_count": 21,
+          "samples_us": [
+            236.087,
+            242.116,
+            237.08833333333334,
+            221.22433333333333,
+            226.08166666666665,
+            244.27266666666665,
+            237.92633333333333,
+            256.578,
+            245.30733333333333,
+            227.90133333333335,
+            232.241,
+            234.98533333333333,
+            228.479,
+            257.192,
+            255.309,
+            266.14566666666667,
+            247.661,
+            230.869,
+            232.171,
+            229.82766666666666,
+            221.42466666666667
+          ],
+          "min_us": 221.22433333333333,
+          "max_us": 266.14566666666667
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch",
+          "median_us": 228.589,
+          "mad_us": 4.4196666666666715,
+          "variance_us2": 54.56534839304613,
+          "sample_count": 21,
+          "samples_us": [
+            228.589,
+            217.02466666666666,
+            221.231,
+            226.61933333333334,
+            229.01633333333334,
+            227.938,
+            247.29733333333334,
+            227.52733333333333,
+            226.519,
+            236.03666666666666,
+            234.63466666666665,
+            231.907,
+            228.569,
+            227.424,
+            224.045,
+            244.059,
+            243.251,
+            222.65333333333334,
+            235.53266666666667,
+            233.00866666666667,
+            230.118
+          ],
+          "min_us": 217.02466666666666,
+          "max_us": 247.29733333333334
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 110.63033333333333,
+          "mad_us": 5.905333333333331,
+          "variance_us2": 54.88621875434619,
+          "sample_count": 21,
+          "samples_us": [
+            104.725,
+            101.57366666666667,
+            103.08933333333333,
+            101.787,
+            102.50166666666667,
+            101.283,
+            110.55733333333333,
+            105.473,
+            125.246,
+            125.994,
+            116.009,
+            118.299,
+            115.521,
+            111.56866666666667,
+            107.79266666666668,
+            118.042,
+            111.83566666666667,
+            100.95233333333333,
+            112.04266666666668,
+            111.39166666666667,
+            110.63033333333333
+          ],
+          "min_us": 100.95233333333333,
+          "max_us": 125.994
+        }
+      ]
+    },
+    {
+      "name": "matrix_129x521_transpose",
+      "api": "dstack",
+      "inputs": [
+        {
+          "shape": [
+            129,
+            521
+          ],
+          "stride": [
+            1,
+            129
+          ],
+          "storage_offset": 0,
+          "numel": 67209,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        },
+        {
+          "shape": [
+            129,
+            521
+          ],
+          "stride": [
+            1,
+            129
+          ],
+          "storage_offset": 0,
+          "numel": 67209,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        }
+      ],
+      "passes": [
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 145.62033333333335,
+          "mad_us": 13.073000000000008,
+          "variance_us2": 242.60378912774004,
+          "sample_count": 21,
+          "samples_us": [
+            162.262,
+            172.888,
+            158.69333333333336,
+            144.72566666666665,
+            169.977,
+            136.72666666666666,
+            126.47133333333333,
+            155.74533333333335,
+            130.95766666666668,
+            143.39,
+            143.98433333333335,
+            159.61466666666666,
+            151.756,
+            169.04233333333335,
+            162.79266666666666,
+            139.22033333333334,
+            144.27133333333333,
+            148.194,
+            145.62033333333335,
+            122.602,
+            114.323
+          ],
+          "min_us": 114.323,
+          "max_us": 172.888
+        },
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch",
+          "median_us": 169.96366666666665,
+          "mad_us": 11.25399999999999,
+          "variance_us2": 269.12279006500376,
+          "sample_count": 21,
+          "samples_us": [
+            158.70966666666666,
+            211.05233333333334,
+            162.793,
+            183.92466666666667,
+            162.232,
+            158.493,
+            169.96366666666665,
+            174.54066666666665,
+            185.73733333333334,
+            180.536,
+            192.73466666666667,
+            192.06033333333335,
+            173.87266666666665,
+            180.406,
+            157.79533333333333,
+            158.079,
+            172.90133333333335,
+            168.034,
+            152.57066666666665,
+            162.94633333333334,
+            134.44333333333336
+          ],
+          "min_us": 134.44333333333336,
+          "max_us": 211.05233333333334
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch",
+          "median_us": 174.12333333333333,
+          "mad_us": 14.575333333333333,
+          "variance_us2": 483.9078559501133,
+          "sample_count": 21,
+          "samples_us": [
+            166.325,
+            129.746,
+            136.129,
+            209.76033333333334,
+            153.215,
+            178.51333333333335,
+            174.12333333333333,
+            169.082,
+            145.55,
+            169.37266666666665,
+            167.293,
+            210.78866666666664,
+            192.945,
+            191.71966666666665,
+            149.43933333333334,
+            184.98966666666666,
+            188.69866666666667,
+            178.73666666666665,
+            184.52233333333334,
+            169.286,
+            204.94633333333334
+          ],
+          "min_us": 129.746,
+          "max_us": 210.78866666666664
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 168.241,
+          "mad_us": 12.041666666666657,
+          "variance_us2": 455.16554764676226,
+          "sample_count": 21,
+          "samples_us": [
+            171.40566666666666,
+            157.76833333333335,
+            138.346,
+            132.58733333333333,
+            128.40433333333334,
+            122.248,
+            201.61133333333333,
+            168.241,
+            177.95233333333334,
+            162.30533333333335,
+            180.18566666666666,
+            179.308,
+            181.76133333333334,
+            178.46966666666665,
+            153.90933333333334,
+            194.85466666666665,
+            163.33033333333336,
+            163.701,
+            180.28266666666667,
+            141.42733333333334,
+            182.50566666666666
+          ],
+          "min_us": 122.248,
+          "max_us": 201.61133333333333
+        }
+      ]
+    },
+    {
+      "name": "matrix_129x521_offset",
+      "api": "dstack",
+      "inputs": [
+        {
+          "shape": [
+            129,
+            521
+          ],
+          "stride": [
+            521,
+            1
+          ],
+          "storage_offset": 67209,
+          "numel": 67209,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        },
+        {
+          "shape": [
+            129,
+            521
+          ],
+          "stride": [
+            521,
+            1
+          ],
+          "storage_offset": 67209,
+          "numel": 67209,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        }
+      ],
+      "passes": [
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 105.52966666666667,
+          "mad_us": 6.2123333333333335,
+          "variance_us2": 44.497610969513715,
+          "sample_count": 21,
+          "samples_us": [
+            116.937,
+            109.01833333333333,
+            111.742,
+            97.751,
+            102.839,
+            114.81333333333333,
+            108.13,
+            108.564,
+            97.72766666666668,
+            99.50033333333333,
+            115.84833333333333,
+            99.26333333333334,
+            110.74733333333333,
+            106.14733333333332,
+            105.52966666666667,
+            103.80033333333333,
+            97.41733333333333,
+            98.28533333333333,
+            107.272,
+            95.73833333333333,
+            95.44433333333333
+          ],
+          "min_us": 95.44433333333333,
+          "max_us": 116.937
+        },
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch",
+          "median_us": 231.16933333333336,
+          "mad_us": 3.2813333333333503,
+          "variance_us2": 95.22878920937265,
+          "sample_count": 21,
+          "samples_us": [
+            235.56966666666665,
+            233.25233333333335,
+            256.8546666666667,
+            254.685,
+            239.57533333333333,
+            223.53766666666667,
+            228.26833333333335,
+            231.16933333333336,
+            244.77333333333334,
+            229.89733333333334,
+            231.92733333333334,
+            229.55033333333336,
+            227.888,
+            217.058,
+            217.559,
+            229.21,
+            235.99,
+            230.662,
+            232.26766666666666,
+            229.32,
+            241.67866666666666
+          ],
+          "min_us": 217.058,
+          "max_us": 256.8546666666667
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch",
+          "median_us": 241.83233333333334,
+          "mad_us": 3.6086666666666645,
+          "variance_us2": 77.66323725220455,
+          "sample_count": 21,
+          "samples_us": [
+            215.90633333333335,
+            224.663,
+            245.441,
+            232.24466666666666,
+            244.75333333333333,
+            228.57866666666666,
+            241.83233333333334,
+            246.44266666666667,
+            250.078,
+            251.657,
+            246.449,
+            241.662,
+            241.288,
+            249.89766666666665,
+            243.39466666666667,
+            241.25466666666665,
+            229.04966666666667,
+            241.979,
+            241.61166666666665,
+            240.814,
+            242.45633333333333
+          ],
+          "min_us": 215.90633333333335,
+          "max_us": 251.657
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 110.317,
+          "mad_us": 2.6943333333333186,
+          "variance_us2": 139.25380047770213,
+          "sample_count": 21,
+          "samples_us": [
+            109.065,
+            119.90466666666667,
+            107.62266666666667,
+            112.353,
+            107.726,
+            108.197,
+            107.566,
+            117.95466666666667,
+            110.931,
+            107.923,
+            110.317,
+            130.45733333333334,
+            100.28133333333332,
+            104.231,
+            111.64533333333333,
+            115.80166666666668,
+            112.57366666666667,
+            109.62566666666667,
+            104.875,
+            158.01566666666665,
+            119.41733333333333
+          ],
+          "min_us": 100.28133333333332,
+          "max_us": 158.01566666666665
+        }
+      ]
+    },
+    {
+      "name": "matrix_129x521_strided",
+      "api": "dstack",
+      "inputs": [
+        {
+          "shape": [
+            129,
+            521
+          ],
+          "stride": [
+            1042,
+            2
+          ],
+          "storage_offset": 1,
+          "numel": 67209,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        },
+        {
+          "shape": [
+            129,
+            521
+          ],
+          "stride": [
+            1042,
+            2
+          ],
+          "storage_offset": 1,
+          "numel": 67209,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        }
+      ],
+      "passes": [
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 111.198,
+          "mad_us": 4.049333333333323,
+          "variance_us2": 35.36489141395816,
+          "sample_count": 21,
+          "samples_us": [
+            122.465,
+            106.334,
+            112.787,
+            111.198,
+            103.747,
+            106.03033333333333,
+            104.24766666666667,
+            114.67333333333333,
+            112.38666666666667,
+            109.926,
+            121.043,
+            112.41633333333333,
+            124.74866666666667,
+            107.14866666666667,
+            120.916,
+            117.51733333333333,
+            109.22166666666668,
+            110.37033333333333,
+            108.494,
+            116.33566666666667,
+            109.03166666666667
+          ],
+          "min_us": 103.747,
+          "max_us": 124.74866666666667
+        },
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch",
+          "median_us": 114.68,
+          "mad_us": 8.115666666666684,
+          "variance_us2": 112.74722283497107,
+          "sample_count": 21,
+          "samples_us": [
+            106.56433333333332,
+            114.68,
+            100.86233333333332,
+            114.82666666666667,
+            122.098,
+            107.62933333333334,
+            118.29566666666668,
+            129.75966666666667,
+            129.42233333333334,
+            127.07533333333333,
+            129.429,
+            125.947,
+            122.642,
+            101.39666666666668,
+            98.639,
+            107.369,
+            104.47133333333333,
+            113.95233333333333,
+            111.49833333333333,
+            118.16833333333332,
+            95.294
+          ],
+          "min_us": 95.294,
+          "max_us": 129.75966666666667
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch",
+          "median_us": 110.24666666666667,
+          "mad_us": 6.36966666666666,
+          "variance_us2": 212.6786166999244,
+          "sample_count": 21,
+          "samples_us": [
+            121.95433333333332,
+            102.702,
+            106.87833333333333,
+            98.145,
+            107.486,
+            106.898,
+            110.24666666666667,
+            171.713,
+            116.239,
+            118.32566666666668,
+            116.61633333333333,
+            101.44333333333333,
+            111.93266666666668,
+            109.27833333333332,
+            116.329,
+            103.47966666666667,
+            108.474,
+            112.16933333333333,
+            102.712,
+            119.614,
+            118.43933333333332
+          ],
+          "min_us": 98.145,
+          "max_us": 171.713
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 115.805,
+          "mad_us": 7.200666666666677,
+          "variance_us2": 450.57012525371636,
+          "sample_count": 21,
+          "samples_us": [
+            117.93166666666667,
+            115.805,
+            107.26233333333333,
+            99.56366666666668,
+            95.975,
+            97.92466666666667,
+            119.504,
+            118.272,
+            109.49233333333333,
+            176.43,
+            173.392,
+            108.60433333333333,
+            143.84733333333335,
+            110.56733333333332,
+            115.48466666666667,
+            143.48033333333333,
+            112.47666666666667,
+            117.94466666666668,
+            116.96333333333332,
+            130.20033333333333,
+            108.51066666666667
+          ],
+          "min_us": 95.975,
+          "max_us": 176.43
+        }
+      ]
+    },
+    {
+      "name": "three_matrices_dense",
+      "api": "dstack",
+      "inputs": [
+        {
+          "shape": [
+            37,
+            41
+          ],
+          "stride": [
+            41,
+            1
+          ],
+          "storage_offset": 0,
+          "numel": 1517,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        },
+        {
+          "shape": [
+            37,
+            41
+          ],
+          "stride": [
+            41,
+            1
+          ],
+          "storage_offset": 0,
+          "numel": 1517,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        },
+        {
+          "shape": [
+            37,
+            41
+          ],
+          "stride": [
+            41,
+            1
+          ],
+          "storage_offset": 0,
+          "numel": 1517,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        }
+      ],
+      "passes": [
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 5.254666666666667,
+          "mad_us": 0.07333333333333325,
+          "variance_us2": 3.7289003905265803,
+          "sample_count": 21,
+          "samples_us": [
+            5.361666666666667,
+            5.234666666666667,
+            5.428333333333333,
+            5.237666666666667,
+            5.208,
+            5.308,
+            5.171,
+            5.274666666666667,
+            6.196,
+            5.428333333333333,
+            5.258,
+            5.1946666666666665,
+            5.137666666666667,
+            14.311666666666666,
+            5.024333333333333,
+            5.234666666666667,
+            5.511666666666667,
+            5.254666666666667,
+            5.134333333333333,
+            5.328,
+            5.204666666666667
+          ],
+          "min_us": 5.024333333333333,
+          "max_us": 14.311666666666666
+        },
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch",
+          "median_us": 10.719666666666667,
+          "mad_us": 0.10366666666666724,
+          "variance_us2": 0.021897165532879802,
+          "sample_count": 21,
+          "samples_us": [
+            10.699333333333334,
+            10.733,
+            10.963333333333335,
+            10.956666666666665,
+            10.616,
+            10.726333333333335,
+            10.636,
+            10.649333333333335,
+            10.93,
+            10.606,
+            10.936333333333334,
+            10.853,
+            10.793,
+            10.656,
+            10.699666666666666,
+            10.719666666666667,
+            11.023333333333333,
+            10.589333333333334,
+            10.482333333333333,
+            10.773,
+            10.542333333333334
+          ],
+          "min_us": 10.482333333333333,
+          "max_us": 11.023333333333333
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch",
+          "median_us": 10.936333333333334,
+          "mad_us": 0.3070000000000004,
+          "variance_us2": 8.533785497102542,
+          "sample_count": 21,
+          "samples_us": [
+            10.809666666666667,
+            10.966333333333335,
+            10.819666666666667,
+            10.776333333333334,
+            10.683,
+            10.612666666666666,
+            10.813,
+            20.19033333333333,
+            10.629333333333333,
+            10.696333333333333,
+            11.824666666666666,
+            21.569333333333333,
+            12.081666666666665,
+            11.514333333333333,
+            11.824333333333334,
+            13.440333333333333,
+            12.692333333333334,
+            10.632666666666665,
+            11.504,
+            10.92,
+            10.936333333333334
+          ],
+          "min_us": 10.612666666666666,
+          "max_us": 21.569333333333333
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 5.361333333333333,
+          "mad_us": 0.1070000000000002,
+          "variance_us2": 0.3267504434366338,
+          "sample_count": 21,
+          "samples_us": [
+            5.261333333333333,
+            5.505,
+            7.965333333333333,
+            5.375,
+            5.485,
+            5.581666666666667,
+            5.468333333333333,
+            5.361333333333333,
+            5.188,
+            5.378333333333333,
+            5.358,
+            5.344666666666667,
+            5.381666666666667,
+            5.331333333333333,
+            5.167666666666667,
+            5.625,
+            5.138,
+            5.394666666666667,
+            5.268,
+            5.228,
+            5.181
+          ],
+          "min_us": 5.138,
+          "max_us": 7.965333333333333
+        }
+      ]
+    },
+    {
+      "name": "three_matrices_transpose",
+      "api": "dstack",
+      "inputs": [
+        {
+          "shape": [
+            37,
+            41
+          ],
+          "stride": [
+            1,
+            37
+          ],
+          "storage_offset": 0,
+          "numel": 1517,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        },
+        {
+          "shape": [
+            37,
+            41
+          ],
+          "stride": [
+            1,
+            37
+          ],
+          "storage_offset": 0,
+          "numel": 1517,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        },
+        {
+          "shape": [
+            37,
+            41
+          ],
+          "stride": [
+            1,
+            37
+          ],
+          "storage_offset": 0,
+          "numel": 1517,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        }
+      ],
+      "passes": [
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 5.261333333333333,
+          "mad_us": 0.09366666666666568,
+          "variance_us2": 8.20776649181154,
+          "sample_count": 21,
+          "samples_us": [
+            5.254666666666667,
+            5.284666666666667,
+            5.475,
+            5.281333333333333,
+            5.027666666666667,
+            5.174333333333333,
+            15.653666666666666,
+            5.261333333333333,
+            5.498333333333333,
+            5.425,
+            5.191,
+            5.101333333333333,
+            5.261333333333333,
+            5.027333333333333,
+            5.128,
+            5.318,
+            5.167666666666667,
+            5.097666666666667,
+            14.258333333333335,
+            5.264666666666667,
+            5.188
+          ],
+          "min_us": 5.027333333333333,
+          "max_us": 15.653666666666666
+        },
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch",
+          "median_us": 8.286,
+          "mad_us": 0.3106666666666662,
+          "variance_us2": 5.647153819098009,
+          "sample_count": 21,
+          "samples_us": [
+            12.355333333333334,
+            9.077333333333334,
+            8.863333333333333,
+            8.489333333333335,
+            8.439333333333334,
+            8.072333333333333,
+            8.659666666666666,
+            7.975333333333333,
+            8.165666666666667,
+            8.042,
+            8.286,
+            8.105666666666666,
+            18.848666666666666,
+            8.058666666666667,
+            8.095666666666666,
+            8.863666666666665,
+            7.868666666666667,
+            9.183666666666666,
+            8.195666666666666,
+            8.649666666666667,
+            7.972
+          ],
+          "min_us": 7.868666666666667,
+          "max_us": 18.848666666666666
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch",
+          "median_us": 8.172666666666666,
+          "mad_us": 0.1906666666666661,
+          "variance_us2": 0.11276145477450225,
+          "sample_count": 21,
+          "samples_us": [
+            8.629666666666665,
+            8.993666666666666,
+            8.192333333333334,
+            7.995333333333333,
+            8.172666666666666,
+            7.982,
+            8.689666666666666,
+            8.015333333333333,
+            9.053666666666667,
+            8.215666666666666,
+            8.292333333333334,
+            7.892,
+            8.032,
+            8.269333333333334,
+            7.965333333333333,
+            8.449666666666666,
+            8.152333333333333,
+            8.376,
+            7.845333333333333,
+            8.115666666666668,
+            7.898666666666667
+          ],
+          "min_us": 7.845333333333333,
+          "max_us": 9.053666666666667
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 5.324666666666667,
+          "mad_us": 0.07000000000000028,
+          "variance_us2": 0.018377516754850106,
+          "sample_count": 21,
+          "samples_us": [
+            5.338,
+            5.331333333333333,
+            5.224666666666667,
+            5.254666666666667,
+            5.391666666666667,
+            5.324666666666667,
+            5.288,
+            5.394666666666667,
+            5.271333333333333,
+            5.281333333333333,
+            5.251333333333333,
+            5.575,
+            5.662,
+            5.324666666666667,
+            5.228,
+            5.434666666666667,
+            5.605,
+            5.248,
+            5.178,
+            5.391666666666667,
+            5.111
+          ],
+          "min_us": 5.111,
+          "max_us": 5.662
+        }
+      ]
+    },
+    {
+      "name": "three_matrices_offset",
+      "api": "dstack",
+      "inputs": [
+        {
+          "shape": [
+            37,
+            41
+          ],
+          "stride": [
+            41,
+            1
+          ],
+          "storage_offset": 1517,
+          "numel": 1517,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        },
+        {
+          "shape": [
+            37,
+            41
+          ],
+          "stride": [
+            41,
+            1
+          ],
+          "storage_offset": 1517,
+          "numel": 1517,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        },
+        {
+          "shape": [
+            37,
+            41
+          ],
+          "stride": [
+            41,
+            1
+          ],
+          "storage_offset": 1517,
+          "numel": 1517,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        }
+      ],
+      "passes": [
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 5.344666666666667,
+          "mad_us": 0.10666666666666647,
+          "variance_us2": 0.26193402267573695,
+          "sample_count": 21,
+          "samples_us": [
+            5.405,
+            5.3116666666666665,
+            5.454666666666667,
+            5.405,
+            5.458333333333333,
+            5.772,
+            5.615,
+            5.618666666666667,
+            5.451333333333333,
+            5.244666666666667,
+            5.234666666666667,
+            5.211333333333333,
+            5.224666666666667,
+            5.364666666666667,
+            5.281,
+            5.344666666666667,
+            5.254666666666667,
+            5.331666666666667,
+            5.057666666666667,
+            5.304666666666667,
+            7.655
+          ],
+          "min_us": 5.057666666666667,
+          "max_us": 7.655
+        },
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch",
+          "median_us": 11.003333333333334,
+          "mad_us": 0.21666666666666679,
+          "variance_us2": 7.372106803224992,
+          "sample_count": 21,
+          "samples_us": [
+            20.107,
+            10.703,
+            11.206666666666665,
+            11.003333333333334,
+            10.96,
+            11.510666666666665,
+            10.916333333333334,
+            10.953333333333333,
+            10.906666666666666,
+            11.080333333333334,
+            11.737666666666666,
+            11.320333333333334,
+            10.866666666666665,
+            20.41433333333333,
+            11.22,
+            10.582666666666666,
+            11.237,
+            10.696333333333333,
+            11.607666666666667,
+            10.836333333333334,
+            10.903333333333334
+          ],
+          "min_us": 10.582666666666666,
+          "max_us": 20.41433333333333
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch",
+          "median_us": 10.843333333333334,
+          "mad_us": 0.1639999999999997,
+          "variance_us2": 5.736797194759384,
+          "sample_count": 21,
+          "samples_us": [
+            11.380666666666666,
+            10.676,
+            10.926666666666666,
+            10.672666666666666,
+            11.043333333333335,
+            10.596,
+            11.033333333333333,
+            10.843333333333334,
+            11.086666666666666,
+            10.679333333333334,
+            10.993333333333334,
+            10.609333333333334,
+            22.080333333333332,
+            10.913333333333334,
+            10.799666666666665,
+            10.763,
+            10.833,
+            10.986666666666666,
+            10.736333333333334,
+            11.013333333333334,
+            10.756333333333334
+          ],
+          "min_us": 10.596,
+          "max_us": 22.080333333333332
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 5.455,
+          "mad_us": 0.06700000000000017,
+          "variance_us2": 0.14353298563869996,
+          "sample_count": 21,
+          "samples_us": [
+            5.428,
+            5.812333333333333,
+            5.505,
+            5.461666666666667,
+            5.501666666666667,
+            5.431333333333333,
+            5.765333333333333,
+            5.541666666666667,
+            5.628666666666667,
+            5.515,
+            5.394666666666667,
+            5.268,
+            5.455,
+            5.505,
+            5.261333333333333,
+            5.388,
+            5.234666666666667,
+            7.104,
+            5.374666666666667,
+            5.425,
+            5.288
+          ],
+          "min_us": 5.234666666666667,
+          "max_us": 7.104
+        }
+      ]
+    },
+    {
+      "name": "three_matrices_strided",
+      "api": "dstack",
+      "inputs": [
+        {
+          "shape": [
+            37,
+            41
+          ],
+          "stride": [
+            82,
+            2
+          ],
+          "storage_offset": 1,
+          "numel": 1517,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        },
+        {
+          "shape": [
+            37,
+            41
+          ],
+          "stride": [
+            82,
+            2
+          ],
+          "storage_offset": 1,
+          "numel": 1517,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        },
+        {
+          "shape": [
+            37,
+            41
+          ],
+          "stride": [
+            82,
+            2
+          ],
+          "storage_offset": 1,
+          "numel": 1517,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        }
+      ],
+      "passes": [
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 5.171333333333333,
+          "mad_us": 0.13999999999999968,
+          "variance_us2": 7.687039684051397,
+          "sample_count": 21,
+          "samples_us": [
+            14.522,
+            5.268,
+            5.121,
+            5.311333333333333,
+            5.134333333333333,
+            14.645666666666665,
+            4.857333333333333,
+            5.174666666666667,
+            4.904,
+            6.289666666666667,
+            5.030666666666667,
+            5.087666666666667,
+            5.1946666666666665,
+            5.218,
+            5.558333333333333,
+            4.997333333333333,
+            5.241,
+            5.107666666666667,
+            4.961,
+            5.171333333333333,
+            4.984333333333333
+          ],
+          "min_us": 4.857333333333333,
+          "max_us": 14.645666666666665
+        },
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch",
+          "median_us": 7.958666666666667,
+          "mad_us": 0.20366666666666688,
+          "variance_us2": 9.031566616780042,
+          "sample_count": 21,
+          "samples_us": [
+            7.972,
+            8.476,
+            8.319333333333335,
+            8.402666666666667,
+            8.179,
+            8.122333333333334,
+            7.875333333333333,
+            22.05333333333333,
+            7.781666666666667,
+            7.785,
+            8.072333333333333,
+            7.825333333333333,
+            7.862,
+            7.621666666666667,
+            8.205666666666666,
+            7.658333333333333,
+            8.359333333333334,
+            7.958666666666667,
+            7.748333333333333,
+            7.8116666666666665,
+            7.755
+          ],
+          "min_us": 7.621666666666667,
+          "max_us": 22.05333333333333
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch",
+          "median_us": 7.858666666666667,
+          "mad_us": 0.18700000000000028,
+          "variance_us2": 0.07801446712018134,
+          "sample_count": 21,
+          "samples_us": [
+            8.002333333333333,
+            8.155666666666667,
+            7.635,
+            8.382666666666665,
+            7.801666666666667,
+            8.195666666666666,
+            8.005333333333333,
+            8.402666666666667,
+            7.645,
+            7.8053333333333335,
+            7.625,
+            7.671666666666667,
+            8.159,
+            7.595,
+            7.775333333333333,
+            7.6883333333333335,
+            7.851666666666667,
+            7.888666666666667,
+            8.015333333333333,
+            7.858666666666667,
+            8.603
+          ],
+          "min_us": 7.595,
+          "max_us": 8.603
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 5.171333333333333,
+          "mad_us": 0.07333333333333414,
+          "variance_us2": 4.395651051146385,
+          "sample_count": 21,
+          "samples_us": [
+            5.261333333333333,
+            5.211333333333333,
+            5.094333333333333,
+            5.007666666666667,
+            5.164666666666667,
+            5.044333333333333,
+            5.244666666666667,
+            5.167666666666667,
+            5.138,
+            5.187666666666667,
+            5.187666666666667,
+            5.204333333333333,
+            5.318,
+            5.117666666666667,
+            5.4383333333333335,
+            4.994,
+            5.051,
+            14.996,
+            5.044333333333333,
+            5.211333333333333,
+            5.171333333333333
+          ],
+          "min_us": 4.994,
+          "max_us": 14.996
+        }
+      ]
+    },
+    {
+      "name": "cat_axis_0",
+      "api": "cat0",
+      "inputs": [
+        {
+          "shape": [
+            37,
+            41
+          ],
+          "stride": [
+            1,
+            37
+          ],
+          "storage_offset": 0,
+          "numel": 1517,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        },
+        {
+          "shape": [
+            37,
+            41
+          ],
+          "stride": [
+            1,
+            37
+          ],
+          "storage_offset": 0,
+          "numel": 1517,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        },
+        {
+          "shape": [
+            37,
+            41
+          ],
+          "stride": [
+            1,
+            37
+          ],
+          "storage_offset": 0,
+          "numel": 1517,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        }
+      ],
+      "passes": [
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 17.910333333333334,
+          "mad_us": 0.06666666666666643,
+          "variance_us2": 4.175253655832704,
+          "sample_count": 21,
+          "samples_us": [
+            17.96066666666667,
+            17.807,
+            17.910333333333334,
+            18.003666666666668,
+            17.823666666666668,
+            17.994,
+            17.933666666666667,
+            17.817,
+            18.020666666666667,
+            27.495,
+            17.867,
+            18.19066666666667,
+            17.930333333333333,
+            17.867,
+            18.000666666666667,
+            17.910333333333334,
+            17.857,
+            17.723666666666666,
+            17.843666666666667,
+            17.887,
+            17.863666666666667
+          ],
+          "min_us": 17.723666666666666,
+          "max_us": 27.495
+        },
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch",
+          "median_us": 6.857,
+          "mad_us": 0.24033333333333307,
+          "variance_us2": 0.3272459289493576,
+          "sample_count": 21,
+          "samples_us": [
+            6.914,
+            6.533,
+            6.980666666666667,
+            6.800333333333333,
+            7.254333333333333,
+            6.613333333333333,
+            6.960333333333333,
+            6.483333333333333,
+            6.723333333333333,
+            6.793666666666667,
+            6.857,
+            7.979,
+            7.207666666666667,
+            7.571666666666667,
+            6.823666666666667,
+            7.080666666666667,
+            6.616666666666667,
+            6.690333333333333,
+            7.114,
+            9.057,
+            6.61
+          ],
+          "min_us": 6.483333333333333,
+          "max_us": 9.057
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch",
+          "median_us": 6.973666666666667,
+          "mad_us": 0.18333333333333446,
+          "variance_us2": 0.08582231191735949,
+          "sample_count": 21,
+          "samples_us": [
+            6.666666666666667,
+            7.077333333333333,
+            6.990666666666667,
+            7.114,
+            6.860333333333333,
+            6.747,
+            6.903666666666667,
+            6.790333333333333,
+            6.890666666666667,
+            7.598333333333333,
+            7.504666666666667,
+            6.973666666666667,
+            6.773666666666667,
+            6.810333333333333,
+            7.388,
+            6.583333333333333,
+            7.181,
+            7.171,
+            7.671333333333333,
+            6.943666666666667,
+            6.973666666666667
+          ],
+          "min_us": 6.583333333333333,
+          "max_us": 7.671333333333333
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 18.04733333333333,
+          "mad_us": 0.10366666666666191,
+          "variance_us2": 4.069382556311414,
+          "sample_count": 21,
+          "samples_us": [
+            18.231,
+            18.12066666666667,
+            18.144,
+            18.037333333333333,
+            27.498,
+            18.314333333333334,
+            18.04733333333333,
+            17.914,
+            18.004,
+            17.957,
+            17.997333333333334,
+            18.491333333333333,
+            18.972,
+            18.077333333333332,
+            17.94366666666667,
+            17.80366666666667,
+            18.124,
+            17.890666666666668,
+            17.893666666666668,
+            17.910333333333334,
+            18.077333333333332
+          ],
+          "min_us": 17.80366666666667,
+          "max_us": 27.498
+        }
+      ]
+    },
+    {
+      "name": "cat_axis_1",
+      "api": "cat1",
+      "inputs": [
+        {
+          "shape": [
+            37,
+            41
+          ],
+          "stride": [
+            1,
+            37
+          ],
+          "storage_offset": 0,
+          "numel": 1517,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        },
+        {
+          "shape": [
+            37,
+            41
+          ],
+          "stride": [
+            1,
+            37
+          ],
+          "storage_offset": 0,
+          "numel": 1517,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        },
+        {
+          "shape": [
+            37,
+            41
+          ],
+          "stride": [
+            1,
+            37
+          ],
+          "storage_offset": 0,
+          "numel": 1517,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": false
+        }
+      ],
+      "passes": [
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 18.688,
+          "mad_us": 0.06700000000000017,
+          "variance_us2": 4.616257815570672,
+          "sample_count": 21,
+          "samples_us": [
+            18.708,
+            18.628333333333334,
+            18.65833333333333,
+            18.648333333333333,
+            18.77166666666667,
+            18.52133333333333,
+            18.728,
+            18.955333333333332,
+            18.63133333333333,
+            18.651666666666667,
+            18.73166666666667,
+            19.145666666666667,
+            18.688,
+            18.59466666666667,
+            18.618,
+            28.787,
+            19.062,
+            18.634666666666668,
+            18.57133333333333,
+            18.761666666666667,
+            18.755
+          ],
+          "min_us": 18.52133333333333,
+          "max_us": 28.787
+        },
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch",
+          "median_us": 7.151,
+          "mad_us": 0.38033333333333363,
+          "variance_us2": 10.068546639959688,
+          "sample_count": 21,
+          "samples_us": [
+            6.807,
+            6.890333333333333,
+            7.531333333333333,
+            7.167666666666667,
+            6.643333333333333,
+            17.142666666666667,
+            6.870333333333333,
+            6.713333333333333,
+            6.707,
+            6.793333333333333,
+            7.211,
+            6.55,
+            7.160666666666667,
+            7.151,
+            16.702,
+            6.810333333333333,
+            6.483333333333333,
+            13.764,
+            9.457666666666666,
+            8.623,
+            7.304333333333333
+          ],
+          "min_us": 6.483333333333333,
+          "max_us": 17.142666666666667
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch",
+          "median_us": 6.820333333333333,
+          "mad_us": 0.13999999999999968,
+          "variance_us2": 0.0537239536407156,
+          "sample_count": 21,
+          "samples_us": [
+            6.903666666666667,
+            6.63,
+            6.967333333333333,
+            7.281,
+            6.730333333333333,
+            6.820333333333333,
+            6.777,
+            6.870333333333333,
+            6.566333333333333,
+            6.757,
+            6.583333333333333,
+            7.298,
+            6.63,
+            6.553,
+            6.833666666666667,
+            6.6803333333333335,
+            6.827,
+            6.6866666666666665,
+            6.917,
+            7.324666666666667,
+            7.120666666666667
+          ],
+          "min_us": 6.553,
+          "max_us": 7.324666666666667
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 18.83533333333333,
+          "mad_us": 0.09033333333333005,
+          "variance_us2": 4.24880574048879,
+          "sample_count": 21,
+          "samples_us": [
+            18.882,
+            18.77166666666667,
+            28.51966666666667,
+            18.798333333333332,
+            18.935,
+            18.725,
+            19.06866666666667,
+            18.832,
+            18.795,
+            18.965333333333334,
+            18.83533333333333,
+            18.878666666666668,
+            19.049,
+            18.755,
+            18.952,
+            18.745,
+            18.969,
+            18.92533333333333,
+            18.735,
+            18.775333333333332,
+            18.675
+          ],
+          "min_us": 18.675,
+          "max_us": 28.51966666666667
+        }
+      ]
+    },
+    {
+      "name": "empty",
+      "api": "dstack",
+      "inputs": [
+        {
+          "shape": [
+            257,
+            0
+          ],
+          "stride": [
+            1,
+            1
+          ],
+          "storage_offset": 0,
+          "numel": 0,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        },
+        {
+          "shape": [
+            257,
+            0
+          ],
+          "stride": [
+            1,
+            1
+          ],
+          "storage_offset": 0,
+          "numel": 0,
+          "dtype": "torch.float32",
+          "device": "cpu",
+          "layout": "torch.strided",
+          "requires_grad": false,
+          "is_leaf": true,
+          "is_contiguous": true
+        }
+      ],
+      "passes": [
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 0.8313333333333334,
+          "mad_us": 0.016666666666666607,
+          "variance_us2": 0.0007354346182917616,
+          "sample_count": 21,
+          "samples_us": [
+            0.8313333333333334,
+            0.8443333333333334,
+            0.888,
+            0.8913333333333334,
+            0.871,
+            0.8146666666666667,
+            0.838,
+            0.8013333333333333,
+            0.818,
+            0.8443333333333334,
+            0.8013333333333333,
+            0.841,
+            0.818,
+            0.848,
+            0.858,
+            0.878,
+            0.8113333333333334,
+            0.8276666666666667,
+            0.798,
+            0.8246666666666667,
+            0.8246666666666667
+          ],
+          "min_us": 0.798,
+          "max_us": 0.8913333333333334
+        },
+        {
+          "order": [
+            "torch_rs",
+            "torch"
+          ],
+          "implementation": "torch",
+          "median_us": 2.26,
+          "mad_us": 0.05333333333333368,
+          "variance_us2": 0.07437889392794156,
+          "sample_count": 21,
+          "samples_us": [
+            2.1966666666666663,
+            2.2,
+            2.6473333333333335,
+            2.3533333333333335,
+            2.2536666666666667,
+            2.2166666666666663,
+            2.2266666666666666,
+            2.2033333333333336,
+            2.2833333333333337,
+            2.1963333333333335,
+            2.26,
+            2.3133333333333335,
+            2.2366666666666664,
+            2.2633333333333336,
+            2.8543333333333334,
+            3.3586666666666667,
+            2.4036666666666666,
+            2.3236666666666665,
+            2.2903333333333333,
+            2.2266666666666666,
+            2.2336666666666667
+          ],
+          "min_us": 2.1963333333333335,
+          "max_us": 3.3586666666666667
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch",
+          "median_us": 2.2533333333333334,
+          "mad_us": 0.029999999999999805,
+          "variance_us2": 0.12954052910052907,
+          "sample_count": 21,
+          "samples_us": [
+            2.27,
+            2.2033333333333336,
+            2.2533333333333334,
+            2.2133333333333334,
+            2.22,
+            2.2233333333333336,
+            2.367,
+            2.2266666666666666,
+            2.2433333333333336,
+            2.4236666666666666,
+            2.2933333333333334,
+            2.2533333333333334,
+            2.2233333333333336,
+            2.28,
+            2.2233333333333336,
+            3.3083333333333336,
+            3.6186666666666665,
+            2.2303333333333333,
+            2.23,
+            2.3836666666666666,
+            2.2566666666666664
+          ],
+          "min_us": 2.2033333333333336,
+          "max_us": 3.6186666666666665
+        },
+        {
+          "order": [
+            "torch",
+            "torch_rs"
+          ],
+          "implementation": "torch_rs",
+          "median_us": 0.8613333333333334,
+          "mad_us": 0.033333333333333215,
+          "variance_us2": 0.004001928949357524,
+          "sample_count": 21,
+          "samples_us": [
+            0.878,
+            0.858,
+            0.8643333333333334,
+            0.9313333333333333,
+            0.8813333333333334,
+            0.8613333333333334,
+            0.858,
+            0.8746666666666666,
+            0.8813333333333334,
+            0.8946666666666666,
+            0.8746666666666666,
+            0.9513333333333334,
+            1.1016666666666668,
+            0.8446666666666667,
+            0.818,
+            0.828,
+            0.8276666666666667,
+            0.8276666666666667,
+            0.8113333333333334,
+            0.828,
+            0.801
+          ],
+          "min_us": 0.801,
+          "max_us": 1.1016666666666668
+        }
+      ]
+    }
+  ],
+  "ended_at": "2026-09-10T06:44:50.337447+00:00"
+}

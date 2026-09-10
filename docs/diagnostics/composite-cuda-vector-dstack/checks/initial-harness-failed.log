@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/scripts/benchmark_depth_concat.py", line 159, in <module>
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/scripts/benchmark_depth_concat.py", line 140, in main
+    samples.append(elapsed)
+             ^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d/scripts/benchmark_depth_concat.py", line 127, in call
+    for module in order:
+           ^^^^^^^^^^^^^
+NotImplementedError: dstack(): only exact native CPU float32 scalar, rank-1, or rank-2 Tensor inputs are supported
