@@ -4,6 +4,7 @@ import copy
 import itertools
 import pickle
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import torch_rs
@@ -283,6 +284,63 @@ class LinearModeReferenceTests(unittest.TestCase):
                     result = linear(*operands)
                 self.assertEqual(result.tolist(), linear(*(x.detach() for x in operands)).tolist())
                 self.assertFalse(result.requires_grad)
+
+    def rebound_linear(self, module, form, depth, record):
+        original = module.nn.functional.linear
+        x = module.ones((1, 3))
+        w = module.ones((1, 3))
+        b = module.tensor([0.5])
+        wrapper_calls = []
+        mode_calls = []
+        test = self
+
+        def wrapped(*args, **kwargs):
+            wrapper_calls.append("wrapper")
+            return original(*args, **kwargs) + 10
+
+        class RecordingMode(module.overrides.BaseTorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                test.assertIsNot(func, wrapped)
+                if func is original:
+                    mode_calls.append("linear")
+                return super().__torch_function__(func, types, args, kwargs)
+
+        def call(function):
+            if form == "omitted":
+                return function(x, w)
+            if form == "positional":
+                return function(x, w, b)
+            return function(x, w, bias=b)
+
+        mode_type = RecordingMode if record else module.overrides.BaseTorchFunctionMode
+        results = []
+        with patch.object(module.nn.functional, "linear", wrapped):
+            for saved in (False, True):
+                # A public wrapper must run exactly once, and a saved original
+                # must remain usable without going through the replacement.
+                with mode_type():
+                    if depth == 2:
+                        with mode_type():
+                            result = call(original if saved else module.nn.functional.linear)
+                    else:
+                        result = call(original if saved else module.nn.functional.linear)
+                results.append(result.tolist())
+        self.assertIs(module.nn.functional.linear, original)
+        self.assertEqual(wrapper_calls, ["wrapper"])
+        self.assertEqual(mode_calls, ["linear"] * (2 * depth) if record else [])
+        value = 3.0 if form == "omitted" else 3.5
+        self.assertEqual(results, [[[value + 10]], [[value]]])
+        return results, wrapper_calls, mode_calls
+
+    def test_wrapped_public_linear_and_saved_original_keep_dispatch_identity(self):
+        for form, depth, record in itertools.product(
+            ("omitted", "positional", "keyword"), (1, 2), (False, True)
+        ):
+            with self.subTest(form=form, depth=depth, record=record):
+                self.assertEqual(
+                    self.rebound_linear(torch_rs, form, depth, record),
+                    self.rebound_linear(reference, form, depth, record),
+                )
 
     def test_mode_can_replace_keyword_bias_before_delegating_strided_operands(self):
         results = []

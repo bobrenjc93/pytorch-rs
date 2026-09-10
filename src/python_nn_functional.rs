@@ -6,6 +6,7 @@ use std::fmt::Write as _;
 use pyo3::exceptions::{
     PyMemoryError, PyNotImplementedError, PyRuntimeError, PyTypeError, PyUserWarning,
 };
+use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyAny, PyDict, PyModule, PyString, PyTuple};
 use pyo3::{IntoPyObjectExt, prelude::*};
 
@@ -16,6 +17,10 @@ use crate::{
     python_tensor_errors::tensor_error,
     python_torch_function_mode,
 };
+
+// Dispatch must retain the callable being executed even when Python callers
+// replace nn.functional.linear with a wrapper or keep a saved reference.
+static LINEAR_FUNCTION: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
 const LINEAR_EXACT_TENSORS_ERROR: &str =
     "linear() only supports exact native Tensor input and weight operands";
@@ -582,11 +587,11 @@ fn _nn_functional_linear(
         .then(|| exact_linear_bias(&bias))
         .transpose()?;
     if !python_torch_function_mode::is_empty() {
-        let function = PyModule::import(py, "torch_rs.nn.functional")?
-            .getattr("linear")?
-            .unbind();
+        let function = LINEAR_FUNCTION.get(py).ok_or_else(|| {
+            PyRuntimeError::new_err("linear() was called before module initialization completed")
+        })?;
         if let Some(result) =
-            dispatch_exact_tensor_function_mode(py, &function, "torch.nn.linear", args, kwargs)?
+            dispatch_exact_tensor_function_mode(py, function, "torch.nn.linear", args, kwargs)?
         {
             return Ok(result);
         }
@@ -869,9 +874,13 @@ fn _nn_functional_glu_vector(
 }
 
 pub(crate) fn add_nn_functional_bridges(module: &Bound<'_, PyModule>) -> PyResult<()> {
-    let linear = wrap_pyfunction!(_nn_functional_linear, module)?;
-    linear.setattr("__module__", "torch_rs.nn.functional")?;
-    module.add("_nn_functional_linear", linear)?;
+    let py = module.py();
+    let linear = LINEAR_FUNCTION.get_or_try_init(py, || -> PyResult<_> {
+        let linear = wrap_pyfunction!(_nn_functional_linear, module)?;
+        linear.setattr("__module__", "torch_rs.nn.functional")?;
+        Ok(linear.into_any().unbind())
+    })?;
+    module.add("_nn_functional_linear", linear.clone_ref(py))?;
     module
         .getattr("__all__")?
         .call_method1("remove", ("_nn_functional_linear",))?;
