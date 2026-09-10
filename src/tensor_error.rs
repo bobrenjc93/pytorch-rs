@@ -105,6 +105,9 @@ pub enum TensorError {
     UnsupportedCudaNegation {
         reason: &'static str,
     },
+    UnsupportedCudaSum {
+        reason: &'static str,
+    },
     UnsupportedCudaTransfer {
         reason: &'static str,
     },
@@ -136,6 +139,8 @@ pub enum TensorError {
 }
 
 impl Display for TensorError {
+    // Keep the exhaustive error-family dispatch together as variants are added.
+    #[allow(clippy::too_many_lines)]
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ShapeDataMismatch { shape, elements } => write!(
@@ -223,6 +228,7 @@ impl Display for TensorError {
             | Self::UnsupportedCudaAddition { .. }
             | Self::UnsupportedCudaScalarMultiplication { .. }
             | Self::UnsupportedCudaNegation { .. }
+            | Self::UnsupportedCudaSum { .. }
             | Self::UnsupportedCudaTransfer { .. }
             | Self::CudaRuntimeError { .. }) => format_device_error(formatter, error),
             error @ (Self::UnsupportedMemoryFormat { .. }
@@ -400,6 +406,9 @@ fn format_device_error(formatter: &mut Formatter<'_>, error: &TensorError) -> st
         }
         TensorError::UnsupportedCudaNegation { reason } => {
             write!(formatter, "neg(): unsupported CUDA negation ({reason})")
+        }
+        TensorError::UnsupportedCudaSum { reason } => {
+            write!(formatter, "sum(): unsupported CUDA reduction ({reason})")
         }
         TensorError::UnsupportedCudaTransfer { reason } => {
             write!(formatter, "to(): unsupported CUDA transfer ({reason})")

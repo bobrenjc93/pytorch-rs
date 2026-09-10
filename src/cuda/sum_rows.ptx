@@ -1,0 +1,60 @@
+// Appended to add.ptx's version/target directives. One warp per matrix row,
+// strided loads followed by a fixed shuffle tree. All indexing is 64-bit.
+// No FTZ; zero columns write the additive identity without reading input.
+.visible .entry sum_rows_f32(
+    .param .u64 input, .param .u64 output,
+    .param .u64 rows, .param .u64 columns
+) {
+    .reg .pred done, leader;
+    .reg .b32 tid, block, blocks, warp, lane;
+    .reg .b64 a, b, nr, nc, row, step, col, lane64, offset, ptr;
+    .reg .f32 total, value, other;
+    ld.param.u64 a, [input];
+    ld.param.u64 b, [output];
+    ld.param.u64 nr, [rows];
+    ld.param.u64 nc, [columns];
+    mov.u32 tid, %tid.x;
+    mov.u32 block, %ctaid.x;
+    mov.u32 blocks, %nctaid.x;
+    shr.u32 warp, tid, 5;
+    and.b32 lane, tid, 31;
+    cvt.u64.u32 lane64, warp;
+    mul.wide.u32 row, block, 8;
+    add.u64 row, row, lane64;
+    mul.wide.u32 step, blocks, 8;
+    cvt.u64.u32 lane64, lane;
+    setp.eq.u32 leader, lane, 0;
+row_loop:
+    setp.ge.u64 done, row, nr;
+    @done bra end;
+    mov.f32 total, 0f00000000;
+    mov.u64 col, lane64;
+column_loop:
+    setp.ge.u64 done, col, nc;
+    @done bra reduce;
+    mad.lo.u64 offset, row, nc, col;
+    shl.b64 offset, offset, 2;
+    add.u64 ptr, a, offset;
+    ld.global.f32 value, [ptr];
+    add.rn.f32 total, total, value;
+    add.u64 col, col, 32;
+    bra column_loop;
+reduce:
+    shfl.sync.bfly.b32 other, total, 16, 31, 0xffffffff;
+    add.rn.f32 total, total, other;
+    shfl.sync.bfly.b32 other, total, 8, 31, 0xffffffff;
+    add.rn.f32 total, total, other;
+    shfl.sync.bfly.b32 other, total, 4, 31, 0xffffffff;
+    add.rn.f32 total, total, other;
+    shfl.sync.bfly.b32 other, total, 2, 31, 0xffffffff;
+    add.rn.f32 total, total, other;
+    shfl.sync.bfly.b32 other, total, 1, 31, 0xffffffff;
+    add.rn.f32 total, total, other;
+    shl.b64 offset, row, 2;
+    add.u64 ptr, b, offset;
+    @leader st.global.f32 [ptr], total;
+    add.u64 row, row, step;
+    bra row_loop;
+end:
+    ret;
+}

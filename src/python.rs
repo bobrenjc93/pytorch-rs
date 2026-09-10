@@ -6352,8 +6352,17 @@ fn apply_sum_reduction(
     reduction: &BoundSumReduction<'_>,
 ) -> PyResult<CoreTensor> {
     if input.device().is_cuda() {
+        if let BoundSumReduction::Dimension { dimension, keepdim } = reduction
+            && input.shape().len() == 2
+        {
+            let dimension = extract_bound_sum_dimension(dimension)?;
+            let dimension = normalize_dimension(dimension, 2)?;
+            return input
+                .sum_rank_two_dimension(dimension, *keepdim)
+                .map_err(|error| tensor_error(&error));
+        }
         return Err(PyNotImplementedError::new_err(
-            "sum(): CUDA tensor reductions are not supported",
+            "sum(): CUDA reductions require a contiguous float32 matrix and dim=1 or -1 without autograd",
         ));
     }
     let output = match reduction {
