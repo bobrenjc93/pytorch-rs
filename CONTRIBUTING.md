@@ -51,13 +51,13 @@ After a manual release wheel install, run `.venv/bin/python .github/scripts/veri
 - Use the repository virtual environment for Python-facing builds and tests.
   Set `PYO3_PYTHON="$PWD/.venv/bin/python"` when invoking Cargo or Maturin with
   `python-bindings`.
-- The current native backend is CPU `float32` focused. Portable tests should
-  skip hardware-only cases when an accelerator is unavailable rather than
-  weakening the assertion.
-- If a change touches devices, CUDA, dispatch, transfers, or accelerator
-  performance, run a real accelerator check when available. Prefer
-  `CUDA_VISIBLE_DEVICES=0` for single-GPU validation and record the GPU,
-  driver, CUDA, PyTorch, and build settings used.
+- Native [CPU and bounded CUDA support](docs/supported-surface.md) does not imply
+  general accelerator/training parity. Skip unavailable hardware cases clearly.
+- For device/CUDA/dispatch/transfer/performance changes, test real GPUs when
+  available. Default to `CUDA_VISIBLE_DEVICES=0`; record GPU/driver/CUDA/PyTorch
+  and build settings. Minimize multi-GPU use. [Paired diagnostics](docs/compile-cuda-matmul.md#explicit-diagnostic-gpu-selection)
+  may declare an idle UUID, identical for both builds. Idle snapshots do not reserve
+  access; never interrupt another user's jobs.
 - Keep build and test artifacts inside the worktree. Do not depend on local
   user configuration, parent checkouts, or globally installed packages.
 

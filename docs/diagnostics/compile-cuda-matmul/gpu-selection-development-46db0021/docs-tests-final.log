@@ -1,0 +1,13 @@
+......F.....
+======================================================================
+FAIL: test_readme_links_contributing_guide (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_links_contributing_guide)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_ab372605/tests/test_readme_quickstart.py", line 1033, in test_readme_links_contributing_guide
+    self.assertLess(len(contributing.splitlines()), 120)
+AssertionError: 120 not less than 120
+
+----------------------------------------------------------------------
+Ran 12 tests in 0.130s
+
+FAILED (failures=1)

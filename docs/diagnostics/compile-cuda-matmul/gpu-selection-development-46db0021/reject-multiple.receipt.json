@@ -1,0 +1,22 @@
+{
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_ab372605/.venv/bin/python",
+    "-B",
+    "scripts/diagnose_compile_cuda_matmul.py",
+    "--build-record",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_ab372605/target/selection/reports/build-record.json",
+    "--output",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_ab372605/target/selection/reports/reject-multiple.json",
+    "--gpu-uuid",
+    "GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e",
+    "--allow-dirty"
+  ],
+  "cuda_visible_devices": "0,2",
+  "started_at": "2026-09-10T20:54:32.761422+00:00",
+  "ended_at": "2026-09-10T20:54:33.366774+00:00",
+  "wall_seconds": 0.6053661415353417,
+  "exit_status": 1,
+  "expected_exit_status": 1,
+  "report_sha256": "2072725ddb0660dc056b3c153e1ab88555a90c6426be1d9696e169822a4f7b86",
+  "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

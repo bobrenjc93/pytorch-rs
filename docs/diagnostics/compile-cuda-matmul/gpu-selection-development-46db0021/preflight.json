@@ -1,0 +1,30 @@
+{
+  "driver": {
+    "library": "libcuda.so.1",
+    "visible_count": 1,
+    "logical_index": 0,
+    "pci.bus_id": "0000:46:00.0",
+    "version": 13000,
+    "uuid": "GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e",
+    "physical_index": 2
+  },
+  "native_runtime": {
+    "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_ab372605/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "visible_count": 1,
+    "logical_index": 0,
+    "pci.bus_id": "0000:46:00.0",
+    "version": 13000,
+    "sha256": "96c42e418cec19054186b9429c321603cc190bf26a18104e19408117a2a817b0",
+    "uuid": "GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e",
+    "uuid_source": "physical inventory matched by runtime PCI bus ID",
+    "physical_index": 2
+  },
+  "native_visible_count": 1,
+  "reference_runtime": {
+    "visible_count": 1,
+    "logical_index": 0,
+    "uuid": "GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e",
+    "version": "13.0",
+    "physical_index": 2
+  }
+}
