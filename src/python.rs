@@ -1,3 +1,7 @@
+#[path = "python_unflatten.rs"]
+mod unflatten;
+pub(crate) use unflatten::unflatten_variable_function;
+
 use std::cmp::Ordering as CmpOrdering;
 use std::ffi::{CStr, c_char};
 use std::os::raw::c_long;
