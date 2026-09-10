@@ -1,0 +1,25 @@
+{
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv/bin/python",
+    "-m",
+    "unittest",
+    "-v",
+    "tests.test_compile_corpus",
+    "tests.test_top_level_compile",
+    "tests.test_compile_static_analysis",
+    "tests.test_compile_tanh_composition",
+    "tests.test_cuda_compilation_evaluator"
+  ],
+  "environment_overrides": {},
+  "started_unix": 1789080849.593698,
+  "finished_unix": 1789080919.956809,
+  "exit_code": 0,
+  "source": {
+    "commit": "563d55960332a9a09c5825da22e4212c053ce374",
+    "source_sha256": "2bec769fadb89e9e0f58e4a3356f26439637b49b1cf3a80b285fe6a985330d6d",
+    "production_diff_sha256": "3348e63e14039c91287dce86bf5e8920473933f0f74bffd615025cac3bb8b349"
+  },
+  "source_unchanged": true,
+  "extension_sha256": "5751461a9ddf2447bdb0a3a51086bd5cef70bc263dc41a372dc12db764e5f5b5",
+  "log_sha256": "316f0fa2192ef59e208dc9873ec89a429024d0c96b5e631b989445096933c254"
+}

@@ -301,6 +301,23 @@ class IsolationTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "extension builtin"):
             e.CompileObserver(e.negation, e.negation, e.negation, lambda x: x)
 
+    def test_reduction_observation_rejects_counterfeit_and_old_unary_hooks(self):
+        case = next(c for c in e.corpus()["cases"] if c["operation"] == "sum")
+        self.assertEqual(e.native_hook(case), "_compile_trace_reduction")
+        def counterfeit(*args):
+            raise AssertionError("must never execute")
+        counterfeit.__name__ = "_compile_trace_reduction"
+        with self.assertRaisesRegex(RuntimeError, "extension builtin"):
+            e.CompileObserver(e.row_sum, e.row_sum, e.row_sum, counterfeit)
+        fixture = AccountingTests()
+        fixture.setUp()
+        for trial in fixture.trials:
+            if trial["case_id"] == case["id"]:
+                trial["candidate"]["compile_evidence"][0]["hook"] = "_compile_trace_unary"
+        score = fixture.score()
+        self.assertEqual(score["passed"], 5)
+        self.assertEqual(next(c for c in score["cases"] if c["case_id"] == case["id"])["credit"], 0)
+
     def test_crash_timeout_invalid_json_and_missing_python(self):
         case = e.corpus()["cases"][0]
         for error in (FileNotFoundError("missing"), subprocess.TimeoutExpired("worker", 1)):
@@ -370,11 +387,7 @@ class HardwareTests(unittest.TestCase):
                         cand = e.launch("candidate", case, seed, sys.executable, 60, env)
                         self.assertTrue(e.valid_execution(ref, case, seed, "reference"), ref)
                         self.assertNotEqual(ref["pid"], cand.get("pid"))
-                        if case["operation"] == "sum":
-                            self.assertFalse(e.valid_execution(cand, case, seed, "candidate"))
-                            self.assertIn("not support", cand.get("error", ""))
-                        else:
-                            self.assertTrue(e.valid_execution(cand, case, seed, "candidate"), cand)
-                            for r, c in zip(ref["executions"], cand["executions"]):
-                                for expected, actual in zip(r["output"]["values"], c["output"]["values"]):
-                                    self.assertLessEqual(abs(expected - actual), 1e-6 + 1e-5 * abs(expected))
+                        self.assertTrue(e.valid_execution(cand, case, seed, "candidate"), cand)
+                        for r, c in zip(ref["executions"], cand["executions"]):
+                            for expected, actual in zip(r["output"]["values"], c["output"]["values"]):
+                                self.assertLessEqual(abs(expected - actual), 1e-6 + 1e-5 * abs(expected))

@@ -54,14 +54,24 @@ pub(super) fn execute(
         .map(|tensor| Layout::from_tensor(tensor))
         .collect();
     let mut operations = Vec::with_capacity(nodes.len());
-    for (target, indices, scalar, shape, strides) in nodes {
+    for (target, indices, payload, shape, strides) in nodes {
         let operation = match (target.as_str(), indices.as_slice()) {
             ("mul_scalar", &[input]) => {
-                Operation::MulScalar(input, compile_trace_mul_scalar_value(&scalar)?)
+                Operation::MulScalar(input, compile_trace_mul_scalar_value(&payload)?)
             }
-            ("neg", &[input]) if scalar.is_none() => Operation::Neg(input),
-            ("add", &[left, right]) if scalar.is_none() => Operation::Add(left, right),
-            ("matmul", &[left, right]) if scalar.is_none() => Operation::Matmul(left, right),
+            ("sum", &[input]) => {
+                let options = payload.cast::<PyTuple>()?;
+                if options.len() != 2 {
+                    return Err(PyNotImplementedError::new_err("invalid reduction options"));
+                }
+                Operation::SumRows(
+                    input,
+                    super::compile_trace_sum_options(&options.get_item(0)?, &options.get_item(1)?)?,
+                )
+            }
+            ("neg", &[input]) if payload.is_none() => Operation::Neg(input),
+            ("add", &[left, right]) if payload.is_none() => Operation::Add(left, right),
+            ("matmul", &[left, right]) if payload.is_none() => Operation::Matmul(left, right),
             _ => {
                 return Err(PyNotImplementedError::new_err(
                     "unsupported CUDA graph node",

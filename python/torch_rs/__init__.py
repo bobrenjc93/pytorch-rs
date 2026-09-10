@@ -348,6 +348,7 @@ _COMPILE_TENSOR_METHOD_GUARD_NAMES = (
     "requires_grad",
     "relu",
     "square",
+    "sum",
 )
 _COMPILE_TENSOR_METHOD_GUARD_MISSING = globals().get(
     "_COMPILE_TENSOR_METHOD_GUARD_MISSING",
