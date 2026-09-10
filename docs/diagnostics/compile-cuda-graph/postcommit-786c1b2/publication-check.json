@@ -1,0 +1,13 @@
+{
+  "checked_at": "2026-09-10T17:43:37.101988+00:00",
+  "measured_commit": "786c1b2e18ca83ecbe6e09606d33309d00187b2f",
+  "copied_artifacts_verified": 78,
+  "links_verified": 29,
+  "source_test_harness_files_verified": 864,
+  "implementation_dependencies_evaluators_unchanged": true,
+  "managed_artifacts_unchanged": true,
+  "publication_status": " M docs/compile-cuda-matmul.md\n?? docs/diagnostics/compile-cuda-graph/\n",
+  "readme_sha256": "dd4355dcdaf12ae495f55d49a5fc8cded29bbdac3b2372753b1250252844efb0",
+  "canonical_doc_sha256": "d54ab521cd1627c947a3aa16c10fb4c9d4c401e2f9920b9c39f4adad5102030e",
+  "documentation_smoke_exit_status": 0
+}

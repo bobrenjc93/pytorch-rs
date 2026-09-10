@@ -36,8 +36,9 @@ libTorch operator runs on the candidate execution path.
 The bridge retains all input borrows and intermediate allocations, and each
 native operation still completes and restores the current device before the
 next node. Calls return fresh storage; repeated output leaves keep their
-identity. This reduces Python/PyO3 execution overhead without kernel fusion,
-CUDA graph replay, algebraic rewriting or changes to ordinary eager tensors.
+identity. This moves node dispatch and intermediate metadata checks into Rust,
+without kernel fusion, CUDA graph replay, algebraic rewriting or changes to
+ordinary eager tensors.
 
 Negation, scalar multiplication, equal-shape addition and trailing-vector
 addition compose before/after products, including repeated products and
@@ -116,6 +117,9 @@ contains results, source/native/runtime identities, command receipts and raw sam
 for the per-node bridge. It is not a baseline measurement of the composed bridge.
 Development comparisons must start from merged main, keep the diagnostic's
 default 12 cells unchanged, and declare held-out seeds before measurement.
-After Burner commits the implementation, repeat the clean-build procedure
-above before publishing new commit-bound evidence. Independent review, all ten
-non-regressing gates and exact-head CI remain required for managed merge.
+[Clean-commit bridge evidence](diagnostics/compile-cuda-graph/postcommit-786c1b2/README.md)
+records the unchanged primary/repeat and held-out comparisons, fresh wheel,
+regressions, provenance and unfiltered timings from implementation `786c1b2`.
+Those clean runs do not establish a repeatable native latency gain.
+Independent review, all ten non-regressing gates and exact-head CI remain
+required for managed merge.

@@ -1,0 +1,170 @@
+"""Publish byte-identical capture artifacts and accompanying documentation."""
+import hashlib, json, pathlib, shutil, subprocess
+ROOT=pathlib.Path.cwd().resolve(); OUT=ROOT/'target/graph-plan-postcommit-786c1b2'; OLD=ROOT/'target/graph-plan'
+DEST=ROOT/'docs/diagnostics/compile-cuda-graph/postcommit-786c1b2'
+assert not DEST.exists()
+assert not subprocess.check_output(['git','status','--porcelain'],text=True)
+assert json.loads((OUT/'capture-complete.json').read_text())['source_and_harness_unchanged']
+audit=json.loads((OUT/'verification.json').read_text())
+assert audit['source_and_receipt_checks']=='passed'
+DEST.mkdir(parents=True)
+index={}
+def copy(source,relative):
+    dest=DEST/relative;dest.parent.mkdir(parents=True,exist_ok=True)
+    shutil.copyfile(source,dest)
+    digest=hashlib.sha256(source.read_bytes()).hexdigest()
+    assert hashlib.sha256(dest.read_bytes()).hexdigest()==digest
+    index[relative]={'source':str(source),'sha256':digest}
+for path in sorted(OUT.iterdir()):
+    if path.is_file() and path.suffix in ('.json','.log','.txt'):
+        copy(path,path.name)
+for name in ('build-record.json','commands.json','build.log','install.log'):
+    copy(OUT/'build-capture'/name,'build/'+name)
+for name in ('capture.py','verify.py','publish.py'):
+    copy(OUT/name,'command-sources/'+name+'.txt')
+for name in ('primary','primary-repeat','held-481723','held-926051'):
+    for ext in ('.json','.receipt.json','.log'):
+        copy(OLD/('baseline-'+name+ext),'baseline/'+name+ext)
+for name in ('build-record.json','commands.json','build.log','install.log'):
+    copy(OLD/'baseline-build'/name,'baseline/build/'+name)
+for name in ('profile_graph.py','run.py'):
+    copy(OLD/name,'baseline/command-sources/'+name+'.txt')
+for name in ('held-outs.json','baseline-profile.log','baseline-profile.receipt.json','baseline-profile-retry.log','baseline-profile-retry.receipt.json','matmul.prof','composed.prof'):
+    copy(OLD/name,'baseline/'+name)
+build=json.loads((OUT/'build-capture/build-record.json').read_text())
+rows=[]
+for pair in audit['pairs']:
+    rows.append(f"| {pair['name']} | {100*pair['baseline_parity']:.4f}% | {100*pair['candidate_parity']:.4f}% | {pair['composed_native_speedup']:.4f}x |")
+allcells=[cell for pair in audit['pairs'] for cell in pair['cells']]
+worst=min(cell['native_speedup'] for cell in allcells if cell['program']=='composed')
+drift=[cell['reference_latency_ratio'] for cell in allcells]
+text=f'''# Clean captured CUDA graph bridge evidence
+
+Measured implementation: **`{audit['commit']}`**, against the fresh merged-main
+baseline **`{audit['baseline_commit']}`**, on 2026-09-10 UTC. Build, correctness,
+timings and accounting completed with clean Git status. This publication adds
+only evidence and documentation; it is not independent approval, a ten-gate
+evaluation or merge authorization.
+
+## Complete unchanged diagnostic
+
+| Run | Main capped parity | Candidate capped parity | Composed native geometric speedup |
+| --- | ---: | ---: | ---: |
+{chr(10).join(rows)}
+
+Each row contains all 12 cells of the unchanged diagnostic, including the six
+composed programs. Primary and repeat use seed 798431; held-outs use the
+previously declared seeds 481723 and 926051 and their deterministic shapes.
+All 48 fresh candidate cells passed. The raw
+[primary](primary.json), [repeat](primary-repeat.json),
+[held-out 481723](held-481723.json), and [held-out 926051](held-926051.json)
+reports retain both execution orders, all first-call/wrapper costs, every
+individual timing, aggregate samples, dispersion, input-preservation checks and
+changed-data checks. Matching baseline reports are under [baseline](baseline/primary.json)
+and copied byte-for-byte; they measured actual merged main before optimization.
+The earlier cbcbd84 measurements and dirty candidate development runs are not
+used as this comparison's baseline or final candidate evidence.
+
+[Verified comparison](verification.json) recomputes all **{audit['verified_individual_calls']:,}**
+individual calls across eight reports, including **29,760 newly measured calls**.
+It verifies the fixed cell matrix, policies, seeds, regenerated input hashes,
+block and pooled medians, capped aggregation, source/wheel/runtime identities
+and command/log receipts. No cell or unsuccessful attempt was removed.
+The clean paired data **does not establish the required repeatable native
+latency improvement**. Composed execution was 6.1% faster in the first primary
+pair but 1.7% slower in the repeat; held-out geometric speedups were only
+0.5% and 0.4%. Higher capped parity also reflects reference timing drift.
+Correctness passed, but the performance milestone remains unproven and needs
+independent review; no implementation change or favorable-only recapture was
+made in this evidence step. The worst composed per-cell native speedup is {worst:.4f}x; reference latency ratios
+span {min(drift):.4f}–{max(drift):.4f}x across all pairs. Individual regressions and
+all slower-than-reference cells remain visible. This native `backend="eager"`
+capture path is unfused and does not establish general Inductor parity.
+
+First-call observations are not cold disk-cache comparisons: each wrapper is
+new and Dynamo resets per order, but compiler disk caches persist. All
+observations, including the baseline-repeat 71.211256 ms native outlier, are
+preserved; no first-call improvement is claimed. The native bridge still calls
+the existing kernels/cuBLAS in order and synchronizes each operation.
+
+## Build, checks and identities
+
+- [Fresh build](build/build-record.json): absent target, locked offline release
+  wheel build, then local wheel installation. Native extension SHA-256:
+  `{build['extension_sha256']}`.
+- Production source SHA-256: `{build['source_sha256']}`.
+  [Source manifest](source-manifest.json), [complete diff](candidate.diff.txt),
+  and [inspection](inspection.json) bind the exact committed code/tests/harness.
+  Evaluators, frozen workloads, dependencies and managed progress artifacts
+  were unchanged by the implementation.
+- [Installed-wheel verification](wheel-verifier.log) passed under `-I`.
+  Every timing report additionally checks all 59 installed package Python files
+  against the checkout and the extension against the fresh build record.
+- [CUDA regressions](cuda-regressions.log): 33 run, 30 passed, three device-mask
+  skips. Covers numerical and wide-K/overflow/nonfinite behavior, new data,
+  no-body/no-PyTorch execution from an isolated installed wheel, graph/native
+  guards, aliases, offsets/overlap, lifetimes and recovery.
+- [Separate GPUs 0,1](two-gpu.log): all three composed/compiled/eager matmul
+  restoration tests passed, including mixed-device rejection.
+- [Native bridge](rust-bridge.log) and [native matmul](rust-matmul.log): one and
+  two focused Rust tests passed. Unrelated author-validated full suites were
+  not repeated for this evidence-only step.
+- [Fixed CUDA math](fixed-math.json): all six unchanged cases at all three
+  prescribed seeds, 18/18 trials passed. [Fixed compiler corpus](frozen-compiler.log):
+  38/38 reference-eligible cases passed.
+- [Unchanged four-shape scoring](fixed-scoring.json): all four eligible;
+  capped score {audit['fixed_scoring']['coverage_adjusted_overall_percent']:.1f}%,
+  common-success ratio {audit['fixed_scoring']['common_success_geomean_speed_ratio']:.4f}x.
+  This remains a separate pre-existing private workload, not a score increase
+  attributed to the composed bridge.
+
+Local CPython 3.12.12, NumPy 2.5.1 and PyTorch 2.13.0+cu130 were reused from the
+locked worktree environment. H100, driver 580.82.07, GPU 0 except the separate
+two-GPU test. Native runtime and cuBLAS resolve from local nvidia/cu13 packages;
+the reports include loaded paths, hashes, runtime versions, PyTorch build and
+local Triton/PTX assembler identities. Rust 1.92.0, release, thin LTO, one codegen
+unit, extension-module/abi3-py310. Native matmul uses cuBLAS and pointwise kernels
+use driver-JIT PTX; nvcc 12.6.85 is recorded but unused for these operations.
+The separate fixed scoring lane uses its existing nvcc-built private kernels.
+
+The build target and capture temporary/CUDA/Triton/Inductor caches were new;
+local Cargo downloads and Python packages were reused. CUDA driver caches were
+warmed by the preceding correctness checks. Timing orders/cells/runs share their
+new diagnostic compiler caches. Scoring used separate initially empty
+Triton/Inductor caches and reused both unchanged native private-kernel libraries.
+Their source checksums and actual binary hashes were verified and retained in
+`verification.json`, alongside the scoring tool's reuse records. Baseline cache states and first-call costs
+remain pinned to their original reports; they were not rewritten.
+
+## Receipts and reproduction
+
+[Commands](commands.json) record actual argv, timestamps, exit status, clean
+status before/after, source identities, environment and log hashes.
+[Build commands](build/commands.json) record compiler and installer details.
+[Capture completion](capture-complete.json) confirms unchanged sources.
+[Copied-artifact hashes](artifact-hashes.json) bind publication bytes to the
+original local captures. Orchestration and read-only audit source snapshots
+are under `command-sources/`; the workload and build tools are unchanged files
+from the measured commit.
+
+The preserved [baseline profile](baseline/baseline-profile-retry.log) identified
+per-node bridge and metadata overhead before implementation. Its temporary
+script-name collision and retry remain recorded in `baseline/baseline-profile*`;
+this historical profiling does not supply candidate timing credit. The source
+`baseline/command-sources/profile_graph.py.txt` declared held-out seeds before
+baseline measurements; `baseline/held-outs.json` was materialized later.
+
+Reproduce using the [canonical capture procedure](../../../compile-cuda-matmul.md#reproduction-and-delivery)
+and these actual command receipts, with new output/cache directories and a clean
+checkout. No `--allow-dirty` option was used for this candidate capture. Final
+independent exact-head review, all ten non-regressing gates and exact-head CI
+remain Burner-owned prerequisites for managed merge.
+'''
+(DEST/'README.md').write_text(text)
+(DEST/'artifact-hashes.json').write_text(json.dumps(index,indent=2)+'\n')
+canonical=ROOT/'docs/compile-cuda-matmul.md'
+s=canonical.read_text().replace('This reduces Python/PyO3 execution overhead without kernel fusion,', 'This moves node dispatch and intermediate metadata checks into Rust, without kernel fusion,')
+s=s.replace('After Burner commits the implementation, repeat the clean-build procedure\nabove before publishing new commit-bound evidence. Independent review, all ten\nnon-regressing gates and exact-head CI remain required for managed merge.', '[Clean-commit bridge evidence](diagnostics/compile-cuda-graph/postcommit-786c1b2/README.md)\nrecords the unchanged primary/repeat and held-out comparisons, fresh wheel,\nregressions, provenance and unfiltered timings from implementation `786c1b2`.\nThose clean runs do not establish a repeatable native latency gain.\nIndependent review, all ten non-regressing gates and exact-head CI remain\nrequired for managed merge.')
+canonical.write_text(s)
+print(DEST)
+print('Copied',len(index),'artifacts without modifying provenance.')

@@ -1,0 +1,23 @@
+import cProfile, json, pathlib, pstats, sys
+sys.path.insert(0, str(pathlib.Path.cwd()/'scripts'))
+import diagnose_compile_cuda_matmul as diagnostic
+import torch, torch_rs as native
+seed = 798431
+held_out_seeds = [481723, 926051]
+# Declared before candidate measurement. Primary matrix remains unchanged.
+pathlib.Path('target/graph-plan/held-outs.json').write_text(json.dumps({'seeds':held_out_seeds,'cells':{str(s):diagnostic.cells(s) for s in held_out_seeds}},indent=2))
+torch.set_num_threads(1)
+for kind in ('matmul','composed'):
+    a=native.ones((64,64)).to('cuda:0'); b=native.ones((64,64)).to('cuda:0'); bias=native.ones((64,)).to('cuda:0')
+    fn=native.compile(diagnostic.program(native,bias,kind=='composed'),backend='eager',fullgraph=True,dynamic=False)
+    for _ in range(20): fn(a,b)
+    profile=cProfile.Profile()
+    profile.enable()
+    for _ in range(200):
+        result=fn(a,b)
+        torch.cuda.synchronize()
+    profile.disable()
+    assert result.cpu().tolist()
+    profile.dump_stats('target/graph-plan/'+kind+'.prof')
+    print(kind)
+    pstats.Stats(profile).strip_dirs().sort_stats('cumulative').print_stats(35)

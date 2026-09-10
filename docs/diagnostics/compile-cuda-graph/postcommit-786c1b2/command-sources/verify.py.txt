@@ -1,0 +1,118 @@
+"""Read-only evidence accounting/provenance audit, not a workload/evaluator."""
+import hashlib, io, json, math, pathlib, statistics, subprocess, sys, tarfile, zipfile
+ROOT=pathlib.Path.cwd().resolve(); OUT=ROOT/'target/graph-plan-postcommit-786c1b2'; OLD=ROOT/'target/graph-plan'
+sys.path.insert(0,str(ROOT/'scripts'))
+from diagnose_compile_cuda_matmul import cells, aggregate
+from evaluate_cuda_math import source_provenance, sha256, corpus, account
+COMMIT='786c1b2e18ca83ecbe6e09606d33309d00187b2f';BASE='fbb0aa0f5ad37fc0b868d0d153fb90aeeb41b6f3'
+def git(*args): return subprocess.check_output(['git',*args])
+def source_manifest(commit, *paths):
+    archive=git('archive','--format=tar',commit,*paths)
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+        return {m.name:hashlib.sha256(tar.extractfile(m).read()).hexdigest() for m in tar.getmembers() if m.isfile()}
+def code_identity(commit):
+    manifest=source_manifest(commit,'src','python','Cargo.toml','Cargo.lock','pyproject.toml','rust-toolchain.toml')
+    return hashlib.sha256(json.dumps(manifest,sort_keys=True).encode()).hexdigest()
+def native_build(path,commit):
+    record=json.loads(path.read_text())
+    assert record['commit']==commit and record['clean_checkout'] and not record['git_status_before_build']
+    assert record['source_sha256']==code_identity(commit)
+    assert record['production_diff_sha256']==hashlib.sha256(b'').hexdigest()
+    assert pathlib.Path(record['interpreter_path']).resolve().is_relative_to(ROOT)
+    assert sha256(record['interpreter_path'])==record['interpreter_sha256']
+    assert sha256(record['rustc_path'])==record['rustc_sha256']
+    wheel=pathlib.Path(record['wheel_path']).resolve()
+    assert wheel.is_relative_to(ROOT) and sha256(wheel)==record['wheel_sha256']
+    with zipfile.ZipFile(wheel) as z:
+        native=[n for n in z.namelist() if n.endswith('.so')];assert len(native)==1
+        assert hashlib.sha256(z.read(native[0])).hexdigest()==record['extension_sha256']
+        sources=source_manifest(commit,'python')
+        for path,digest in sources.items():
+            if path.endswith('.py'):
+                assert hashlib.sha256(z.read(path.removeprefix('python/'))).hexdigest()==digest
+    for cmd in record['commands']:
+        assert cmd['exit_status']==0 and sha256(cmd['log'])==cmd['log_sha256']
+    return record
+before_build=native_build(OLD/'baseline-build/build-record.json',BASE)
+after_build=native_build(OUT/'build-capture/build-record.json',COMMIT)
+assert sha256(after_build['extension_path'])==after_build['extension_sha256']
+assert source_provenance()['source_sha256']==after_build['source_sha256']
+all_count=0; pairs=[]
+for suffix,seed in [('primary',798431),('primary-repeat',798431),('held-481723',481723),('held-926051',926051)]:
+    rows=[]; reports=[]
+    for path,build in [(OLD/('baseline-'+suffix+'.json'),before_build),(OUT/(suffix+'.json'),after_build)]:
+        report=json.loads(path.read_text()); assert report['seed']==seed
+        assert report['source']==report['source_after']
+        for key in ('commit','source_sha256','production_diff_sha256'):assert report['source'][key]==build[key]
+        assert not report['git_status'] and report['measurement_kind']=='clean-commit'
+        assert report['harness_sha256']==sha256(ROOT/'scripts/diagnose_compile_cuda_matmul.py')
+        assert report['build_record']['record']==build
+        assert len(report['cases'])==12
+        import numpy as np
+        rng=np.random.default_rng(seed)
+        count=0
+        for expected,cell in zip(cells(seed),report['cases']):
+            for key in ('shape_mkn','offset','program'):assert list(expected[key])==list(cell[key]) if key=='shape_mkn' else expected[key]==cell[key]
+            m,k,n=cell['shape_mkn'];offset=cell['offset']
+            vals=[rng.normal(size=offset+size).astype(np.float32) for size in (m*k,k*n)]
+            rng.normal(size=n).astype(np.float32)
+            if 'input_hashes' in cell:
+                assert [hashlib.sha256(v.tobytes()).hexdigest() for v in vals]==cell['input_hashes']
+            # Retain failures as zero; never select only the successful cells.
+            if cell['status']!='passed':
+                assert cell['capped_parity']==0
+                continue
+            samples={'native':[],'pytorch':[]}
+            assert [entry['order'] for entry in cell['orders']]==report['policy']['orders']
+            for entry in cell['orders']:
+                for key,sample in entry['samples'].items():
+                    calls=sample['calls_us'];blocks=sample['samples_us']
+                    assert len(calls)==sample['checked_calls']==155 and len(blocks)==31
+                    for i,block in enumerate(blocks):assert math.isclose(sum(calls[5*i:5*i+5])/5,block,rel_tol=1e-12)
+                    assert statistics.median(blocks)==sample['median_us']
+                    samples[key]+=blocks;count+=len(calls)
+            for key,values in samples.items():assert statistics.median(values)==cell['timings'][key]['median_us']
+            assert math.isclose(cell['capped_parity'],min(1.,statistics.median(samples['pytorch'])/statistics.median(samples['native'])),rel_tol=1e-12)
+        assert math.isclose(aggregate(report['cases']),report['capped_geometric_parity'],rel_tol=1e-12)
+        if report['status']=='passed':assert count==7440 and all(c['status']=='passed' for c in report['cases'])
+        for library in report['loaded_cuda_libraries']:
+            p=pathlib.Path(library['path']).resolve();assert p.is_relative_to(ROOT) and sha256(p)==library['sha256']
+        ptxas=report['reference_triton_compiler'];assert sha256(ptxas['ptxas_path'])==ptxas['ptxas_sha256']
+        for name,path in report['imports'].items():assert pathlib.Path(path).resolve().is_relative_to(ROOT/'.venv')
+        expected_manifest={p:d for p,d in source_manifest(build['commit'],'python').items() if p.endswith('.py')}
+        assert report['installed_source_manifest']==expected_manifest
+        reports.append(report);all_count+=count
+    before,after=reports
+    assert before['policy']==after['policy']
+    for b,a in zip(before['cases'],after['cases']):
+        assert b['input_hashes']==a['input_hashes']
+        item={k:a[k] for k in ('shape_mkn','program','offset','status','capped_parity')}
+        item.update(baseline_capped_parity=b['capped_parity'],baseline_first_call_ms=[e['first_call_ms'] for e in b['orders']],candidate_first_call_ms=[e['first_call_ms'] for e in a['orders']],orders=[dict(order=x['order'],baseline_medians_us={k:v['median_us'] for k,v in x['samples'].items()},candidate_medians_us={k:v['median_us'] for k,v in y['samples'].items()}) for x,y in zip(b['orders'],a['orders'])])
+        if b['status']==a['status']=='passed':
+            item.update(native_speedup=b['timings']['native']['median_us']/a['timings']['native']['median_us'],reference_latency_ratio=a['timings']['pytorch']['median_us']/b['timings']['pytorch']['median_us'],baseline_native_us=b['timings']['native']['median_us'],candidate_native_us=a['timings']['native']['median_us'])
+        rows.append(item)
+    def ratio(kind=None):
+        selected=[r for r in rows if kind is None or r['program']==kind]
+        return math.exp(statistics.mean(math.log(r['native_speedup']) for r in selected)) if all('native_speedup' in r for r in selected) else 0.
+    pairs.append(dict(name=suffix,seed=seed,baseline_file=str(OLD/('baseline-'+suffix+'.json')),candidate_file=str(OUT/(suffix+'.json')),baseline_parity=before['capped_geometric_parity'],candidate_parity=after['capped_geometric_parity'],all_native_speedup=ratio(),composed_native_speedup=ratio('composed'),cells=rows))
+for command in json.loads((OUT/'commands.json').read_text()):
+    assert command['exit_status']==0 and not command['status_before'] and not command['status_after']
+    assert command['source_before']==command['source_after']==source_provenance()
+    assert sha256(command['log'])==command['log_sha256']
+math_report=json.loads((OUT/'fixed-math.json').read_text())
+assert account(corpus(),math_report['seeds'],math_report['trials'],after_build,source_provenance())==math_report['accounting']
+scoring_report=json.loads((OUT/'fixed-scoring.json').read_text())
+scoring=scoring_report['aggregates']
+scoring_artifacts={}
+def inspect_builds(value):
+    if isinstance(value,dict):
+        if value.get('source_path') and value.get('library_path') and value.get('source_checksum'):
+            source=pathlib.Path(value['source_path']).resolve();library=pathlib.Path(value['library_path']).resolve()
+            assert source.is_relative_to(ROOT) and library.is_relative_to(ROOT)
+            assert hashlib.blake2b(source.read_bytes(),digest_size=16).hexdigest()==value['source_checksum']
+            scoring_artifacts[str(library)]=dict(sha256=sha256(library),source_path=str(source),source_sha256=sha256(source),reused=value.get('reused'))
+        for item in value.values():inspect_builds(item)
+    elif isinstance(value,list):
+        for item in value:inspect_builds(item)
+inspect_builds(scoring_report)
+print(json.dumps(dict(commit=COMMIT,baseline_commit=BASE,verified_individual_calls=all_count,baseline_build=before_build['extension_sha256'],candidate_build=after_build['extension_sha256'],pairs=pairs,fixed_math=math_report['accounting'],fixed_scoring=scoring,fixed_scoring_artifacts=scoring_artifacts,source_and_receipt_checks='passed'),indent=2))
