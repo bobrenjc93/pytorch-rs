@@ -1,0 +1,396 @@
+[
+  {
+    "side": "baseline",
+    "cells": [
+      {
+        "cell": 0,
+        "profiled_elapsed_s": 0.038643889,
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 1,
+        "profiled_elapsed_s": 0.09961618200000001,
+        "_lowerable_bytecode_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.016745709
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.010337536000000001
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.003112183
+        }
+      },
+      {
+        "cell": 2,
+        "profiled_elapsed_s": 0.037180783,
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 3,
+        "profiled_elapsed_s": 0.10102294099999999,
+        "_lowerable_bytecode_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.017132908000000002
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.010504911
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.003253344
+        }
+      },
+      {
+        "cell": 4,
+        "profiled_elapsed_s": 0.04020507600000001,
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 5,
+        "profiled_elapsed_s": 0.10324448799999995,
+        "_lowerable_bytecode_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.016914386
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.010327251
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.0031778120000000003
+        }
+      },
+      {
+        "cell": 6,
+        "profiled_elapsed_s": 0.04035774299999999,
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 7,
+        "profiled_elapsed_s": 0.10092308000000003,
+        "_lowerable_bytecode_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.016689226
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.010382202
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.003167225
+        }
+      },
+      {
+        "cell": 8,
+        "profiled_elapsed_s": 0.04025486800000002,
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 9,
+        "profiled_elapsed_s": 0.10488750000000004,
+        "_lowerable_bytecode_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.017029081
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.010436131000000001
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.0031612460000000004
+        }
+      },
+      {
+        "cell": 10,
+        "profiled_elapsed_s": 0.039543028,
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 11,
+        "profiled_elapsed_s": 0.10370445400000003,
+        "_lowerable_bytecode_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.016939866
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.010430697000000001
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.0031958560000000004
+        }
+      }
+    ]
+  },
+  {
+    "side": "candidate",
+    "cells": [
+      {
+        "cell": 0,
+        "profiled_elapsed_s": 0.038569239000000005,
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 1,
+        "profiled_elapsed_s": 0.06820204500000002,
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.0027859250000000003
+        }
+      },
+      {
+        "cell": 2,
+        "profiled_elapsed_s": 0.03739927800000002,
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 3,
+        "profiled_elapsed_s": 0.06883078399999999,
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.002755949
+        }
+      },
+      {
+        "cell": 4,
+        "profiled_elapsed_s": 0.04029084400000001,
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 5,
+        "profiled_elapsed_s": 0.07324967499999999,
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.002866144
+        }
+      },
+      {
+        "cell": 6,
+        "profiled_elapsed_s": 0.038955949999999996,
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 7,
+        "profiled_elapsed_s": 0.07130413600000002,
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.0028491320000000003
+        }
+      },
+      {
+        "cell": 8,
+        "profiled_elapsed_s": 0.04166964799999999,
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 9,
+        "profiled_elapsed_s": 0.07478170799999997,
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.0028362300000000003
+        }
+      },
+      {
+        "cell": 10,
+        "profiled_elapsed_s": 0.04022624399999999,
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 11,
+        "profiled_elapsed_s": 0.07306401900000002,
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.002841857
+        }
+      }
+    ]
+  }
+]

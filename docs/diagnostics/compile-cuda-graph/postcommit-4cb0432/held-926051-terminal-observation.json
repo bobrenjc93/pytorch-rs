@@ -1,0 +1,9 @@
+{
+  "provenance": "Verbatim stdout from the agent tool call during held-926051; that call did not persist a per-command UTC timestamp. The subsequent held-926051-contention.json queries had empty process lists.",
+  "command": [
+    "nvidia-smi",
+    "--query-compute-apps=gpu_uuid,pid,process_name,used_memory",
+    "--format=csv"
+  ],
+  "stdout": "gpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 553940, /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/bin/python, 896 MiB\nGPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 553902, /data/users/njriasan/fbsource/buck-out/v2/art/fbcode/c8deebed89b5c0eb/deeplearning/fbgemm/fbgemm_gpu/experimental/gemm/test/__fp8_gemm_test__/fp8_gemm_test#link-tree/runtime/bin/fp8_gemm_test#native-main#platform-runtime#python#py_version_3_12, 874 MiB\n"
+}

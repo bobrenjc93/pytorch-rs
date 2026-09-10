@@ -1,0 +1,5 @@
+source target/static-analysis/env.sh
+export CUDA_CACHE_PATH="$PWD/target/static-analysis/candidate/cuda"
+export TRITON_CACHE_DIR="$PWD/target/static-analysis/candidate/triton"
+export TORCHINDUCTOR_CACHE_DIR="$PWD/target/static-analysis/candidate/inductor"
+export XDG_CACHE_HOME="$PWD/target/static-analysis/candidate/cache"

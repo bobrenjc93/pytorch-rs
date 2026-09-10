@@ -1,0 +1,146 @@
+[
+  {
+    "cell": 0,
+    "total_s": 0.038643889,
+    "_global_cache_dependencies": {
+      "calls": 200,
+      "cumulative_s": 2.4881e-05
+    }
+  },
+  {
+    "cell": 1,
+    "total_s": 0.09961618200000001,
+    "_lowerable_bytecode_instructions": {
+      "calls": 200,
+      "cumulative_s": 0.016745709
+    },
+    "_global_cache_dependencies": {
+      "calls": 200,
+      "cumulative_s": 0.030910647000000003
+    },
+    "_global_load_dependencies_from_instructions": {
+      "calls": 200,
+      "cumulative_s": 0.010337536000000001
+    }
+  },
+  {
+    "cell": 2,
+    "total_s": 0.037180783,
+    "_global_cache_dependencies": {
+      "calls": 200,
+      "cumulative_s": 2.4953000000000003e-05
+    }
+  },
+  {
+    "cell": 3,
+    "total_s": 0.10102294099999999,
+    "_lowerable_bytecode_instructions": {
+      "calls": 200,
+      "cumulative_s": 0.017132908000000002
+    },
+    "_global_cache_dependencies": {
+      "calls": 200,
+      "cumulative_s": 0.031613656000000004
+    },
+    "_global_load_dependencies_from_instructions": {
+      "calls": 200,
+      "cumulative_s": 0.010504911
+    }
+  },
+  {
+    "cell": 4,
+    "total_s": 0.04020507600000001,
+    "_global_cache_dependencies": {
+      "calls": 200,
+      "cumulative_s": 2.4513e-05
+    }
+  },
+  {
+    "cell": 5,
+    "total_s": 0.10324448799999995,
+    "_lowerable_bytecode_instructions": {
+      "calls": 200,
+      "cumulative_s": 0.016914386
+    },
+    "_global_cache_dependencies": {
+      "calls": 200,
+      "cumulative_s": 0.031184218000000003
+    },
+    "_global_load_dependencies_from_instructions": {
+      "calls": 200,
+      "cumulative_s": 0.010327251
+    }
+  },
+  {
+    "cell": 6,
+    "total_s": 0.04035774299999999,
+    "_global_cache_dependencies": {
+      "calls": 200,
+      "cumulative_s": 2.5532000000000002e-05
+    }
+  },
+  {
+    "cell": 7,
+    "total_s": 0.10092308000000003,
+    "_lowerable_bytecode_instructions": {
+      "calls": 200,
+      "cumulative_s": 0.016689226
+    },
+    "_global_cache_dependencies": {
+      "calls": 200,
+      "cumulative_s": 0.030965016
+    },
+    "_global_load_dependencies_from_instructions": {
+      "calls": 200,
+      "cumulative_s": 0.010382202
+    }
+  },
+  {
+    "cell": 8,
+    "total_s": 0.04025486800000002,
+    "_global_cache_dependencies": {
+      "calls": 200,
+      "cumulative_s": 2.4786000000000003e-05
+    }
+  },
+  {
+    "cell": 9,
+    "total_s": 0.10488750000000004,
+    "_lowerable_bytecode_instructions": {
+      "calls": 200,
+      "cumulative_s": 0.017029081
+    },
+    "_global_cache_dependencies": {
+      "calls": 200,
+      "cumulative_s": 0.031381556000000005
+    },
+    "_global_load_dependencies_from_instructions": {
+      "calls": 200,
+      "cumulative_s": 0.010436131000000001
+    }
+  },
+  {
+    "cell": 10,
+    "total_s": 0.039543028,
+    "_global_cache_dependencies": {
+      "calls": 200,
+      "cumulative_s": 2.5872000000000002e-05
+    }
+  },
+  {
+    "cell": 11,
+    "total_s": 0.10370445400000003,
+    "_lowerable_bytecode_instructions": {
+      "calls": 200,
+      "cumulative_s": 0.016939866
+    },
+    "_global_cache_dependencies": {
+      "calls": 200,
+      "cumulative_s": 0.031312069000000005
+    },
+    "_global_load_dependencies_from_instructions": {
+      "calls": 200,
+      "cumulative_s": 0.010430697000000001
+    }
+  }
+]

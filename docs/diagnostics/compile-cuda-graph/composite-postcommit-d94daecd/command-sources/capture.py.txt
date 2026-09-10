@@ -1,0 +1,67 @@
+"""Evidence orchestration only: invoke unchanged committed build/measurement tools."""
+import datetime,hashlib,json,os,pathlib,subprocess,sys,time
+ROOT=pathlib.Path.cwd();OUT=ROOT/'target/composite-postcommit-d94daecd'
+BASE=OUT/'baseline';COMMIT='d94daecdd9c086ac23afe690a52df11cbaca4f8a';BASE_COMMIT='b7936239ceb7d7713a15ecd8a2c82c4bddd6d214'
+def stamp():return datetime.datetime.now(datetime.timezone.utc).isoformat()
+def sha(p):return hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()
+def git(root,*args):return subprocess.check_output(['git',*args],cwd=root,text=True)
+def save(p,v):p.write_text(json.dumps(v,indent=2)+'\n')
+def inventory():
+ result={'at':stamp()}
+ for name,cmd in [('gpu',['nvidia-smi','--query-gpu=index,name,uuid,memory.used,utilization.gpu','--format=csv']),('processes',['nvidia-smi','--query-compute-apps=gpu_uuid,pid,process_name,used_memory','--format=csv'])]:
+  r=subprocess.run(cmd,capture_output=True,text=True);result[name]={'stdout':r.stdout,'stderr':r.stderr,'returncode':r.returncode}
+ return result
+def env_for(root):
+ env=dict(os.environ);local=root/('target/local' if root==BASE else 'target/integration');out=root/'target/clean-d94daecd'
+ for key,suffix in [('UV_CACHE_DIR','uv-cache'),('UV_PYTHON_INSTALL_DIR','uv-python'),('UV_PYTHON_BIN_DIR','uv-python-bin'),('UV_TOOL_BIN_DIR','uv-tool-bin'),('UV_TOOL_DIR','uv-tools'),('CARGO_HOME','cargo')]:env[key]=str(local/suffix)
+ for key,suffix in [('TMPDIR','tmp'),('XDG_CACHE_HOME','cache'),('CUDA_CACHE_PATH','cuda'),('TRITON_CACHE_DIR','triton'),('TORCHINDUCTOR_CACHE_DIR','inductor'),('CARGO_TARGET_DIR','unused-rust')]:
+  path=out/suffix;path.mkdir(parents=True,exist_ok=True);env[key]=str(path)
+ env.update(UV_PROJECT_ENVIRONMENT=str(root/'.venv'),VIRTUAL_ENV=str(root/'.venv'),PYO3_PYTHON=str(root/'.venv/bin/python'),CUDA_VISIBLE_DEVICES='0',TORCH_RS_CUDART=str(root/'.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13'),TORCH_RS_CUBLAS=str(root/'.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcublas.so.13'))
+ for key in ['CONDA_PREFIX','PYTHONPATH']:env.pop(key,None)
+ return env,out
+commands=[]
+def run(root,name,command,overrides=None,required=True):
+ env,out=env_for(root);env.update(overrides or {})
+ expected=BASE_COMMIT if root==BASE else COMMIT
+ assert git(root,'rev-parse','HEAD').strip()==expected and not git(root,'status','--porcelain')
+ receipt=dict(command=command,cwd=str(root),started_at=stamp(),commit=expected,status_before=git(root,'status','--porcelain'),inventory_before=inventory(),environment={k:v for k,v in env.items() if k.startswith(('UV_','CUDA','TORCH','TRITON','CARGO','PYO3_','OMP_','MKL_','OPENBLAS_')) or k in ('TMPDIR','XDG_CACHE_HOME','VIRTUAL_ENV','RUSTUP_TOOLCHAIN')})
+ log=out/(name+'.log');tick=time.perf_counter()
+ with log.open('x') as stream:r=subprocess.run(command,cwd=root,env=env,stdout=stream,stderr=subprocess.STDOUT)
+ receipt.update(ended_at=stamp(),wall_seconds=time.perf_counter()-tick,exit_status=r.returncode,status_after=git(root,'status','--porcelain'),inventory_after=inventory(),log=str(log),log_sha256=sha(log))
+ save(out/(name+'.receipt.json'),receipt);commands.append(receipt);save(OUT/'commands.json',commands)
+ print(('baseline' if root==BASE else 'candidate'),name,r.returncode,flush=True)
+ assert not receipt['status_after']
+ if required:r.check_returncode()
+ return r.returncode
+# Every interpreter/dependency/cache path is inside the checkout being measured.
+base_python=BASE/'target/local/uv-python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12'
+run(BASE,'setup',['uv','sync','--locked','--no-install-project','--group','dev','--group','reference','--python',str(base_python)],{'UV_PYTHON_DOWNLOADS':'never','UV_LINK_MODE':'copy'})
+for root in [BASE,ROOT]:
+ env,out=env_for(root)
+ manifest={p:sha(root/p) for p in git(root,'ls-files','-z').split('\0') if p}
+ save(out/'source-manifest.json',manifest)
+ if root==ROOT:(out/'implementation.diff').write_text(git(root,'diff',BASE_COMMIT,COMMIT,'--','python','src','tests','docs/supported-surface.md','docs/composite-compile-tanh-integration.md'))
+ run(root,'fresh-build',[str(root/'.venv/bin/python'),'scripts/capture_depth_concat_build.py','--output',str(out/'build-capture')])
+ run(root,'wheel-verifier',[str(root/'.venv/bin/python'),'-I','.github/scripts/verify_native_extension.py'])
+# Compare before any timing; absolute install paths differ, content identities may not.
+b= json.loads((BASE/'target/clean-d94daecd/build-capture/build-record.json').read_text())
+a= json.loads((ROOT/'target/clean-d94daecd/build-capture/build-record.json').read_text())
+for key in ['python','interpreter_sha256','dependencies','rustc','cargo','rustc_sha256','uv_lock_sha256','profile']:
+ assert a[key]==b[key],key
+assert a['clean_checkout'] and b['clean_checkout']
+save(OUT/'paired-build-check.json',{key:a[key] for key in ['python','interpreter_sha256','dependencies','rustc','cargo','rustc_sha256','uv_lock_sha256','profile']})
+for root in [BASE,ROOT]:
+ env,out=env_for(root);py=str(root/'.venv/bin/python');diag={}
+ for key,suffix in [('CUDA_CACHE_PATH','diagnostic-cuda'),('TRITON_CACHE_DIR','diagnostic-triton'),('TORCHINDUCTOR_CACHE_DIR','diagnostic-inductor')]:
+  path=out/suffix;path.mkdir();diag[key]=str(path)
+ run(root,'profile',[py,str(OUT/'profile_graph.py'),str(out)],diag)
+ for name,seed in [('primary',798431),('held-481723',481723),('held-926051',926051),('primary-repeat',798431)]:
+  run(root,name,[py,'scripts/diagnose_compile_cuda_matmul.py','--build-record',str(out/'build-capture/build-record.json'),'--output',str(out/(name+'.json')),'--seed',str(seed)],diag,required=False)
+ assert all(sha(root/p)==h for p,h in json.loads((out/'source-manifest.json').read_text()).items())
+py=str(ROOT/'.venv/bin/python');out=ROOT/'target/clean-d94daecd'
+run(ROOT,'focused-regressions',[py,'-m','unittest','tests.test_compile_tanh_composition','tests.test_compile_static_analysis','tests.test_compile_cuda_graph'])
+run(ROOT,'two-gpu',[py,'-m','unittest','tests.test_compile_cuda_graph.CudaGraphDeviceTests','tests.test_compile_cuda_matmul.CompileCudaMatmulDeviceTests'],{'CUDA_VISIBLE_DEVICES':'0,1'})
+run(ROOT,'frozen-compiler',[py,'scripts/evaluate_torch_compile_coverage.py','--subset','full'],{'CUDA_VISIBLE_DEVICES':''})
+run(ROOT,'fixed-math',[py,'scripts/evaluate_cuda_math.py','--build-record',str(out/'build-capture/build-record.json'),'--output',str(out/'fixed-math.json'),'--seed','8503945240872567646','--seed','8613321571747136749','--seed','4480763905421893394'])
+run(ROOT,'fixed-scoring',[py,'scripts/benchmark_compile_cuda.py','--output',str(out/'fixed-scoring.json')])
+save(OUT/'capture-complete.json',dict(status='COMPLETE',candidate_commit=COMMIT,baseline_commit=BASE_COMMIT,ended_at=stamp(),commands=len(commands),all_reports_retained=True,clean_status=git(ROOT,'status','--porcelain')))

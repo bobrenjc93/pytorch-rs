@@ -1,0 +1,29 @@
+"""Verify completed captures and record read-only identity/accounting commands."""
+import datetime,hashlib,json,pathlib,subprocess,sys,time
+ROOT=pathlib.Path.cwd();OUT=ROOT/'target/composite-postcommit-d94daecd';BASE=OUT/'baseline'
+def read(p):return json.loads(p.read_text())
+def save(p,v):p.write_text(json.dumps(v,indent=2)+'\n')
+def stamp():return datetime.datetime.now(datetime.timezone.utc).isoformat()
+def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
+assert read(OUT/'capture-complete.json')['status']=='COMPLETE'
+receipts=[]
+def run(name,root,command,log,env=None):
+ before=subprocess.check_output(['git','status','--porcelain'],cwd=root,text=True);assert not before
+ receipt=dict(command=command,cwd=str(root),started_at=stamp(),status_before=before,kind='read-only post-capture verification')
+ tick=time.perf_counter()
+ with log.open('x') as stream:r=subprocess.run(command,cwd=root,env=env,stdout=stream,stderr=subprocess.STDOUT)
+ receipt.update(ended_at=stamp(),wall_seconds=time.perf_counter()-tick,exit_status=r.returncode,status_after=subprocess.check_output(['git','status','--porcelain'],cwd=root,text=True),log=str(log),log_sha256=sha(log))
+ save(log.with_suffix('.receipt.json'),receipt);receipts.append(receipt);save(OUT/'verification-commands.json',receipts);print(name,r.returncode,flush=True);r.check_returncode()
+for side,root in [('baseline',BASE),('candidate',ROOT)]:
+ # Imports are read-only; CUDA is not initialized by this hash collection.
+ import os
+ env=dict(os.environ);env.update(CUDA_VISIBLE_DEVICES='',PYTHONDONTWRITEBYTECODE='1')
+ run(side+'-reference-identities',root,[str(root/'.venv/bin/python'),str(OUT/'reference_identities.py')],root/'target/clean-d94daecd/reference-identities.json',env)
+b=read(BASE/'target/clean-d94daecd/reference-identities.json');a=read(ROOT/'target/clean-d94daecd/reference-identities.json')
+for key in ['python','torch','torch_cuda','torch_build','numpy','triton']:assert a[key]==b[key]
+identity=lambda report:sorted((p['name'],p['size'],p['sha256']) for p in report['files'])
+assert identity(a)==identity(b)
+save(OUT/'paired-reference-check.json',dict(equal=True,baseline=str(BASE/'target/clean-d94daecd/reference-identities.json'),candidate=str(ROOT/'target/clean-d94daecd/reference-identities.json'),files=identity(a)))
+run('view-regression',ROOT,[str(ROOT/'.venv/bin/python'),'-m','unittest','tests.test_tanh.TensorTanhTests.test_tracked_views_remain_rejected_after_disabling_base_gradients'],ROOT/'target/clean-d94daecd/view-regression.log',dict(os.environ,CUDA_VISIBLE_DEVICES=''))
+run('compare',ROOT,[str(ROOT/'.venv/bin/python'),str(OUT/'compare.py')],OUT/'comparison.log')
+run('verify',ROOT,[str(ROOT/'.venv/bin/python'),str(OUT/'verify.py')],OUT/'verification.log')

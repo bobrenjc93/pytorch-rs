@@ -1,0 +1,3 @@
+Using CPython 3.14.7
+Creating virtual environment at: target/static-analysis/venv314
+Activate with: source target/static-analysis/venv314/bin/activate

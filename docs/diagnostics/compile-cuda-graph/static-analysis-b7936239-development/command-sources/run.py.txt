@@ -1,0 +1,31 @@
+"""Local receipt wrapper; invokes existing tools without changing their policy."""
+import datetime, hashlib, json, os, pathlib, subprocess, sys, time
+ROOT = pathlib.Path.cwd()
+sys.path.insert(0, str(ROOT / 'scripts'))
+from evaluate_cuda_math import source_provenance, sha256
+
+def stamp():
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+def git(*args):
+    return subprocess.check_output(['git', *args], text=True)
+def inventory():
+    return {query: subprocess.run(command, capture_output=True, text=True).__dict__ for query,command in (
+        ('gpu', ['nvidia-smi', '--query-gpu=index,name,uuid,memory.used,utilization.gpu', '--format=csv']),
+        ('processes', ['nvidia-smi', '--query-compute-apps=gpu_uuid,pid,process_name,used_memory', '--format=csv']))}
+
+if __name__ == '__main__':
+    name, *command = sys.argv[1:]
+    output = ROOT / 'target/static-analysis' / name
+    output.parent.mkdir(parents=True, exist_ok=True)
+    receipt = dict(command=command, cwd=str(ROOT), started_at=stamp(), source_before=source_provenance(),
+                   status_before=git('status','--porcelain'), inventory_before=inventory(),
+                   environment={k:v for k,v in os.environ.items() if k.startswith(('UV_','CUDA','TORCH','TRITON','CARGO','PYO3_','OMP_','MKL_','OPENBLAS_')) or k in ('TMPDIR','XDG_CACHE_HOME','VIRTUAL_ENV','RUSTUP_TOOLCHAIN')})
+    tick = time.perf_counter()
+    with output.with_suffix('.log').open('x') as stream:
+        result = subprocess.run(command, stdout=stream, stderr=subprocess.STDOUT)
+    receipt.update(ended_at=stamp(), wall_seconds=time.perf_counter()-tick, exit_status=result.returncode,
+                   source_after=source_provenance(), status_after=git('status','--porcelain'),
+                   inventory_after=inventory(), log_sha256=sha256(output.with_suffix('.log')))
+    output.with_suffix('.receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
+    print(name, result.returncode, flush=True)
+    sys.exit(result.returncode)

@@ -1,0 +1,206 @@
+"""Copy verified evidence only; do not change sources or historical publications."""
+import csv,datetime,hashlib,io,json,pathlib,re,shutil,subprocess
+ROOT=pathlib.Path.cwd();OUT=ROOT/'target/composite-postcommit-d94daecd'
+PUB=ROOT/'docs/diagnostics/compile-cuda-graph/composite-postcommit-d94daecd'
+BASE=OUT/'baseline/target/clean-d94daecd';CAND=ROOT/'target/clean-d94daecd'
+def read(p):return json.loads(p.read_text())
+def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
+assert not subprocess.check_output(['git','status','--porcelain'],text=True)
+assert read(OUT/'capture-complete.json')['status']=='COMPLETE'
+verification=read(OUT/'verification.json');comparison=read(OUT/'comparison.json')
+assert verification['raw_calls_verified']==comparison['raw_calls_verified']
+for path,digest in read(OUT/'historical-publication-manifest.json').items():assert sha(ROOT/path)==digest
+PUB.mkdir(parents=True,exist_ok=False);hashes={}
+def copy(src,dst):
+ target=PUB/dst;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(src,target);assert sha(src)==sha(target);hashes[str(dst)]=sha(target)
+for side,folder in [('baseline',BASE),('candidate',CAND)]:
+ for path in sorted(folder.iterdir()):
+  if path.is_file():copy(path,pathlib.Path(side)/path.name)
+ for path in sorted((folder/'build-capture').iterdir()):
+  if path.is_file():copy(path,pathlib.Path(side)/'build-capture'/path.name)
+for path in sorted(OUT.iterdir()):
+ if path.is_file() and path.name!='worker-inventory.txt':
+  dst=pathlib.Path('command-sources')/(path.name+'.txt') if path.suffix=='.py' else pathlib.Path(path.name)
+  copy(path,dst)
+# Keep actual command-output inventories unchanged and additionally index nonempty snapshots.
+observations=[]
+for receipt in read(OUT/'commands.json'):
+ for moment in ['before','after']:
+  snapshot=receipt['inventory_'+moment];raw=snapshot['processes']['stdout']
+  rows=list(csv.reader(io.StringIO(raw)))
+  if len(rows)>1:observations.append(dict(command=receipt['command'],moment=moment,at=snapshot['at'],processes=rows[1:]))
+(PUB/'contention-observations.json').write_text(json.dumps(observations,indent=2)+'\n');hashes['contention-observations.json']=sha(PUB/'contention-observations.json')
+rows=[r for p in comparison['pairs'] for r in p['cells']]
+passed=sum(r['status']=='passed' for r in rows);baseline_passed=sum(r['baseline_status']=='passed' for r in rows)
+comparable=[r for r in rows if 'native_speedup' in r]
+regressions=sum(r['native_speedup']<1 for r in comparable)
+text=f'''# Clean composite evidence: immutable analysis and owned CPU tanh
+
+Measured composite implementation: **`d94daecdd9c086ac23afe690a52df11cbaca4f8a`**.
+Fresh actual-main baseline: **`b7936239ceb7d7713a15ecd8a2c82c4bddd6d214`**.
+Evidence-only publication commit: **pending Burner delivery**. No source,
+test, harness, dependency or scoring change is part of this publication.
+
+This new, declared **COMPLETE** series contains four fresh baseline and four
+fresh composite reports from clean checkouts inside this composite worktree.
+It completes the capture deferred by the [integration notes](../../../composite-compile-tanh-integration.md).
+Both sides used matching local CPython 3.12.14 interpreter bytes, installed
+PyTorch 2.13.0+cu130 and locked dependencies, Rust 1.92.0, CUDA libraries and
+unchanged diagnostic harness. Actual baseline paths are inside the nested
+`target/composite-postcommit-d94daecd/baseline` checkout; candidate paths are
+inside the enclosing composite. No old report was reused as the fresh baseline.
+
+The [declaration](declaration.json) fixes primary **798431**, held-outs
+**481723/926051**, and primary repeat **798431**, with baseline profiling and
+all four baseline runs preceding candidate profiling and its four runs.
+All 12 cells, both timing orders, individual calls, first calls, cache records
+and failures are retained. Correctness passed in **{baseline_passed}/48 baseline**
+and **{passed}/48 candidate** cells. [Accounting](comparison.json) verifies
+**{comparison['raw_calls_verified']:,} raw calls**, five-call block means, medians,
+fixed aggregation, matching inputs and the unchanged timing policy.
+
+## Paired latency and reference drift
+
+Geometric means across every cell; native speedup is baseline native latency
+/ candidate native latency. Reference drift is candidate PyTorch latency /
+baseline PyTorch latency, so values above one mean the reference slowed.
+
+| Run | Baseline native µs | Candidate native µs | Native speedup | Reference drift |
+| --- | ---: | ---: | ---: | ---: |
+'''
+for p in comparison['pairs']:
+ g=p['groups']['all'];text+=f"| {p['name']} | {g['baseline_native_us']:.2f} | {g['candidate_native_us']:.2f} | {g['native_speedup']:.4f}x | {g['reference_drift']:.4f}x |\n"
+text+='''
+The six composed cells, which exercise root global-load analysis reuse:
+
+| Run | Baseline native µs | Candidate native µs | Native speedup | Reference drift |
+| --- | ---: | ---: | ---: | ---: |
+'''
+for p in comparison['pairs']:
+ g=p['groups']['composed'];text+=f"| {p['name']} | {g['baseline_native_us']:.2f} | {g['candidate_native_us']:.2f} | {g['native_speedup']:.4f}x | {g['reference_drift']:.4f}x |\n"
+text+='''
+Capped diagnostic parity is reported separately; a higher cap can result from
+reference drift and does not establish native acceleration.
+
+| Run | Baseline cap | Candidate cap | Raw baseline | Raw candidate |
+| --- | ---: | ---: | --- | --- |
+'''
+for p in comparison['pairs']:
+ n=p['name'];text+=f"| {n} | {100*p['baseline_parity']:.4f}% | {100*p['candidate_parity']:.4f}% | [report](baseline/{n}.json) | [report](candidate/{n}.json) |\n"
+text+=f'''
+Aggregate native latency improved in all four paired runs in this capture.
+There are **{regressions} native regressions among {len(comparable)} comparable
+paired cells**. All slow cells remain included. Per-cell values, timing-order
+medians and first-call observations are in [comparison.json](comparison.json).
+The unmodified matmul-only group regressed in the second held-out and repeat;
+the six composed-cell aggregate improved in all four pairs.
+The measured ratios describe this capture only; no isolated performance
+nonregression, general compiler parity or performance milestone is claimed.
+
+## Contention, caches and mechanism
+
+Every build/measurement/check command has timestamped before/after GPU and process inventories in
+[commands.json](commands.json). The [admission observation](admission-observation.json)
+records the paused Burner process; the task reports other Burner work completed.
+No reservation API was available and no other user's process was interrupted.
+'''
+text+=(f"There were **{len(observations)} nonempty boundary process inventories**; see the\n[unaltered observations](contention-observations.json) and original receipts.\nExternal activity prevents isolated performance claims.\n" if observations else "All recorded boundary process inventories were empty. Empty snapshots do not\nprove exclusive GPU use between them.\n")
+text+='''
+Fresh empty Cargo targets were used for both release builds. Each side used
+separate initially empty diagnostic CUDA/Triton/Inductor caches. Profiling
+performed 20 warmups and 200 calls per cell before that side's timing series;
+caches then persisted across all four runs. First calls are fresh-wrapper and
+Dynamo-reset observations, not cold disk-cache comparisons. Setup reused the
+local locked download/registry caches, and copied the same CPython distribution
+into the baseline checkout. No Python shortcut or global configuration changed.
+
+The [24 raw profiles](profiles.json) confirm the mechanism on fresh actual main:
+each composed baseline cell repeats root lowering/static global-load analysis
+200 times; each candidate cell repeats it zero times, while **200 live global
+resolutions remain on both sides**. Profiled durations are not timing evidence.
+Immutable reuse does not cache live bindings or expand compiler support.
+
+## Verification and reproducibility
+
+[Verification](verification.json) checks complete committed source manifests,
+installed Python files, wheel/native hashes, interpreter/reference identities,
+loaded CUDA library hashes, private fixed-score kernels and command log hashes.
+The [paired reference check](paired-reference-check.json) additionally compares
+installed PyTorch and NumPy native-library bytes on both sides.
+The existing private-kernel source checksum is BLAKE2b-128; SHA-256 is recorded
+separately for the source and binary. Exact commands and timestamps are in the
+[receipts](commands.json), with their orchestration in [command-sources](command-sources/).
+
+- [Baseline build](baseline/build-capture/build-record.json) and
+  [candidate build](candidate/build-capture/build-record.json): fresh locked
+  offline release wheels, thin LTO, one codegen unit, extension-module/abi3-py310.
+- [Baseline manifest](baseline/source-manifest.json) and
+  [candidate manifest](candidate/source-manifest.json): every tracked file at
+  the respective measured revision, including tests and harnesses.
+- [Paired build check](paired-build-check.json): identical interpreter bytes,
+  dependency versions, lockfile, Rust compiler and release configuration.
+- [Candidate focused checks](candidate/focused-regressions.log): 18 tests run,
+  17 passed and one device-mask skip; compiler/tanh composition, static/live
+  guards and native CUDA whole-graph validation. The targeted persistent-view
+  [regression](candidate/view-regression.log) also passed.
+- [Two-GPU checks](candidate/two-gpu.log): composed graph and matmul device
+  restoration/mixed-device rejection: two passed, with only devices 0 and 1 visible.
+- [Frozen compiler corpus](candidate/frozen-compiler.log),
+  [fixed CUDA math](candidate/fixed-math.json) and the separate unchanged
+  [four-shape score](candidate/fixed-scoring.json) retain their own bounded
+  definitions: 38/38 compiler cases and 18/18 math trials passed; all four
+  fixed-score shapes were eligible. Their outcomes do not establish general
+  parity or a score gain.
+
+The timing harness and fixed math script kept physical `CUDA_VISIBLE_DEVICES=0`.
+The host is NVIDIA H100, driver 580.82.07. Both sides used local CUDA 13
+runtime/cuBLAS, recorded in every timing report. Native graph operations use
+cuBLAS and driver-JIT PTX; nvcc 12.6.85 is recorded but unused by those operations.
+The unchanged fixed-score private kernels use their recorded nvcc-built binaries.
+The actual PyTorch/Triton compiler paths, hashes and build configuration remain
+in the raw reports. All executable, installed-package, cache, build and output
+paths are inside this composite worktree except read-only system toolchain and
+driver identities.
+
+Reproduce each side from its clean committed checkout with a local canonical
+`.venv`, the recorded local environment, and a new output directory:
+
+```bash
+.venv/bin/python scripts/capture_depth_concat_build.py --output target/NEW/build-capture
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/diagnose_compile_cuda_matmul.py \\
+  --build-record target/NEW/build-capture/build-record.json \\
+  --output target/NEW/primary.json --seed 798431
+```
+
+Use the complete sequence in [capture.py](command-sources/capture.py.txt), not
+selected cells or replacement runs. Wheels and caches remain under `target`;
+all reports, logs, receipts, raw profiles and provenance manifests are published.
+
+## Historical evidence and remaining gates
+
+All **255 files** in the two included source publications remain byte-for-byte
+unchanged, as checked by the [historical manifest](historical-publication-manifest.json).
+The [source development series](../static-analysis-b7936239-development/README.md)
+and [source clean series](../postcommit-4cb0432/README.md) retain original source,
+build and path identities, failed attempts, contention inventories and the
+failed/corrected audit receipts. Their prior ratios (approximately 0.3346,
+0.6599, 0.0863 and 0.9167) remain historical potentially-contended observations;
+none supplies current-composite performance credit. No original result or
+publication was relabeled or edited.
+
+Native CUDA remains bounded `backend="eager"`. CPU tanh gradients are not CUDA
+autograd and provide no hardware-score credit. The four-shape and frozen 38-case
+corpora, weights, denominators and Burner-managed progress artifacts are unchanged.
+
+Burner owns the evidence-only publication commit. The measured implementation
+may precede that publication only while the intervening diff remains evidence
+and documentation. Any later implementation/test/harness change invalidates the
+affected captures. **Independent exact-head review, all ten current-definition
+nonregression gates and exact-head combined CI remain required before merge.**
+This evidence step does not approve the branch or authorize cleanup.
+'''
+(PUB/'README.md').write_text(text);hashes['README.md']=sha(PUB/'README.md')
+(PUB/'artifact-hashes.json').write_text(json.dumps(hashes,indent=2)+'\n')
+for path,digest in hashes.items():assert sha(PUB/path)==digest
+for path,digest in read(OUT/'historical-publication-manifest.json').items():assert sha(ROOT/path)==digest
+print(PUB);print(len(hashes),'published artifact hashes verified')

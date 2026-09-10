@@ -1,0 +1,11 @@
+test_cuda_live_scalars_bindings_captures_and_failure_recovery (tests.test_compile_static_analysis.StaticAnalysisCudaTests.test_cuda_live_scalars_bindings_captures_and_failure_recovery) ... ok
+test_code_replacement_reanalyzes_branches_and_inactive_globals (tests.test_compile_static_analysis.StaticAnalysisTests.test_code_replacement_reanalyzes_branches_and_inactive_globals) ... ok
+test_descriptor_does_not_retain_root_or_resolved_helpers (tests.test_compile_static_analysis.StaticAnalysisTests.test_descriptor_does_not_retain_root_or_resolved_helpers) ... ok
+test_only_root_analysis_is_reused_and_helper_guards_stay_live (tests.test_compile_static_analysis.StaticAnalysisTests.test_only_root_analysis_is_reused_and_helper_guards_stay_live) ... ok
+test_reused_analysis_preserves_cpu_limit_metadata_and_method_guards (tests.test_compile_static_analysis.StaticAnalysisTests.test_reused_analysis_preserves_cpu_limit_metadata_and_method_guards) ... ok
+test_warm_tensor_capture_reuses_analysis_but_resolves_every_call (tests.test_compile_static_analysis.StaticAnalysisTests.test_warm_tensor_capture_reuses_analysis_but_resolves_every_call) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.284s
+
+OK

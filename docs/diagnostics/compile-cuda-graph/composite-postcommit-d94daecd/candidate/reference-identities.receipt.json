@@ -1,0 +1,16 @@
+{
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/.venv/bin/python",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/reference_identities.py"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544",
+  "started_at": "2026-09-10T20:00:01.064519+00:00",
+  "status_before": "",
+  "kind": "read-only post-capture verification",
+  "ended_at": "2026-09-10T20:00:05.162533+00:00",
+  "wall_seconds": 4.098012312315404,
+  "exit_status": 0,
+  "status_after": "",
+  "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/clean-d94daecd/reference-identities.json",
+  "log_sha256": "3cf038c03194e340f814ec3c0f84f179ca38da8af51c910062fa08a54e0a83b4"
+}

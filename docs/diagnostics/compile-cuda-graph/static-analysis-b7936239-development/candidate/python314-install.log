@@ -1,0 +1,5 @@
+Downloading cpython-3.14.7-linux-x86_64-gnu (download) (34.3MiB)
+ Downloaded cpython-3.14.7-linux-x86_64-gnu (download)
+Installed Python 3.14.7 in 985ms
+ + cpython-3.14.7-linux-x86_64-gnu (python3.14)
+warning: `/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/uv-python-bin` is not on your PATH. To use installed Python executables, run `export PATH="/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/uv-python-bin:$PATH"` or `uv python update-shell`.

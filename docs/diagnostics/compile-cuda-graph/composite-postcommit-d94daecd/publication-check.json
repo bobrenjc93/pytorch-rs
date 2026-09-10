@@ -1,0 +1,62 @@
+{
+  "checked_at": "2026-09-10T20:02:03.808362+00:00",
+  "measured_commit": "d94daecdd9c086ac23afe690a52df11cbaca4f8a",
+  "publication_commit": null,
+  "publication_commit_note": "Pending Burner evidence-only delivery.",
+  "reports": [
+    {
+      "path": "baseline/primary.json",
+      "sha256": "e7aa8ad7b489d2e09be2eb0d50a3bcc276754cbec34a948a086555d3f43f1c43",
+      "commit": "b7936239ceb7d7713a15ecd8a2c82c4bddd6d214",
+      "passed_cells": 12
+    },
+    {
+      "path": "baseline/held-481723.json",
+      "sha256": "d29b447dd72a396cb7b7ecfe9b57c19897b0655d2991b2a7f137881f8c6c295c",
+      "commit": "b7936239ceb7d7713a15ecd8a2c82c4bddd6d214",
+      "passed_cells": 12
+    },
+    {
+      "path": "baseline/held-926051.json",
+      "sha256": "7a6601d1c5d6c7ee305d91cdd841682d82d79efe4f19f80f69a42b7aa4756f90",
+      "commit": "b7936239ceb7d7713a15ecd8a2c82c4bddd6d214",
+      "passed_cells": 12
+    },
+    {
+      "path": "baseline/primary-repeat.json",
+      "sha256": "cb82ad4b5872e580caad547dbbd8265b6f808f93b918cda579bf2abacfdd118a",
+      "commit": "b7936239ceb7d7713a15ecd8a2c82c4bddd6d214",
+      "passed_cells": 12
+    },
+    {
+      "path": "candidate/primary.json",
+      "sha256": "9c2d2e6103ff1152dccff6c9700d5793e662afb839acd1d464a4aadf034cdd64",
+      "commit": "d94daecdd9c086ac23afe690a52df11cbaca4f8a",
+      "passed_cells": 12
+    },
+    {
+      "path": "candidate/held-481723.json",
+      "sha256": "bae1ad98a995eab28fe0eb1f6fdfb81df94e302a3fa555ea1459310819458113",
+      "commit": "d94daecdd9c086ac23afe690a52df11cbaca4f8a",
+      "passed_cells": 12
+    },
+    {
+      "path": "candidate/held-926051.json",
+      "sha256": "31fe0c19a65b4a2c8c0e005cc2c6764cd5002bd4ed32e33b768717785761c5d6",
+      "commit": "d94daecdd9c086ac23afe690a52df11cbaca4f8a",
+      "passed_cells": 12
+    },
+    {
+      "path": "candidate/primary-repeat.json",
+      "sha256": "f12548a303d337805337a6fcf48e4c40a80871223ba84b3fc393d19c9c987896",
+      "commit": "d94daecdd9c086ac23afe690a52df11cbaca4f8a",
+      "passed_cells": 12
+    }
+  ],
+  "profiles": 24,
+  "all_new_paths_inside_publication": true,
+  "historical_files_unchanged": 255,
+  "foreign_worktree_paths": [],
+  "source_files_unchanged": true,
+  "readme_links_checked": 37
+}

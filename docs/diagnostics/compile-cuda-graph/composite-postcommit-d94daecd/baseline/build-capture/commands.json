@@ -1,0 +1,37 @@
+[
+  {
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/.venv/bin/maturin",
+      "build",
+      "--release",
+      "--locked",
+      "--offline",
+      "--out",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/target/clean-d94daecd/build-capture/wheels"
+    ],
+    "started_at": "2026-09-10T19:47:49.651109+00:00",
+    "ended_at": "2026-09-10T19:48:36.215744+00:00",
+    "wall_seconds": 46.5646447269246,
+    "exit_status": 0,
+    "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/target/clean-d94daecd/build-capture/build.log",
+    "log_sha256": "1c104cbbc5fa88e7e5d2cb98e6d703a0f47a6546e7671eab22e3ca9c704beb48"
+  },
+  {
+    "command": [
+      "uv",
+      "pip",
+      "install",
+      "--python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/.venv/bin/python",
+      "--force-reinstall",
+      "--no-deps",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/target/clean-d94daecd/build-capture/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl"
+    ],
+    "started_at": "2026-09-10T19:48:36.217171+00:00",
+    "ended_at": "2026-09-10T19:48:36.420755+00:00",
+    "wall_seconds": 0.20360175520181656,
+    "exit_status": 0,
+    "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/target/clean-d94daecd/build-capture/install.log",
+    "log_sha256": "4c8e10ef7b51e63f85f6d82bb1093919e2ea4f75fc54b16143c80b925fee309b"
+  }
+]

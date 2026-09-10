@@ -1,0 +1,1185 @@
+diff --git a/docs/composite-compile-tanh-integration.md b/docs/composite-compile-tanh-integration.md
+new file mode 100644
+index 0000000..f9acafa
+--- /dev/null
++++ b/docs/composite-compile-tanh-integration.md
+@@ -0,0 +1,128 @@
++# Immutable compiler analysis and owned CPU tanh integration
++
++The composite preserves the complete reviewed changes from compiler source
++`9e467a251ecf43ab38b01ff27253d3aa5b6d2ebf` and tanh source
++`03ef9ee74a81ae8a498b74762d8884cb0446c6d3`, based on main
++`b7936239ceb7d7713a15ecd8a2c82c4bddd6d214`. No additional production change was
++needed. The tanh persistent-view-marker repair and all its regressions remain
++intact, including empty views after clearing the base's gradient flag.
++
++[The integration tests](../tests/test_compile_tanh_composition.py) exercise
++eager tanh consuming owned CPU outputs of supported compiled negation and
++addition. They compare values, metadata and gradients with pinned PyTorch 2.13,
++using the existing per-operator tanh/tanhshrink tolerances and signed-zero
++checks. Coverage includes:
++
++- Scalar through rank-three outputs and empty dimensions; method, top-level,
++  functional tanh and the existing tanhshrink composition.
++- Changed values in input/capture allocations, shared operands and input/capture aliases,
++  weighted repeated output use, accumulated gradients, and graph release.
++- Input/capture gradient-flag transitions, capture rebinding, helper code and
++  callable replacement, root code replacement, inactive-branch globals, and
++  recovery after an invalid active capture.
++- Rejection of tanh inside the compiled grammar, and of rank-four nonleaf or
++  nonfinite compiled outputs by eager tanh, preserving usable parent graphs.
++
++Calls to compiled programs are instrumented to reject execution of their
++original Python bodies. Existing compiler tests retain the independent checks
++for native execution, callable/method guards, unsupported CPU scalar globals,
++cache limits, failure recovery, whole-CUDA-graph validation and device restoration.
++Sigmoid support is unchanged. Native CUDA compilation remains bounded
++`backend="eager"`; CPU tanh gradients do not implement accelerator autograd.
++
++## Source evidence preservation
++
++Every source-authored file changed by either included revision was compared
++byte-for-byte with that revision after integration: 257 compiler/publication
++files and nine tanh files. The development publication's 143 indexed artifact
++hashes and the postcommit publication's 110 indexed hashes were verified;
++the indexes themselves are also unchanged. The complete 2,923-file source
++manifest was checked against its measured implementation `4cb0432`.
++
++The [source development series](diagnostics/compile-cuda-graph/static-analysis-b7936239-development/README.md)
++and [source clean series](diagnostics/compile-cuda-graph/postcommit-4cb0432/README.md)
++retain their original identities, measurements, raw profiles, failures,
++corrected BLAKE2b-128 audit receipt and contention observations. They measure
++the source revisions identified in those publications, not this composite.
++Their original worktree paths are retained as historical provenance. The four
++source clean all-cell native ratios remain approximately 0.3346, 0.6599, 0.0863
++and 0.9167. Neither isolated performance nonregression nor repeatable speedup
++has been established. Reference drift and source scheduling credit provide no
++composite performance credit.
++
++## Validation and delivery boundary
++
++Local checks are development correctness checks, with logs, command receipts,
++before/after GPU inventories, environment setup and build products under
++`target/integration/`. They are not the final clean performance publication.
++The first test invocation preceded completion of the build; a later invocation
++exposed a replacement-helper fixture using an unsupported globals namespace.
++That fixture was corrected to use the root namespace. The first broad H100 run
++also correctly rejected an editable installation in the installed-wheel test.
++The release wheel was then installed and verified before rerunning the suite.
++The original failed logs remain in that local directory.
++
++A stronger capture-value fixture also exercised tanhshrink near zero. Applying
++tanh's relative tolerance to that subtraction failed by one float32 rounding
++step; the final test uses the established tanhshrink tolerance from its existing
++reference suite. Tanh retains its stricter existing tolerance. No pre-existing
++test or assertion was relaxed, and both exploratory failure logs are retained.
++
++Completed development checks on 2026-09-10:
++
++| Check | Result |
++| --- | --- |
++| Rust formatting | Passed |
++| Rust all targets, default features | 389 passed |
++| Rust all targets, Python bindings | 401 passed |
++| Clippy all targets, Python bindings, warnings denied | Passed |
++| Installed release wheel provenance | Passed |
++| Focused CPU/H100 compiler, tanh and sigmoid suites | 292 run, six hardware/device-mask skips, no failures |
++| Portable no-GPU focused suite, Python 3.12 | 226 run, 43 hardware skips, no failures |
++| Portable no-GPU focused suite, Python 3.14 | 226 run, 43 hardware skips, no failures |
++| Final integration test file after fixture refinements, each Python version | Four passed on each |
++| Separate two-GPU graph/matmul restoration and mixed-device checks | Two passed |
++| Unchanged frozen compiler evaluator | 38/38 eligible cases passed |
++
++The local interpreters were CPython 3.12.14 and 3.14.7 with pinned PyTorch
++2.13.0+cu130. The native release wheel used Rust 1.92.0, thin LTO, one codegen
++unit and `extension-module`/abi3-py310. H100 checks used GPU 0, with only GPUs
++0 and 1 exposed for the separate two-device check, driver 580.82.07 and the
++local CUDA 13 runtime/cuBLAS. The available nvcc was 12.6.85; these native graph
++operations use driver-JIT PTX/cuBLAS rather than nvcc compilation. Before/after
++inventories for the successful H100 and two-GPU runs were empty. This is not an
++isolation or timing claim.
++
++GitHub `test` and `Python 3.14 compatibility` jobs subsequently succeeded at
++both exact source heads listed above. These are source CI results, not
++exact-head combined CI for the final composite.
++
++Burner must commit the final implementation/tests before the required fresh
++empty-target builds and paired capture. Use unchanged actual main `b7936239`
++as baseline and the final committed composite as candidate, each rooted inside
++this worktree and using identical local CPython, PyTorch, libraries, toolchain
++and unchanged diagnostic harness. Declare the new series COMPLETE only after
++collecting four baseline and four candidate reports: all 12 cases, primary
++798431, held-outs 481723/926051, and primary repeat 798431, both timing orders,
++all raw/first calls, cache states and failures. Keep that series separate from
++the source publications.
++
++Admissions must remain paused and other Burner source/reviewer/evaluator work
++must finish before that capture. Keep physical `CUDA_VISIBLE_DEVICES=0` and
++the existing diagnostic/math guards unchanged; record before/after process
++inventories for every run, retain all cells, and disclose any foreign activity.
++Empty snapshots alone do not prove isolation. Withhold isolated performance
++claims if contention persists.
++
++Use the existing repository build/capture tools and publish complete tracked
++source/test/harness manifests, commands, cache records, build/wheel/native
++hashes, interpreter/reference/runtime/compiler identities and raw reports.
++Separate measured implementation and evidence-only publication commits; later
++implementation/test/harness edits invalidate affected clean captures. All UV
++caches and Python/tool executable links must remain worktree-local.
++
++Final delivery still requires independent exact-head review, all ten unchanged
++current-definition nonregression gates and successful exact-head combined CI.
++The frozen 38-case compiler corpus, four-shape CUDA corpus, scoring definitions
++and Burner-managed progress artifacts are unchanged. No score increase,
++hardware credit or performance milestone is claimed by this integration.
+diff --git a/docs/supported-surface.md b/docs/supported-surface.md
+index bac64b3..fba9622 100644
+--- a/docs/supported-surface.md
++++ b/docs/supported-surface.md
+@@ -1326,9 +1326,9 @@ sum-axis, and mean contracts describe CPU behavior.
+ 
+ `Tensor.sigmoid()` and top-level `torch.sigmoid(input, *, out=None)` share the unary-layout and `TorchFunctionMode` paths for CPU float32 tensors, including empty, offset, noncontiguous, and channel-last inputs. `torch.nn.functional.sigmoid(input)` delegates directly to `input.sigmoid()`, preserving receiver overrides, layout, fresh-storage behavior, mode dispatch, and the method's autograd boundary. `torch.nn.functional.silu(input, inplace=False)` is supported for exact native CPU float32 tensors through the existing sigmoid and multiplication paths, preserving PyTorch-compatible values, output layout metadata, fresh storage, first-order autograd for the same finite inputs accepted by that composition, public-function `TorchFunctionMode` dispatch, and ordinary function import/copy/pickle behavior. Finite constructor-owned CPU float32 leaves of every supported rank, including rank-6, high-rank singleton shapes, and empty dimensions, plus finite owned rank-0 through rank-3 non-leaves produced by supported autograd operations, support first-order eager autograd through a saved-output `SigmoidBackward0` node. Tracked views, rank-4-or-higher non-leaves, and non-finite tracked inputs remain explicitly unsupported. Detached tensors and calls under `torch.no_grad()` retain the broader inference path. Top-level calls accept PyTorch's legacy input aliases and `out=None`; concrete output tensors, higher-order gradients, `Tensor.silu`, `nn.Sigmoid`, `nn.SiLU`, and in-place sigmoid or SiLU remain unsupported.
+ 
+-`Tensor.tanh()`, `torch.tanh()`, and `torch.nn.functional.tanh(input)` share the native layout-preserving float32 CPU kernel. The functional form delegates directly to `input.tanh()`, so receiver overrides and `TensorBase.tanh` mode dispatch are preserved. Finite constructor-owned rank-0 through rank-4 CPU float32 leaves, including singleton and empty dimensions, support first-order eager autograd through a saved-output `TanhBackward0` node; tracked views, non-leaf inputs, rank-5-or-higher tracked leaves, and non-finite tracked inputs remain explicitly unsupported. Detached tensors and calls under `torch.no_grad()` retain the broader inference path. Top-level calls accept PyTorch's legacy input aliases and `out=None`; concrete output tensors, higher-order gradients, `nn.Tanh`, and in-place tanh remain explicitly unsupported.
++`Tensor.tanh()`, `torch.tanh()`, and `torch.nn.functional.tanh(input)` share the native layout-preserving float32 CPU kernel. The functional form delegates directly to `input.tanh()`, so receiver overrides and `TensorBase.tanh` mode dispatch are preserved. Finite constructor-owned rank-0 through rank-4 CPU float32 leaves and finite owned rank-0 through rank-3 non-leaves produced by supported autograd operations, including singleton and empty dimensions, support first-order eager autograd through a saved-output `TanhBackward0` node. Weighted compositions after negation, addition, and tanh, repeated-use accumulation, and graph release are checked through all three entry points against PyTorch 2.13 in `tests/test_tanh_reference.py`. Tracked views, rank-4-or-higher non-leaves, rank-5-or-higher tracked leaves, and non-finite tracked inputs remain explicitly unsupported. Detached tensors and calls under `torch.no_grad()` retain the broader inference path. Top-level calls accept PyTorch's legacy input aliases and `out=None`; concrete output tensors, higher-order gradients, `nn.Tanh`, and in-place tanh remain explicitly unsupported.
+ 
+-`torch.nn.functional.tanhshrink(input)` composes native `input - input.tanh()` for exact CPU float32 tensors, retaining the existing tanh/subtraction value and layout boundaries. Scalar, empty, contiguous, offset, noncontiguous, channels-last, signed-zero, and nonfinite inference inputs return fresh independent storage. Finite constructor-owned leaves of rank zero through four support first-order gradients through the existing saved-output tanh and subtraction backward operations. Tracked views (including views created inside `no_grad`), non-leaves, rank-five-or-higher tracked leaves, and nonfinite tracked inputs remain rejected while recording gradients; detached inputs and calls inside `torch.no_grad()` retain the broader inference path. The public `(input)` signature accepts positional or keyword input and uses the shared unary `__torch_function__`/`TorchFunctionMode` dispatcher. CUDA and other unsupported devices/dtypes, higher-order gradients, `out`, `inplace`, `Tensor.tanhshrink`, and `nn.Tanhshrink` remain unsupported. Values, strides, fresh storage, first-order gradients, no-grad behavior, overrides, and binding errors are checked against PyTorch 2.13 in `tests/test_nn_functional_tanhshrink_reference.py`; native rejection boundaries are also covered in `tests/test_nn_functional_tanhshrink.py`.
++`torch.nn.functional.tanhshrink(input)` composes native `input - input.tanh()` for exact CPU float32 tensors, retaining the existing tanh/subtraction value and layout boundaries. Scalar, empty, contiguous, offset, noncontiguous, channels-last, signed-zero, and nonfinite inference inputs return fresh independent storage. Finite constructor-owned leaves of rank zero through four and finite owned non-leaves of rank zero through three support first-order gradients through the existing saved-output tanh and subtraction backward operations. Tracked views (including views created inside `no_grad`), rank-four-or-higher non-leaves, rank-five-or-higher tracked leaves, and nonfinite tracked inputs remain rejected while recording gradients; detached inputs and calls inside `torch.no_grad()` retain the broader inference path. The public `(input)` signature accepts positional or keyword input and uses the shared unary `__torch_function__`/`TorchFunctionMode` dispatcher. CUDA and other unsupported devices/dtypes, higher-order gradients, `out`, `inplace`, `Tensor.tanhshrink`, and `nn.Tanhshrink` remain unsupported. Values, strides, fresh storage, first-order gradients, no-grad behavior, overrides, and binding errors are checked against PyTorch 2.13 in `tests/test_nn_functional_tanhshrink_reference.py`; native rejection boundaries are also covered in `tests/test_nn_functional_tanhshrink.py`.
+ 
+ `torch.nn.functional.glu(input, dim=-1)` supports exact native CPU float32 tensors of ranks one through three by composing `input.chunk(2, dim)`, sigmoid on the second half, and elementwise multiplication. The selected dimension must have even size, including zero; positive and negative dimensions, contiguous, transposed, offset, and empty inputs are supported. Outputs own fresh independent storage with PyTorch-compatible values, shape, strides, offset, dtype, device, and leaf metadata, and preserve the input. Finite rank-one inputs support first-order backward for `dim=0` or `-1`, including empty vectors, non-leaves, and tracked offset or strided views. During recording, the gate half is materialized with differentiable `clone()` before sigmoid to satisfy its existing owned-storage requirement; a vector-only combined multiplication/sigmoid backward node applies `(1 - gate) * gate * first * upstream` before passing gradients through clone and chunk. This preserves finite derivatives when `first * upstream` alone would overflow, and supports nonuniform upstream gradients and repeated-use accumulation. Sigmoid itself still rejects tracked views and nonfinite tracked gates. Rank-two and rank-three calls with `requires_grad=True` while grad mode is enabled raise `RuntimeError("glu(): autograd recording is not supported")` before creating chunk views; detached inputs and calls inside `torch.no_grad()` retain the original inference path. The public signature and unary `__torch_function__`/`TorchFunctionMode` dispatch preserve positional and keyword binding, scalar-input errors, invalid dimensions, odd-size errors, and mode restoration. CUDA, other dtypes, rank-four-or-higher inputs, higher-rank active gradient recording, higher-order gradients, `out`, `inplace`, and `nn.GLU` remain unsupported. PyTorch 2.13 differentials, including numerical edges and real-GPU rejection when available, are in `tests/test_nn_functional_glu_reference.py`; native autograd and inference boundaries are in `tests/test_nn_functional_glu.py`.
+ 
+diff --git a/python/torch_rs/_compile_bytecode.py b/python/torch_rs/_compile_bytecode.py
+index ea746c2..f490770 100644
+--- a/python/torch_rs/_compile_bytecode.py
++++ b/python/torch_rs/_compile_bytecode.py
+@@ -76,6 +76,7 @@ class _GlobalLoadDependency:
+ class _CompileProgramDescriptor:
+     code: object
+     global_loads: tuple[_GlobalLoadDependency, ...]
++    has_requires_grad_branch: bool
+ 
+ 
+ @dataclass(frozen=True, slots=True)
+@@ -479,7 +480,7 @@ def analyze_compile_program(program):
+         analyzable_instructions,
+         resolve=layout is None,
+     )
+-    return _CompileProgramDescriptor(code, global_loads)
++    return _CompileProgramDescriptor(code, global_loads, layout is not None)
+ 
+ 
+ def _global_load_dependencies_from_instructions(program, instructions, *, resolve=False):
+@@ -559,14 +560,19 @@ def _global_cache_dependencies_for_loads(
+ def _global_cache_dependencies(program, descriptor, input_metadatas):
+     if not descriptor.global_loads:
+         return (), (), ()
+-    global_loads = _global_load_dependencies_from_instructions(
+-        program,
+-        _lowerable_bytecode_instructions(
++    # A descriptor is bound to one immutable code object. Straight-line loads
++    # cannot change until that code is replaced; their live values still must
++    # be resolved below on every call. Branches retain input-dependent loads.
++    global_loads = descriptor.global_loads
++    if descriptor.has_requires_grad_branch:
++        global_loads = _global_load_dependencies_from_instructions(
+             program,
+-            descriptor.code,
+-            input_metadatas,
+-        ),
+-    )
++            _lowerable_bytecode_instructions(
++                program,
++                descriptor.code,
++                input_metadatas,
++            ),
++        )
+     return _global_cache_dependencies_for_loads(
+         program,
+         program,
+diff --git a/src/tensor.rs b/src/tensor.rs
+index 2c5fb8f..f162dfa 100644
+--- a/src/tensor.rs
++++ b/src/tensor.rs
+@@ -1821,10 +1821,7 @@ impl Tensor {
+         self.logical_values().all(f32::is_finite)
+     }
+ 
+-    fn is_finite_owned_leaf(&self) -> bool {
+-        // Factory-created leaves span their complete allocation. Recorded
+-        // views are non-leaves, while unrecorded views can dynamically inherit
+-        // a source flag without leaf metadata.
++    fn is_supported_sigmoid_autograd_input(&self) -> bool {
+         if !self.is_finite_owned() {
+             return false;
+         }
+@@ -1832,10 +1829,13 @@ impl Tensor {
+         let Some(metadata) = self.autograd.as_deref() else {
+             return false;
+         };
+-        matches!(&metadata.kind, AutogradKind::Leaf { .. })
++        match &metadata.kind {
++            AutogradKind::Leaf { .. } => true,
++            AutogradKind::NonLeaf { .. } => self.shape.len() <= 3,
++        }
+     }
+ 
+-    fn is_supported_sigmoid_autograd_input(&self) -> bool {
++    fn is_supported_tanh_autograd_input(&self) -> bool {
+         if !self.is_finite_owned() {
+             return false;
+         }
+@@ -1844,15 +1844,15 @@ impl Tensor {
+             return false;
+         };
+         match &metadata.kind {
+-            AutogradKind::Leaf { .. } => true,
+-            AutogradKind::NonLeaf { .. } => self.shape.len() <= 3,
++            AutogradKind::Leaf { .. } => self.shape.len() <= 4,
++            // A recorded view keeps its graph even if its base's inherited
++            // requires-grad flag is later cleared. Its view marker persists.
++            AutogradKind::NonLeaf { .. } => {
++                self.shape.len() <= 3 && self.view_requires_grad.is_none()
++            }
+         }
+     }
+ 
+-    fn is_finite_owned_leaf_with_max_rank(&self, max_rank: usize) -> bool {
+-        self.shape.len() <= max_rank && self.is_finite_owned_leaf()
+-    }
+-
+     fn record_transform(
+         &self,
+         output: &mut Self,
+@@ -5451,10 +5451,10 @@ impl Tensor {
+     /// # Errors
+     ///
+     /// Returns an error when gradient recording is enabled for an input other
+-    /// than a finite, owned CPU float32 leaf with rank at most four, or when
+-    /// result metadata or storage allocation fails.
++    /// than a finite, owned CPU float32 leaf with rank at most four or non-leaf
++    /// with rank at most three, or when result metadata or storage allocation fails.
+     pub fn tanh(&self) -> Result<Self, TensorError> {
+-        if self.records_grad() && !self.is_finite_owned_leaf_with_max_rank(4) {
++        if self.records_grad() && !self.is_supported_tanh_autograd_input() {
+             return Err(TensorError::AutogradRecordingUnsupported { operation: "tanh" });
+         }
+         let output = self.unary_map(tanh_value)?;
+@@ -7748,7 +7748,7 @@ fn apply_sigmoid_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<
+ }
+ 
+ fn apply_tanh_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
+-    // Supported tanh leaves save contiguous outputs through rank four. Keep the
++    // Supported tanh inputs save contiguous outputs through rank four. Keep the
+     // generic fallback because the saved-output node itself is layout-agnostic.
+     if let Some(saved_values) = output.contiguous_slice() {
+         debug_assert_eq!(saved_values.len(), upstream.len());
+@@ -15058,6 +15058,123 @@ mod tests {
+         );
+     }
+ 
++    #[test]
++    fn tanh_nonleaf_compositions_weight_accumulate_and_release_graphs() {
++        let inputs = [-0.0, 0.0, -0.5, 0.5, -9.0, 9.0, -100.0, 100.0];
++        let weights = [1.0, -2.0, 0.5, -0.25, 3.0, -4.0, 5.0, -6.0];
++        for shape in [&[][..], &[8], &[2, 4], &[2, 1, 4]] {
++            let cases: Vec<Vec<f32>> = if shape.is_empty() {
++                inputs.iter().map(|&value| vec![value]).collect()
++            } else {
++                vec![inputs.to_vec()]
++            };
++            for data in cases {
++                for operation in ["negation", "addition", "tanh"] {
++                    let leaf = Tensor::from_vec(data.clone(), shape)
++                        .unwrap()
++                        .with_requires_grad(true);
++                    let weight = Tensor::from_vec(weights[..data.len()].to_vec(), shape).unwrap();
++                    for pass in [1.0, 2.0] {
++                        let parent = match operation {
++                            "negation" => leaf.negate().unwrap(),
++                            "addition" => leaf.add(&leaf).unwrap(),
++                            _ => leaf.tanh().unwrap(),
++                        };
++                        assert!(!parent.is_leaf());
++                        let output = parent.tanh().unwrap();
++                        assert!(output.requires_grad());
++                        assert!(!output.is_leaf());
++                        assert_eq!(output.shape(), shape);
++                        assert!(!output.shares_storage_with(&parent));
++                        #[cfg(feature = "python-bindings")]
++                        assert_eq!(output.grad_fn_name(), Some("TanhBackward0"));
++
++                        // Two uses of one output must meet at the saved-output node.
++                        let loss = output.add(&output).unwrap().mul(&weight).unwrap().sum();
++                        let sibling = output.sum();
++                        loss.backward().unwrap();
++                        let gradient = leaf.grad().unwrap().unwrap().try_to_vec().unwrap();
++                        for (index, &value) in data.iter().enumerate() {
++                            let x = f64::from(value);
++                            let (parent_value, parent_derivative) = match operation {
++                                "negation" => (-x, -1.0),
++                                "addition" => (x + x, 2.0),
++                                _ => (x.tanh(), 1.0 / x.cosh().powi(2)),
++                            };
++                            let expected =
++                                pass * 2.0 * f64::from(weights[index]) * parent_derivative
++                                    / parent_value.cosh().powi(2);
++                            assert!(
++                                (f64::from(gradient[index]) - expected).abs() < 2e-6,
++                                "{operation}, {shape:?}, {value}: {} != {expected}",
++                                gradient[index]
++                            );
++                            assert!(
++                                (f64::from(output.as_slice()[index]) - parent_value.tanh()).abs()
++                                    < 2e-7
++                            );
++                        }
++                        assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
++                        assert_eq!(sibling.backward(), Err(TensorError::BackwardGraphFreed));
++                        assert_eq!(
++                            leaf.grad().unwrap().unwrap().try_to_vec().unwrap(),
++                            gradient
++                        );
++                    }
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn tanh_empty_nonleaf_compositions_release_graphs() {
++        for shape in [
++            &[0][..],
++            &[0, 2],
++            &[2, 0],
++            &[0, 1, 2],
++            &[2, 0, 1],
++            &[2, 1, 0],
++        ] {
++            for operation in ["negation", "addition", "tanh"] {
++                let leaf = Tensor::zeros(shape).unwrap().with_requires_grad(true);
++                let parent = match operation {
++                    "negation" => leaf.negate().unwrap(),
++                    "addition" => leaf.add(&leaf).unwrap(),
++                    _ => leaf.tanh().unwrap(),
++                };
++                let output = parent.tanh().unwrap();
++                assert_eq!(output.shape(), shape);
++                assert!(output.requires_grad());
++                let loss = output.mul(&Tensor::zeros(shape).unwrap()).unwrap().sum();
++                loss.backward().unwrap();
++                let gradient = leaf.grad().unwrap().unwrap();
++                assert_eq!(gradient.shape(), shape);
++                assert!(gradient.as_slice().is_empty());
++                assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
++            }
++        }
++    }
++
++    #[test]
++    fn tanh_rejects_nonfinite_nonleaves_without_consuming_parent_graph() {
++        for shape in [&[][..], &[1], &[1, 1], &[1, 1, 1]] {
++            for value in [f32::INFINITY, f32::NEG_INFINITY, f32::NAN, f32::MAX] {
++                let leaf = Tensor::from_vec(vec![value], shape)
++                    .unwrap()
++                    .with_requires_grad(true);
++                let parent = leaf.add(&leaf).unwrap();
++                assert_eq!(
++                    parent.tanh(),
++                    Err(TensorError::AutogradRecordingUnsupported { operation: "tanh" })
++                );
++                assert!(leaf.grad().unwrap().is_none());
++                parent.sum().backward().unwrap();
++                assert_eq!(leaf.grad().unwrap().unwrap().as_slice(), [2.0]);
++            }
++        }
++    }
++
+     #[cfg(feature = "python-bindings")]
+     #[test]
+     fn saved_unary_nodes_preserve_operation_specific_python_names() {
+diff --git a/tests/autograd.rs b/tests/autograd.rs
+index 51573b6..ce327e7 100644
+--- a/tests/autograd.rs
++++ b/tests/autograd.rs
+@@ -3107,7 +3107,51 @@ fn tanh_rejects_nonfinite_and_rank_five_owned_leaves_before_graph_mutation() {
+ }
+ 
+ #[test]
+-fn tanh_rejects_tracked_views_and_nonleaves_before_graph_or_layout_mutation() {
++fn tanh_rejects_tracked_views_after_disabling_base_gradients() {
++    let unsupported = TensorError::AutogradRecordingUnsupported { operation: "tanh" };
++    for shape in [
++        &[][..],
++        &[2],
++        &[1, 2],
++        &[1, 1, 2],
++        &[0],
++        &[2, 0],
++        &[1, 0, 2],
++    ] {
++        let mut base_shape = vec![1];
++        base_shape.extend_from_slice(shape);
++        let mut base = Tensor::ones(base_shape).unwrap().with_requires_grad(true);
++        let view = base.index([0]).unwrap();
++        assert!(view.shares_storage_with(&base));
++        assert_eq!(view.tanh(), Err(unsupported.clone()));
++
++        base.requires_grad_(false).unwrap();
++        assert!(!base.requires_grad());
++        assert!(view.requires_grad());
++        assert!(!view.is_leaf());
++        assert_eq!(view.tanh(), Err(unsupported.clone()), "{shape:?}");
++        assert!(base.grad().unwrap().is_none());
++        assert!(view.shares_storage_with(&base));
++        assert_eq!(view.shape(), shape);
++        assert_eq!(values(&view), vec![1.0; view.numel()]);
++
++        assert!(!view.detach().unwrap().tanh().unwrap().requires_grad());
++        {
++            let _guard = no_grad();
++            assert!(!view.tanh().unwrap().requires_grad());
++        }
++        assert!(view.try_clone().unwrap().tanh().unwrap().requires_grad());
++        base.requires_grad_(true).unwrap();
++        view.sum().backward().unwrap();
++        assert_eq!(
++            values(&base.grad().unwrap().unwrap()),
++            vec![1.0; base.numel()]
++        );
++    }
++}
++
++#[test]
++fn tanh_rejects_tracked_views_before_graph_or_layout_mutation() {
+     let unsupported = TensorError::AutogradRecordingUnsupported { operation: "tanh" };
+ 
+     let view_base = Tensor::from_vec(vec![0.5], [1])
+@@ -3163,17 +3207,6 @@ fn tanh_rejects_tracked_views_and_nonleaves_before_graph_or_layout_mutation() {
+         [1.0, 1.0, 0.0, 0.0]
+     );
+ 
+-    let nonleaf_base = Tensor::from_vec(vec![0.5, -0.5], [1, 1, 2])
+-        .unwrap()
+-        .with_requires_grad(true);
+-    let nonleaf = nonleaf_base.sin().unwrap();
+-    assert_eq!(nonleaf.tanh(), Err(unsupported.clone()));
+-    nonleaf.sum().backward().unwrap();
+-    assert_eq!(
+-        values(&nonleaf_base.grad().unwrap().unwrap()),
+-        [0.5_f32.cos(), (-0.5_f32).cos()]
+-    );
+-
+     let no_grad_view = {
+         let _guard = no_grad();
+         matrix_view_base.index([0]).unwrap()
+diff --git a/tests/test_compile_static_analysis.py b/tests/test_compile_static_analysis.py
+new file mode 100644
+index 0000000..e35a295
+--- /dev/null
++++ b/tests/test_compile_static_analysis.py
+@@ -0,0 +1,180 @@
++"""Immutable root analysis reuse must leave runtime capture guards live."""
++import ctypes
++from contextlib import contextmanager
++import gc
++import types
++import unittest
++import weakref
++from unittest.mock import patch
++
++import torch_rs as native
++from torch_rs import _compile_bytecode as bytecode, _compile_trace as trace
++from tests.test_compile_cuda_boundary import compile_with_cache
++from tests.test_compile_cuda_mul_scalar import call_without_python, make_program
++from tests.test_cuda_add import available
++
++
++@contextmanager
++def function_attribute(function, name, value):
++    # Function slots such as __name__ and __code__ cannot be deleted on exit.
++    original = getattr(function, name)
++    setattr(function, name, value)
++    try:
++        yield
++    finally:
++        setattr(function, name, original)
++
++
++class StaticAnalysisTests(unittest.TestCase):
++    def test_warm_tensor_capture_reuses_analysis_but_resolves_every_call(self):
++        bias = native.tensor([2., 3.])
++        program = make_program('def program(x):\n    return x + bias\n', bias=bias)
++        compiled, cache = compile_with_cache(program)
++        x = native.ones(2)
++        self.assertEqual(compiled(x).tolist(), [3., 4.])
++        with patch.object(bytecode._dis, 'get_instructions', side_effect=AssertionError('warm disassembly')), \
++             patch.object(bytecode, '_global_load_dependencies_from_instructions', side_effect=AssertionError('warm static analysis')), \
++             patch.object(bytecode, '_resolve_live_global_dependency', wraps=bytecode._resolve_live_global_dependency) as resolve:
++            for value in (4., -2.):
++                # Mutate the existing CPU allocation without rebinding the capture.
++                storage = (ctypes.c_float * 2).from_address(bias.data_ptr())
++                storage[:] = [value, value]
++                actual = call_without_python(compiled, {program.__code__}, native.full((2,), value))
++                self.assertEqual(actual.tolist(), [2 * value] * 2)
++            self.assertEqual(resolve.call_count, 2)
++        self.assertEqual(len(cache.graphs), 1)
++        program.__globals__['bias'] = native.tensor([7., 8.])
++        self.assertEqual(compiled(x).tolist(), [8., 9.])
++        self.assertEqual(len(cache.graphs), 2)
++        program.__globals__['bias'] = object()
++        with self.assertRaises(NotImplementedError):
++            compiled(x)
++        program.__globals__['bias'] = bias
++        self.assertEqual(compiled(x).tolist(), [-1., -1.])
++        self.assertEqual(len(cache.graphs), 2)
++
++    def test_only_root_analysis_is_reused_and_helper_guards_stay_live(self):
++        program = make_program('def helper(x):\n    return -x\ndef program(x):\n    return helper(x)\n')
++        helper = program.__globals__['helper']
++        compiled, cache = compile_with_cache(program)
++        x = native.tensor([-2., 3.])
++        self.assertEqual(compiled(x).tolist(), [2., -3.])
++        with patch.object(bytecode._dis, 'get_instructions', wraps=bytecode._dis.get_instructions) as scans:
++            self.assertEqual(call_without_python(compiled, {program.__code__, helper.__code__}, x).tolist(), [2., -3.])
++        self.assertNotIn(program.__code__, [c.args[0] for c in scans.call_args_list])
++        self.assertIn(helper.__code__, [c.args[0] for c in scans.call_args_list])
++        for attribute, value in (('__module__', 'another_module'), ('__name__', 'unbound'),
++                                 ('__defaults__', (x,)), ('__kwdefaults__', {'x': x})):
++            with self.subTest(attribute=attribute), function_attribute(helper, attribute, value):
++                with self.assertRaises(NotImplementedError):
++                    compiled(x)
++            self.assertEqual(compiled(x).tolist(), [2., -3.])
++            self.assertEqual(len(cache.graphs), 1)
++        with function_attribute(program, '__module__', 'another_module'):
++            with self.assertRaises(NotImplementedError):
++                compiled(x)
++        old_code = helper.__code__
++        helper.__code__ = make_program('def program(x):\n    return x.abs()\n').__code__
++        self.assertEqual(compiled(x).tolist(), [2., 3.])
++        self.assertEqual(len(cache.graphs), 2)
++        helper.__code__ = old_code
++        namespace = program.__globals__
++        closed = x
++        def closure(x):
++            return x + closed
++        recursive = make_program('def program(x):\n    return helper(x)\n').__code__
++        for replacement in (closure, types.FunctionType(old_code, {'__name__': program.__module__}, 'helper')):
++            with patch.dict(namespace, helper=replacement), self.assertRaises(NotImplementedError):
++                compiled(x)
++        with function_attribute(helper, '__code__', recursive), self.assertRaisesRegex(NotImplementedError, 'recursive'):
++            compiled(x)
++        with patch.dict(namespace, helper=program), self.assertRaises(NotImplementedError):
++            compiled(x)
++        self.assertEqual(compiled(x).tolist(), [2., -3.])
++
++    def test_code_replacement_reanalyzes_branches_and_inactive_globals(self):
++        program = make_program('def program(x):\n    return x + bias\n', bias=native.ones(2))
++        compiled, cache = compile_with_cache(program)
++        x = native.tensor([-2., 3.])
++        self.assertEqual(compiled(x).tolist(), [-1., 4.])
++        branch = make_program('def program(x):\n    if x.requires_grad:\n        return x + missing\n    return x.abs()\n')
++        program.__code__ = branch.__code__
++        self.assertEqual(compiled(x).tolist(), [2., 3.])
++        with patch.object(bytecode, '_lowerable_bytecode_instructions', wraps=bytecode._lowerable_bytecode_instructions) as select:
++            self.assertEqual(compiled(x).tolist(), [2., 3.])
++            self.assertEqual(select.call_count, 1)
++        grad = native.tensor([-2., 3.], requires_grad=True)
++        with self.assertRaises(NotImplementedError):
++            compiled(grad)
++        program.__globals__['missing'] = native.ones(2)
++        self.assertEqual(compiled(grad).tolist(), [-1., 4.])
++        program.__globals__['missing'] = object()
++        self.assertEqual(compiled(x).tolist(), [2., 3.])
++        with self.assertRaises(NotImplementedError):
++            compiled(grad)
++        program.__code__ = make_program('def program(x):\n    try:\n        return -x\n    except Exception:\n        return x\n').__code__
++        with self.assertRaisesRegex(NotImplementedError, 'exception handling'):
++            compiled(x)
++        program.__code__ = make_program('def program(x):\n    return x + bias\n').__code__
++        self.assertEqual(compiled(x).tolist(), [-1., 4.])
++        self.assertEqual(len(cache.graphs), 3)
++
++    def test_reused_analysis_preserves_cpu_limit_metadata_and_method_guards(self):
++        bias = native.ones(2)
++        program = make_program('def program(x):\n    return x + bias\n', bias=bias)
++        compiled, cache = compile_with_cache(program, limit=1)
++        x = native.ones(2)
++        compiled(x)
++        bias.requires_grad_(True)
++        with self.assertRaisesRegex(NotImplementedError, 'recompile_limit'):
++            compiled(x)
++        bias.requires_grad_(False)
++        with patch.dict(program.__globals__, bias=native.zeros(2)):
++            with self.assertRaisesRegex(NotImplementedError, 'recompile_limit'):
++                compiled(x)
++        with patch.object(native.Tensor, '__add__', lambda *args: self.fail('patched method ran')):
++            with self.assertRaisesRegex(NotImplementedError, 'patched Tensor operation bindings'):
++                compiled(x)
++        self.assertEqual(compiled(x).tolist(), [2., 2.])
++        self.assertEqual(len(cache.graphs), 1)
++        scalar = make_program('def program(x):\n    return x * scale\n', scale=2.)
++        with self.assertRaisesRegex(NotImplementedError, 'global or import access'):
++            native.compile(scalar, backend='eager', fullgraph=True)(x)
++
++    def test_descriptor_does_not_retain_root_or_resolved_helpers(self):
++        def analyze():
++            program = make_program('def helper(x):\n    return -x\ndef program(x):\n    return helper(x)\n')
++            return bytecode.analyze_compile_program(program), weakref.ref(program), weakref.ref(program.__globals__['helper'])
++        descriptor, root, helper = analyze()
++        gc.collect()
++        self.assertIsNone(root())
++        self.assertIsNone(helper())
++        self.assertEqual([load.name for load in descriptor.global_loads], ['helper'])
++
++
++@unittest.skipUnless(available('0'), 'requires real CUDA with CUDA_VISIBLE_DEVICES=0')
++class StaticAnalysisCudaTests(unittest.TestCase):
++    def test_cuda_live_scalars_bindings_captures_and_failure_recovery(self):
++        program = make_program('def program(x):\n    return m.mul(x, scale) + bias\n',
++                               scale=2., bias=native.ones(3).to('cuda:0'))
++        compiled, cache = compile_with_cache(program)
++        x = native.ones((2, 3)).to('cuda:0')
++        self.assertEqual(compiled(x).cpu().tolist(), [[3.] * 3] * 2)
++        with patch.object(bytecode._dis, 'get_instructions', side_effect=AssertionError('warm disassembly')):
++            self.assertEqual(call_without_python(compiled, {program.__code__}, x).cpu().tolist(), [[3.] * 3] * 2)
++            for name, value in (('scale', object()), ('bias', native.ones(3))):
++                with patch.dict(program.__globals__, {name: value}), self.assertRaises(NotImplementedError):
++                    compiled(x)
++            with patch.object(native, 'mul', lambda *args: self.fail('patched callable ran')):
++                with self.assertRaises(NotImplementedError):
++                    compiled(x)
++        program.__globals__['scale'] = -2.
++        self.assertEqual(compiled(x).cpu().tolist(), [[-1.] * 3] * 2)
++        self.assertEqual(len(cache.graphs), 2)
++        program.__globals__['bias'] = native.full((3,), 4.).to('cuda:0')
++        with patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=RuntimeError('launch failed')):
++            with self.assertRaisesRegex(RuntimeError, 'launch failed'):
++                compiled(x)
++        self.assertEqual(len(cache.graphs), 2)
++        self.assertEqual(compiled(x).cpu().tolist(), [[2.] * 3] * 2)
++        self.assertEqual(len(cache.graphs), 3)
+diff --git a/tests/test_compile_tanh_composition.py b/tests/test_compile_tanh_composition.py
+new file mode 100644
+index 0000000..7805212
+--- /dev/null
++++ b/tests/test_compile_tanh_composition.py
+@@ -0,0 +1,219 @@
++"""Eager tanh on owned CPU outputs of the bounded native compiler."""
++
++import ctypes
++import types
++import unittest
++from unittest.mock import patch
++
++import numpy as np
++import torch_rs as native
++
++from tests.test_compile_cuda_boundary import compile_with_cache
++from tests.test_compile_cuda_mul_scalar import call_without_python, make_program
++
++try:
++    import torch as reference
++except ImportError:
++    reference = None
++
++
++def apply_tanh(module, value, form):
++    if form == "method":
++        return value.tanh()
++    if form == "top level":
++        return module.tanh(input=value, out=None)
++    if form == "functional":
++        return module.nn.functional.tanh(value)
++    return module.nn.functional.tanhshrink(value)
++
++
++@unittest.skipIf(reference is None, "install the reference dependency group")
++class CompileTanhCompositionTests(unittest.TestCase):
++    @classmethod
++    def setUpClass(cls):
++        if reference.__version__.split("+")[0] != "2.13.0":
++            raise AssertionError("tanh differentials require pinned PyTorch 2.13.0")
++
++    def compare(self, actual, expected, *, tanhshrink=False):
++        self.assertEqual(tuple(actual.shape), tuple(expected.shape))
++        self.assertEqual(actual.stride(), expected.stride())
++        self.assertEqual(actual.storage_offset(), expected.storage_offset())
++        self.assertEqual(str(actual.dtype), str(expected.dtype))
++        self.assertEqual(str(actual.device), str(expected.device))
++        self.assertEqual(actual.requires_grad, expected.requires_grad)
++        self.assertEqual(actual.is_leaf, expected.is_leaf)
++        # Match each operator's existing differential tolerance. Tanhshrink's
++        # subtraction near zero amplifies tanh's float32 rounding difference;
++        # see test_nn_functional_tanhshrink_reference.py.
++        a = np.asarray(actual, dtype=np.float32)
++        b = expected.detach().numpy()
++        np.testing.assert_allclose(
++            a, b, rtol=2e-6 if tanhshrink else 3 * np.finfo(np.float32).eps,
++            atol=2e-7 if tanhshrink else np.nextafter(np.float32(0), np.float32(1)),
++            equal_nan=True,
++        )
++        zeros = b == 0
++        np.testing.assert_array_equal(a[zeros].view(np.uint32), b[zeros].view(np.uint32))
++
++    def backward_and_release(self, actual, expected, leaves, refs, *, tanhshrink=False):
++        self.compare(actual, expected, tanhshrink=tanhshrink)
++        weights = np.linspace(-2.5, 1.5, actual.numel(), dtype=np.float32).reshape(actual.shape)
++        weight = native.tensor(weights.tolist()).reshape(actual.shape)
++        ref_weight = reference.tensor(weights.tolist()).reshape(expected.shape)
++        loss = ((actual + actual) * weight).sum()
++        ref_loss = ((expected + expected) * ref_weight).sum()
++        sibling, ref_sibling = actual.sum(), expected.sum()
++        loss.backward()
++        ref_loss.backward()
++        for leaf, ref in zip(leaves, refs):
++            if ref.grad is None:
++                self.assertIsNone(leaf.grad)
++            else:
++                self.compare(leaf.grad, ref.grad, tanhshrink=tanhshrink)
++        before = [None if leaf.grad is None else np.asarray(leaf.grad).copy() for leaf in leaves]
++        for released, ref_released in ((loss, ref_loss), (sibling, ref_sibling)):
++            with self.assertRaises(RuntimeError) as expected_error:
++                ref_released.backward()
++            with self.assertRaises(RuntimeError) as actual_error:
++                released.backward()
++            self.assertEqual(str(actual_error.exception), str(expected_error.exception))
++        for leaf, previous in zip(leaves, before):
++            if previous is not None:
++                np.testing.assert_array_equal(np.asarray(leaf.grad), previous)
++
++    def test_owned_outputs_changed_values_shared_operands_and_repeated_backward(self):
++        sources = (
++            "def program(x):\n    return -x\n",
++            "def program(x):\n    return x + x\n",
++            "def program(x):\n    return -(x + bias)\n",
++        )
++        shapes = ((), (4,), (2, 2), (2, 1, 2), (0,), (2, 0), (2, 0, 1))
++        for shape in shapes:
++            for source in sources:
++                for form in ("method", "top level", "functional", "tanhshrink"):
++                    for shared_capture in (False, True) if "bias" in source else (False,):
++                        with self.subTest(shape=shape, source=source, form=form, shared=shared_capture):
++                            x = native.full(shape, 0.25, requires_grad=True)
++                            rx = reference.full(shape, 0.25, requires_grad=True)
++                            bias = x if shared_capture else native.full(shape, -0.5, requires_grad=True)
++                            rbias = rx if shared_capture else reference.full(shape, -0.5, requires_grad=True)
++                            program = make_program(source, bias=bias)
++                            ref_program = make_program(source, module=reference, bias=rbias)
++                            compiled, cache = compile_with_cache(program)
++                            for value in (0.25, -0.75):
++                                # Change existing allocations after releasing the previous graph.
++                                (ctypes.c_float * x.numel()).from_address(x.data_ptr())[:] = [value] * x.numel()
++                                with reference.no_grad():
++                                    rx.fill_(value)
++                                    if not shared_capture:
++                                        rbias.fill_(-0.5 * value)
++                                if not shared_capture:
++                                    (ctypes.c_float * bias.numel()).from_address(bias.data_ptr())[:] = [-0.5 * value] * bias.numel()
++                                parent = call_without_python(compiled, {program.__code__}, x)
++                                ref_parent = ref_program(rx)
++                                self.compare(parent, ref_parent)
++                                self.assertFalse(parent.is_leaf)
++                                if parent.numel():
++                                    self.assertNotEqual(parent.data_ptr(), x.data_ptr())
++                                self.backward_and_release(
++                                    apply_tanh(native, parent, form),
++                                    apply_tanh(reference, ref_parent, form),
++                                    [x] if shared_capture else [x, bias],
++                                    [rx] if shared_capture else [rx, rbias],
++                                    tanhshrink=form == "tanhshrink",
++                                )
++                            self.assertEqual(len(cache.graphs), 1)
++
++    def test_live_grad_flags_capture_rebinding_helper_and_root_code_replacement(self):
++        source = "def helper(x):\n    return -x\ndef program(x):\n    return helper(x) + bias\n"
++        bias, rbias = native.full((2,), 0.5), reference.full((2,), 0.5)
++        program = make_program(source, bias=bias)
++        ref_program = make_program(source, module=reference, bias=rbias)
++        compiled, cache = compile_with_cache(program)
++        x, rx = native.full((2,), 0.25), reference.full((2,), 0.25)
++
++        def check():
++            helper = program.__globals__["helper"]
++            parent = call_without_python(compiled, {program.__code__, helper.__code__}, x)
++            actual, expected = parent.tanh(), ref_program(rx).tanh()
++            if expected.requires_grad:
++                self.backward_and_release(actual, expected, [x, bias], [rx, rbias])
++            else:
++                self.compare(actual, expected)
++
++        for input_grad, capture_grad in ((False, False), (True, False), (False, True),
++                                         (True, True), (False, False), (True, True)):
++            x.requires_grad_(input_grad)
++            rx.requires_grad_(input_grad)
++            bias.requires_grad_(capture_grad)
++            rbias.requires_grad_(capture_grad)
++            check()
++        self.assertEqual(len(cache.graphs), 4)
++
++        bias = native.full((2,), -0.75, requires_grad=True)
++        rbias = reference.full((2,), -0.75, requires_grad=True)
++        program.__globals__["bias"], ref_program.__globals__["bias"] = bias, rbias
++        check()
++        for root, module in ((program, native), (ref_program, reference)):
++            root.__globals__["helper"].__code__ = make_program(
++                "def program(x):\n    return x + x\n", module=module).__code__
++        check()
++        for root, module in ((program, native), (ref_program, reference)):
++            replacement = make_program(
++                "def helper(x):\n    return -(x + x)\ndef program(x):\n    return helper(x)\n",
++                module=module)
++            root.__globals__["helper"] = types.FunctionType(
++                replacement.__globals__["helper"].__code__, root.__globals__, "helper")
++        check()
++        for root, module in ((program, native), (ref_program, reference)):
++            root.__code__ = make_program(
++                "def program(x):\n    if x.requires_grad:\n        return x + bias\n    return -x\n",
++                module=module).__code__
++        check()
++        x.requires_grad_(False)
++        rx.requires_grad_(False)
++        with patch.dict(program.__globals__, bias=object()):
++            check()  # The inactive capture must not be resolved.
++        x.requires_grad_(True)
++        rx.requires_grad_(True)
++        before = dict(cache.graphs)
++        with patch.dict(program.__globals__, bias=object()), self.assertRaises(NotImplementedError):
++            compiled(x)
++        self.assertEqual(cache.graphs, before)
++        check()
++
++
++class CompileTanhBoundaryTests(unittest.TestCase):
++    def test_unsupported_outputs_leave_compiled_parent_graph_usable(self):
++        program = make_program("def program(x):\n    return x + x\n")
++        compiled, _ = compile_with_cache(program)
++        for shape, value in (((1, 1, 1, 2), 0.5), ((2,), float("inf"))):
++            with self.subTest(shape=shape, value=value):
++                x = native.full(shape, value, requires_grad=True)
++                parent = call_without_python(compiled, {program.__code__}, x)
++                for form in ("method", "top level", "functional", "tanhshrink"):
++                    with self.assertRaisesRegex(RuntimeError, "tanh.*autograd recording is not supported"):
++                        apply_tanh(native, parent, form)
++                    self.assertIsNone(x.grad)
++                parent.sum().backward()
++                np.testing.assert_array_equal(np.asarray(x.grad), np.full(shape, 2.0))
++
++    def test_tanh_inside_compiled_body_stays_unsupported_and_recovers(self):
++        program = make_program("def program(x):\n    return x + bias\n", bias=native.ones(2))
++        compiled, cache = compile_with_cache(program)
++        x = native.full((2,), 0.5, requires_grad=True)
++        original = program.__code__
++        compiled(x).tanh().sum().backward()
++        before = dict(cache.graphs)
++        for expression in ("x.tanh()", "m.tanh(x)", "m.nn.functional.tanh(x)"):
++            program.__code__ = make_program(f"def program(x):\n    return {expression}\n").__code__
++            with self.subTest(expression=expression), self.assertRaises(NotImplementedError):
++                call_without_python(compiled, {program.__code__}, x)
++            self.assertEqual(cache.graphs, before)
++        program.__code__ = original
++        compiled(x).tanh().sum().backward()
++        self.assertEqual(cache.graphs, before)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/test_nn_functional_tanh.py b/tests/test_nn_functional_tanh.py
+index a0f849c..f9e0567 100644
+--- a/tests/test_nn_functional_tanh.py
++++ b/tests/test_nn_functional_tanh.py
+@@ -443,16 +443,6 @@ class FunctionalTanhTests(unittest.TestCase):
+             [[[[[1.0, 1.0]]]], [[[[0.0, 0.0]]]]],
+         )
+ 
+-        nonleaf_base = torch.tensor([[[0.5, -1.0]]], requires_grad=True)
+-        nonleaf = nonleaf_base.sin()
+-        with self.assertRaisesRegex(
+-            RuntimeError,
+-            r"^tanh\(\): autograd recording is not supported$",
+-        ):
+-            functional.tanh(nonleaf)
+-        nonleaf.sum().backward()
+-        self.assertIsNotNone(nonleaf_base.grad)
+-
+         rank_four_nonleaf_base = torch.tensor([[[[0.5, -1.0]]]], requires_grad=True)
+         rank_four_nonleaf = rank_four_nonleaf_base.sin()
+         with self.assertRaisesRegex(
+diff --git a/tests/test_nn_functional_tanh_reference.py b/tests/test_nn_functional_tanh_reference.py
+index c2658d8..38cf710 100644
+--- a/tests/test_nn_functional_tanh_reference.py
++++ b/tests/test_nn_functional_tanh_reference.py
+@@ -685,18 +685,6 @@ class FunctionalTanhReferenceTests(unittest.TestCase):
+             actual_rank_four_nonfinite.grad.tolist(), [[[[1.0, 1.0]]]]
+         )
+ 
+-        actual_nonleaf_base = torch.tensor(
+-            [[[0.5, -1.0]]], requires_grad=True
+-        )
+-        actual_nonleaf = actual_nonleaf_base.sin()
+-        with self.assertRaisesRegex(
+-            RuntimeError,
+-            r"^tanh\(\): autograd recording is not supported$",
+-        ):
+-            functional.tanh(actual_nonleaf)
+-        actual_nonleaf.sum().backward()
+-        self.assertIsNotNone(actual_nonleaf_base.grad)
+-
+         actual_rank_four_nonleaf_base = torch.tensor(
+             [[[[0.5, -1.0]]]], requires_grad=True
+         )
+diff --git a/tests/test_nn_functional_tanhshrink.py b/tests/test_nn_functional_tanhshrink.py
+index 2591e8b..32ae3df 100644
+--- a/tests/test_nn_functional_tanhshrink.py
++++ b/tests/test_nn_functional_tanhshrink.py
+@@ -25,11 +25,12 @@ class FunctionalTanhshrinkTests(unittest.TestCase):
+         with torch.no_grad():
+             no_grad_view = leaf[0]
+         self.assertTrue(no_grad_view.is_leaf)
++        rank_four_leaf = torch.ones((1, 1, 1, 2), requires_grad=True)
+         cases = {
+             "view_created_inside_no_grad": no_grad_view,
+             "offset_view": leaf[1],
+             "transposed_view": leaf.transpose(0, 1),
+-            "nonleaf": leaf + leaf,
++            "rank_four_nonleaf": rank_four_leaf + rank_four_leaf,
+             "rank_five": torch.ones((1, 1, 1, 1, 2), requires_grad=True),
+             "positive_infinity": torch.tensor([float("inf")], requires_grad=True),
+             "negative_infinity": torch.tensor([float("-inf")], requires_grad=True),
+@@ -51,8 +52,8 @@ class FunctionalTanhshrinkTests(unittest.TestCase):
+                 self.assertTrue(result.is_leaf)
+         self.assertIsNone(leaf.grad)
+         # Rejection must leave the pre-existing graph usable.
+-        cases["nonleaf"].sum().backward()
+-        self.assertEqual(leaf.grad.tolist(), [[2.0, 2.0], [2.0, 2.0]])
++        cases["rank_four_nonleaf"].sum().backward()
++        self.assertEqual(rank_four_leaf.grad.tolist(), [[[[2.0, 2.0]]]])
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/tests/test_nn_functional_tanhshrink_reference.py b/tests/test_nn_functional_tanhshrink_reference.py
+index 6b9f9a6..8f54f7f 100644
+--- a/tests/test_nn_functional_tanhshrink_reference.py
++++ b/tests/test_nn_functional_tanhshrink_reference.py
+@@ -75,6 +75,18 @@ class FunctionalTanhshrinkReferenceTests(unittest.TestCase):
+             a[exact_mask].view(np.uint32), b[exact_mask].view(np.uint32)
+         )
+ 
++    def test_owned_nonleaf_composition_inherits_tanh_backward(self):
++        for shape in ((), (2,), (1, 2), (1, 1, 2), (2, 0, 1)):
++            with self.subTest(shape=shape):
++                actual_leaf = torch.full(shape, 0.5, requires_grad=True)
++                expected_leaf = reference.full(shape, 0.5, requires_grad=True)
++                actual = torch.nn.functional.tanhshrink(actual_leaf + actual_leaf)
++                expected = reference.nn.functional.tanhshrink(expected_leaf + expected_leaf)
++                self.assert_tensor_matches(actual, expected)
++                (actual * -2.5).sum().backward()
++                (expected * -2.5).sum().backward()
++                self.assert_tensor_matches(actual_leaf.grad, expected_leaf.grad)
++
+     def test_signature_metadata_and_function_identity(self):
+         actual = torch.nn.functional.tanhshrink
+         expected = reference.nn.functional.tanhshrink
+diff --git a/tests/test_tanh.py b/tests/test_tanh.py
+index 6ef2651..6d9606a 100644
+--- a/tests/test_tanh.py
++++ b/tests/test_tanh.py
+@@ -193,6 +193,81 @@ class TensorTanhTests(unittest.TestCase):
+             ("alias and out none", lambda: torch.tanh(x=source, out=None)),
+         )
+ 
++    def test_nonleaf_rejections_preserve_graphs_and_owned_storage_boundary(self):
++        calls = (lambda x: x.tanh(), torch.tanh, torch.nn.functional.tanh)
++        for shape in ((), (1,), (1, 1), (1, 1, 1)):
++            for value in (float("inf"), float("-inf"), float("nan"), np.finfo(np.float32).max):
++                for call in calls:
++                    with self.subTest(shape=shape, value=value, call=call):
++                        leaf = torch.tensor(np.full(shape, value, np.float32).tolist(),
++                                            requires_grad=True)
++                        parent = leaf + leaf  # Also covers overflow of finite inputs.
++                        before = np.asarray(parent).copy().view(np.uint32)
++                        with self.assertRaisesRegex(RuntimeError, "tanh.*autograd recording is not supported"):
++                            call(parent)
++                        self.assertIsNone(leaf.grad)
++                        np.testing.assert_array_equal(np.asarray(parent).view(np.uint32), before)
++                        parent.sum().backward()
++                        np.testing.assert_array_equal(np.asarray(leaf.grad), np.full(shape, 2.0))
++        # Full-allocation views still fail ownership checks, even for empty storage.
++        for shape in ((), (2,), (1, 2), (1, 1, 2), (0,), (2, 0), (1, 0, 2)):
++            for call in calls:
++                for unrecorded in (False, True):
++                    with self.subTest(shape=shape, call=call, unrecorded=unrecorded):
++                        leaf = torch.ones((1, *shape), requires_grad=True)
++                        if unrecorded:
++                            with torch.no_grad():
++                                view = leaf[0]
++                        else:
++                            view = leaf[0]
++                        with self.assertRaisesRegex(RuntimeError, "tanh.*autograd recording is not supported"):
++                            call(view)
++                        with torch.no_grad():
++                            self.assertFalse(call(view).requires_grad)
++                        self.assertFalse(call(view.detach()).requires_grad)
++                        leaf.sum().backward()
++                        np.testing.assert_array_equal(np.asarray(leaf.grad), np.ones((1, *shape)))
++
++    def test_tracked_views_remain_rejected_after_disabling_base_gradients(self):
++        calls = {
++            "method": lambda x: x.tanh(),
++            "top level": lambda x: torch.tanh(input=x, out=None),
++            "functional": torch.nn.functional.tanh,
++            "tanhshrink": torch.nn.functional.tanhshrink,
++        }
++        message = r"^tanh\(\): autograd recording is not supported$"
++        for shape in ((), (2,), (1, 2), (1, 1, 2), (0,), (2, 0), (1, 0, 2)):
++            for name, call in calls.items():
++                with self.subTest(shape=shape, entry_point=name):
++                    base = torch.ones((1, *shape), requires_grad=True)
++                    view = base[0]
++                    before = np.asarray(view).copy()
++                    metadata = (view.shape, view.stride(), view.data_ptr())
++                    with self.assertRaisesRegex(RuntimeError, message):
++                        call(view)
++
++                    base.requires_grad_(False)
++                    self.assertFalse(base.requires_grad)
++                    self.assertTrue(view.requires_grad)
++                    self.assertFalse(view.is_leaf)
++                    with self.assertRaisesRegex(RuntimeError, message):
++                        call(view)
++                    self.assertIsNone(base.grad)
++                    self.assertEqual(metadata, (view.shape, view.stride(), view.data_ptr()))
++                    np.testing.assert_array_equal(np.asarray(view), before)
++
++                    detached = call(view.detach())
++                    with torch.no_grad():
++                        untracked = call(view)
++                    self.assertFalse(detached.requires_grad)
++                    self.assertFalse(untracked.requires_grad)
++                    np.testing.assert_array_equal(np.asarray(untracked), np.asarray(detached))
++                    self.assertTrue(call(view.clone()).requires_grad)
++                    # Rejection must preserve the original view's backward edge.
++                    base.requires_grad_(True)
++                    view.sum().backward()
++                    np.testing.assert_array_equal(np.asarray(base.grad), np.ones((1, *shape)))
++
+     def test_values_layouts_offsets_empty_tensors_and_fresh_storage(self):
+         expected_special_bits = np.asarray(
+             (
+@@ -809,16 +884,6 @@ class TensorTanhTests(unittest.TestCase):
+             [[[[[1.0, 1.0]]]], [[[[0.0, 0.0]]]]],
+         )
+ 
+-        nonleaf_base = torch.tensor([[[0.5, -0.5]]], requires_grad=True)
+-        nonleaf = nonleaf_base.sin()
+-        with self.assertRaisesRegex(RuntimeError, message):
+-            nonleaf.tanh()
+-        nonleaf.sum().backward()
+-        np.testing.assert_allclose(
+-            np.asarray(nonleaf_base.grad),
+-            np.cos(np.asarray([[[0.5, -0.5]]], dtype=np.float32)),
+-        )
+-
+         rank_four_nonleaf_base = torch.tensor([[[[0.5, -0.5]]]], requires_grad=True)
+         rank_four_nonleaf = rank_four_nonleaf_base.sin()
+         with self.assertRaisesRegex(RuntimeError, message):
+diff --git a/tests/test_tanh_reference.py b/tests/test_tanh_reference.py
+index 67da95d..cfcddd4 100644
+--- a/tests/test_tanh_reference.py
++++ b/tests/test_tanh_reference.py
+@@ -42,6 +42,82 @@ class TensorTanhReferenceTests(unittest.TestCase):
+         if reference_torch.__version__.split("+")[0] != "2.13.0":
+             raise AssertionError("Tensor.tanh differentials require pinned PyTorch 2.13.0")
+ 
++    @staticmethod
++    def composed_tanh(module, source, parent, form):
++        source = {"negation": lambda: -source,
++                  "addition": lambda: source + source,
++                  "tanh": source.tanh}[parent]()
++        if form == "method":
++            return source.tanh()
++        if form == "top level":
++            return module.tanh(source)
++        if form == "top level keyword":
++            return module.tanh(input=source, out=None)
++        return module.nn.functional.tanh(input=source)
++
++    def test_nonleaf_weighted_compositions_accumulation_and_graph_release(self):
++        data = AUTOGRAD_INPUT_BITS.view(np.float32)
++        cases = [((), np.asarray(value), np.asarray(-2.5, dtype=np.float32))
++                 for value in (*data, -100.0, 100.0)]
++        for shape in ((8,), (2, 4), (2, 1, 4)):
++            cases.append((shape, data.reshape(shape), AUTOGRAD_WEIGHTS.reshape(shape)))
++        for shape in ((0,), (0, 2), (2, 0), (0, 1, 2), (2, 0, 1), (2, 1, 0)):
++            cases.append((shape, np.zeros(shape, np.float32), np.zeros(shape, np.float32)))
++        for shape, data, weights in cases:
++            for parent in ("negation", "addition", "tanh"):
++                for form in ("method", "top level", "top level keyword", "functional"):
++                    with self.subTest(shape=shape, data=data.tolist(), parent=parent, form=form):
++                        actual_leaf = torch.tensor(data.tolist(), dtype=torch.float32,
++                                                   requires_grad=True)
++                        expected_leaf = reference_torch.tensor(
++                            data.tolist(), dtype=reference_torch.float32, requires_grad=True)
++                        # Nested empty lists cannot encode every trailing dimension.
++                        if data.size == 0:
++                            actual_leaf = torch.zeros(shape, requires_grad=True)
++                            expected_leaf = reference_torch.zeros(shape, requires_grad=True)
++                        actual_weights = torch.tensor(weights.tolist()).reshape(shape)
++                        expected_weights = reference_torch.tensor(weights.tolist()).reshape(shape)
++                        for _ in range(2):
++                            actual = self.composed_tanh(torch, actual_leaf, parent, form)
++                            expected = self.composed_tanh(
++                                reference_torch, expected_leaf, parent, form)
++                            self.assert_tensor_matches(actual, expected, case="nonleaf forward")
++                            self.assertEqual(type(expected.grad_fn).__name__, "TanhBackward0")
++                            self.assertEqual(
++                                torch._C._nn_functional_dropout_tensor_autograd_suffix(actual),
++                                ", grad_fn=<TanhBackward0>")
++                            # Reuse a single result, then rebuild the graph for a second pass.
++                            actual_loss = ((actual + actual) * actual_weights).sum()
++                            expected_loss = ((expected + expected) * expected_weights).sum()
++                            actual_sibling = actual.sum()
++                            expected_sibling = expected.sum()
++                            with self.assertRaisesRegex(NotImplementedError, "create_graph=True"):
++                                actual_loss.backward(create_graph=True)
++                            actual_loss.backward()
++                            expected_loss.backward()
++                            self.assert_tensor_matches(
++                                actual_leaf.grad, expected_leaf.grad, case="nonleaf weighted gradient")
++                            before = self.tensor_values(actual_leaf.grad).copy()
++                            actual_error = self.error(actual_loss.backward)
++                            self.assertEqual(actual_error[0], "RuntimeError")
++                            self.assertEqual(actual_error, self.error(expected_loss.backward))
++                            self.assertEqual(self.error(actual_sibling.backward),
++                                             self.error(expected_sibling.backward))
++                            np.testing.assert_array_equal(self.tensor_values(actual_leaf.grad), before)
++
++    def test_cuda_compositions_keep_device_rejection(self):
++        if not reference_torch.cuda.is_available():
++            self.skipTest("requires a real NVIDIA GPU to test native CUDA rejection")
++        source = -torch.tensor([-1.0, 0.5, 2.0]).to("cuda:0")
++        expected = -reference_torch.tensor([-1.0, 0.5, 2.0], device="cuda:0")
++        expected.tanh()
++        reference_torch.cuda.synchronize()
++        for call in (lambda: source.tanh(), lambda: torch.tanh(source),
++                     lambda: torch.nn.functional.tanh(source)):
++            with self.assertRaisesRegex(NotImplementedError, "only 'cpu' is implemented"):
++                call()
++        self.assertEqual(source.cpu().tolist(), [1.0, -0.5, -2.0])
++
+     @staticmethod
+     def tensor_values(tensor):
+         if type(tensor) is torch.Tensor:
+@@ -1656,13 +1732,6 @@ print(json.dumps({
+             [[[[[1.0, 1.0]]]], [[[[0.0, 0.0]]]]],
+         )
+ 
+-        actual_nonleaf_base = torch.tensor([[[0.5, -0.5]]], requires_grad=True)
+-        actual_nonleaf = actual_nonleaf_base.sin()
+-        with self.assertRaisesRegex(RuntimeError, message):
+-            actual_nonleaf.tanh()
+-        actual_nonleaf.sum().backward()
+-        self.assertIsNotNone(actual_nonleaf_base.grad)
+-
+         actual_rank_four_nonleaf_base = torch.tensor(
+             [[[[0.5, -0.5]]]], requires_grad=True
+         )

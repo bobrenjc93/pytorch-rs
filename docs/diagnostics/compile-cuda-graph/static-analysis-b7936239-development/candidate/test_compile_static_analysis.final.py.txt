@@ -1,0 +1,180 @@
+"""Immutable root analysis reuse must leave runtime capture guards live."""
+import ctypes
+from contextlib import contextmanager
+import gc
+import types
+import unittest
+import weakref
+from unittest.mock import patch
+
+import torch_rs as native
+from torch_rs import _compile_bytecode as bytecode, _compile_trace as trace
+from tests.test_compile_cuda_boundary import compile_with_cache
+from tests.test_compile_cuda_mul_scalar import call_without_python, make_program
+from tests.test_cuda_add import available
+
+
+@contextmanager
+def function_attribute(function, name, value):
+    # Function slots such as __name__ and __code__ cannot be deleted on exit.
+    original = getattr(function, name)
+    setattr(function, name, value)
+    try:
+        yield
+    finally:
+        setattr(function, name, original)
+
+
+class StaticAnalysisTests(unittest.TestCase):
+    def test_warm_tensor_capture_reuses_analysis_but_resolves_every_call(self):
+        bias = native.tensor([2., 3.])
+        program = make_program('def program(x):\n    return x + bias\n', bias=bias)
+        compiled, cache = compile_with_cache(program)
+        x = native.ones(2)
+        self.assertEqual(compiled(x).tolist(), [3., 4.])
+        with patch.object(bytecode._dis, 'get_instructions', side_effect=AssertionError('warm disassembly')), \
+             patch.object(bytecode, '_global_load_dependencies_from_instructions', side_effect=AssertionError('warm static analysis')), \
+             patch.object(bytecode, '_resolve_live_global_dependency', wraps=bytecode._resolve_live_global_dependency) as resolve:
+            for value in (4., -2.):
+                # Mutate the existing CPU allocation without rebinding the capture.
+                storage = (ctypes.c_float * 2).from_address(bias.data_ptr())
+                storage[:] = [value, value]
+                actual = call_without_python(compiled, {program.__code__}, native.full((2,), value))
+                self.assertEqual(actual.tolist(), [2 * value] * 2)
+            self.assertEqual(resolve.call_count, 2)
+        self.assertEqual(len(cache.graphs), 1)
+        program.__globals__['bias'] = native.tensor([7., 8.])
+        self.assertEqual(compiled(x).tolist(), [8., 9.])
+        self.assertEqual(len(cache.graphs), 2)
+        program.__globals__['bias'] = object()
+        with self.assertRaises(NotImplementedError):
+            compiled(x)
+        program.__globals__['bias'] = bias
+        self.assertEqual(compiled(x).tolist(), [-1., -1.])
+        self.assertEqual(len(cache.graphs), 2)
+
+    def test_only_root_analysis_is_reused_and_helper_guards_stay_live(self):
+        program = make_program('def helper(x):\n    return -x\ndef program(x):\n    return helper(x)\n')
+        helper = program.__globals__['helper']
+        compiled, cache = compile_with_cache(program)
+        x = native.tensor([-2., 3.])
+        self.assertEqual(compiled(x).tolist(), [2., -3.])
+        with patch.object(bytecode._dis, 'get_instructions', wraps=bytecode._dis.get_instructions) as scans:
+            self.assertEqual(call_without_python(compiled, {program.__code__, helper.__code__}, x).tolist(), [2., -3.])
+        self.assertNotIn(program.__code__, [c.args[0] for c in scans.call_args_list])
+        self.assertIn(helper.__code__, [c.args[0] for c in scans.call_args_list])
+        for attribute, value in (('__module__', 'another_module'), ('__name__', 'unbound'),
+                                 ('__defaults__', (x,)), ('__kwdefaults__', {'x': x})):
+            with self.subTest(attribute=attribute), function_attribute(helper, attribute, value):
+                with self.assertRaises(NotImplementedError):
+                    compiled(x)
+            self.assertEqual(compiled(x).tolist(), [2., -3.])
+            self.assertEqual(len(cache.graphs), 1)
+        with function_attribute(program, '__module__', 'another_module'):
+            with self.assertRaises(NotImplementedError):
+                compiled(x)
+        old_code = helper.__code__
+        helper.__code__ = make_program('def program(x):\n    return x.abs()\n').__code__
+        self.assertEqual(compiled(x).tolist(), [2., 3.])
+        self.assertEqual(len(cache.graphs), 2)
+        helper.__code__ = old_code
+        namespace = program.__globals__
+        closed = x
+        def closure(x):
+            return x + closed
+        recursive = make_program('def program(x):\n    return helper(x)\n').__code__
+        for replacement in (closure, types.FunctionType(old_code, {'__name__': program.__module__}, 'helper')):
+            with patch.dict(namespace, helper=replacement), self.assertRaises(NotImplementedError):
+                compiled(x)
+        with function_attribute(helper, '__code__', recursive), self.assertRaisesRegex(NotImplementedError, 'recursive'):
+            compiled(x)
+        with patch.dict(namespace, helper=program), self.assertRaises(NotImplementedError):
+            compiled(x)
+        self.assertEqual(compiled(x).tolist(), [2., -3.])
+
+    def test_code_replacement_reanalyzes_branches_and_inactive_globals(self):
+        program = make_program('def program(x):\n    return x + bias\n', bias=native.ones(2))
+        compiled, cache = compile_with_cache(program)
+        x = native.tensor([-2., 3.])
+        self.assertEqual(compiled(x).tolist(), [-1., 4.])
+        branch = make_program('def program(x):\n    if x.requires_grad:\n        return x + missing\n    return x.abs()\n')
+        program.__code__ = branch.__code__
+        self.assertEqual(compiled(x).tolist(), [2., 3.])
+        with patch.object(bytecode, '_lowerable_bytecode_instructions', wraps=bytecode._lowerable_bytecode_instructions) as select:
+            self.assertEqual(compiled(x).tolist(), [2., 3.])
+            self.assertEqual(select.call_count, 1)
+        grad = native.tensor([-2., 3.], requires_grad=True)
+        with self.assertRaises(NotImplementedError):
+            compiled(grad)
+        program.__globals__['missing'] = native.ones(2)
+        self.assertEqual(compiled(grad).tolist(), [-1., 4.])
+        program.__globals__['missing'] = object()
+        self.assertEqual(compiled(x).tolist(), [2., 3.])
+        with self.assertRaises(NotImplementedError):
+            compiled(grad)
+        program.__code__ = make_program('def program(x):\n    try:\n        return -x\n    except Exception:\n        return x\n').__code__
+        with self.assertRaisesRegex(NotImplementedError, 'exception handling'):
+            compiled(x)
+        program.__code__ = make_program('def program(x):\n    return x + bias\n').__code__
+        self.assertEqual(compiled(x).tolist(), [-1., 4.])
+        self.assertEqual(len(cache.graphs), 3)
+
+    def test_reused_analysis_preserves_cpu_limit_metadata_and_method_guards(self):
+        bias = native.ones(2)
+        program = make_program('def program(x):\n    return x + bias\n', bias=bias)
+        compiled, cache = compile_with_cache(program, limit=1)
+        x = native.ones(2)
+        compiled(x)
+        bias.requires_grad_(True)
+        with self.assertRaisesRegex(NotImplementedError, 'recompile_limit'):
+            compiled(x)
+        bias.requires_grad_(False)
+        with patch.dict(program.__globals__, bias=native.zeros(2)):
+            with self.assertRaisesRegex(NotImplementedError, 'recompile_limit'):
+                compiled(x)
+        with patch.object(native.Tensor, '__add__', lambda *args: self.fail('patched method ran')):
+            with self.assertRaisesRegex(NotImplementedError, 'patched Tensor operation bindings'):
+                compiled(x)
+        self.assertEqual(compiled(x).tolist(), [2., 2.])
+        self.assertEqual(len(cache.graphs), 1)
+        scalar = make_program('def program(x):\n    return x * scale\n', scale=2.)
+        with self.assertRaisesRegex(NotImplementedError, 'global or import access'):
+            native.compile(scalar, backend='eager', fullgraph=True)(x)
+
+    def test_descriptor_does_not_retain_root_or_resolved_helpers(self):
+        def analyze():
+            program = make_program('def helper(x):\n    return -x\ndef program(x):\n    return helper(x)\n')
+            return bytecode.analyze_compile_program(program), weakref.ref(program), weakref.ref(program.__globals__['helper'])
+        descriptor, root, helper = analyze()
+        gc.collect()
+        self.assertIsNone(root())
+        self.assertIsNone(helper())
+        self.assertEqual([load.name for load in descriptor.global_loads], ['helper'])
+
+
+@unittest.skipUnless(available('0'), 'requires real CUDA with CUDA_VISIBLE_DEVICES=0')
+class StaticAnalysisCudaTests(unittest.TestCase):
+    def test_cuda_live_scalars_bindings_captures_and_failure_recovery(self):
+        program = make_program('def program(x):\n    return m.mul(x, scale) + bias\n',
+                               scale=2., bias=native.ones(3).to('cuda:0'))
+        compiled, cache = compile_with_cache(program)
+        x = native.ones((2, 3)).to('cuda:0')
+        self.assertEqual(compiled(x).cpu().tolist(), [[3.] * 3] * 2)
+        with patch.object(bytecode._dis, 'get_instructions', side_effect=AssertionError('warm disassembly')):
+            self.assertEqual(call_without_python(compiled, {program.__code__}, x).cpu().tolist(), [[3.] * 3] * 2)
+            for name, value in (('scale', object()), ('bias', native.ones(3))):
+                with patch.dict(program.__globals__, {name: value}), self.assertRaises(NotImplementedError):
+                    compiled(x)
+            with patch.object(native, 'mul', lambda *args: self.fail('patched callable ran')):
+                with self.assertRaises(NotImplementedError):
+                    compiled(x)
+        program.__globals__['scale'] = -2.
+        self.assertEqual(compiled(x).cpu().tolist(), [[-1.] * 3] * 2)
+        self.assertEqual(len(cache.graphs), 2)
+        program.__globals__['bias'] = native.full((3,), 4.).to('cuda:0')
+        with patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=RuntimeError('launch failed')):
+            with self.assertRaisesRegex(RuntimeError, 'launch failed'):
+                compiled(x)
+        self.assertEqual(len(cache.graphs), 2)
+        self.assertEqual(compiled(x).cpu().tolist(), [[2.] * 3] * 2)
+        self.assertEqual(len(cache.graphs), 3)

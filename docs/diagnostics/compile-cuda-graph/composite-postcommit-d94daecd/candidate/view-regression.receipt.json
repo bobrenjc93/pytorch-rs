@@ -1,0 +1,18 @@
+{
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/.venv/bin/python",
+    "-m",
+    "unittest",
+    "tests.test_tanh.TensorTanhTests.test_tracked_views_remain_rejected_after_disabling_base_gradients"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544",
+  "started_at": "2026-09-10T20:00:05.254923+00:00",
+  "status_before": "",
+  "kind": "read-only post-capture verification",
+  "ended_at": "2026-09-10T20:00:05.539907+00:00",
+  "wall_seconds": 0.2849859166890383,
+  "exit_status": 0,
+  "status_after": "",
+  "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/clean-d94daecd/view-regression.log",
+  "log_sha256": "5b35f451190e297f20f300265ca651d86621a323117aa69c5414d5d651de02ed"
+}

@@ -1,0 +1,76 @@
+"""Read-only accounting of unchanged diagnostic reports; not a scoring tool."""
+import json, math, pathlib, statistics, sys
+ROOT = pathlib.Path.cwd()
+OUT = ROOT / 'target/static-analysis-postcommit-4cb0432'
+OLD = ROOT / 'docs/diagnostics/compile-cuda-graph/static-analysis-b7936239-development'
+sys.path.insert(0,str(ROOT/'scripts'))
+from diagnose_compile_cuda_matmul import cells, aggregate
+from evaluate_cuda_math import sha256
+
+def geom(values):
+    return math.exp(statistics.mean(map(math.log, values))) if values and all(v > 0 for v in values) else 0.
+pairs = []
+count = 0
+for name,seed in [('primary',798431),('held-481723',481723),('held-926051',926051),('primary-repeat',798431)]:
+    reports = []
+    for side in ('baseline','candidate'):
+        path = (OLD/'baseline' if side == 'baseline' else OUT)/(name+'.json')
+        report = json.loads(path.read_text())
+        assert report['seed'] == seed
+        assert report['measurement_kind'] == 'clean-commit' and not report['git_status']
+        assert report['build_record']['record']['clean_checkout']
+        assert report['source']['commit'] == ('b7936239ceb7d7713a15ecd8a2c82c4bddd6d214' if side == 'baseline' else '4cb04321dc706870cc5f83508dfdccadf9197760')
+        assert len(report['cases']) == len(cells(seed)) == 12
+        assert report['source'] == report['source_after']
+        for cell, expected in zip(report['cases'], cells(seed)):
+            for key in ('shape_mkn','offset','program'):
+                assert list(cell[key]) == list(expected[key]) if key == 'shape_mkn' else cell[key] == expected[key]
+            if cell['status'] != 'passed':
+                assert cell['capped_parity'] == 0
+                continue
+            pooled = {'native': [], 'pytorch': []}
+            assert [e['order'] for e in cell['orders']] == report['policy']['orders']
+            for entry in cell['orders']:
+                for key, sample in entry['samples'].items():
+                    calls, blocks = sample['calls_us'], sample['samples_us']
+                    assert len(calls) == sample['checked_calls'] == 155
+                    assert len(blocks) == 31
+                    for i, block in enumerate(blocks):
+                        assert math.isclose(sum(calls[5*i:5*i+5])/5,block,rel_tol=1e-12)
+                    assert statistics.median(blocks) == sample['median_us']
+                    pooled[key].extend(blocks)
+                    count += len(calls)
+            for key, values in pooled.items():
+                assert statistics.median(values) == cell['timings'][key]['median_us']
+            assert math.isclose(cell['capped_parity'],min(1.,statistics.median(pooled['pytorch'])/statistics.median(pooled['native'])),rel_tol=1e-12)
+        assert math.isclose(aggregate(report['cases']),report['capped_geometric_parity'],rel_tol=1e-12)
+        receipt = json.loads(path.with_suffix('.receipt.json').read_text())
+        assert receipt['source_before'] == receipt['source_after'] == report['source']
+        assert sha256(path.with_suffix('.log')) == receipt['log_sha256']
+        reports.append(report)
+    baseline, candidate = reports
+    for key in ('policy','python','pytorch','pytorch_cuda','harness_sha256','reference_triton_compiler','executable'):
+        assert baseline[key] == candidate[key], key
+    rows = []
+    for b,a in zip(baseline['cases'],candidate['cases']):
+        assert b.get('input_hashes') == a.get('input_hashes')
+        row = {k:a[k] for k in ('shape_mkn','program','offset','status','capped_parity')}
+        row['baseline_status'] = b['status']
+        row['baseline_capped_parity'] = b['capped_parity']
+        row['first_call_ms'] = {side:[e['first_call_ms'] for e in c['orders']] for side,c in [('baseline',b),('candidate',a)]}
+        row['orders'] = [dict(order=x['order'],baseline_us={k:v['median_us'] for k,v in x['samples'].items()},candidate_us={k:v['median_us'] for k,v in y['samples'].items()}) for x,y in zip(b['orders'],a['orders'])]
+        if b['status'] == a['status'] == 'passed':
+            row.update(baseline_native_us=b['timings']['native']['median_us'],candidate_native_us=a['timings']['native']['median_us'],
+                       baseline_reference_us=b['timings']['pytorch']['median_us'],candidate_reference_us=a['timings']['pytorch']['median_us'],
+                       native_speedup=b['timings']['native']['median_us']/a['timings']['native']['median_us'],
+                       reference_drift=a['timings']['pytorch']['median_us']/b['timings']['pytorch']['median_us'])
+        rows.append(row)
+    groups = {}
+    for kind in ('all','composed','matmul'):
+        selected = rows if kind == 'all' else [r for r in rows if r['program'] == kind]
+        groups[kind] = {key:geom([r.get(key,0) for r in selected]) for key in ('baseline_native_us','candidate_native_us','native_speedup','reference_drift')}
+    pairs.append(dict(name=name,seed=seed,baseline_parity=baseline['capped_geometric_parity'],candidate_parity=candidate['capped_geometric_parity'],groups=groups,cells=rows))
+output = dict(measurement_kind='clean actual-main baseline versus clean implementation commit 4cb04321dc706870cc5f83508dfdccadf9197760',raw_calls_verified=count,pairs=pairs)
+(OUT/'comparison.json').write_text(json.dumps(output,indent=2)+'\n')
+for pair in pairs:
+    print(pair['name'], pair['groups'], flush=True)

@@ -1,0 +1,9 @@
+Using Python 3.14.7 environment at: target/static-analysis/venv314
+Resolved 3 packages in 216ms
+Downloading numpy (15.9MiB)
+ Downloaded numpy
+Prepared 1 package in 252ms
+Installed 3 packages in 268ms
+ + numpy==2.5.3
+ + torch-rs==0.1.0 (from file:///data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/candidate/build-capture/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl)
+ + typing-extensions==4.16.0

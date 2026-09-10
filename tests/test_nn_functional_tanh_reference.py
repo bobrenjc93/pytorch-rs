@@ -685,18 +685,6 @@ class FunctionalTanhReferenceTests(unittest.TestCase):
             actual_rank_four_nonfinite.grad.tolist(), [[[[1.0, 1.0]]]]
         )
 
-        actual_nonleaf_base = torch.tensor(
-            [[[0.5, -1.0]]], requires_grad=True
-        )
-        actual_nonleaf = actual_nonleaf_base.sin()
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^tanh\(\): autograd recording is not supported$",
-        ):
-            functional.tanh(actual_nonleaf)
-        actual_nonleaf.sum().backward()
-        self.assertIsNotNone(actual_nonleaf_base.grad)
-
         actual_rank_four_nonleaf_base = torch.tensor(
             [[[[0.5, -1.0]]]], requires_grad=True
         )

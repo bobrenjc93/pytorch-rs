@@ -1,0 +1,15 @@
+"""Read-only identities of the installed reference used by the capture."""
+import hashlib,importlib.metadata,json,pathlib,sys
+import numpy,torch,triton
+root=pathlib.Path.cwd()
+paths=[pathlib.Path(sys.executable).resolve(),pathlib.Path(torch.__file__),pathlib.Path(torch._C.__file__),pathlib.Path(numpy.__file__),pathlib.Path(triton.__file__)]
+paths.extend(sorted((pathlib.Path(torch.__file__).parent/'lib').glob('*.so')))
+paths.extend(sorted((pathlib.Path(numpy.__file__).parent/'_core').glob('*.so')))
+rows=[]
+for p in paths:
+ assert p.resolve().is_relative_to(root)
+ h=hashlib.sha256()
+ with p.open('rb') as f:
+  for block in iter(lambda:f.read(8*1024*1024),b''):h.update(block)
+ rows.append(dict(path=str(p.resolve()),name=p.name,size=p.stat().st_size,sha256=h.hexdigest()))
+print(json.dumps(dict(python=sys.version,torch=torch.__version__,torch_cuda=torch.version.cuda,torch_build=torch.__config__.show(),numpy=numpy.__version__,triton=triton.__version__,files=rows),indent=2))

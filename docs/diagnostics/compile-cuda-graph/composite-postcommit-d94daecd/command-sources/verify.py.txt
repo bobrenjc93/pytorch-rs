@@ -1,0 +1,91 @@
+"""Read-only source/build/runtime/profile and publication accounting."""
+import hashlib,io,json,pathlib,pstats,subprocess,sys,tarfile,zipfile
+ROOT=pathlib.Path.cwd();OUT=ROOT/'target/composite-postcommit-d94daecd'
+BASE=OUT/'baseline';SIDES={'baseline':BASE/'target/clean-d94daecd','candidate':ROOT/'target/clean-d94daecd'}
+COMMITS={'baseline':'b7936239ceb7d7713a15ecd8a2c82c4bddd6d214','candidate':'d94daecdd9c086ac23afe690a52df11cbaca4f8a'}
+sys.path.insert(0,str(ROOT/'scripts'))
+from evaluate_cuda_math import sha256,source_provenance,corpus,account
+
+def read(p):return json.loads(pathlib.Path(p).read_text())
+def committed_manifest(commit):
+ archive=subprocess.check_output(['git','archive',commit])
+ with tarfile.open(fileobj=io.BytesIO(archive)) as tar:return {m.name:hashlib.sha256(tar.extractfile(m).read()).hexdigest() for m in tar.getmembers() if m.isfile()}
+assert not subprocess.check_output(['git','status','--porcelain'],text=True)
+assert sha256(OUT/'profile_graph.py')==sha256(ROOT/'docs/diagnostics/compile-cuda-graph/postcommit-4cb0432/command-sources/profile_graph.py.txt')
+for path in ['scripts/diagnose_compile_cuda_matmul.py','scripts/benchmark_cuda_matmul.py','scripts/evaluate_cuda_math.py','scripts/benchmark_compile_cuda.py','scripts/capture_depth_concat_build.py']:
+ assert sha256(ROOT/path)==sha256(BASE/path),path
+assert read(OUT/'paired-reference-check.json')['equal']
+
+prior={}
+for name in ['static-analysis-b7936239-development','postcommit-4cb0432']:
+ folder=ROOT/'docs/diagnostics/compile-cuda-graph'/name;hashes=read(folder/'artifact-hashes.json')
+ for path,digest in hashes.items():assert sha256(folder/path)==digest,path
+ prior[name]=len(hashes)
+# Complete source files, including historical publication bytes, cannot change.
+for side,folder in SIDES.items():
+ root=BASE if side=='baseline' else ROOT;manifest=read(folder/'source-manifest.json')
+ assert manifest==committed_manifest(COMMITS[side])
+ assert all(sha256(root/p)==h for p,h in manifest.items())
+ build=read(folder/'build-capture/build-record.json')
+ assert build['clean_checkout'] and not build['git_status_before_build'] and build['commit']==COMMITS[side]
+ assert build['production_diff_sha256']==hashlib.sha256(b'').hexdigest()
+ for key,digest in [('interpreter_path','interpreter_sha256'),('wheel_path','wheel_sha256'),('extension_path','extension_sha256'),('source_extension_path','extension_sha256'),('rustc_path','rustc_sha256')]:assert sha256(build[key])==build[digest],key
+ with zipfile.ZipFile(build['wheel_path']) as wheel:
+  native,=[n for n in wheel.namelist() if n.endswith('.so')]
+  assert hashlib.sha256(wheel.read(native)).hexdigest()==build['extension_sha256']
+  for p,h in manifest.items():
+   if p.startswith('python/torch_rs/') and p.endswith('.py'):assert hashlib.sha256(wheel.read(p.removeprefix('python/'))).hexdigest()==h,p
+ for command in build['commands']:assert command['exit_status']==0 and sha256(command['log'])==command['log_sha256']
+ for name in ['primary','held-481723','held-926051','primary-repeat']:
+  report=read(folder/(name+'.json'))
+  assert report['installed_source_manifest']=={p:h for p,h in manifest.items() if p.startswith('python/torch_rs/') and p.endswith('.py')}
+  for library in report['loaded_cuda_libraries']:assert sha256(library['path'])==library['sha256']
+  compiler=report['reference_triton_compiler'];assert sha256(compiler['ptxas_path'])==compiler['ptxas_sha256']
+  for path in report['imports'].values():assert pathlib.Path(path).resolve().is_relative_to(root/'.venv')
+  assert pathlib.Path(report['executable']).resolve().is_relative_to(root)
+profiles=[]
+for side,folder in SIDES.items():
+ rows=[]
+ for i in range(12):
+  stats=pstats.Stats(str(folder/f'cell-{i}.prof'));row=dict(cell=i,profiled_elapsed_s=stats.total_tt)
+  for name in ['_lowerable_bytecode_instructions','_global_load_dependencies_from_instructions','_resolve_live_global_dependency']:
+   values=[v for k,v in stats.stats.items() if k[2]==name];row[name]=dict(calls=sum(v[1] for v in values),cumulative_s=sum(v[3] for v in values))
+  if i%2:
+   assert row['_resolve_live_global_dependency']['calls']==200
+   assert row['_lowerable_bytecode_instructions']['calls']==(200 if side=='baseline' else 0)
+   assert row['_global_load_dependencies_from_instructions']['calls']==(200 if side=='baseline' else 0)
+  rows.append(row)
+ profiles.append(dict(side=side,cells=rows))
+(OUT/'profiles.json').write_text(json.dumps(profiles,indent=2)+'\n')
+commands=read(OUT/'commands.json')
+declaration=read(OUT/'declaration.json')
+assert all(declaration['declared_at'] < receipt['started_at'] for receipt in commands)
+measured=[('baseline' if receipt['commit']==COMMITS['baseline'] else 'candidate', pathlib.Path(receipt['log']).stem) for receipt in commands if pathlib.Path(receipt['log']).stem in ['profile','primary','held-481723','held-926051','primary-repeat']]
+assert measured==[(side,name) for side in ['baseline','candidate'] for name in ['profile','primary','held-481723','held-926051','primary-repeat']]
+assert read(OUT/'capture-complete.json')['status']=='COMPLETE'
+
+for receipt in commands:
+ assert not receipt['status_before'] and not receipt['status_after'] and sha256(receipt['log'])==receipt['log_sha256']
+ # Nonzero diagnostic exits, if any, are retained and reported, not filtered.
+comparison=read(OUT/'comparison.json')
+math=read(SIDES['candidate']/'fixed-math.json');build=read(SIDES['candidate']/'build-capture/build-record.json')
+assert account(corpus(),math['seeds'],math['trials'],build,source_provenance())==math['accounting']
+scoring=read(SIDES['candidate']/'fixed-scoring.json');private=[]
+def check_private(value):
+ if isinstance(value,dict):
+  if value.get('source_path') and value.get('library_path') and value.get('source_checksum'):
+   p=pathlib.Path(value['source_path']).resolve();lib=pathlib.Path(value['library_path']).resolve();assert p.is_relative_to(ROOT) and lib.is_relative_to(ROOT)
+   assert hashlib.blake2b(p.read_bytes(),digest_size=16).hexdigest()==value['source_checksum']
+   private.append(dict(source=str(p),source_sha256=sha256(p),library=str(lib),library_sha256=sha256(lib)))
+  for v in value.values():check_private(v)
+ elif isinstance(value,list):
+  for v in value:check_private(v)
+check_private(scoring)
+builds={side:read(folder/'build-capture/build-record.json') for side,folder in SIDES.items()}
+for key in ['python','interpreter_sha256','dependencies','rustc','cargo','rustc_sha256','uv_lock_sha256','profile']:assert builds['baseline'][key]==builds['candidate'][key]
+# Compare loaded runtime/library content identities while keeping actual paths.
+reports={s:read(p/'primary.json') for s,p in SIDES.items()}
+libs=lambda r: sorted((pathlib.Path(v['path']).name,v['sha256']) for v in r['loaded_cuda_libraries'])
+assert libs(reports['baseline'])==libs(reports['candidate'])
+result=dict(measured_commit=COMMITS['candidate'],baseline_commit=COMMITS['baseline'],publication_commit=None,publication_note='Pending Burner evidence-only commit; no implementation/test/harness changes permitted.',full_manifest_files={s:len(read(p/'source-manifest.json')) for s,p in SIDES.items()},build_records={s:dict(path=str(p/'build-capture/build-record.json'),sha256=sha256(p/'build-capture/build-record.json'),native_sha256=builds[s]['extension_sha256'],wheel_sha256=builds[s]['wheel_sha256']) for s,p in SIDES.items()},interpreter_sha256=builds['candidate']['interpreter_sha256'],raw_calls_verified=comparison['raw_calls_verified'],command_count=len(commands),nonzero_commands=[r['command'] for r in commands if r['exit_status']],prior_artifact_hashes_verified=prior,profiles_verified=True,loaded_runtime_hashes_equal=True,fixed_math_accounting=math['accounting'],fixed_scoring=scoring['aggregates'],private_libraries=private)
+(OUT/'verification.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result,indent=2))

@@ -1,0 +1,427 @@
+{
+  "measured_commit": "d94daecdd9c086ac23afe690a52df11cbaca4f8a",
+  "baseline_commit": "b7936239ceb7d7713a15ecd8a2c82c4bddd6d214",
+  "publication_commit": null,
+  "publication_note": "Pending Burner evidence-only commit; no implementation/test/harness changes permitted.",
+  "full_manifest_files": {
+    "baseline": 2778,
+    "candidate": 3036
+  },
+  "build_records": {
+    "baseline": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/target/clean-d94daecd/build-capture/build-record.json",
+      "sha256": "a5465dd02f855dee97eb4b8e49114be5f3e0cb1c0d73c52a76ada896ca475d85",
+      "native_sha256": "a1fc7f99dee49375e8b40b47da5b49ec61c90c2446bfff22417dce82bf639162",
+      "wheel_sha256": "c78890ee024ff99b29272dbaef61e1227dca0da492fa4a7fefbe8e2536822c4e"
+    },
+    "candidate": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/clean-d94daecd/build-capture/build-record.json",
+      "sha256": "a09d6df35c2454974dd6f2d63ee0b3467102757732e957ea1767f69119105279",
+      "native_sha256": "e6817ed37691beb75aa30f59dbe82e356ac02a2eda2b3173f0c40079f5ac53b5",
+      "wheel_sha256": "844b073e4975473da7864c282e4b3911fc3015a300875c07b05797aa5f7edf29"
+    }
+  },
+  "interpreter_sha256": "f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526",
+  "raw_calls_verified": 59520,
+  "command_count": 20,
+  "nonzero_commands": [],
+  "prior_artifact_hashes_verified": {
+    "static-analysis-b7936239-development": 143,
+    "postcommit-4cb0432": 110
+  },
+  "profiles_verified": true,
+  "loaded_runtime_hashes_equal": true,
+  "fixed_math_accounting": {
+    "denominator": 6,
+    "passed": 6,
+    "fraction": 1.0,
+    "cases": [
+      {
+        "case_id": "cuda_f32_add_same_shape",
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 8503945240872567646,
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 8613321571747136749,
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 4480763905421893394,
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      },
+      {
+        "case_id": "cuda_f32_add_trailing_vector",
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 8503945240872567646,
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 8613321571747136749,
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 4480763905421893394,
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      },
+      {
+        "case_id": "cuda_f32_neg",
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 8503945240872567646,
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 8613321571747136749,
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 4480763905421893394,
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      },
+      {
+        "case_id": "cuda_f32_mul_scalar",
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 8503945240872567646,
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 8613321571747136749,
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 4480763905421893394,
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      },
+      {
+        "case_id": "cuda_f32_sum_axis",
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 8503945240872567646,
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 8613321571747136749,
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 4480763905421893394,
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      },
+      {
+        "case_id": "cuda_f32_matmul",
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 8503945240872567646,
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 8613321571747136749,
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 4480763905421893394,
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      }
+    ]
+  },
+  "fixed_scoring": {
+    "common_success_geomean_speed_ratio": 1.2742772771857542,
+    "common_success_shape_count": 4,
+    "common_success_weight": 1.0,
+    "coverage_adjusted_capped_speed_ratio": 1.0,
+    "coverage_adjusted_overall_percent": 100.0,
+    "denominator_weight": 1.0,
+    "full_matrix_weight": 1.0,
+    "per_workload": [
+      {
+        "candidate_status": "ok",
+        "capped_steady_speed_ratio": 1.0,
+        "eligible_cuda_compile_evidence": true,
+        "name": "square_256x256",
+        "pytorch_cold_first_call_us": 3039499.815,
+        "pytorch_steady_median_us": 45.34866666666667,
+        "shape": [
+          256,
+          256
+        ],
+        "steady_speed_ratio": 1.2593003989521718,
+        "torch_rs_cold_first_call_us": 168.425,
+        "torch_rs_steady_median_us": 36.011,
+        "weight": 0.25,
+        "weighted_score_contribution_percent": 25.0
+      },
+      {
+        "candidate_status": "ok",
+        "capped_steady_speed_ratio": 1.0,
+        "eligible_cuda_compile_evidence": true,
+        "name": "square_1024x1024",
+        "pytorch_cold_first_call_us": 852503.38,
+        "pytorch_steady_median_us": 50.25266666666666,
+        "shape": [
+          1024,
+          1024
+        ],
+        "steady_speed_ratio": 1.2549466832041687,
+        "torch_rs_cold_first_call_us": 167.253,
+        "torch_rs_steady_median_us": 40.04366666666667,
+        "weight": 0.25,
+        "weighted_score_contribution_percent": 25.0
+      },
+      {
+        "candidate_status": "ok",
+        "capped_steady_speed_ratio": 1.0,
+        "eligible_cuda_compile_evidence": true,
+        "name": "tall_4096x256",
+        "pytorch_cold_first_call_us": 827644.969,
+        "pytorch_steady_median_us": 50.366,
+        "shape": [
+          4096,
+          256
+        ],
+        "steady_speed_ratio": 1.3391651156607285,
+        "torch_rs_cold_first_call_us": 162.265,
+        "torch_rs_steady_median_us": 37.61,
+        "weight": 0.25,
+        "weighted_score_contribution_percent": 25.0
+      },
+      {
+        "candidate_status": "ok",
+        "capped_steady_speed_ratio": 1.0,
+        "eligible_cuda_compile_evidence": true,
+        "name": "wide_256x4096",
+        "pytorch_cold_first_call_us": 265978.062,
+        "pytorch_steady_median_us": 42.090333333333334,
+        "shape": [
+          256,
+          4096
+        ],
+        "steady_speed_ratio": 1.2458536007814272,
+        "torch_rs_cold_first_call_us": 163.167,
+        "torch_rs_steady_median_us": 33.784333333333336,
+        "weight": 0.25,
+        "weighted_score_contribution_percent": 25.0
+      }
+    ],
+    "torch_rs_cuda_compile_score_percent": 100.0,
+    "workload_count": 4,
+    "zero_credit_cell_count": 0,
+    "zero_credit_unsupported_cell_count": 0,
+    "zero_credit_weight": 0
+  },
+  "private_libraries": [
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise/abc1ef92dd5c211d/torch_rs_private_pointwise.cu",
+      "source_sha256": "22c19cfe066dc5ec5ef73e350a8c5ee6bf8aa5509f97b0df17e72aa7d7ef7139",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise/abc1ef92dd5c211d/libtorch_rs_private_pointwise.so",
+      "library_sha256": "fc4bdfebceb3da199a03d78c56f245e28ae203013362368538b8ab924c7531a6"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/torch_rs_private_pointwise_reduce.cu",
+      "source_sha256": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+      "library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/torch_rs_private_cuda_pointwise_reduce/008df4c027d70965/libtorch_rs_private_pointwise_reduce.so",
+      "library_sha256": "828ec2e9cb73c6a34855664945d82d7faeacb56bee957afec128c8af0863d7a8"
+    }
+  ]
+}
