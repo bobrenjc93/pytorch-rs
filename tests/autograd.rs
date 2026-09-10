@@ -264,7 +264,7 @@ fn reciprocal_records_saved_input_vjp_for_views_and_honors_no_grad() {
 }
 
 #[test]
-fn division_rejects_recording_before_planning_and_honors_no_grad() {
+fn tensor_and_reflected_division_reject_recording_and_honor_no_grad() {
     let left = Tensor::from_vec(vec![2.0, 8.0, 4.0, 16.0], [2, 2])
         .unwrap()
         .with_requires_grad(true);
@@ -273,7 +273,6 @@ fn division_rejects_recording_before_planning_and_honors_no_grad() {
         .with_requires_grad(true);
     let unsupported = TensorError::AutogradRecordingUnsupported { operation: "div" };
     assert_eq!(left.div(&right), Err(unsupported.clone()));
-    assert_eq!(left.div_scalar(2.0), Err(unsupported.clone()));
     assert_eq!(left.scalar_div(2.0), Err(unsupported.clone()));
     assert_eq!(right.div(&left), Err(unsupported.clone()));
 
@@ -282,7 +281,9 @@ fn division_rejects_recording_before_planning_and_honors_no_grad() {
         .reshape([0, i64::MAX, 3])
         .unwrap()
         .with_requires_grad(true);
-    assert_eq!(extreme.div_scalar(2.0), Err(unsupported));
+    let extreme_output = extreme.div_scalar(2.0).unwrap();
+    extreme_output.sum().backward().unwrap();
+    assert_eq!(extreme.grad().unwrap().unwrap().shape(), extreme.shape());
 
     {
         let _guard = no_grad();
@@ -5272,4 +5273,122 @@ fn rsqrt_accumulates_shared_edges_and_fresh_graphs() {
     leaf.rsqrt().unwrap().sum().backward().unwrap();
     assert_eq!(values(&leaf.grad().unwrap().unwrap()), [-1.5, -0.1875]);
     assert!(!leaf.grad().unwrap().unwrap().requires_grad());
+}
+
+#[test]
+fn div_scalar_weighted_scalar_empty_offset_and_transposed_backward() {
+    let scalar = Tensor::from_vec(vec![4.0], [])
+        .unwrap()
+        .with_requires_grad(true);
+    scalar
+        .div_scalar(-2.0)
+        .unwrap()
+        .mul_scalar(3.0)
+        .unwrap()
+        .backward()
+        .unwrap();
+    assert_eq!(scalar.grad().unwrap().unwrap().item().unwrap(), -1.5);
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+    let output = empty.transpose(0, 2).unwrap().div_scalar(0.0).unwrap();
+    assert_eq!(output.shape(), [3, 0, 2]);
+    output.sum().backward().unwrap();
+    assert_eq!(empty.grad().unwrap().unwrap().shape(), [2, 0, 3]);
+    assert!(values(&empty.grad().unwrap().unwrap()).is_empty());
+
+    for transposed in [false, true] {
+        let leaf = Tensor::from_vec(vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0], [2, 2, 2])
+            .unwrap()
+            .with_requires_grad(true);
+        let offset = leaf.index([1]).unwrap();
+        let input = if transposed {
+            offset.transpose(0, 1).unwrap()
+        } else {
+            offset
+        };
+        let output = input.div_scalar(-2.0).unwrap();
+        assert_eq!(input.storage_offset(), 4);
+        assert_eq!(output.stride(), if transposed { [1, 2] } else { [2, 1] });
+        assert_eq!(output.storage_offset(), 0);
+        assert!(!output.shares_storage_with(&input));
+        let weights = Tensor::from_vec(vec![1.0, -2.0, 3.0, -4.0], [2, 2]).unwrap();
+        let loss = output.mul(&weights).unwrap().sum();
+        loss.backward().unwrap();
+        let expected = if transposed {
+            [0.0, 0.0, 0.0, 0.0, -0.5, -1.5, 1.0, 2.0]
+        } else {
+            [0.0, 0.0, 0.0, 0.0, -0.5, 1.0, -1.5, 2.0]
+        };
+        assert_eq!(values(&leaf.grad().unwrap().unwrap()), expected);
+        assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+        assert_eq!(values(&leaf.grad().unwrap().unwrap()), expected);
+    }
+}
+
+#[test]
+fn div_scalar_vjp_matches_pytorch_float32_division_order() {
+    // PyTorch 2.13 CPU float32: ((x / divisor) * weight).sum().backward().
+    // These cases distinguish direct division from multiplication by 1/divisor.
+    let cases = [
+        (0x40e0_0000, 0x4040_0000, 0x4015_5555), // 7/3 rounds differently
+        (0x7f7f_ffff, 0x7f7f_ffff, 0x3f80_0000),
+        (0x0001_16c2, 0x0001_16c2, 0x3f80_0000), // reciprocal overflows
+        (0x0000_0001, 0x0000_0001, 0x3f80_0000),
+        (0x0080_0000, 0x4000_0000, 0x0040_0000), // subnormal result
+        (0x7f7f_ffff, 0x0000_0001, 0x7f80_0000), // overflow
+        (0x0000_0001, 0x4000_0000, 0x0000_0000), // underflow
+        (0x0000_0000, 0xc000_0000, 0x8000_0000),
+        (0x3f80_0000, 0x0000_0000, 0x7f80_0000),
+        (0xbf80_0000, 0x8000_0000, 0x7f80_0000),
+        (0x0000_0000, 0x0000_0000, 0xffc0_0000),
+        (0x3f80_0000, 0x7f80_0000, 0x0000_0000),
+        (0xbf80_0000, 0x7f80_0000, 0x8000_0000),
+        (0x3f80_0000, 0xff80_0000, 0x8000_0000),
+        (0x7f80_0000, 0x7f80_0000, 0xffc0_0000),
+        (0x3f80_0000, 0x7fc0_0000, 0x7fc0_0000),
+    ];
+    for (weight, divisor, expected) in cases {
+        let leaf = Tensor::from_vec(vec![2.0], [1])
+            .unwrap()
+            .with_requires_grad(true);
+        leaf.div_scalar(f32::from_bits(divisor))
+            .unwrap()
+            .mul_scalar(f32::from_bits(weight))
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+        let actual = leaf.grad().unwrap().unwrap().item().unwrap();
+        if f32::from_bits(expected).is_nan() {
+            assert!(actual.is_nan());
+        } else {
+            assert_eq!(
+                actual.to_bits(),
+                expected,
+                "weight={weight:x}, divisor={divisor:x}"
+            );
+        }
+    }
+}
+
+#[test]
+fn div_scalar_accumulates_shared_edges_and_fresh_graphs_and_honors_no_grad() {
+    let leaf = Tensor::from_vec(vec![2.0, 4.0], [2])
+        .unwrap()
+        .with_requires_grad(true);
+    let output = leaf.div_scalar(2.0).unwrap();
+    output.add(&output).unwrap().sum().backward().unwrap();
+    assert_eq!(values(&leaf.grad().unwrap().unwrap()), [1.0, 1.0]);
+    assert_eq!(
+        output.sum().backward(),
+        Err(TensorError::BackwardGraphFreed)
+    );
+    leaf.div_scalar(4.0).unwrap().sum().backward().unwrap();
+    assert_eq!(values(&leaf.grad().unwrap().unwrap()), [1.25, 1.25]);
+    assert!(!leaf.grad().unwrap().unwrap().requires_grad());
+    let _guard = no_grad();
+    let detached = leaf.div_scalar(2.0).unwrap();
+    assert!(!detached.requires_grad());
+    assert!(detached.is_leaf());
+    assert_eq!(values(&detached), [1.0, 2.0]);
 }

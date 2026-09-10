@@ -7646,11 +7646,6 @@ fn apply_top_level_division(
         (BoundDivOperand::Tensor(input), BoundDivOperand::Scalar(scalar)) => {
             let input = input.try_borrow()?;
             validate_top_level_division_tensor(operation, &input)?;
-            if is_grad_enabled() && input.inner.requires_grad() {
-                return Err(PyRuntimeError::new_err(
-                    operation.autograd_unsupported_error(),
-                ));
-            }
             let scalar = parse_top_level_mul_scalar(scalar)?;
             BinaryOperation::Divide.apply_scalar(&input.inner, scalar, false)
         }
@@ -7929,11 +7924,6 @@ fn apply_tensor_division_method(
         }
         (BoundDivOperand::Tensor(tensor), BoundDivOperand::Scalar(scalar)) => {
             let tensor = tensor.try_borrow()?;
-            if is_grad_enabled() && tensor.inner.requires_grad() {
-                return Err(PyRuntimeError::new_err(
-                    operation.autograd_unsupported_error(),
-                ));
-            }
             let scalar = parse_top_level_mul_scalar(scalar)?;
             BinaryOperation::Divide.apply_scalar(&tensor.inner, scalar, false)
         }
