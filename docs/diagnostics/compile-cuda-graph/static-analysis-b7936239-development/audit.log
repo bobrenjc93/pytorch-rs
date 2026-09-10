@@ -1,0 +1,12 @@
+{
+  "existing_changed_paths": [
+    "python/torch_rs/_compile_bytecode.py"
+  ],
+  "raw_calls": 59520,
+  "rust_test_totals": {
+    "passed": 397,
+    "failed": 0,
+    "ignored": 0
+  },
+  "profiles": "all 12 cells per side verified; live resolution retained"
+}

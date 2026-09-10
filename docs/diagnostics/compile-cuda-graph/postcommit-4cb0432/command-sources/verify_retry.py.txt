@@ -1,0 +1,89 @@
+"""Read-only checks of this capture's complete committed sources and raw evidence."""
+import hashlib, io, json, pathlib, pstats, subprocess, sys, tarfile, zipfile
+ROOT=pathlib.Path.cwd().resolve(); OUT=ROOT/'target/static-analysis-postcommit-4cb0432'
+OLD=ROOT/'docs/diagnostics/compile-cuda-graph/static-analysis-b7936239-development'
+COMMIT='4cb04321dc706870cc5f83508dfdccadf9197760'; BASE='b7936239ceb7d7713a15ecd8a2c82c4bddd6d214'
+sys.path.insert(0,str(ROOT/'scripts'))
+from evaluate_cuda_math import source_provenance, sha256, corpus, account
+
+def read(path): return json.loads(path.read_text())
+def committed_manifest(commit):
+    archive=subprocess.check_output(['git','archive',commit])
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+        return {m.name:hashlib.sha256(tar.extractfile(m).read()).hexdigest() for m in tar.getmembers() if m.isfile()}
+manifest=read(OUT/'source-manifest.json'); assert manifest==committed_manifest(COMMIT)
+assert all(sha256(ROOT/p)==h for p,h in manifest.items())
+assert not subprocess.check_output(['git','status','--porcelain'],text=True)
+base_manifest=committed_manifest(BASE)
+assert read(OLD/'baseline/source-manifest.json')==base_manifest
+for path,digest in read(OLD/'artifact-hashes.json').items(): assert sha256(OLD/path)==digest
+builds={}
+for label,path,expected in [('baseline',OLD/'baseline/build-capture/build-record.json',base_manifest),('candidate',OUT/'build-capture/build-record.json',manifest)]:
+    build=read(path)
+    assert build['clean_checkout'] and not build['git_status_before_build']
+    assert build['commit']==(BASE if label=='baseline' else COMMIT)
+    assert build['production_diff_sha256']==hashlib.sha256(b'').hexdigest()
+    assert sha256(build['interpreter_path'])==build['interpreter_sha256']
+    assert sha256(build['wheel_path'])==build['wheel_sha256']
+    with zipfile.ZipFile(build['wheel_path']) as wheel:
+        native,=[n for n in wheel.namelist() if n.endswith('.so')]
+        assert hashlib.sha256(wheel.read(native)).hexdigest()==build['extension_sha256']
+        for p,h in expected.items():
+            if p.startswith('python/torch_rs/') and p.endswith('.py'):
+                assert hashlib.sha256(wheel.read(p.removeprefix('python/'))).hexdigest()==h
+    for command in build['commands']:
+        assert command['exit_status']==0 and sha256(command['log'])==command['log_sha256']
+    builds[label]=build
+assert builds['candidate']['extension_sha256']==builds['baseline']['extension_sha256']
+assert builds['candidate']['interpreter_sha256']==builds['baseline']['interpreter_sha256']
+assert builds['candidate']['dependencies']==builds['baseline']['dependencies']
+profiles=[]
+for side,folder in [('baseline',OLD/'baseline'),('candidate',OUT)]:
+    cells=[]
+    for i in range(12):
+        stats=pstats.Stats(str(folder/f'cell-{i}.prof'))
+        row=dict(cell=i,profiled_elapsed_s=stats.total_tt)
+        for name in ('_lowerable_bytecode_instructions','_global_load_dependencies_from_instructions','_resolve_live_global_dependency'):
+            values=[v for k,v in stats.stats.items() if k[2]==name]
+            row[name]=dict(calls=sum(v[1] for v in values),cumulative_s=sum(v[3] for v in values))
+        if i%2:
+            assert row['_resolve_live_global_dependency']['calls']==200
+            assert row['_lowerable_bytecode_instructions']['calls']==(200 if side=='baseline' else 0)
+            assert row['_global_load_dependencies_from_instructions']['calls']==(200 if side=='baseline' else 0)
+        cells.append(row)
+    profiles.append(dict(side=side,cells=cells))
+(OUT/'profiles.json').write_text(json.dumps(profiles,indent=2)+'\n')
+for side,folder,expected in [('baseline',OLD/'baseline',base_manifest),('candidate',OUT,manifest)]:
+    for name in ('primary','held-481723','held-926051','primary-repeat'):
+        report=read(folder/(name+'.json'))
+        assert report['status']=='passed' and len(report['cases'])==12
+        assert report['installed_source_manifest']=={p:h for p,h in expected.items() if p.startswith('python/torch_rs/') and p.endswith('.py')}
+        for library in report['loaded_cuda_libraries']: assert sha256(library['path'])==library['sha256']
+        compiler=report['reference_triton_compiler'];assert sha256(compiler['ptxas_path'])==compiler['ptxas_sha256']
+        for path in report['imports'].values(): assert pathlib.Path(path).resolve().is_relative_to(ROOT/'.venv')
+        assert pathlib.Path(report['executable']).resolve().is_relative_to(ROOT)
+commands=read(OUT/'commands.json')
+for receipt in commands:
+    assert receipt['exit_status']==0
+    assert not receipt['status_before'] and not receipt['status_after']
+    assert receipt['source_before']==receipt['source_after']==source_provenance()
+    assert sha256(receipt['log'])==receipt['log_sha256']
+comparison=read(OUT/'comparison.json');assert comparison['raw_calls_verified']==59520
+math=read(OUT/'fixed-math.json')
+assert account(corpus(),math['seeds'],math['trials'],builds['candidate'],source_provenance())==math['accounting']
+scoring=read(OUT/'fixed-scoring.json')
+private_libraries=[]
+def check_private(value):
+    if isinstance(value,dict):
+        if value.get('source_path') and value.get('library_path') and value.get('source_checksum'):
+            p=pathlib.Path(value['source_path']).resolve(); lib=pathlib.Path(value['library_path']).resolve()
+            assert p.is_relative_to(ROOT) and lib.is_relative_to(ROOT)
+            assert hashlib.blake2b(p.read_bytes(),digest_size=16).hexdigest()==value['source_checksum']
+            private_libraries.append(dict(source=str(p),source_sha256=sha256(p),library=str(lib),library_sha256=sha256(lib)))
+        for v in value.values():check_private(v)
+    elif isinstance(value,list):
+        for v in value:check_private(v)
+check_private(scoring)
+result=dict(measured_commit=COMMIT,publication_commit=None,publication_commit_note='Burner will create the evidence-only publication commit after this step.',baseline_commit=BASE,source=source_provenance(),full_committed_source_manifest_sha256=sha256(OUT/'source-manifest.json'),baseline_build_record_sha256=sha256(OLD/'baseline/build-capture/build-record.json'),candidate_build_record_sha256=sha256(OUT/'build-capture/build-record.json'),native_sha256=builds['candidate']['extension_sha256'],interpreter_sha256=builds['candidate']['interpreter_sha256'],raw_calls_verified=59520,clean_candidate_cells=48,baseline_cells=48,baseline_publication_unchanged=True,profiles_verified=True,commands_verified=len(commands),fixed_scoring=scoring['aggregates'],private_libraries=private_libraries)
+(OUT/'verification.json').write_text(json.dumps(result,indent=2)+'\n')
+print(json.dumps(result,indent=2))

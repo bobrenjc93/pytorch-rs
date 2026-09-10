@@ -1,0 +1,13 @@
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis-postcommit-4cb0432/verify.py", line 86, in <module>
+    check_private(scoring)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis-postcommit-4cb0432/verify.py", line 83, in check_private
+    for v in value.values():check_private(v)
+                            ^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis-postcommit-4cb0432/verify.py", line 83, in check_private
+    for v in value.values():check_private(v)
+                            ^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis-postcommit-4cb0432/verify.py", line 81, in check_private
+    assert sha256(p)==value['source_checksum']
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

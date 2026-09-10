@@ -1,0 +1,70 @@
+"""Invoke unchanged committed tools with clean-source and inventory receipts."""
+import datetime, hashlib, importlib.metadata, json, os, pathlib, subprocess, sys, time
+ROOT=pathlib.Path.cwd().resolve()
+OUT=ROOT/'target/static-analysis-postcommit-4cb0432'
+OLD=ROOT/'docs/diagnostics/compile-cuda-graph/static-analysis-b7936239-development'
+COMMIT='4cb04321dc706870cc5f83508dfdccadf9197760'
+sys.path.insert(0,str(ROOT/'scripts'))
+from evaluate_cuda_math import source_provenance, sha256
+from diagnose_compile_cuda_matmul import cells
+
+def git(*args): return subprocess.check_output(['git',*args],text=True)
+def stamp(): return datetime.datetime.now(datetime.timezone.utc).isoformat()
+def save(name,value): (OUT/name).write_text(json.dumps(value,indent=2)+'\n')
+def inventory():
+    return {name:dict(stdout=r.stdout,stderr=r.stderr,returncode=r.returncode) for name,cmd in (
+        ('gpu',['nvidia-smi','--query-gpu=index,name,uuid,memory.used,utilization.gpu','--format=csv']),
+        ('processes',['nvidia-smi','--query-compute-apps=gpu_uuid,pid,process_name,used_memory','--format=csv']))
+        for r in [subprocess.run(cmd,capture_output=True,text=True)]}
+assert git('rev-parse','HEAD').strip()==COMMIT
+assert not git('status','--porcelain')
+initial=source_provenance()
+paths=git('ls-files','-z').split('\0')
+manifest={p:sha256(ROOT/p) for p in paths if p}
+save('source-manifest.json',manifest)
+(OUT/'complete-candidate.diff').write_text(git('diff','main...HEAD'))
+changed=git('diff','main...HEAD','--name-only').splitlines()
+assert all(p in ('python/torch_rs/_compile_bytecode.py','tests/test_compile_static_analysis.py') or p.startswith('docs/diagnostics/compile-cuda-graph/static-analysis-b7936239-development/') for p in changed)
+for path,digest in json.loads((OLD/'artifact-hashes.json').read_text()).items(): assert sha256(OLD/path)==digest
+prior_manifest=json.loads((OLD/'candidate/source-manifest-final.json').read_text())
+assert all(sha256(ROOT/p)==h for p,h in prior_manifest.items())
+baseline_build=json.loads((OLD/'baseline/build-capture/build-record.json').read_text())
+assert sha256(pathlib.Path(sys.executable).resolve())==baseline_build['interpreter_sha256']
+assert sys.version==baseline_build['python']
+assert {d.metadata['Name']:d.version for d in importlib.metadata.distributions()}==baseline_build['dependencies']
+save('inspection.json',dict(commit=COMMIT,base=git('rev-parse','main').strip(),source=initial,status=git('status','--porcelain'),changed_paths=changed,complete_diff_sha256=sha256(OUT/'complete-candidate.diff'),prior_publication_verified=True,author_final_sources_unchanged=True,baseline_interpreter_and_dependencies_unchanged=True,started_at=stamp()))
+save('declaration.json',dict(declared_at=stamp(),primary_seed=798431,held_out_seeds=[481723,926051],primary_repeat_seed=798431,sequence=['primary','held-481723','held-926051','primary-repeat'],cells={str(s):cells(s) for s in (798431,481723,926051)},resource='gpu',reservation='No reservation API available; inventories do not prove exclusivity.'))
+env=dict(os.environ)
+for key,name in [('TMPDIR','tmp'),('XDG_CACHE_HOME','cache'),('CUDA_CACHE_PATH','cuda'),('TRITON_CACHE_DIR','triton'),('TORCHINDUCTOR_CACHE_DIR','inductor'),('CARGO_TARGET_DIR','rust-tests')]:
+    path=OUT/name;path.mkdir();env[key]=str(path)
+commands=[]
+def run(name,command,overrides=None,required=True):
+    child_env=env | (overrides or {})
+    assert source_provenance()==initial and not git('status','--porcelain')
+    receipt=dict(command=command,cwd=str(ROOT),started_at=stamp(),source_before=initial,status_before=git('status','--porcelain'),inventory_before=inventory(),environment={k:v for k,v in child_env.items() if k.startswith(('UV_','CUDA','TORCH','TRITON','CARGO','PYO3_','OMP_','MKL_','OPENBLAS_')) or k in ('TMPDIR','XDG_CACHE_HOME','VIRTUAL_ENV')})
+    start=time.perf_counter(); log=OUT/(name+'.log')
+    with log.open('x') as stream:
+        result=subprocess.run(command,env=child_env,stdout=stream,stderr=subprocess.STDOUT)
+    receipt.update(ended_at=stamp(),wall_seconds=time.perf_counter()-start,exit_status=result.returncode,source_after=source_provenance(),status_after=git('status','--porcelain'),inventory_after=inventory(),log=str(log),log_sha256=sha256(log))
+    save(name+'.receipt.json',receipt);commands.append(receipt);save('commands.json',commands)
+    print(name,result.returncode,flush=True)
+    assert receipt['source_after']==initial and not receipt['status_after']
+    if required: result.check_returncode()
+py=str(ROOT/'.venv/bin/python')
+run('preflight',[py,'-c',"import torch,sys,subprocess;print(sys.executable,sys.base_prefix,sys.version,torch.__version__,torch.version.cuda,torch.cuda.is_available());print(subprocess.check_output(['nvidia-smi','--query-gpu=index,name,uuid,memory.total,memory.used,driver_version,compute_cap','--format=csv'],text=True));print(subprocess.check_output(['nvcc','--version'],text=True))"])
+run('fresh-build',[py,'scripts/capture_depth_concat_build.py','--output',str(OUT/'build-capture')])
+run('wheel-verifier',[py,'-I','.github/scripts/verify_native_extension.py'])
+run('focused-regressions',[py,'-m','unittest','tests.test_compile_static_analysis','tests.test_compile_cuda_graph'])
+run('two-gpu',[py,'-m','unittest','tests.test_compile_cuda_graph.CudaGraphDeviceTests','tests.test_compile_cuda_matmul.CompileCudaMatmulDeviceTests'],{'CUDA_VISIBLE_DEVICES':'0,1'})
+# Mirror baseline profile-then-timing cache policy with fresh diagnostic caches.
+diag={}
+for key,name in [('CUDA_CACHE_PATH','diagnostic-cuda'),('TRITON_CACHE_DIR','diagnostic-triton'),('TORCHINDUCTOR_CACHE_DIR','diagnostic-inductor')]:
+    path=OUT/name;path.mkdir();diag[key]=str(path)
+run('profile',[py,str(OUT/'profile_graph.py'),str(OUT)],diag)
+for name,seed in [('primary',798431),('held-481723',481723),('held-926051',926051),('primary-repeat',798431)]:
+    run(name,[py,'scripts/diagnose_compile_cuda_matmul.py','--build-record',str(OUT/'build-capture/build-record.json'),'--output',str(OUT/(name+'.json')),'--seed',str(seed)],diag,required=False)
+run('frozen-compiler',[py,'scripts/evaluate_torch_compile_coverage.py','--subset','full'])
+run('fixed-math',[py,'scripts/evaluate_cuda_math.py','--build-record',str(OUT/'build-capture/build-record.json'),'--output',str(OUT/'fixed-math.json'),'--seed','8503945240872567646','--seed','8613321571747136749','--seed','4480763905421893394'])
+run('fixed-scoring',[py,'scripts/benchmark_compile_cuda.py','--output',str(OUT/'fixed-scoring.json')])
+assert all(sha256(ROOT/p)==h for p,h in manifest.items())
+save('capture-complete.json',dict(commit=COMMIT,source=initial,status=git('status','--porcelain'),ended_at=stamp(),all_tracked_sources_unchanged=True,commands=len(commands)))

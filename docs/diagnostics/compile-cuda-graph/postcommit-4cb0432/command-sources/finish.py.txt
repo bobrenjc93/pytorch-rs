@@ -1,0 +1,15 @@
+"""Record the comparison and provenance verification commands, read-only."""
+import datetime,json,pathlib,subprocess,sys,time
+ROOT=pathlib.Path.cwd();OUT=ROOT/'target/static-analysis-postcommit-4cb0432'
+sys.path.insert(0,str(ROOT/'scripts'))
+from evaluate_cuda_math import sha256,source_provenance
+assert (OUT/'capture-complete.json').exists()
+for name,script in [('comparison','compare.py'),('verification','verify.py')]:
+    command=[str(ROOT/'.venv/bin/python'),str(OUT/script)]
+    before=source_provenance();started=datetime.datetime.now(datetime.timezone.utc).isoformat();tick=time.perf_counter()
+    status=subprocess.check_output(['git','status','--porcelain'],text=True);assert not status
+    log=OUT/(name+'.log')
+    with log.open('x') as f:r=subprocess.run(command,stdout=f,stderr=subprocess.STDOUT)
+    record=dict(command=command,cwd=str(ROOT),started_at=started,ended_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),wall_seconds=time.perf_counter()-tick,exit_status=r.returncode,source_before=before,source_after=source_provenance(),status_before=status,status_after=subprocess.check_output(['git','status','--porcelain'],text=True),log_sha256=sha256(log))
+    (OUT/(name+'.receipt.json')).write_text(json.dumps(record,indent=2)+'\n')
+    print(name,r.returncode,flush=True);r.check_returncode()

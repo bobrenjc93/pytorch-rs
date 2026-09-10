@@ -1,0 +1,55 @@
+test_cuda_live_scalars_bindings_captures_and_failure_recovery (tests.test_compile_static_analysis.StaticAnalysisCudaTests.test_cuda_live_scalars_bindings_captures_and_failure_recovery) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_code_replacement_reanalyzes_branches_and_inactive_globals (tests.test_compile_static_analysis.StaticAnalysisTests.test_code_replacement_reanalyzes_branches_and_inactive_globals) ... ok
+test_descriptor_does_not_retain_root_or_resolved_helpers (tests.test_compile_static_analysis.StaticAnalysisTests.test_descriptor_does_not_retain_root_or_resolved_helpers) ... ok
+test_only_root_analysis_is_reused_and_helper_guards_stay_live (tests.test_compile_static_analysis.StaticAnalysisTests.test_only_root_analysis_is_reused_and_helper_guards_stay_live) ... 
+  test_only_root_analysis_is_reused_and_helper_guards_stay_live (tests.test_compile_static_analysis.StaticAnalysisTests.test_only_root_analysis_is_reused_and_helper_guards_stay_live) (attribute='__name__') ... ERROR
+test_only_root_analysis_is_reused_and_helper_guards_stay_live (tests.test_compile_static_analysis.StaticAnalysisTests.test_only_root_analysis_is_reused_and_helper_guards_stay_live) ... ERROR
+test_reused_analysis_preserves_cpu_limit_metadata_and_method_guards (tests.test_compile_static_analysis.StaticAnalysisTests.test_reused_analysis_preserves_cpu_limit_metadata_and_method_guards) ... ok
+test_warm_tensor_capture_reuses_analysis_but_resolves_every_call (tests.test_compile_static_analysis.StaticAnalysisTests.test_warm_tensor_capture_reuses_analysis_but_resolves_every_call) ... ok
+
+======================================================================
+ERROR: test_only_root_analysis_is_reused_and_helper_guards_stay_live (tests.test_compile_static_analysis.StaticAnalysisTests.test_only_root_analysis_is_reused_and_helper_guards_stay_live) (attribute='__name__')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/tests/test_compile_static_analysis.py", line 56, in test_only_root_analysis_is_reused_and_helper_guards_stay_live
+    with self.subTest(attribute=attribute), patch.object(helper, attribute, value):
+                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/mock.py", line 1605, in __exit__
+    delattr(self.target, self.attribute)
+TypeError: __name__ must be set to a string object
+
+======================================================================
+ERROR: test_only_root_analysis_is_reused_and_helper_guards_stay_live (tests.test_compile_static_analysis.StaticAnalysisTests.test_only_root_analysis_is_reused_and_helper_guards_stay_live)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/tests/test_compile_static_analysis.py", line 59, in test_only_root_analysis_is_reused_and_helper_guards_stay_live
+    self.assertEqual(compiled(x).tolist(), [2., -3.])
+                     ^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 437, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 817, in compiled_model
+    compile_request = _compile_bytecode.prepare_compile_cache_request(
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 655, in prepare_compile_cache_request
+    dependencies = _global_cache_dependencies(program, descriptor, input_metadatas)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 576, in _global_cache_dependencies
+    return _global_cache_dependencies_for_loads(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 509, in _global_cache_dependencies_for_loads
+    dependency = _resolve_live_global_dependency(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 455, in _resolve_live_global_dependency
+    helper_code = _validate_helper_function(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 380, in _validate_helper_function
+    _unsupported_bytecode(program, instruction, "global or import access")
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 310, in _unsupported_bytecode
+    raise _trace.CompileTraceUnsupportedError(
+torch_rs._compile_trace.CompileTraceUnsupportedError: torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.062s
+
+FAILED (errors=2, skipped=1)

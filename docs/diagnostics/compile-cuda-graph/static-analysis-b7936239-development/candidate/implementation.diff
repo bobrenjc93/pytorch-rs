@@ -1,0 +1,48 @@
+diff --git a/python/torch_rs/_compile_bytecode.py b/python/torch_rs/_compile_bytecode.py
+index ea746c2..f490770 100644
+--- a/python/torch_rs/_compile_bytecode.py
++++ b/python/torch_rs/_compile_bytecode.py
+@@ -76,6 +76,7 @@ class _GlobalLoadDependency:
+ class _CompileProgramDescriptor:
+     code: object
+     global_loads: tuple[_GlobalLoadDependency, ...]
++    has_requires_grad_branch: bool
+ 
+ 
+ @dataclass(frozen=True, slots=True)
+@@ -479,7 +480,7 @@ def analyze_compile_program(program):
+         analyzable_instructions,
+         resolve=layout is None,
+     )
+-    return _CompileProgramDescriptor(code, global_loads)
++    return _CompileProgramDescriptor(code, global_loads, layout is not None)
+ 
+ 
+ def _global_load_dependencies_from_instructions(program, instructions, *, resolve=False):
+@@ -559,14 +560,19 @@ def _global_cache_dependencies_for_loads(
+ def _global_cache_dependencies(program, descriptor, input_metadatas):
+     if not descriptor.global_loads:
+         return (), (), ()
+-    global_loads = _global_load_dependencies_from_instructions(
+-        program,
+-        _lowerable_bytecode_instructions(
++    # A descriptor is bound to one immutable code object. Straight-line loads
++    # cannot change until that code is replaced; their live values still must
++    # be resolved below on every call. Branches retain input-dependent loads.
++    global_loads = descriptor.global_loads
++    if descriptor.has_requires_grad_branch:
++        global_loads = _global_load_dependencies_from_instructions(
+             program,
+-            descriptor.code,
+-            input_metadatas,
+-        ),
+-    )
++            _lowerable_bytecode_instructions(
++                program,
++                descriptor.code,
++                input_metadatas,
++            ),
++        )
+     return _global_cache_dependencies_for_loads(
+         program,
+         program,

@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running unittests src/lib.rs (target/static-analysis/rust-tests/debug/deps/pytorch_rs-545e4fdb10cc861f)
+
+running 1 test
+test python::tests::compiled_matmul_bridge_checks_scope_and_owns_fresh_storage ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 184 filtered out; finished in 0.49s
+

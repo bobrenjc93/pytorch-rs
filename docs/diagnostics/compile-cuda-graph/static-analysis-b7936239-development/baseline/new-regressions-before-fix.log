@@ -1,0 +1,81 @@
+F..F.F
+======================================================================
+FAIL: test_cuda_live_scalars_bindings_captures_and_failure_recovery (tests.test_compile_static_analysis.StaticAnalysisCudaTests.test_cuda_live_scalars_bindings_captures_and_failure_recovery)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/tests/test_compile_static_analysis.py", line 152, in test_cuda_live_scalars_bindings_captures_and_failure_recovery
+    self.assertEqual(call_without_python(compiled, {program.__code__}, x).cpu().tolist(), [[3.] * 3] * 2)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 437, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 817, in compiled_model
+    compile_request = _compile_bytecode.prepare_compile_cache_request(
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 649, in prepare_compile_cache_request
+    dependencies = _global_cache_dependencies(program, descriptor, input_metadatas)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 564, in _global_cache_dependencies
+    _lowerable_bytecode_instructions(
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 911, in _lowerable_bytecode_instructions
+    instructions = tuple(_dis.get_instructions(code))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/mock.py", line 1198, in _execute_mock_call
+    raise effect
+AssertionError: warm disassembly
+
+======================================================================
+FAIL: test_only_root_analysis_is_reused_and_helper_guards_stay_live (tests.test_compile_static_analysis.StaticAnalysisTests.test_only_root_analysis_is_reused_and_helper_guards_stay_live)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/tests/test_compile_static_analysis.py", line 52, in test_only_root_analysis_is_reused_and_helper_guards_stay_live
+    self.assertNotIn(program.__code__, [c.args[0] for c in scans.call_args_list])
+AssertionError: <code object program at 0x7fa09b9ef750, file "<string>", line 3> unexpectedly found in [<code object program at 0x7fa09b9ef750, file "<string>", line 3>, <code object helper at 0x7f9fe0003c50, file "<string>", line 1>]
+
+======================================================================
+FAIL: test_warm_tensor_capture_reuses_analysis_but_resolves_every_call (tests.test_compile_static_analysis.StaticAnalysisTests.test_warm_tensor_capture_reuses_analysis_but_resolves_every_call)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/tests/test_compile_static_analysis.py", line 30, in test_warm_tensor_capture_reuses_analysis_but_resolves_every_call
+    actual = call_without_python(compiled, {program.__code__}, native.full((2,), value))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 437, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 817, in compiled_model
+    compile_request = _compile_bytecode.prepare_compile_cache_request(
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 649, in prepare_compile_cache_request
+    dependencies = _global_cache_dependencies(program, descriptor, input_metadatas)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 564, in _global_cache_dependencies
+    _lowerable_bytecode_instructions(
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 911, in _lowerable_bytecode_instructions
+    instructions = tuple(_dis.get_instructions(code))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/mock.py", line 1198, in _execute_mock_call
+    raise effect
+AssertionError: warm disassembly
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.324s
+
+FAILED (failures=3)

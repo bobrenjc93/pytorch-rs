@@ -1,0 +1,3526 @@
+{
+  "measurement_kind": "clean actual-main baseline versus clean implementation commit 4cb04321dc706870cc5f83508dfdccadf9197760",
+  "raw_calls_verified": 59520,
+  "pairs": [
+    {
+      "name": "primary",
+      "seed": 798431,
+      "baseline_parity": 0.8109827145587652,
+      "candidate_parity": 0.5812203305639919,
+      "groups": {
+        "all": {
+          "baseline_native_us": 285.36448090719165,
+          "candidate_native_us": 852.8220635801216,
+          "native_speedup": 0.33461198190539276,
+          "reference_drift": 2.0520079383787055
+        },
+        "composed": {
+          "baseline_native_us": 414.85595295116246,
+          "candidate_native_us": 1309.7865812021823,
+          "native_speedup": 0.3167355345558578,
+          "reference_drift": 1.6554584561340426
+        },
+        "matmul": {
+          "baseline_native_us": 196.29195720620953,
+          "candidate_native_us": 555.2854812892518,
+          "native_speedup": 0.35349736994826936,
+          "reference_drift": 2.5435471144364863
+        }
+      },
+      "cells": [
+        {
+          "shape_mkn": [
+            1,
+            65539,
+            1
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 1.0,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 1.0,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 1.016918,
+                "pytorch": 1696.652147
+              },
+              {
+                "pytorch": 29.961997,
+                "native": 0.499045
+              }
+            ],
+            "candidate": [
+              {
+                "native": 1.31573,
+                "pytorch": 1321.716171
+              },
+              {
+                "pytorch": 28.069576,
+                "native": 0.44953
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 107.5288,
+                "pytorch": 108.7806
+              },
+              "candidate_us": {
+                "native": 106.4628,
+                "pytorch": 109.1628
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 108.7724,
+                "native": 107.1198
+              },
+              "candidate_us": {
+                "pytorch": 108.2718,
+                "native": 106.1826
+              }
+            }
+          ],
+          "baseline_native_us": 107.28030000000001,
+          "candidate_native_us": 106.19059999999999,
+          "baseline_reference_us": 108.7765,
+          "candidate_reference_us": 108.70439999999999,
+          "native_speedup": 1.010261736914567,
+          "reference_drift": 0.9993371730107146
+        },
+        {
+          "shape_mkn": [
+            1,
+            65539,
+            1
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 0.3693451422994258,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.48871423060864494,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.942736,
+                "pytorch": 488.019279
+              },
+              {
+                "pytorch": 33.810298,
+                "native": 0.899791
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.949697,
+                "pytorch": 526.831315
+              },
+              {
+                "pytorch": 39.755032,
+                "native": 12.238731
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 276.965,
+                "pytorch": 134.866
+              },
+              "candidate_us": {
+                "native": 470.614,
+                "pytorch": 174.0494
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 135.739,
+                "native": 276.0814
+              },
+              "candidate_us": {
+                "pytorch": 182.8368,
+                "native": 473.2338
+              }
+            }
+          ],
+          "baseline_native_us": 276.8708,
+          "candidate_native_us": 471.9239,
+          "baseline_reference_us": 135.3107,
+          "candidate_reference_us": 174.3028,
+          "native_speedup": 0.5866852685358804,
+          "reference_drift": 1.288167158990383
+        },
+        {
+          "shape_mkn": [
+            64,
+            64,
+            64
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 0.9929870357502498,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 1.0,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.526646,
+                "pytorch": 56.634577
+              },
+              {
+                "pytorch": 28.850665,
+                "native": 0.405653
+              }
+            ],
+            "candidate": [
+              {
+                "native": 1.548332,
+                "pytorch": 55.441487
+              },
+              {
+                "pytorch": 30.670814,
+                "native": 1.405896
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 116.6444,
+                "pytorch": 120.386
+              },
+              "candidate_us": {
+                "native": 2084.837,
+                "pytorch": 2060.1296
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 120.9952,
+                "native": 118.4832
+              },
+              "candidate_us": {
+                "pytorch": 2048.1456,
+                "native": 1074.4386
+              }
+            }
+          ],
+          "baseline_native_us": 117.1824,
+          "candidate_native_us": 2066.4443,
+          "baseline_reference_us": 120.8328,
+          "candidate_reference_us": 2051.9524,
+          "native_speedup": 0.056707262808874156,
+          "reference_drift": 16.981749988413743
+        },
+        {
+          "shape_mkn": [
+            64,
+            64,
+            64
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 0.240191380927747,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.5201412682444619,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.730075,
+                "pytorch": 372.657479
+              },
+              {
+                "pytorch": 35.330608,
+                "native": 0.80636
+              }
+            ],
+            "candidate": [
+              {
+                "native": 11.322954,
+                "pytorch": 806.433047
+              },
+              {
+                "pytorch": 42.890966,
+                "native": 11.127108
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 298.572,
+                "pytorch": 154.9844
+              },
+              "candidate_us": {
+                "native": 850.6766,
+                "pytorch": 252.1332
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 154.3856,
+                "native": 296.863
+              },
+              "candidate_us": {
+                "pytorch": 240.7644,
+                "native": 1464.8834
+              }
+            }
+          ],
+          "baseline_native_us": 297.81640000000004,
+          "candidate_native_us": 1010.0275,
+          "baseline_reference_us": 154.9066,
+          "candidate_reference_us": 242.5999,
+          "native_speedup": 0.294859694414261,
+          "reference_drift": 1.5661043493304998
+        },
+        {
+          "shape_mkn": [
+            512,
+            512,
+            512
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 1.0,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 1.0,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.573868,
+                "pytorch": 62.69836
+              },
+              {
+                "pytorch": 29.020659,
+                "native": 0.58133
+              }
+            ],
+            "candidate": [
+              {
+                "native": 2.018022,
+                "pytorch": 55.66217
+              },
+              {
+                "pytorch": 32.942029,
+                "native": 1.149318
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 316.4684,
+                "pytorch": 466.3696
+              },
+              "candidate_us": {
+                "native": 1716.8366,
+                "pytorch": 1770.7458
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 461.4458,
+                "native": 328.8896
+              },
+              "candidate_us": {
+                "pytorch": 1426.6798,
+                "native": 1346.9352
+              }
+            }
+          ],
+          "baseline_native_us": 321.18179999999995,
+          "candidate_native_us": 1569.7599,
+          "baseline_reference_us": 463.9077,
+          "candidate_reference_us": 1653.5014,
+          "native_speedup": 0.20460568523886993,
+          "reference_drift": 3.5642896205430525
+        },
+        {
+          "shape_mkn": [
+            512,
+            512,
+            512
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 1.0,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.8823747484376655,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.911389,
+                "pytorch": 526.213043
+              },
+              {
+                "pytorch": 36.174892,
+                "native": 0.937518
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.852189,
+                "pytorch": 548.095481
+              },
+              {
+                "pytorch": 36.066415,
+                "native": 0.944709
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 597.4318,
+                "pytorch": 521.6972
+              },
+              "candidate_us": {
+                "native": 493.2322,
+                "pytorch": 573.4592
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 482.2174,
+                "native": 544.4516
+              },
+              "candidate_us": {
+                "pytorch": 560.75,
+                "native": 522.5362
+              }
+            }
+          ],
+          "baseline_native_us": 566.46,
+          "candidate_native_us": 505.828,
+          "baseline_reference_us": 499.83000000000004,
+          "candidate_reference_us": 570.5339,
+          "native_speedup": 1.1198668322038323,
+          "reference_drift": 1.1414558950043014
+        },
+        {
+          "shape_mkn": [
+            127,
+            1025,
+            65
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 1.0,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.9963342355814725,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.507778,
+                "pytorch": 92.380244
+              },
+              {
+                "pytorch": 29.844295,
+                "native": 0.45633
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.554128,
+                "pytorch": 93.700347
+              },
+              {
+                "pytorch": 30.599167,
+                "native": 0.499326
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 125.4194,
+                "pytorch": 127.3044
+              },
+              "candidate_us": {
+                "native": 127.038,
+                "pytorch": 128.9832
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 124.0478,
+                "native": 125.9044
+              },
+              "candidate_us": {
+                "pytorch": 125.3498,
+                "native": 125.9548
+              }
+            }
+          ],
+          "baseline_native_us": 125.6491,
+          "candidate_native_us": 126.3379,
+          "baseline_reference_us": 125.1885,
+          "candidate_reference_us": 127.4256,
+          "native_speedup": 0.99454795433516,
+          "reference_drift": 1.0178698522627878
+        },
+        {
+          "shape_mkn": [
+            127,
+            1025,
+            65
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 0.6353847116465892,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.49494201233030477,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.772729,
+                "pytorch": 409.115149
+              },
+              {
+                "pytorch": 32.502727,
+                "native": 0.735933
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.803325,
+                "pytorch": 869.774881
+              },
+              {
+                "pytorch": 35.036687,
+                "native": 0.748552
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 301.9026,
+                "pytorch": 149.52
+              },
+              "candidate_us": {
+                "native": 230.4926,
+                "pytorch": 147.5568
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 146.7716,
+                "native": 296.3966
+              },
+              "candidate_us": {
+                "pytorch": 145.63,
+                "native": 229.4548
+              }
+            }
+          ],
+          "baseline_native_us": 299.6844,
+          "candidate_native_us": 230.1412,
+          "baseline_reference_us": 148.32639999999998,
+          "candidate_reference_us": 146.22820000000002,
+          "native_speedup": 1.3021762292018986,
+          "reference_drift": 0.9858541702623406
+        },
+        {
+          "shape_mkn": [
+            563,
+            563,
+            563
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 1.0,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 1.0,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.520888,
+                "pytorch": 86.651628
+              },
+              {
+                "pytorch": 27.660202,
+                "native": 0.599347
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.583843,
+                "pytorch": 82.465026
+              },
+              {
+                "pytorch": 29.716242,
+                "native": 1.065181
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 341.7492,
+                "pytorch": 480.3364
+              },
+              "candidate_us": {
+                "native": 950.7098,
+                "pytorch": 1147.075
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 500.9038,
+                "native": 341.9832
+              },
+              "candidate_us": {
+                "pytorch": 601.6398,
+                "native": 399.8444
+              }
+            }
+          ],
+          "baseline_native_us": 341.8662,
+          "candidate_native_us": 405.76779999999997,
+          "baseline_reference_us": 494.4909,
+          "candidate_reference_us": 615.2705000000001,
+          "native_speedup": 0.8425168285901444,
+          "reference_drift": 1.244250399754576
+        },
+        {
+          "shape_mkn": [
+            563,
+            563,
+            563
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 0.1611295020176131,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.884883946937916,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 1.161567,
+                "pytorch": 403.058064
+              },
+              {
+                "pytorch": 34.579101,
+                "native": 0.981364
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.878939,
+                "pytorch": 600.035622
+              },
+              {
+                "pytorch": 39.460027,
+                "native": 12.73508
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 604.324,
+                "pytorch": 536.7198
+              },
+              "candidate_us": {
+                "native": 9628.9302,
+                "pytorch": 1467.0448
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 562.9496,
+                "native": 647.5416
+              },
+              "candidate_us": {
+                "pytorch": 1593.981,
+                "native": 9400.9054
+              }
+            }
+          ],
+          "baseline_native_us": 617.39,
+          "candidate_native_us": 9443.1633,
+          "baseline_reference_us": 546.3185,
+          "candidate_reference_us": 1521.5722,
+          "native_speedup": 0.06537957466011415,
+          "reference_drift": 2.785137607457921
+        },
+        {
+          "shape_mkn": [
+            534,
+            250,
+            562
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 1.0,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 1.0,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.551184,
+                "pytorch": 91.08352
+              },
+              {
+                "pytorch": 30.712001,
+                "native": 0.579066
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.825108,
+                "pytorch": 109.411639
+              },
+              {
+                "pytorch": 31.050244,
+                "native": 2.76372
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 335.2912,
+                "pytorch": 490.582
+              },
+              "candidate_us": {
+                "native": 1679.0574,
+                "pytorch": 1728.09
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 475.4632,
+                "native": 328.4908
+              },
+              "candidate_us": {
+                "pytorch": 1716.7086,
+                "native": 1630.512
+              }
+            }
+          ],
+          "baseline_native_us": 329.81179999999995,
+          "candidate_native_us": 1660.136,
+          "baseline_reference_us": 487.26210000000003,
+          "candidate_reference_us": 1722.3993,
+          "native_speedup": 0.19866553101673595,
+          "reference_drift": 3.534851776897895
+        },
+        {
+          "shape_mkn": [
+            534,
+            250,
+            562
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 0.1647951214425927,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.8269211762825147,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.928785,
+                "pytorch": 409.008135
+              },
+              {
+                "pytorch": 35.323667,
+                "native": 0.944649
+              }
+            ],
+            "candidate": [
+              {
+                "native": 1.095527,
+                "pytorch": 663.703431
+              },
+              {
+                "pytorch": 41.729706,
+                "native": 12.324551
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 561.3774,
+                "pytorch": 467.8716
+              },
+              "candidate_us": {
+                "native": 9697.7238,
+                "pytorch": 1551.7852
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 526.1678,
+                "native": 626.1132
+              },
+              "candidate_us": {
+                "pytorch": 1744.5824,
+                "native": 9504.8062
+              }
+            }
+          ],
+          "baseline_native_us": 589.8821,
+          "candidate_native_us": 9635.7009,
+          "baseline_reference_us": 487.786,
+          "candidate_reference_us": 1587.9164999999998,
+          "native_speedup": 0.06121839045460617,
+          "reference_drift": 3.2553548072310394
+        }
+      ]
+    },
+    {
+      "name": "held-481723",
+      "seed": 481723,
+      "baseline_parity": 0.754758692909187,
+      "candidate_parity": 0.7812817036260233,
+      "groups": {
+        "all": {
+          "baseline_native_us": 232.34636037347354,
+          "candidate_native_us": 352.08522272619865,
+          "native_speedup": 0.6599151153644393,
+          "reference_drift": 1.5703827143182025
+        },
+        "composed": {
+          "baseline_native_us": 349.3646889919171,
+          "candidate_native_us": 346.3762493079727,
+          "native_speedup": 1.0086277269007762,
+          "reference_drift": 1.063621820977592
+        },
+        "matmul": {
+          "baseline_native_us": 154.52286072348048,
+          "candidate_native_us": 357.88829144557474,
+          "native_speedup": 0.4317628277229606,
+          "reference_drift": 2.3185890142445285
+        }
+      },
+      "cells": [
+        {
+          "shape_mkn": [
+            1,
+            65539,
+            1
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 1.0,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 1.0,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 1.800124,
+                "pytorch": 650.011454
+              },
+              {
+                "pytorch": 27.32084,
+                "native": 0.394777
+              }
+            ],
+            "candidate": [
+              {
+                "native": 2.609006,
+                "pytorch": 696.383424
+              },
+              {
+                "pytorch": 27.620706,
+                "native": 0.876255
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 103.0038,
+                "pytorch": 104.426
+              },
+              "candidate_us": {
+                "native": 1917.8268,
+                "pytorch": 2272.8096
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 103.3684,
+                "native": 103.711
+              },
+              "candidate_us": {
+                "pytorch": 686.2,
+                "native": 303.8754
+              }
+            }
+          ],
+          "baseline_native_us": 103.3533,
+          "candidate_native_us": 1225.2411,
+          "baseline_reference_us": 103.9322,
+          "candidate_reference_us": 1321.1752999999999,
+          "native_speedup": 0.08435343868239484,
+          "reference_drift": 12.711895832090535
+        },
+        {
+          "shape_mkn": [
+            1,
+            65539,
+            1
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 0.4241405961077732,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.4760758337362673,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.843786,
+                "pytorch": 36.642583
+              },
+              {
+                "pytorch": 30.934127,
+                "native": 0.750415
+              }
+            ],
+            "candidate": [
+              {
+                "native": 12.003826,
+                "pytorch": 36.791838
+              },
+              {
+                "pytorch": 40.260383,
+                "native": 12.519085
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 266.6174,
+                "pytorch": 126.6698
+              },
+              "candidate_us": {
+                "native": 903.8552,
+                "pytorch": 282.0346
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 127.2706,
+                "native": 267.9792
+              },
+              "candidate_us": {
+                "pytorch": 178.6002,
+                "native": 453.3896
+              }
+            }
+          ],
+          "baseline_native_us": 266.9999,
+          "candidate_native_us": 466.4425,
+          "baseline_reference_us": 127.1122,
+          "candidate_reference_us": 197.8372,
+          "native_speedup": 0.5724176077437199,
+          "reference_drift": 1.5563982056797065
+        },
+        {
+          "shape_mkn": [
+            64,
+            64,
+            64
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 1.0,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 1.0,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.458433,
+                "pytorch": 29.194165
+              },
+              {
+                "pytorch": 26.720893,
+                "native": 0.373976
+              }
+            ],
+            "candidate": [
+              {
+                "native": 1.832512,
+                "pytorch": 28.358502
+              },
+              {
+                "pytorch": 27.218708,
+                "native": 1.641572
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 114.0264,
+                "pytorch": 117.035
+              },
+              "candidate_us": {
+                "native": 2101.5668,
+                "pytorch": 2068.527
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 117.1914,
+                "native": 114.289
+              },
+              "candidate_us": {
+                "pytorch": 2059.4348,
+                "native": 1988.9944
+              }
+            }
+          ],
+          "baseline_native_us": 114.0916,
+          "candidate_native_us": 1990.3935000000001,
+          "baseline_reference_us": 117.113,
+          "candidate_reference_us": 2063.9809,
+          "native_speedup": 0.057321127706656996,
+          "reference_drift": 17.623841076567075
+        },
+        {
+          "shape_mkn": [
+            64,
+            64,
+            64
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 0.37177855809212484,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.4962489819274134,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.653449,
+                "pytorch": 33.518076
+              },
+              {
+                "pytorch": 31.393452,
+                "native": 0.661331
+              }
+            ],
+            "candidate": [
+              {
+                "native": 10.476525,
+                "pytorch": 39.820528
+              },
+              {
+                "pytorch": 37.450634,
+                "native": 11.256615
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 280.9626,
+                "pytorch": 138.764
+              },
+              "candidate_us": {
+                "native": 879.3078,
+                "pytorch": 221.1664
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 140.162,
+                "native": 282.089
+              },
+              "candidate_us": {
+                "pytorch": 164.3968,
+                "native": 422.5534
+              }
+            }
+          ],
+          "baseline_native_us": 281.5369,
+          "candidate_native_us": 507.20300000000003,
+          "baseline_reference_us": 139.7124,
+          "candidate_reference_us": 188.5672,
+          "native_speedup": 0.5550773556150101,
+          "reference_drift": 1.3496812022411755
+        },
+        {
+          "shape_mkn": [
+            512,
+            512,
+            512
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 1.0,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 1.0,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.55568,
+                "pytorch": 28.987001
+              },
+              {
+                "pytorch": 209.722998,
+                "native": 0.570222
+              }
+            ],
+            "candidate": [
+              {
+                "native": 1.021355,
+                "pytorch": 27.49767
+              },
+              {
+                "pytorch": 25.902347,
+                "native": 0.488699
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 320.3668,
+                "pytorch": 486.4898
+              },
+              "candidate_us": {
+                "native": 293.7502,
+                "pytorch": 390.5026
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 438.3872,
+                "native": 284.5146
+              },
+              "candidate_us": {
+                "pytorch": 385.6412,
+                "native": 283.643
+              }
+            }
+          ],
+          "baseline_native_us": 308.2631,
+          "candidate_native_us": 284.0736,
+          "baseline_reference_us": 468.33939999999996,
+          "candidate_reference_us": 388.5015,
+          "native_speedup": 1.085152228154957,
+          "reference_drift": 0.829529823884132
+        },
+        {
+          "shape_mkn": [
+            512,
+            512,
+            512
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 0.9804944727600214,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.8738543919642586,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.838639,
+                "pytorch": 35.032044
+              },
+              {
+                "pytorch": 35.00986,
+                "native": 0.917648
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.757326,
+                "pytorch": 36.219342
+              },
+              {
+                "pytorch": 32.299272,
+                "native": 0.766499
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 532.2832,
+                "pytorch": 457.8284
+              },
+              "candidate_us": {
+                "native": 397.7052,
+                "pytorch": 403.5264
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 503.3592,
+                "native": 550.7712
+              },
+              "candidate_us": {
+                "pytorch": 416.6722,
+                "native": 455.7054
+              }
+            }
+          ],
+          "baseline_native_us": 548.0714,
+          "candidate_native_us": 417.94820000000004,
+          "baseline_reference_us": 478.9346,
+          "candidate_reference_us": 409.7959,
+          "native_speedup": 1.3113381036214535,
+          "reference_drift": 0.8556406240016905
+        },
+        {
+          "shape_mkn": [
+            127,
+            1025,
+            65
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 0.9710699265328935,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.978058854110453,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.438263,
+                "pytorch": 28.734387
+              },
+              {
+                "pytorch": 27.854549,
+                "native": 0.434608
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.453856,
+                "pytorch": 28.909625
+              },
+              {
+                "pytorch": 26.989411,
+                "native": 0.410281
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 120.6286,
+                "pytorch": 118.0446
+              },
+              "candidate_us": {
+                "native": 122.4054,
+                "pytorch": 119.2202
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 118.7336,
+                "native": 121.9986
+              },
+              "candidate_us": {
+                "pytorch": 117.4234,
+                "native": 122.0188
+              }
+            }
+          ],
+          "baseline_native_us": 121.3747,
+          "candidate_native_us": 122.38130000000001,
+          "baseline_reference_us": 118.7116,
+          "candidate_reference_us": 118.8408,
+          "native_speedup": 0.9917748871763905,
+          "reference_drift": 1.001088351938648
+        },
+        {
+          "shape_mkn": [
+            127,
+            1025,
+            65
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 0.6183833697540202,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.47243438774046065,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.779259,
+                "pytorch": 35.806009
+              },
+              {
+                "pytorch": 32.608501,
+                "native": 0.731857
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.692137,
+                "pytorch": 34.021788
+              },
+              {
+                "pytorch": 31.577161,
+                "native": 0.697174
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 293.2338,
+                "pytorch": 139.2164
+              },
+              "candidate_us": {
+                "native": 220.8902,
+                "pytorch": 136.825
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 139.3346,
+                "native": 296.4806
+              },
+              "candidate_us": {
+                "pytorch": 139.361,
+                "native": 223.652
+              }
+            }
+          ],
+          "baseline_native_us": 294.8039,
+          "candidate_native_us": 223.0875,
+          "baseline_reference_us": 139.2755,
+          "candidate_reference_us": 137.9536,
+          "native_speedup": 1.3214720681347005,
+          "reference_drift": 0.9905087398716932
+        },
+        {
+          "shape_mkn": [
+            257,
+            257,
+            257
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 1.0,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 1.0,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.417802,
+                "pytorch": 335.247803
+              },
+              {
+                "pytorch": 28.430601,
+                "native": 0.483241
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.445043,
+                "pytorch": 340.017634
+              },
+              {
+                "pytorch": 25.825341,
+                "native": 0.388939
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 150.78,
+                "pytorch": 164.489
+              },
+              "candidate_us": {
+                "native": 155.5974,
+                "pytorch": 166.5658
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 172.6976,
+                "native": 162.1056
+              },
+              "candidate_us": {
+                "pytorch": 154.3014,
+                "native": 148.9834
+              }
+            }
+          ],
+          "baseline_native_us": 155.8096,
+          "candidate_native_us": 150.1571,
+          "baseline_reference_us": 166.5319,
+          "candidate_reference_us": 164.37369999999999,
+          "native_speedup": 1.037643907614092,
+          "reference_drift": 0.9870403208034015
+        },
+        {
+          "shape_mkn": [
+            257,
+            257,
+            257
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 0.7592569028669263,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.5385559202849707,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.854172,
+                "pytorch": 573.158612
+              },
+              {
+                "pytorch": 34.038475,
+                "native": 0.840502
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.669923,
+                "pytorch": 716.848468
+              },
+              {
+                "pytorch": 29.992263,
+                "native": 0.675872
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 335.5478,
+                "pytorch": 180.7374
+              },
+              "candidate_us": {
+                "native": 271.7352,
+                "pytorch": 212.7156
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 184.3068,
+                "native": 343.7456
+              },
+              "candidate_us": {
+                "pytorch": 203.7002,
+                "native": 270.4232
+              }
+            }
+          ],
+          "baseline_native_us": 337.6628,
+          "candidate_native_us": 271.13009999999997,
+          "baseline_reference_us": 181.8503,
+          "candidate_reference_us": 205.85739999999998,
+          "native_speedup": 1.2453903126211368,
+          "reference_drift": 1.1320157294213975
+        },
+        {
+          "shape_mkn": [
+            401,
+            734,
+            267
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 1.0,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 1.0,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.53525,
+                "pytorch": 84.151687
+              },
+              {
+                "pytorch": 27.818114,
+                "native": 0.597494
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.46957,
+                "pytorch": 80.149224
+              },
+              {
+                "pytorch": 24.913932,
+                "native": 0.490041
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 186.524,
+                "pytorch": 216.2952
+              },
+              "candidate_us": {
+                "native": 167.143,
+                "pytorch": 197.6106
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 239.364,
+                "native": 202.967
+              },
+              "candidate_us": {
+                "pytorch": 174.5738,
+                "native": 162.568
+              }
+            }
+          ],
+          "baseline_native_us": 198.0316,
+          "candidate_native_us": 165.0565,
+          "baseline_reference_us": 217.8576,
+          "candidate_reference_us": 184.31689999999998,
+          "native_speedup": 1.1997806811606935,
+          "reference_drift": 0.8460430115818772
+        },
+        {
+          "shape_mkn": [
+            401,
+            734,
+            267
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 0.7337624130974952,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.6651894467450903,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.914794,
+                "pytorch": 435.61996
+              },
+              {
+                "pytorch": 35.685566,
+                "native": 0.97833
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.806049,
+                "pytorch": 759.348729
+              },
+              {
+                "pytorch": 30.773875,
+                "native": 0.756234
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 447.9696,
+                "pytorch": 283.8896
+              },
+              "candidate_us": {
+                "native": 287.9798,
+                "pytorch": 208.6678
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 299.034,
+                "native": 441.7704
+              },
+              "candidate_us": {
+                "pytorch": 221.5312,
+                "native": 289.6564
+              }
+            }
+          ],
+          "baseline_native_us": 443.3779,
+          "candidate_native_us": 288.75750000000005,
+          "baseline_reference_us": 294.9303,
+          "candidate_reference_us": 211.8794,
+          "native_speedup": 1.535467996502255,
+          "reference_drift": 0.7184049926372434
+        }
+      ]
+    },
+    {
+      "name": "held-926051",
+      "seed": 926051,
+      "baseline_parity": 0.7580185154695372,
+      "candidate_parity": 0.41295666906813316,
+      "groups": {
+        "all": {
+          "baseline_native_us": 232.77940865365167,
+          "candidate_native_us": 2698.266917042449,
+          "native_speedup": 0.0862699709889337,
+          "reference_drift": 6.076706751099391
+        },
+        "composed": {
+          "baseline_native_us": 353.1471738760313,
+          "candidate_native_us": 5010.446875990846,
+          "native_speedup": 0.07048217107504895,
+          "reference_drift": 4.45949841475597
+        },
+        "matmul": {
+          "baseline_native_us": 153.43816148494875,
+          "candidate_native_us": 1453.0928150327852,
+          "native_speedup": 0.10559419184898163,
+          "reference_drift": 8.280385259622875
+        }
+      },
+      "cells": [
+        {
+          "shape_mkn": [
+            1,
+            65539,
+            1
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 0.751495450473685,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 1.0,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.995476,
+                "pytorch": 677.093949
+              },
+              {
+                "pytorch": 26.952335,
+                "native": 0.394246
+              }
+            ],
+            "candidate": [
+              {
+                "native": 2.133758,
+                "pytorch": 688.768841
+              },
+              {
+                "pytorch": 28.270179,
+                "native": 0.702232
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 109.768,
+                "pytorch": 111.4106
+              },
+              "candidate_us": {
+                "native": 1084.9008,
+                "pytorch": 1061.2512
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 110.5528,
+                "native": 110.0026
+              },
+              "candidate_us": {
+                "pytorch": 282.4232,
+                "native": 605.3156
+              }
+            }
+          ],
+          "baseline_native_us": 109.77600000000001,
+          "candidate_native_us": 749.5065999999999,
+          "baseline_reference_us": 111.081,
+          "candidate_reference_us": 563.2508,
+          "native_speedup": 0.14646435401636226,
+          "reference_drift": 5.070631341093437
+        },
+        {
+          "shape_mkn": [
+            1,
+            65539,
+            1
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 0.32307025846897647,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.4851856375440377,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.914102,
+                "pytorch": 39.390061
+              },
+              {
+                "pytorch": 32.999483,
+                "native": 0.811567
+              }
+            ],
+            "candidate": [
+              {
+                "native": 11.925959,
+                "pytorch": 38.272077
+              },
+              {
+                "pytorch": 38.953648,
+                "native": 10.555225
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 287.6874,
+                "pytorch": 138.0392
+              },
+              "candidate_us": {
+                "native": 629.3338,
+                "pytorch": 184.6094
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 139.2166,
+                "native": 283.9054
+              },
+              "candidate_us": {
+                "pytorch": 295.8496,
+                "native": 799.954
+              }
+            }
+          ],
+          "baseline_native_us": 284.9262,
+          "candidate_native_us": 742.3831,
+          "baseline_reference_us": 138.2421,
+          "candidate_reference_us": 239.8419,
+          "native_speedup": 0.3837994156925178,
+          "reference_drift": 1.734941092474724
+        },
+        {
+          "shape_mkn": [
+            64,
+            64,
+            64
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 0.9992619531505867,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 1.0,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.483872,
+                "pytorch": 33.290553
+              },
+              {
+                "pytorch": 27.842982,
+                "native": 0.425293
+              }
+            ],
+            "candidate": [
+              {
+                "native": 1.552749,
+                "pytorch": 30.443005
+              },
+              {
+                "pytorch": 26.918304,
+                "native": 1.552328
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 121.6422,
+                "pytorch": 126.0748
+              },
+              "candidate_us": {
+                "native": 2095.3192,
+                "pytorch": 2075.2666
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 126.9738,
+                "native": 125.2314
+              },
+              "candidate_us": {
+                "pytorch": 2064.7368,
+                "native": 2054.7658
+              }
+            }
+          ],
+          "baseline_native_us": 122.9219,
+          "candidate_native_us": 2068.0259,
+          "baseline_reference_us": 126.5934,
+          "candidate_reference_us": 2066.4996,
+          "native_speedup": 0.05943924590112725,
+          "reference_drift": 16.323912621037117
+        },
+        {
+          "shape_mkn": [
+            64,
+            64,
+            64
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 0.06904640902358597,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.5013678496890975,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.719068,
+                "pytorch": 33.925063
+              },
+              {
+                "pytorch": 31.717864,
+                "native": 0.714851
+              }
+            ],
+            "candidate": [
+              {
+                "native": 11.427164,
+                "pytorch": 40.425294
+              },
+              {
+                "pytorch": 45.390614,
+                "native": 11.290998
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 298.7278,
+                "pytorch": 150.6278
+              },
+              "candidate_us": {
+                "native": 5028.7738,
+                "pytorch": 286.5392
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 146.6298,
+                "native": 294.6858
+              },
+              "candidate_us": {
+                "pytorch": 491.201,
+                "native": 5464.7072
+              }
+            }
+          ],
+          "baseline_native_us": 296.9259,
+          "candidate_native_us": 5450.108200000001,
+          "baseline_reference_us": 148.8691,
+          "candidate_reference_us": 376.31039999999996,
+          "native_speedup": 0.05448073489623564,
+          "reference_drift": 2.527793880664288
+        },
+        {
+          "shape_mkn": [
+            512,
+            512,
+            512
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 0.9405192968063112,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 1.0,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.50881,
+                "pytorch": 29.933364
+              },
+              {
+                "pytorch": 217.728016,
+                "native": 0.562331
+              }
+            ],
+            "candidate": [
+              {
+                "native": 1.643846,
+                "pytorch": 29.375811
+              },
+              {
+                "pytorch": 29.928508,
+                "native": 2.220548
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 248.4158,
+                "pytorch": 364.6038
+              },
+              "candidate_us": {
+                "native": 1476.2028,
+                "pytorch": 1318.7606
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 410.4472,
+                "native": 293.3824
+              },
+              "candidate_us": {
+                "pytorch": 1563.3866,
+                "native": 1557.5098
+              }
+            }
+          ],
+          "baseline_native_us": 274.6587,
+          "candidate_native_us": 1525.1046999999999,
+          "baseline_reference_us": 387.1558,
+          "candidate_reference_us": 1434.3904,
+          "native_speedup": 0.180091701245167,
+          "reference_drift": 3.7049435911847377
+        },
+        {
+          "shape_mkn": [
+            512,
+            512,
+            512
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 0.12919285345836082,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.8240787464704338,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.79334,
+                "pytorch": 34.444329
+              },
+              {
+                "pytorch": 30.940759,
+                "native": 0.902626
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.901704,
+                "pytorch": 40.915135
+              },
+              {
+                "pytorch": 37.233115,
+                "native": 2.222442
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 475.9602,
+                "pytorch": 353.579
+              },
+              "candidate_us": {
+                "native": 10230.0488,
+                "pytorch": 1522.1202
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 498.4642,
+                "native": 582.1926
+              },
+              "candidate_us": {
+                "pytorch": 1174.3984,
+                "native": 9792.6416
+              }
+            }
+          ],
+          "baseline_native_us": 524.3562,
+          "candidate_native_us": 9833.8698,
+          "baseline_reference_us": 432.11080000000004,
+          "candidate_reference_us": 1270.4657,
+          "native_speedup": 0.053321450320605215,
+          "reference_drift": 2.9401387329360893
+        },
+        {
+          "shape_mkn": [
+            127,
+            1025,
+            65
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 0.9843956153459698,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.9809316975445775,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.463852,
+                "pytorch": 28.39002
+              },
+              {
+                "pytorch": 26.694835,
+                "native": 0.460346
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.567138,
+                "pytorch": 29.995198
+              },
+              {
+                "pytorch": 33.580702,
+                "native": 1.383924
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 128.0778,
+                "pytorch": 126.7998
+              },
+              "candidate_us": {
+                "native": 1875.1278,
+                "pytorch": 1848.578
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 122.5334,
+                "native": 125.3154
+              },
+              "candidate_us": {
+                "pytorch": 1850.0062,
+                "native": 1883.6854
+              }
+            }
+          ],
+          "baseline_native_us": 126.48740000000001,
+          "candidate_native_us": 1878.6066,
+          "baseline_reference_us": 124.0755,
+          "candidate_reference_us": 1849.2921000000001,
+          "native_speedup": 0.0673304352278971,
+          "reference_drift": 14.904571007169022
+        },
+        {
+          "shape_mkn": [
+            127,
+            1025,
+            65
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 0.41407173905771044,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.48094720841325145,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.788974,
+                "pytorch": 33.897521
+              },
+              {
+                "pytorch": 30.359018,
+                "native": 0.725728
+              }
+            ],
+            "candidate": [
+              {
+                "native": 10.763049,
+                "pytorch": 41.491937
+              },
+              {
+                "pytorch": 38.651752,
+                "native": 11.676521
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 307.8698,
+                "pytorch": 149.7686
+              },
+              "candidate_us": {
+                "native": 5807.4658,
+                "pytorch": 1865.6798
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 145.5142,
+                "native": 303.2586
+              },
+              "candidate_us": {
+                "pytorch": 1862.5252,
+                "native": 4258.0924
+              }
+            }
+          ],
+          "baseline_native_us": 306.56399999999996,
+          "candidate_native_us": 4498.818499999999,
+          "baseline_reference_us": 147.4411,
+          "candidate_reference_us": 1862.8336,
+          "native_speedup": 0.06814322471555588,
+          "reference_drift": 12.634425543488213
+        },
+        {
+          "shape_mkn": [
+            231,
+            231,
+            231
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 1.0,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 1.0,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.425153,
+                "pytorch": 334.311768
+              },
+              {
+                "pytorch": 25.205752,
+                "native": 0.428638
+              }
+            ],
+            "candidate": [
+              {
+                "native": 1.332495,
+                "pytorch": 415.607171
+              },
+              {
+                "pytorch": 30.533292,
+                "native": 1.492337
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 143.0524,
+                "pytorch": 151.0164
+              },
+              "candidate_us": {
+                "native": 1774.9104,
+                "pytorch": 1826.1878
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 148.2282,
+                "native": 143.008
+              },
+              "candidate_us": {
+                "pytorch": 1846.12,
+                "native": 1820.3374
+              }
+            }
+          ],
+          "baseline_native_us": 143.0302,
+          "candidate_native_us": 1813.434,
+          "baseline_reference_us": 149.2706,
+          "candidate_reference_us": 1842.7442999999998,
+          "native_speedup": 0.07887256994188926,
+          "reference_drift": 12.344991579051735
+        },
+        {
+          "shape_mkn": [
+            231,
+            231,
+            231
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 0.17653007074663982,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.5455422283491527,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.738006,
+                "pytorch": 500.782179
+              },
+              {
+                "pytorch": 31.844455,
+                "native": 0.749204
+              }
+            ],
+            "candidate": [
+              {
+                "native": 11.711514,
+                "pytorch": 747.340912
+              },
+              {
+                "pytorch": 39.618874,
+                "native": 11.220942
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 337.0882,
+                "pytorch": 190.7906
+              },
+              "candidate_us": {
+                "native": 10338.6434,
+                "pytorch": 1807.4096
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 174.2514,
+                "native": 330.6842
+              },
+              "candidate_us": {
+                "pytorch": 1766.2012,
+                "native": 9955.013
+              }
+            }
+          ],
+          "baseline_native_us": 333.5366,
+          "candidate_native_us": 10146.8282,
+          "baseline_reference_us": 181.9583,
+          "candidate_reference_us": 1791.2203,
+          "native_speedup": 0.032871020719558455,
+          "reference_drift": 9.84412527485693
+        },
+        {
+          "shape_mkn": [
+            501,
+            502,
+            296
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 1.0,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 1.0,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.530874,
+                "pytorch": 78.106652
+              },
+              {
+                "pytorch": 25.683091,
+                "native": 0.493206
+              }
+            ],
+            "candidate": [
+              {
+                "native": 1.525638,
+                "pytorch": 111.756373
+              },
+              {
+                "pytorch": 31.100379,
+                "native": 0.964319
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 189.4644,
+                "pytorch": 235.36
+              },
+              "candidate_us": {
+                "native": 1158.5464,
+                "pytorch": 1287.223
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 243.0078,
+                "native": 199.039
+              },
+              "candidate_us": {
+                "pytorch": 1434.4376,
+                "native": 1178.873
+              }
+            }
+          ],
+          "baseline_native_us": 194.62349999999998,
+          "candidate_native_us": 1168.9379,
+          "baseline_reference_us": 241.6244,
+          "candidate_reference_us": 1380.2758,
+          "native_speedup": 0.1664960131757213,
+          "reference_drift": 5.712485162922287
+        },
+        {
+          "shape_mkn": [
+            501,
+            502,
+            296
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 0.1679344782551642,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.697525494311836,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.815905,
+                "pytorch": 402.026266
+              },
+              {
+                "pytorch": 31.619802,
+                "native": 0.939241
+              }
+            ],
+            "candidate": [
+              {
+                "native": 11.150475,
+                "pytorch": 903.920621
+              },
+              {
+                "pytorch": 48.4483,
+                "native": 11.965217
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 443.7476,
+                "pytorch": 318.4558
+              },
+              "candidate_us": {
+                "native": 8806.5822,
+                "pytorch": 1376.504
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 278.7578,
+                "native": 410.1962
+              },
+              "candidate_us": {
+                "pytorch": 1521.8278,
+                "native": 8655.8382
+              }
+            }
+          ],
+          "baseline_native_us": 427.6248,
+          "candidate_native_us": 8711.0867,
+          "baseline_reference_us": 298.2792,
+          "candidate_reference_us": 1462.8918,
+          "native_speedup": 0.0490897191965728,
+          "reference_drift": 4.904437855539374
+        }
+      ]
+    },
+    {
+      "name": "primary-repeat",
+      "seed": 798431,
+      "baseline_parity": 0.7888017635154682,
+      "candidate_parity": 0.894690072216065,
+      "groups": {
+        "all": {
+          "baseline_native_us": 273.7145073166563,
+          "candidate_native_us": 298.5729166860762,
+          "native_speedup": 0.9167425845407255,
+          "reference_drift": 1.2585957846149303
+        },
+        "composed": {
+          "baseline_native_us": 400.74958100260255,
+          "candidate_native_us": 343.4594748111759,
+          "native_speedup": 1.1668031031111397,
+          "reference_drift": 1.1598107976974477
+        },
+        "matmul": {
+          "baseline_native_us": 186.94874571837258,
+          "candidate_native_us": 259.552561848644,
+          "native_speedup": 0.7202731669718215,
+          "reference_drift": 1.36579462115311
+        }
+      },
+      "cells": [
+        {
+          "shape_mkn": [
+            1,
+            65539,
+            1
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 1.0,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 1.0,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 1.060414,
+                "pytorch": 678.510849
+              },
+              {
+                "pytorch": 28.26868,
+                "native": 0.419405
+              }
+            ],
+            "candidate": [
+              {
+                "native": 1.087855,
+                "pytorch": 704.238167
+              },
+              {
+                "pytorch": 30.549277,
+                "native": 0.540467
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 102.8996,
+                "pytorch": 103.128
+              },
+              "candidate_us": {
+                "native": 105.4556,
+                "pytorch": 108.5644
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 106.7172,
+                "native": 104.9266
+              },
+              "candidate_us": {
+                "pytorch": 107.977,
+                "native": 107.3064
+              }
+            }
+          ],
+          "baseline_native_us": 103.71600000000001,
+          "candidate_native_us": 106.6835,
+          "baseline_reference_us": 104.1234,
+          "candidate_reference_us": 108.1057,
+          "native_speedup": 0.972184077200317,
+          "reference_drift": 1.038245965844373
+        },
+        {
+          "shape_mkn": [
+            1,
+            65539,
+            1
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 0.6305749860811277,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.4655545705290009,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.869285,
+                "pytorch": 39.47124
+              },
+              {
+                "pytorch": 32.216032,
+                "native": 0.76679
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.864007,
+                "pytorch": 39.534537
+              },
+              {
+                "pytorch": 35.176997,
+                "native": 0.780551
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 284.887,
+                "pytorch": 138.5416
+              },
+              "candidate_us": {
+                "native": 206.3218,
+                "pytorch": 130.5136
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 132.1544,
+                "native": 293.3562
+              },
+              "candidate_us": {
+                "pytorch": 130.0506,
+                "native": 206.8886
+              }
+            }
+          ],
+          "baseline_native_us": 287.9787,
+          "candidate_native_us": 206.7337,
+          "baseline_reference_us": 134.0698,
+          "candidate_reference_us": 130.36110000000002,
+          "native_speedup": 1.3929934983991483,
+          "reference_drift": 0.9723375435780469
+        },
+        {
+          "shape_mkn": [
+            64,
+            64,
+            64
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 1.0,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 1.0,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.433406,
+                "pytorch": 28.892183
+              },
+              {
+                "pytorch": 28.309762,
+                "native": 0.445374
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.536161,
+                "pytorch": 32.6865
+              },
+              {
+                "pytorch": 28.936748,
+                "native": 0.413956
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 115.6748,
+                "pytorch": 116.9568
+              },
+              "candidate_us": {
+                "native": 117.163,
+                "pytorch": 120.4944
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 138.191,
+                "native": 133.9084
+              },
+              "candidate_us": {
+                "pytorch": 121.4596,
+                "native": 117.4718
+              }
+            }
+          ],
+          "baseline_native_us": 117.1322,
+          "candidate_native_us": 117.38050000000001,
+          "baseline_reference_us": 118.32390000000001,
+          "candidate_reference_us": 121.15129999999999,
+          "native_speedup": 0.9978846571619646,
+          "reference_drift": 1.0238954260297368
+        },
+        {
+          "shape_mkn": [
+            64,
+            64,
+            64
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 0.6564281937351085,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.49133998189426287,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.675302,
+                "pytorch": 34.568772
+              },
+              {
+                "pytorch": 33.751145,
+                "native": 0.735724
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.785608,
+                "pytorch": 38.410958
+              },
+              {
+                "pytorch": 35.740649,
+                "native": 0.731507
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 286.1328,
+                "pytorch": 139.7596
+              },
+              "candidate_us": {
+                "native": 220.4354,
+                "pytorch": 143.9014
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 140.897,
+                "native": 285.7946
+              },
+              "candidate_us": {
+                "pytorch": 145.252,
+                "native": 220.5874
+              }
+            }
+          ],
+          "baseline_native_us": 285.98670000000004,
+          "candidate_native_us": 220.51139999999998,
+          "baseline_reference_us": 140.51670000000001,
+          "candidate_reference_us": 144.7499,
+          "native_speedup": 1.296924784841056,
+          "reference_drift": 1.0301259565589
+        },
+        {
+          "shape_mkn": [
+            512,
+            512,
+            512
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 1.0,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 1.0,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.51499,
+                "pytorch": 29.375375
+              },
+              {
+                "pytorch": 242.560761,
+                "native": 0.57492
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.581379,
+                "pytorch": 31.633196
+              },
+              {
+                "pytorch": 31.337369,
+                "native": 1.986154
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 278.3674,
+                "pytorch": 403.9372
+              },
+              "candidate_us": {
+                "native": 1510.6594,
+                "pytorch": 1127.5892
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 398.637,
+                "native": 275.3006
+              },
+              "candidate_us": {
+                "pytorch": 1572.4904,
+                "native": 1332.2692
+              }
+            }
+          ],
+          "baseline_native_us": 277.0762,
+          "candidate_native_us": 1411.8044,
+          "baseline_reference_us": 399.62760000000003,
+          "candidate_reference_us": 1466.6363000000001,
+          "native_speedup": 0.19625679024658088,
+          "reference_drift": 3.670007527007644
+        },
+        {
+          "shape_mkn": [
+            512,
+            512,
+            512
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 1.0,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.8156832733569906,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.856136,
+                "pytorch": 35.326048
+              },
+              {
+                "pytorch": 32.816131,
+                "native": 0.910227
+              }
+            ],
+            "candidate": [
+              {
+                "native": 2.371257,
+                "pytorch": 42.591141
+              },
+              {
+                "pytorch": 35.475317,
+                "native": 0.99162
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 520.3254,
+                "pytorch": 423.9896
+              },
+              "candidate_us": {
+                "native": 2764.7294,
+                "pytorch": 713.9378
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 416.5522,
+                "native": 494.6766
+              },
+              "candidate_us": {
+                "pytorch": 554.8312,
+                "native": 520.8094
+              }
+            }
+          ],
+          "baseline_native_us": 512.0908,
+          "candidate_native_us": 541.6184,
+          "baseline_reference_us": 417.7039,
+          "candidate_reference_us": 595.0900999999999,
+          "native_speedup": 0.9454826497770386,
+          "reference_drift": 1.4246697241754265
+        },
+        {
+          "shape_mkn": [
+            127,
+            1025,
+            65
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 0.9986556530634438,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.9596401599852561,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.448589,
+                "pytorch": 29.976383
+              },
+              {
+                "pytorch": 26.29207,
+                "native": 0.432053
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.5024,
+                "pytorch": 32.259854
+              },
+              {
+                "pytorch": 31.339251,
+                "native": 0.487657
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 118.2428,
+                "pytorch": 113.506
+              },
+              "candidate_us": {
+                "native": 124.1596,
+                "pytorch": 125.0634
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 113.5178,
+                "native": 119.0342
+              },
+              "candidate_us": {
+                "pytorch": 123.3806,
+                "native": 124.1394
+              }
+            }
+          ],
+          "baseline_native_us": 118.2859,
+          "candidate_native_us": 124.14949999999999,
+          "baseline_reference_us": 113.5119,
+          "candidate_reference_us": 123.9826,
+          "native_speedup": 0.9527698460324046,
+          "reference_drift": 1.092243192123469
+        },
+        {
+          "shape_mkn": [
+            127,
+            1025,
+            65
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 0.6364022258577725,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.46964853392399514,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.766439,
+                "pytorch": 35.666443
+              },
+              {
+                "pytorch": 32.72983,
+                "native": 0.766149
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.862835,
+                "pytorch": 39.345832
+              },
+              {
+                "pytorch": 35.274664,
+                "native": 0.748693
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 297.5724,
+                "pytorch": 140.9632
+              },
+              "candidate_us": {
+                "native": 229.397,
+                "pytorch": 146.9662
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 135.9916,
+                "native": 291.8034
+              },
+              "candidate_us": {
+                "pytorch": 146.884,
+                "native": 232.057
+              }
+            }
+          ],
+          "baseline_native_us": 292.7338,
+          "candidate_native_us": 230.8683,
+          "baseline_reference_us": 137.482,
+          "candidate_reference_us": 146.9251,
+          "native_speedup": 1.2679687943299274,
+          "reference_drift": 1.0686860825417144
+        },
+        {
+          "shape_mkn": [
+            563,
+            563,
+            563
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 1.0,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 1.0,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.493577,
+                "pytorch": 29.123904
+              },
+              {
+                "pytorch": 27.650118,
+                "native": 0.583633
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.587809,
+                "pytorch": 31.15926
+              },
+              {
+                "pytorch": 29.850239,
+                "native": 0.639176
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 310.6762,
+                "pytorch": 434.5974
+              },
+              "candidate_us": {
+                "native": 385.567,
+                "pytorch": 578.8176
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 436.6528,
+                "native": 309.6166
+              },
+              "candidate_us": {
+                "pytorch": 628.9232,
+                "native": 404.9366
+              }
+            }
+          ],
+          "baseline_native_us": 310.14639999999997,
+          "candidate_native_us": 396.3826,
+          "baseline_reference_us": 436.2891,
+          "candidate_reference_us": 607.2084,
+          "native_speedup": 0.7824420143568359,
+          "reference_drift": 1.391756979489059
+        },
+        {
+          "shape_mkn": [
+            563,
+            563,
+            563
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 1.0,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.8208659179766349,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 1.155979,
+                "pytorch": 35.853999
+              },
+              {
+                "pytorch": 34.340879,
+                "native": 0.907072
+              }
+            ],
+            "candidate": [
+              {
+                "native": 1.724829,
+                "pytorch": 37.829669
+              },
+              {
+                "pytorch": 35.956005,
+                "native": 0.995996
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 557.858,
+                "pytorch": 459.589
+              },
+              "candidate_us": {
+                "native": 541.0402,
+                "pytorch": 637.0956
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 506.9992,
+                "native": 590.6232
+              },
+              "candidate_us": {
+                "pytorch": 636.5088,
+                "native": 565.3992
+              }
+            }
+          ],
+          "baseline_native_us": 570.9617,
+          "candidate_native_us": 556.6148000000001,
+          "baseline_reference_us": 468.683,
+          "candidate_reference_us": 636.8022,
+          "native_speedup": 1.025775275828095,
+          "reference_drift": 1.358705564315326
+        },
+        {
+          "shape_mkn": [
+            534,
+            250,
+            562
+          ],
+          "program": "matmul",
+          "offset": 0,
+          "status": "passed",
+          "capped_parity": 1.0,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 1.0,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.530483,
+                "pytorch": 31.365258
+              },
+              {
+                "pytorch": 29.982927,
+                "native": 0.639257
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.564504,
+                "pytorch": 32.527259
+              },
+              {
+                "pytorch": 28.780842,
+                "native": 0.563602
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 347.2454,
+                "pytorch": 482.793
+              },
+              "candidate_us": {
+                "native": 338.3776,
+                "pytorch": 497.677
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 486.52,
+                "native": 341.905
+              },
+              "candidate_us": {
+                "pytorch": 572.466,
+                "native": 361.6528
+              }
+            }
+          ],
+          "baseline_native_us": 345.7119,
+          "candidate_native_us": 351.4185,
+          "baseline_reference_us": 485.067,
+          "candidate_reference_us": 530.8949,
+          "native_speedup": 0.9837612419380312,
+          "reference_drift": 1.0944774639379715
+        },
+        {
+          "shape_mkn": [
+            534,
+            250,
+            562
+          ],
+          "program": "composed",
+          "offset": 3,
+          "status": "passed",
+          "capped_parity": 1.0,
+          "baseline_status": "passed",
+          "baseline_capped_parity": 0.8405946238462167,
+          "first_call_ms": {
+            "baseline": [
+              {
+                "native": 0.964949,
+                "pytorch": 39.74201
+              },
+              {
+                "pytorch": 35.005628,
+                "native": 0.96515
+              }
+            ],
+            "candidate": [
+              {
+                "native": 0.863376,
+                "pytorch": 38.489947
+              },
+              {
+                "pytorch": 37.08386,
+                "native": 0.957018
+              }
+            ]
+          },
+          "orders": [
+            {
+              "order": [
+                "native",
+                "pytorch"
+              ],
+              "baseline_us": {
+                "native": 632.8092,
+                "pytorch": 524.832
+              },
+              "candidate_us": {
+                "native": 530.2522,
+                "pytorch": 610.2228
+              }
+            },
+            {
+              "order": [
+                "pytorch",
+                "native"
+              ],
+              "baseline_us": {
+                "pytorch": 455.9216,
+                "native": 552.7482
+              },
+              "candidate_us": {
+                "pytorch": 568.2352,
+                "native": 494.4662
+              }
+            }
+          ],
+          "baseline_native_us": 587.632,
+          "candidate_native_us": 517.3664,
+          "baseline_reference_us": 493.9603,
+          "candidate_reference_us": 580.2536,
+          "native_speedup": 1.1358139995175565,
+          "reference_drift": 1.1746968329236176
+        }
+      ]
+    }
+  ]
+}
