@@ -2484,6 +2484,14 @@ pub(crate) fn column_stack_variable_function(
     atleast_stack_variable_function(AtleastStackOperation::ColumnStack, py, args, kwargs)
 }
 
+pub(crate) fn dstack_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    atleast_stack_variable_function(AtleastStackOperation::Dstack, py, args, kwargs)
+}
+
 pub(crate) fn vstack_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -3322,6 +3330,7 @@ impl CatAlias {
 enum AtleastStackOperation {
     Hstack,
     ColumnStack,
+    Dstack,
     Vstack,
     RowStack,
 }
@@ -3331,6 +3340,7 @@ impl AtleastStackOperation {
         match self {
             Self::Hstack => "hstack",
             Self::ColumnStack => "column_stack",
+            Self::Dstack => "dstack",
             Self::Vstack => "vstack",
             Self::RowStack => "row_stack",
         }
@@ -3340,6 +3350,7 @@ impl AtleastStackOperation {
         match self {
             Self::Hstack => "torch.hstack",
             Self::ColumnStack => "torch.column_stack",
+            Self::Dstack => "torch.dstack",
             Self::Vstack => "torch.vstack",
             Self::RowStack => "torch.row_stack",
         }
@@ -5683,14 +5694,32 @@ fn apply_top_level_atleast_stack(
 
     let horizontal = matches!(alias, AtleastStackOperation::Hstack);
     let columns = matches!(alias, AtleastStackOperation::ColumnStack);
-    let minimum_rank = if horizontal { 1 } else { 2 };
+    let depth = matches!(alias, AtleastStackOperation::Dstack);
+    let minimum_rank = if depth {
+        3
+    } else if horizontal {
+        1
+    } else {
+        2
+    };
     // hstack chooses the axis from the first operand after atleast_1d, even
     // when that operand is a neutral empty vector preceding a matrix.
-    let dimension =
-        usize::from(columns || (horizontal && borrowed_tensors[0].inner.shape().len() == 2));
+    let dimension = if depth {
+        2
+    } else {
+        usize::from(columns || (horizontal && borrowed_tensors[0].inner.shape().len() == 2))
+    };
     let mut normalized_views = try_size_vector(borrowed_tensors.len())?;
     for tensor in &borrowed_tensors {
         let view = match tensor.inner.shape().len() {
+            0 if depth => Some(tensor.inner.reshape([1, 1, 1])),
+            1 if depth => Some(
+                tensor
+                    .inner
+                    .unsqueeze_front()
+                    .and_then(|tensor| tensor.unsqueeze_back()),
+            ),
+            2 if depth => Some(tensor.inner.unsqueeze_back()),
             0 if horizontal => Some(tensor.inner.reshape([1])),
             0 => Some(tensor.inner.reshape([1, 1])),
             1 if columns => Some(tensor.inner.unsqueeze_back()),
