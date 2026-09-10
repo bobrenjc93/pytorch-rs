@@ -5,16 +5,16 @@
   "capability": "math_reductions_linalg",
   "scope": "correctness evidence for this six-case cell only; no overall score or transfer credit",
   "source": {
-    "commit": "6d240ceef6ee719a041852c904506622995ef4c7",
-    "source_sha256": "ef5e875cb9e9b40018772fdafacb333a4173d152f06d7352a569bb07712e5683",
+    "commit": "f1040cdf723cf9b172f27d50d3580bbb21f3c430",
+    "source_sha256": "d75bec6d9072e4ed020a9948276e9769147761992dd9b1dbb913e0e5fc9bb19b",
     "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
   "source_unchanged_during_run": true,
   "evaluator_sha256": "29a97d07bad0d82c261e28aa880de68cdf46df0731d5ff0aa9802ec5bb8e605b",
   "matrix_sha256": "a077f00f5eb50e2dceb2bd41a8453977955a8114fed203b7235f3a8befb24698",
   "build_record": {
-    "commit": "6d240ceef6ee719a041852c904506622995ef4c7",
-    "source_sha256": "ef5e875cb9e9b40018772fdafacb333a4173d152f06d7352a569bb07712e5683",
+    "commit": "f1040cdf723cf9b172f27d50d3580bbb21f3c430",
+    "source_sha256": "d75bec6d9072e4ed020a9948276e9769147761992dd9b1dbb913e0e5fc9bb19b",
     "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "git_status_before_build": "",
     "clean_checkout": true,
@@ -26,7 +26,7 @@
       "--locked",
       "--offline",
       "--out",
-      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-6d240cee/native-build/wheels"
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-f1040cdf/native-build/wheels"
     ],
     "commands": [
       {
@@ -37,14 +37,14 @@
           "--locked",
           "--offline",
           "--out",
-          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-6d240cee/native-build/wheels"
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-f1040cdf/native-build/wheels"
         ],
-        "started_at": "2026-09-10T10:40:38.732370+00:00",
-        "ended_at": "2026-09-10T10:41:23.850780+00:00",
-        "wall_seconds": 45.11840803641826,
+        "started_at": "2026-09-10T10:53:43.452723+00:00",
+        "ended_at": "2026-09-10T10:54:29.588110+00:00",
+        "wall_seconds": 46.13538741506636,
         "exit_status": 0,
-        "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-6d240cee/native-build/build.log",
-        "log_sha256": "97971caae6e3b2d6c36b4c3a692be53e48cb555d561ac6975849129af35aa62e"
+        "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-f1040cdf/native-build/build.log",
+        "log_sha256": "75c5634bd1b7ffa59df9889b52a0910bce6b9842e8f4b855bb7fcec5271626de"
       },
       {
         "command": [
@@ -55,22 +55,22 @@
           "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
           "--force-reinstall",
           "--no-deps",
-          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-6d240cee/native-build/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl"
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-f1040cdf/native-build/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl"
         ],
-        "started_at": "2026-09-10T10:41:23.852225+00:00",
-        "ended_at": "2026-09-10T10:41:24.006722+00:00",
-        "wall_seconds": 0.15450723469257355,
+        "started_at": "2026-09-10T10:54:29.589088+00:00",
+        "ended_at": "2026-09-10T10:54:29.735012+00:00",
+        "wall_seconds": 0.1459401398897171,
         "exit_status": 0,
-        "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-6d240cee/native-build/install.log",
-        "log_sha256": "7b3b72ef9de103d7d133e3521b15ea6c1009829868bea4522d82a65575583a47"
+        "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-f1040cdf/native-build/install.log",
+        "log_sha256": "e4837620ea0f677323be30007941a3a290d24381429a39969db62cc21c41ea7b"
       }
     ],
     "source_unchanged_during_build": true,
     "extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
-    "extension_sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9",
+    "extension_sha256": "36dfe5a572392d0602423ffe5cdbb141b88561ce74f8b0be95aa34ffe211da1a",
     "source_extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-    "wheel_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-6d240cee/native-build/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
-    "wheel_sha256": "2edd7b6ef5eb98428954648a1b444ddb6c0d7ad1fac349c164add67f5a009f25",
+    "wheel_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-f1040cdf/native-build/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "wheel_sha256": "bda809a23128ca075f2a598a8ba33866b3c7ede2a5f937bee8a35a4e84f30521",
     "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
     "python_executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
     "interpreter_path": "/usr/local/fbcode/platform010/bin/python3.12",
@@ -126,7 +126,7 @@
     },
     "environment": {
       "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/cargo-home",
-      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-6d240cee/native-build/build",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-f1040cdf/native-build/build",
       "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
       "VIRTUAL_ENV": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv",
       "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/tmp",
@@ -156,7 +156,7 @@
         "role": "reference",
         "case_id": "cuda_f32_add_same_shape",
         "seed": 7763153567161607008,
-        "pid": 3385654,
+        "pid": 791227,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -725,14 +725,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_add_same_shape",
         "seed": 7763153567161607008,
-        "pid": 3395254,
+        "pid": 797312,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
+          "sha256": "36dfe5a572392d0602423ffe5cdbb141b88561ce74f8b0be95aa34ffe211da1a"
         },
         "inputs": [
           {
@@ -1290,7 +1290,7 @@
         "role": "reference",
         "case_id": "cuda_f32_add_same_shape",
         "seed": 2618969910755569448,
-        "pid": 3396015,
+        "pid": 797548,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -1859,14 +1859,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_add_same_shape",
         "seed": 2618969910755569448,
-        "pid": 3401593,
+        "pid": 802799,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
+          "sha256": "36dfe5a572392d0602423ffe5cdbb141b88561ce74f8b0be95aa34ffe211da1a"
         },
         "inputs": [
           {
@@ -2424,7 +2424,7 @@
         "role": "reference",
         "case_id": "cuda_f32_add_trailing_vector",
         "seed": 7763153567161607008,
-        "pid": 3402788,
+        "pid": 804071,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -2835,14 +2835,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_add_trailing_vector",
         "seed": 7763153567161607008,
-        "pid": 3407554,
+        "pid": 809116,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
+          "sha256": "36dfe5a572392d0602423ffe5cdbb141b88561ce74f8b0be95aa34ffe211da1a"
         },
         "inputs": [
           {
@@ -3242,7 +3242,7 @@
         "role": "reference",
         "case_id": "cuda_f32_add_trailing_vector",
         "seed": 2618969910755569448,
-        "pid": 3407942,
+        "pid": 810194,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -3653,14 +3653,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_add_trailing_vector",
         "seed": 2618969910755569448,
-        "pid": 3411560,
+        "pid": 814869,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
+          "sha256": "36dfe5a572392d0602423ffe5cdbb141b88561ce74f8b0be95aa34ffe211da1a"
         },
         "inputs": [
           {
@@ -4060,7 +4060,7 @@
         "role": "reference",
         "case_id": "cuda_f32_neg",
         "seed": 7763153567161607008,
-        "pid": 3413091,
+        "pid": 816228,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -4417,14 +4417,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_neg",
         "seed": 7763153567161607008,
-        "pid": 3419669,
+        "pid": 820761,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
+          "sha256": "36dfe5a572392d0602423ffe5cdbb141b88561ce74f8b0be95aa34ffe211da1a"
         },
         "inputs": [
           {
@@ -4770,7 +4770,7 @@
         "role": "reference",
         "case_id": "cuda_f32_neg",
         "seed": 2618969910755569448,
-        "pid": 3420211,
+        "pid": 821253,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -5127,14 +5127,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_neg",
         "seed": 2618969910755569448,
-        "pid": 3425135,
+        "pid": 828229,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
+          "sha256": "36dfe5a572392d0602423ffe5cdbb141b88561ce74f8b0be95aa34ffe211da1a"
         },
         "inputs": [
           {
@@ -5480,7 +5480,7 @@
         "role": "reference",
         "case_id": "cuda_f32_mul_scalar",
         "seed": 7763153567161607008,
-        "pid": 3426388,
+        "pid": 829881,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -5837,14 +5837,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_mul_scalar",
         "seed": 7763153567161607008,
-        "pid": 3432443,
+        "pid": 834898,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
+          "sha256": "36dfe5a572392d0602423ffe5cdbb141b88561ce74f8b0be95aa34ffe211da1a"
         },
         "inputs": [
           {
@@ -6190,7 +6190,7 @@
         "role": "reference",
         "case_id": "cuda_f32_mul_scalar",
         "seed": 2618969910755569448,
-        "pid": 3433373,
+        "pid": 835133,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -6206,7 +6206,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          100734337024,
+          101373968384,
           102085492736
         ],
         "inputs": [
@@ -6547,14 +6547,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_mul_scalar",
         "seed": 2618969910755569448,
-        "pid": 3441039,
+        "pid": 840378,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
+          "sha256": "36dfe5a572392d0602423ffe5cdbb141b88561ce74f8b0be95aa34ffe211da1a"
         },
         "inputs": [
           {
@@ -6900,7 +6900,7 @@
         "role": "reference",
         "case_id": "cuda_f32_sum_axis",
         "seed": 7763153567161607008,
-        "pid": 3441735,
+        "pid": 841636,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -6916,7 +6916,7 @@
           "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1"
         },
         "memory_free_total": [
-          100734337024,
+          101415452672,
           102085492736
         ],
         "inputs": [
@@ -7172,14 +7172,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_sum_axis",
         "seed": 7763153567161607008,
-        "pid": 3444546,
+        "pid": 845643,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
+          "sha256": "36dfe5a572392d0602423ffe5cdbb141b88561ce74f8b0be95aa34ffe211da1a"
         },
         "inputs": [
           {
@@ -7301,12 +7301,12 @@
             "is_managed": 0
           },
           "values": [
-            7.066951274871826,
+            7.066951751708984,
             -4.216708183288574,
-            5.541792869567871,
+            5.541793346405029,
             -4.732392311096191,
             3.613708734512329,
-            2.437880516052246,
+            2.437880039215088,
             -1.6200380325317383
           ]
         },
@@ -7440,7 +7440,7 @@
         "role": "reference",
         "case_id": "cuda_f32_sum_axis",
         "seed": 2618969910755569448,
-        "pid": 3445518,
+        "pid": 846152,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -7712,14 +7712,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_sum_axis",
         "seed": 2618969910755569448,
-        "pid": 3453037,
+        "pid": 853433,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
+          "sha256": "36dfe5a572392d0602423ffe5cdbb141b88561ce74f8b0be95aa34ffe211da1a"
         },
         "inputs": [
           {
@@ -7846,7 +7846,7 @@
             -7.276864051818848,
             2.4900593757629395,
             3.127434253692627,
-            0.24794667959213257,
+            0.24794678390026093,
             -0.418485164642334
           ]
         },
@@ -7980,7 +7980,7 @@
         "role": "reference",
         "case_id": "cuda_f32_matmul",
         "seed": 7763153567161607008,
-        "pid": 3455061,
+        "pid": 856554,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -8441,14 +8441,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_matmul",
         "seed": 7763153567161607008,
-        "pid": 3463558,
+        "pid": 861200,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
+          "sha256": "36dfe5a572392d0602423ffe5cdbb141b88561ce74f8b0be95aa34ffe211da1a"
         },
         "inputs": [
           {
@@ -8661,7 +8661,7 @@
         "role": "reference",
         "case_id": "cuda_f32_matmul",
         "seed": 2618969910755569448,
-        "pid": 3464125,
+        "pid": 862493,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch/__init__.py",
@@ -9122,14 +9122,14 @@
         "role": "candidate",
         "case_id": "cuda_f32_matmul",
         "seed": 2618969910755569448,
-        "pid": 3472085,
+        "pid": 869396,
         "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
         "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/__init__.py",
         "version": "0.1.0",
         "extension": {
           "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-          "sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9"
+          "sha256": "36dfe5a572392d0602423ffe5cdbb141b88561ce74f8b0be95aa34ffe211da1a"
         },
         "inputs": [
           {

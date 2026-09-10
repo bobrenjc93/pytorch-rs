@@ -1,9 +1,9 @@
    Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.21s
-     Running unittests src/lib.rs (target/postcommit-sum-6d240cee/checks-build/debug/deps/pytorch_rs-a84bc75b3d7dfab2)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.41s
+     Running unittests src/lib.rs (target/postcommit-sum-f1040cdf/checks-build/debug/deps/pytorch_rs-a84bc75b3d7dfab2)
 
 running 1 test
 test cuda::tests::row_sum_bounds_empty_inputs_and_failure_cleanup ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 165 filtered out; finished in 0.42s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 165 filtered out; finished in 0.44s
 

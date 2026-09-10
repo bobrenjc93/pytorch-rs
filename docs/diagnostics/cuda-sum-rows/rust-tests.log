@@ -2,17 +2,18 @@
    Compiling crossbeam-epoch v0.9.21
    Compiling crossbeam-deque v0.8.8
    Compiling rayon-core v1.13.0
-   Compiling cfg-if v1.0.4
    Compiling either v1.18.0
+   Compiling cfg-if v1.0.4
    Compiling libloading v0.8.9
    Compiling rayon v1.12.0
    Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.91s
-     Running tests/cuda_sum_rows.rs (target/postcommit-sum-6d240cee/checks-build/debug/deps/cuda_sum_rows-9865ac5ad944ff1c)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.79s
+     Running tests/cuda_sum_rows.rs (target/postcommit-sum-f1040cdf/checks-build/debug/deps/cuda_sum_rows-9865ac5ad944ff1c)
 
-running 2 tests
+running 3 tests
 test cancellation_nonfinite_values_and_output_lifetime ... ok
 test generated_rectangles_offsets_empty_axes_and_storage ... ok
+test wide_same_sign_decimal_rows_do_not_accumulate_float32_drift ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.46s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.89s
 

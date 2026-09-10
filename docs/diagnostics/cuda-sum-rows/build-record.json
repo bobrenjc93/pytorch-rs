@@ -1,6 +1,6 @@
 {
-  "commit": "6d240ceef6ee719a041852c904506622995ef4c7",
-  "source_sha256": "ef5e875cb9e9b40018772fdafacb333a4173d152f06d7352a569bb07712e5683",
+  "commit": "f1040cdf723cf9b172f27d50d3580bbb21f3c430",
+  "source_sha256": "d75bec6d9072e4ed020a9948276e9769147761992dd9b1dbb913e0e5fc9bb19b",
   "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "git_status_before_build": "",
   "clean_checkout": true,
@@ -12,7 +12,7 @@
     "--locked",
     "--offline",
     "--out",
-    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-6d240cee/native-build/wheels"
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-f1040cdf/native-build/wheels"
   ],
   "commands": [
     {
@@ -23,14 +23,14 @@
         "--locked",
         "--offline",
         "--out",
-        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-6d240cee/native-build/wheels"
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-f1040cdf/native-build/wheels"
       ],
-      "started_at": "2026-09-10T10:40:38.732370+00:00",
-      "ended_at": "2026-09-10T10:41:23.850780+00:00",
-      "wall_seconds": 45.11840803641826,
+      "started_at": "2026-09-10T10:53:43.452723+00:00",
+      "ended_at": "2026-09-10T10:54:29.588110+00:00",
+      "wall_seconds": 46.13538741506636,
       "exit_status": 0,
-      "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-6d240cee/native-build/build.log",
-      "log_sha256": "97971caae6e3b2d6c36b4c3a692be53e48cb555d561ac6975849129af35aa62e"
+      "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-f1040cdf/native-build/build.log",
+      "log_sha256": "75c5634bd1b7ffa59df9889b52a0910bce6b9842e8f4b855bb7fcec5271626de"
     },
     {
       "command": [
@@ -41,22 +41,22 @@
         "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
         "--force-reinstall",
         "--no-deps",
-        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-6d240cee/native-build/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl"
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-f1040cdf/native-build/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl"
       ],
-      "started_at": "2026-09-10T10:41:23.852225+00:00",
-      "ended_at": "2026-09-10T10:41:24.006722+00:00",
-      "wall_seconds": 0.15450723469257355,
+      "started_at": "2026-09-10T10:54:29.589088+00:00",
+      "ended_at": "2026-09-10T10:54:29.735012+00:00",
+      "wall_seconds": 0.1459401398897171,
       "exit_status": 0,
-      "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-6d240cee/native-build/install.log",
-      "log_sha256": "7b3b72ef9de103d7d133e3521b15ea6c1009829868bea4522d82a65575583a47"
+      "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-f1040cdf/native-build/install.log",
+      "log_sha256": "e4837620ea0f677323be30007941a3a290d24381429a39969db62cc21c41ea7b"
     }
   ],
   "source_unchanged_during_build": true,
   "extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
-  "extension_sha256": "ce56a8cb238e20c3bbb60639a4c7f7a043e6c8002a51b62ea6ec7b73af2da7b9",
+  "extension_sha256": "36dfe5a572392d0602423ffe5cdbb141b88561ce74f8b0be95aa34ffe211da1a",
   "source_extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/python/torch_rs/torch_rs.abi3.so",
-  "wheel_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-6d240cee/native-build/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
-  "wheel_sha256": "2edd7b6ef5eb98428954648a1b444ddb6c0d7ad1fac349c164add67f5a009f25",
+  "wheel_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-f1040cdf/native-build/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+  "wheel_sha256": "bda809a23128ca075f2a598a8ba33866b3c7ede2a5f937bee8a35a4e84f30521",
   "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
   "python_executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
   "interpreter_path": "/usr/local/fbcode/platform010/bin/python3.12",
@@ -112,7 +112,7 @@
   },
   "environment": {
     "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/cargo-home",
-    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-6d240cee/native-build/build",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/postcommit-sum-f1040cdf/native-build/build",
     "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv/bin/python",
     "VIRTUAL_ENV": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/.venv",
     "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5/target/tmp",

@@ -1,6 +1,6 @@
 test_device_guard_restores_current_device (tests.test_cuda_sum_rows.CudaSumRowsDeviceTests.test_device_guard_restores_current_device) ... ok
 
 ----------------------------------------------------------------------
-Ran 1 test in 0.748s
+Ran 1 test in 0.786s
 
 OK

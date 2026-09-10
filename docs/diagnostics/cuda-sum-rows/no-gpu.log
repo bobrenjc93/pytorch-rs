@@ -5,8 +5,9 @@ test_generated_rectangles_forms_and_preservation (tests.test_cuda_sum_rows.CudaS
 test_no_pytorch_forwarding (tests.test_cuda_sum_rows.CudaSumRowsTests.test_no_pytorch_forwarding) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
 test_offset_singleton_and_empty_views (tests.test_cuda_sum_rows.CudaSumRowsTests.test_offset_singleton_and_empty_views) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
 test_unsupported_boundaries_and_compiled_reductions (tests.test_cuda_sum_rows.CudaSumRowsTests.test_unsupported_boundaries_and_compiled_reductions) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_wide_same_sign_decimal_rows (tests.test_cuda_sum_rows.CudaSumRowsTests.test_wide_same_sign_decimal_rows) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
 
 ----------------------------------------------------------------------
-Ran 7 tests in 0.000s
+Ran 8 tests in 0.000s
 
-OK (skipped=7)
+OK (skipped=8)

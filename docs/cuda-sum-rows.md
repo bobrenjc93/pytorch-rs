@@ -12,7 +12,7 @@ output. This prevents serial float32 rounding error from growing with row width.
 A bounded grid strides over rows. The installed NVIDIA driver JITs PTX;
 there is no nvcc/NVRTC dependency, CPU value computation, PyTorch forwarding,
 shape-specific benchmark path, or compiler integration. Floating-point addition
-order can differ from PyTorch, so finite sums are compared with tolerances;
+order can differ from PyTorch, so finite sums are compared with tolerances.
 Input NaNs and infinities retain their arithmetic classifications, and subnormals
 are not flushed. Accumulation precision and intermediate overflow can differ
 from PyTorch's float32 reduction; this does not add a float64 tensor API.
@@ -40,8 +40,7 @@ Existing CPU sum bindings, override dispatch, and CPU autograd are unchanged.
 
 [Python differentials](../tests/test_cuda_sum_rows.py) cover generated rectangular
 shapes, same-sign decimal rows through width 1,000,003, irregular widths,
-a row count beyond the grid stride,
-empty outputs, zero-width rows, offsets, singleton layouts, cancellation,
+a row count beyond the grid stride, empty outputs, zero-width rows, offsets, singleton layouts, cancellation,
 nonfinite values, signed zeros/subnormals, metadata, source preservation, fresh
 storage, thread/lifetime reuse, stream completion, and unsupported boundaries.
 A subprocess blocks all PyTorch imports. A separate two-GPU test checks device
@@ -52,49 +51,88 @@ without Python. Internal CUDA storage tests check overflowing products and bound
 empty offsets, and injected launch failure cleanup. Hardware-only tests clearly
 skip when their required CUDA devices are unavailable.
 
-## Review regression and validation
+## Clean-commit H100 evidence
 
-The previous kernel added an entire strided row into one float32 accumulator
-per lane. For two rows of 1,000,000 copies of float32 `0.1`, it returned
-`100022.3515625` per row on H100, versus PyTorch's `100000.0`. The revised kernel
-returns `100000.0`. At width 65,539, it returns `6553.89990234375` versus
-PyTorch's `6553.8984375`, within the existing `rtol=1e-5`, `atol=1e-4`.
+The refreshed capture measures implementation commit
+`f1040cdf723cf9b172f27d50d3580bbb21f3c430`, including the wide-row accuracy fix.
+Every build, evaluation, and test command began and ended with an empty
+`git status --porcelain`; artifacts were copied into `docs` only after the
+captures and provenance checks completed. These results replace the stale
+candidate records for the earlier float32-accumulator kernel and fulfill the
+previously deferred clean-commit capture.
 
-New Rust and H100 regressions cover widths 65,539, 1,000,000, and 1,000,003;
-positive and negative decimal inputs; both `keepdim` forms; contiguous offsets;
-source preservation; and fresh storage. The Python regression fails against
-the previous extension and passes against the revised one without changing
-any tolerance. The Rust oracle uses the input's exact float32 value multiplied
-by the row width in float64, independently of either tensor reduction.
+The existing `scripts/capture_depth_concat_build.py` built a release wheel
+without `--allow-dirty`, using a fresh Cargo target and locked offline
+dependencies. The [build receipt](diagnostics/cuda-sum-rows/build-record.json)
+records `clean_checkout=true`, unchanged source fingerprints, exact commands,
+timestamps, cache state, compiler versions, dependencies, and binary hashes.
+The wheel's extension, installed extension, and checkout extension have
+identical bytes. All wheel Python sources were checked against the checkout.
+The raw install log also records removal of the prior development wheel; the
+installed and measured extension hashes match the new committed build.
 
-Development checks use a fresh source-matched release wheel built with
-`scripts/capture_depth_concat_build.py --allow-dirty`, Rust/Cargo 1.92.0,
-Python 3.12.14+meta, and PyTorch `2.13.0+cu130`. H100 driver 580.82.07 loads
-CUDA runtime 13.0 from the worktree-local `.venv`. The available nvcc is 12.6.85;
-embedded PTX is compiled by the driver, without invoking nvcc. Raw build,
-test, and evaluator diagnostics are under `target/sum-row-review/` and are
-explicitly uncommitted-source diagnostics, not clean-commit evaluation evidence.
-The seven single-GPU Python tests, one two-device test, three Rust integration
-tests, and eleven internal CUDA tests passed. With no visible GPU, all eight
-Python hardware tests skipped clearly. Clippy with warnings denied, formatting,
-and diff checks passed. The unchanged math evaluator passed row sums at both
-existing evaluator-selected seeds in this diagnostic run (five of six cases;
-CUDA matrix multiplication remains unsupported).
+Extension SHA-256:
+`36dfe5a572392d0602423ffe5cdbb141b88561ce74f8b0be95aa34ffe211da1a`.
 
-## Required clean-commit evidence refresh
+The [unchanged math evaluator](diagnostics/cuda-sum-rows/cuda-math.json)
+passes `cuda_f32_sum_axis` at the original evaluator-selected seeds
+`7763153567161607008` and `2618969910755569448`, using the unchanged
+`rtol=1e-5` and `atol=1e-6`. The full six-case denominator remains intact:
+five cases pass and unsupported CUDA matrix multiplication receives zero.
+The report records `source_unchanged_during_run=true`. Candidate workers
+blocked PyTorch imports, inspected native device pointers, copied results
+through the driver, and checked input preservation. This is correctness
+evidence, not a performance score.
 
-**The checked-in artifacts under `docs/diagnostics/cuda-sum-rows/` are stale for
-this revision.** They measure commit `6d240ceef6ee719a041852c904506622995ef4c7`,
-which contains the inaccurate float32 accumulator. Their recorded provenance
-and measurements are preserved unchanged; they must not establish credit for
-the revised kernel. This is an outstanding capture requirement, not a historical
-reclassification or a waiver of the required clean measurement.
+## Wide-row regression
 
-After Burner commits the fix, rerun the existing
-`scripts/capture_depth_concat_build.py` without `--allow-dirty`, followed by
-`scripts/evaluate_cuda_math.py` with seeds `7763153567161607008` and
-`2618969910755569448` and that fresh build receipt. Keep all six cases, the
-original tolerances, and unsupported matrix multiplication at zero. Refresh the
-focused Rust/H100 test logs and replace the stale artifacts only after their
-clean source/build provenance is verified. Commit creation is owned by Burner,
-so a clean capture of this uncommitted fix cannot be produced in this turn.
+The reviewer identified serial float32 accumulation drift in the previous
+kernel. The committed regressions cover widths 65,539, 1,000,000, and
+1,000,003; positive and negative decimal values; contiguous offsets; both
+`keepdim` forms; metadata; source preservation; and fresh storage. All pass
+with the existing `rtol=1e-5`, `atol=1e-4`. The Rust oracle multiplies the exact
+float32 input value by the width in float64, independently of tensor reduction.
+
+A [fresh reproduction](diagnostics/cuda-sum-rows/wide-row-check.log) records
+these per-row results for a `(2, width)` matrix filled with float32 `0.1`:
+
+| Width | Native CUDA sum | PyTorch CUDA sum |
+| --- | --- | --- |
+| 65,539 | 6553.89990234375 | 6553.8984375 |
+| 1,000,000 | 100000.0 | 100000.0 |
+
+Both cases satisfy the unchanged regression tolerances.
+
+## Environment and checks
+
+Hardware was NVIDIA H100 (97,871 MiB, compute capability 9.0), driver
+580.82.07. Reference PyTorch was `2.13.0+cu130` on Python 3.12.14+meta.
+Both evaluator workers loaded the current worktree's
+`.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13`, runtime
+version 13000 (CUDA 13.0). Rust tests explicitly selected that library with
+`TORCH_RS_CUDART`. Rust/Cargo were 1.92.0; the build used release optimization,
+thin LTO, one codegen unit, and `extension-module`. The available nvcc was
+12.6.85 but was not invoked: the driver JIT-compiled embedded PTX.
+
+Candidate/reference packages, extensions, build outputs, and caches were
+worktree-local. Shared system Python, Rust, and CUDA tools were used read-only.
+Ordinary GPU checks used `CUDA_VISIBLE_DEVICES=0`; only the device-restoration
+test used `0,1`. [Command receipts](diagnostics/cuda-sum-rows/commands.json)
+retain exact commands, environments, timestamps, clean status checks, and log
+hashes. The [verification record](diagnostics/cuda-sum-rows/verification.json)
+binds the preserved artifacts to this source and build.
+
+Passed focused checks:
+
+- Three [Rust integration tests](diagnostics/cuda-sum-rows/rust-tests.log),
+  including the wide decimal regression, plus one
+  [bounds/failure-cleanup test](diagnostics/cuda-sum-rows/rust-bounds.log).
+- Seven [single-GPU Python differentials](diagnostics/cuda-sum-rows/python-tests.log)
+  and one [two-device guard test](diagnostics/cuda-sum-rows/two-device.log).
+- All eight Python hardware tests [skip clearly with no visible GPU](diagnostics/cuda-sum-rows/no-gpu.log).
+- Clippy with warnings denied, formatting, and diff checks.
+
+This refresh changes only candidate evidence and accompanying documentation.
+Implementation, tests, dependencies, evaluator definitions, scoring corpora,
+historical baseline artifacts, and Burner-managed progress artifacts remain
+unchanged. The capture does not replace independent review or merge gates.
