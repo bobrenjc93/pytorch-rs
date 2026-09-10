@@ -319,20 +319,32 @@ class IsolationTests(unittest.TestCase):
             package = Path(temp) / "python/torch_rs"
             package.mkdir(parents=True)
             (package / "__init__.py").write_text("try:\n import torch\nexcept RuntimeError:\n pass\n__version__='fixture'\n")
-            code = f"""
+            # Import isolation is independent of CUDA availability and procfs.
+            # Exercise the unavailable-provenance path too: it must retain the
+            # blocked import evidence and must never produce a passing result.
+            for procfs_available in (True, False):
+                code = f"""
 import sys,json
 from pathlib import Path
+from unittest.mock import patch
 sys.path.insert(0, {str(ROOT / 'scripts')!r})
 import evaluate_cuda_compilation as e
 case=e.corpus()['cases'][0]
 e.ROOT=Path({temp!r})
-print(json.dumps(e.worker('candidate', {{'case':case,'seed':17}})))
+with patch.object(e.common, 'runtime_provenance', return_value={{}}), \\
+     patch.object(Path, 'read_text', return_value='',
+                  side_effect=None if {procfs_available!r} else FileNotFoundError('procfs unavailable')):
+    print(json.dumps(e.worker('candidate', {{'case':case,'seed':17}})))
 """
-            result = subprocess.run([sys.executable, "-I", "-B", "-c", code], capture_output=True, text=True, timeout=30)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            row = json.loads(result.stdout)
-            self.assertEqual(row["status"], "forwarded")
-            self.assertEqual(row["blocked_imports"], ["torch"])
+                with self.subTest(procfs_available=procfs_available):
+                    result = subprocess.run([sys.executable, "-I", "-B", "-c", code], capture_output=True, text=True, timeout=30)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    row = json.loads(result.stdout)
+                    self.assertEqual(row["status"], "forwarded" if procfs_available else "failed")
+                    self.assertEqual(row["blocked_imports"], ["torch"])
+                    self.assertEqual(row["loaded_torch_modules"], [])
+                    if not procfs_available:
+                        self.assertEqual(row["runtime_error"], "procfs unavailable")
 
 
 @unittest.skipUnless(os.environ.get("CUDA_VISIBLE_DEVICES") == "0", "requires CUDA_VISIBLE_DEVICES=0")

@@ -170,6 +170,12 @@ Source, installed-wheel and runtime checks still apply. `--allow-dirty` produces
 development evidence only; Burner must commit before clean validation and own
 managed review, all current gates, exact-head CI and evidence-only publication.
 
+### Historical GPU-selection publications (PR1966)
+
+These two source publications retain their original source/build identities and
+paths. Neither qualifies the combined candidate; its fresh combined capture
+must follow the implementation and provenance-documentation commit.
+
 [GPU selection development evidence](diagnostics/compile-cuda-matmul/gpu-selection-development-46db0021/README.md)
 retains all six primary/held-out reports on GPU0 and explicitly selected GPU2,
 identity/multi-device rejection reports, golden tests and independent review.

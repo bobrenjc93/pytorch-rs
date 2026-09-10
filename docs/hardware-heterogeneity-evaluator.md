@@ -380,6 +380,38 @@ and `nvcc` (explicitly `unused` when appropriate). Keep dependencies, build
 outputs, compiler caches, and temporary files inside the worktree. Burner jobs
 must reserve the shared `gpu` resource; the runner requires physical GPU 0.
 
+For combined validation, install Python itself under the worktree before
+creating the venv: set `UV_PYTHON_INSTALL_DIR`, `UV_PYTHON_BIN_DIR`,
+`UV_CACHE_DIR`, and `TMPDIR` to local directories, run
+`uv python install 3.12.12`, and give `uv venv --python` the resulting local
+interpreter path. Install the locked `dev` and `reference` dependency groups.
+A `.venv/bin/python` invocation alone does not prove isolation. Before building
+or measuring, retain this check's output alongside package/runtime identities:
+
+```bash
+.venv/bin/python -B - <<'PY'
+import hashlib, json, sys
+from pathlib import Path
+root = Path.cwd().resolve()
+executable = Path(sys.executable).resolve(strict=True)
+base = Path(sys.base_prefix).resolve(strict=True)
+assert executable.is_relative_to(root), executable
+assert base.is_relative_to(root), base
+print(json.dumps({"executable": str(executable), "base_prefix": str(base),
+                  "interpreter_sha256": hashlib.sha256(executable.read_bytes()).hexdigest()}, indent=2))
+PY
+```
+
+Run the contributor environment and documentation preflights before measurement.
+Burner must commit the combined implementation and provenance correction before
+the final fresh locked release-wheel build in an empty local Cargo target.
+Retain clean Git statuses, actual build/capture commands and environments,
+timestamps, hashes, both executions for each seed, and all failures in new
+combined artifacts. Record the installed Rust toolchain and system NVIDIA driver
+separately from local dependencies. If implementation or evaluator code changes,
+repeat the build and capture from the new clean commit. The historical source
+capture below is preserved independently of that required combined evidence.
+
 ```bash
 mkdir -p target/cuda-compilation
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python -B scripts/evaluate_cuda_compilation.py \
@@ -401,7 +433,9 @@ pointwise kernels use driver-JIT embedded PTX; native matmul uses cuBLAS.
 Portable unit tests run without CUDA, and hardware tests skip clearly when the
 reference GPU or local extension is unavailable.
 
-The [H100 evidence](evaluation-data/cuda-inference-compilation-v1-h100.json)
+### Historical source capture (PR1967)
+
+The [H100 source evidence](evaluation-data/cuda-inference-compilation-v1-h100.json)
 was regenerated from clean implementation commit
 `387f541c8b01d53e5644d5ee3b1399e95978915f`. Its production sources match
 main `46db0021e8db4b563327ac4b8290eb7eab4318f4`. The committed evaluator and matrix
@@ -414,8 +448,15 @@ The [capture receipt](evaluation-data/cuda-inference-compilation-v1-h100-receipt
 records the actual command, timestamps, environment, artifact hash, and clean
 Git status before and after measurement. The artifact embeds the fresh build
 receipt, full build log, source/evaluator/extension hashes, and every trial.
-Build, import, executable, and runtime dependency paths belong to this worktree;
-the installed compiler and system NVIDIA driver paths are recorded separately.
+Build, candidate import, and runtime dependency paths belonged to the original
+`agent_7616a521` worktree. The command invoked that worktree's `.venv/bin/python`,
+but its interpreter symlink resolved to
+`/home/bobren/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/bin/python3.12`.
+The executable was therefore shared, not worktree-local; the invocation path
+does not establish interpreter isolation. The installed Rust compiler and system
+NVIDIA driver were also external and are recorded separately. Preserve the
+original capture and receipt unchanged as source-history evidence: they do not
+qualify the combined candidate or its environment.
 Evidence and documentation were updated only after the clean capture finished.
 
 That run selected seeds `4903053239806875220` and `5105064065959191971`:
