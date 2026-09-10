@@ -84,6 +84,97 @@ rules requires a new matrix schema version and a matching Burner evaluation
 definition version. Cases may be added within this contract, but existing
 failing cases must not be deleted merely to raise the score.
 
+## Fixed CUDA float32 device/transfer denominator
+
+The `cuda_float32_transfers_v1` case set fixes six equally weighted cases within
+CUDA's existing `device_tensors_and_transfers` capability. The seven backend
+weights and all eight capability weights remain unchanged.
+
+| Case ID | Required public behavior |
+| --- | --- |
+| `cuda_f32_vector_zero_roundtrip` | `zeros((17,), device="cuda:0")` and `zeros((0,), device="cuda:0")`, each downloaded with both `.cpu()` and `.to("cpu")` |
+| `cuda_f32_matrix_zero_roundtrip` | Direct `zeros((7, 13), device="cuda:0")`, downloaded with both `.cpu()` and `.to("cpu")` |
+| `cuda_f32_contiguous_cpu_upload` | Contiguous CPU `(7, 13)` tensor uploaded with `.to("cuda:0")` |
+| `cuda_f32_strided_cpu_upload` | CPU `(7, 13)` base viewed as `[:, 1:12].transpose(0, 1)`, uploaded with `.to("cuda:0")` |
+| `cuda_f32_view_to_cpu_copy` | The same offset, non-dense view of a CUDA base, copied with both `.cpu()` and `.to("cpu")` |
+| `cuda_f32_same_device_copy` | CUDA `(17,)` tensor copied with both `.clone()` and `.to("cuda:0", copy=True)`; ordinary `.to("cuda:0")` must preserve object identity |
+
+Every tensor is float32, with no gradient tracking. The view shape is `(11, 7)`,
+its strides are `(1, 13)`, and its storage offset is 1. Copies have strides
+`(1, 11)` and storage offset 0. Other tensors and copies are contiguous.
+Nonzero values are drawn independently of either framework using Python
+`random.Random(seed).uniform(-2, 2)`, rounded to float32. At least two distinct
+nonnegative evaluator-selected seeds are required; omitting `--seed` generates
+and records three seeds. Shapes and required operations are fixed by this
+version. All subchecks, including empty input, must pass for a case to earn
+credit; subchecks and seeds do not add denominator slots. Comparisons are exact.
+
+[`scripts/evaluate_cuda_transfers.py`](../scripts/evaluate_cuda_transfers.py)
+runs every reference and candidate trial in separate isolated processes with
+`CUDA_VISIBLE_DEVICES=0`. The reference must be NVIDIA PyTorch 2.13.0 on real
+hardware. Candidate processes load this checkout's native extension, block
+installed `torch` imports, and record even swallowed forwarding attempts.
+Evaluator-owned driver queries check CUDA pointer memory type and device,
+synchronize, and read logical elements using their strides. CPU storage reads
+must also agree with public `.tolist()`. Empty allocations have no pointer to
+query; the vector slot additionally requires the nonempty hardware case.
+
+The runner verifies source values and metadata before and after copying,
+distinct objects and allocations, and copy contents after an independent source
+mutation. View-download and same-device-copy fixtures start with a public
+rank-one CUDA zero allocation, filled by an evaluator-owned driver upload and
+reshaped. This identical setup on both sides avoids requiring public upload or
+matrix allocation for those slots. Only the declared public operations earn
+credit; driver fixture initialization and observation earn none. Pointer checks
+and the import blocker are not a sandbox for hostile native code: published
+credit still requires review of the commit-bound native transfer path.
+
+For this capability only, `p(cuda_nvidia, device_tensors_and_transfers) = passed / 6`.
+Its contribution within the CUDA backend is `15 * passed / 6` percentage points.
+Each case therefore contributes at most 2.5 points within that backend. Missing,
+skipped, unsupported, forwarded, incorrect, malformed, and unbound results earn
+zero and retain their slots. Reference failure also retains a zero slot and
+makes the command exit 2 (incomplete reference run). A complete reference run
+exits 0 even if all candidate cases are unsupported. The JSON records reference
+eligibility and candidate verdicts separately. It emits no overall heterogeneity,
+backend breadth, performance, or other capability score. These specific view
+checks do not establish additional `dtypes_layout_views` credit.
+
+### Run the transfer evaluator
+
+Build a fresh local extension and create an evaluator build receipt using the
+[native build instructions below](#reproduce-and-bind-a-native-build). The same
+receipt format is used: commit, production-source digest, extension SHA-256,
+build command, Rust/Cargo compiler versions, and `nvcc` selection (record
+`unused` when the build does not compile CUDA). Never attest a copied or stale
+binary as a fresh build. Use the installed pinned toolchain and keep all build
+outputs, downloads, caches, and temporary files inside the worktree. Burner jobs
+must reserve the shared `gpu` resource.
+
+```bash
+mkdir -p target/cuda-transfers
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python -B scripts/evaluate_cuda_transfers.py \
+  --seed 9173 --seed 260909 \
+  --build-record target/cuda-math/build-record.json \
+  --output target/cuda-transfers/evidence.json
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python -B -m unittest discover \
+  -s tests -p test_cuda_transfers_evaluator.py -v
+```
+
+Interpreter overrides `--reference-python` and `--candidate-python` are
+available. Without a matching build receipt, candidate credit is zero. The JSON
+records commit/source, evaluator/helper/matrix and native-extension hashes,
+build configuration, interpreter/package versions, seeds, process IDs, GPU
+model/UUID/compute capability, driver and memory pressure, and paths/versions of
+the CUDA runtimes actually mapped by each worker. The evaluator itself does not
+compile CUDA or select `nvcc`; the build receipt records the compiler actually
+used, rather than inferring it from the driver's compatibility version. Source,
+extension, evaluator, or matrix changes during a run invalidate candidate
+credit. Hardware unit tests skip clearly when NVIDIA CUDA is absent; the runner's
+six-slot denominator is retained on such hosts. Synthetic accounting fixtures
+are not evidence of hardware support. This evaluator-only addition claims no
+production implementation gain.
+
 ## Fixed CUDA float32 math denominator
 
 The `cuda_float32_math_v1` case set within `math_reductions_linalg` fixes six

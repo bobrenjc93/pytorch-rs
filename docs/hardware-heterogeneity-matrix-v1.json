@@ -46,7 +46,107 @@
   "capabilities": [
     {
       "id": "device_tensors_and_transfers",
-      "weight": 15
+      "weight": 15,
+      "case_sets": [
+        {
+          "version": "cuda_float32_transfers_v1",
+          "backend": "cuda_nvidia",
+          "dtype": "float32",
+          "device": "cuda:0",
+          "case_aggregation": "equal_fraction_fixed_denominator",
+          "input_distribution": "Python random.Random(seed).uniform(-2, 2), rounded to IEEE float32; zeros for allocation cases",
+          "seed_policy": "At least two distinct nonnegative evaluator-selected seeds; all shapes and operations must pass for case credit.",
+          "comparison": "exact float32 values, shape, strides, storage offset, device, source preservation, and copy independence",
+          "cases": [
+            {
+              "id": "cuda_f32_vector_zero_roundtrip",
+              "operation": "vector_zero_roundtrip",
+              "shapes": [
+                [
+                  17
+                ],
+                [
+                  0
+                ]
+              ],
+              "copies": [
+                "cpu",
+                "to_cpu"
+              ]
+            },
+            {
+              "id": "cuda_f32_matrix_zero_roundtrip",
+              "operation": "matrix_zero_roundtrip",
+              "shapes": [
+                [
+                  7,
+                  13
+                ]
+              ],
+              "copies": [
+                "cpu",
+                "to_cpu"
+              ]
+            },
+            {
+              "id": "cuda_f32_contiguous_cpu_upload",
+              "operation": "contiguous_cpu_upload",
+              "shapes": [
+                [
+                  7,
+                  13
+                ]
+              ],
+              "copies": [
+                "to_cuda"
+              ]
+            },
+            {
+              "id": "cuda_f32_strided_cpu_upload",
+              "operation": "strided_cpu_upload",
+              "shapes": [
+                [
+                  7,
+                  13
+                ]
+              ],
+              "view": "[:, 1:12].transpose(0, 1)",
+              "copies": [
+                "to_cuda"
+              ]
+            },
+            {
+              "id": "cuda_f32_view_to_cpu_copy",
+              "operation": "view_to_cpu_copy",
+              "shapes": [
+                [
+                  7,
+                  13
+                ]
+              ],
+              "view": "[:, 1:12].transpose(0, 1)",
+              "copies": [
+                "cpu",
+                "to_cpu"
+              ]
+            },
+            {
+              "id": "cuda_f32_same_device_copy",
+              "operation": "same_device_copy",
+              "shapes": [
+                [
+                  17
+                ]
+              ],
+              "copies": [
+                "clone",
+                "to_cuda_copy"
+              ],
+              "no_copy_identity": true
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "dtypes_layout_views",
