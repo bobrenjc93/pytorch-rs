@@ -1,5 +1,13 @@
 # Factory-kwargs parity across Python caches
 
+This page preserves PR #1926's original diagnosis and validation report
+(source PR tip `78a9589c006c675496d0910c63c92bd57e520891`). Interpreter paths,
+cache states, test counts, and statements about unchanged scripts or evaluation
+definitions below belong to that source PR. They do not describe the combined
+#1926/#1927/#1928 checkout, which also adds the transfer evaluator. See the
+[composite integration checks](composite-validation-integration.md) for the
+separate combined-tree validation.
+
 On 2026-09-09, unchanged main `28fb6b923843989f9536608a75f3d240ce4c8a7e`
 reproduced three order-only assertions in `test_nn_factory_kwargs_reference`.
 This is an assertion-contract issue: PyTorch itself changes direct-key order
@@ -7,7 +15,7 @@ when its code constants are reconstructed. Production `nn.factory_kwargs`,
 CUDA code, validation scripts, and evaluation definitions are unchanged.
 
 The baseline used CPython **3.14.5** (`main, May 10 2026, 19:28:16`, Clang
-22.1.3), installed in this worktree's canonical `.venv`, and locked PyTorch
+22.1.3), installed in the original PR worktree's canonical `.venv`, and locked PyTorch
 **2.13.0+cu130**. The base interpreter was
 `/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/bin/python3.14`.
 The reference came from `.venv/lib/python3.14/site-packages/torch/nn/__init__.py`.
