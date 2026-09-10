@@ -519,14 +519,129 @@ print(json.dumps({
                 expected_error = self.error(expected_call)
                 self.assertEqual(actual_error, expected_error)
 
-    def test_inference_only_and_unsupported_boundaries_remain_explicit(self):
+    def assert_gradient_matches(self, actual, expected):
+        self.assertEqual(actual.shape, tuple(expected.shape))
+        self.assertEqual(actual.requires_grad, expected.requires_grad)
+        actual_values = np.asarray(actual, dtype=np.float32)
+        expected_values = expected.detach().numpy()
+        # NaN payload propagation is not portable; all other values, including
+        # signed zeros and subnormals, must match bit for bit.
+        np.testing.assert_array_equal(np.isnan(actual_values), np.isnan(expected_values))
+        finite_or_inf = ~np.isnan(expected_values)
+        np.testing.assert_array_equal(
+            actual_values.view(np.uint32)[finite_or_inf],
+            expected_values.view(np.uint32)[finite_or_inf],
+        )
+
+    @staticmethod
+    def autograd_case(module, case):
+        if case == "scalar":
+            leaf = module.tensor(4.0, requires_grad=True)
+            return leaf, leaf
+        if case == "empty":
+            leaf = module.zeros((2, 0, 3), requires_grad=True)
+            return leaf, leaf.transpose(0, 2)[1]
+        leaf = module.tensor(
+            np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            requires_grad=True,
+        )
+        if case == "contiguous":
+            return leaf, leaf
+        if case == "offset":
+            return leaf, leaf[1]
+        if case == "transpose":
+            return leaf, leaf.transpose(0, 2)
+        if case == "offset transpose":
+            return leaf, leaf[1].transpose(0, 1)
+        if case == "strided offset":
+            return leaf, leaf.transpose(0, 2)[1]
+        raise AssertionError(case)
+
+    def test_weighted_backward_layouts_match_pytorch(self):
+        for case in ("scalar", "empty", "contiguous", "offset", "transpose",
+                     "offset transpose", "strided offset"):
+            for top_level in (False, True):
+                with self.subTest(case=case, top_level=top_level):
+                    actual_leaf, actual_input = self.autograd_case(torch, case)
+                    expected_leaf, expected_input = self.autograd_case(reference_torch, case)
+                    weights = np.linspace(-2.0, 3.0, actual_input.numel(), dtype=np.float32)
+                    weights = weights.reshape(actual_input.shape).tolist()
+                    outputs = []
+                    for module, source in ((torch, actual_input), (reference_torch, expected_input)):
+                        output = module.rsqrt(source) if top_level else source.rsqrt()
+                        self.assertTrue(output.requires_grad)
+                        if module is reference_torch:
+                            self.assertEqual(type(output.grad_fn).__name__, "RsqrtBackward0")
+                        self.assertFalse(output.is_leaf)
+                        if source.numel():
+                            self.assertNotEqual(source.data_ptr(), output.data_ptr())
+                        # Preserve empty shape when tolist() loses trailing axes.
+                        weight = (module.tensor(weights) if source.numel()
+                                  else module.zeros(source.shape))
+                        loss = (output * weight).sum()
+                        loss.backward()
+                        outputs.append(output)
+                    self.assert_tensor_matches(*outputs, case=case)
+                    self.assert_gradient_matches(actual_leaf.grad, expected_leaf.grad)
+
+    def test_weighted_ieee_edges_and_seeded_bits_match_pytorch(self):
+        edge_bits = np.array([
+            0, 0x80000000, 1, 0x80000001, 0x007fffff, 0x00800000,
+            0x0d800000, 0x3eaaaaab, 0x3f800000, 0x3faaaaab, 0xbf800000,
+            0x40800000, 0x71800000, 0x7f7fffff, 0xff7fffff,
+            0x7f800000, 0xff800000, 0x7f812345, 0xff812345, 0x7fc12345,
+        ], dtype=np.uint32)
+        weight_bits = np.array([
+            0, 0x80000000, 1, 0x000116c2, 0x0da24260, 0x3f000000,
+            0x3f800000, 0xc0000000, 0x7149f2ca, 0x7f7fffff,
+            0x7f800000, 0xff800000, 0x7fc56789,
+        ], dtype=np.uint32)
+        inputs = np.repeat(edge_bits, len(weight_bits))
+        weights = np.tile(weight_bits, len(edge_bits))
+        rng = np.random.default_rng(0x52535152)
+        inputs = np.concatenate((inputs, rng.integers(0, 2**32, 4096, dtype=np.uint32)))
+        weights = np.concatenate((weights, rng.integers(0, 2**32, 4096, dtype=np.uint32)))
+        for top_level in (False, True):
+            leaves = []
+            for module in (torch, reference_torch):
+                leaf = module.tensor(memoryview(inputs.view(np.float32)), requires_grad=True)
+                weight = module.tensor(memoryview(weights.view(np.float32)))
+                output = module.rsqrt(leaf) if top_level else leaf.rsqrt()
+                (output * weight).sum().backward()
+                leaves.append(leaf)
+            self.assert_gradient_matches(leaves[0].grad, leaves[1].grad)
+
+    def test_accumulation_no_grad_and_saved_graph_release_match_pytorch(self):
+        leaves = []
+        errors = []
+        for module in (torch, reference_torch):
+            leaf = module.tensor([1.0, 4.0, 16.0], requires_grad=True)
+            output = module.rsqrt(leaf)
+            loss = (output + output).sum()
+            loss.backward()
+            before = leaf.grad.tolist()
+            errors.append(self.error(lambda: output.sum().backward()))
+            self.assertEqual(leaf.grad.tolist(), before)
+            module.rsqrt(leaf).sum().backward()
+            self.assertFalse(leaf.grad.requires_grad)
+            with module.no_grad():
+                detached_output = module.rsqrt(leaf)
+            self.assertFalse(detached_output.requires_grad)
+            self.assertTrue(detached_output.is_leaf)
+            self.assertFalse(leaf.detach().rsqrt().requires_grad)
+            self.assertTrue(leaf.rsqrt().requires_grad)
+            leaves.append(leaf)
+        self.assert_gradient_matches(leaves[0].grad, leaves[1].grad)
+        self.assertEqual(errors[0], errors[1])
+
+    def test_autograd_and_unsupported_boundaries_remain_explicit(self):
         actual = torch.tensor([4.0], requires_grad=True)
         for call in (actual.rsqrt, lambda: torch.rsqrt(actual)):
-            with self.assertRaisesRegex(
-                RuntimeError,
-                r"^rsqrt\(\): autograd recording is not supported$",
-            ):
-                call()
+            output = call()
+            self.assertTrue(output.requires_grad)
+            self.assertFalse(output.is_leaf)
+            with self.assertRaisesRegex(RuntimeError, "does not support create_graph=True"):
+                output.sum().backward(create_graph=True)
 
         expected = reference_torch.tensor([4.0], requires_grad=True)
         self.assertTrue(expected.rsqrt().requires_grad)
