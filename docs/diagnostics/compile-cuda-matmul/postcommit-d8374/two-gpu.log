@@ -1,0 +1,6 @@
+test_device_restore_cache_and_mixed_device_errors (tests.test_compile_cuda_matmul.CompileCudaMatmulDeviceTests.test_device_restore_cache_and_mixed_device_errors) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 1.454s
+
+OK

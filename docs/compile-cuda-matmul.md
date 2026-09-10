@@ -105,3 +105,17 @@ remain required before merge. Development validation cannot satisfy those
 merge-coupled requirements and this implementation agent does not commit.
 
 The [development validation index](diagnostics/compile-cuda-matmul/development/README.md) retains H100 results, raw timings, independent review and unsuccessful attempts. It is explicitly uncommitted evidence, not merge qualification.
+
+## Clean implementation capture
+
+The [clean post-commit capture](diagnostics/compile-cuda-matmul/postcommit-d8374/README.md)
+measured **`d8374ec16f6c13fb09b18723c491d06fdaeaafaa`** with a fresh installed
+release wheel on H100. All 12 timing cells passed with **79.48% capped geometric
+parity**, retaining slower composed cells, raw samples, both execution orders,
+first-call costs and verified source/binary/runtime identities. The unchanged
+six-case math workload passed all 18 trials, and the frozen compiler corpus
+passed 38/38 cases. Compiled numerical/guard/lifetime/isolated-program checks,
+separate GPUs 0,1 checks and focused Rust tests passed. All measurements completed
+with clean tracked status before artifact publication. Development records
+remain unchanged; independent review, ten merge gates and exact-head CI remain
+separate requirements.

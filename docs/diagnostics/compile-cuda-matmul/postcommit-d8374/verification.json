@@ -1,0 +1,151 @@
+{
+  "verified": true,
+  "measured_commit": "d8374ec16f6c13fb09b18723c491d06fdaeaafaa",
+  "source": {
+    "commit": "d8374ec16f6c13fb09b18723c491d06fdaeaafaa",
+    "source_sha256": "cd83a4af5944328eba0c973e0d3ec6490a5537cda39c0d7c58ed966c9e32b329",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "extension_sha256": "e591b9edecc721aefacce130ce7b9771589e3e758e11b1ed1d8ce524a4b50d2d",
+  "wheel_sha256": "6959a11b89a08620fb94ae42886fb5dd94b6bb3113b863b61dcfc54078e92223",
+  "receipts": {
+    "build-wheel.receipt.json": {
+      "command": [
+        ".venv/bin/python",
+        "-B",
+        "scripts/capture_depth_concat_build.py",
+        "--output",
+        "target/postcommit-d8374/native"
+      ],
+      "exit_status": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "compiled-regressions.receipt.json": {
+      "command": [
+        ".venv/bin/python",
+        "-B",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_compile_cuda_matmul",
+        "tests.test_compile_cuda_matmul_diagnostic"
+      ],
+      "exit_status": 0,
+      "log_sha256": "a0e91d6565a4e0a4c56cfc2d91fa44c19743d91aa128f1a43bdd2284f84feac0"
+    },
+    "compiled-timings.receipt.json": {
+      "command": [
+        ".venv/bin/python",
+        "-B",
+        "scripts/diagnose_compile_cuda_matmul.py",
+        "--build-record",
+        "target/postcommit-d8374/native/build-record.json",
+        "--output",
+        "target/postcommit-d8374/evidence/compiled-timings.json"
+      ],
+      "exit_status": 0,
+      "log_sha256": "f19e7abf8e20c8cd07f0ed4ca251574ddf40cf930f58fd242152bba1b086c658"
+    },
+    "fixed-math.receipt.json": {
+      "command": [
+        ".venv/bin/python",
+        "-B",
+        "scripts/evaluate_cuda_math.py",
+        "--seed",
+        "8503945240872567646",
+        "--seed",
+        "8613321571747136749",
+        "--seed",
+        "4480763905421893394",
+        "--build-record",
+        "target/postcommit-d8374/native/build-record.json",
+        "--output",
+        "target/postcommit-d8374/evidence/fixed-math.json"
+      ],
+      "exit_status": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "frozen-compiler.receipt.json": {
+      "command": [
+        ".venv/bin/python",
+        "-B",
+        "scripts/evaluate_torch_compile_coverage.py",
+        "--subset",
+        "full"
+      ],
+      "exit_status": 0,
+      "log_sha256": "fe510ad1e96e6837eac0de1fa139a4f52a23012bf4f5f53a260efa2ea1dfaa69"
+    },
+    "provenance.receipt.json": {
+      "command": [
+        ".venv/bin/python",
+        "-B",
+        "target/postcommit-d8374/provenance.py"
+      ],
+      "exit_status": 0,
+      "log_sha256": "9509ff078bdcc552ab56bea13a5b53b3b72bb0fe3e4b85343c29a4a1302c3894"
+    },
+    "rust-bridge.receipt.json": {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "python-bindings",
+        "--lib",
+        "compiled_matmul_bridge"
+      ],
+      "exit_status": 0,
+      "log_sha256": "8e79f1637ff698463a6b5c45165f24531add9a78f27a8701f0fb03d44efced75"
+    },
+    "rust-matmul.receipt.json": {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--test",
+        "cuda_matmul"
+      ],
+      "exit_status": 0,
+      "log_sha256": "391acb8fa14fd9fe7d9689603c370ad640aa97e1be6dbad69b93e412c71c4d0b"
+    },
+    "two-gpu.receipt.json": {
+      "command": [
+        ".venv/bin/python",
+        "-B",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_compile_cuda_matmul.CompileCudaMatmulDeviceTests"
+      ],
+      "exit_status": 0,
+      "log_sha256": "46281300fc2b34ffd5380a16bf74f8cb310a35a058c31703a94af27d34d7c909"
+    },
+    "wheel-verifier.receipt.json": {
+      "command": [
+        ".venv/bin/python",
+        "-B",
+        ".github/scripts/verify_native_extension.py"
+      ],
+      "exit_status": 0,
+      "log_sha256": "55c7d7bd9e6605da6dd928c0b450dd7961fd4844cef09c2518f578cb55d5fc2d"
+    }
+  },
+  "fixed_math_trials": 18,
+  "fixed_math_cases": 6,
+  "frozen_compiler_cases": 38,
+  "timing_cells": 12,
+  "capped_geometric_parity": 0.7947884783289866,
+  "all_timing_samples_verified": true,
+  "execution_import_build_and_cuda_library_paths_current_worktree": true,
+  "candidate_files_unchanged_since_inspection": true,
+  "git_status_at_verification": "",
+  "harness_and_evaluator_hashes": {
+    "scripts/capture_depth_concat_build.py": "de3ad50facaad0fcdb5bf83111abd3548c3fa9aa05a97b2f2ff267a330204ece",
+    "scripts/diagnose_compile_cuda_matmul.py": "9029157f4f0c790708602412c0e5a6fe3d12bbde76cb67bb460dcdae78fcf1e9",
+    "scripts/evaluate_cuda_math.py": "29a97d07bad0d82c261e28aa880de68cdf46df0731d5ff0aa9802ec5bb8e605b",
+    "scripts/evaluate_torch_compile_coverage.py": "7dd5607216116c29a53405abe61be8a9ab6253e89ddee32b5f1a1de4cb19a9c3",
+    "tests/test_compile_cuda_matmul.py": "a76f0a9ea57b813ee45a403d4e8f29fe20f204b7a3b854c6892515043281a15c",
+    "docs/hardware-heterogeneity-matrix-v1.json": "a077f00f5eb50e2dceb2bd41a8453977955a8114fed203b7235f3a8befb24698"
+  }
+}

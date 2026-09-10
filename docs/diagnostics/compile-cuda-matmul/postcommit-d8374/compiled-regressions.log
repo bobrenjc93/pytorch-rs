@@ -1,0 +1,20 @@
+test_device_restore_cache_and_mixed_device_errors (tests.test_compile_cuda_matmul.CompileCudaMatmulDeviceTests.test_device_restore_cache_and_mixed_device_errors) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_completion_thread_and_allocation_lifetimes (tests.test_compile_cuda_matmul.CompileCudaMatmulTests.test_completion_thread_and_allocation_lifetimes) ... ok
+test_generated_capture_forms_changed_inputs_and_composition (tests.test_compile_cuda_matmul.CompileCudaMatmulTests.test_generated_capture_forms_changed_inputs_and_composition) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ok
+test_generated_wide_products_and_overlapping_offsets (tests.test_compile_cuda_matmul.CompileCudaMatmulTests.test_generated_wide_products_and_overlapping_offsets) ... ok
+test_guards_late_validation_recovery_and_captures (tests.test_compile_cuda_matmul.CompileCudaMatmulTests.test_guards_late_validation_recovery_and_captures) ... ok
+test_intermediate_overflow_cancellation_and_nonfinite_classification (tests.test_compile_cuda_matmul.CompileCudaMatmulTests.test_intermediate_overflow_cancellation_and_nonfinite_classification) ... ok
+test_isolated_installed_wheel_no_body_no_pytorch (tests.test_compile_cuda_matmul.CompileCudaMatmulTests.test_isolated_installed_wheel_no_body_no_pytorch) ... ok
+test_rejections_binding_guards_and_alias_containers (tests.test_compile_cuda_matmul.CompileCudaMatmulTests.test_rejections_binding_guards_and_alias_containers) ... ok
+test_singleton_empty_and_overlapping_views (tests.test_compile_cuda_matmul.CompileCudaMatmulTests.test_singleton_empty_and_overlapping_views) ... ok
+test_special_values_and_cancellation (tests.test_compile_cuda_matmul.CompileCudaMatmulTests.test_special_values_and_cancellation) ... ok
+test_wide_decimal_products (tests.test_compile_cuda_matmul.CompileCudaMatmulTests.test_wide_decimal_products) ... ok
+test_scope_dimensions_and_fresh_output (tests.test_compile_cuda_matmul.MatmulMetadataTests.test_scope_dimensions_and_fresh_output) ... ok
+test_fixed_denominator_and_failures (tests.test_compile_cuda_matmul_diagnostic.MatmulDiagnosticTests.test_fixed_denominator_and_failures) ... ok
+
+----------------------------------------------------------------------
+Ran 13 tests in 23.992s
+
+OK (skipped=1)
