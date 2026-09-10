@@ -1,10 +1,11 @@
-# Native CUDA vector copy validation
+# Native CUDA vector copy validation (historical source PR)
 
 The post-commit capture measured clean implementation commit
 `78310d9277dcb54bb328c24cbf445f7d4e500cd5` on 2026-09-10 UTC.
 The worktree was clean before the fresh build and after all measurements;
 only this report and the preserved evidence were added afterward.
-This replaces the earlier development capture as current-candidate evidence.
+This is historical source-PR evidence, pinned to that implementation commit;
+it does not measure the combined candidate or earn current-candidate credit.
 
 `cuda_f32_same_device_copy` received full slot credit at all three random seeds
 selected by the unchanged transfer evaluator, exceeding the required two.
@@ -16,8 +17,8 @@ selected by the unchanged transfer evaluator, exceeding the required two.
 | `3733381193531632723` | passed | passed | 1 |
 
 The fixed denominator remains six: 5/6 transfer slots passed.
-Rank-2 CUDA zeros remains unsupported with zero credit. No cases, seeds, failures
-or unsupported outcomes were removed. This capture measures correctness, not
+At that source revision, rank-2 CUDA zeros was unsupported with zero credit.
+No cases, seeds, failures or unsupported outcomes were removed. This capture measures correctness, not
 performance or an overall hardware score.
 
 ## Preserved evidence
@@ -33,7 +34,7 @@ performance or an overall hardware score.
 
 Raw artifacts were generated under `target/cuda-copy-postcommit-78310d92/` and
 copied here byte-for-byte. The paths in the receipts describe their actual
-capture locations in the current worktree. They were not rewritten.
+capture locations in the original source-PR worktree. They were not rewritten.
 
 ## Build and hardware
 
@@ -43,7 +44,7 @@ capture locations in the current worktree. They were not rewritten.
   A new worktree-local `.venv` was installed with the existing locked dependencies:
   `uv sync --locked --no-install-project --group dev --group reference` using Python 3.12.
   Both evaluator workers use `.venv/bin/python`; reference package, native extension,
-  selected CUDA runtime and build paths are rooted in this worktree.
+  selected CUDA runtime and build paths were rooted in that original worktree.
 - Native and reference runtime: `libcudart.so.13`, reported runtime version
   `13000`. `TORCH_RS_CUDART` selects
   `.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13`.
@@ -55,7 +56,7 @@ capture locations in the current worktree. They were not rewritten.
   unit, `extension-module`, locked dependencies.
 - Build command: `cargo build --release --features extension-module --locked --offline`. The resulting `libpytorch_rs.so`
   was copied to `python/torch_rs/torch_rs.abi3.so` before any copy tests or evaluation.
-  All generated files, caches and environment installations remained in this worktree.
+  All generated files, caches and environment installations remained in that original worktree.
 
 | Provenance | SHA-256 |
 | --- | --- |

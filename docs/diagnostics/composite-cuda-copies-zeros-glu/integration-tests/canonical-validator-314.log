@@ -1,0 +1,6 @@
+test_generated_validator_smoke_artifact_validates (tests.test_top_level_stack_benchmark_artifact.TopLevelStackBenchmarkArtifactTests.test_generated_validator_smoke_artifact_validates) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 10.256s
+
+OK

@@ -1,0 +1,6 @@
+test_current_device_restored_on_success_failure_and_drop (tests.test_cuda_host_transfer.CudaHostTransferDeviceGuardTests.test_current_device_restored_on_success_failure_and_drop) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 1.951s
+
+OK

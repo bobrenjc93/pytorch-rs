@@ -1,0 +1,17 @@
+   Compiling crossbeam-utils v0.8.23
+   Compiling cfg-if v1.0.4
+   Compiling either v1.18.0
+   Compiling libloading v0.8.9
+   Compiling crossbeam-epoch v0.9.21
+   Compiling crossbeam-deque v0.8.8
+   Compiling rayon-core v1.13.0
+   Compiling rayon v1.12.0
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_433d72e4)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.98s
+  Executable unittests src/lib.rs (target/composite-integration/build/debug/deps/pytorch_rs-a84bc75b3d7dfab2)
+  Executable tests/autograd.rs (target/composite-integration/build/debug/deps/autograd-f38585ca82bec9e6)
+  Executable tests/cuda_add.rs (target/composite-integration/build/debug/deps/cuda_add-3043d5dd2af577ad)
+  Executable tests/cuda_mul_scalar.rs (target/composite-integration/build/debug/deps/cuda_mul_scalar-e969f9beb76a1936)
+  Executable tests/cuda_native_boundaries.rs (target/composite-integration/build/debug/deps/cuda_native_boundaries-5c3fea720f3372b3)
+  Executable tests/cuda_same_device_copy.rs (target/composite-integration/build/debug/deps/cuda_same_device_copy-8e5fcdb7d77c7d8c)
+  Executable tests/tensor_baseline.rs (target/composite-integration/build/debug/deps/tensor_baseline-1f3bc301430510b8)

@@ -1,0 +1,27 @@
+test_copy_and_indexed_cpu_forms_match_pytorch_2_13 (tests.test_tensor_to_reference.TensorToReferenceTests.test_copy_and_indexed_cpu_forms_match_pytorch_2_13) ... ok
+test_copy_true_grad_fn_metadata_matches_pytorch_2_13 (tests.test_tensor_to_reference.TensorToReferenceTests.test_copy_true_grad_fn_metadata_matches_pytorch_2_13) ... ok
+test_descriptor_documentation_and_binding_match_pytorch_2_13 (tests.test_tensor_to_reference.TensorToReferenceTests.test_descriptor_documentation_and_binding_match_pytorch_2_13) ... ok
+test_device_like_overrides_outside_device_slots_match_pytorch_2_13 (tests.test_tensor_to_reference.TensorToReferenceTests.test_device_like_overrides_outside_device_slots_match_pytorch_2_13) ... ok
+test_device_string_subclasses_parse_as_devices_without_dispatch (tests.test_tensor_to_reference.TensorToReferenceTests.test_device_string_subclasses_parse_as_devices_without_dispatch) ... ok
+test_grad_and_no_grad_behavior_matches_pytorch_2_13 (tests.test_tensor_to_reference.TensorToReferenceTests.test_grad_and_no_grad_behavior_matches_pytorch_2_13) ... ok
+test_identity_forms_match_pytorch_2_13 (tests.test_tensor_to_reference.TensorToReferenceTests.test_identity_forms_match_pytorch_2_13) ... ok
+test_torch_function_descriptor_lookup_counts_match_pytorch_2_13 (tests.test_tensor_to_reference.TensorToReferenceTests.test_torch_function_descriptor_lookup_counts_match_pytorch_2_13) ... ok
+test_torch_function_dispatch_matches_pytorch_2_13 (tests.test_tensor_to_reference.TensorToReferenceTests.test_torch_function_dispatch_matches_pytorch_2_13) ... ok
+test_unsupported_conversions_fail_closed (tests.test_tensor_to_reference.TensorToReferenceTests.test_unsupported_conversions_fail_closed) ... ok
+test_benchmarking_indexes_historical_release_timing_reports (tests.test_readme_quickstart.ReadmeQuickstartTests.test_benchmarking_indexes_historical_release_timing_reports) ... ok
+test_detailed_support_contracts_live_in_focused_docs (tests.test_readme_quickstart.ReadmeQuickstartTests.test_detailed_support_contracts_live_in_focused_docs) ... ok
+test_docs_readme_indexes_contracts_guides_and_timing_evidence (tests.test_readme_quickstart.ReadmeQuickstartTests.test_docs_readme_indexes_contracts_guides_and_timing_evidence) ... ok
+test_entry_point_links_resolve (tests.test_readme_quickstart.ReadmeQuickstartTests.test_entry_point_links_resolve) ... ok
+test_first_success_example_is_short_and_runs (tests.test_readme_quickstart.ReadmeQuickstartTests.test_first_success_example_is_short_and_runs) ... ok
+test_readme_keeps_quickstart_scope_and_evaluation_route (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_keeps_quickstart_scope_and_evaluation_route) ... ok
+test_readme_links_contributing_guide (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_links_contributing_guide) ... ok
+test_readme_routes_benchmark_policy_to_focused_docs (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_routes_benchmark_policy_to_focused_docs) ... ok
+test_readme_routes_to_supported_surface_anchors (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_routes_to_supported_surface_anchors) ... ok
+test_readme_scope_is_scan_friendly_table (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_scope_is_scan_friendly_table) ... ok
+test_source_install_commands_are_locked (tests.test_readme_quickstart.ReadmeQuickstartTests.test_source_install_commands_are_locked) ... ok
+test_stale_wheel_recovery_uses_wheel_test_workflow (tests.test_readme_quickstart.ReadmeQuickstartTests.test_stale_wheel_recovery_uses_wheel_test_workflow) ... ok
+
+----------------------------------------------------------------------
+Ran 22 tests in 0.370s
+
+OK

@@ -1,6 +1,8 @@
-# Rank-2 CUDA zeros: clean-commit evidence
+# Rank-2 CUDA zeros: historical clean-commit source-PR evidence
 
 Measured implementation: `6b0f68b0d2408bd8bda5073ec332fd88f02a67fb` (base: `a60b059321a90d9ea9a0d64d777dbb8544383e11`).
+This historical source-PR capture does not measure the combined candidate or
+earn current-candidate credit. Original paths identify the source-PR worktree.
 The build, evaluator, and focused tests all ran with an empty Git status from
 this committed implementation. This directory contains evidence and its
 explanation only; it does not approve the candidate or replace independent review.
@@ -8,7 +10,7 @@ explanation only; it does not approve the candidate or replace independent revie
 The unchanged six-case CUDA transfer evaluator reports **5/6 cases passing**.
 `cuda_f32_matrix_zero_roundtrip` passes at every evaluator-selected seed:
 `8417970381438833507`, `3794413297053346249`, `2257496142127917571`.
-The existing CUDA-to-CUDA copy case remains unsupported and stays in the
+At that source revision, the CUDA-to-CUDA copy case was unsupported and stays in the
 denominator. This is correctness evidence for this capability only, with no
 performance or overall hardware-score claim.
 
@@ -46,7 +48,7 @@ Both worker roles actually loaded CUDA runtime 13.0 (`cudaRuntimeGetVersion`
 extension. Installed nvcc was 12.6.85; this allocation/transfer path invoked no
 CUDA compiler. Python dependencies were materialized into a local virtual
 environment without changing their versions; all recorded package/runtime
-imports and virtual-environment executable paths are inside this worktree.
+imports and virtual-environment executable paths are inside that original worktree.
 
 ## Reproduction
 

@@ -1,0 +1,59 @@
+{
+  "phase": "precommit regression validation, not final clean-commit evaluation evidence",
+  "source": {
+    "commit": "cef8b64a471f985ae66463a24d22cd8ccda60932",
+    "source_sha256": "d27159403a544fc5a4148be3fd8d493f3fc39481e198c68656125de91ba4a454",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evaluator_hashes": {
+    "evaluate_cuda_transfers.py": "a73e5f44e7ff47c1b6de2df77d14a9c5450eef3f28f0435215ea1f3112bec3c3",
+    "evaluate_cuda_math.py": "29a97d07bad0d82c261e28aa880de68cdf46df0731d5ff0aa9802ec5bb8e605b",
+    "hardware-heterogeneity-matrix-v1.json": "a077f00f5eb50e2dceb2bd41a8453977955a8114fed203b7235f3a8befb24698"
+  },
+  "extension_sha256": "90b435d50e8612270fc0a1ba43447c92639c79f6d6a9b2a968342426d155ab11",
+  "snapshot_root": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_433d72e4/target/composite-integration/python314-checkout",
+  "snapshot_manifest_sha256": "1507d401d97eca9605994e2782c46048b7048390803d0a2397cfa136b2922c0f",
+  "snapshot_production_tests_scripts_match_composite": true,
+  "snapshot_checked_file_count": 843,
+  "changed_test_hashes": {
+    "tests/test_readme_quickstart.py": "0bb7d977fd3fde74d710c8d65308cf915973882beed52265ee5f7b4c6051f9c0",
+    "tests/test_tensor_to_reference.py": "feebba721d91669a863bf8007422bb8bb40898a09669456b06d08a228dd9700d"
+  },
+  "published_log_hashes": {
+    "build-314.log": "0a68f454f2effffaea5942392325251164859c5614c85e89315b4026669d192d",
+    "build.log": "87d14bc03bb1d158dbf42e678fdec020851b8e9b6d224189ac8ee176c3ee9cf9",
+    "canonical-install-314.log": "b2927cc7ca628540c53679f866c787dbaca86be771eef3a7712b06154f13c8eb",
+    "canonical-provenance-314.log": "fe713bdf14db6b438b79c0e20d55f6a6dd29dcd17b3fa0e5a47b042f1248b5a4",
+    "canonical-setup-314.log": "5d10b426a857c91f073838f5e80795f99e19d89ebf8c047af79aee066795292f",
+    "canonical-validator-314.log": "6754f2d5d29e1f2e62209015bb3eece15dbb65b9fba335e8070504cf0eb452f0",
+    "clippy-bindings.log": "5b73030511e538fd39cfcbc20aac532bd47caf62834a26efbd4653988a4806b5",
+    "clippy.log": "42e52364bace71120eafd4c748f39a90b0f0cced791f3e89b32e9aad848fa5d5",
+    "contract-final.log": "c374ddf12dafe5b1592cc053aaaccbb25604f21e04d2eec2c1cbdabbd51e044c",
+    "fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "focused.log": "6216bcd9da6195bb01c8ccb54f9b55c6b3211f249119945b7e463ad3056c734f",
+    "install-314.log": "7fa88c2ae406cc50ba97fb9c12698da0f7c9e70215d0e3e67d50b2771a9cfbcd",
+    "install.log": "3a6c6350c8ae421dfc4227092f874744608959a3ffbfad2cb025a7ed43496a3c",
+    "managed-dependencies.log": "fc9090fa36cd24cdfa84683892061f75cd37f3bf73b9d30df84e2dedb29566c5",
+    "managed-python.log": "b14eed7aa22b1f19350d00de5ee6c18df03fb088c5c7c559138ddd86ec94d516",
+    "native-bindings-compile.log": "04224c0772dec59059a08dc9a06b17d6d027bc7dd6fff697f099708883e0c286",
+    "native-bindings-cpu.log": "401d2d1c130180152aa4c44adef2c510e9b75ff16da3eb18d9820886623808bf",
+    "native-compile.log": "36f3c342ea32b955af089c3a135561046da473482b17d472d7df738bf56d494f",
+    "native-cpu.log": "eb6c690f7fcf846ccd60824d8d2789454673446954e04d85d58a81a723cc50b4",
+    "native-h100.log": "40726f79b89ff3d2a63ae05d66a17d65333c7f219dfa7a22171ad51d6aeb568d",
+    "native-two-device.log": "a0446d9d936d3d6f8f1e1227f385bd4e810ddef495a032408ebbeeb682cd204e",
+    "preflight.log": "a60de3073cbacc2a552d040af83036693cef04e94ae4e8aa9768f90be46ad0bc",
+    "provenance-314.log": "5a97c1542c54f109a6fa9c05574b47801a239dd0a028c1152a0764a2d1bd7028",
+    "provenance.log": "84543a1498ed18828d615d648f5a29c0e24b438fd77bd50a6ce610263b2680c6",
+    "python-full-314-canonical.log": "8115c9a9d6eb12bf383f9141dd1db81938f7bc8c3aa2965ca6b743e46f4b0ce5",
+    "python-full-314.log": "36bcbfc9650183def4973aeb560f114be5088a0887d4c51af854339bdf4c7c14",
+    "python-full.log": "a6b8ab0672a9073435df697b8191f915c80bf5b30bb2c66c0731199a0f46bea5",
+    "repaired-tests.log": "b2d0239318664eefd68856fa93158a1ab963d5dd4ccd66627c3de6df3373be35",
+    "setup-314.log": "d33ef791e7d3b1c420dd3954d23882cc879fa009ea932d71032efc5e028f32d7",
+    "setup.log": "3c0ad2db41dcd03d429d71d7313e9a962d2453269c8628f4399b83e62ae43473",
+    "snapshot-314.log": "cac3a37d8b73bd37a9b179448bb42effa4cd501d04ba66cb3ef2fb2a91752117",
+    "snapshot-extension-314.log": "e6d6172e67a9c19a4df727012b8538ae44f1be964a2ae6328b5583894d6fcc53",
+    "two-device-host-transfer.log": "8a2fbc4191e4ea0cabd26a7550b33773552477709b36e8840548ae5528ddc926",
+    "two-device-regressions.log": "e66b166ea2ae6d5e14be964a1f48a2a8d1da1ceee967ba93f47ea6bb547ee42b",
+    "two-device.log": "2852943373a1d3cc61a26ce06444595d5e6878fd7a07f83af312097b4aaab8ec"
+  }
+}
