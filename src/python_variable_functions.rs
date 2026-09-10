@@ -38,7 +38,8 @@ use crate::python::{
     sqrt_variable_function, square_variable_function, stack_variable_function,
     sub_variable_function, subtract_variable_function, sum_variable_function,
     tanh_variable_function, trunc_variable_function, unbind_variable_function,
-    unsqueeze_variable_function, vstack_variable_function, zeros_like_variable_function,
+    unflatten_variable_function, unsqueeze_variable_function, vstack_variable_function,
+    zeros_like_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
@@ -76,6 +77,7 @@ const VARIABLE_FUNCTION_NAMES: &[&str] = &[
     "detach",
     "ravel",
     "reshape",
+    "unflatten",
     "reciprocal",
     "rsqrt",
     "neg",
@@ -1557,6 +1559,7 @@ variable_function_callback!(positive_callback, positive_variable_function);
 variable_function_callback!(detach_callback, detach_variable_function);
 variable_function_callback!(ravel_callback, ravel_variable_function);
 variable_function_callback!(reshape_callback, reshape_variable_function);
+variable_function_callback!(unflatten_callback, unflatten_variable_function);
 variable_function_callback!(reciprocal_callback, reciprocal_variable_function);
 variable_function_callback!(rsqrt_callback, rsqrt_variable_function);
 variable_function_callback!(log_callback, log_variable_function);
@@ -1664,6 +1667,11 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"detach", detach_callback, c""),
         variable_function_method!(c"ravel", ravel_callback, RAVEL_DOC),
         variable_function_method!(c"reshape", reshape_callback, RESHAPE_DOC),
+        variable_function_method!(
+            c"unflatten",
+            unflatten_callback,
+            c"\nunflatten(input, dim, sizes) -> Tensor\n\nExpand an integer dimension of an exact CPU float32 tensor into shared-storage views.\nPass a non-empty list or tuple of sizes with at most one inferred -1.\n"
+        ),
         variable_function_method!(c"reciprocal", reciprocal_callback, RECIPROCAL_DOC),
         variable_function_method!(c"rsqrt", rsqrt_callback, RSQRT_DOC),
         variable_function_method!(c"log", log_callback, LOG_DOC),

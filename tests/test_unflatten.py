@@ -19,7 +19,7 @@ class UnflattenTests(unittest.TestCase):
             self.assertEqual(result.data_ptr(), source.data_ptr())
             np.testing.assert_array_equal(np.asarray(result), np.arange(24).reshape(4, 2, 3))
         self.assertEqual(str(inspect.signature(torch.Tensor.unflatten)), "(self, dim, sizes)")
-        self.assertFalse(hasattr(torch, "unflatten"))
+        self.assertTrue(callable(torch.unflatten))
 
     def test_alias_observes_gradient_storage_updates(self):
         leaf = torch.ones((2, 6), requires_grad=True)
