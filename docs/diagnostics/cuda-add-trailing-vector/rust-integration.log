@@ -1,22 +1,22 @@
    Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.33s
-     Running tests/cuda_add.rs (target/native-build/debug/deps/cuda_add-3043d5dd2af577ad)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.05s
+     Running tests/cuda_add.rs (target/post-commit-95330944/build/debug/deps/cuda_add-3043d5dd2af577ad)
 
 running 3 tests
 test ieee_edges_and_rejections ... ok
 test cross_thread_output_ownership_and_reuse ... ok
 test shapes_offsets_aliases_and_completion ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.56s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
 
-     Running tests/cuda_mul_scalar.rs (target/native-build/debug/deps/cuda_mul_scalar-e969f9beb76a1936)
+     Running tests/cuda_mul_scalar.rs (target/post-commit-95330944/build/debug/deps/cuda_mul_scalar-e969f9beb76a1936)
 
 running 1 test
 test generated_scalar_multiplication_shapes_views_and_boundaries ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.71s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.56s
 
-     Running tests/cuda_native_boundaries.rs (target/native-build/debug/deps/cuda_native_boundaries-5c3fea720f3372b3)
+     Running tests/cuda_native_boundaries.rs (target/post-commit-95330944/build/debug/deps/cuda_native_boundaries-5c3fea720f3372b3)
 
 running 4 tests
 test host_to_device_rejects_unsupported_inputs_without_runtime ... ok
@@ -24,5 +24,5 @@ test fallible_cpu_apis_preserve_values_and_gradients ... ok
 test native_nonzero_cpu_cuda_roundtrips_preserve_layout_and_lifetimes ... ok
 test standalone_cuda_operations_reject_before_cpu_storage_access ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
 

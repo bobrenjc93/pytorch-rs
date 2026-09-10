@@ -1,6 +1,14 @@
+   Compiling crossbeam-utils v0.8.23
+   Compiling crossbeam-epoch v0.9.21
+   Compiling crossbeam-deque v0.8.8
+   Compiling rayon-core v1.13.0
+   Compiling either v1.18.0
+   Compiling cfg-if v1.0.4
+   Compiling libloading v0.8.9
+   Compiling rayon v1.12.0
    Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.17s
-     Running unittests src/lib.rs (target/native-build/debug/deps/pytorch_rs-a84bc75b3d7dfab2)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.20s
+     Running unittests src/lib.rs (target/post-commit-95330944/build/debug/deps/pytorch_rs-a84bc75b3d7dfab2)
 
 running 9 tests
 test cuda::pool::tests::pool_budgets_unused_memory_independently_of_large_live_allocations ... ok
@@ -13,5 +21,5 @@ test cuda::tests::scalar_multiplication_bounds_and_launch_failure_cleanup ... ok
 test cuda::tests::standalone_native_cuda_roundtrip ... ok
 test cuda::tests::trailing_vector_checks_independent_bounds ... ok
 
-test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 0.41s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 0.43s
 

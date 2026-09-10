@@ -1,15 +1,22 @@
 {
   "source": {
-    "commit": "f88b7e8bb622d8aad58819b7985fb39d279a51c1",
+    "commit": "953309445979c1340a9adffde93b2d1aef09893c",
     "source_sha256": "6cd0f5d735f488bbbf9eed39d29f9b9b38041ccecb606f16452e2d90b8c0dba3",
-    "production_diff_sha256": "34902dfd67b15554fdd01a5f40ce1896b860b5161df564f856c59a1de7483403"
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
   "source_after": {
-    "commit": "f88b7e8bb622d8aad58819b7985fb39d279a51c1",
+    "commit": "953309445979c1340a9adffde93b2d1aef09893c",
     "source_sha256": "6cd0f5d735f488bbbf9eed39d29f9b9b38041ccecb606f16452e2d90b8c0dba3",
-    "production_diff_sha256": "34902dfd67b15554fdd01a5f40ce1896b860b5161df564f856c59a1de7483403"
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
   "extension_sha256": "fde6fabde331f77f2943d4a58ecf379d187880d630df2c16255f9aa0057a2ad2",
+  "environment": {
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154/target/cargo-home",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154/target/post-commit-95330944/build",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154/.venv/bin/python",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "PYTHONPATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154/python"
+  },
   "checks": [
     {
       "command": [
@@ -30,12 +37,15 @@
         "tests.test_top_level_add_reference"
       ],
       "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154",
-      "started_at": "2026-09-10T04:46:23.046868+00:00",
-      "ended_at": "2026-09-10T04:47:09.014904+00:00",
-      "wall_seconds": 45.96804444026202,
+      "started_at": "2026-09-10T04:51:09.223254+00:00",
+      "ended_at": "2026-09-10T04:51:53.429255+00:00",
+      "wall_seconds": 44.206007689237595,
       "exit_status": 0,
       "log": "python-focused.log",
-      "log_sha256": "9859f570076e50d8a41c6efc561c3bcc676b70354eb286830d20ea8b4081f3f4",
+      "log_sha256": "df2d46709a1416c0d6ca33117246f791ebe80a09c6e648222c57654b659be21f",
+      "git_status_before": "",
+      "git_status_after": "",
+      "measured_commit": "953309445979c1340a9adffde93b2d1aef09893c",
       "CUDA_VISIBLE_DEVICES": "0"
     },
     {
@@ -47,12 +57,15 @@
         "tests.test_cuda_add_trailing_vector.CudaAddTrailingVectorDeviceTests"
       ],
       "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154",
-      "started_at": "2026-09-10T04:47:09.015629+00:00",
-      "ended_at": "2026-09-10T04:47:13.377305+00:00",
-      "wall_seconds": 4.361696731299162,
+      "started_at": "2026-09-10T04:51:53.557862+00:00",
+      "ended_at": "2026-09-10T04:51:57.749968+00:00",
+      "wall_seconds": 4.192111955955625,
       "exit_status": 0,
       "log": "python-two-device.log",
-      "log_sha256": "6e8e8417d6720f8c601175f9cb94f21bb88ecf814950bcba09819d431561973b",
+      "log_sha256": "3954e4112faaffbc830c4267b20bc1748ade4cdca7aa0ad5b3e190d7b65c51ca",
+      "git_status_before": "",
+      "git_status_after": "",
+      "measured_commit": "953309445979c1340a9adffde93b2d1aef09893c",
       "CUDA_VISIBLE_DEVICES": "0,1"
     },
     {
@@ -66,12 +79,15 @@
         "--test-threads=1"
       ],
       "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154",
-      "started_at": "2026-09-10T04:47:13.377566+00:00",
-      "ended_at": "2026-09-10T04:47:16.083301+00:00",
-      "wall_seconds": 2.7057595560327172,
+      "started_at": "2026-09-10T04:51:57.869947+00:00",
+      "ended_at": "2026-09-10T04:52:03.621921+00:00",
+      "wall_seconds": 5.751972669735551,
       "exit_status": 0,
       "log": "rust-cuda.log",
-      "log_sha256": "3e6097616b23bbe9cfb3064f3937af727164e6a096731b0aebca14fc01a87ce2",
+      "log_sha256": "43ce21b4467c80ad9ea0f7b915e3d2856274b04d1a6ae7f8ec275bee41bf147e",
+      "git_status_before": "",
+      "git_status_after": "",
+      "measured_commit": "953309445979c1340a9adffde93b2d1aef09893c",
       "CUDA_VISIBLE_DEVICES": "0"
     },
     {
@@ -87,12 +103,15 @@
         "cuda_native_boundaries"
       ],
       "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154",
-      "started_at": "2026-09-10T04:47:16.083986+00:00",
-      "ended_at": "2026-09-10T04:47:19.500066+00:00",
-      "wall_seconds": 3.416101785376668,
+      "started_at": "2026-09-10T04:52:03.741054+00:00",
+      "ended_at": "2026-09-10T04:52:07.590712+00:00",
+      "wall_seconds": 3.8496624398976564,
       "exit_status": 0,
       "log": "rust-integration.log",
-      "log_sha256": "0b6c5abda44f87d775edfdfe5e49f638b3a9b55aff476972d3aedec65bd990dc",
+      "log_sha256": "280bd1af07c9da7a2c7019a25ad94026f1ab10c464bf4b7d9bcdf065851688a7",
+      "git_status_before": "",
+      "git_status_after": "",
+      "measured_commit": "953309445979c1340a9adffde93b2d1aef09893c",
       "CUDA_VISIBLE_DEVICES": "0"
     },
     {
@@ -108,12 +127,15 @@
         "warnings"
       ],
       "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154",
-      "started_at": "2026-09-10T04:47:19.500389+00:00",
-      "ended_at": "2026-09-10T04:47:19.587780+00:00",
-      "wall_seconds": 0.08741764258593321,
+      "started_at": "2026-09-10T04:52:07.712435+00:00",
+      "ended_at": "2026-09-10T04:52:20.970116+00:00",
+      "wall_seconds": 13.257686003111303,
       "exit_status": 0,
       "log": "clippy.log",
-      "log_sha256": "99f71393b9903dca098310bb446022a4bdee195ea9996f351a787195555210a6",
+      "log_sha256": "c1a82b9624631e1225645cb9da1deb91032f8c79853fcaede822353ccc412f94",
+      "git_status_before": "",
+      "git_status_after": "",
+      "measured_commit": "953309445979c1340a9adffde93b2d1aef09893c",
       "CUDA_VISIBLE_DEVICES": "0"
     },
     {
@@ -125,12 +147,15 @@
         "--check"
       ],
       "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154",
-      "started_at": "2026-09-10T04:47:19.588058+00:00",
-      "ended_at": "2026-09-10T04:47:20.100442+00:00",
-      "wall_seconds": 0.5124059999361634,
+      "started_at": "2026-09-10T04:52:21.096720+00:00",
+      "ended_at": "2026-09-10T04:52:21.629037+00:00",
+      "wall_seconds": 0.5323198949918151,
       "exit_status": 0,
       "log": "format.log",
       "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_status_before": "",
+      "git_status_after": "",
+      "measured_commit": "953309445979c1340a9adffde93b2d1aef09893c",
       "CUDA_VISIBLE_DEVICES": "0"
     }
   ]

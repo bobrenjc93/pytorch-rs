@@ -87,6 +87,6 @@ test_tensor_tensor_values_layouts_and_ieee_match_pytorch_2_13 (tests.test_top_le
 test_torch_function_mode_and_operand_dispatch_match_pytorch_2_13 (tests.test_top_level_add_reference.TopLevelAddReferenceTests.test_torch_function_mode_and_operand_dispatch_match_pytorch_2_13) ... ok
 
 ----------------------------------------------------------------------
-Ran 85 tests in 41.725s
+Ran 85 tests in 39.940s
 
 OK (skipped=9)

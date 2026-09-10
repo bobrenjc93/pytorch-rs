@@ -34,11 +34,18 @@ extension. Raw results and commit/source/build/runtime provenance are retained
 in [the validation report](diagnostics/cuda-add-trailing-vector/evaluation.json),
 [build receipt](diagnostics/cuda-add-trailing-vector/build-record.json), and
 [run receipt](diagnostics/cuda-add-trailing-vector/run-record.json).
-The build receipt identifies an uncommitted implementation overlay on its base
-commit, with hashes for every production source file; it is not clean-commit
-release evidence. Burner owns subsequent commits and final evaluation.
+The post-commit capture freshly built clean implementation commit
+`953309445979c1340a9adffde93b2d1aef09893c` in the current worktree. The receipt
+records clean checkout status, an empty production diff, and hashes for every
+production source file. Build, evaluation, and focused checks all completed
+before any tracked evidence was replaced. Outputs were first written under
+`target/post-commit-95330944/evidence/` and copied here byte-for-byte.
+The committed [capture helper](diagnostics/composite-cuda-neg/reproduce.py)
+supplied build/run receipts and command logging; the unchanged evaluator used
+the same three previously evaluator-selected seeds. This refresh changes only
+evidence and its documentation; Burner owns subsequent commits and review.
 
-The final run passed **4/6 fixed math cases**, including
+The post-commit run passed **4/6 fixed math cases**, including
 `cuda_f32_add_trailing_vector` at all three evaluator-selected seeds:
 `5027103527016457416`, `3727445652986941402`, and `6885146872121100961`.
 All 18 reference executions passed. Same-shape addition, negation, and scalar
@@ -46,7 +53,7 @@ multiplication retained credit; axis reduction and matrix multiplication
 remained unsupported with zero credit. Candidate workers loaded no PyTorch
 modules, and the source fingerprint remained unchanged through build and run.
 
-The measured base commit is `f88b7e8bb622d8aad58819b7985fb39d279a51c1`, with
+The measured code commit is `953309445979c1340a9adffde93b2d1aef09893c`, with
 production fingerprint
 `6cd0f5d735f488bbbf9eed39d29f9b9b38041ccecb606f16452e2d90b8c0dba3`
 and native extension SHA-256
@@ -91,11 +98,14 @@ CUDA_VISIBLE_DEVICES=0 cargo test --locked \
 
 Record a fresh receipt with the unchanged evaluator's `source_provenance()`
 fields, exact build command, `rustc`/`cargo` versions, and extension SHA-256;
-verify the source fingerprint before and after building. Then run the evaluator
-without seed overrides so it selects fresh seeds itself:
+verify the source fingerprint and clean checkout before and after building.
+To repeat the recorded inputs, run the unchanged evaluator with these seeds
+(omit the seed arguments when a fresh evaluator-selected draw is desired):
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/evaluate_cuda_math.py \
+  --seed 5027103527016457416 --seed 3727445652986941402 \
+  --seed 6885146872121100961 \
   --build-record target/build-record.json --output target/cuda-math-result.json
 ```
 
