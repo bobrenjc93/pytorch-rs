@@ -1,3 +1,5 @@
+#[path = "python_compile_cuda_graph.rs"]
+mod compile_cuda_graph;
 #[path = "python_unflatten.rs"]
 mod unflatten;
 pub(crate) use unflatten::unflatten_variable_function;
@@ -25939,6 +25941,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
     module.add_function(wrap_pyfunction!(compile_trace_unary, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_binary, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_scalar, module)?)?;
+    module.add_function(wrap_pyfunction!(compile_cuda_graph::execute, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_mul_scalar_value, module)?)?;
     let exports = module.getattr("__all__")?;
     for name in [
@@ -25949,6 +25952,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
         "_compile_trace_unary",
         "_compile_trace_binary",
         "_compile_trace_scalar",
+        "_compile_trace_cuda_graph",
         "_compile_trace_mul_scalar_value",
     ] {
         exports.call_method1("remove", (name,))?;

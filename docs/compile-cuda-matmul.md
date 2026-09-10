@@ -23,13 +23,21 @@ assert compiled(a * 2, b).cpu().tolist() == [[6.] * 4] * 2
 
 The bytecode frontend emits an actual `matmul` graph node. Whole-graph metadata
 validation checks the inner dimension, output size, layout and device before
-execution, including dynamic cache hits. The native bridge independently calls
-`Tensor::matmul` and its existing cuBLAS SGEMM implementation. Float32
+execution, including dynamic cache hits. Composed CUDA graphs use one native
+bridge: it plans every node's shape and stride before launching, then calls
+the existing native operations in order and checks intermediate metadata in
+Rust. `Tensor::matmul` still uses its existing cuBLAS SGEMM implementation. Float32
 accumulation, disabled TF32, independent offsets, overlapping inputs, contiguous
 singleton layouts, empty/zero-inner products, fresh contiguous output storage,
 input preservation, device restoration and completion/lifetimes have the same
 contract as [eager CUDA matmul](cuda-matmul.md). No Python body, PyTorch or
 libTorch operator runs on the candidate execution path.
+
+The bridge retains all input borrows and intermediate allocations, and each
+native operation still completes and restores the current device before the
+next node. Calls return fresh storage; repeated output leaves keep their
+identity. This reduces Python/PyO3 execution overhead without kernel fusion,
+CUDA graph replay, algebraic rewriting or changes to ordinary eager tensors.
 
 Negation, scalar multiplication, equal-shape addition and trailing-vector
 addition compose before/after products, including repeated products and
@@ -63,10 +71,10 @@ export CUDA_VISIBLE_DEVICES=0
 export PYO3_PYTHON="$PWD/.venv/bin/python"
 .venv/bin/maturin build --release --locked --out target/wheels
 uv pip install --python .venv/bin/python --force-reinstall target/wheels/*.whl
-.venv/bin/python -B -m unittest tests.test_compile_cuda_matmul tests.test_compile_cuda_matmul_diagnostic
+.venv/bin/python -B -m unittest tests.test_compile_cuda_graph tests.test_compile_cuda_matmul tests.test_compile_cuda_matmul_diagnostic
 cargo test --locked --features python-bindings --lib compiled_matmul_bridge
 cargo test --locked --test cuda_matmul
-CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -B -m unittest tests.test_compile_cuda_matmul.CompileCudaMatmulDeviceTests
+CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -B -m unittest tests.test_compile_cuda_graph.CudaGraphDeviceTests tests.test_compile_cuda_matmul.CompileCudaMatmulDeviceTests
 .venv/bin/python -B scripts/diagnose_compile_cuda_matmul.py \
   --build-record target/capture/build-record.json --output target/compiled-matmul.json
 ```
@@ -103,5 +111,11 @@ not nvcc; pointwise kernels use driver-JIT PTX. This unfused eager-backend graph
 diagnostic is separate from the fixed four-shape CUDA scoring workload and does
 not establish general Inductor parity.
 
-[Current measured evidence](diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md)
-contains results, source/native/runtime identities, command receipts and raw samples.
+[Prior implementation evidence](diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md)
+contains results, source/native/runtime identities, command receipts and raw samples
+for the per-node bridge. It is not a baseline measurement of the composed bridge.
+Development comparisons must start from merged main, keep the diagnostic's
+default 12 cells unchanged, and declare held-out seeds before measurement.
+After Burner commits the implementation, repeat the clean-build procedure
+above before publishing new commit-bound evidence. Independent review, all ten
+non-regressing gates and exact-head CI remain required for managed merge.
