@@ -594,7 +594,9 @@ unless ``copy=True`` or an indexed CPU device such as ``"cpu:0"`` is requested;
 CPU copy requests return a fresh Tensor and record ``ToCopyBackward0`` when
 autograd is active. CPU tensors without autograd support synchronized copies
 to explicit CUDA devices, preserving dense strides and packing sparse views.
-Native CUDA tensors support synchronized transfer to CPU.
+Native CUDA tensors support synchronized transfer to CPU. Contiguous rank-1
+CUDA tensors without autograd also support same-device ``copy=True``;
+ordinary same-device requests return ``self``.
 
 Supported forms include ``to()``, ``to(torch.float32)``, ``to(torch.float)``,
 ``to("cpu")``, ``to(torch.device("cpu"))``, ``to(device="cpu")``,
@@ -606,7 +608,7 @@ or CUDA. ``copy`` may be ``True`` or ``False``;
 or ``torch.preserve_format``.
 
 Unsupported: dtype-changing conversions such as ``torch.float64``, autograd
-through CUDA transfers, CUDA-to-CUDA copies, unindexed CUDA targets, devices
+through CUDA transfers, cross-device CUDA copies, unindexed CUDA targets, devices
 other than CPU and CUDA, ``non_blocking=True``, memory formats other than
 ``torch.preserve_format``, Tensor subclasses, and non-native tensors.
 
@@ -684,11 +686,19 @@ Example::
                     .map_err(|error| tensor_error(&error))?;
                 return Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any());
             }
-            if target == source_device && !copy {
-                return Ok(tensor.clone().unbind().into_any());
+            if target == source_device {
+                if !copy {
+                    return Ok(tensor.clone().unbind().into_any());
+                }
+                let inner = tensor
+                    .try_borrow()?
+                    .inner
+                    .try_copy_with_memory_format(memory_format)
+                    .map_err(|error| tensor_error(&error))?;
+                return Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any());
             }
             return Err(PyNotImplementedError::new_err(
-                "to(): CUDA tensors only support no-copy same-device metadata or transfer to CPU",
+                "to(): cross-device CUDA copies are not supported",
             ));
         }
 
@@ -10316,7 +10326,7 @@ fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
             };
             return Err(creation_factory_error(&error, &shape, scalar_dimension));
         }
-        if unindexed_cuda_device && dimensions.len() == 1 {
+        if unindexed_cuda_device && matches!(dimensions.len(), 1 | 2) {
             return Err(PyNotImplementedError::new_err(
                 "zeros(): unindexed CUDA devices are not supported; use 'cuda:0'",
             ));

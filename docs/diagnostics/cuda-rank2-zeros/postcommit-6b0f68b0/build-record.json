@@ -1,0 +1,43 @@
+{
+  "commit": "6b0f68b0d2408bd8bda5073ec332fd88f02a67fb",
+  "source_sha256": "2c9a3794d6b0bd7e168bb970d9d9ddf93f41244e849e44d6839c83cb40b9e20b",
+  "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "worktree": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68",
+  "git_status_porcelain": "",
+  "git_diff_head_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "build_command": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/venv/bin/maturin build --release --locked --offline --interpreter /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/venv/bin/python --out /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/wheels",
+  "build_environment": {
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cargo-home",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/build",
+    "RUSTUP_TOOLCHAIN": "1.92.0",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/venv/bin/python",
+    "VIRTUAL_ENV": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/venv",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/tmp",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/cache",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/cache/cuda",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "CUDA_VISIBLE_DEVICES": "0"
+  },
+  "environment_unset": [
+    "CONDA_PREFIX",
+    "PYTHONPATH",
+    "TORCH_RS_CUDART"
+  ],
+  "started_at_utc": "2026-09-10T09:09:47.771826+00:00",
+  "finished_at_utc": "2026-09-10T09:10:33.584623+00:00",
+  "duration_seconds": 45.81280100531876,
+  "exit_code": 0,
+  "build_cache_state": "new CARGO_TARGET_DIR; existing worktree-local Cargo registry cache; --offline --locked",
+  "profile": "release; extension-module; abi3-py310; thin LTO; codegen-units=1; strip=true",
+  "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)\nbinary: rustc\ncommit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234\ncommit-date: 2025-12-08\nhost: x86_64-unknown-linux-gnu\nrelease: 1.92.0\nLLVM version: 21.1.3\n",
+  "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)\n",
+  "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0\n",
+  "cuda_compiler_used": "none; native allocation/transfers dynamically load libcudart",
+  "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/venv/bin/python",
+  "extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/python/torch_rs/torch_rs.abi3.so",
+  "extension_sha256": "8362c2e70b00b2f1697f907da74c4411f5d89688412e543e625ccaec778040b9",
+  "wheel_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+  "wheel_sha256": "40f3d59a83a55f827c0170dc2c9aa8f5e44a4017bcfb5b80b97a673b77972d7f",
+  "build_log_sha256": "3c2ab5e24df703fcb96de1e19fbfdb9d8f45e998d905bd1842ad0b641e93519d"
+}

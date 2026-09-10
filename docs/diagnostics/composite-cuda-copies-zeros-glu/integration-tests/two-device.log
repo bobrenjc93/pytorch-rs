@@ -1,0 +1,8 @@
+test_current_device_restored_and_cross_device_rejected (tests.test_cuda_same_device_copy.CopyDeviceGuardTests.test_current_device_restored_and_cross_device_rejected) ... ok
+test_allocation_and_cpu_copy_preserve_current_cuda_device (tests.test_cuda_zero_roundtrip.CudaCurrentDeviceGuardTests.test_allocation_and_cpu_copy_preserve_current_cuda_device) ... ok
+test_matrix_zeros_on_explicit_device_preserve_current_device (tests.test_cuda_zero_roundtrip.CudaCurrentDeviceGuardTests.test_matrix_zeros_on_explicit_device_preserve_current_device) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.574s
+
+OK

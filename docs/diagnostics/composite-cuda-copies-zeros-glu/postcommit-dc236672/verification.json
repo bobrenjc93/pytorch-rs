@@ -1,0 +1,220 @@
+{
+  "verified_at_utc": "2026-09-10T10:07:35.597133+00:00",
+  "source": {
+    "commit": "dc2366727f7839e8710af48fd63b08268d40f987",
+    "source_sha256": "d27159403a544fc5a4148be3fd8d493f3fc39481e198c68656125de91ba4a454",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evaluator_hashes": {
+    "evaluate_cuda_transfers.py": "a73e5f44e7ff47c1b6de2df77d14a9c5450eef3f28f0435215ea1f3112bec3c3",
+    "evaluate_cuda_math.py": "29a97d07bad0d82c261e28aa880de68cdf46df0731d5ff0aa9802ec5bb8e605b",
+    "hardware-heterogeneity-matrix-v1.json": "a077f00f5eb50e2dceb2bd41a8453977955a8114fed203b7235f3a8befb24698"
+  },
+  "accounting": {
+    "denominator": 6,
+    "passed": 6,
+    "fraction": 1.0,
+    "cases": [
+      {
+        "case_id": "cuda_f32_vector_zero_roundtrip",
+        "reference_eligible": true,
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 4004991550803647476,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 4769562916386723985,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 4106961968642668418,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      },
+      {
+        "case_id": "cuda_f32_matrix_zero_roundtrip",
+        "reference_eligible": true,
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 4004991550803647476,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 4769562916386723985,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 4106961968642668418,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      },
+      {
+        "case_id": "cuda_f32_contiguous_cpu_upload",
+        "reference_eligible": true,
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 4004991550803647476,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 4769562916386723985,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 4106961968642668418,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      },
+      {
+        "case_id": "cuda_f32_strided_cpu_upload",
+        "reference_eligible": true,
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 4004991550803647476,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 4769562916386723985,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 4106961968642668418,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      },
+      {
+        "case_id": "cuda_f32_view_to_cpu_copy",
+        "reference_eligible": true,
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 4004991550803647476,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 4769562916386723985,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 4106961968642668418,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      },
+      {
+        "case_id": "cuda_f32_same_device_copy",
+        "reference_eligible": true,
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 4004991550803647476,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 4769562916386723985,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 4106961968642668418,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      }
+    ]
+  },
+  "seeds": [
+    4004991550803647476,
+    4769562916386723985,
+    4106961968642668418
+  ],
+  "raw_report_sha256": "78be3406fb0b515c9d15dd1018456c904ffe11dd9c65ae5817643696ad2019fb",
+  "build_record_sha256": "807bf7dca42016570ccc88a947ff7d01e82eb80ba22a24b4c5cdc7a9f085238e",
+  "extension_sha256": "90b435d50e8612270fc0a1ba43447c92639c79f6d6a9b2a968342426d155ab11",
+  "wheel_sha256": "985b028700f24a01caf67ed9dd4bb4f1e909f3bccb7d7f959f7d0a2d96280494",
+  "runtime_library_hashes": {
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_433d72e4/target/composite-postcommit-dc236672/venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13": "96c42e418cec19054186b9429c321603cc190bf26a18104e19408117a2a817b0"
+  },
+  "actual_worker_package_paths": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_433d72e4/python/torch_rs/__init__.py",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_433d72e4/target/composite-postcommit-dc236672/venv/lib/python3.12/site-packages/torch/__init__.py"
+  ],
+  "clean_receipts_verified": [
+    "bind-build.receipt.json",
+    "build.receipt.json",
+    "focused.receipt.json",
+    "install.receipt.json",
+    "preflight.receipt.json",
+    "provenance.receipt.json",
+    "setup.receipt.json",
+    "transfers.receipt.json",
+    "two-device.receipt.json"
+  ],
+  "clean_status_after_all_measurements": "",
+  "candidate_torch_imports": [],
+  "all_initial_candidate_files_unchanged": true,
+  "all_worker_paths_inside_current_composite": true,
+  "all_runtime_paths_inside_fresh_environment": true
+}

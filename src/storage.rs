@@ -194,6 +194,21 @@ impl Storage {
         })
     }
 
+    pub(crate) fn copy_cuda_float32(
+        &self,
+        offset: usize,
+        elements: usize,
+    ) -> Result<Self, TensorError> {
+        match &self.payload {
+            StoragePayload::CudaFloat32(input) => Ok(Self {
+                payload: StoragePayload::CudaFloat32(input.copy_device(offset, elements)?),
+            }),
+            StoragePayload::CpuFloat32(_) => Err(TensorError::UnsupportedCudaTransfer {
+                reason: "source must be CUDA",
+            }),
+        }
+    }
+
     pub(crate) fn cuda_add_float32(
         &self,
         left_offset: usize,

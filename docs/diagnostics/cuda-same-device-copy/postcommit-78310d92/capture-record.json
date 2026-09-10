@@ -1,0 +1,349 @@
+{
+  "measured_code_commit": "78310d9277dcb54bb328c24cbf445f7d4e500cd5",
+  "worktree_root": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5",
+  "source": {
+    "commit": "78310d9277dcb54bb328c24cbf445f7d4e500cd5",
+    "source_sha256": "9f82cbdbed7a75d44a413d03f295798c01d76f13e070c6f5f90c254e1eae5a6d",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "status_before": "",
+  "started_at": "2026-09-10T09:31:16.630903+00:00",
+  "commands": [
+    {
+      "label": "preflight",
+      "argv": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5/.venv/bin/python",
+        "-c",
+        "import torch, sys, json\nfrom pathlib import Path\nroot=Path.cwd().resolve()\nfor path in (torch.__file__, sys.executable):\n    assert Path(path).absolute().is_relative_to(root), path\nprint(json.dumps({'python': sys.version, 'executable': sys.executable, 'torch': torch.__version__,\n 'torch_path': torch.__file__, 'cuda': torch.version.cuda, 'available': torch.cuda.is_available(),\n 'gpu': torch.cuda.get_device_name(0)}, indent=2))"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5",
+      "started_at": "2026-09-10T09:31:16.630934+00:00",
+      "finished_at": "2026-09-10T09:31:20.056806+00:00",
+      "elapsed_seconds": 3.4258943581953645,
+      "exit_code": 0,
+      "CUDA_VISIBLE_DEVICES": "0",
+      "log": "preflight.log",
+      "log_sha256": "9ac89675825312c1c8874aaa065185a188afc2b5c0e9f7cdc179b52237bc0a22"
+    },
+    {
+      "label": "build",
+      "argv": [
+        "cargo",
+        "build",
+        "--release",
+        "--features",
+        "extension-module",
+        "--locked",
+        "--offline"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5",
+      "started_at": "2026-09-10T09:31:20.057942+00:00",
+      "finished_at": "2026-09-10T09:32:00.304575+00:00",
+      "elapsed_seconds": 40.246648728847504,
+      "exit_code": 0,
+      "CUDA_VISIBLE_DEVICES": "0",
+      "log": "build.log",
+      "log_sha256": "34b783643a92a303036f9ecccbaf7522251be1e2fd799c05708534367a2d4454"
+    },
+    {
+      "label": "rust-copy",
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--test",
+        "cuda_same_device_copy"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5",
+      "started_at": "2026-09-10T09:32:00.698925+00:00",
+      "finished_at": "2026-09-10T09:32:05.198993+00:00",
+      "elapsed_seconds": 4.500072756782174,
+      "exit_code": 0,
+      "CUDA_VISIBLE_DEVICES": "0",
+      "log": "rust-copy.log",
+      "log_sha256": "68940bfc98fd6e543bd2d3b1298239a816add79b78b8bc8d2a20697ae300e131"
+    },
+    {
+      "label": "rust-copy-bounds",
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--lib",
+        "cuda::tests::device_copy_checks_bounds_and_exact_bits"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5",
+      "started_at": "2026-09-10T09:32:05.200091+00:00",
+      "finished_at": "2026-09-10T09:32:09.219684+00:00",
+      "elapsed_seconds": 4.019610388204455,
+      "exit_code": 0,
+      "CUDA_VISIBLE_DEVICES": "0",
+      "log": "rust-copy-bounds.log",
+      "log_sha256": "9577681db3101fe1c4df8c3624e3cc2b339b05bda93951a634d930be8edb0f0e"
+    },
+    {
+      "label": "python-copy",
+      "argv": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5/.venv/bin/python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_cuda_same_device_copy.py",
+        "-v"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5",
+      "started_at": "2026-09-10T09:32:09.220728+00:00",
+      "finished_at": "2026-09-10T09:32:13.833741+00:00",
+      "elapsed_seconds": 4.613028664141893,
+      "exit_code": 0,
+      "CUDA_VISIBLE_DEVICES": "0",
+      "log": "python-copy.log",
+      "log_sha256": "85c4de8eee076316f13f5275fc63d814ddf4cacb4f0862dcf1b0f7911365d25a"
+    },
+    {
+      "label": "python-copy-guard",
+      "argv": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5/.venv/bin/python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_cuda_same_device_copy.py",
+        "-v"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5",
+      "started_at": "2026-09-10T09:32:13.835703+00:00",
+      "finished_at": "2026-09-10T09:32:17.396365+00:00",
+      "elapsed_seconds": 3.5606742491945624,
+      "exit_code": 0,
+      "CUDA_VISIBLE_DEVICES": "0,1",
+      "log": "python-copy-guard.log",
+      "log_sha256": "c527c252caf2df5f46b417c0240be4d96bc3bc183e78a6dea024f914765bb56e"
+    },
+    {
+      "label": "transfers",
+      "argv": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5/.venv/bin/python",
+        "scripts/evaluate_cuda_transfers.py",
+        "--build-record",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5/target/cuda-copy-postcommit-78310d92/build-record.json",
+        "--output",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5/target/cuda-copy-postcommit-78310d92/transfers.json"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5",
+      "started_at": "2026-09-10T09:32:17.398838+00:00",
+      "finished_at": "2026-09-10T09:33:24.405138+00:00",
+      "elapsed_seconds": 67.00635560788214,
+      "exit_code": 0,
+      "CUDA_VISIBLE_DEVICES": "0",
+      "log": "transfers.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "evaluator_hashes": {
+    "evaluate_cuda_transfers.py": "a73e5f44e7ff47c1b6de2df77d14a9c5450eef3f28f0435215ea1f3112bec3c3",
+    "evaluate_cuda_math.py": "29a97d07bad0d82c261e28aa880de68cdf46df0731d5ff0aa9802ec5bb8e605b",
+    "hardware-heterogeneity-matrix-v1.json": "a077f00f5eb50e2dceb2bd41a8453977955a8114fed203b7235f3a8befb24698"
+  },
+  "finished_at": "2026-09-10T09:33:24.608342+00:00",
+  "status_after": "",
+  "source_after": {
+    "commit": "78310d9277dcb54bb328c24cbf445f7d4e500cd5",
+    "source_sha256": "9f82cbdbed7a75d44a413d03f295798c01d76f13e070c6f5f90c254e1eae5a6d",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "extension_sha256": "f8cf93e95e09129d912c00076caa320e4c676ed7c34027498757d0e9fa619068",
+  "evaluator_hashes_after": {
+    "evaluate_cuda_transfers.py": "a73e5f44e7ff47c1b6de2df77d14a9c5450eef3f28f0435215ea1f3112bec3c3",
+    "evaluate_cuda_math.py": "29a97d07bad0d82c261e28aa880de68cdf46df0731d5ff0aa9802ec5bb8e605b",
+    "hardware-heterogeneity-matrix-v1.json": "a077f00f5eb50e2dceb2bd41a8453977955a8114fed203b7235f3a8befb24698"
+  },
+  "transfers_sha256": "af6857c0dafe91af79f1f3bc94f20222f5184a5f181aac64c70cfe0fd67a2b1b",
+  "accounting": {
+    "denominator": 6,
+    "passed": 5,
+    "fraction": 0.8333333333333334,
+    "cases": [
+      {
+        "case_id": "cuda_f32_vector_zero_roundtrip",
+        "reference_eligible": true,
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 5106175624324498452,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 5380439577007405373,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 3733381193531632723,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      },
+      {
+        "case_id": "cuda_f32_matrix_zero_roundtrip",
+        "reference_eligible": true,
+        "credit": 0,
+        "trials": [
+          {
+            "seed": 5106175624324498452,
+            "reference_eligible": true,
+            "candidate_outcome": "unsupported",
+            "credit": 0,
+            "reason": "candidate_missing_unsupported_skipped_forwarded_incorrect_or_invalid"
+          },
+          {
+            "seed": 5380439577007405373,
+            "reference_eligible": true,
+            "candidate_outcome": "unsupported",
+            "credit": 0,
+            "reason": "candidate_missing_unsupported_skipped_forwarded_incorrect_or_invalid"
+          },
+          {
+            "seed": 3733381193531632723,
+            "reference_eligible": true,
+            "candidate_outcome": "unsupported",
+            "credit": 0,
+            "reason": "candidate_missing_unsupported_skipped_forwarded_incorrect_or_invalid"
+          }
+        ]
+      },
+      {
+        "case_id": "cuda_f32_contiguous_cpu_upload",
+        "reference_eligible": true,
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 5106175624324498452,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 5380439577007405373,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 3733381193531632723,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      },
+      {
+        "case_id": "cuda_f32_strided_cpu_upload",
+        "reference_eligible": true,
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 5106175624324498452,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 5380439577007405373,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 3733381193531632723,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      },
+      {
+        "case_id": "cuda_f32_view_to_cpu_copy",
+        "reference_eligible": true,
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 5106175624324498452,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 5380439577007405373,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 3733381193531632723,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      },
+      {
+        "case_id": "cuda_f32_same_device_copy",
+        "reference_eligible": true,
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 5106175624324498452,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 5380439577007405373,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 3733381193531632723,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      }
+    ]
+  },
+  "seeds": [
+    5106175624324498452,
+    5380439577007405373,
+    3733381193531632723
+  ]
+}

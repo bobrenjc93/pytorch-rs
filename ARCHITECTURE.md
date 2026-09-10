@@ -13,7 +13,7 @@ addition and matrix-plus-trailing-vector addition, contiguous negation, and cont
 | --- | --- | --- |
 | Crate entry | [src/lib.rs](src/lib.rs) | Declares the Rust modules and re-exports `Tensor`, `TensorError`, `DType`, `Device`, and `MemoryFormat`. Python-only modules are gated behind `python-bindings`. |
 | Storage | [src/storage.rs](src/storage.rs) | Owns `Storage`, native CPU/CUDA payload dispatch, the CPU `f32` payload, inline scalar storage, owned vectors, and mutex-backed leaf-gradient buffers. |
-| CUDA backend | [src/cuda.rs](src/cuda.rs), [src/cuda/pointwise.rs](src/cuda/pointwise.rs), [src/cuda/pool.rs](src/cuda/pool.rs), [src/cuda/add.ptx](src/cuda/add.ptx), [src/cuda/add_trailing_vector.ptx](src/cuda/add_trailing_vector.ptx), [src/cuda/neg.ptx](src/cuda/neg.ptx), [src/cuda/mul_scalar.ptx](src/cuda/mul_scalar.ptx) | Loads the optional CUDA runtime, owns device allocations, restores the calling thread's device, and performs synchronous host-to-device and device-to-host transfers from/to Rust buffers. A front cache retains at most 32 buffers / 64 MiB across devices; optional private pools budget another 256 MiB of unused backing per device, as detailed below. The optional driver loads embedded contiguous float32 addition, negation and scalar multiplication kernels. Python only discovers optional wheel library paths. |
+| CUDA backend | [src/cuda.rs](src/cuda.rs), [src/cuda/pointwise.rs](src/cuda/pointwise.rs), [src/cuda/pool.rs](src/cuda/pool.rs), [src/cuda/add.ptx](src/cuda/add.ptx), [src/cuda/add_trailing_vector.ptx](src/cuda/add_trailing_vector.ptx), [src/cuda/neg.ptx](src/cuda/neg.ptx), [src/cuda/mul_scalar.ptx](src/cuda/mul_scalar.ptx) | Loads the optional CUDA runtime, owns device allocations, restores the calling thread's device, and performs synchronous host-to-device and device-to-host transfers from/to Rust buffers, plus bounded same-device vector copies. A front cache retains at most 32 buffers / 64 MiB across devices; optional private pools budget another 256 MiB of unused backing per device, as detailed below. The optional driver loads embedded contiguous float32 addition, negation and scalar multiplication kernels. Python only discovers optional wheel library paths. |
 | Dimension reduction kernels | [src/reduction.rs](src/reduction.rs) | Uses layout-aware slices and four-level float32 accumulation for rank-2 single-axis sums and means. [src/parallel.rs](src/parallel.rs) manages an explicit worker budget; large reductions split independent outputs without changing their accumulation order. |
 | Tensor layout | [src/tensor.rs](src/tensor.rs) | `Tensor` stores shared storage plus shape, strides, storage offset, element count, output number, view grad state, and optional autograd metadata. It also implements contiguity, view, stride, indexing, and materialization helpers. Integer-size and list/tuple-section split and chunk reuse `partition_dimension` slice views and one shared multi-output backward node per call; explicit sections use `SplitWithSizes` metadata. |
 | Metadata types | [src/dtype.rs](src/dtype.rs), [src/device.rs](src/device.rs), [src/memory_format.rs](src/memory_format.rs) | Define the currently compiled native dtype/device/memory-format enums and query behavior. |
@@ -165,9 +165,15 @@ stride ordering, including singleton dimensions. No compiler capture, tensor-ten
 CUDA multiplication, out variants, or autograd support is added. See
 [validation](docs/cuda-mul-scalar-validation.md). Other CUDA materialization and
 arithmetic reject at the operation boundary.
-Direct public CUDA factory allocation remains rank-1 float32 zeros without
-autograd. Transfers do not add dtype conversions, autograd (even under
-`no_grad` for grad-requiring inputs), asynchronous copies, CUDA-to-CUDA copies,
+Direct public CUDA factory allocation supports rank-1 and rank-2 float32 zeros
+without autograd on explicit indexed devices. Contiguous rank-1 CUDA float32
+tensors with `requires_grad=False` support `clone()` and same-device
+`to(copy=True)` with preserve format, including empty and offset views. Native
+device-to-device copies own independent storage at offset zero, complete before
+return, and restore the calling thread's device. Ordinary same-device `to()`
+returns the original object. Cross-device, noncontiguous, scalar, and rank-2 or
+higher CUDA copies remain unsupported. Transfers do not add dtype conversions,
+autograd (even under `no_grad` for grad-requiring inputs), asynchronous copies,
 or other CUDA math. See the [exact transfer contract](docs/supported-surface.md)
 for Python argument forms and unsupported boundaries.
 

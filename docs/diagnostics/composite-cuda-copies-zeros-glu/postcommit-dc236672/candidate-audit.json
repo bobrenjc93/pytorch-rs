@@ -1,0 +1,457 @@
+{
+  "base_branch": "main",
+  "base_commit": "a60b059321a90d9ea9a0d64d777dbb8544383e11",
+  "merge_base": "a60b059321a90d9ea9a0d64d777dbb8544383e11",
+  "implementation_commit": "dc2366727f7839e8710af48fd63b08268d40f987",
+  "initial_status": "",
+  "changed_files": [
+    {
+      "path": "ARCHITECTURE.md",
+      "sha256": "c22a5fc658e8df6b2d22b6b117ec8f610c1122ad4ca3678b4ce3437ce97769d1",
+      "classification": "implementation, test, or scope documentation"
+    },
+    {
+      "path": "FEATURES.md",
+      "sha256": "0c7796b8ad12fa6d8698692b11afb0811f79f18cfe4d16df8fb0a58b8c7f6099",
+      "classification": "implementation, test, or scope documentation"
+    },
+    {
+      "path": "README.md",
+      "sha256": "e65456d7cbada2040455c9ed1479971c99175021bb8bfa70de6bc167b6a8b2b2",
+      "classification": "implementation, test, or scope documentation"
+    },
+    {
+      "path": "docs/composite-cuda-copies-zeros-glu-validation.md",
+      "sha256": "92777b2dba39cd5d155a173e0960ca63abeb39cecdd8dae5241d6769cb708e50",
+      "classification": "integration report with outstanding clean-commit capture"
+    },
+    {
+      "path": "docs/cuda-same-device-copy-validation.md",
+      "sha256": "d6a694646f4cf23aa75ef538e7152c6b079f9d9e3f26340a2a57ccc74056a863",
+      "classification": "historical source-PR evidence (already labeled)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/build-314.log",
+      "sha256": "0a68f454f2effffaea5942392325251164859c5614c85e89315b4026669d192d",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/build-record-314.json",
+      "sha256": "c0f21839d18ed26f1aa027e61a3fdb5a9cd09ec85c5891ceb59dc73c25b7e3b8",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/build-record.json",
+      "sha256": "290e7e4dcc4f513f50fe9cf484da8fbae4b26943fb38674791eca02db78d9d11",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/build.log",
+      "sha256": "87d14bc03bb1d158dbf42e678fdec020851b8e9b6d224189ac8ee176c3ee9cf9",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/canonical-install-314.log",
+      "sha256": "b2927cc7ca628540c53679f866c787dbaca86be771eef3a7712b06154f13c8eb",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/canonical-provenance-314.log",
+      "sha256": "fe713bdf14db6b438b79c0e20d55f6a6dd29dcd17b3fa0e5a47b042f1248b5a4",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/canonical-setup-314.log",
+      "sha256": "5d10b426a857c91f073838f5e80795f99e19d89ebf8c047af79aee066795292f",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/canonical-validator-314.log",
+      "sha256": "6754f2d5d29e1f2e62209015bb3eece15dbb65b9fba335e8070504cf0eb452f0",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/clippy-bindings.log",
+      "sha256": "5b73030511e538fd39cfcbc20aac532bd47caf62834a26efbd4653988a4806b5",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/clippy.log",
+      "sha256": "42e52364bace71120eafd4c748f39a90b0f0cced791f3e89b32e9aad848fa5d5",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/commands.json",
+      "sha256": "f08bf82a4cf87219f44623002d64f9eab89238d9e57a44d7bd7b8766f418a3cd",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/contract-final.log",
+      "sha256": "c374ddf12dafe5b1592cc053aaaccbb25604f21e04d2eec2c1cbdabbd51e044c",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/fmt.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/focused.log",
+      "sha256": "6216bcd9da6195bb01c8ccb54f9b55c6b3211f249119945b7e463ad3056c734f",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/install-314.log",
+      "sha256": "7fa88c2ae406cc50ba97fb9c12698da0f7c9e70215d0e3e67d50b2771a9cfbcd",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/install.log",
+      "sha256": "3a6c6350c8ae421dfc4227092f874744608959a3ffbfad2cb025a7ed43496a3c",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/managed-dependencies.log",
+      "sha256": "fc9090fa36cd24cdfa84683892061f75cd37f3bf73b9d30df84e2dedb29566c5",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/managed-python.log",
+      "sha256": "b14eed7aa22b1f19350d00de5ee6c18df03fb088c5c7c559138ddd86ec94d516",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/native-bindings-compile.log",
+      "sha256": "04224c0772dec59059a08dc9a06b17d6d027bc7dd6fff697f099708883e0c286",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/native-bindings-cpu.log",
+      "sha256": "401d2d1c130180152aa4c44adef2c510e9b75ff16da3eb18d9820886623808bf",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/native-compile.log",
+      "sha256": "36f3c342ea32b955af089c3a135561046da473482b17d472d7df738bf56d494f",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/native-cpu.log",
+      "sha256": "eb6c690f7fcf846ccd60824d8d2789454673446954e04d85d58a81a723cc50b4",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/native-h100.log",
+      "sha256": "40726f79b89ff3d2a63ae05d66a17d65333c7f219dfa7a22171ad51d6aeb568d",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/native-two-device.log",
+      "sha256": "a0446d9d936d3d6f8f1e1227f385bd4e810ddef495a032408ebbeeb682cd204e",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/preflight.log",
+      "sha256": "a60de3073cbacc2a552d040af83036693cef04e94ae4e8aa9768f90be46ad0bc",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/provenance-314.log",
+      "sha256": "5a97c1542c54f109a6fa9c05574b47801a239dd0a028c1152a0764a2d1bd7028",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/provenance.log",
+      "sha256": "84543a1498ed18828d615d648f5a29c0e24b438fd77bd50a6ce610263b2680c6",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/python-full-314-canonical.log",
+      "sha256": "8115c9a9d6eb12bf383f9141dd1db81938f7bc8c3aa2965ca6b743e46f4b0ce5",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/python-full-314.log",
+      "sha256": "36bcbfc9650183def4973aeb560f114be5088a0887d4c51af854339bdf4c7c14",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/python-full.log",
+      "sha256": "a6b8ab0672a9073435df697b8191f915c80bf5b30bb2c66c0731199a0f46bea5",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/repaired-tests.log",
+      "sha256": "b2d0239318664eefd68856fa93158a1ab963d5dd4ccd66627c3de6df3373be35",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/setup-314.log",
+      "sha256": "d33ef791e7d3b1c420dd3954d23882cc879fa009ea932d71032efc5e028f32d7",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/setup.log",
+      "sha256": "3c0ad2db41dcd03d429d71d7313e9a962d2453269c8628f4399b83e62ae43473",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/snapshot-314.log",
+      "sha256": "cac3a37d8b73bd37a9b179448bb42effa4cd501d04ba66cb3ef2fb2a91752117",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/snapshot-extension-314.log",
+      "sha256": "e6d6172e67a9c19a4df727012b8538ae44f1be964a2ae6328b5583894d6fcc53",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/source-audit.json",
+      "sha256": "0c5fa87c2f8dace06a346ff5a6e417422267c495bc52a700ddb580785570df8d",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/two-device-host-transfer.log",
+      "sha256": "8a2fbc4191e4ea0cabd26a7550b33773552477709b36e8840548ae5528ddc926",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/two-device-regressions.log",
+      "sha256": "e66b166ea2ae6d5e14be964a1f48a2a8d1da1ceee967ba93f47ea6bb547ee42b",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/composite-cuda-copies-zeros-glu/integration-tests/two-device.log",
+      "sha256": "2852943373a1d3cc61a26ce06444595d5e6878fd7a07f83af312097b4aaab8ec",
+      "classification": "explicitly precommit regression record (not final evaluation evidence)"
+    },
+    {
+      "path": "docs/diagnostics/cuda-rank2-zeros/postcommit-6b0f68b0/README.md",
+      "sha256": "a71e8f1ff749855f589c5e612675619c504df5869397dc21fa5134f4985e8ef7",
+      "classification": "historical source-PR evidence (already labeled)"
+    },
+    {
+      "path": "docs/diagnostics/cuda-rank2-zeros/postcommit-6b0f68b0/build-record.json",
+      "sha256": "a1b767c7e076a4c159e8b2450d22afde1636ebf94037a9f57d8462d8d468ba98",
+      "classification": "historical source-PR evidence (already labeled)"
+    },
+    {
+      "path": "docs/diagnostics/cuda-rank2-zeros/postcommit-6b0f68b0/build.log",
+      "sha256": "3c2ab5e24df703fcb96de1e19fbfdb9d8f45e998d905bd1842ad0b641e93519d",
+      "classification": "historical source-PR evidence (already labeled)"
+    },
+    {
+      "path": "docs/diagnostics/cuda-rank2-zeros/postcommit-6b0f68b0/focused-tests.log",
+      "sha256": "0623fbccc9a724abfd4a060ad68b60bd2bdd31b4516923e453a0c3e077ffdc89",
+      "classification": "historical source-PR evidence (already labeled)"
+    },
+    {
+      "path": "docs/diagnostics/cuda-rank2-zeros/postcommit-6b0f68b0/run-record.json",
+      "sha256": "22d753700a033545415d5e328e7d75d28990fb708af1c4ba6c05e67eedfffea3",
+      "classification": "historical source-PR evidence (already labeled)"
+    },
+    {
+      "path": "docs/diagnostics/cuda-rank2-zeros/postcommit-6b0f68b0/transfers.json",
+      "sha256": "ac9627354ee3a4fd1e45dacbec834887b3292d6067035739f345f744fbedc685",
+      "classification": "historical source-PR evidence (already labeled)"
+    },
+    {
+      "path": "docs/diagnostics/cuda-rank2-zeros/postcommit-6b0f68b0/transfers.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "classification": "historical source-PR evidence (already labeled)"
+    },
+    {
+      "path": "docs/diagnostics/cuda-rank2-zeros/postcommit-6b0f68b0/verification.json",
+      "sha256": "30f8b56aa385bedea57dc6b2531e582566b016484ad5eefa8d290b79b6bd9c47",
+      "classification": "historical source-PR evidence (already labeled)"
+    },
+    {
+      "path": "docs/diagnostics/cuda-same-device-copy/postcommit-78310d92/build-record.json",
+      "sha256": "65495b9553488407825e1e3bede7765a1cce38a9a71319080d7ad2ac356aa74c",
+      "classification": "historical source-PR evidence (already labeled)"
+    },
+    {
+      "path": "docs/diagnostics/cuda-same-device-copy/postcommit-78310d92/build.log",
+      "sha256": "34b783643a92a303036f9ecccbaf7522251be1e2fd799c05708534367a2d4454",
+      "classification": "historical source-PR evidence (already labeled)"
+    },
+    {
+      "path": "docs/diagnostics/cuda-same-device-copy/postcommit-78310d92/capture-record.json",
+      "sha256": "991dcf2ae7778ab4d649afee9dcdf026befa2460adf0e7efcac36b97791552be",
+      "classification": "historical source-PR evidence (already labeled)"
+    },
+    {
+      "path": "docs/diagnostics/cuda-same-device-copy/postcommit-78310d92/preflight.log",
+      "sha256": "9ac89675825312c1c8874aaa065185a188afc2b5c0e9f7cdc179b52237bc0a22",
+      "classification": "historical source-PR evidence (already labeled)"
+    },
+    {
+      "path": "docs/diagnostics/cuda-same-device-copy/postcommit-78310d92/python-copy-guard.log",
+      "sha256": "c527c252caf2df5f46b417c0240be4d96bc3bc183e78a6dea024f914765bb56e",
+      "classification": "historical source-PR evidence (already labeled)"
+    },
+    {
+      "path": "docs/diagnostics/cuda-same-device-copy/postcommit-78310d92/python-copy.log",
+      "sha256": "85c4de8eee076316f13f5275fc63d814ddf4cacb4f0862dcf1b0f7911365d25a",
+      "classification": "historical source-PR evidence (already labeled)"
+    },
+    {
+      "path": "docs/diagnostics/cuda-same-device-copy/postcommit-78310d92/rust-copy-bounds.log",
+      "sha256": "9577681db3101fe1c4df8c3624e3cc2b339b05bda93951a634d930be8edb0f0e",
+      "classification": "historical source-PR evidence (already labeled)"
+    },
+    {
+      "path": "docs/diagnostics/cuda-same-device-copy/postcommit-78310d92/rust-copy.log",
+      "sha256": "68940bfc98fd6e543bd2d3b1298239a816add79b78b8bc8d2a20697ae300e131",
+      "classification": "historical source-PR evidence (already labeled)"
+    },
+    {
+      "path": "docs/diagnostics/cuda-same-device-copy/postcommit-78310d92/setup.log",
+      "sha256": "a83f33025d6e254db868681d176fe789c9c307bc9fb030ebab6b038991742f7e",
+      "classification": "historical source-PR evidence (already labeled)"
+    },
+    {
+      "path": "docs/diagnostics/cuda-same-device-copy/postcommit-78310d92/transfers.json",
+      "sha256": "af6857c0dafe91af79f1f3bc94f20222f5184a5f181aac64c70cfe0fd67a2b1b",
+      "classification": "historical source-PR evidence (already labeled)"
+    },
+    {
+      "path": "docs/diagnostics/cuda-same-device-copy/postcommit-78310d92/transfers.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "classification": "historical source-PR evidence (already labeled)"
+    },
+    {
+      "path": "docs/supported-surface.md",
+      "sha256": "a4cb7b287bc49bada7a48c31cf519351b8d80606d467331f57c915b769f5381c",
+      "classification": "implementation, test, or scope documentation"
+    },
+    {
+      "path": "docs/troubleshooting.md",
+      "sha256": "d9c1731451e435cec884e3b73f910f41c598337e1214cba00335d3096e91c235",
+      "classification": "implementation, test, or scope documentation"
+    },
+    {
+      "path": "python/torch_rs/nn/functional.py",
+      "sha256": "b338b131b7f3168e93112f59cd7f44c93e78242b1dada85507df35f03af71bd8",
+      "classification": "implementation, test, or scope documentation"
+    },
+    {
+      "path": "src/cuda.rs",
+      "sha256": "b283357cbdb6e83865907ca2651a9f128cc8ae3ae5890208854ba64aa072b6cb",
+      "classification": "implementation, test, or scope documentation"
+    },
+    {
+      "path": "src/python.rs",
+      "sha256": "4e85b445aa21ae3dcfbffcfb22d9bdda977ea51809546e3637744bd4d3d42112",
+      "classification": "implementation, test, or scope documentation"
+    },
+    {
+      "path": "src/storage.rs",
+      "sha256": "6ef13eb107a6ba01ac878175bf4dd77aad79a7260aef3fc0340d1e37d1a8678a",
+      "classification": "implementation, test, or scope documentation"
+    },
+    {
+      "path": "src/tensor.rs",
+      "sha256": "083432a2af8d439209ea2cfacc34d0de96147a17a0502e0c60fb152498aa7f6e",
+      "classification": "implementation, test, or scope documentation"
+    },
+    {
+      "path": "src/tensor_error.rs",
+      "sha256": "a62b5b6ce8c272dd428128dabe40efac3e13e1a5b4ddafdf6d26312fcfd72a04",
+      "classification": "implementation, test, or scope documentation"
+    },
+    {
+      "path": "tests/cuda_native_boundaries.rs",
+      "sha256": "73d4b8fb55963650f02cb368364ce4982d72b788fa07ea562050aab155023c8d",
+      "classification": "implementation, test, or scope documentation"
+    },
+    {
+      "path": "tests/cuda_same_device_copy.rs",
+      "sha256": "ac08bd094bce120711875b4efc5204501db85275c050cec825e88189af9683a4",
+      "classification": "implementation, test, or scope documentation"
+    },
+    {
+      "path": "tests/test_cuda_host_transfer.py",
+      "sha256": "5969db97c503c317e3f10a90c66377e725c4ee64328cc7f28d09184531d1153b",
+      "classification": "implementation, test, or scope documentation"
+    },
+    {
+      "path": "tests/test_cuda_same_device_copy.py",
+      "sha256": "f5903b497a7be46c999d84672f7f62419d1ef28740fbed0d36ef3223165d3355",
+      "classification": "implementation, test, or scope documentation"
+    },
+    {
+      "path": "tests/test_cuda_zero_roundtrip.py",
+      "sha256": "35d0b9baa9e8ed62c8eed01999e69230fc7da2178dfa2cbbf4b6c53cb105f000",
+      "classification": "implementation, test, or scope documentation"
+    },
+    {
+      "path": "tests/test_nn_functional_glu.py",
+      "sha256": "0cc6523168fcec1bb5f3bd68a09304cea52e22a64cbd236f8a142c9f95c9fa1b",
+      "classification": "implementation, test, or scope documentation"
+    },
+    {
+      "path": "tests/test_nn_functional_glu_reference.py",
+      "sha256": "1c9e12971a1dcef65e40d7c70666e5809bba3642a8590bbe8d6f482ff438b520",
+      "classification": "implementation, test, or scope documentation"
+    },
+    {
+      "path": "tests/test_readme_quickstart.py",
+      "sha256": "0bb7d977fd3fde74d710c8d65308cf915973882beed52265ee5f7b4c6051f9c0",
+      "classification": "implementation, test, or scope documentation"
+    },
+    {
+      "path": "tests/test_tensor_to.py",
+      "sha256": "ac533bf363c7e94c4dacaa4e33a0967610aaf00a0925a852b2ee2cefb97c59b3",
+      "classification": "implementation, test, or scope documentation"
+    },
+    {
+      "path": "tests/test_tensor_to_reference.py",
+      "sha256": "feebba721d91669a863bf8007422bb8bb40898a09669456b06d08a228dd9700d",
+      "classification": "implementation, test, or scope documentation"
+    },
+    {
+      "path": "tests/test_zeros.py",
+      "sha256": "e50e49b133b472994a2ffaa885727811211ac96021e240504f0d069ec70fa4c6",
+      "classification": "implementation, test, or scope documentation"
+    }
+  ],
+  "historical_captures": [
+    {
+      "path": "docs/diagnostics/cuda-rank2-zeros/postcommit-6b0f68b0/transfers.json",
+      "source": {
+        "commit": "6b0f68b0d2408bd8bda5073ec332fd88f02a67fb",
+        "source_sha256": "2c9a3794d6b0bd7e168bb970d9d9ddf93f41244e849e44d6839c83cb40b9e20b",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "verified_against_original_git_tree": true,
+      "passed": 5,
+      "denominator": 6,
+      "seeds": [
+        8417970381438833507,
+        3794413297053346249,
+        2257496142127917571
+      ],
+      "sha256": "ac9627354ee3a4fd1e45dacbec834887b3292d6067035739f345f744fbedc685"
+    },
+    {
+      "path": "docs/diagnostics/cuda-same-device-copy/postcommit-78310d92/transfers.json",
+      "source": {
+        "commit": "78310d9277dcb54bb328c24cbf445f7d4e500cd5",
+        "source_sha256": "9f82cbdbed7a75d44a413d03f295798c01d76f13e070c6f5f90c254e1eae5a6d",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "verified_against_original_git_tree": true,
+      "passed": 5,
+      "denominator": 6,
+      "seeds": [
+        5106175624324498452,
+        5380439577007405373,
+        3733381193531632723
+      ],
+      "sha256": "af6857c0dafe91af79f1f3bc94f20222f5184a5f181aac64c70cfe0fd67a2b1b"
+    }
+  ],
+  "precommit_log_receipts_verified": 35,
+  "outstanding_required_capture": "unchanged six-case transfer evaluator; clean dc236672; fresh local release/environment; three evaluator-selected seeds"
+}

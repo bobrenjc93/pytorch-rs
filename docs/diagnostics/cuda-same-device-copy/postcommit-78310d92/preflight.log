@@ -1,0 +1,9 @@
+{
+  "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5/.venv/bin/python",
+  "torch": "2.13.0+cu130",
+  "torch_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5/.venv/lib/python3.12/site-packages/torch/__init__.py",
+  "cuda": "13.0",
+  "available": true,
+  "gpu": "NVIDIA H100"
+}

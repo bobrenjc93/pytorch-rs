@@ -1,6 +1,7 @@
 """Functional interface."""
 
 import math
+import operator as _operator
 import warnings
 
 import torch_rs as torch
@@ -292,6 +293,55 @@ def silu(input: Tensor, inplace: bool = False) -> Tensor:
         input,
         {"inplace": inplace},
     )
+
+
+def _glu_impl(input, dim):
+    # PyTorch checks scalar inputs before binding the native dimension argument.
+    rank = input.dim()
+    if rank == 0:
+        raise RuntimeError(
+            "glu does not support scalars because halving size must be even"
+        )
+    if type(input) is not Tensor:
+        _silu_tensor_type_error(input, "glu")
+
+    # Reuse size's native integer, overflow, and dimension-range validation.
+    # Unlike size, GLU has no optional-None dimension overload.
+    if dim is None:
+        raise TypeError("glu(): argument 'dim' (position 2) must be int, not NoneType")
+    try:
+        size = input.size(dim)
+    except TypeError as error:
+        prefix = "size(): argument 'dim' (position 1) must be int, not "
+        if str(error).startswith(prefix):
+            raise TypeError(
+                "glu(): argument 'dim' (position 2) must be int, not "
+                + str(error)[len(prefix):]
+            ) from None
+        raise
+    axis = _operator.index(dim) % rank
+    if size % 2:
+        raise RuntimeError(
+            f"Halving dimension must be even, but dimension {axis} is size {size}"
+        )
+    if input.device.type != "cpu" or input.dtype is not torch.float32 or rank > 3:
+        raise NotImplementedError(
+            "glu(): only exact native CPU float32 Tensor inputs of ranks 1 through 3 are supported"
+        )
+    if torch.is_grad_enabled() and input.requires_grad:
+        raise RuntimeError("glu(): autograd recording is not supported")
+    first, second = input.chunk(2, axis)
+    return first * second.sigmoid()
+
+
+def glu(input: Tensor, dim: int = -1) -> Tensor:
+    r"""Apply the gated linear unit: split input along dim and return a * sigmoid(b).
+
+    Supports exact native CPU float32 tensors of ranks one through three with
+    an even selected dimension (including zero). Outputs own fresh storage.
+    Active gradient recording is unsupported; tracked inputs work in no_grad.
+    """
+    return _dispatch_unary_torch_function(glu, _glu_impl, input, {"dim": dim})
 
 
 def _tanhshrink_impl(input):

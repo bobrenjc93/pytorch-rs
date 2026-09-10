@@ -1,0 +1,24 @@
+test_argument_forms_and_relaxed_contiguous_strides (tests.test_cuda_same_device_copy.SameDeviceCopyTests.test_argument_forms_and_relaxed_contiguous_strides) ... ok
+test_generated_lengths_offsets_and_exact_values (tests.test_cuda_same_device_copy.SameDeviceCopyTests.test_generated_lengths_offsets_and_exact_values) ... ok
+test_independence_source_mutation_and_allocation_reuse (tests.test_cuda_same_device_copy.SameDeviceCopyTests.test_independence_source_mutation_and_allocation_reuse) ... ok
+test_no_pytorch_forwarding (tests.test_cuda_same_device_copy.SameDeviceCopyTests.test_no_pytorch_forwarding) ... ok
+test_rejections_preserve_source (tests.test_cuda_same_device_copy.SameDeviceCopyTests.test_rejections_preserve_source) ... ok
+test_matrix_storage_capacity_overflow_precedes_allocation (tests.test_cuda_zero_roundtrip.CudaZeroBoundaryTests.test_matrix_storage_capacity_overflow_precedes_allocation) ... ok
+test_matrix_zeros_retain_gradient_and_dtype_restrictions (tests.test_cuda_zero_roundtrip.CudaZeroBoundaryTests.test_matrix_zeros_retain_gradient_and_dtype_restrictions) ... ok
+test_unindexed_devices_rejected_for_both_supported_ranks (tests.test_cuda_zero_roundtrip.CudaZeroBoundaryTests.test_unindexed_devices_rejected_for_both_supported_ranks) ... ok
+test_generated_matrix_zeros_and_cpu_copies_match_pytorch (tests.test_cuda_zero_roundtrip.CudaZeroRoundtripTests.test_generated_matrix_zeros_and_cpu_copies_match_pytorch) ... ok
+test_active_recording_rejected_without_changing_input_or_graph (tests.test_nn_functional_glu.FunctionalGluTests.test_active_recording_rejected_without_changing_input_or_graph) ... ok
+test_failure_restores_forwarding_mode_and_no_grad (tests.test_nn_functional_glu.FunctionalGluTests.test_failure_restores_forwarding_mode_and_no_grad) ... ok
+test_rank_boundary_in_grad_and_no_grad_modes (tests.test_nn_functional_glu.FunctionalGluTests.test_rank_boundary_in_grad_and_no_grad_modes) ... ok
+test_binding_scalar_dimension_and_odd_size_errors (tests.test_nn_functional_glu_reference.FunctionalGluReferenceTests.test_binding_scalar_dimension_and_odd_size_errors) ... ok
+test_cuda_boundary_on_real_hardware (tests.test_nn_functional_glu_reference.FunctionalGluReferenceTests.test_cuda_boundary_on_real_hardware) ... ok
+test_layouts_dimensions_fresh_storage_and_input_preservation (tests.test_nn_functional_glu_reference.FunctionalGluReferenceTests.test_layouts_dimensions_fresh_storage_and_input_preservation) ... ok
+test_no_grad_and_detach (tests.test_nn_functional_glu_reference.FunctionalGluReferenceTests.test_no_grad_and_detach) ... ok
+test_numerical_edges (tests.test_nn_functional_glu_reference.FunctionalGluReferenceTests.test_numerical_edges) ... ok
+test_overrides_nested_modes_and_restoration_after_errors (tests.test_nn_functional_glu_reference.FunctionalGluReferenceTests.test_overrides_nested_modes_and_restoration_after_errors) ... ok
+test_signature_imports_and_function_identity (tests.test_nn_functional_glu_reference.FunctionalGluReferenceTests.test_signature_imports_and_function_identity) ... ok
+
+----------------------------------------------------------------------
+Ran 19 tests in 1.287s
+
+OK

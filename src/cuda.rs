@@ -250,6 +250,46 @@ impl CudaFloat32Storage {
         Ok(result)
     }
 
+    /// Copies a checked contiguous range into independent same-device storage.
+    pub(crate) fn copy_device(&self, offset: usize, elements: usize) -> Result<Self, TensorError> {
+        // Empty views can carry arbitrary offsets; do not form their pointer.
+        if elements != 0
+            && offset
+                .checked_add(elements)
+                .is_none_or(|end| end > self.elements)
+        {
+            return Err(TensorError::IndexCalculationOverflow);
+        }
+        let (result, _guard) = Self::allocate(elements, self.device_index)?;
+        if elements != 0 {
+            // SAFETY: the range is within the checked source allocation; the
+            // destination is independent and both owners survive completion.
+            let copied = self.runtime.check(
+                unsafe {
+                    (self.runtime.memcpy)(
+                        result.data_ptr as *mut c_void,
+                        (self.data_ptr + offset * 4) as *const c_void,
+                        elements * 4,
+                        3, // cudaMemcpyDeviceToDevice
+                    )
+                },
+                "cudaMemcpy",
+            );
+            // D2D cudaMemcpy need not block the host. Wait even on a copy
+            // error before releasing borrowed input or caching output storage.
+            let completed = self.runtime.check(
+                unsafe { (self.runtime.stream_synchronize)(std::ptr::null_mut()) },
+                "cudaStreamSynchronize",
+            );
+            if copied.is_err() || completed.is_err() {
+                CACHE_HEALTHY.store(false, Ordering::Relaxed);
+            }
+            copied?;
+            completed?;
+        }
+        Ok(result)
+    }
+
     pub(crate) fn add(
         &self,
         left_offset: usize,
@@ -701,6 +741,53 @@ mod tests {
                 .try_to_vec()
                 .unwrap()
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn device_copy_checks_bounds_and_exact_bits() {
+        if super::device_count() == 0 {
+            eprintln!("skipping native CUDA copy: no CUDA runtime/device");
+            return;
+        }
+        let bits = [
+            0,
+            0x8000_0000,
+            1,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0x7f80_0001,
+        ];
+        let input = super::CudaFloat32Storage::from_host(&bits.map(f32::from_bits), 0).unwrap();
+        for (offset, count) in [(bits.len(), 1), (usize::MAX, 2), (0, usize::MAX)] {
+            assert!(matches!(
+                input.copy_device(offset, count),
+                Err(crate::TensorError::IndexCalculationOverflow)
+            ));
+        }
+        let output = input.copy_device(1, bits.len() - 1).unwrap();
+        assert_ne!(input.data_ptr, output.data_ptr);
+        assert_eq!(
+            input
+                .copy_range(0, bits.len())
+                .unwrap()
+                .into_iter()
+                .map(f32::to_bits)
+                .collect::<Vec<_>>(),
+            bits
+        );
+        let empty = input.copy_device(usize::MAX, 0).unwrap();
+        assert_eq!(empty.data_ptr, 0);
+        drop(input);
+        assert_eq!(
+            output
+                .copy_range(0, bits.len() - 1)
+                .unwrap()
+                .into_iter()
+                .map(f32::to_bits)
+                .collect::<Vec<_>>(),
+            bits[1..]
         );
     }
 

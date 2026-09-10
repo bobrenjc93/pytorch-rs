@@ -1,5 +1,87 @@
 //! Native backend contracts: these tests run without Python bindings.
-use pytorch_rs::{Device, Tensor, TensorError, cuda};
+use pytorch_rs::{DType, Device, Tensor, TensorError, cuda};
+
+#[test]
+fn cuda_zeros_checks_rank_device_and_layout_before_runtime() {
+    for shape in [vec![], vec![1, 2, 3], vec![0, 2, 3]] {
+        assert_eq!(
+            Tensor::cuda_zeros_float32(shape, Device::Cuda(0)).err(),
+            Some(TensorError::UnsupportedCudaZeroTensor {
+                reason: "shape rank is not 1 or 2",
+            })
+        );
+    }
+    for shape in [vec![2], vec![2, 3], vec![0, 3]] {
+        assert_eq!(
+            Tensor::cuda_zeros_float32(shape, Device::Cpu).err(),
+            Some(TensorError::UnsupportedDevice {
+                operation: "zeros",
+                device: Device::Cpu,
+            })
+        );
+    }
+    let too_many = isize::MAX.unsigned_abs() / size_of::<f32>() + 1;
+    for (shape, error) in [
+        ([usize::MAX, 2], TensorError::ElementCountOverflow),
+        ([0, usize::MAX], TensorError::StrideCalculationOverflow),
+        (
+            [too_many, 1],
+            TensorError::StorageCapacityOverflow { elements: too_many },
+        ),
+    ] {
+        assert_eq!(
+            Tensor::cuda_zeros_float32(shape, Device::Cuda(0)).err(),
+            Some(error)
+        );
+    }
+}
+
+#[test]
+fn native_cuda_matrix_zeros_preserve_layout_values_and_independent_storage() {
+    if cuda::device_count() == 0 {
+        eprintln!("skipping native CUDA matrix zeros: no CUDA runtime/device");
+        return;
+    }
+    let shapes = [[0, 0], [0, 7], [5, 0], [1, 9], [11, 1]]
+        .into_iter()
+        .chain((1..=16).map(|i| [i * 3, i * 5 + 1]));
+    for shape in shapes {
+        let tensor = Tensor::cuda_zeros_float32(shape, Device::Cuda(0)).unwrap();
+        let second = Tensor::cuda_zeros_float32(shape, Device::Cuda(0)).unwrap();
+        assert_eq!(tensor.shape(), shape);
+        assert_eq!(tensor.stride(), [shape[1].max(1), 1]);
+        assert_eq!(tensor.storage_offset(), 0);
+        assert_eq!(tensor.numel(), shape[0] * shape[1]);
+        assert_eq!(tensor.dtype(), DType::Float32);
+        assert_eq!(tensor.device(), Device::Cuda(0));
+        assert!(!tensor.requires_grad());
+        if tensor.numel() == 0 {
+            assert_eq!(tensor.data_ptr(), 0);
+            assert_eq!(second.data_ptr(), 0);
+        } else {
+            assert_ne!(tensor.data_ptr(), 0);
+            assert_ne!(tensor.data_ptr(), second.data_ptr());
+        }
+        let cpu = tensor.try_copy_cuda_to_cpu().unwrap();
+        assert_eq!(cpu.shape(), shape);
+        assert_eq!(cpu.stride(), tensor.stride());
+        assert_eq!(cpu.device(), Device::Cpu);
+        assert!(
+            cpu.try_to_vec()
+                .unwrap()
+                .iter()
+                .all(|value| value.to_bits() == 0)
+        );
+        drop(tensor);
+        assert_eq!(second.try_copy_cuda_to_cpu().unwrap(), cpu);
+    }
+    for shape in [[0, 3], [3, 0], [2, 3]] {
+        assert!(matches!(
+            Tensor::cuda_zeros_float32(shape, Device::Cuda(cuda::device_count())),
+            Err(TensorError::CudaRuntimeError { .. })
+        ));
+    }
+}
 
 fn unsupported<T>(result: Result<T, TensorError>, operation: &'static str) {
     assert_eq!(

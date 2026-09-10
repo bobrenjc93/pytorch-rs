@@ -1,0 +1,9 @@
+test_generated_matrix_zeros_and_cpu_copies_match_pytorch (tests.test_cuda_zero_roundtrip.CudaZeroRoundtripTests.test_generated_matrix_zeros_and_cpu_copies_match_pytorch) ... ok
+test_matrix_storage_capacity_overflow_precedes_allocation (tests.test_cuda_zero_roundtrip.CudaZeroBoundaryTests.test_matrix_storage_capacity_overflow_precedes_allocation) ... ok
+test_matrix_zeros_retain_gradient_and_dtype_restrictions (tests.test_cuda_zero_roundtrip.CudaZeroBoundaryTests.test_matrix_zeros_retain_gradient_and_dtype_restrictions) ... ok
+test_unindexed_devices_rejected_for_both_supported_ranks (tests.test_cuda_zero_roundtrip.CudaZeroBoundaryTests.test_unindexed_devices_rejected_for_both_supported_ranks) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.183s
+
+OK
