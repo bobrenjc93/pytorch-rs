@@ -452,6 +452,55 @@ impl CudaFloat32Storage {
         })
     }
 
+    pub(crate) fn matmul(
+        &self,
+        left_offset: usize,
+        other: &Self,
+        right_offset: usize,
+        [rows, inner, columns]: [usize; 3],
+    ) -> Result<Self, TensorError> {
+        if self.device_index != other.device_index {
+            return Err(TensorError::UnsupportedCudaMatmul {
+                reason: "operands must be on the same CUDA device",
+            });
+        }
+        let left_elements = rows
+            .checked_mul(inner)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let right_elements = inner
+            .checked_mul(columns)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let output_elements = rows
+            .checked_mul(columns)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        if right_elements != 0
+            && right_offset
+                .checked_add(right_elements)
+                .is_none_or(|end| end > other.elements)
+        {
+            return Err(TensorError::IndexCalculationOverflow);
+        }
+        // Reuse checked left offsets, guarded allocation, and completion/error
+        // handling. The right owner also stays borrowed until completion.
+        self.unary_output(
+            left_offset,
+            left_elements,
+            output_elements,
+            |left, output| {
+                let right = if right_elements == 0 {
+                    0
+                } else {
+                    (other.data_ptr + right_offset * 4) as u64
+                };
+                // SAFETY: checked contiguous ranges on the guarded device, disjoint
+                // output, and both inputs live through the shared completion path.
+                unsafe {
+                    pointwise::launch_matmul(left, right, output, output_elements, inner, columns)
+                }
+            },
+        )
+    }
+
     fn unary_output(
         &self,
         offset: usize,
@@ -1006,6 +1055,55 @@ mod tests {
             )
             .unwrap();
         assert_eq!(current, 1);
+    }
+
+    #[test]
+    fn matmul_checked_offsets_products_and_empty_inputs() {
+        use super::CudaFloat32Storage;
+        use crate::TensorError;
+        if super::device_count() == 0 {
+            eprintln!("skipping CUDA matmul bounds: no CUDA runtime/device");
+            return;
+        }
+        let input = CudaFloat32Storage::from_host(&[1., 2., 3., 4.], 0).unwrap();
+        for (left, right, dimensions) in [
+            (1, 0, [2, 2, 2]),
+            (0, 1, [2, 2, 2]),
+            (usize::MAX, 0, [1, 1, 1]),
+            (0, usize::MAX, [1, 1, 1]),
+            (0, 0, [usize::MAX, 2, 0]),
+            (0, 0, [0, 2, usize::MAX]),
+            (0, 0, [usize::MAX, 0, 2]),
+        ] {
+            assert!(matches!(
+                input.matmul(left, &input, right, dimensions),
+                Err(TensorError::IndexCalculationOverflow)
+            ));
+        }
+        assert_eq!(
+            input
+                .matmul(usize::MAX, &input, usize::MAX, [0, usize::MAX, 0])
+                .unwrap()
+                .elements,
+            0
+        );
+        assert_eq!(
+            input
+                .matmul(usize::MAX, &input, usize::MAX, [3, 0, 2])
+                .unwrap()
+                .copy_range(0, 6)
+                .unwrap(),
+            [0.; 6]
+        );
+        assert_eq!(
+            input
+                .matmul(1, &input, 2, [1, 2, 1])
+                .unwrap()
+                .copy_range(0, 1)
+                .unwrap(),
+            [18.]
+        );
+        assert_eq!(input.copy_range(0, 4).unwrap(), [1., 2., 3., 4.]);
     }
 
     #[test]

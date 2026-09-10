@@ -1,0 +1,62 @@
+// Appended to add.ptx, which supplies the version/target directives.
+// One thread accumulates one output in increasing inner-dimension order.
+// Grid-stride indexing and all matrix offsets are 64-bit. Adjacent lanes read
+// adjacent right-hand columns. FMA rounds to float32 without flushing subnormals.
+.visible .entry matmul_f32(
+    .param .u64 left, .param .u64 right, .param .u64 output,
+    .param .u64 count, .param .u64 inner, .param .u64 columns
+) {
+    .reg .pred done;
+    .reg .b32 tid, block, width, blocks;
+    .reg .f32 x, y, acc;
+    .reg .b64 a, b, c, total, k, n, i, step, lane;
+    .reg .b64 row, col, j, offset, pa, pb, pc, right_step;
+    ld.param.u64 a, [left];
+    ld.param.u64 b, [right];
+    ld.param.u64 c, [output];
+    ld.param.u64 total, [count];
+    ld.param.u64 k, [inner];
+    ld.param.u64 n, [columns];
+    mov.u32 tid, %tid.x;
+    mov.u32 block, %ctaid.x;
+    mov.u32 width, %ntid.x;
+    mov.u32 blocks, %nctaid.x;
+    mul.wide.u32 i, block, width;
+    cvt.u64.u32 lane, tid;
+    add.u64 i, i, lane;
+    mul.wide.u32 step, blocks, width;
+    shl.b64 right_step, n, 2;
+outputs:
+    setp.ge.u64 done, i, total;
+    @done bra end;
+    mov.f32 acc, 0f00000000;
+    // Empty inner dimensions write +0 without forming any input address.
+    setp.eq.u64 done, k, 0;
+    @done bra store;
+    div.u64 row, i, n;
+    rem.u64 col, i, n;
+    mul.lo.u64 offset, row, k;
+    shl.b64 offset, offset, 2;
+    add.u64 pa, a, offset;
+    shl.b64 offset, col, 2;
+    add.u64 pb, b, offset;
+    mov.u64 j, 0;
+products:
+    ld.global.f32 x, [pa];
+    ld.global.f32 y, [pb];
+    fma.rn.f32 acc, x, y, acc;
+    add.u64 j, j, 1;
+    setp.ge.u64 done, j, k;
+    @done bra store;
+    add.u64 pa, pa, 4;
+    add.u64 pb, pb, right_step;
+    bra products;
+store:
+    shl.b64 offset, i, 2;
+    add.u64 pc, c, offset;
+    st.global.f32 [pc], acc;
+    add.u64 i, i, step;
+    bra outputs;
+end:
+    ret;
+}
