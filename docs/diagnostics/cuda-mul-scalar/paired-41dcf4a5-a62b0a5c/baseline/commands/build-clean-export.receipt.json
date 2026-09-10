@@ -1,0 +1,18 @@
+{
+  "executable": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/baseline/.venv/bin/python",
+  "args": [
+    "-B",
+    "scripts/build_cuda_add_diagnostic.py",
+    "--name",
+    "paired",
+    "--revision",
+    "HEAD"
+  ],
+  "cwd": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/baseline",
+  "startedAt": "2026-09-09T23:51:54.452Z",
+  "completedAt": "2026-09-09T23:52:43.622Z",
+  "seconds": 49.17072779200001,
+  "exitCode": 0,
+  "log": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/baseline/target/root-paired/reports/build-clean-export.log",
+  "logSha256": "be844e9189069c88b3abcb4f26183cf3b77adb4abbf551f57e2ed7e27825393f"
+}

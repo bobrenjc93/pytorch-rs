@@ -1,0 +1,9 @@
+{
+  "stage": "managed Python dependency setup before native build or any timing run",
+  "observed_tool": "global uv 0.12.11",
+  "error": "No interpreter found for Python 3.12.14 in managed installations",
+  "verified_catalog": "uv 0.12.11 lists Python 3.12.13 as the newest 3.12 download; uv 0.12.12 lists 3.12.14",
+  "correction": "Install uv==0.12.12 only under this task's uv-tool directory and put its bin directory first for both checkouts and the repository build helper. Global tools unchanged.",
+  "disposition": "Checkout, command logs, receipts, and selection record moved intact under rejected-old-uv. No native build or timing result existed.",
+  "measurement_plan": "The planned interpreter fingerprint, source revisions, complete diagnostic, order, seed, samples, warmups, CPU, and GPU are unchanged."
+}

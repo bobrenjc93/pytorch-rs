@@ -1,0 +1,22 @@
+{
+  "executable": "uv",
+  "args": [
+    "sync",
+    "--locked",
+    "--no-install-project",
+    "--group",
+    "dev",
+    "--group",
+    "reference",
+    "--managed-python",
+    "--python",
+    "3.12.14"
+  ],
+  "cwd": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/baseline",
+  "startedAt": "2026-09-09T23:45:31.527Z",
+  "completedAt": "2026-09-09T23:45:31.633Z",
+  "seconds": 0.10565257400000018,
+  "exitCode": 2,
+  "log": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/baseline/target/root-paired/reports/dependencies.log",
+  "logSha256": "6ea4cbc3843b032de7700cc3b3bc3ef5add2923245d6a876e385416460945227"
+}

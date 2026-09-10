@@ -103,6 +103,53 @@ and 96.94 / 69.99 / 68.03 percent after saturation. All slow rows remain
 in the raw report. These measurements establish neither general performance
 non-regression nor scalar-multiplication performance parity.
 
+## Matched main/candidate public-add check
+
+A separate [paired capture](diagnostics/cuda-mul-scalar/paired-41dcf4a5-a62b0a5c/)
+compares main `41dcf4a5a015337a61f4507940cbeb20fd4ff006` with published candidate
+`a62b0a5c2709898ebcb1b906b37ffcb7c1a2c1d9`. The candidate has the same implementation
+as `e87d5db6`; its intervening commit adds only documentation and evidence.
+Both use independent clean exports and fresh native builds, the identical managed
+CPython 3.12.14 binary (Clang 22.1.3), PyTorch 2.13.0+cu130, H100 GPU 0 and CPU 0.
+The [fixed plan](diagnostics/cuda-mul-scalar/paired-41dcf4a5-a62b0a5c/plan.json)
+runs main then candidate once, with the unchanged diagnostic, seed 937514,
+five warmups, nine samples per implementation order, and separate processes for
+the two saturation conditions. There are 18 samples per implementation per row.
+No measured run was retried or selected.
+
+All 152 matched rows have bitwise-identical outputs and matching metadata across
+implementations and revisions. The [summary](diagnostics/cuda-mul-scalar/paired-41dcf4a5-a62b0a5c/summary.json)
+recomputes medians from the raw samples. Each group below contains 19 rows;
+ratios are geometric means of candidate/main latency, so values above 1 are
+slower. The last column divides the native ratio by the PyTorch ratio.
+
+| Saturation prelude | Calls per sample | Native | PyTorch | Native / PyTorch change |
+| --- | --- | ---: | ---: | ---: |
+| None | 1 | 0.9759 | 0.9286 | 1.0510 |
+| None | 32 independent | 0.9869 | 0.9976 | 0.9893 |
+| None | 64 independent | 0.9735 | 0.9640 | 1.0098 |
+| None | 32 chained | 0.9804 | 0.9629 | 1.0181 |
+| Saturated | 1 | 0.9690 | 0.9281 | 1.0442 |
+| Saturated | 32 independent | 0.9858 | 0.9264 | 1.0641 |
+| Saturated | 64 independent | 0.9626 | 0.9299 | 1.0352 |
+| Saturated | 32 chained | 0.9731 | 0.9354 | 1.0403 |
+
+No broad absolute native slowdown was reproduced in this pair, but relative
+ratios worsened in seven groups as PyTorch timings also changed. Individual
+native ratios range from 0.6721 to 1.0720, including all slower rows. One fixed-order
+series does not establish statistical non-regression, explain the earlier
+historical comparison (which used a different Python build), or measure scalar
+multiplication or compiler performance. No Burner score is changed by this check.
+
+The bundle retains both raw reports, build/command receipts, capture and summary
+scripts, and [artifact hashes](diagnostics/cuda-mul-scalar/paired-41dcf4a5-a62b0a5c/artifact-sha256.json).
+It also retains two setup rejections: selection of a different system Python
+binary, then an older uv catalog without managed Python 3.12.14. Both stopped
+before native builds or timing; task-local uv 0.12.12 resolved setup without
+changing shared environments. Post-run binary verification is explicitly
+timestamped after measurement. Original host paths are provenance, not portable
+installation paths; use a fresh checkout and the reproduction guidance below.
+
 ## Original author validation and superseded measurements
 
 The original provisional files below remain byte-for-byte intact. Their CUDA,
