@@ -11,6 +11,7 @@ from torch_rs.overrides import _dispatch_unary_torch_function
 
 from ..torch_rs import (
     _nn_functional_dropout,
+    _nn_functional_glu_vector,
     _nn_functional_l1_loss,
     _nn_functional_linear,
     _nn_functional_mse_loss,
@@ -328,9 +329,16 @@ def _glu_impl(input, dim):
         raise NotImplementedError(
             "glu(): only exact native CPU float32 Tensor inputs of ranks 1 through 3 are supported"
         )
-    if torch.is_grad_enabled() and input.requires_grad:
+    recording = torch.is_grad_enabled() and input.requires_grad
+    if recording and rank != 1:
         raise RuntimeError("glu(): autograd recording is not supported")
     first, second = input.chunk(2, axis)
+    if recording:
+        # Sigmoid records finite owned vectors, but chunk returns views. Clone
+        # the gate differentiably so both halves still backpropagate to input.
+        # Combine the multiplication/sigmoid VJP to apply the sigmoid factors
+        # before multiplying the first half by a potentially large upstream.
+        return _nn_functional_glu_vector(first, second.clone())
     return first * second.sigmoid()
 
 
@@ -339,7 +347,8 @@ def glu(input: Tensor, dim: int = -1) -> Tensor:
 
     Supports exact native CPU float32 tensors of ranks one through three with
     an even selected dimension (including zero). Outputs own fresh storage.
-    Active gradient recording is unsupported; tracked inputs work in no_grad.
+    Finite rank-one inputs support first-order gradients for dim=0 or -1.
+    Higher-rank tracked inputs work only in no_grad.
     """
     return _dispatch_unary_torch_function(glu, _glu_impl, input, {"dim": dim})
 
