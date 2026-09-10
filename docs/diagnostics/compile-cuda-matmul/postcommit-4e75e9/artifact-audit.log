@@ -1,0 +1,86 @@
+{
+  "measured_implementation_commit": "4e75e9ae177b37d022799394732db49ad95358a6",
+  "evidence_publication_commit": null,
+  "publication_status": "awaiting Burner artifact-only commit; no implementation/harness changes in this step",
+  "measurement_kind": "clean-commit",
+  "measured_harness_sha256": "2bd01a0aa73f924c2ee7f10882bba8c180c42cfa2a4d97504b0eff1fc8fef1d6",
+  "status": "passed",
+  "reports": {
+    "default-798431": {
+      "status": "passed",
+      "passed_cells": 12,
+      "planned_cells": 12,
+      "checked_timed_calls": 7440,
+      "uuid": "GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1",
+      "physical_index": 0
+    },
+    "default-481723": {
+      "status": "passed",
+      "passed_cells": 12,
+      "planned_cells": 12,
+      "checked_timed_calls": 7440,
+      "uuid": "GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1",
+      "physical_index": 0
+    },
+    "default-926051": {
+      "status": "passed",
+      "passed_cells": 12,
+      "planned_cells": 12,
+      "checked_timed_calls": 7440,
+      "uuid": "GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1",
+      "physical_index": 0
+    },
+    "explicit-798431": {
+      "status": "passed",
+      "passed_cells": 12,
+      "planned_cells": 12,
+      "checked_timed_calls": 7440,
+      "uuid": "GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e",
+      "physical_index": 2
+    },
+    "explicit-481723": {
+      "status": "passed",
+      "passed_cells": 12,
+      "planned_cells": 12,
+      "checked_timed_calls": 7440,
+      "uuid": "GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e",
+      "physical_index": 2
+    },
+    "explicit-926051": {
+      "status": "passed",
+      "passed_cells": 12,
+      "planned_cells": 12,
+      "checked_timed_calls": 7440,
+      "uuid": "GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e",
+      "physical_index": 2
+    }
+  },
+  "rejections": {
+    "reject-mismatch": {
+      "status": "rejected",
+      "exit_status": 1,
+      "planned_cells": 12,
+      "aggregate": 0,
+      "error": "RuntimeError: mask does not match declared physical GPU; prefer its full UUID"
+    },
+    "reject-multiple": {
+      "status": "rejected",
+      "exit_status": 1,
+      "planned_cells": 12,
+      "aggregate": 0,
+      "error": "RuntimeError: CUDA_VISIBLE_DEVICES must declare exactly one device"
+    },
+    "reject-absent": {
+      "status": "rejected",
+      "exit_status": 1,
+      "planned_cells": 12,
+      "aggregate": 0,
+      "error": "RuntimeError: CUDA_VISIBLE_DEVICES must declare exactly one device"
+    }
+  },
+  "checked_timed_calls_total": 44640,
+  "identical_inputs_policy_and_wheel_across_paths": true,
+  "source_and_provenance_unchanged_during_capture": true,
+  "performance_claim": null,
+  "independent_review_and_merge_gates": "not replaced by this evidence step"
+}

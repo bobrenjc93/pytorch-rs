@@ -1,0 +1,13 @@
+{
+  "measured_commit": "4e75e9ae177b37d022799394732db49ad95358a6",
+  "tracked_changes": [
+    "docs/compile-cuda-matmul.md"
+  ],
+  "new_evidence_directory": "docs/diagnostics/compile-cuda-matmul/postcommit-4e75e9",
+  "prior_evidence_hashes_unchanged": true,
+  "report_receipt_hashes_match": true,
+  "documentation_links_resolve": true,
+  "implementation_dependencies_tests_harnesses_evaluators_unchanged": true,
+  "no_source_tree_native_extension": true,
+  "publication_commit": "pending Burner; no commit created"
+}
