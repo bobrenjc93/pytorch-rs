@@ -1,0 +1,10 @@
+export TMPDIR="$PWD/target/tmp" XDG_CACHE_HOME="$PWD/target/cache"
+export UV_CACHE_DIR="$PWD/target/uv-cache" UV_PYTHON_INSTALL_DIR="$PWD/target/uv-python"
+export UV_PYTHON_BIN_DIR="$PWD/target/uv-bin"
+export CARGO_HOME="$PWD/target/cargo-home" CARGO_TARGET_DIR="$PWD/target/build"
+export CUDA_CACHE_PATH="$PWD/target/cache/cuda"
+export TORCHINDUCTOR_CACHE_DIR="$PWD/target/cache/inductor" TRITON_CACHE_DIR="$PWD/target/cache/triton"
+export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
+export CUDA_VISIBLE_DEVICES=0 PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1
+export RUSTUP_TOOLCHAIN=1.92.0 GIT_OPTIONAL_LOCKS=0
+unset PYTHONPATH CONDA_PREFIX VIRTUAL_ENV

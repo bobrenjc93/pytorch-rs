@@ -1,0 +1,57 @@
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded cfg-if v1.0.4
+  Downloaded crossbeam-epoch v0.9.21
+  Downloaded heck v0.5.0
+  Downloaded once_cell v1.21.4
+  Downloaded crossbeam-utils v0.8.23
+  Downloaded inventory v0.3.24
+  Downloaded windows-link v0.2.1
+  Downloaded pyo3-macros v0.29.2
+  Downloaded crossbeam-deque v0.8.8
+  Downloaded target-lexicon v0.13.5
+  Downloaded rustversion v1.0.23
+  Downloaded libloading v0.8.9
+  Downloaded either v1.18.0
+  Downloaded quote v1.0.47
+  Downloaded pyo3-build-config v0.29.2
+  Downloaded unicode-ident v1.0.24
+  Downloaded proc-macro2 v1.0.107
+  Downloaded rayon-core v1.13.0
+  Downloaded pyo3-macros-backend v0.29.2
+  Downloaded pyo3-ffi v0.29.2
+  Downloaded rayon v1.12.0
+  Downloaded portable-atomic v1.14.0
+  Downloaded syn v2.0.119
+  Downloaded libc v0.2.189
+  Downloaded pyo3 v0.29.2
+📦 Including license file `LICENSE`
+🍹 Building a mixed python/rust project
+🐍 Found CPython 3.14 at /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/.venv/bin/python
+🔗 Found pyo3 bindings with abi3-py3.10 support
+📡 Using build options features from pyproject.toml
+   Compiling target-lexicon v0.13.5
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling crossbeam-utils v0.8.23
+   Compiling quote v1.0.47
+   Compiling crossbeam-epoch v0.9.21
+   Compiling libc v0.2.189
+   Compiling crossbeam-deque v0.8.8
+   Compiling heck v0.5.0
+   Compiling rayon-core v1.13.0
+   Compiling inventory v0.3.24
+   Compiling cfg-if v1.0.4
+   Compiling either v1.18.0
+   Compiling once_cell v1.21.4
+   Compiling libloading v0.8.9
+   Compiling pyo3-build-config v0.29.2
+   Compiling syn v2.0.119
+   Compiling pyo3-ffi v0.29.2
+   Compiling pyo3 v0.29.2
+   Compiling rayon v1.12.0
+   Compiling pyo3-macros-backend v0.29.2
+   Compiling pyo3-macros v0.29.2
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/target/cuda-add-diagnostic/composite-final-314-retry/source)
+    Finished `release` profile [optimized] target(s) in 44.93s
+📦 Built wheel for abi3 Python ≥ 3.10 to /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/target/cuda-add-diagnostic/composite-final-314-retry/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl

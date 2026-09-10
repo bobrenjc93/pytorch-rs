@@ -111,11 +111,20 @@ class DiagnosticAccountingTests(unittest.TestCase):
             command[command.index("--output") + 1] = str(output)
             result = subprocess.run(command, cwd=ROOT, env={**os.environ, "CUDA_VISIBLE_DEVICES": "0"},
                                     capture_output=True, text=True, timeout=180)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             report = json.loads(output.read_text())
             self.assertEqual(report["case_set"], "neg_add_v1")
-            self.assertEqual(report["summary"]["expectation_failures"], 0)
-            self.assertTrue(all(r["expectation_met"] for r in report["cases"]))
+            # Preserve the historical v1 denominator and raw expectation failures:
+            # only the newly supported matrix/vector relation changed.
+            failures = [r for r in report["cases"] if not r["expectation_met"]]
+            self.assertEqual(report["summary"]["expectation_failures"], 4)
+            self.assertEqual({(r["program"], r["kind"], r["fullgraph"]) for r in failures},
+                             {(p, "broadcast", fullgraph) for p in ("silver", "compose")
+                              for fullgraph in (True, False)})
+            for record in failures:
+                self.assertTrue(record["reference_eligible"])
+                self.assertEqual(record["native_outcome"], "pass")
+                self.assertEqual(record["native_outputs"], record["reference_outputs"])
 
 
 class DiagnosticDocumentationTests(unittest.TestCase):

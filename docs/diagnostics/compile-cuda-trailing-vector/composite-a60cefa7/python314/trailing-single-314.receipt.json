@@ -1,0 +1,40 @@
+{
+  "command": [
+    ".venv/bin/python",
+    "-m",
+    "scripts.diagnose_compile_cuda_trailing_vector",
+    "--case-set",
+    "trailing_vector_v1",
+    "--build-record",
+    "target/cuda-add-diagnostic/composite-final-314-retry/build-record.json",
+    "--output",
+    "target/integration-evidence/trailing-single-314.json"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314",
+  "started_utc": "2026-09-10T08:21:05.356616+00:00",
+  "source_commit": "a60cefa7c2ea7792bace10381218365a14da5fd6",
+  "source_status": "",
+  "environment": {
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/target/uv-cache",
+    "PYTHONNOUSERSITE": "1",
+    "NUMEXPR_NUM_THREADS": "1",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/target/cache/cuda",
+    "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/target/uv-python",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/target/build",
+    "OPENBLAS_NUM_THREADS": "1",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/target/cache/inductor",
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/target/cargo-home",
+    "RUSTUP_TOOLCHAIN": "1.92.0",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/target/tmp",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/target/cache/triton",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/target/cache",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "OMP_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1"
+  },
+  "returncode": 0,
+  "elapsed_seconds": 18.454192083328962,
+  "finished_utc": "2026-09-10T08:21:24.031755+00:00",
+  "log_sha256": "3306f6b6fcf5edf1bd064262ef41f234ff201ed06dfd392698f47c1da44151dd"
+}

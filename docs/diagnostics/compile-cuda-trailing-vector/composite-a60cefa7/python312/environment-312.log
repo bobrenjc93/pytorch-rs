@@ -1,0 +1,19 @@
+{
+  "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/.venv/bin/python",
+  "compiler": "Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+  "build": [
+    "3.12:2abcf90",
+    "Aug 12 2026 13:57:39"
+  ],
+  "prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/.venv",
+  "numpy_version": "2.5.1",
+  "numpy_file": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/.venv/lib/python3.12/site-packages/numpy/__init__.py",
+  "torch_version": "2.13.0+cu130",
+  "torch_file": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/.venv/lib/python3.12/site-packages/torch/__init__.py",
+  "torch_cuda": "13.0",
+  "torch_rs_version": "0.1.0",
+  "torch_rs_file": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+  "gpu": "NVIDIA H100",
+  "gpu_count": 1
+}

@@ -87,12 +87,6 @@ def _atleast_sequence(input, variable_function, unsupported):
     return variable_function(input)
 
 
-def _atleast_variadic(tensors, variable_function, unsupported):
-    if _get_current_function_mode() is not None:
-        raise TypeError(unsupported)
-    return _atleast_sequence(tensors, variable_function, unsupported)
-
-
 def _atleast_1d_impl(input):
     if type(input) is Tensor:
         return _VF_atleast_1d(input)
@@ -101,6 +95,10 @@ def _atleast_1d_impl(input):
         _VF_atleast_1d,
         _ATLEAST_1D_SEQUENCE_UNSUPPORTED,
     )
+
+
+def _atleast_1d_variadic_impl(tensors):
+    return tuple(_VF_atleast_1d(tensor) for tensor in tensors)
 
 
 def atleast_1d(*tensors):
@@ -134,10 +132,13 @@ def atleast_1d(*tensors):
         ()
     """
     if len(tensors) > 1:
-        return _atleast_variadic(
+        if any(type(tensor) is not Tensor for tensor in tensors):
+            raise TypeError(_ATLEAST_1D_VARIADIC_UNSUPPORTED)
+        return _dispatch_exact_native_variadic_torch_function(
+            atleast_1d,
+            _atleast_1d_variadic_impl,
             tensors,
-            _VF_atleast_1d,
-            _ATLEAST_1D_VARIADIC_UNSUPPORTED,
+            {},
         )
     if not tensors:
         if _get_current_function_mode() is not None:

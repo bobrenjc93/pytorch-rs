@@ -207,7 +207,7 @@ class CompileCudaBoundaryTests(Comparison, unittest.TestCase):
         compiled, cache = compile_with_cache(add_inputs)
         compiled(cpu, cpu)
         before = dict(cache.graphs)
-        for left, right in ((cuda, cuda[0]), (cuda.t(), cuda.t()),
+        for left, right in ((cuda, cuda[:1]), (cuda.t(), cuda.t()),
                             (cuda[:, 1:], cuda[:, 1:]), (cpu, cuda),
                             (native.ones((3, 4), requires_grad=True), cuda)):
             with self.assertRaises(NotImplementedError):

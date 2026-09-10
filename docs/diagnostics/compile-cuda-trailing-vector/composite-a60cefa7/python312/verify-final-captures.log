@@ -1,0 +1,9 @@
+target/integration-evidence/trailing-single-312.json {"cases": 228, "reference_eligible": 226, "native_pass": 200, "native_unsupported": 28, "expectation_failures": 0}
+Verified clean commit, complete source manifest, harness hashes, installed native/wheel hashes and contained source/build/import paths.
+target/integration-evidence/trailing-two-device-312.json {"cases": 12, "reference_eligible": 6, "native_pass": 6, "native_unsupported": 6, "expectation_failures": 0}
+Verified clean commit, complete source manifest, harness hashes, installed native/wheel hashes and contained source/build/import paths.
+target/python314/target/integration-evidence/trailing-single-314.json {"cases": 228, "reference_eligible": 226, "native_pass": 200, "native_unsupported": 28, "expectation_failures": 0}
+Verified clean commit, complete source manifest, harness hashes, installed native/wheel hashes and contained source/build/import paths.
+target/python314/target/integration-evidence/trailing-two-device-314.json {"cases": 12, "reference_eligible": 6, "native_pass": 6, "native_unsupported": 6, "expectation_failures": 0}
+Verified clean commit, complete source manifest, harness hashes, installed native/wheel hashes and contained source/build/import paths.
+Measured implementation: a60cefa7c2ea7792bace10381218365a14da5fd6

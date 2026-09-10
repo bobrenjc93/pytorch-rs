@@ -34,6 +34,7 @@ Top-level calls require the native callable identity; patched bindings reject.
 
 Unary `-`, zero-argument `.neg()` and `.negative()` compose arbitrarily with
 operator `+` and positional `.add(tensor)`. This syntax supports
+equal-shape addition and exactly `(M, N)+(N,)` in either operand order,
 self-addition, chains, scalar tensors, empty tensors, and contiguous views with
 nonzero offsets. Exact same-module helpers, live global tensor captures, and
 tuple/list tensor outputs retain the existing bytecode restrictions. Names and
@@ -45,11 +46,12 @@ The existing no-break `backend="eager", fullgraph=False` option also accepts
 this subset with `dynamic=None`; unsupported bytecode still raises without
 eager fallback. `fullgraph=True` retains `dynamic=None/False/True`. Dynamic
 variants guard rank and exact strides; a reused graph recomputes operation
-shapes and requires equal CUDA addition operand shapes before executing any
-operation. Dynamic shapes do not enable broadcasting.
+shapes and validates equal shapes or exactly `(M, N)` and `(N,)` before
+executing any operation. Dynamic shapes do not enable broader broadcasting.
 
 CUDA graphs reject other unary operations (including `float` and `detach`), scalar
-number operands outside multiplication, broadcasting, noncontiguous layouts,
+number operands outside multiplication, broader broadcasts (including `(M,N)+(1,N)`,
+`(M,N)+(M,1)`, rank-three plus vector, or scalar expansion), noncontiguous layouts,
 gradients, mixed CPU/CUDA inputs, and mixed CUDA ordinals. Keyword method arguments, other operations,
 closures, mutations, top-level `torch.neg`/`negative` calls, unsupported bytecode,
 and unsupported compiler options retain their existing rejection behavior.
@@ -64,10 +66,11 @@ The Rust metadata hook reads dtype, device including ordinal, shape, strides,
 requires-grad, and storage offset from the actual tensor, without Python
 property dispatch. The compiler uses that native device metadata. CUDA input and
 capture metadata guard the exact offset as well as shape/stride/dtype/device;
-negation and addition outputs own fresh CUDA storage with canonical contiguous
-strides and offset zero, including scalar, empty, and offset-view inputs. Scalar
-multiplication instead uses the shared scalar layout planner, which can preserve
-noncanonical singleton stride ordering. CPU traces retain their established offset-polymorphic behavior (`storage_offset=None`
+negation and equal-shape addition outputs own fresh CUDA storage with canonical
+contiguous strides and offset zero. Matrix/vector addition uses the shared
+elementwise stride planner, preserving singleton and empty output ordering;
+scalar multiplication uses the scalar layout planner. All allocate fresh storage
+with offset zero, including offset-view inputs. CPU traces retain their established offset-polymorphic behavior (`storage_offset=None`
 in trace metadata), while the raw native metadata hook reports their real offset.
 
 CPU, CUDA:0, and CUDA:1 specializations cannot share cache entries. Global
@@ -86,6 +89,18 @@ execution, and the entire graph is validated before executing any operation.
 Private metadata-only recorders can still describe unsupported CUDA unary graphs;
 the executor rejects these before any kernel runs. Native unary hooks admit
 only negation on CUDA and retain CPU-only guards for all other unary targets.
+The private binary bridge independently delegates shape, layout, dtype, device
+and autograd validation to `Tensor::add`; it cannot bypass the kernel boundary.
+CUDA add nodes also validate declared result metadata before execution, while
+dynamic outputs derive concrete metadata from current inputs.
+
+## Matrix/vector validation
+
+[Trailing-vector validation](compile-cuda-trailing-vector-validation.md) gives
+the reproducible `trailing_vector_v1` diagnostic, H100 test commands, and evidence
+requirements. Reference backend `eager` establishes bounded semantics only.
+The frozen 38-case compiler corpus and four-workload CUDA benchmark are unchanged;
+this capability does not imply a score gain.
 
 ## Scalar multiplication validation
 
@@ -116,8 +131,11 @@ their original measured revisions in that guide.
 The fixed scoring corpora and historical measurements are unchanged. The frozen
 addition-only diagnostic retains two obsolete `reject_neg` expectations and
 returns exit 1 on supported negation; those are historical expectation failures,
-not harness passes. Use the maintained `neg_add_v1` diagnostic below for current
-neg/add behavior. It retains the addition matrix and unsupported guards, adds
+not harness passes. The historical `neg_add_v1` command below now returns exit 1 on GPU 0:
+its four matrix/vector rejection expectations are obsolete. All other
+expectations remain enforced; do not label that run a passing diagnostic.
+Use [trailing-vector validation](compile-cuda-trailing-vector-validation.md) for
+the versioned current capability diagnostic. It retains the addition matrix and unsupported guards, adds
 all three negation spellings and composed graphs, and records every raw outcome.
 
 ## Reproduction and evidence
