@@ -29,7 +29,22 @@ regression covers that failure path; the matrix, warmups, sample counts, timing
 intervals and aggregation are unchanged. Feature summaries now include the
 public unflatten operation and the supported L1 gradient subset.
 
-## Validation status
+## Clean committed validation
+
+Burner committed the integrated implementation as
+`208e9bff072bc9354ca0aec3e4a5330c1bde53ca`. The
+[post-commit capture](diagnostics/composite-matmul-unflatten-l1/postcommit-208e9bf/README.md)
+built a fresh release wheel from an absent target and verified the installed
+Python/native sources and local runtime identities. The 74 CPU-surface tests,
+compiled/eager matmul checks, independent isolated-program proof, GPUs 0,1
+restoration, focused Rust checks, 18 fixed math trials, 38-case corpus and all
+four fixed scoring shapes passed. The separate 12-cell diagnostic retained all
+raw samples and slower composed results, with 77.46% capped geometric parity.
+Its clean source, build, runtime, compiler and command receipts are published;
+the failed scoring import attempt is retained alongside the isolated retry.
+These results supersede development evidence for the committed composite.
+
+## Development validation (preserved)
 
 Development validation uses a copied local CPython 3.12.12 distribution, local
 reference PyTorch 2.13.0+cu130 and NumPy, local CUDA 13 libraries, local caches,
@@ -82,22 +97,13 @@ argv, timestamps, exit code, log hash, source manifest and environment.
 `repro-before.log` retains the two expected pre-repair failures; setup/build
 logs also remain available. No failed attempt was overwritten.
 
-## Required managed handoff
+## Remaining managed handoff
 
-Burner must commit the implementation, tests, documentation and any harness
-repairs before final evidence. From that clean committed tree, with dispatch
-paused, use the existing build and capture commands in
-[compiled matmul](compile-cuda-matmul.md#reproduction-and-delivery) with a fresh
-empty target and local interpreter, reference packages, libraries and caches.
-Install the wheel and verify every resolved import and source/native hash.
-Capture all six fixed math cases at the three existing seeds, independent
-compiled-program proofs, separate GPUs 0,1 restoration, the unchanged 38-case
-compiler corpus and four-shape scoring workload, and the separate 12-cell
-timing diagnostic. Retain all trials, slow/failed cells, raw samples, cache and
-first-call disclosures, executed commands, timestamps and log hashes.
-
-No implementation or harness edits may occur during that capture. Source PR
-readiness, continued dispatch pause, independent exact-head review, all ten
-non-regressing current-definition gates, exact-head CI and managed merge are
-Burner-owned requirements still to be confirmed. This integration work does
-not commit, publish, score the candidate or modify managed progress artifacts.
+Implementation commit and clean-commit evidence capture are complete. The
+publication adds only evidence and documentation; no implementation, dependency,
+test, benchmark harness, evaluator or supported behavior changed during capture.
+Independent exact-head review, all ten non-regressing current-definition gates,
+exact-head CI, confirmed source PR delivery, continued dispatch pause and managed
+merge remain Burner-owned requirements. The source reports and development
+measurements above retain their original identities and provide no substitute
+for these remaining requirements.

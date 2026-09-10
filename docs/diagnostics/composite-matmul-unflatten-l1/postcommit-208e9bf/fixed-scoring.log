@@ -1,0 +1,20 @@
+Inspected 121 changed files; full candidate diff fingerprint saved; implementation matches author-reviewed source manifest; protected files unchanged.
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/run_scoring.py", line 8, in <module>
+    runpy.run_path(str(harness),run_name='__main__')
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/scripts/benchmark_compile_cuda.py", line 2140, in <module>
+    main()
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/scripts/benchmark_compile_cuda.py", line 2129, in main
+    report = run_benchmark(args)
+             ^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/scripts/benchmark_compile_cuda.py", line 1994, in run_benchmark
+    import torch as reference_torch
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/.venv/lib/python3.12/site-packages/torch/__init__.py", line 35, in <module>
+    from typing_extensions import (
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/.venv/lib/python3.12/site-packages/typing_extensions.py", line 1154, in <module>
+    _TAKES_MODULE = "module" in inspect.signature(typing._type_check).parameters
+                                ^^^^^^^^^^^^^^^^^
+AttributeError: module 'inspect' has no attribute 'signature'

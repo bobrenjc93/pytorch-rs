@@ -1,0 +1,32 @@
+"""Evidence-only orchestration of committed repository tools; no workload changes."""
+import importlib.util, json, os, pathlib, subprocess, sys
+ROOT = pathlib.Path.cwd().resolve()
+OUT = ROOT/'target/postcommit-208e9bf'
+sys.path.insert(0,str(ROOT/'scripts'))
+from evaluate_cuda_math import source_provenance, sha256
+spec=importlib.util.spec_from_file_location('capture',ROOT/'docs/diagnostics/composite-cuda-neg/reproduce.py')
+capture=importlib.util.module_from_spec(spec); spec.loader.exec_module(capture)
+capture.OUT=OUT
+label,*command=sys.argv[1:]
+assert command and not (OUT/(label+'.log')).exists()
+assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()=='208e9bff072bc9354ca0aec3e4a5330c1bde53ca'
+status=subprocess.check_output(['git','status','--porcelain'],text=True)
+assert not status, status
+paths=subprocess.check_output(['git','ls-files','-z'],text=True).split('\0')
+manifest={p:sha256(ROOT/p) for p in paths if p}
+mp=OUT/'source-manifest.json'
+if mp.exists(): assert json.loads(mp.read_text())==manifest
+else: mp.write_text(json.dumps(manifest,indent=2)+'\n')
+before=source_provenance()
+result=capture.capture(command,label)
+status_after=subprocess.check_output(['git','status','--porcelain'],text=True)
+after=source_provenance()
+result.update(source_before=before,source_after=after,git_status_before=status,git_status_after=status_after,
+              measurement_kind='clean-commit',source_manifest_path=str(mp),source_manifest_sha256=sha256(mp),
+              recorder_sha256=sha256(__file__),
+              environment={k:v for k,v in os.environ.items() if k.startswith(('TORCH','TRITON','CUDA','CARGO','PYO3','UV_')) or k in ('TMPDIR','XDG_CACHE_HOME','RUSTC','RUSTDOC','VIRTUAL_ENV','PYTHONPATH','RUSTUP_AUTO_INSTALL')})
+result['source_unchanged']=before==after and manifest=={p:sha256(ROOT/p) for p in manifest}
+(OUT/(label+'.receipt.json')).write_text(json.dumps(result,indent=2)+'\n')
+print(json.dumps({k:result[k] for k in ('command','exit_status','wall_seconds','source_unchanged','git_status_after','log')}),flush=True)
+assert not status_after and result['source_unchanged']
+sys.exit(result['exit_status'])

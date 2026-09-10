@@ -126,7 +126,21 @@ separate requirements.
 These reports retain their original source-worktree identities and measure the
 matmul source PR only. They are stale for the combined implementation and do not
 supply composite performance credit. All raw records, failed attempts and
-sampling results remain unchanged. After Burner commits the combined repairs,
-repeat the clean-build and capture procedure above in this composite worktree;
-final evidence, independent exact-head review, all ten gates and exact-head CI
-remain pending. See [integration validation](composite-matmul-unflatten-l1-validation.md).
+sampling results remain unchanged. The fresh combined-commit capture below
+supersedes their applicability to this composite. See
+[integration validation](composite-matmul-unflatten-l1-validation.md).
+
+## Clean composite capture
+
+The [combined capture](diagnostics/composite-matmul-unflatten-l1/postcommit-208e9bf/README.md)
+measures **`208e9bff072bc9354ca0aec3e4a5330c1bde53ca`** from an absent native
+build target and a newly installed matching wheel. All 18 fixed math trials,
+38 compiler cases, four fixed scoring shapes, focused CPU/GPU regressions and
+separate device-restoration checks passed. The separate matmul diagnostic passed
+all 12 correctness cells with **77.46% capped geometric parity**, retaining the
+slower composed cells, raw calls, dispersion, both orders and first-call/cache
+disclosures. Exact source/native/runtime/compiler identities, executed command
+receipts and the failed premeasurement scoring launch are published with the
+capture. All measurement and verification completed while the committed tree
+was clean; only evidence and documentation were published afterward.
+Independent exact-head review, ten gates and exact-head CI remain required.

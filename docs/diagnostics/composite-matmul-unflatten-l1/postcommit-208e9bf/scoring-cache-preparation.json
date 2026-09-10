@@ -1,0 +1,22 @@
+{
+  "started_at": "2026-09-10T15:47:46.545046+00:00",
+  "caches": [
+    {
+      "original": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/torch_rs_private_cuda_pointwise",
+      "archive": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/prior-private-kernel-caches/torch_rs_private_cuda_pointwise",
+      "files": {
+        "abc1ef92dd5c211d/torch_rs_private_pointwise.cu": "22c19cfe066dc5ec5ef73e350a8c5ee6bf8aa5509f97b0df17e72aa7d7ef7139",
+        "abc1ef92dd5c211d/libtorch_rs_private_pointwise.so": "3f9ba221cae01f68d8c448890806449c85377964f6b24d9e94f3bd0ea7011a1d"
+      }
+    },
+    {
+      "original": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/torch_rs_private_cuda_pointwise_reduce",
+      "archive": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/prior-private-kernel-caches/torch_rs_private_cuda_pointwise_reduce",
+      "files": {
+        "008df4c027d70965/torch_rs_private_pointwise_reduce.cu": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7",
+        "008df4c027d70965/libtorch_rs_private_pointwise_reduce.so": "c0933b4c21a7130770a3974ff070abbcdb8696a10996ae5e734b9f0758953443"
+      }
+    }
+  ],
+  "result": "Both scoring kernel targets absent; prior contents retained unchanged inside worktree."
+}

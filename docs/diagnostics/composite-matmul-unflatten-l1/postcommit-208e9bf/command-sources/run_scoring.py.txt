@@ -1,0 +1,21 @@
+"""Run the committed scoring CLI unchanged, then record its resolved dependencies."""
+import hashlib,json,os,pathlib,runpy,subprocess,sys
+ROOT=pathlib.Path.cwd().resolve(); OUT=ROOT/'target/postcommit-208e9bf'
+harness=ROOT/'scripts/benchmark_compile_cuda.py'
+cache_before={k:len(list(pathlib.Path(os.environ[k]).rglob('*'))) for k in ('TRITON_CACHE_DIR','TORCHINDUCTOR_CACHE_DIR')}
+argv=[str(harness),*sys.argv[1:]]
+sys.argv=argv
+runpy.run_path(str(harness),run_name='__main__')
+def identity(path):
+    p=pathlib.Path(path).resolve(); assert p.is_relative_to(ROOT),p
+    return {'path':str(p),'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
+imports={name:identity(module.__file__) for name,module in sorted(sys.modules.items()) if isinstance(getattr(module,'__file__',None),str) and pathlib.Path(module.__file__).is_file()}
+libs=sorted({line.split()[-1] for line in pathlib.Path('/proc/self/maps').read_text().splitlines() if any(n in line for n in ('/libcudart.so','/libcublas.so','/libcublasLt.so','libtorch_rs_private'))})
+from triton.backends.nvidia.compiler import get_ptxas
+ptxas=get_ptxas(90).path
+result={'executed_harness':identity(harness),'harness_argv':argv,'imports':imports,'loaded_cuda_libraries':[identity(p) for p in libs],
+        'reference_ptxas':{**identity(ptxas),'version':subprocess.check_output([ptxas,'--version'],text=True)},
+        'cache_initial_files':cache_before,'environment':{k:os.environ[k] for k in ('LD_LIBRARY_PATH','TRITON_CACHE_DIR','TORCHINDUCTOR_CACHE_DIR','CUDA_CACHE_PATH','TMPDIR')},
+        'git_status':subprocess.check_output(['git','status','--porcelain'],text=True)}
+(OUT/'scoring-provenance.json').write_text(json.dumps(result,indent=2)+'\n')
+print('Scoring completed; inspected',len(imports),'module files and',len(libs),'loaded CUDA/benchmark libraries.')
