@@ -32,6 +32,7 @@ artifacts are generated at merge time and are not source documentation.
 - [CUDA-add diagnostics](cuda-add-diagnostics.md): Latency, sustained throughput, cache saturation, and release provenance.
 - [CUDA matrix/vector addition](cuda-add-trailing-vector.md): Bounded eager broadcast support, H100 differentials, and six-case math validation.
 - [CUDA vector addition and depth-stack integration](composite-cuda-vector-dstack.md): Records composite repairs, diagnostics, and the clean-commit delivery gate.
+- [CUDA matrix row sums](cuda-sum-rows.md): Contiguous rank-2 float32 dim=1/-1 reduction, numerical behavior, and validation.
 - [Rank-2 mean diagnostics](rank2-mean-diagnostics.md): Both reduction axes and layouts at matched CPU worker budgets.
 
 ## Historical Validation Evidence

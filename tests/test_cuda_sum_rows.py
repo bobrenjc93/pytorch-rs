@@ -67,6 +67,64 @@ class CudaSumRowsTests(Comparison, unittest.TestCase):
                             self.assertNotEqual(result.data_ptr(), x.data_ptr())
                 self.compare(base, reference)
 
+    def test_float32_cancellation_and_intermediate_overflow(self):
+        maximum = np.finfo(np.float32).max
+        patterns = [[1e8, 1, 1, -1e8]]
+        for large in (np.float32(3e38), maximum):
+            patterns += [[large, 0, large, -large],
+                         [large, -large, large, -large]]
+        for row_count in (1, 2, 17):
+            for pattern in patterns:
+                values = np.tile(np.array(pattern, dtype=np.float32), (row_count, 1))
+                x, tx = [upload(m, values.ravel(), values.shape) for m in (native, torch)]
+                for keepdim in (False, True):
+                    with self.subTest(rows=row_count, pattern=pattern, keepdim=keepdim):
+                        # Classification and cancellation must match exactly;
+                        # tolerance cannot hide a finite-vs-overflow difference.
+                        np.testing.assert_array_equal(x.sum(1, keepdim).cpu().tolist(),
+                                                      tx.sum(1, keepdim).cpu().tolist())
+                self.compare(x, tx)
+
+    def test_reduction_geometry_vector_alignment_and_dynamic_range(self):
+        rng = np.random.default_rng(718934)
+        widths = (2, 3, 4, 7, 8, 15, 16, 31, 32, 33, 63, 64, 65,
+                  127, 128, 129, 131, 255, 256, 257, 511, 512, 513,
+                  1023, 1024, 1025, 4095, 4096, 4097, 8191, 8192, 8193,
+                  65535, 65536, 65539, 1_000_000, 1_000_003)
+        for width in widths:
+            row_counts = (1, 2, 17) if width > 65539 else (1, 2, 3, 15, 16, 17, 33)
+            for rows in row_counts:
+                for offset in range(4):
+                    # Independent row starts hit all vector head/tail alignments.
+                    values = rng.normal(size=rows * width + offset).astype(np.float32)
+                    values *= np.exp2(rng.integers(-20, 21, size=values.size)).astype(np.float32)
+                    x, tx = [upload(m, values, values.shape)[offset:].reshape(rows, width)
+                             for m in (native, torch)]
+                    for keepdim in (False, True):
+                        with self.subTest(width=width, rows=rows, offset=offset, keepdim=keepdim):
+                            self.compare_sum(x.sum(1, keepdim), tx.sum(1, keepdim))
+                    self.compare(x, tx)
+
+    def test_nonfinite_and_subnormal_values_across_reduction_trees(self):
+        rng = np.random.default_rng(556712)
+        special = np.array([0, 0x80000000, 1, 0x80000001, 0x007fffff,
+                            0x7f7fffff, 0xff7fffff, 0x7f800000,
+                            0xff800000, 0x7fc12345], dtype=np.uint32).view(np.float32)
+        for width in (127, 128, 129, 513, 8193, 65539, 1_000_003):
+            for offset in range(4):
+                values = np.zeros((17, width), dtype=np.float32)
+                # Keep some rows subnormal-only, some overflowing, some nonfinite.
+                for row in range(17):
+                    pool = special[:5] if row < 5 else special[5:7] if row < 10 else special
+                    values[row] = rng.choice(pool, size=width)
+                padded = np.concatenate((np.zeros(offset, np.float32), values.ravel()))
+                x, tx = [upload(m, padded, padded.shape)[offset:].reshape(values.shape)
+                         for m in (native, torch)]
+                for keepdim in (False, True):
+                    with self.subTest(width=width, offset=offset, keepdim=keepdim):
+                        self.compare(x.sum(1, keepdim), tx.sum(1, keepdim))
+                self.compare(x, tx)
+
     def test_offset_singleton_and_empty_views(self):
         values = np.arange(420, dtype=np.float32) / 16 - 5
         base, reference = upload(native, values, (420,)), upload(torch, values, (420,))
@@ -186,7 +244,7 @@ class CudaSumRowsDeviceTests(unittest.TestCase):
         try:
             for current, target in ((1, 0), (0, 1)):
                 torch.cuda.set_device(current)
-                for shape in ((3, 37), (0, 37), (3, 0)):
+                for shape in ((3, 37), (2, 1_000_003), (0, 37), (3, 0)):
                     x = native.full(shape, 1.25).to(f"cuda:{target}")
                     result = x.sum(1)
                     self.assertEqual(str(result.device), f"cuda:{target}")

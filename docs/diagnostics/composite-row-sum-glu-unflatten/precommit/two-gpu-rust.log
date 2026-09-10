@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running unittests src/lib.rs (target/cargo-build/debug/deps/pytorch_rs-a84bc75b3d7dfab2)
+
+running 1 test
+test cuda::tests::addition_checks_storage_bounds_and_restores_device ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 167 filtered out; finished in 0.51s
+

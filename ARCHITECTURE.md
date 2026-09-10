@@ -5,7 +5,7 @@ tensor core. The native implementation is intentionally small today: tensors
 carry strided CPU `float32` storage and optional native CUDA `float32` storage,
 Python-facing metadata objects, selected CPU operators, and limited eager
 reverse-mode autograd. Native CUDA storage and transfers, same-shape contiguous
-addition and matrix-plus-trailing-vector addition, contiguous negation, and contiguous scalar multiplication execute without Python.
+addition and matrix-plus-trailing-vector addition, contiguous negation, and contiguous scalar multiplication and matrix row sums execute without Python.
 
 ## Source Map
 
@@ -13,8 +13,8 @@ addition and matrix-plus-trailing-vector addition, contiguous negation, and cont
 | --- | --- | --- |
 | Crate entry | [src/lib.rs](src/lib.rs) | Declares the Rust modules and re-exports `Tensor`, `TensorError`, `DType`, `Device`, and `MemoryFormat`. Python-only modules are gated behind `python-bindings`. |
 | Storage | [src/storage.rs](src/storage.rs) | Owns `Storage`, native CPU/CUDA payload dispatch, the CPU `f32` payload, inline scalar storage, owned vectors, and mutex-backed leaf-gradient buffers. |
-| CUDA backend | [src/cuda.rs](src/cuda.rs), [src/cuda/pointwise.rs](src/cuda/pointwise.rs), [src/cuda/pool.rs](src/cuda/pool.rs), [src/cuda/add.ptx](src/cuda/add.ptx), [src/cuda/add_trailing_vector.ptx](src/cuda/add_trailing_vector.ptx), [src/cuda/neg.ptx](src/cuda/neg.ptx), [src/cuda/mul_scalar.ptx](src/cuda/mul_scalar.ptx) | Loads the optional CUDA runtime, owns device allocations, restores the calling thread's device, and performs synchronous host-to-device and device-to-host transfers from/to Rust buffers, plus bounded same-device vector copies. A front cache retains at most 32 buffers / 64 MiB across devices; optional private pools budget another 256 MiB of unused backing per device, as detailed below. The optional driver loads embedded contiguous float32 addition, negation and scalar multiplication kernels. Python only discovers optional wheel library paths. |
-| Dimension reduction kernels | [src/reduction.rs](src/reduction.rs) | Uses layout-aware slices and four-level float32 accumulation for rank-2 single-axis sums and means. [src/parallel.rs](src/parallel.rs) manages an explicit worker budget; large reductions split independent outputs without changing their accumulation order. |
+| CUDA backend | [src/cuda.rs](src/cuda.rs), [src/cuda/pointwise.rs](src/cuda/pointwise.rs), [src/cuda/pool.rs](src/cuda/pool.rs), [src/cuda/add.ptx](src/cuda/add.ptx), [src/cuda/add_trailing_vector.ptx](src/cuda/add_trailing_vector.ptx), [src/cuda/neg.ptx](src/cuda/neg.ptx), [src/cuda/mul_scalar.ptx](src/cuda/mul_scalar.ptx), [src/cuda/sum_rows.rs](src/cuda/sum_rows.rs), [src/cuda/sum_rows.ptx](src/cuda/sum_rows.ptx) | Loads the optional CUDA runtime, owns device allocations, restores the calling thread's device, and performs synchronous host-to-device and device-to-host transfers from/to Rust buffers, plus bounded same-device vector copies. A front cache retains at most 32 buffers / 64 MiB across devices; optional private pools budget another 256 MiB of unused backing per device, as detailed below. The optional driver loads embedded contiguous float32 addition, negation, scalar multiplication and matrix row reduction kernels. Python only discovers optional wheel library paths. |
+| Dimension reduction kernels | [src/reduction.rs](src/reduction.rs) | Uses layout-aware slices and four-level float32 accumulation for CPU rank-2 single-axis sums and means. CUDA contiguous row sums use the [native reduction geometry and PTX](docs/cuda-sum-rows.md). [src/parallel.rs](src/parallel.rs) manages an explicit worker budget; large reductions split independent outputs without changing their accumulation order. |
 | Tensor layout | [src/tensor.rs](src/tensor.rs) | `Tensor` stores shared storage plus shape, strides, storage offset, element count, output number, view grad state, and optional autograd metadata. It also implements contiguity, view, stride, indexing, and materialization helpers. Integer-size and list/tuple-section split and chunk reuse `partition_dimension` slice views and one shared multi-output backward node per call; explicit sections use `SplitWithSizes` metadata. |
 | Metadata types | [src/dtype.rs](src/dtype.rs), [src/device.rs](src/device.rs), [src/memory_format.rs](src/memory_format.rs) | Define the currently compiled native dtype/device/memory-format enums and query behavior. |
 | Tensor operations | [src/tensor.rs](src/tensor.rs) | Constructors, unary and binary kernels, reductions, matrix multiply, layout transforms, and backward kernels live with the core tensor representation. |
@@ -214,6 +214,19 @@ unsupported devices retain guarded `cudaMalloc`/`cudaFree`. A launch/completion
 or pooled-release failure disables reuse; uncertain pool allocations are
 quarantined rather than recycled.
 See [optional runtime setup](docs/troubleshooting.md#optional-native-cuda-runtime).
+
+## Native CUDA row reduction
+
+Contiguous rank-2 float32 `sum(dim=1/-1)` uses four float32 accumulators,
+aligned vector loads with scalar heads/tails, descending shuffle-down, and
+geometry-dependent shared-memory x/y reductions. Rust selects block geometry
+from row count and width and queries the current device's multiprocessor and
+thread capacity for CTA splitting. Wide-row partials use fresh device scratch;
+a second legacy-stream kernel reduces them in y-then-x order. Scratch and
+output survive both launches and synchronization, including failure paths.
+There is no float64 promotion, host value reduction, or PyTorch dependency.
+Empty axes, offsets, fresh output, guards, and unsupported dimensions are
+specified in the [row-sum contract](docs/cuda-sum-rows.md).
 
 ## Native CUDA addition
 

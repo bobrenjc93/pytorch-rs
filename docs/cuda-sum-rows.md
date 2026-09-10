@@ -5,17 +5,20 @@ float32 matrices, with either `keepdim` value and no gradients. The shared sum
 binding also accepts the existing one-item dimension sequences, such as `(1,)`.
 Rust uses `Tensor::sum_rank_two_dimension(1, keepdim)` (a normalized dimension).
 
-One embedded PTX kernel handles arbitrary rectangular dimensions with 64-bit
-indexing. Each warp widens its float32 inputs to float64, accumulates and
-reduces them with a float64 shuffle tree, then rounds once to float32 for the
-output. This prevents serial float32 rounding error from growing with row width.
-A bounded grid strides over rows. The installed NVIDIA driver JITs PTX;
-there is no nvcc/NVRTC dependency, CPU value computation, PyTorch forwarding,
-shape-specific benchmark path, or compiler integration. Floating-point addition
-order can differ from PyTorch, so finite sums are compared with tolerances.
-Input NaNs and infinities retain their arithmetic classifications, and subnormals
-are not flushed. Accumulation precision and intermediate overflow can differ
-from PyTorch's float32 reduction; this does not add a float64 tensor API.
+Embedded PTX uses four float32 accumulators per thread, aligned vector loads
+with scalar heads and tails, descending shuffle-down reductions, and shared
+memory when reduction geometry spans warps. Rust chooses geometry from row
+count and width; wide rows can use CTA partials according to the current
+device's multiprocessor and thread capacity. A second legacy-stream kernel
+reduces those partials in a fixed order. Indexing is 64-bit and bounded grids
+stride across rows and partials.
+
+This follows the contiguous float32 reduction ordering in PyTorch 2.13's
+`ATen/native/cuda/Reduce.cuh`, including float32 intermediate overflow. It does
+not widen to float64 or flush subnormals. Finite comparisons use the existing
+tolerances; NaN and infinity classifications are checked explicitly. The
+installed driver JITs PTX; production requires neither nvcc/NVRTC nor PyTorch,
+and performs no CPU value computation. Compiled reductions remain unsupported.
 
 Contiguous offset views and contiguous singleton layouts are accepted. Outputs
 have fresh contiguous storage on the input device, offset zero, and shape
@@ -38,9 +41,12 @@ Existing CPU sum bindings, override dispatch, and CPU autograd are unchanged.
 
 ## Validation
 
+The [combined integration report](composite-row-sum-glu-unflatten-validation.md)
+records the repaired kernel's checks and the remaining clean-code and CI gates.
+
 [Python differentials](../tests/test_cuda_sum_rows.py) cover generated rectangular
 shapes, same-sign decimal rows through width 1,000,003, irregular widths,
-a row count beyond the grid stride, empty outputs, zero-width rows, offsets, singleton layouts, cancellation,
+differing row counts, empty outputs, zero-width rows, offsets, singleton layouts, cancellation,
 nonfinite values, signed zeros/subnormals, metadata, source preservation, fresh
 storage, thread/lifetime reuse, stream completion, and unsupported boundaries.
 A subprocess blocks all PyTorch imports. A separate two-GPU test checks device
@@ -51,9 +57,16 @@ without Python. Internal CUDA storage tests check overflowing products and bound
 empty offsets, and injected launch failure cleanup. Hardware-only tests clearly
 skip when their required CUDA devices are unavailable.
 
-## Clean-commit H100 evidence
+## Historical source H100 evidence
 
-The refreshed capture measures implementation commit
+The artifacts below belong to the original row-sum source, before the composite
+float32-tree repair. They are retained under their original identities and paths,
+not as proof of the combined candidate. Their float64 kernel failed the later
+cancellation and overflow regressions; passing the six-case corpus did not make
+that source merge-qualified. A fresh clean-code composite capture is still
+required after Burner commits the repaired implementation and tests.
+
+The source capture measures implementation commit
 `f1040cdf723cf9b172f27d50d3580bbb21f3c430`, including the wide-row accuracy fix.
 Every build, evaluation, and test command began and ended with an empty
 `git status --porcelain`; artifacts were copied into `docs` only after the
@@ -84,7 +97,7 @@ blocked PyTorch imports, inspected native device pointers, copied results
 through the driver, and checked input preservation. This is correctness
 evidence, not a performance score.
 
-## Wide-row regression
+## Historical wide-row regression
 
 The reviewer identified serial float32 accumulation drift in the previous
 kernel. The committed regressions cover widths 65,539, 1,000,000, and
@@ -93,7 +106,7 @@ kernel. The committed regressions cover widths 65,539, 1,000,000, and
 with the existing `rtol=1e-5`, `atol=1e-4`. The Rust oracle multiplies the exact
 float32 input value by the width in float64, independently of tensor reduction.
 
-A [fresh reproduction](diagnostics/cuda-sum-rows/wide-row-check.log) records
+The [source reproduction](diagnostics/cuda-sum-rows/wide-row-check.log) records
 these per-row results for a `(2, width)` matrix filled with float32 `0.1`:
 
 | Width | Native CUDA sum | PyTorch CUDA sum |
@@ -107,7 +120,7 @@ Both cases satisfy the unchanged regression tolerances.
 
 Hardware was NVIDIA H100 (97,871 MiB, compute capability 9.0), driver
 580.82.07. Reference PyTorch was `2.13.0+cu130` on Python 3.12.14+meta.
-Both evaluator workers loaded the current worktree's
+Both source evaluator workers loaded their original worktree's
 `.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13`, runtime
 version 13000 (CUDA 13.0). Rust tests explicitly selected that library with
 `TORCH_RS_CUDART`. Rust/Cargo were 1.92.0; the build used release optimization,
@@ -120,7 +133,7 @@ Ordinary GPU checks used `CUDA_VISIBLE_DEVICES=0`; only the device-restoration
 test used `0,1`. [Command receipts](diagnostics/cuda-sum-rows/commands.json)
 retain exact commands, environments, timestamps, clean status checks, and log
 hashes. The [verification record](diagnostics/cuda-sum-rows/verification.json)
-binds the preserved artifacts to this source and build.
+binds the preserved artifacts to that original source and build.
 
 Passed focused checks:
 
@@ -132,7 +145,5 @@ Passed focused checks:
 - All eight Python hardware tests [skip clearly with no visible GPU](diagnostics/cuda-sum-rows/no-gpu.log).
 - Clippy with warnings denied, formatting, and diff checks.
 
-This refresh changes only candidate evidence and accompanying documentation.
-Implementation, tests, dependencies, evaluator definitions, scoring corpora,
-historical baseline artifacts, and Burner-managed progress artifacts remain
-unchanged. The capture does not replace independent review or merge gates.
+These historical records remain unchanged. They do not supply current-composite
+correctness or performance credit, independent review, or merge qualification.

@@ -158,3 +158,41 @@ fn cancellation_nonfinite_values_and_output_lifetime() {
         vec![0.; 24]
     );
 }
+
+#[test]
+fn float32_tree_preserves_cancellation_and_intermediate_overflow() {
+    if cuda::device_count() == 0 {
+        eprintln!("skipping native CUDA float32 reduction tree: no CUDA runtime/device");
+        return;
+    }
+    for rows in [1, 2, 17] {
+        for large in [3e38_f32, f32::MAX] {
+            for (pattern, expected) in [
+                ([1e8, 1., 1., -1e8], 0.),
+                ([large, 0., large, -large], f32::INFINITY),
+                ([large, -large, large, -large], f32::NAN),
+            ] {
+                let input = Tensor::from_vec(pattern.repeat(rows), [rows, 4])
+                    .unwrap()
+                    .try_copy_cpu_to_cuda(Device::Cuda(0))
+                    .unwrap();
+                for keepdim in [false, true] {
+                    let output = input
+                        .sum_rank_two_dimension(1, keepdim)
+                        .unwrap()
+                        .try_copy_cuda_to_cpu()
+                        .unwrap()
+                        .try_to_vec()
+                        .unwrap();
+                    for actual in output {
+                        if expected.is_nan() {
+                            assert!(actual.is_nan());
+                        } else {
+                            assert_eq!(actual.to_bits(), expected.to_bits());
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

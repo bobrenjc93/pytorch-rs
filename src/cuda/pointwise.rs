@@ -2,8 +2,14 @@
 //! time and JIT-compiled by the installed NVIDIA driver, without nvcc or NVRTC.
 use super::{CStr, Library, Mutex, OnceLock, Status, TensorError, c_char, c_int, c_void};
 
+#[path = "sum_rows.rs"]
+mod sum_rows;
+pub(super) use sum_rows::{RowSumConfig, launch_sum_rows};
+
 struct Driver {
     _library: Library,
+    device: unsafe extern "C" fn(*mut c_int) -> Status,
+    attribute: unsafe extern "C" fn(*mut c_int, c_int, c_int) -> Status,
     context: unsafe extern "C" fn(*mut *mut c_void) -> Status,
     load: unsafe extern "C" fn(*mut *mut c_void, *const c_void) -> Status,
     function: unsafe extern "C" fn(*mut *mut c_void, *mut c_void, *const c_char) -> Status,
@@ -29,7 +35,7 @@ struct Driver {
 struct Module {
     context: usize,
     _handle: usize,
-    functions: [usize; 6],
+    functions: [usize; 7],
 }
 
 enum Kernel {
@@ -38,6 +44,7 @@ enum Kernel {
     MultiplyScalar,
     AddTrailingVector,
     SumRows,
+    SumRowsFinalize,
     #[cfg(any(feature = "python-bindings", test))]
     Negate,
 }
@@ -57,6 +64,8 @@ fn driver() -> Result<&'static Driver, TensorError> {
                 .map_err(|error| error.to_string())?;
                 let loaded = || -> Result<Driver, libloading::Error> {
                     Ok(Driver {
+                        device: *library.get(b"cuCtxGetDevice\0")?,
+                        attribute: *library.get(b"cuDeviceGetAttribute\0")?,
                         context: *library.get(b"cuCtxGetCurrent\0")?,
                         load: *library.get(b"cuModuleLoadData\0")?,
                         function: *library.get(b"cuModuleGetFunction\0")?,
@@ -129,7 +138,7 @@ impl Driver {
             .try_reserve(1)
             .map_err(|_| TensorError::AllocationFailed { elements: 1 })?;
         let mut module = std::ptr::null_mut();
-        let mut functions = [0; 6];
+        let mut functions = [0; 7];
         // SAFETY: static NUL-terminated PTX and entry names; writable handles.
         unsafe {
             self.check(
@@ -158,6 +167,7 @@ impl Driver {
                 c"mul_scalar_f32",
                 c"add_trailing_vector_f32",
                 c"sum_rows_f32",
+                c"sum_rows_finalize_f32",
                 c"neg_f32",
             ]) {
                 let mut function = std::ptr::null_mut();
@@ -365,50 +375,6 @@ pub(super) unsafe fn launch_mul_scalar(
     let blocks = u32::try_from(elements.div_ceil(256).min(4096)).expect("bounded grid");
     // SAFETY: parameters survive the launch argument copy; the cached function
     // belongs to this context. CU_STREAM_LEGACY matches runtime copies/zero-fill.
-    driver.check(
-        unsafe {
-            (driver.launch)(
-                function as *mut c_void,
-                blocks,
-                1,
-                1,
-                256,
-                1,
-                1,
-                0,
-                std::ptr::without_provenance_mut(1),
-                arguments.as_mut_ptr(),
-                std::ptr::null_mut(),
-            )
-        },
-        "cuLaunchKernel",
-    )
-}
-
-/// # Safety
-/// Input contains `rows * columns` contiguous floats on the guarded device;
-/// output holds `rows` fresh floats. Rows is nonzero. For zero columns input
-/// may be null and is never read. Complete the legacy stream even on error.
-pub(super) unsafe fn launch_sum_rows(
-    mut input: u64,
-    mut output: u64,
-    rows: usize,
-    columns: usize,
-) -> Result<(), TensorError> {
-    let driver = driver()?;
-    let function = driver.function(Kernel::SumRows)?;
-    let mut row_count = rows as u64;
-    let mut columns = columns as u64;
-    let mut arguments = [
-        (&raw mut input).cast(),
-        (&raw mut output).cast(),
-        (&raw mut row_count).cast(),
-        (&raw mut columns).cast(),
-    ];
-    // Eight warps per block; each warp owns a row and strides over further rows.
-    let blocks = u32::try_from(rows.div_ceil(8).min(4096)).expect("bounded grid");
-    // SAFETY: arguments survive the launch copy, function is context-local,
-    // and the caller retains the allocations through legacy-stream completion.
     driver.check(
         unsafe {
             (driver.launch)(

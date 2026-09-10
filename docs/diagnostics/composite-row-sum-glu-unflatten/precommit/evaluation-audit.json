@@ -1,0 +1,15 @@
+{
+  "measurement_kind": "precommit-diagnostic",
+  "report_sha256": "db16b5dd8c7051cffc13ca93886965d48e715d10faa351c8ab62f345c5180bf6",
+  "worker_file_hashes": {
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/.venv/bin/python": "41987ba66b0d1234f81ccf9ddfe1f21abcdb6ed8e31956f1edcac13122db017f",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/.venv/lib/python3.12/site-packages/torch/__init__.py": "cf40c075c95864036e835795756d69b8cccfafa76f3bcde5eba9d06065ccd3d1",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/python/torch_rs/__init__.py": "59f38b54f72d36cc670354361d63ac96aa9b60b7160af0c2f59f4383ea54c552"
+  },
+  "runtime_hashes": {
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13": "96c42e418cec19054186b9429c321603cc190bf26a18104e19408117a2a817b0"
+  },
+  "current_source_unchanged": true,
+  "evaluator_unchanged": true,
+  "no_performance_credit": true
+}

@@ -408,11 +408,22 @@ impl CudaFloat32Storage {
         let elements = rows
             .checked_mul(columns)
             .ok_or(TensorError::IndexCalculationOverflow)?;
+        // Keep scratch outside the launch closure: unary_output synchronizes
+        // after that closure returns, including on partial/final launch errors.
+        let mut scratch = None;
         self.unary_output(offset, elements, rows, |input, output| {
-            // SAFETY: checked input bounds, fresh output, guarded device and
+            let config = pointwise::RowSumConfig::current(rows, columns)?;
+            if config.ctas > 1 {
+                let count = rows
+                    .checked_mul(config.ctas)
+                    .ok_or(TensorError::IndexCalculationOverflow)?;
+                scratch = Some(Self::allocate(count, self.device_index)?.0);
+            }
+            let partials = scratch.as_ref().map_or(0, |buffer| buffer.data_ptr as u64);
+            // SAFETY: checked bounds, fresh output/scratch, guarded device and
             // completion are shared with pointwise operations. Zero-width rows
             // do not dereference input; zero rows do not launch at all.
-            unsafe { pointwise::launch_sum_rows(input, output, rows, columns) }
+            unsafe { pointwise::launch_sum_rows(input, output, partials, rows, columns, &config) }
         })
     }
 

@@ -1,0 +1,5 @@
+Using Python 3.14.7 environment at: target/python314-checkout/.venv
+Resolved 1 package in 2ms
+Prepared 1 package in 44ms
+Installed 1 package in 16ms
+ + torch-rs==0.1.0 (from file:///data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/target/python314-checkout/target/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl)

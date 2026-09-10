@@ -1,0 +1,1 @@
+2.13.0+cu130 13.0 True _CudaDeviceProperties(name='NVIDIA H100', major=9, minor=0, total_memory=97356MB, multi_processor_count=132, uuid=8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, pci_bus_id=6, pci_device_id=0, pci_domain_id=0, L2_cache_size=60MB)
