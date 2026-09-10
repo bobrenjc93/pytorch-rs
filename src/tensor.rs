@@ -5699,17 +5699,67 @@ impl Tensor {
         Ok(self.value_at_linear_index(0))
     }
 
-    /// Multiplies two rank-2 matrices.
+    /// Multiplies two rank-2 matrices. CUDA supports contiguous float32 operands
+    /// on the same device without autograd, including offset and empty views.
     ///
     /// # Errors
     ///
     /// Returns an error unless both tensors are matrices with compatible inner
-    /// dimensions.
+    /// dimensions, CUDA layout/device/autograd is unsupported, or allocation
+    /// or kernel execution fails.
     pub fn matmul(&self, other: &Self) -> Result<Self, TensorError> {
+        if self.is_cuda() || other.is_cuda() {
+            return self.cuda_matmul(other);
+        }
         validate_cpu_storage_device("matmul", self.device())?;
         validate_cpu_storage_device("matmul", other.device())?;
         self.matmul_with_initializer(other, |_, _, output_elements| {
             filled_storage(output_elements, 0.0)
+        })
+    }
+
+    fn cuda_matmul(&self, other: &Self) -> Result<Self, TensorError> {
+        let reason = if self.device() != other.device() {
+            Some("operands must be on the same CUDA device")
+        } else if self.dtype() != DType::Float32 || other.dtype() != DType::Float32 {
+            Some("only float32 is supported")
+        } else if self.requires_grad() || other.requires_grad() {
+            Some("autograd is unsupported")
+        } else if self.shape.len() != 2 || other.shape.len() != 2 {
+            Some("operands must be rank-2 matrices")
+        } else if !self.is_contiguous() || !other.is_contiguous() {
+            Some("operands must be contiguous")
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            return Err(TensorError::UnsupportedCudaMatmul { reason });
+        }
+        let (rows, inner, columns) = (self.shape[0], self.shape[1], other.shape[1]);
+        if inner != other.shape[0] {
+            return Err(TensorError::MatmulInnerDimensionMismatch {
+                left: self.shape.clone(),
+                right: other.shape.clone(),
+            });
+        }
+        let shape = try_clone_result_shape(&[rows, columns], 0)?;
+        let (elements, strides) = validated_layout(&shape)?;
+        let storage = self.storage.cuda_matmul_float32(
+            self.offset,
+            &other.storage,
+            other.offset,
+            [rows, inner, columns],
+        )?;
+        Ok(Self {
+            storage: Arc::new(storage),
+            shape,
+            strides,
+            offset: 0,
+            elements,
+            output_nr: 0,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
+            autograd: None,
         })
     }
 

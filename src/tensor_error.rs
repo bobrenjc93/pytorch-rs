@@ -117,6 +117,9 @@ pub enum TensorError {
     UnsupportedCudaSum {
         reason: &'static str,
     },
+    UnsupportedCudaMatmul {
+        reason: &'static str,
+    },
     UnsupportedCudaTransfer {
         reason: &'static str,
     },
@@ -228,6 +231,7 @@ impl Display for TensorError {
             | Self::UnsupportedCudaScalarMultiplication { .. }
             | Self::UnsupportedCudaNegation { .. }
             | Self::UnsupportedCudaSum { .. }
+            | Self::UnsupportedCudaMatmul { .. }
             | Self::UnsupportedCudaTransfer { .. }
             | Self::CudaRuntimeError { .. }) => format_device_error(formatter, error),
             error @ (Self::UnsupportedMemoryFormat { .. }
@@ -448,6 +452,12 @@ fn format_device_error(formatter: &mut Formatter<'_>, error: &TensorError) -> st
         }
         TensorError::UnsupportedCudaSum { reason } => {
             write!(formatter, "sum(): unsupported CUDA reduction ({reason})")
+        }
+        TensorError::UnsupportedCudaMatmul { reason } => {
+            write!(
+                formatter,
+                "matmul(): unsupported CUDA matrix multiplication ({reason})"
+            )
         }
         TensorError::UnsupportedCudaTransfer { reason } => {
             write!(formatter, "to(): unsupported CUDA transfer ({reason})")

@@ -1,0 +1,9 @@
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.49s
+     Running unittests src/lib.rs (target/cuda-matmul-postcommit/build/debug/deps/pytorch_rs-a84bc75b3d7dfab2)
+
+running 1 test
+test cuda::tests::matmul_checked_offsets_products_and_empty_inputs ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 170 filtered out; finished in 0.40s
+

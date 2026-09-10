@@ -57,6 +57,7 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::UnsupportedCudaScalarMultiplication { .. }
         | TensorError::UnsupportedCudaNegation { .. }
         | TensorError::UnsupportedCudaSum { .. }
+        | TensorError::UnsupportedCudaMatmul { .. }
         | TensorError::UnsupportedCudaTransfer { .. } => {
             PyNotImplementedError::new_err(error.to_string())
         }

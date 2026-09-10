@@ -1,0 +1,32 @@
+{
+  "commit": "96205cb01e85f6961a4d8ea40aa792b485289d84",
+  "source_sha256": "707ec5d124910b4c4247e84024fbf7179e78bb5144467548eb64dea2a80e9502",
+  "production_diff_sha256": "88a4069e21cfbe3f8c4f133ceb9d1b59427c5d6a2c504c12801b5d1508983def",
+  "extension_sha256": "78943559de1dc2fdf37d4ef20065e7f523b2900f90fdeb72e12108a85bde4fd9",
+  "build_command": [
+    "cargo",
+    "build",
+    "--locked",
+    "--release",
+    "--features",
+    "extension-module"
+  ],
+  "build_started": "2026-09-10T13:03:40.849053+00:00",
+  "build_finished": "2026-09-10T13:04:21.606067+00:00",
+  "build_target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5/target/cuda-matmul/fresh-build",
+  "build_target_initially_absent": true,
+  "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+  "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)",
+  "profile": "release; thin LTO; codegen-units=1; extension-module; abi3-py310",
+  "nvcc": "unused: embedded PTX 6.0 sm_50, driver JIT",
+  "available_nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0\n",
+  "environment": {
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5/target/cuda-matmul/cargo-home",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5/target/cuda-matmul/fresh-build",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5/target/cuda-matmul/cuda-cache"
+  },
+  "attestation": "Implementation validation of an uncommitted worktree; not final merge evaluation"
+}

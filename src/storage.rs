@@ -283,6 +283,28 @@ impl Storage {
         }
     }
 
+    pub(crate) fn cuda_matmul_float32(
+        &self,
+        left_offset: usize,
+        other: &Self,
+        right_offset: usize,
+        dimensions: [usize; 3],
+    ) -> Result<Self, TensorError> {
+        match (&self.payload, &other.payload) {
+            (StoragePayload::CudaFloat32(left), StoragePayload::CudaFloat32(right)) => Ok(Self {
+                payload: StoragePayload::CudaFloat32(left.matmul(
+                    left_offset,
+                    right,
+                    right_offset,
+                    dimensions,
+                )?),
+            }),
+            _ => Err(TensorError::UnsupportedCudaMatmul {
+                reason: "operands must be on the same CUDA device",
+            }),
+        }
+    }
+
     pub(crate) fn len(&self) -> usize {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.len(),

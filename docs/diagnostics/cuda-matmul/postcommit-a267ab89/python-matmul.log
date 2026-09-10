@@ -1,0 +1,12 @@
+test_device_guard_and_mixed_device_rejection (tests.test_cuda_matmul.CudaMatmulDeviceTests.test_device_guard_and_mixed_device_rejection) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_completion_thread_and_allocation_lifetimes (tests.test_cuda_matmul.CudaMatmulTests.test_completion_thread_and_allocation_lifetimes) ... ok
+test_generated_shapes_offsets_public_forms_and_preservation (tests.test_cuda_matmul.CudaMatmulTests.test_generated_shapes_offsets_public_forms_and_preservation) ... ok
+test_invalid_inputs_and_compilation (tests.test_cuda_matmul.CudaMatmulTests.test_invalid_inputs_and_compilation) ... ok
+test_no_pytorch_forwarding (tests.test_cuda_matmul.CudaMatmulTests.test_no_pytorch_forwarding) ... ok
+test_singleton_empty_and_overlapping_views (tests.test_cuda_matmul.CudaMatmulTests.test_singleton_empty_and_overlapping_views) ... ok
+test_special_values_and_cancellation (tests.test_cuda_matmul.CudaMatmulTests.test_special_values_and_cancellation) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 4.290s
+
+OK (skipped=1)

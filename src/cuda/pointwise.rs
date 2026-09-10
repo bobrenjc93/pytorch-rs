@@ -35,7 +35,7 @@ struct Driver {
 struct Module {
     context: usize,
     _handle: usize,
-    functions: [usize; 7],
+    functions: [usize; 8],
 }
 
 enum Kernel {
@@ -45,6 +45,7 @@ enum Kernel {
     AddTrailingVector,
     SumRows,
     SumRowsFinalize,
+    Matmul,
     #[cfg(any(feature = "python-bindings", test))]
     Negate,
 }
@@ -138,7 +139,7 @@ impl Driver {
             .try_reserve(1)
             .map_err(|_| TensorError::AllocationFailed { elements: 1 })?;
         let mut module = std::ptr::null_mut();
-        let mut functions = [0; 7];
+        let mut functions = [0; 8];
         // SAFETY: static NUL-terminated PTX and entry names; writable handles.
         unsafe {
             self.check(
@@ -152,6 +153,8 @@ impl Driver {
                         include_str!("add_trailing_vector.ptx"),
                         "\n",
                         include_str!("sum_rows.ptx"),
+                        "\n",
+                        include_str!("matmul.ptx"),
                         "\n",
                         include_str!("neg.ptx"),
                         "\0"
@@ -168,6 +171,7 @@ impl Driver {
                 c"add_trailing_vector_f32",
                 c"sum_rows_f32",
                 c"sum_rows_finalize_f32",
+                c"matmul_f32",
                 c"neg_f32",
             ]) {
                 let mut function = std::ptr::null_mut();
@@ -375,6 +379,55 @@ pub(super) unsafe fn launch_mul_scalar(
     let blocks = u32::try_from(elements.div_ceil(256).min(4096)).expect("bounded grid");
     // SAFETY: parameters survive the launch argument copy; the cached function
     // belongs to this context. CU_STREAM_LEGACY matches runtime copies/zero-fill.
+    driver.check(
+        unsafe {
+            (driver.launch)(
+                function as *mut c_void,
+                blocks,
+                1,
+                1,
+                256,
+                1,
+                1,
+                0,
+                std::ptr::without_provenance_mut(1),
+                arguments.as_mut_ptr(),
+                std::ptr::null_mut(),
+            )
+        },
+        "cuLaunchKernel",
+    )
+}
+
+/// # Safety
+/// Inputs cover the checked rank-2 product on the guarded device; output is
+/// disjoint and covers `elements` floats. For inner=0 inputs may be null. The
+/// caller must retain all allocations through legacy-stream completion,
+/// including on launch errors. Nonzero elements requires nonzero columns.
+pub(super) unsafe fn launch_matmul(
+    mut left: u64,
+    mut right: u64,
+    mut output: u64,
+    elements: usize,
+    inner: usize,
+    columns: usize,
+) -> Result<(), TensorError> {
+    let driver = driver()?;
+    let function = driver.function(Kernel::Matmul)?;
+    let mut count = elements as u64;
+    let mut k = inner as u64;
+    let mut n = columns as u64;
+    let mut arguments = [
+        (&raw mut left).cast(),
+        (&raw mut right).cast(),
+        (&raw mut output).cast(),
+        (&raw mut count).cast(),
+        (&raw mut k).cast(),
+        (&raw mut n).cast(),
+    ];
+    let blocks = u32::try_from(elements.div_ceil(256).min(4096)).expect("bounded grid");
+    // SAFETY: argument values survive launch, function belongs to this context,
+    // and the caller provides the checked allocation/completion contract above.
     driver.check(
         unsafe {
             (driver.launch)(

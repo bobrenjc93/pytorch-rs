@@ -1,0 +1,106 @@
+{
+  "source_before": {
+    "commit": "a267ab89a31573e68d0045f1cbcf55d8ea243307",
+    "source_sha256": "707ec5d124910b4c4247e84024fbf7179e78bb5144467548eb64dea2a80e9502",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "source_after": {
+    "commit": "a267ab89a31573e68d0045f1cbcf55d8ea243307",
+    "source_sha256": "707ec5d124910b4c4247e84024fbf7179e78bb5144467548eb64dea2a80e9502",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "clean_checkout": true,
+  "extension_sha256": "78943559de1dc2fdf37d4ef20065e7f523b2900f90fdeb72e12108a85bde4fd9",
+  "checks": [
+    {
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5/.venv/bin/python",
+        "-B",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_cuda_matmul"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5",
+      "started_at": "2026-09-10T13:10:33.971440+00:00",
+      "ended_at": "2026-09-10T13:10:41.763812+00:00",
+      "wall_seconds": 7.792375843971968,
+      "exit_status": 0,
+      "log": "python-matmul.log",
+      "log_sha256": "f6a7d948a0eea54dd57a869eedf6e1295091fd9911f74ae1404f01af1242de81",
+      "CUDA_VISIBLE_DEVICES": "0"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--test",
+        "cuda_matmul"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5",
+      "started_at": "2026-09-10T13:10:41.950862+00:00",
+      "ended_at": "2026-09-10T13:10:46.353995+00:00",
+      "wall_seconds": 4.403137628920376,
+      "exit_status": 0,
+      "log": "rust-matmul.log",
+      "log_sha256": "fba9f2fd526e9795c91585ea753880fd5678409305d3eef43bc3b2a42826c10d",
+      "CUDA_VISIBLE_DEVICES": "0"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--lib",
+        "cuda::tests::matmul_checked_offsets_products_and_empty_inputs",
+        "--",
+        "--nocapture"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5",
+      "started_at": "2026-09-10T13:10:46.546690+00:00",
+      "ended_at": "2026-09-10T13:10:50.560885+00:00",
+      "wall_seconds": 4.0142048466950655,
+      "exit_status": 0,
+      "log": "rust-bounds.log",
+      "log_sha256": "0da66a0c417660418d2cce1e750d066cfc20ec6ab3d3f275526fa578992c48c2",
+      "CUDA_VISIBLE_DEVICES": "0"
+    },
+    {
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5/.venv/bin/python",
+        "-B",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_cuda_matmul.CudaMatmulDeviceTests"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5",
+      "started_at": "2026-09-10T13:10:50.750799+00:00",
+      "ended_at": "2026-09-10T13:10:54.753260+00:00",
+      "wall_seconds": 4.002469025552273,
+      "exit_status": 0,
+      "log": "python-two-device.log",
+      "log_sha256": "1629bf65a9078c95005bbdf738ea16a273742d0b3616a6eaab864243d21a90c0",
+      "CUDA_VISIBLE_DEVICES": "0,1"
+    },
+    {
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5/.venv/bin/python",
+        "-B",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_cuda_math_evaluator"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5",
+      "started_at": "2026-09-10T13:10:54.932949+00:00",
+      "ended_at": "2026-09-10T13:11:23.519455+00:00",
+      "wall_seconds": 28.586512342095375,
+      "exit_status": 0,
+      "log": "evaluator-tests.log",
+      "log_sha256": "e643dfcf1878fa539dae0d6964dc84bd33300cc0108d10931acd68d9891471c9",
+      "CUDA_VISIBLE_DEVICES": "0"
+    }
+  ]
+}
