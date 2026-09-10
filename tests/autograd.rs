@@ -3107,7 +3107,7 @@ fn tanh_rejects_nonfinite_and_rank_five_owned_leaves_before_graph_mutation() {
 }
 
 #[test]
-fn tanh_rejects_tracked_views_and_nonleaves_before_graph_or_layout_mutation() {
+fn tanh_rejects_tracked_views_before_graph_or_layout_mutation() {
     let unsupported = TensorError::AutogradRecordingUnsupported { operation: "tanh" };
 
     let view_base = Tensor::from_vec(vec![0.5], [1])
@@ -3161,17 +3161,6 @@ fn tanh_rejects_tracked_views_and_nonleaves_before_graph_or_layout_mutation() {
     assert_eq!(
         values(&rank_three_view_base.grad().unwrap().unwrap()),
         [1.0, 1.0, 0.0, 0.0]
-    );
-
-    let nonleaf_base = Tensor::from_vec(vec![0.5, -0.5], [1, 1, 2])
-        .unwrap()
-        .with_requires_grad(true);
-    let nonleaf = nonleaf_base.sin().unwrap();
-    assert_eq!(nonleaf.tanh(), Err(unsupported.clone()));
-    nonleaf.sum().backward().unwrap();
-    assert_eq!(
-        values(&nonleaf_base.grad().unwrap().unwrap()),
-        [0.5_f32.cos(), (-0.5_f32).cos()]
     );
 
     let no_grad_view = {

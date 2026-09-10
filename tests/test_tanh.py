@@ -193,6 +193,41 @@ class TensorTanhTests(unittest.TestCase):
             ("alias and out none", lambda: torch.tanh(x=source, out=None)),
         )
 
+    def test_nonleaf_rejections_preserve_graphs_and_owned_storage_boundary(self):
+        calls = (lambda x: x.tanh(), torch.tanh, torch.nn.functional.tanh)
+        for shape in ((), (1,), (1, 1), (1, 1, 1)):
+            for value in (float("inf"), float("-inf"), float("nan"), np.finfo(np.float32).max):
+                for call in calls:
+                    with self.subTest(shape=shape, value=value, call=call):
+                        leaf = torch.tensor(np.full(shape, value, np.float32).tolist(),
+                                            requires_grad=True)
+                        parent = leaf + leaf  # Also covers overflow of finite inputs.
+                        before = np.asarray(parent).copy().view(np.uint32)
+                        with self.assertRaisesRegex(RuntimeError, "tanh.*autograd recording is not supported"):
+                            call(parent)
+                        self.assertIsNone(leaf.grad)
+                        np.testing.assert_array_equal(np.asarray(parent).view(np.uint32), before)
+                        parent.sum().backward()
+                        np.testing.assert_array_equal(np.asarray(leaf.grad), np.full(shape, 2.0))
+        # Full-allocation views still fail ownership checks, even for empty storage.
+        for shape in ((), (2,), (1, 2), (1, 1, 2), (0,), (2, 0), (1, 0, 2)):
+            for call in calls:
+                for unrecorded in (False, True):
+                    with self.subTest(shape=shape, call=call, unrecorded=unrecorded):
+                        leaf = torch.ones((1, *shape), requires_grad=True)
+                        if unrecorded:
+                            with torch.no_grad():
+                                view = leaf[0]
+                        else:
+                            view = leaf[0]
+                        with self.assertRaisesRegex(RuntimeError, "tanh.*autograd recording is not supported"):
+                            call(view)
+                        with torch.no_grad():
+                            self.assertFalse(call(view).requires_grad)
+                        self.assertFalse(call(view.detach()).requires_grad)
+                        leaf.sum().backward()
+                        np.testing.assert_array_equal(np.asarray(leaf.grad), np.ones((1, *shape)))
+
     def test_values_layouts_offsets_empty_tensors_and_fresh_storage(self):
         expected_special_bits = np.asarray(
             (
@@ -807,16 +842,6 @@ class TensorTanhTests(unittest.TestCase):
         self.assertEqual(
             rank_four_view_base.grad.tolist(),
             [[[[[1.0, 1.0]]]], [[[[0.0, 0.0]]]]],
-        )
-
-        nonleaf_base = torch.tensor([[[0.5, -0.5]]], requires_grad=True)
-        nonleaf = nonleaf_base.sin()
-        with self.assertRaisesRegex(RuntimeError, message):
-            nonleaf.tanh()
-        nonleaf.sum().backward()
-        np.testing.assert_allclose(
-            np.asarray(nonleaf_base.grad),
-            np.cos(np.asarray([[[0.5, -0.5]]], dtype=np.float32)),
         )
 
         rank_four_nonleaf_base = torch.tensor([[[[0.5, -0.5]]]], requires_grad=True)

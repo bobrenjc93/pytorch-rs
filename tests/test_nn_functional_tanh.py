@@ -443,16 +443,6 @@ class FunctionalTanhTests(unittest.TestCase):
             [[[[[1.0, 1.0]]]], [[[[0.0, 0.0]]]]],
         )
 
-        nonleaf_base = torch.tensor([[[0.5, -1.0]]], requires_grad=True)
-        nonleaf = nonleaf_base.sin()
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^tanh\(\): autograd recording is not supported$",
-        ):
-            functional.tanh(nonleaf)
-        nonleaf.sum().backward()
-        self.assertIsNotNone(nonleaf_base.grad)
-
         rank_four_nonleaf_base = torch.tensor([[[[0.5, -1.0]]]], requires_grad=True)
         rank_four_nonleaf = rank_four_nonleaf_base.sin()
         with self.assertRaisesRegex(

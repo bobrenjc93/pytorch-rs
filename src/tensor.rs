@@ -1821,20 +1821,6 @@ impl Tensor {
         self.logical_values().all(f32::is_finite)
     }
 
-    fn is_finite_owned_leaf(&self) -> bool {
-        // Factory-created leaves span their complete allocation. Recorded
-        // views are non-leaves, while unrecorded views can dynamically inherit
-        // a source flag without leaf metadata.
-        if !self.is_finite_owned() {
-            return false;
-        }
-
-        let Some(metadata) = self.autograd.as_deref() else {
-            return false;
-        };
-        matches!(&metadata.kind, AutogradKind::Leaf { .. })
-    }
-
     fn is_supported_sigmoid_autograd_input(&self) -> bool {
         if !self.is_finite_owned() {
             return false;
@@ -1849,8 +1835,18 @@ impl Tensor {
         }
     }
 
-    fn is_finite_owned_leaf_with_max_rank(&self, max_rank: usize) -> bool {
-        self.shape.len() <= max_rank && self.is_finite_owned_leaf()
+    fn is_supported_tanh_autograd_input(&self) -> bool {
+        if !self.is_finite_owned() {
+            return false;
+        }
+
+        let Some(metadata) = self.autograd.as_deref() else {
+            return false;
+        };
+        match &metadata.kind {
+            AutogradKind::Leaf { .. } => self.shape.len() <= 4,
+            AutogradKind::NonLeaf { .. } => self.shape.len() <= 3,
+        }
     }
 
     fn record_transform(
@@ -5451,10 +5447,10 @@ impl Tensor {
     /// # Errors
     ///
     /// Returns an error when gradient recording is enabled for an input other
-    /// than a finite, owned CPU float32 leaf with rank at most four, or when
-    /// result metadata or storage allocation fails.
+    /// than a finite, owned CPU float32 leaf with rank at most four or non-leaf
+    /// with rank at most three, or when result metadata or storage allocation fails.
     pub fn tanh(&self) -> Result<Self, TensorError> {
-        if self.records_grad() && !self.is_finite_owned_leaf_with_max_rank(4) {
+        if self.records_grad() && !self.is_supported_tanh_autograd_input() {
             return Err(TensorError::AutogradRecordingUnsupported { operation: "tanh" });
         }
         let output = self.unary_map(tanh_value)?;
@@ -7748,7 +7744,7 @@ fn apply_sigmoid_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<
 }
 
 fn apply_tanh_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
-    // Supported tanh leaves save contiguous outputs through rank four. Keep the
+    // Supported tanh inputs save contiguous outputs through rank four. Keep the
     // generic fallback because the saved-output node itself is layout-agnostic.
     if let Some(saved_values) = output.contiguous_slice() {
         debug_assert_eq!(saved_values.len(), upstream.len());
@@ -15056,6 +15052,123 @@ mod tests {
                 .map(|index| saved_strided.value_at_linear_index(index))
                 .eq([8.0, 12.0, 9.0, 13.0, 10.0, 14.0, 11.0, 15.0])
         );
+    }
+
+    #[test]
+    fn tanh_nonleaf_compositions_weight_accumulate_and_release_graphs() {
+        let inputs = [-0.0, 0.0, -0.5, 0.5, -9.0, 9.0, -100.0, 100.0];
+        let weights = [1.0, -2.0, 0.5, -0.25, 3.0, -4.0, 5.0, -6.0];
+        for shape in [&[][..], &[8], &[2, 4], &[2, 1, 4]] {
+            let cases: Vec<Vec<f32>> = if shape.is_empty() {
+                inputs.iter().map(|&value| vec![value]).collect()
+            } else {
+                vec![inputs.to_vec()]
+            };
+            for data in cases {
+                for operation in ["negation", "addition", "tanh"] {
+                    let leaf = Tensor::from_vec(data.clone(), shape)
+                        .unwrap()
+                        .with_requires_grad(true);
+                    let weight = Tensor::from_vec(weights[..data.len()].to_vec(), shape).unwrap();
+                    for pass in [1.0, 2.0] {
+                        let parent = match operation {
+                            "negation" => leaf.negate().unwrap(),
+                            "addition" => leaf.add(&leaf).unwrap(),
+                            _ => leaf.tanh().unwrap(),
+                        };
+                        assert!(!parent.is_leaf());
+                        let output = parent.tanh().unwrap();
+                        assert!(output.requires_grad());
+                        assert!(!output.is_leaf());
+                        assert_eq!(output.shape(), shape);
+                        assert!(!output.shares_storage_with(&parent));
+                        #[cfg(feature = "python-bindings")]
+                        assert_eq!(output.grad_fn_name(), Some("TanhBackward0"));
+
+                        // Two uses of one output must meet at the saved-output node.
+                        let loss = output.add(&output).unwrap().mul(&weight).unwrap().sum();
+                        let sibling = output.sum();
+                        loss.backward().unwrap();
+                        let gradient = leaf.grad().unwrap().unwrap().try_to_vec().unwrap();
+                        for (index, &value) in data.iter().enumerate() {
+                            let x = f64::from(value);
+                            let (parent_value, parent_derivative) = match operation {
+                                "negation" => (-x, -1.0),
+                                "addition" => (x + x, 2.0),
+                                _ => (x.tanh(), 1.0 / x.cosh().powi(2)),
+                            };
+                            let expected =
+                                pass * 2.0 * f64::from(weights[index]) * parent_derivative
+                                    / parent_value.cosh().powi(2);
+                            assert!(
+                                (f64::from(gradient[index]) - expected).abs() < 2e-6,
+                                "{operation}, {shape:?}, {value}: {} != {expected}",
+                                gradient[index]
+                            );
+                            assert!(
+                                (f64::from(output.as_slice()[index]) - parent_value.tanh()).abs()
+                                    < 2e-7
+                            );
+                        }
+                        assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+                        assert_eq!(sibling.backward(), Err(TensorError::BackwardGraphFreed));
+                        assert_eq!(
+                            leaf.grad().unwrap().unwrap().try_to_vec().unwrap(),
+                            gradient
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn tanh_empty_nonleaf_compositions_release_graphs() {
+        for shape in [
+            &[0][..],
+            &[0, 2],
+            &[2, 0],
+            &[0, 1, 2],
+            &[2, 0, 1],
+            &[2, 1, 0],
+        ] {
+            for operation in ["negation", "addition", "tanh"] {
+                let leaf = Tensor::zeros(shape).unwrap().with_requires_grad(true);
+                let parent = match operation {
+                    "negation" => leaf.negate().unwrap(),
+                    "addition" => leaf.add(&leaf).unwrap(),
+                    _ => leaf.tanh().unwrap(),
+                };
+                let output = parent.tanh().unwrap();
+                assert_eq!(output.shape(), shape);
+                assert!(output.requires_grad());
+                let loss = output.mul(&Tensor::zeros(shape).unwrap()).unwrap().sum();
+                loss.backward().unwrap();
+                let gradient = leaf.grad().unwrap().unwrap();
+                assert_eq!(gradient.shape(), shape);
+                assert!(gradient.as_slice().is_empty());
+                assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+            }
+        }
+    }
+
+    #[test]
+    fn tanh_rejects_nonfinite_nonleaves_without_consuming_parent_graph() {
+        for shape in [&[][..], &[1], &[1, 1], &[1, 1, 1]] {
+            for value in [f32::INFINITY, f32::NEG_INFINITY, f32::NAN, f32::MAX] {
+                let leaf = Tensor::from_vec(vec![value], shape)
+                    .unwrap()
+                    .with_requires_grad(true);
+                let parent = leaf.add(&leaf).unwrap();
+                assert_eq!(
+                    parent.tanh(),
+                    Err(TensorError::AutogradRecordingUnsupported { operation: "tanh" })
+                );
+                assert!(leaf.grad().unwrap().is_none());
+                parent.sum().backward().unwrap();
+                assert_eq!(leaf.grad().unwrap().unwrap().as_slice(), [2.0]);
+            }
+        }
     }
 
     #[cfg(feature = "python-bindings")]
