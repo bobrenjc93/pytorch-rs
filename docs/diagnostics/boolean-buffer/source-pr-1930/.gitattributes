@@ -1,0 +1,3 @@
+# Preserve original log formatting; SHA256SUMS and its audit enforce the bytes.
+target/baseline-.venv-test.log whitespace=-blank-at-eol
+target/rust-tests.log whitespace=-blank-at-eof

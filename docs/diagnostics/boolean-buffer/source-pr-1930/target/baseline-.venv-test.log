@@ -1,0 +1,48 @@
+FF
+======================================================================
+FAIL: test_numeric_buffers_match_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_numeric_buffers_match_pytorch_2_13) (case='bool including noncanonical bytes')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0398d5/tests/test_tensor_buffer_reference.py", line 31, in assert_matches
+    np.testing.assert_array_equal(np.asarray(actual), expected.numpy())
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0398d5/.venv/lib64/python3.12/site-packages/numpy/testing/_private/utils.py", line 1128, in assert_array_equal
+    assert_array_compare(operator.__eq__, actual, desired, err_msg=err_msg,
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0398d5/.venv/lib64/python3.12/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError: 
+Arrays are not equal
+
+Mismatched elements: 2 / 6 (33.3%)
+Mismatch at indices:
+ [2]: 0.0 (ACTUAL), 1.0 (DESIRED)
+ [4]: 0.0 (ACTUAL), 1.0 (DESIRED)
+Max absolute difference among violations: 1.
+Max relative difference among violations: 1.
+ ACTUAL: array([0., 1., 0., 1., 0., 1.], dtype=float32)
+ DESIRED: array([0., 1., 1., 1., 1., 1.], dtype=float32)
+
+======================================================================
+FAIL: test_numeric_buffers_match_pytorch_2_13 (tests.test_tensor_buffer_reference.TensorBufferReferenceTests.test_numeric_buffers_match_pytorch_2_13) (case='native-prefixed bool')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0398d5/tests/test_tensor_buffer_reference.py", line 31, in assert_matches
+    np.testing.assert_array_equal(np.asarray(actual), expected.numpy())
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0398d5/.venv/lib64/python3.12/site-packages/numpy/testing/_private/utils.py", line 1128, in assert_array_equal
+    assert_array_compare(operator.__eq__, actual, desired, err_msg=err_msg,
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0398d5/.venv/lib64/python3.12/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError: 
+Arrays are not equal
+
+Mismatched elements: 1 / 2 (50%)
+Mismatch at index:
+ [0]: 0.0 (ACTUAL), 1.0 (DESIRED)
+Max absolute difference among violations: 1.
+Max relative difference among violations: 1.
+ ACTUAL: array([0., 1.], dtype=float32)
+ DESIRED: array([1., 1.], dtype=float32)
+
+----------------------------------------------------------------------
+Ran 1 test in 0.024s
+
+FAILED (failures=2)

@@ -24,7 +24,13 @@ smoke checks establish no performance credit.
 
 ## Same-code reproduction
 
-On 2026-09-09, this job started at
+The reproduction and validation below are the historical record of source
+PR #1931, `85c8c1e5842ac394f182232dadb7c45d0a6c6b89`, before integration with
+the boolean repair in PR #1930. Counts, paths, and failures describe that
+source checkout, not the combined checkout. See
+[combined validation](boolean-stack-integration.md) for the integrated results.
+
+On 2026-09-09, the source job started at
 `03075466b077c69ed1f7a4f047ebb33004d3306b`. Before edits, the benchmark, validator,
 stack/buffer tests, production Python/Rust code, manifests, and lockfiles were
 verified identical to main `28fb6b923843989f9536608a75f3d240ce4c8a7e`.
@@ -84,9 +90,12 @@ placed inside the exact historical-report index. The link was moved to the
 general provenance policy; all 12 documentation checks subsequently passed
 without changing their assertions. The final 26-test run covers the completed
 path/fixture refinements and documentation repair. The only unresolved failures
-are the two boolean-buffer subcases reproduced before edits; their tests and
-production behavior remain unchanged. The full suite was not repeated on 3.14.
+at that source revision were the two boolean-buffer subcases reproduced before
+edits; their tests and production behavior were unchanged by PR #1931. The
+source job did not repeat the full suite on 3.14.
 
-Local logs and environment/build identities are retained in `target/evidence/`,
+That source job recorded local logs and environment/build identities in its
+`target/evidence/`,
 including `baseline-312.log`, `canonical-312.log`, `final-focused-312.log`, and
-`validator-314.log`. These are validation records, not published measurements.
+`validator-314.log`. These source-local paths are validation history, not
+published measurements or files present in the combined checkout.

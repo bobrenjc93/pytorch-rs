@@ -1,5 +1,13 @@
 # Boolean memoryview conversion
 
+This report records source PR #1930 at
+`ed078e1a2dec6ad7c01f6c74c36cce52165d6fc3`, based on
+`03075466b077c69ed1f7a4f047ebb33004d3306b`. Its test counts and timings are
+historical source-PR observations, not measurements of the combined checkout.
+The [original evidence bundle](diagnostics/boolean-buffer/source-pr-1930/README.md)
+preserves the driver, raw measurements, setup/build/test logs, and post-commit
+verification. See [combined validation](boolean-stack-integration.md) separately.
+
 `torch.tensor(view, dtype=torch.float32)` must follow the running interpreter's
 memoryview item conversion for `?` and `@?`. Noncanonical boolean storage does
 not have a portable byte-level interpretation, even within one Python minor
