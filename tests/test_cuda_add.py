@@ -230,7 +230,7 @@ class CudaAddTests(Comparison, unittest.TestCase):
                 with self.assertRaises(NotImplementedError):
                     native.ones(shape, requires_grad=True).to("cuda:0")
         x = native.ones((3, 5)).to("cuda:0")
-        for left, right in ((x, native.ones((5,)).to("cuda:0")),
+        for left, right in ((x, native.ones((1, 5)).to("cuda:0")),
                             (x, x.reshape(5, 3)), (x.t(), x.t()),
                             (x[:, 1:4], x[:, 1:4])):
             for call in (lambda: left + right, lambda: left.add(right),
@@ -251,6 +251,9 @@ x = m.tensor([99., 1.25, -2., 3.5]).to("cuda:0")[1:]
 y = m.tensor([-1., 4., 0.5]).to("cuda:0")
 for z in (x+y, x.add(y), m.add(x,y,alpha=1.0)):
     assert z.cpu().tolist() == [0.25, 2., 4.]
+matrix = m.tensor([[1., 2., 3.], [-1., -2., -3.]]).to("cuda:0")
+for z in (matrix+y, y+matrix, matrix.add(y), m.add(y, matrix)):
+    assert z.cpu().tolist() == [[0., 6., 3.5], [-2., 2., -2.5]]
 assert "torch" not in sys.modules
 '''
         result = subprocess.run([sys.executable, "-c", script], capture_output=True,

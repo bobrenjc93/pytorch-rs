@@ -4218,14 +4218,15 @@ impl Tensor {
         )
     }
 
-    /// Adds CPU tensors with trailing-dimension broadcasting, or same-shape
-    /// contiguous CUDA float32 tensors without autograd. CUDA completes before return.
+    /// Adds CPU tensors with trailing-dimension broadcasting, or contiguous CUDA
+    /// float32 tensors of equal shape or (M, N) and (N,), without autograd.
+    /// CUDA completes before return.
     ///
     /// # Errors
     ///
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails. CUDA also rejects mixed devices,
-    /// noncontiguous or unequal shapes, and autograd, and reports driver errors.
+    /// noncontiguous or other broadcast shapes, and autograd, and reports driver errors.
     pub fn add(&self, other: &Self) -> Result<Self, TensorError> {
         if self.is_cuda() || other.is_cuda() {
             return self.add_cuda(other);
@@ -4243,8 +4244,6 @@ impl Tensor {
             Some("only float32 is supported")
         } else if self.requires_grad() || other.requires_grad() {
             Some("autograd is unsupported")
-        } else if self.shape != other.shape {
-            Some("inputs must have the same shape; broadcasting is unsupported")
         } else if !self.is_contiguous() || !other.is_contiguous() {
             Some("inputs must be contiguous")
         } else {
@@ -4253,20 +4252,50 @@ impl Tensor {
         if let Some(reason) = reason {
             return Err(TensorError::UnsupportedCudaAddition { reason });
         }
-        let shape = try_clone_result_shape(&self.shape, self.elements)?;
-        let strides = contiguous_strides(&shape, self.elements)?;
-        let storage = self.storage.cuda_add_float32(
-            self.offset,
-            &other.storage,
-            other.offset,
-            self.elements,
+        // Normalize only the supported trailing-vector case. Equal shapes keep
+        // the existing vectorized/replay path, including scalars and empty views.
+        let (left, right, trailing_columns) = if self.shape == other.shape {
+            (self, other, None)
+        } else {
+            match (self.shape.as_slice(), other.shape.as_slice()) {
+                ([_, columns], [n]) if columns == n => (self, other, Some(*columns)),
+                ([n], [_, columns]) if columns == n => (other, self, Some(*columns)),
+                _ => {
+                    return Err(TensorError::UnsupportedCudaAddition {
+                        reason: "inputs must have the same shape or shapes (M, N) and (N,)",
+                    });
+                }
+            }
+        };
+        let shape = try_clone_result_shape(&left.shape, left.elements)?;
+        let strides = if trailing_columns.is_some() {
+            // Contiguous singleton/empty views can have noncanonical strides.
+            // Match TensorIterator's output ordering without changing the
+            // same-shape fast path; physical indexing is still contiguous.
+            elementwise_output_strides(
+                &shape,
+                &[
+                    ElementwiseLayout::from_tensor(left),
+                    ElementwiseLayout::from_tensor(right),
+                ],
+                left.elements,
+            )?
+        } else {
+            contiguous_strides(&shape, left.elements)?
+        };
+        let storage = left.storage.cuda_add_float32(
+            left.offset,
+            &right.storage,
+            right.offset,
+            left.elements,
+            trailing_columns,
         )?;
         Ok(Self {
             storage: Arc::new(storage),
             shape,
             strides,
             offset: 0,
-            elements: self.elements,
+            elements: left.elements,
             output_nr: 0,
             leaf_requires_grad: requires_grad_flag(false),
             view_requires_grad: None,

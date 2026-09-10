@@ -1,0 +1,42 @@
+// Appended to add.ptx for shared version/target directives. General (M, N) + (N,)
+// addition: 64-bit indexing and grid strides, round-to-nearest without FTZ.
+// The caller handles empty tensors without a launch; columns is positive here.
+.visible .entry add_trailing_vector_f32(
+    .param .u64 matrix, .param .u64 vector, .param .u64 output,
+    .param .u64 count, .param .u64 columns
+) {
+    .reg .pred done;
+    .reg .b32 tid, block, width, blocks;
+    .reg .b64 a, b, c, n, cols, i, step, offset, column, pa, pb, pc, lane;
+    .reg .f32 x, y, z;
+    ld.param.u64 a, [matrix];
+    ld.param.u64 b, [vector];
+    ld.param.u64 c, [output];
+    ld.param.u64 n, [count];
+    ld.param.u64 cols, [columns];
+    mov.u32 tid, %tid.x;
+    mov.u32 block, %ctaid.x;
+    mov.u32 width, %ntid.x;
+    mov.u32 blocks, %nctaid.x;
+    mul.wide.u32 i, block, width;
+    cvt.u64.u32 lane, tid;
+    add.u64 i, i, lane;
+    mul.wide.u32 step, blocks, width;
+loop:
+    setp.ge.u64 done, i, n;
+    @done bra end;
+    shl.b64 offset, i, 2;
+    add.u64 pa, a, offset;
+    add.u64 pc, c, offset;
+    rem.u64 column, i, cols;
+    shl.b64 offset, column, 2;
+    add.u64 pb, b, offset;
+    ld.global.f32 x, [pa];
+    ld.global.f32 y, [pb];
+    add.rn.f32 z, x, y;
+    st.global.f32 [pc], z;
+    add.u64 i, i, step;
+    bra loop;
+end:
+    ret;
+}

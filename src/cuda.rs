@@ -256,6 +256,7 @@ impl CudaFloat32Storage {
         other: &Self,
         right_offset: usize,
         elements: usize,
+        trailing_columns: Option<usize>,
     ) -> Result<Self, TensorError> {
         if self.device_index != other.device_index {
             return Err(TensorError::UnsupportedCudaAddition {
@@ -264,9 +265,18 @@ impl CudaFloat32Storage {
         }
         // Empty views may point beyond storage; no pointer is formed or read.
         if elements != 0 {
-            for (storage, offset) in [(self, left_offset), (other, right_offset)] {
+            let right_elements = trailing_columns.unwrap_or(elements);
+            if trailing_columns.is_some()
+                && (right_elements == 0 || !elements.is_multiple_of(right_elements))
+            {
+                return Err(TensorError::IndexCalculationOverflow);
+            }
+            for (storage, offset, count) in [
+                (self, left_offset, elements),
+                (other, right_offset, right_elements),
+            ] {
                 if offset
-                    .checked_add(elements)
+                    .checked_add(count)
                     .is_none_or(|end| end > storage.elements)
                 {
                     return Err(TensorError::IndexCalculationOverflow);
@@ -278,12 +288,22 @@ impl CudaFloat32Storage {
             // SAFETY: bounds and device checked above, output is fresh and all
             // three storages remain borrowed/owned until stream completion.
             let (launched, replay) = unsafe {
-                pointwise::launch_add(
-                    (self.data_ptr + left_offset * 4) as u64,
-                    (other.data_ptr + right_offset * 4) as u64,
-                    result.data_ptr as u64,
-                    elements,
-                )
+                let left = (self.data_ptr + left_offset * 4) as u64;
+                let right = (other.data_ptr + right_offset * 4) as u64;
+                if let Some(columns) = trailing_columns {
+                    (
+                        pointwise::launch_add_trailing_vector(
+                            left,
+                            right,
+                            result.data_ptr as u64,
+                            elements,
+                            columns,
+                        ),
+                        None,
+                    )
+                } else {
+                    pointwise::launch_add(left, right, result.data_ptr as u64, elements)
+                }
             };
             // Always wait, including after a launch error, before any borrowed
             // input or unpublished output can be dropped or cached. Explicit
@@ -737,6 +757,47 @@ mod tests {
     }
 
     #[test]
+    fn trailing_vector_checks_independent_bounds() {
+        if super::device_count() == 0 {
+            eprintln!("skipping CUDA trailing-vector bounds: no CUDA runtime/device");
+            return;
+        }
+        let matrix = super::CudaFloat32Storage::from_host(&[99.0, 1.0, 2.0, 3.0, 4.0], 0).unwrap();
+        let vector = super::CudaFloat32Storage::from_host(&[99.0, 10.0, 20.0], 0).unwrap();
+        assert_eq!(
+            matrix
+                .add(1, &vector, 1, 4, Some(2))
+                .unwrap()
+                .copy_range(0, 4)
+                .unwrap(),
+            [11.0, 22.0, 13.0, 24.0]
+        );
+        for (a, b, count, columns) in [
+            (2, 1, 4, 2),
+            (1, 2, 4, 2),
+            (usize::MAX, 1, 4, 2),
+            (1, usize::MAX, 4, 2),
+            (1, 1, 4, 0),
+            (1, 0, 4, 3),
+            (0, 0, 4, usize::MAX),
+        ] {
+            assert!(matches!(
+                matrix.add(a, &vector, b, count, Some(columns)),
+                Err(crate::TensorError::IndexCalculationOverflow)
+            ));
+        }
+        for columns in [0, 2, usize::MAX] {
+            assert_eq!(
+                matrix
+                    .add(usize::MAX, &vector, usize::MAX, 0, Some(columns))
+                    .unwrap()
+                    .elements,
+                0
+            );
+        }
+    }
+
+    #[test]
     fn addition_checks_storage_bounds_and_restores_device() {
         if super::device_count() == 0 {
             eprintln!("skipping CUDA addition bounds: no CUDA runtime/device");
@@ -746,16 +807,19 @@ mod tests {
         let right = super::CudaFloat32Storage::from_host(&[3.0, 7.5, -8.0], 0).unwrap();
         for (a, b, n) in [(3, 0, 1), (0, 3, 1), (usize::MAX, 0, 2), (0, 0, 4)] {
             assert!(matches!(
-                left.add(a, &right, b, n),
+                left.add(a, &right, b, n, None),
                 Err(crate::TensorError::IndexCalculationOverflow)
             ));
         }
         assert_eq!(
-            left.add(1, &right, 0, 2).unwrap().copy_range(0, 2).unwrap(),
+            left.add(1, &right, 0, 2, None)
+                .unwrap()
+                .copy_range(0, 2)
+                .unwrap(),
             [0.5, 11.5]
         );
         assert_eq!(
-            left.add(usize::MAX, &right, usize::MAX, 0)
+            left.add(usize::MAX, &right, usize::MAX, 0, None)
                 .unwrap()
                 .elements,
             0
@@ -770,10 +834,10 @@ mod tests {
         }
         let runtime = super::runtime().unwrap();
         let _current = runtime.guard(1).unwrap();
-        let output = left.add(0, &right, 0, 3).unwrap();
+        let output = left.add(0, &right, 0, 3, None).unwrap();
         let other_device = super::CudaFloat32Storage::zeros(3, 1).unwrap();
         assert!(matches!(
-            left.add(0, &other_device, 0, 3),
+            left.add(0, &other_device, 0, 3, None),
             Err(crate::TensorError::UnsupportedCudaAddition { .. })
         ));
         assert_eq!(output.copy_range(0, 3).unwrap(), [4.25, 5.0, -4.0]);
