@@ -1,6 +1,7 @@
 """Public native rank-2 CUDA matmul differentials; scoring inputs are unchanged."""
 import ctypes
 import gc
+import os
 import subprocess
 import sys
 import unittest
@@ -96,6 +97,68 @@ class CudaMatmulTests(Comparison, unittest.TestCase):
             b, tb = [upload(mod, weights, (k, 7)) for mod in (native, torch)]
             self.compare(a @ b, ta @ tb)
 
+    def test_wide_decimal_products(self):
+        # Root/evaluator counterexamples plus repeated non-binary fractions.
+        widths = (4096, 8192, 16384, 32768, 65536, 65539, 131072, 262144, 1000000)
+        for k in widths:
+            for value, weight in ((0.1, 1.), (-0.1, 1.), (0.1, 0.1),
+                                  (-0.1, 0.1), (1. / 3., -0.2)):
+                with self.subTest(k=k, value=value, weight=weight):
+                    a, ta = [mod.full((1, k), value).to("cuda:0") for mod in (native, torch)]
+                    b, tb = [mod.full((k, 1), weight).to("cuda:0") for mod in (native, torch)]
+                    self.compare_product(a @ b, ta @ tb)
+                    self.compare(a, ta)
+                    self.compare(b, tb)
+
+    def test_generated_wide_products_and_overlapping_offsets(self):
+        rng = np.random.default_rng(573219)
+        for m, k, n in [(int(rng.integers(2, 6)), int(rng.integers(4096, 90001)),
+                         int(rng.integers(2, 8))) for _ in range(6)]:
+            for shared in (False, True):
+                # Positive/negative decimals with nonzero mean also expose
+                # accumulation drift in each row/column of generated products.
+                av = rng.uniform(-0.2, 0.7, size=7 + max(m*k, k*n)).astype(np.float32)
+                bv = av if shared else rng.uniform(-0.7, 0.2, size=av.size).astype(np.float32)
+                bases = [upload(mod, v, v.shape) for mod in (native, torch) for v in (av, bv)]
+                a, b, ta, tb = [base[3:3+size].reshape(shape) for base, size, shape in
+                               zip(bases, (m*k, k*n, m*k, k*n), ((m,k), (k,n), (m,k), (k,n)))]
+                if shared:
+                    b = bases[0][5:5+k*n].reshape(k, n)
+                    tb = bases[2][5:5+k*n].reshape(k, n)
+                with self.subTest(shape=(m,k,n), shared=shared):
+                    result, second = a @ b, a @ b
+                    self.compare_product(result, ta @ tb)
+                    self.assertNotIn(result.data_ptr(), (a.data_ptr(), b.data_ptr(), second.data_ptr()))
+                    self.compare(bases[0], bases[2])
+                    self.compare(bases[1], bases[3])
+
+    def test_intermediate_overflow_cancellation_and_nonfinite_classification(self):
+        high = np.float32(2.**127)
+        tiny = np.nextafter(np.float32(0), np.float32(1))
+        patterns = ([high, high, -high, -high], [high, -high, high, -high],
+                    [high, high, high, high], [high, high, -high, 0.],
+                    [np.inf, 1., -np.inf, 0.], [np.nan, 1., 0., 0.],
+                    [tiny, tiny, -tiny, tiny], [1.e20, 0.1, -1.e20, 0.1])
+        for k in (4, 1031, 2048, 65539):
+            for pattern in patterns:
+                for m, n in ((1, 1), (3, 5)):
+                    av = np.zeros((m, k), dtype=np.float32)
+                    av[:, :4] = pattern
+                    bv = np.ones((k, n), dtype=np.float32)
+                    a, ta = [upload(mod, av.ravel(), av.shape) for mod in (native, torch)]
+                    b, tb = [upload(mod, bv.ravel(), bv.shape) for mod in (native, torch)]
+                    with self.subTest(k=k, pattern=pattern, shape=(m,n)):
+                        actual, expected = a @ b, ta @ tb
+                        self.compare_product(actual, expected)
+                        x, y = [np.asarray(v.cpu().tolist(), dtype=np.float32) for v in (actual, expected)]
+                        for classification in (np.isfinite, np.isposinf, np.isneginf, np.isnan):
+                            np.testing.assert_array_equal(classification(x), classification(y))
+                        # Subnormal and signed-zero results must not be hidden by atol.
+                        small = np.isfinite(y) & (np.abs(y) < np.finfo(np.float32).tiny)
+                        np.testing.assert_array_equal(x[small].view(np.uint32), y[small].view(np.uint32))
+                        if k in (1031, 2048) and m == n == 1 and pattern is patterns[0]:
+                            self.assertEqual(expected.item(), 0.)
+
     def test_completion_thread_and_allocation_lifetimes(self):
         a = native.full((13, 37), 1.25).to("cuda:0")
         b = native.full((37, 7), 0.5).to("cuda:0")
@@ -156,6 +219,38 @@ class CudaMatmulTests(Comparison, unittest.TestCase):
                 compiled = native.compile(program, backend="eager", fullgraph=fullgraph)
                 with self.assertRaises(NotImplementedError):
                     compiled(a, b)
+
+    def test_optional_blas_discovery_and_load_failure(self):
+        script = """
+import os
+import sys
+import torch_rs as m
+assert 'torch' not in sys.modules
+assert (m.ones((1, 2)) @ m.ones((2, 1))).tolist() == [[2.]]
+a = m.ones((1, 2)).to('cuda:0')
+b = m.ones((2, 1)).to('cuda:0')
+if os.environ.get('TORCH_RS_CUBLAS'):
+    try:
+        a @ b
+    except RuntimeError as error:
+        assert 'cannot load native cuBLAS' in str(error), str(error)
+    else:
+        raise AssertionError('invalid explicit library must fail')
+    # Failed optional loading cannot disable CPU, other CUDA math, or zeros.
+    assert (a + a).cpu().tolist() == [[2., 2.]]
+    assert (m.zeros((2, 0), device='cuda:0') @ m.zeros((0, 3), device='cuda:0')).cpu().tolist() == [[0.]*3]*2
+else:
+    assert (a @ b).cpu().tolist() == [[2.]]
+assert 'torch' not in sys.modules
+"""
+        for missing in (False, True):
+            env = dict(os.environ)
+            env.pop("TORCH_RS_CUBLAS", None)
+            if missing:
+                env["TORCH_RS_CUBLAS"] = os.path.join(os.getcwd(), "target", "absent-cublas.so")
+            result = subprocess.run([sys.executable, "-B", "-c", script], env=env,
+                                    capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_no_pytorch_forwarding(self):
         script = '''

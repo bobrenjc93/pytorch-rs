@@ -7,13 +7,22 @@ matrices, contiguous offset views, overlapping input views, and contiguous
 singleton layouts are supported. The result has fresh contiguous device
 storage, shape `(a.shape[0], b.shape[1])`, offset zero, and no gradients.
 
-One embedded PTX kernel uses a bounded grid with 64-bit grid-stride indexing.
-Each thread computes an output element with float32 round-to-nearest fused
-multiply-adds in increasing inner-dimension order, without flushing subnormals.
-The driver JIT compiles PTX 6.0 targeting `sm_50`; execution needs neither nvcc,
-NVRTC, cuBLAS, nor PyTorch. Accumulation order can differ from cuBLAS, so general
-finite results are compared with tolerances rather than bitwise equality.
-This implementation establishes correctness coverage, with no performance claim.
+Native cuBLAS SGEMM computes the product using float32 accumulation with TF32
+disabled. The row-major matrices are passed as the equivalent column-major
+`Bᵀ Aᵀ` product without copies; the 64-bit cuBLAS API retains wide dimensions.
+This replaces the source PR's serial accumulator, which lost accuracy for long
+decimal sums and disagreed with PyTorch on intermediate overflow. Float64
+accumulation would also change observable float32 overflow behavior.
+
+cuBLAS is loaded lazily only for nonempty, nonzero-inner-dimension matmul.
+Install NVIDIA cuBLAS 12 or 13 alongside the CUDA runtime, or set
+`TORCH_RS_CUBLAS` to its shared library. Discovery checks the optional NVIDIA
+runtime wheel locations and system library names without importing PyTorch.
+CPU operations and the existing CUDA kernels do not require cuBLAS. No nvcc,
+NVRTC, Python PyTorch, or libTorch operator forwarding is used. Handles are
+cached per CUDA context and serialized during submission; the library and
+handles remain alive for the process lifetime. The legacy stream and shared
+completion path protect input/output lifetimes, including failed submissions.
 
 Empty outputs require no launch. A zero inner dimension writes positive zeros
 without forming or reading input addresses. Checked dimension products and
@@ -36,14 +45,23 @@ generated dimensions and values, rectangular products, offsets, singleton and
 empty views, zero inner dimensions, output metadata, source preservation,
 independent allocations, retained views, thread/context lifetimes, stream
 completion, invalid inputs, and compiled-operation rejection. A rectangular
-output exceeding 1,048,576 elements exercises grid-stride iteration. Special
+output exceeding 1,048,576 elements exercises large output indexing. Special
 values include NaNs, infinities, subnormals, signed zeros, and exact binary
-fraction products. A separate two-device test checks guard restoration and
+fraction products. Wide decimal products cover K=4096 through 1,000,000,
+including the reported 65,539 and 262,144 failures, generated rectangular
+products and overlapping offsets. Adversarial tests compare finite/infinite/NaN
+classification and subnormal bits, including the K=1031/2048 intermediate
+overflow cancellation probes. A separate two-device test checks guard restoration and
 mixed-device rejection. Hardware-only tests skip clearly without CUDA.
 
-## Clean-commit capture
+## Historical source PR capture
 
-The current [correctness report](diagnostics/cuda-matmul/postcommit-a267ab89/evaluation.json)
+These records belong to PR #1952, before the composite repair. They are kept
+unchanged with their original source/build identities and paths. They do not
+qualify the combined implementation or establish its performance. A fresh
+clean-commit capture is still required after Burner commits the repair.
+
+The source [correctness report](diagnostics/cuda-matmul/postcommit-a267ab89/evaluation.json)
 measures clean implementation commit **`a267ab89a31573e68d0045f1cbcf55d8ea243307`**.
 The unchanged six-case evaluator passed **6/6 cases at all three seeds**, including
 `cuda_f32_matmul`. The existing repository capture procedure selects seeds
@@ -68,9 +86,10 @@ the extension SHA-256 is
 
 All captures and focused checks completed while the tracked checkout was clean.
 Reports were first written under `target/cuda-matmul-postcommit/` and copied
-byte-for-byte into the evidence directory afterward. This subsequent change
-contains only evidence and documentation. Implementation, tests, dependencies,
-benchmark harnesses, evaluators, and Burner-managed artifacts were not changed.
+byte-for-byte into the evidence directory afterward. The source PR’s subsequent publication
+contained only evidence and documentation. Implementation, tests, dependencies,
+benchmark harnesses, evaluators, and Burner-managed artifacts were not changed
+in that publication.
 
 Host: NVIDIA H100, compute capability 9.0, driver 580.82.07. Both workers used
 worktree-local CPython 3.12.12; the reference used worktree-local PyTorch
@@ -81,7 +100,7 @@ was 12.6.85 and was unused. The Cargo registry was reused; the native build
 target was empty and the evaluator created a new temporary CUDA JIT cache.
 The local Python environment was installed from the unchanged lockfile.
 Existing toolchain executables were read-only; every generated artifact and
-cache stayed inside this worktree.
+cache stayed inside the original source worktree.
 
 Focused clean-commit checks are bound to the same source and extension by the
 [checks receipt](diagnostics/cuda-matmul/postcommit-a267ab89/checks-record.json):
@@ -101,8 +120,8 @@ The original [development report](diagnostics/cuda-matmul/evaluation.json),
 [build log](diagnostics/cuda-matmul/build.log) remain unchanged as superseded
 records. They measured base `96205cb01e85` plus the uncommitted implementation,
 with the same production fingerprint above, using the original paths recorded
-there. They do not supply the required clean-commit capture; the new capture
-above does. Their original three-seed 6/6 result is preserved without rewriting
+there. They do not supply the required clean-commit capture; the historical clean-source capture
+above did for that source revision. Their original three-seed 6/6 result is preserved without rewriting
 its source, executable, import, or runtime identities.
 
 The author's broader checks below were also preserved unchanged. They were not
@@ -151,3 +170,45 @@ test, `tests.test_cuda_matmul` on GPU 0, its device test on GPUs 0,1, and
 `tests.test_cuda_math_evaluator`. Publish artifacts only after measurement, so
 documentation writes do not dirty the measured checkout. Independent review and
 normal merge gates remain separate from this evidence step.
+
+## Composite repair validation and timings
+
+After Burner commits implementation, tests, and harness, run the clean capture
+above with the worktree-local environment. Then, using that build receipt:
+
+```bash
+export TRITON_CACHE_DIR="$PWD/target/matmul-triton-cache"
+export TORCHINDUCTOR_CACHE_DIR="$PWD/target/matmul-inductor-cache"
+CUDA_VISIBLE_DEVICES=0 PYTHONPATH=python .venv/bin/python -B \
+  scripts/benchmark_cuda_matmul.py \
+  --build-record target/cuda-matmul-recapture/build-record.json \
+  --output target/cuda-matmul-recapture/public-timings.json
+```
+
+The [timing harness](../scripts/benchmark_cuda_matmul.py) requires clean code
+by default. `--allow-dirty` records development diagnostics explicitly and
+cannot produce clean-commit qualification. It refuses stale build receipts,
+nonlocal imports/runtime/cache paths, and overwriting a previous attempt.
+It reports every fixed and generated square/rectangular shape at offsets zero
+and three, including 512-, 1024-, and 2048-square products. Both implementations
+use the public `@` API with equal float32 inputs and TF32 disabled, ten warmups
+per order, two reversed orders, 31 five-call blocks per order, and symmetric
+synchronization. Outputs and original inputs are materialized and checked.
+Raw samples, medians and dispersion accompany the fixed equal-weight geometric
+mean of capped reference/native median ratios. This is a scoped diagnostic,
+not a substitute for Burner's performance gate.
+
+Run the full Rust suites with and without `python-bindings`, the full Python
+compatibility suite, the focused matmul/rsqrt/linear differentials, and the
+separate two-GPU matmul test. Retain failed attempts and corrected receipts.
+The source linear fixes already preserve omitted versus explicit empty keyword
+arguments and registered-callable identity; its saved-original and wrapper
+regressions remain part of combined validation. CPU rsqrt retains first-order
+saved-output backward, now reflected in the feature-coverage contract.
+
+Final qualification remains Burner's responsibility: clean combined-commit
+capture, independent review, all ten current-definition gates against main
+(including correctness 100, polish 97, performance 97, hardware 4), and exact-head
+CI. Source PR captures above and uncommitted development runs do not waive those
+requirements. Publish evidence only after capture and change no measured code
+or harness without a new capture. No evaluator or corpus changes are needed.

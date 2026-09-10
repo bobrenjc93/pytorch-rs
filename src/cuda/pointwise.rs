@@ -35,7 +35,7 @@ struct Driver {
 struct Module {
     context: usize,
     _handle: usize,
-    functions: [usize; 8],
+    functions: [usize; 7],
 }
 
 enum Kernel {
@@ -45,7 +45,6 @@ enum Kernel {
     AddTrailingVector,
     SumRows,
     SumRowsFinalize,
-    Matmul,
     #[cfg(any(feature = "python-bindings", test))]
     Negate,
 }
@@ -87,6 +86,30 @@ fn driver() -> Result<&'static Driver, TensorError> {
         })
 }
 
+pub(super) fn current_context() -> Result<usize, TensorError> {
+    let driver = driver()?;
+    let mut context = std::ptr::null_mut();
+    // SAFETY: writable context handle; the caller holds the runtime device guard.
+    driver.check(
+        unsafe { (driver.context)(&raw mut context) },
+        "cuCtxGetCurrent",
+    )?;
+    if context.is_null() {
+        // A new host thread can hit the allocation cache without calling
+        // cudaMalloc; cudaGetDevice alone does not bind a driver context.
+        // SAFETY: cudaFree(NULL) initializes the guarded runtime device's
+        // primary context without releasing any allocation. Do this only
+        // on the cold-thread path, before loading or launching a module.
+        let runtime = super::runtime()?;
+        runtime.check(unsafe { (runtime.free)(std::ptr::null_mut()) }, "cudaFree")?;
+        driver.check(
+            unsafe { (driver.context)(&raw mut context) },
+            "cuCtxGetCurrent",
+        )?;
+    }
+    Ok(context as usize)
+}
+
 impl Driver {
     fn check(&self, status: Status, operation: &'static str) -> Result<(), TensorError> {
         if status == 0 {
@@ -106,40 +129,19 @@ impl Driver {
     }
 
     fn function(&self, kernel: Kernel) -> Result<usize, TensorError> {
-        let mut context = std::ptr::null_mut();
-        // SAFETY: writable context handle; the caller holds the runtime device guard.
-        self.check(
-            unsafe { (self.context)(&raw mut context) },
-            "cuCtxGetCurrent",
-        )?;
-        if context.is_null() {
-            // A new host thread can hit the allocation cache without calling
-            // cudaMalloc; cudaGetDevice alone does not bind a driver context.
-            // SAFETY: cudaFree(NULL) initializes the guarded runtime device's
-            // primary context without releasing any allocation. Do this only
-            // on the cold-thread path, before loading or launching a module.
-            let runtime = super::runtime()?;
-            runtime.check(unsafe { (runtime.free)(std::ptr::null_mut()) }, "cudaFree")?;
-            self.check(
-                unsafe { (self.context)(&raw mut context) },
-                "cuCtxGetCurrent",
-            )?;
-        }
+        let context = current_context()?;
         let mut modules = self
             .modules
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(entry) = modules
-            .iter()
-            .find(|entry| entry.context == context as usize)
-        {
+        if let Some(entry) = modules.iter().find(|entry| entry.context == context) {
             return Ok(entry.functions[kernel as usize]);
         }
         modules
             .try_reserve(1)
             .map_err(|_| TensorError::AllocationFailed { elements: 1 })?;
         let mut module = std::ptr::null_mut();
-        let mut functions = [0; 8];
+        let mut functions = [0; 7];
         // SAFETY: static NUL-terminated PTX and entry names; writable handles.
         unsafe {
             self.check(
@@ -153,8 +155,6 @@ impl Driver {
                         include_str!("add_trailing_vector.ptx"),
                         "\n",
                         include_str!("sum_rows.ptx"),
-                        "\n",
-                        include_str!("matmul.ptx"),
                         "\n",
                         include_str!("neg.ptx"),
                         "\0"
@@ -171,7 +171,6 @@ impl Driver {
                 c"add_trailing_vector_f32",
                 c"sum_rows_f32",
                 c"sum_rows_finalize_f32",
-                c"matmul_f32",
                 c"neg_f32",
             ]) {
                 let mut function = std::ptr::null_mut();
@@ -186,7 +185,7 @@ impl Driver {
             }
         }
         modules.push(Module {
-            context: context as usize,
+            context,
             _handle: module as usize,
             functions,
         });
@@ -379,55 +378,6 @@ pub(super) unsafe fn launch_mul_scalar(
     let blocks = u32::try_from(elements.div_ceil(256).min(4096)).expect("bounded grid");
     // SAFETY: parameters survive the launch argument copy; the cached function
     // belongs to this context. CU_STREAM_LEGACY matches runtime copies/zero-fill.
-    driver.check(
-        unsafe {
-            (driver.launch)(
-                function as *mut c_void,
-                blocks,
-                1,
-                1,
-                256,
-                1,
-                1,
-                0,
-                std::ptr::without_provenance_mut(1),
-                arguments.as_mut_ptr(),
-                std::ptr::null_mut(),
-            )
-        },
-        "cuLaunchKernel",
-    )
-}
-
-/// # Safety
-/// Inputs cover the checked rank-2 product on the guarded device; output is
-/// disjoint and covers `elements` floats. For inner=0 inputs may be null. The
-/// caller must retain all allocations through legacy-stream completion,
-/// including on launch errors. Nonzero elements requires nonzero columns.
-pub(super) unsafe fn launch_matmul(
-    mut left: u64,
-    mut right: u64,
-    mut output: u64,
-    elements: usize,
-    inner: usize,
-    columns: usize,
-) -> Result<(), TensorError> {
-    let driver = driver()?;
-    let function = driver.function(Kernel::Matmul)?;
-    let mut count = elements as u64;
-    let mut k = inner as u64;
-    let mut n = columns as u64;
-    let mut arguments = [
-        (&raw mut left).cast(),
-        (&raw mut right).cast(),
-        (&raw mut output).cast(),
-        (&raw mut count).cast(),
-        (&raw mut k).cast(),
-        (&raw mut n).cast(),
-    ];
-    let blocks = u32::try_from(elements.div_ceil(256).min(4096)).expect("bounded grid");
-    // SAFETY: argument values survive launch, function belongs to this context,
-    // and the caller provides the checked allocation/completion contract above.
     driver.check(
         unsafe {
             (driver.launch)(

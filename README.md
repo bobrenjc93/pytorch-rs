@@ -48,7 +48,7 @@ The same assertion-only smoke check is available as
 | Surface | Supported today | Limits |
 | --- | --- | --- |
 | CPU tensors | Native `float32` construction, views, selected math and NN functions, limited first-order autograd. | No additional tensor dtypes or full training stack. |
-| NVIDIA CUDA | Native storage, synchronous CPU transfers, same-shape contiguous `float32` addition, [matrix/vector addition](docs/cuda-add-trailing-vector.md), negation, [scalar multiplication](docs/cuda-mul-scalar-validation.md), and [contiguous matrix row sums](docs/cuda-sum-rows.md) without gradients. | Direct factories: 1-D and 2-D float32 zeros only. No general CUDA math or accelerator training. |
+| NVIDIA CUDA | Native storage, synchronous CPU transfers, same-shape contiguous `float32` addition, [matrix/vector addition](docs/cuda-add-trailing-vector.md), negation, [scalar multiplication](docs/cuda-mul-scalar-validation.md), [rank-2 matmul](docs/cuda-matmul.md), and [contiguous matrix row sums](docs/cuda-sum-rows.md) without gradients. | Direct factories: 1-D and 2-D float32 zeros only. No general CUDA math or accelerator training. |
 | `torch.compile` | Bounded eager CPU capture and [CUDA mul/neg/add capture](docs/compile-cuda-add.md), without fusion. | No full Inductor compiler, general graph capture, or eager fallback. |
 | Compatibility helpers | Selected device/backend probes, state, data, and JIT helpers. | No full module, `DataLoader`, optimizer, model-serialization, or distributed stacks. |
 

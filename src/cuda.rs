@@ -9,6 +9,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+mod blas;
 mod pointwise;
 mod pool;
 mod replay;
@@ -495,7 +496,14 @@ impl CudaFloat32Storage {
                 // SAFETY: checked contiguous ranges on the guarded device, disjoint
                 // output, and both inputs live through the shared completion path.
                 unsafe {
-                    pointwise::launch_matmul(left, right, output, output_elements, inner, columns)
+                    if inner == 0 {
+                        self.runtime.check(
+                            (self.runtime.memset)(output as *mut c_void, 0, output_elements * 4),
+                            "cudaMemset",
+                        )
+                    } else {
+                        blas::launch(left, right, output, rows, inner, columns)
+                    }
                 }
             },
         )
