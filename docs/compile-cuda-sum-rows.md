@@ -36,10 +36,77 @@ counterfeit hooks, body execution, re-lowering, malformed evidence and incorrect
 results. The 38-case CPU compile corpus and four-workload private CUDA
 performance suite are unchanged.
 
-## Development validation and delivery boundary
+## Clean implementation-commit capture
 
-Evidence under `diagnostics/compile-cuda-sum-rows/development/` records this
-uncommitted worktree, including failed development attempts. Build receipts
+The post-commit measurements below use clean implementation commit
+`e9adfdca71626190a17e36544af97b1066499bbe`. They complete the previously deferred
+clean-build capture; the development records below remain unchanged and keep
+their original source identities and failures.
+
+The release ABI3 wheel was rebuilt with the committed repository tooling in a
+new, initially absent Cargo target directory. The local Python environments
+and locked dependency cache were reused. Installed Python sources matched the
+checkout, and the installed extension matched the extension used by evaluator
+workers. Every build and measurement checked the commit, an empty Git status,
+and source hashes before and after execution. All outputs were staged under
+ignored `target/row-sum-postcommit-e9adfdca/`; they were copied byte-for-byte into
+this evidence bundle only after the captures finished.
+
+See the [build receipt](diagnostics/compile-cuda-sum-rows/postcommit-e9adfdca/build-record.json),
+[provenance audit](diagnostics/compile-cuda-sum-rows/postcommit-e9adfdca/audit.json),
+[source hashes](diagnostics/compile-cuda-sum-rows/postcommit-e9adfdca/source-files.json),
+and [artifact hashes](diagnostics/compile-cuda-sum-rows/postcommit-e9adfdca/artifact-sha256.json).
+Per-command receipts retain exact commands, timestamps, source checks,
+stdout/stderr hashes, and GPU inventory/utilization/memory snapshots.
+
+| Check | Clean-commit result | Raw evidence |
+| --- | --- | --- |
+| Held-out reduction and boundary tests | 14 tests; one expected two-device skip | [log](diagnostics/compile-cuda-sum-rows/postcommit-e9adfdca/held-out.stderr.log) |
+| GPU0/GPU1 restoration | One test passed | [log](diagnostics/compile-cuda-sum-rows/postcommit-e9adfdca/two-device.stderr.log) |
+| Python 3.10–3.14 lowering/native execution | Six tests passed per version (3.12 included above) | [3.10](diagnostics/compile-cuda-sum-rows/postcommit-e9adfdca/python-3.10.stderr.log), [3.11](diagnostics/compile-cuda-sum-rows/postcommit-e9adfdca/python-3.11.stderr.log), [3.13](diagnostics/compile-cuda-sum-rows/postcommit-e9adfdca/python-3.13.stderr.log), [3.14](diagnostics/compile-cuda-sum-rows/postcommit-e9adfdca/python-3.14.stderr.log) |
+| Evaluator observer/accounting negative controls | 17 tests passed | [log](diagnostics/compile-cuda-sum-rows/postcommit-e9adfdca/observer-controls.stderr.log) |
+| Fixed hardware compilation, capture 1 | 6/6, both independently selected seeds | [report](diagnostics/compile-cuda-sum-rows/postcommit-e9adfdca/hardware-1.json) |
+| Fixed hardware compilation, capture 2 | 6/6, both independently selected seeds | [report](diagnostics/compile-cuda-sum-rows/postcommit-e9adfdca/hardware-2.json) |
+| Frozen compiler corpus | 38/38 | [report](diagnostics/compile-cuda-sum-rows/postcommit-e9adfdca/frozen38.stdout.log) |
+| Private CUDA performance, fresh caches | 4/4; 1.1636x common-success ratio, 100.00% capped result | [report](diagnostics/compile-cuda-sum-rows/postcommit-e9adfdca/performance-fresh.json) |
+| Private CUDA performance, reused caches | 4/4; 1.2903x common-success ratio, 100.00% capped result | [report](diagnostics/compile-cuda-sum-rows/postcommit-e9adfdca/performance-reused.json) |
+
+Capture 1 selected seeds `548378513193054655` and `2591242177926228750`;
+capture 2 selected `2419986187499636499` and `4536423993897679006`. Each case also
+executed changed inputs through the same wrapper. The existing five passes and
+the newly implemented row-sum slot passed in both captures. The performance
+runs retained five warmups, 17 samples, three repetitions, all four workloads,
+and equal weights. Existing private kernel caches were preserved separately;
+fresh kernel and CUDA/Inductor/Triton caches were used for the first run and
+reused for the second. All slow samples, cold/factory accounting, and raw
+outputs are preserved. No capture or validation command failed in this step.
+
+These results cover bounded inference correctness and the unchanged private
+performance workload. They make no universal compilation, accelerator,
+training or performance parity claim. Unsupported behavior outside the fixed
+cases has not gained credit. The six hardware cases, two evaluator-selected
+seeds per capture, changed-input executions, distribution, tolerances, compile
+options, weights, 38-case compiler corpus, and four-workload performance suite
+were preserved. The audit verifies that the evaluator's sole change from
+`main` is observing the real native reduction hook.
+
+The machine used NVIDIA H100 GPUs and driver 580.82.07. Ordinary runs used
+`CUDA_VISIBLE_DEVICES=0`; the restoration check alone used `0,1`. Rust 1.92.0
+built the release extension with thin LTO and one codegen unit. The native row
+sum uses existing driver-JIT PTX and does not invoke nvcc. Main reference and
+candidate workers used the local PyTorch 2.13.0+cu130 environment and CUDA
+runtime 13.0; standalone Python-version checks recorded the read-only system
+CUDA 13.0.96 runtime and no reference PyTorch imports. The private performance
+kernels used nvcc 12.6.85. All interpreter, import and build paths resolve within
+this worktree; system compiler/driver/runtime paths are recorded separately.
+
+This evidence step does not approve the branch or replace independent review
+or Burner's ordinary ten no-regression gates. Those remain delivery steps.
+
+## Preserved development validation
+
+Evidence under `diagnostics/compile-cuda-sum-rows/development/` records the
+author's pre-commit worktree, including failed development attempts. Build receipts
 bind the parent commit, production source and diff hashes, and native extension
 hash; these are **development receipts, not clean implementation-commit
 receipts**. The first independent hardware capture preserved the existing five
@@ -109,11 +176,10 @@ attempts was corrected locally (the final Python 3.12 test uses the local
 virtual environment). No failed attempt was discarded or represented as a
 passing gate.
 
-Burner must create its final implementation commit, rebuild and recapture from
-that clean commit, then perform independent review and the ordinary ten
-no-regression gates before managed publication/merge. This implementation
-session does not commit, publish a merge score, or modify Burner's managed
-progress artifacts.
+The development stage deferred the clean-commit captures now reported above.
+Independent review and the ordinary ten no-regression gates still precede
+Burner's managed publication/merge. This evidence step does not commit, publish
+a merge score, or modify Burner's managed progress artifacts.
 
 Reproduce after preparing a genuinely local environment and local cache paths:
 
