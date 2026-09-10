@@ -282,7 +282,124 @@
     },
     {
       "id": "compilation",
-      "weight": 10
+      "weight": 10,
+      "case_sets": [
+        {
+          "version": "cuda_float32_inference_compilation_v1",
+          "backend": "cuda_nvidia",
+          "dtype": "float32",
+          "device": "cuda:0",
+          "case_aggregation": "equal_fraction_fixed_denominator",
+          "compile_options": {
+            "backend": "eager",
+            "fullgraph": true,
+            "dynamic": false
+          },
+          "input_distribution": "Python random.Random(seed).uniform(-2, 2), rounded to IEEE float32",
+          "seed_policy": "At least two distinct nonnegative evaluator-selected seeds; each trial executes one wrapper on initial and changed inputs (seed XOR 0x9E3779B97F4A7C15); all executions must pass.",
+          "rtol": 1e-05,
+          "atol": 1e-06,
+          "cases": [
+            {
+              "id": "cuda_f32_compile_add_same_shape",
+              "operation": "add",
+              "input_shapes": [
+                [
+                  7,
+                  13
+                ],
+                [
+                  7,
+                  13
+                ]
+              ],
+              "output_shape": [
+                7,
+                13
+              ]
+            },
+            {
+              "id": "cuda_f32_compile_add_trailing_vector",
+              "operation": "add",
+              "input_shapes": [
+                [
+                  7,
+                  13
+                ],
+                [
+                  13
+                ]
+              ],
+              "output_shape": [
+                7,
+                13
+              ]
+            },
+            {
+              "id": "cuda_f32_compile_neg",
+              "operation": "neg",
+              "input_shapes": [
+                [
+                  7,
+                  13
+                ]
+              ],
+              "output_shape": [
+                7,
+                13
+              ]
+            },
+            {
+              "id": "cuda_f32_compile_mul_scalar",
+              "operation": "mul_scalar",
+              "input_shapes": [
+                [
+                  7,
+                  13
+                ]
+              ],
+              "scalar": -1.75,
+              "output_shape": [
+                7,
+                13
+              ]
+            },
+            {
+              "id": "cuda_f32_compile_sum_rows",
+              "operation": "sum",
+              "input_shapes": [
+                [
+                  7,
+                  13
+                ]
+              ],
+              "dim": 1,
+              "keepdim": false,
+              "output_shape": [
+                7
+              ]
+            },
+            {
+              "id": "cuda_f32_compile_matmul",
+              "operation": "matmul",
+              "input_shapes": [
+                [
+                  7,
+                  13
+                ],
+                [
+                  13,
+                  5
+                ]
+              ],
+              "output_shape": [
+                7,
+                5
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "multi_device_distributed",
