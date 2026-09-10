@@ -115,6 +115,37 @@ class TensorBufferReferenceTests(unittest.TestCase):
         ):
             self.assert_matches(source, case=case)
 
+    def test_all_boolean_storage_bytes_match_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        for format_code in ("?", "@?"):
+            for exporter_type in (bytes, bytearray):
+                exporter = exporter_type(range(256))
+                view = memoryview(exporter).cast(format_code)
+                for source in (view, view[1::3], view[::-1], view[::-2], view[1:1]):
+                    self.assert_matches(
+                        source,
+                        case=(
+                            format_code, exporter_type.__name__,
+                            source.shape, source.strides,
+                        ),
+                    )
+                    self.assertEqual(bytes(exporter), bytes(range(256)))
+                # Each byte must also work alone, independent of its neighbors.
+                for index in range(256):
+                    self.assert_matches(
+                        view[index:index + 1], case=(format_code, index),
+                    )
+
+    def test_boolean_buffer_errors_match_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        for format_code in ("?", "@?"):
+            for source in (
+                memoryview(b"\x02").cast(format_code, ()),
+                memoryview(b"\x00\x01\x02\x03").cast(format_code, (2, 2)),
+            ):
+                self.assert_error_matches(source)
+        self.assert_error_matches(memoryview((ctypes.c_bool * 2)(False, True)))
+
     def test_float16_edge_value_bits_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         half_bits = np.asarray(
