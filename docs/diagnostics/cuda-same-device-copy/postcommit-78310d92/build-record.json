@@ -1,0 +1,30 @@
+{
+  "commit": "78310d9277dcb54bb328c24cbf445f7d4e500cd5",
+  "source_sha256": "9f82cbdbed7a75d44a413d03f295798c01d76f13e070c6f5f90c254e1eae5a6d",
+  "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "build_command": "cargo build --release --features extension-module --locked --offline",
+  "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+  "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)",
+  "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0",
+  "nvcc_use": "unused: device-to-device copies dynamically load cudaMemcpy; no kernel compilation",
+  "worktree_root": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5",
+  "source_kind": "clean committed implementation",
+  "git_status_before": "",
+  "git_status_after_build": "",
+  "build_started_at": "2026-09-10T09:31:20.057942+00:00",
+  "build_finished_at": "2026-09-10T09:32:00.304575+00:00",
+  "profile": "release; thin LTO; codegen-units=1; extension-module; locked dependencies",
+  "cache_state": "empty Cargo target; existing worktree-local dependency source cache; new worktree-local uv environment",
+  "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5/target/cuda-copy-postcommit-78310d92/build",
+  "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5/target/cargo-home",
+  "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+  "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5/.venv/bin/python",
+  "extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_661e92e5/python/torch_rs/torch_rs.abi3.so",
+  "extension_sha256": "f8cf93e95e09129d912c00076caa320e4c676ed7c34027498757d0e9fa619068",
+  "built_library_sha256": "f8cf93e95e09129d912c00076caa320e4c676ed7c34027498757d0e9fa619068",
+  "evaluator_hashes": {
+    "evaluate_cuda_transfers.py": "a73e5f44e7ff47c1b6de2df77d14a9c5450eef3f28f0435215ea1f3112bec3c3",
+    "evaluate_cuda_math.py": "29a97d07bad0d82c261e28aa880de68cdf46df0731d5ff0aa9802ec5bb8e605b",
+    "hardware-heterogeneity-matrix-v1.json": "a077f00f5eb50e2dceb2bd41a8453977955a8114fed203b7235f3a8befb24698"
+  }
+}
