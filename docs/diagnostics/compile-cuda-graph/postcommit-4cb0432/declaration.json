@@ -1,0 +1,457 @@
+{
+  "declared_at": "2026-09-10T19:17:21.706037+00:00",
+  "primary_seed": 798431,
+  "held_out_seeds": [
+    481723,
+    926051
+  ],
+  "primary_repeat_seed": 798431,
+  "sequence": [
+    "primary",
+    "held-481723",
+    "held-926051",
+    "primary-repeat"
+  ],
+  "cells": {
+    "798431": [
+      {
+        "shape_mkn": [
+          1,
+          65539,
+          1
+        ],
+        "offset": 0,
+        "program": "matmul",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          1,
+          65539,
+          1
+        ],
+        "offset": 3,
+        "program": "composed",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          64,
+          64,
+          64
+        ],
+        "offset": 0,
+        "program": "matmul",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          64,
+          64,
+          64
+        ],
+        "offset": 3,
+        "program": "composed",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          512,
+          512,
+          512
+        ],
+        "offset": 0,
+        "program": "matmul",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          512,
+          512,
+          512
+        ],
+        "offset": 3,
+        "program": "composed",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          127,
+          1025,
+          65
+        ],
+        "offset": 0,
+        "program": "matmul",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          127,
+          1025,
+          65
+        ],
+        "offset": 3,
+        "program": "composed",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          563,
+          563,
+          563
+        ],
+        "offset": 0,
+        "program": "matmul",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          563,
+          563,
+          563
+        ],
+        "offset": 3,
+        "program": "composed",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          534,
+          250,
+          562
+        ],
+        "offset": 0,
+        "program": "matmul",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          534,
+          250,
+          562
+        ],
+        "offset": 3,
+        "program": "composed",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      }
+    ],
+    "481723": [
+      {
+        "shape_mkn": [
+          1,
+          65539,
+          1
+        ],
+        "offset": 0,
+        "program": "matmul",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          1,
+          65539,
+          1
+        ],
+        "offset": 3,
+        "program": "composed",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          64,
+          64,
+          64
+        ],
+        "offset": 0,
+        "program": "matmul",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          64,
+          64,
+          64
+        ],
+        "offset": 3,
+        "program": "composed",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          512,
+          512,
+          512
+        ],
+        "offset": 0,
+        "program": "matmul",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          512,
+          512,
+          512
+        ],
+        "offset": 3,
+        "program": "composed",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          127,
+          1025,
+          65
+        ],
+        "offset": 0,
+        "program": "matmul",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          127,
+          1025,
+          65
+        ],
+        "offset": 3,
+        "program": "composed",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          257,
+          257,
+          257
+        ],
+        "offset": 0,
+        "program": "matmul",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          257,
+          257,
+          257
+        ],
+        "offset": 3,
+        "program": "composed",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          401,
+          734,
+          267
+        ],
+        "offset": 0,
+        "program": "matmul",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          401,
+          734,
+          267
+        ],
+        "offset": 3,
+        "program": "composed",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      }
+    ],
+    "926051": [
+      {
+        "shape_mkn": [
+          1,
+          65539,
+          1
+        ],
+        "offset": 0,
+        "program": "matmul",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          1,
+          65539,
+          1
+        ],
+        "offset": 3,
+        "program": "composed",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          64,
+          64,
+          64
+        ],
+        "offset": 0,
+        "program": "matmul",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          64,
+          64,
+          64
+        ],
+        "offset": 3,
+        "program": "composed",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          512,
+          512,
+          512
+        ],
+        "offset": 0,
+        "program": "matmul",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          512,
+          512,
+          512
+        ],
+        "offset": 3,
+        "program": "composed",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          127,
+          1025,
+          65
+        ],
+        "offset": 0,
+        "program": "matmul",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          127,
+          1025,
+          65
+        ],
+        "offset": 3,
+        "program": "composed",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          231,
+          231,
+          231
+        ],
+        "offset": 0,
+        "program": "matmul",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          231,
+          231,
+          231
+        ],
+        "offset": 3,
+        "program": "composed",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          501,
+          502,
+          296
+        ],
+        "offset": 0,
+        "program": "matmul",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      },
+      {
+        "shape_mkn": [
+          501,
+          502,
+          296
+        ],
+        "offset": 3,
+        "program": "composed",
+        "status": "pending",
+        "capped_parity": 0.0,
+        "orders": []
+      }
+    ]
+  },
+  "resource": "gpu",
+  "reservation": "No reservation API available; inventories do not prove exclusivity."
+}
