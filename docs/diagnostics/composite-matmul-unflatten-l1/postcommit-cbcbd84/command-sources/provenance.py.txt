@@ -1,0 +1,55 @@
+"""Inspect the built wheel and runtime; does not build or change measured code."""
+import ctypes, importlib, importlib.metadata, json, os, pathlib, subprocess, sys, zipfile
+ROOT=pathlib.Path.cwd().resolve(); OUT=ROOT/'target/postcommit-cbcbd84'
+sys.path.insert(0,str(ROOT/'scripts'))
+from evaluate_cuda_math import source_provenance,sha256,runtime_provenance
+import torch, torch_rs, numpy, triton
+from triton.backends.nvidia.compiler import get_ptxas
+extension=importlib.import_module('torch_rs.torch_rs')
+build=json.loads((OUT/'native/build-record.json').read_text())
+def local(path):
+    p=pathlib.Path(path).resolve(); assert p.is_relative_to(ROOT),p
+    return p
+def identity(path):
+    p=local(path); return {'path':str(p),'sha256':sha256(p)}
+assert build['clean_checkout'] and source_provenance()=={k:build[k] for k in ('commit','source_sha256','production_diff_sha256')}
+assert not subprocess.check_output(['git','status','--porcelain'],text=True)
+assert sha256(extension.__file__)==build['extension_sha256']
+assert sha256(build['source_extension_path'])==build['extension_sha256']
+assert sha256(build['wheel_path'])==build['wheel_sha256']
+with zipfile.ZipFile(build['wheel_path']) as wheel:
+    import hashlib
+    member=next(p for p in wheel.namelist() if p.endswith('/torch_rs.abi3.so'))
+    assert hashlib.sha256(wheel.read(member)).hexdigest()==build['extension_sha256']
+package=local(torch_rs.__file__).parent
+source=ROOT/'python/torch_rs'
+manifest={str(p.relative_to(source)):sha256(p) for p in source.rglob('*.py')}
+installed={str(p.relative_to(package)):sha256(p) for p in package.rglob('*.py')}
+assert manifest==installed
+assert local(sys.prefix)==ROOT/'.venv'
+local(sys.base_prefix); local(sys.executable)
+assert torch.__version__.split('+')[0]=='2.13.0' and torch.cuda.is_available()
+a=torch_rs.ones((2,3)).to('cuda:0');b=torch_rs.ones((3,4)).to('cuda:0')
+assert (a@b).cpu().tolist()==[[3.]*4]*2
+torch.cuda.synchronize()
+modules={name:identity(module.__file__) for name,module in sorted(sys.modules.items()) if isinstance(getattr(module,'__file__',None),str) and pathlib.Path(module.__file__).is_file()}
+ptxas=local(get_ptxas(90).path)
+libraries=sorted({line.split()[-1] for line in pathlib.Path('/proc/self/maps').read_text().splitlines() if any(x in line for x in ('/libcudart.so','/libcublas.so','/libcublasLt.so'))})
+blas=ctypes.CDLL(os.environ['TORCH_RS_CUBLAS']); handle=ctypes.c_void_p(); version=ctypes.c_int()
+blas.cublasCreate_v2.argtypes=[ctypes.POINTER(ctypes.c_void_p)]
+blas.cublasGetVersion_v2.argtypes=[ctypes.c_void_p,ctypes.POINTER(ctypes.c_int)]
+blas.cublasDestroy_v2.argtypes=[ctypes.c_void_p]
+assert blas.cublasCreate_v2(ctypes.byref(handle))==0
+try: assert blas.cublasGetVersion_v2(handle,ctypes.byref(version))==0
+finally: assert blas.cublasDestroy_v2(handle)==0
+result={**source_provenance(),'python':sys.version,'executable':identity(sys.executable),'base_prefix':str(local(sys.base_prefix)),
+        'imports':modules,'installed_source_manifest':installed,'native':identity(extension.__file__),
+        'wheel':identity(build['wheel_path']),'loaded_cuda_libraries':[identity(p) for p in libraries],
+        'runtime':runtime_provenance(),'cublas_version':version.value,
+        'pytorch':torch.__version__,'pytorch_build':torch.__config__.show(),'pytorch_cuda':torch.version.cuda,
+        'triton':triton.__version__,'reference_ptxas':{**identity(ptxas),'version':subprocess.check_output([str(ptxas),'--version'],text=True)},
+        'native_compiler':'Rust 1.92.0 release; cuBLAS matmul; embedded PTX driver JIT; nvcc unused for native extension',
+        'gpu':subprocess.check_output(['nvidia-smi','--query-gpu=index,name,uuid,driver_version,compute_cap,memory.used','--format=csv'],text=True),
+        'dependencies':{d.metadata['Name']:d.version for d in importlib.metadata.distributions()},'git_status':subprocess.check_output(['git','status','--porcelain'],text=True)}
+(OUT/'provenance.json').write_text(json.dumps(result,indent=2)+'\n')
+print(json.dumps({'commit':result['commit'],'native':result['native'],'checked_module_files':len(modules),'checked_package_sources':len(manifest),'runtime':result['runtime'],'cublas_version':version.value},indent=2))

@@ -1,0 +1,262 @@
+{
+  "compiled-proof.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/compiled-proof.log",
+    "sha256": "93ab0be9ec7f44f817c0ccda6338bf7601372348778f10dc9e4e48c473e4276a"
+  },
+  "compiled-proof.receipt.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/compiled-proof.receipt.json",
+    "sha256": "b77568eeaaa813067d687838098eb900ef2b41b91e232d8b5b65c699f017497b"
+  },
+  "compiled-regressions.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/compiled-regressions.log",
+    "sha256": "ecb51181b000d1dedc55f19362dceb5a347a0ef9d666f2aa6dd4d0f32a3f8323"
+  },
+  "compiled-regressions.receipt.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/compiled-regressions.receipt.json",
+    "sha256": "be9e083a788212807cd9c9a7377919f48b04538e170b90ed98655638697df676"
+  },
+  "compiled-timings.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/compiled-timings.json",
+    "sha256": "57a721a48d0ca4e9ce6aefe43157ac554e6c11c7800ff145a18657abcc4550b6"
+  },
+  "compiled-timings.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/compiled-timings.log",
+    "sha256": "8ddf67120d48fe61e89d557ac103bcbba8e4a4ba8239c5f020d62765b1380ac3"
+  },
+  "compiled-timings.receipt.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/compiled-timings.receipt.json",
+    "sha256": "45599d8ab9b069a919894bfd86a70aa2ff566c115b6f4a8796ea9444aec364f7"
+  },
+  "evidence-validation.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/evidence-validation.log",
+    "sha256": "c33d46402c7ba3104bbd18a72f7fa0442af563b417475f0c42c87c7ceac8b6cc"
+  },
+  "evidence-validation.receipt.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/evidence-validation.receipt.json",
+    "sha256": "bd2555b044e5556e38f83147a6ac18f5629d3fdd431468054f509491b67e451a"
+  },
+  "fixed-math.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/fixed-math.json",
+    "sha256": "6e59b60173a3c3223f32c01296f9f42841f1e165fb9fd56b91ce2dfb7f84b5ad"
+  },
+  "fixed-math.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/fixed-math.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "fixed-math.receipt.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/fixed-math.receipt.json",
+    "sha256": "4574179dc74d78cc25798c5f0e580ef9f757bd93e5db59f69b756c5b74131e3f"
+  },
+  "fixed-scoring-attempt2.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/fixed-scoring-attempt2.json",
+    "sha256": "751fbad399970a848f6f15ed3f99f433e66801a13abf93d3feb4dc2807de068a"
+  },
+  "fixed-scoring-attempt2.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/fixed-scoring-attempt2.log",
+    "sha256": "9b07199a30029c619762a2300ee1a9a70ec86b66baebeb9127280a1f7c902a10"
+  },
+  "fixed-scoring-attempt2.receipt.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/fixed-scoring-attempt2.receipt.json",
+    "sha256": "9a864bd6c67826e7abb08aaa19d75d82ab7b4a883b32ec1cee8e17e7d2c29ce7"
+  },
+  "fixed-scoring.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/fixed-scoring.log",
+    "sha256": "9e08187c0c7059b5e6c33c1717fbbb0aadabd79252af94f302fc68e31de48f69"
+  },
+  "fixed-scoring.receipt.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/fixed-scoring.receipt.json",
+    "sha256": "398509234d474b5b4ed5c4c9696a180d21859f7d406ff6bab5ddb70608e6f689"
+  },
+  "focused-surfaces.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/focused-surfaces.log",
+    "sha256": "5cd3384fff098da9ed4af8c5a849f03320230ac7411a8dd6a16b46fca01b24cb"
+  },
+  "focused-surfaces.receipt.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/focused-surfaces.receipt.json",
+    "sha256": "455497c4f0c7daba9bb6b702badae063db091df5e7b99ee8c285dc0d76fe15ac"
+  },
+  "fresh-build.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/fresh-build.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "fresh-build.receipt.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/fresh-build.receipt.json",
+    "sha256": "3927ce78ffe6250f94edfa9680340ef2a1038d36103b3c62724773f164954ca9"
+  },
+  "frozen-compiler.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/frozen-compiler.log",
+    "sha256": "0c74066d66986e051f73fabae510e39c334576528ac17998042c55d1b3cbcf41"
+  },
+  "frozen-compiler.receipt.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/frozen-compiler.receipt.json",
+    "sha256": "25b9b0a38beef75f4ba4a8a539b5933e46edd5a10c0211922f05e84ee3e5d646"
+  },
+  "inspection.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/inspection.json",
+    "sha256": "d1e5174a62a20fbd7f636aa63573d2edad79c050650b962b9604597bbebc0b1a"
+  },
+  "inspection.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/inspection.log",
+    "sha256": "d73f8c3c05d7b2cc1d43befc910753b07d3c94b1a629c2a77870fceb1a020301"
+  },
+  "inspection.receipt.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/inspection.receipt.json",
+    "sha256": "719d12c95ab704effafd92be43ff5d675930814dc1a2968bcc21dcc458dfc2ee"
+  },
+  "provenance.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/provenance.json",
+    "sha256": "be3b1e60511b3bde0849667316838146a7d251c8f61487940169e882a44226e4"
+  },
+  "provenance.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/provenance.log",
+    "sha256": "23a5132666b2839b2d762d1effd229548a9f1e88567a66198acc3cf967fce36b"
+  },
+  "provenance.receipt.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/provenance.receipt.json",
+    "sha256": "f5e6c0086ee49a324270cc79193702b93479cc7c2ae4e3decdecd02a17d0fabc"
+  },
+  "rust-bridge.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/rust-bridge.log",
+    "sha256": "258e78a44c7e9baa4b2ab4f8273aef4a34fedcc675c32fa178e0011d07582c69"
+  },
+  "rust-bridge.receipt.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/rust-bridge.receipt.json",
+    "sha256": "b3331c3bbbe73e1324cd23150800b4aa0cb0fbd0acdf2a4464aaa3c17c12f1cf"
+  },
+  "rust-matmul.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/rust-matmul.log",
+    "sha256": "13886b7b4293a0befbe1f79251ba99089a749cfafc754834edfe4f16356a6b69"
+  },
+  "rust-matmul.receipt.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/rust-matmul.receipt.json",
+    "sha256": "5f87fa72bc40beef80d7c3ae7cc6a91fe19766b5ec6b28274ffdf9ee29c46894"
+  },
+  "scoring-cache-preparation.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/scoring-cache-preparation.json",
+    "sha256": "d1b1ffbdb0d1d745b0f9a5576e73a5618bc741942cf9493a09c5720bc636c9f9"
+  },
+  "scoring-cache-preparation.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/scoring-cache-preparation.log",
+    "sha256": "d1b1ffbdb0d1d745b0f9a5576e73a5618bc741942cf9493a09c5720bc636c9f9"
+  },
+  "scoring-cache-preparation.receipt.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/scoring-cache-preparation.receipt.json",
+    "sha256": "1489e8a4cebac0a6624ba0a63199820e6154e262d86b6e29766411290b170b0c"
+  },
+  "scoring-provenance.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/scoring-provenance.json",
+    "sha256": "35066dbaf15d4990619c9c62d99e493cbe6eba47986fc1f6e9781ed2e3351e98"
+  },
+  "source-manifest.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/source-manifest.json",
+    "sha256": "2262fb2b578ae79ac580935a69dc4f6db17717f07ad6a14c012e9f68bec1e933"
+  },
+  "two-gpu.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/two-gpu.log",
+    "sha256": "5c173150921e3ea76b7300eca4b8d608a56cf74c8cd33dfad0835d7bc8694590"
+  },
+  "two-gpu.receipt.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/two-gpu.receipt.json",
+    "sha256": "539fc8c22003648813bc4332d88138d49c1edb03941972396541d19226fa18ba"
+  },
+  "verification.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/verification.json",
+    "sha256": "c33d46402c7ba3104bbd18a72f7fa0442af563b417475f0c42c87c7ceac8b6cc"
+  },
+  "wheel-verifier.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/wheel-verifier.log",
+    "sha256": "be82c1a64434fc610fb91a4cc854632a8e9f4a4a474344b02d7150d86069991e"
+  },
+  "wheel-verifier.receipt.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/wheel-verifier.receipt.json",
+    "sha256": "2d0f4cd0f2eb24a6635f46f04c45a5116ed5807430a4024923d5a1726b3a30b3"
+  },
+  "build-record.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/native/build-record.json",
+    "sha256": "e79605268fbb9b896a4e36a50dbd14b508c8526b18c53dfcc35d49f97236f59e"
+  },
+  "commands.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/native/commands.json",
+    "sha256": "986fbd77a6b4a3e415d63e5aef1f5ca266285e9e68b1d1440c40d711dee6e524"
+  },
+  "build.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/native/build.log",
+    "sha256": "acdeb55e8297ef5cf92e23d5643ebb2ba2a5903e278e0b8a80a37dadfac0133a"
+  },
+  "install.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/native/install.log",
+    "sha256": "8d93eed8ee5130564d70c5efe54eda5ba739cd9070dd4e950b0ab2b9f23a6811"
+  },
+  "command-sources/env.sh.txt": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/env.sh",
+    "sha256": "14ff8e8cb4bc26c4785d4767557867d4f4a6c53e985df0b0c90ebfe445fef952"
+  },
+  "command-sources/inspect.py.txt": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/inspect.py",
+    "sha256": "0ad9b2340a2441f4515dc1014e017d83fb263a3df12bc9e81d8301e37f83c3e9"
+  },
+  "command-sources/prepare_scoring.py.txt": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/prepare_scoring.py",
+    "sha256": "9d1c7ae939e3011cdb9e1b06ee05a61bd1de3bfb935671de8650510326331faf"
+  },
+  "command-sources/provenance.py.txt": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/provenance.py",
+    "sha256": "aaa3f4ab518833adfa2b27216b803db7417170b408bf9e023b1dc27f4e39c1c8"
+  },
+  "command-sources/record.py.txt": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/record.py",
+    "sha256": "8154be9e98e58471e9981ff284a5a4d879a3239dd429c7bcec37f660aecfd04e"
+  },
+  "command-sources/run_scoring.py.txt": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/run_scoring.py",
+    "sha256": "aca8434173d800ee59caeb40c3728571291f5b206eea1a5e39b73b88600556b8"
+  },
+  "command-sources/verify.py.txt": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/verify.py",
+    "sha256": "85037886efabe6051f4b289dce9ad8f25d4cb20d9cd2872a37654b8b6e5f0d4f"
+  },
+  "publication-check.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/publication-check.json",
+    "sha256": "859083ce4a2b2822e42394f6e1d7302052683dd45026d13561254f5f1e6a04a8"
+  },
+  "publication-check-attempt2.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/publication-check-attempt2.log",
+    "sha256": "1b46163ab091eb493da634a88fe7c4f8d4a8b5e86a8fc3cd8a0f5d89fc0e5e25"
+  },
+  "publication-check-attempt2.receipt.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/publication-check-attempt2.receipt.json",
+    "sha256": "93a43089cf3b7d2a5ebb2612fadfeccda759f27aa6e0e23801a21ca4009a55ca"
+  },
+  "publication-check-attempt3.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/publication-check-attempt3.log",
+    "sha256": "c7b48db635b4090cdc43d1d1d77b9071d69e29bfced4f2847e1b9868668afabe"
+  },
+  "publication-check-attempt3.receipt.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/publication-check-attempt3.receipt.json",
+    "sha256": "f37ee3f26570342fc65c74b6d7d9302be6a4543bb703087fa34ea940d7c8bbd8"
+  },
+  "publication-docs.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/publication-docs.log",
+    "sha256": "5c2ab363e3b88622099ea8e9b6872137b5735165f0fd8b1c953a57ea80baf1db"
+  },
+  "publication-docs.receipt.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/publication-docs.receipt.json",
+    "sha256": "f7ce1814b13ab8055e1ff28e1f3a1c067bef604ddd60d3e95427d8dfc35fb224"
+  },
+  "publication-diff.log": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/publication-diff.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "publication-diff.receipt.json": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/publication-diff.receipt.json",
+    "sha256": "f191bcef2883bb3c6d0e07848d6187d8bd9f01d400d91418c749b7ba64d49c8b"
+  },
+  "command-sources/check_publication.py.txt": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/check_publication.py",
+    "sha256": "ca0f5f3514225fe5a6ee34519942a96beb03c5e2e0c4b8a8a1ca03dde33ff31e"
+  },
+  "command-sources/check_publication.failed.py.txt": {
+    "source_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/check_publication.failed.py.txt",
+    "sha256": "b6a2ffe65d88dc9b1f7c68b7cab4fde3a653be7f2e6cbced316d2a779b7eae19"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/.venv/bin/python",
+    "-I",
+    "-B",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/check_publication.py"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914",
+  "started_at": "2026-09-10T15:56:44.982572+00:00",
+  "ended_at": "2026-09-10T15:56:45.388940+00:00",
+  "wall_seconds": 0.40637585427612066,
+  "exit_status": 1,
+  "log": "publication-check-attempt2.log",
+  "log_sha256": "1b46163ab091eb493da634a88fe7c4f8d4a8b5e86a8fc3cd8a0f5d89fc0e5e25",
+  "measurement_kind": "post-publication evidence-checker validation; not a workload",
+  "checker_sha256": "b6a2ffe65d88dc9b1f7c68b7cab4fde3a653be7f2e6cbced316d2a779b7eae19",
+  "note": "Repeated initial checker assertion to preserve its output: path scanner included closing punctuation from cargo output in the directory name."
+}

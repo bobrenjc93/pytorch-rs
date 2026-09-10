@@ -1,0 +1,22 @@
+import json,pathlib,subprocess,hashlib
+root=pathlib.Path.cwd();out=root/'target/postcommit-06a2496'
+base='046b7a21e4e2fb7b59b56ea8a9679a9d9c5b0981'
+changed=subprocess.check_output(['git','diff','--name-only',base,'HEAD'],text=True).splitlines()
+managed={'docs/burner-evaluation-history.json','docs/burner-evaluation-progress.svg'}
+files={p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in changed if p not in managed}
+protected=['scripts/evaluate_cuda_math.py','scripts/evaluate_torch_compile_coverage.py','scripts/benchmark_compile_cuda.py','tests/test_compile_corpus.py','docs/hardware-heterogeneity-matrix-v1.json','Cargo.lock','uv.lock']
+for p in protected:
+    assert subprocess.check_output(['git','show',base+':'+p])==(root/p).read_bytes(),p
+prior=json.loads((root/'target/review-unflatten-order/diff-check.receipt.json').read_text())
+assert all(hashlib.sha256((root/p).read_bytes()).hexdigest()==h for p,h in prior['source_manifest'].items())
+result={'base':base,'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+        'git_status':subprocess.check_output(['git','status','--porcelain'],text=True),
+        'complete_candidate_diff_sha256':hashlib.sha256((out/'candidate.diff').read_bytes()).hexdigest(),
+        'changed_files':files,'protected_files_unchanged':protected,
+        'matches_previously_reviewed_author_source_manifest':True,
+        'evidence_disposition':{'source_pr_records_preserved':[p for p in files if p.startswith('docs/diagnostics/compile-cuda-matmul/')],
+            'source_pr_record_scope':'Original source-branch identities and failed attempts retained; not used as composite evidence. Fresh combined-commit captures supersede their applicability to this candidate.',
+            'prior_composite_capture':'The 208e9bf capture predates the committed conversion-order repair; original records remain unchanged and fresh 06a2496 measurements are required.',
+            'historical_baselines':'Unrelated benchmark-data and diagnostic records are unchanged.'}}
+(out/'inspection.json').write_text(json.dumps(result,indent=2)+'\n')
+print('Inspected',len(changed),'changed files; full candidate diff fingerprint saved; implementation matches author-reviewed source manifest; protected files unchanged.')

@@ -217,8 +217,7 @@ class CudaMatmulTests(Comparison, unittest.TestCase):
             for program in (lambda x, y: x @ y, lambda x, y: x.matmul(y),
                             lambda x, y: native.matmul(x, y)):
                 compiled = native.compile(program, backend="eager", fullgraph=fullgraph)
-                with self.assertRaises(NotImplementedError):
-                    compiled(a, b)
+                self.compare_product(compiled(a, b), torch.ones((3, 3), device="cuda:0") * 5)
 
     def test_optional_blas_discovery_and_load_failure(self):
         script = """

@@ -1,0 +1,20 @@
+{
+  "checked_at": "2026-09-10T16:29:17.422719+00:00",
+  "commit": "cbcbd841e053170d46dcf05a0957c8bfc6c36538",
+  "measurement_kind": "post-publication evidence/documentation verification; not a clean-commit workload",
+  "source": {
+    "commit": "cbcbd841e053170d46dcf05a0957c8bfc6c36538",
+    "source_sha256": "aad2016883226a6274343006a7beae88ed0c195d4177912fa9b4aff9b7df8853",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "implementation_tests_dependencies_harnesses_evaluators_and_managed_artifacts_unchanged": true,
+  "changed_tracked_documents": [
+    "docs/README.md",
+    "docs/compile-cuda-matmul.md",
+    "docs/composite-matmul-unflatten-l1-validation.md",
+    "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md"
+  ],
+  "copied_raw_artifact_count": 57,
+  "copies_match_original_hashes": true,
+  "no_stale_worktree_paths_in_new_evidence": true
+}

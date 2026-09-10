@@ -1,0 +1,14 @@
+/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/.venv/lib/python3.12/site-packages/torch/_inductor/compile_fx.py:321: UserWarning: TensorFloat32 tensor cores for float32 matrix multiplication available but not enabled. Consider setting `torch.set_float32_matmul_precision('high')` for better performance.
+  warnings.warn(
+{"shape_mkn": [1, 65539, 1], "offset": 0, "status": "passed", "capped_parity": 1.0}
+{"shape_mkn": [1, 65539, 1], "offset": 3, "status": "passed", "capped_parity": 0.4766990013630774}
+{"shape_mkn": [64, 64, 64], "offset": 0, "status": "passed", "capped_parity": 1.0}
+{"shape_mkn": [64, 64, 64], "offset": 3, "status": "passed", "capped_parity": 0.49667156956819275}
+{"shape_mkn": [512, 512, 512], "offset": 0, "status": "passed", "capped_parity": 1.0}
+{"shape_mkn": [512, 512, 512], "offset": 3, "status": "passed", "capped_parity": 0.8593293137796969}
+{"shape_mkn": [127, 1025, 65], "offset": 0, "status": "passed", "capped_parity": 1.0}
+{"shape_mkn": [127, 1025, 65], "offset": 3, "status": "passed", "capped_parity": 0.4813955610124961}
+{"shape_mkn": [563, 563, 563], "offset": 0, "status": "passed", "capped_parity": 1.0}
+{"shape_mkn": [563, 563, 563], "offset": 3, "status": "passed", "capped_parity": 0.893333240199324}
+{"shape_mkn": [534, 250, 562], "offset": 0, "status": "passed", "capped_parity": 1.0}
+{"shape_mkn": [534, 250, 562], "offset": 3, "status": "passed", "capped_parity": 0.8916448386540917}

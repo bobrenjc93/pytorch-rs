@@ -1,0 +1,8 @@
+{
+  "verified": true,
+  "measured_commit": "d8374ec16f6c13fb09b18723c491d06fdaeaafaa",
+  "fixed_math_trials": 18,
+  "frozen_compiler_cases": 38,
+  "timing_cells": 12,
+  "capped_geometric_parity": 0.7947884783289866
+}

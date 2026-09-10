@@ -21,6 +21,7 @@ addition and matrix-plus-trailing-vector addition, contiguous negation, and cont
 | Autograd | [src/tensor.rs](src/tensor.rs), [src/autograd_node.rs](src/autograd_node.rs), [src/grad_mode.rs](src/grad_mode.rs) | `AutogradMeta`, `GradFn`, `SavedTensor`, backward traversal, VJP kernels, Python-visible node names, and thread-local grad-mode context state. |
 | PyO3 module | [src/python.rs](src/python.rs) | Defines `torch_rs.torch_rs`, `PyTensorBase`, `PyTensor`, Python argument parsing, Tensor methods, top-level native functions, module constants, and module initialization. |
 | Top-level built-ins | [src/python_variable_functions.rs](src/python_variable_functions.rs) | Builds the immutable `_VariableFunctionsClass` and registers PyTorch-style top-level descriptors such as `torch.sqrt`. The callbacks call implementations in `src/python.rs`. |
+| Unflatten bindings | [src/python_unflatten.rs](src/python_unflatten.rs), [src/python_tensor_shape.rs](src/python_tensor_shape.rs) | Top-level schema and override dispatch precede a direct call to shared Rust view construction and error translation. The Tensor method retains its own binding checks; neither path duplicates native view/autograd logic. |
 | Error translation | [src/tensor_error.rs](src/tensor_error.rs), [src/python_tensor_errors.rs](src/python_tensor_errors.rs) | `TensorError` is the native error vocabulary; Python bindings translate it to the closest Python exception class. |
 | Python package shell | [python/torch_rs/__init__.py](python/torch_rs/__init__.py) | Imports the native extension, exposes `_C`, patches package-level compatibility helpers, and binds Python submodules. |
 | Compile bytecode frontend | [python/torch_rs/_compile_bytecode.py](python/torch_rs/_compile_bytecode.py) | Normalizes and validates the narrow CPython 3.10-3.14 straight-line bytecode subset used by public `torch.compile(..., backend="eager", fullgraph=True)` and no-break `fullgraph=False`, then emits operations through `CompileTraceRecorder`. It owns opcode compatibility only. |
@@ -154,6 +155,17 @@ executor preflights the whole graph before launching any operation, including
 on dynamic cache hits. This is not a general Inductor compiler or a performance
 parity claim. Noncontiguous CUDA negation and CUDA autograd remain unsupported;
 see [capture scope](docs/compile-cuda-add.md) and [kernel validation](docs/cuda-neg-validation.md).
+The compiler's `matmul` binary node plans rank-2 `(M,K)@(K,N)` output
+metadata and validates inner dimensions and output size before any node runs.
+`_compile_trace_binary` calls native `Tensor::matmul`, which independently checks
+CUDA storage/layout/dtype/gradients and submits cuBLAS SGEMM. Cache hits execute
+recorded nodes on current inputs; they never call the original Python program.
+Matmul result strides are canonical, including singleton/empty cases. Existing
+method/callable, capture, offset, and device guards apply. Supported pointwise
+nodes can precede/follow matmul without fusion; a third tensor must be a guarded
+global capture because graphs still accept at most two positional inputs.
+See [scope and reproduction](docs/compile-cuda-matmul.md).
+
 Eager scalar multiplication routes `BinaryOperation::Multiply.apply_scalar` to
 `Tensor::mul_scalar`, shared scalar output-stride planning, and the native
 [src/cuda/mul_scalar.ptx](src/cuda/mul_scalar.ptx) 64-bit grid-stride kernel.

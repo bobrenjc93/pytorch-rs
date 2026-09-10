@@ -1,0 +1,17 @@
+"""Archive prior ignored kernel caches so the committed scoring harness builds fresh."""
+import datetime,hashlib,json,pathlib
+root=pathlib.Path.cwd().resolve();out=root/'target/postcommit-208e9bf'; archive=out/'prior-private-kernel-caches'
+archive.mkdir(exist_ok=False)
+result={'started_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'caches':[]}
+for name in ('torch_rs_private_cuda_pointwise','torch_rs_private_cuda_pointwise_reduce'):
+    path=root/'target'/name
+    if path.exists():
+        assert not path.is_symlink()
+        files={str(p.relative_to(path)):hashlib.sha256(p.read_bytes()).hexdigest() for p in path.rglob('*') if p.is_file()}
+        destination=archive/name
+        path.rename(destination)
+        result['caches'].append({'original':str(path),'archive':str(destination),'files':files})
+    assert not path.exists()
+result['result']='Both scoring kernel targets absent; prior contents retained unchanged inside worktree.'
+(out/'scoring-cache-preparation.json').write_text(json.dumps(result,indent=2)+'\n')
+print(json.dumps(result,indent=2))

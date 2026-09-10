@@ -1,0 +1,647 @@
+{
+  "checked_at": "2026-09-10T16:29:17.422719+00:00",
+  "commit": "cbcbd841e053170d46dcf05a0957c8bfc6c36538",
+  "measurement_kind": "post-publication evidence/documentation verification; not a clean-commit workload",
+  "source": {
+    "commit": "cbcbd841e053170d46dcf05a0957c8bfc6c36538",
+    "source_sha256": "aad2016883226a6274343006a7beae88ed0c195d4177912fa9b4aff9b7df8853",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "implementation_tests_dependencies_harnesses_evaluators_and_managed_artifacts_unchanged": true,
+  "changed_tracked_documents": [
+    "docs/README.md",
+    "docs/compile-cuda-matmul.md",
+    "docs/composite-matmul-unflatten-l1-validation.md",
+    "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md"
+  ],
+  "copied_raw_artifact_count": 57,
+  "copies_match_original_hashes": true,
+  "local_links_checked": [
+    {
+      "document": "docs/README.md",
+      "target": "supported-surface.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "../FEATURES.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "../BENCHMARKING.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "torch-compile-coverage-evaluator.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "hardware-heterogeneity-evaluator.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "../scripts/validate_creation_factory_benchmark.py"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "../examples/first_success.py"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "composite-matmul-unflatten-l1-validation.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "compile-cuda-matmul.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "../README.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "../CONTRIBUTING.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "troubleshooting.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "../ARCHITECTURE.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "compile-cuda-add.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "compile-cuda-mul-scalar-validation.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "compile-cuda-neg-validation.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "cuda-mul-scalar-validation.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "cuda-neg-validation.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "text-collation-diagnostics.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "cuda-add-diagnostics.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "cuda-add-trailing-vector.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "composite-cuda-vector-dstack.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "cuda-matmul.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "cuda-sum-rows.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "rank2-mean-diagnostics.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "compile-cuda-add-validation.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "rank1-sum-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "rank9-sum-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "rank10-sum-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "rank11-sum-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "rank12-sum-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "tensor-mean-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "creation-factory-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "tensor-add-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "top-level-subtract-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "benchmark-data/top-level-subtract-release-timings.json"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "top-level-stack-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "benchmark-data/top-level-stack-release-timings.json"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "tensor-mul-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "top-level-division-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "tensor-abs-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "tensor-sqrt-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "tensor-reciprocal-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "softsign-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "torch-compile-cpu-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "benchmark-data/torch-compile-cpu-v4.json"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "torch-compile-cuda-h100-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "benchmark-data/torch-compile-cuda-h100-shape-matrix-v11.json"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "tensor-view-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "rank2-matmul-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "mse-loss-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "l1-loss-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "l1-loss-sum-release-timings.md"
+    },
+    {
+      "document": "docs/README.md",
+      "target": "compile-cuda-trailing-vector-validation.md"
+    },
+    {
+      "document": "docs/compile-cuda-matmul.md",
+      "target": "cuda-matmul.md"
+    },
+    {
+      "document": "docs/compile-cuda-matmul.md",
+      "target": "../CONTRIBUTING.md"
+    },
+    {
+      "document": "docs/compile-cuda-matmul.md",
+      "target": "cuda-matmul.md#reproduction"
+    },
+    {
+      "document": "docs/compile-cuda-matmul.md",
+      "target": "diagnostics/compile-cuda-matmul/development/README.md"
+    },
+    {
+      "document": "docs/compile-cuda-matmul.md",
+      "target": "diagnostics/compile-cuda-matmul/postcommit-d8374/README.md"
+    },
+    {
+      "document": "docs/compile-cuda-matmul.md",
+      "target": "composite-matmul-unflatten-l1-validation.md"
+    },
+    {
+      "document": "docs/compile-cuda-matmul.md",
+      "target": "diagnostics/composite-matmul-unflatten-l1/postcommit-208e9bf/README.md"
+    },
+    {
+      "document": "docs/compile-cuda-matmul.md",
+      "target": "diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md"
+    },
+    {
+      "document": "docs/compile-cuda-matmul.md",
+      "target": "diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md"
+    },
+    {
+      "document": "docs/composite-matmul-unflatten-l1-validation.md",
+      "target": "supported-surface.md"
+    },
+    {
+      "document": "docs/composite-matmul-unflatten-l1-validation.md",
+      "target": "compile-cuda-matmul.md"
+    },
+    {
+      "document": "docs/composite-matmul-unflatten-l1-validation.md",
+      "target": "diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md"
+    },
+    {
+      "document": "docs/composite-matmul-unflatten-l1-validation.md",
+      "target": "diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md"
+    },
+    {
+      "document": "docs/composite-matmul-unflatten-l1-validation.md",
+      "target": "diagnostics/composite-matmul-unflatten-l1/postcommit-208e9bf/README.md"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "../postcommit-cbcbd84/README.md"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "inspection.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "source-manifest.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "build-record.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "commands.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "build.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "install.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "fresh-build.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "provenance.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "provenance.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "wheel-verifier.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "focused-surfaces.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "focused-surfaces.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "compiled-regressions.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "compiled-regressions.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "compiled-proof.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "compiled-proof.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "two-gpu.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "two-gpu.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "rust-bridge.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "rust-matmul.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "fixed-math.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "fixed-math.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "frozen-compiler.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "frozen-compiler.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "fixed-scoring.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "fixed-scoring.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "scoring-provenance.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "compiled-timings.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "compiled-timings.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "verification.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "evidence-validation.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "evidence-validation.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "publication-check.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "publication-docs.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "publication-docs.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "scoring-cache-preparation.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "../postcommit-208e9bf/README.md"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "artifact-hashes.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md",
+      "target": "../../../compile-cuda-matmul.md#reproduction-and-delivery"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "inspection.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "source-manifest.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "build-record.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "commands.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "build.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "install.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "fresh-build.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "provenance.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "provenance.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "wheel-verifier.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "focused-surfaces.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "focused-surfaces.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "compiled-regressions.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "compiled-regressions.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "compiled-proof.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "compiled-proof.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "two-gpu.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "two-gpu.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "rust-bridge.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "rust-matmul.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "fixed-math.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "fixed-math.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "frozen-compiler.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "frozen-compiler.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "fixed-scoring.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "fixed-scoring.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "scoring-provenance.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "compiled-timings.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "compiled-timings.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "verification.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "evidence-validation.log"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "evidence-validation.receipt.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "scoring-cache-preparation.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "../postcommit-06a2496/README.md"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "artifact-hashes.json"
+    },
+    {
+      "document": "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md",
+      "target": "../../../compile-cuda-matmul.md#reproduction-and-delivery"
+    }
+  ],
+  "no_stale_worktree_paths_in_new_evidence": true,
+  "commands": [
+    {
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/.venv/bin/python",
+        "-B",
+        "-m",
+        "unittest",
+        "tests.test_readme_quickstart",
+        "-v"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914",
+      "started_at": "2026-09-10T16:29:16.824526+00:00",
+      "ended_at": "2026-09-10T16:29:17.195577+00:00",
+      "wall_seconds": 0.3710565259680152,
+      "exit_status": 0,
+      "log": "publication-docs.log",
+      "log_sha256": "b8ec41b81cb91ea4162f4b659e0050cf577170d95c15ec8f35d6989ba2256dd0",
+      "measurement_kind": "post-publication evidence/documentation verification; not a clean-commit workload",
+      "source": {
+        "commit": "cbcbd841e053170d46dcf05a0957c8bfc6c36538",
+        "source_sha256": "aad2016883226a6274343006a7beae88ed0c195d4177912fa9b4aff9b7df8853",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "git_status": " M docs/README.md\n M docs/compile-cuda-matmul.md\n M docs/composite-matmul-unflatten-l1-validation.md\n M docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md\n?? docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/\n",
+      "checker_sha256": "6df1bc9d81898dfbec3320ea7107116303fbbe1e74cf1a3dec6aa044b0d00afb"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914",
+      "started_at": "2026-09-10T16:29:17.235061+00:00",
+      "ended_at": "2026-09-10T16:29:17.270148+00:00",
+      "wall_seconds": 0.03509820345789194,
+      "exit_status": 0,
+      "log": "publication-diff.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "measurement_kind": "post-publication evidence/documentation verification; not a clean-commit workload",
+      "source": {
+        "commit": "cbcbd841e053170d46dcf05a0957c8bfc6c36538",
+        "source_sha256": "aad2016883226a6274343006a7beae88ed0c195d4177912fa9b4aff9b7df8853",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "git_status": " M docs/README.md\n M docs/compile-cuda-matmul.md\n M docs/composite-matmul-unflatten-l1-validation.md\n M docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md\n?? docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/\n",
+      "checker_sha256": "6df1bc9d81898dfbec3320ea7107116303fbbe1e74cf1a3dec6aa044b0d00afb"
+    }
+  ]
+}

@@ -1961,6 +1961,162 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
         )
         self.assert_matches(actual, expected, case="bandwidth-sized contiguous")
 
+    @staticmethod
+    def backward_operands(module, case, flags):
+        input_values = np.array([-3.0, -0.0, 0.0, 4.0, 2.0, -2.0], dtype=np.float32)
+        target_values = np.array([1.0, 0.0, -0.0, 4.0, -1.0, -2.0], dtype=np.float32)
+        if case == "scalar":
+            input_values, target_values = np.float32(-3.0), np.float32(1.0)
+        elif case == "empty":
+            input_values = target_values = np.empty((2, 0, 3), dtype=np.float32)
+        elif case == "overflow":
+            limit = np.finfo(np.float32).max
+            input_values = np.array([limit, -limit], dtype=np.float32)
+            target_values = -input_values
+        elif case == "channels last":
+            input_values = np.tile(input_values, 4).reshape(2, 2, 2, 3)
+            target_values = np.tile(target_values, 4).reshape(2, 2, 2, 3)
+        elif case == "singleton channels last":
+            input_values = input_values.reshape(1, 2, 1, 3)
+            target_values = target_values.reshape(1, 2, 1, 3)
+        else:
+            input_values = input_values.reshape(2, 3)
+            target_values = target_values.reshape(2, 3)
+            if case.startswith("offset"):
+                # Finiteness is a property of the view, not its unused storage.
+                padding = np.full((2, 3), np.nan, dtype=np.float32)
+                input_values = np.stack([padding, input_values])
+                target_values = np.stack([padding, target_values])
+        leaves = tuple(
+            module.tensor(values.tolist(), dtype=module.float32, requires_grad=flag)
+            if values.size
+            else module.zeros(values.shape, dtype=module.float32, requires_grad=flag)
+            for values, flag in zip((input_values, target_values), flags)
+        )
+        operands = leaves
+        if case.startswith("offset"):
+            operands = tuple(leaf[1] for leaf in operands)
+        if case in ("transposed", "offset transposed", "empty"):
+            operands = tuple(value.transpose(0, 1) for value in operands)
+        elif case == "mixed layout":
+            operands = (leaves[0].transpose(0, 1), leaves[1].reshape(3, 2))
+        elif case in ("channels last", "singleton channels last"):
+            operands = tuple(
+                value.contiguous(memory_format=module.channels_last)
+                for value in operands
+            )
+        return leaves, operands
+
+    def test_unreduced_weighted_backward_layouts_match_pytorch_2_13(self):
+        for case in (
+            "dense", "scalar", "empty", "transposed", "offset",
+            "offset transposed", "mixed layout", "channels last", "overflow",
+            "singleton channels last",
+        ):
+            for flags in ((True, False), (False, True), (True, True)):
+                with self.subTest(case=case, requires_grad=flags):
+                    results = []
+                    for module in (torch, reference_torch):
+                        leaves, operands = self.backward_operands(module, case, flags)
+                        before = [np.asarray(value.detach()).copy() for value in leaves]
+                        output = module.nn.functional.l1_loss(*operands, reduction="none")
+                        self.assertTrue(output.requires_grad)
+                        self.assertFalse(output.is_leaf)
+                        if module is reference_torch:
+                            self.assertEqual(output.grad_fn.name(), "AbsBackward0")
+                        for operand in operands:
+                            if output.numel():
+                                self.assertNotEqual(output.data_ptr(), operand.data_ptr())
+                        weights = np.resize(
+                            np.array([0.5, -2.0, 3.0, -4.0, 1.5, -0.25], dtype=np.float32),
+                            output.numel(),
+                        ).reshape(tuple(output.shape))
+                        weights = module.tensor(
+                            weights.reshape(-1).tolist(), dtype=module.float32,
+                        ).reshape(tuple(output.shape))
+                        (output * weights).sum().backward()
+                        for leaf, original in zip(leaves, before):
+                            np.testing.assert_array_equal(np.asarray(leaf.detach()), original)
+                        results.append((output, leaves))
+                    self.assert_matches(results[0][0], results[1][0], case=case)
+                    for actual, expected, flag in zip(results[0][1], results[1][1], flags):
+                        if flag:
+                            actual_grad, expected_grad = actual.grad, expected.grad
+                            if case == "singleton channels last":
+                                # The existing engine canonicalizes singleton leaf
+                                # gradient strides; compare all meaningful strides
+                                # and normalize singleton metadata for the helper.
+                                self.assertEqual(actual_grad.shape, tuple(expected_grad.shape))
+                                for size, actual_stride, expected_stride in zip(
+                                    actual_grad.shape, actual_grad.stride(), expected_grad.stride(),
+                                ):
+                                    if size != 1:
+                                        self.assertEqual(actual_stride, expected_stride)
+                                actual_grad = actual_grad.reshape(-1)
+                                expected_grad = expected_grad.reshape(-1)
+                            self.assert_matches(actual_grad, expected_grad, case=(case, "grad"))
+                        else:
+                            self.assertIsNone(actual.grad)
+                            self.assertIsNone(expected.grad)
+
+    def test_unreduced_shared_operands_and_repeated_use_match_pytorch_2_13(self):
+        for case in ("same tensor", "shared views", "shared nonleaf", "repeated loss"):
+            with self.subTest(case=case):
+                results = []
+                for module in (torch, reference_torch):
+                    leaf = module.tensor(
+                        [[-3.0, -0.0, 2.0], [1.0, 0.0, -2.0]],
+                        dtype=module.float32, requires_grad=True,
+                    )
+                    weights = module.tensor(
+                        [[0.5, -2.0, 3.0], [-4.0, 1.5, -0.25]], dtype=module.float32,
+                    )
+                    if case == "same tensor":
+                        input, target = leaf, leaf
+                    elif case == "shared views":
+                        input, target = leaf[0], leaf[1]
+                        weights = weights[0]
+                    elif case == "shared nonleaf":
+                        input, target = leaf * 2.0, leaf * -1.
+                    else:
+                        input, target = leaf, module.zeros_like(leaf)
+                    output = module.nn.functional.l1_loss(input, target, reduction="none")
+                    if case == "repeated loss":
+                        second = module.nn.functional.l1_loss(input, target, reduction="none")
+                        loss = (output * weights + output * 0.5 + second * -2.0).sum()
+                    else:
+                        loss = (output * weights).sum()
+                    loss.backward()
+                    first_grad = leaf.grad.clone()
+                    # A new graph accumulates into the existing leaf gradient.
+                    fresh = module.nn.functional.l1_loss(
+                        leaf, module.zeros_like(leaf), reduction="none",
+                    )
+                    (fresh * -0.5).sum().backward()
+                    results.append((output, first_grad, leaf.grad))
+                for actual, expected in zip(*results):
+                    self.assert_matches(actual, expected, case=case)
+
+    def test_unreduced_backward_releases_graph_matches_pytorch_2_13(self):
+        results = []
+        for module in (torch, reference_torch):
+            input = module.tensor([-3.0, 0.0, 2.0], dtype=module.float32, requires_grad=True)
+            target = module.tensor([1.0, -0.0, 4.0], dtype=module.float32, requires_grad=True)
+            weights = module.tensor([0.5, -2.0, 3.0], dtype=module.float32)
+            output = module.nn.functional.l1_loss(input, target, reduction="none")
+            loss = (output * weights).sum()
+            loss.backward()
+            input_grad, target_grad = input.grad.clone(), target.grad.clone()
+            # Both the scalar root and the saved abs node have been released.
+            for backward in (loss.backward, lambda: output.sum().backward()):
+                with self.assertRaisesRegex(RuntimeError, "backward through the graph a second time"):
+                    backward()
+            np.testing.assert_array_equal(np.asarray(input.grad), np.asarray(input_grad))
+            np.testing.assert_array_equal(np.asarray(target.grad), np.asarray(target_grad))
+            results.append((input.grad, target.grad))
+        for actual, expected in zip(*results):
+            self.assert_matches(actual, expected, case="released graph")
+
     def test_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, target_requires_grad in (
             (True, False),
@@ -1991,15 +2147,22 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                     target_requires_grad=target_requires_grad,
                     reduction=reduction,
                 ):
-                    with self.assertRaisesRegex(
-                        RuntimeError,
-                        r"^l1_loss\(\): autograd recording is not supported$",
-                    ):
-                        functional.l1_loss(
-                            actual_input,
-                            actual_target,
-                            reduction=reduction,
+                    if reduction == "none":
+                        self.assertTrue(
+                            functional.l1_loss(
+                                actual_input, actual_target, reduction=reduction,
+                            ).requires_grad
                         )
+                    else:
+                        with self.assertRaisesRegex(
+                            RuntimeError,
+                            r"^l1_loss\(\): autograd recording is not supported$",
+                        ):
+                            functional.l1_loss(
+                                actual_input,
+                                actual_target,
+                                reduction=reduction,
+                            )
 
                     with torch.no_grad():
                         actual = functional.l1_loss(
@@ -2020,7 +2183,7 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                         max_value_ulp=int(reduction == "sum"),
                     )
 
-    def test_channels_last_requires_grad_matches_no_grad_and_rejects_active_autograd(self):
+    def test_channels_last_requires_grad_matches_no_grad(self):
         for input_requires_grad, target_requires_grad in (
             (True, False),
             (False, True),
@@ -2073,15 +2236,11 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 self.assertTrue(
                     actual_input.is_contiguous(memory_format=torch.channels_last)
                 )
-                with self.assertRaisesRegex(
-                    RuntimeError,
-                    r"^l1_loss\(\): autograd recording is not supported$",
-                ):
+                self.assertTrue(
                     functional.l1_loss(
-                        actual_input,
-                        actual_target,
-                        reduction="none",
-                    )
+                        actual_input, actual_target, reduction="none",
+                    ).requires_grad
+                )
 
                 with torch.no_grad():
                     actual = functional.l1_loss(

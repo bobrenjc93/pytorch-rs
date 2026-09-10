@@ -12,6 +12,10 @@ except ImportError:
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class UnflattenReferenceTests(unittest.TestCase):
+    @staticmethod
+    def unflatten(module, source, dim, sizes):
+        return source.unflatten(dim, sizes)
+
     def assert_matches(self, actual, expected):
         self.assertEqual(actual.shape, expected.shape)
         self.assertEqual(actual.stride(), expected.stride())
@@ -48,15 +52,15 @@ class UnflattenReferenceTests(unittest.TestCase):
                 expected_leaf = reference_torch.tensor(values, requires_grad=True) if values.size else reference_torch.zeros(shape, requires_grad=True)
                 source, reference = transform(actual_leaf), transform(expected_leaf)
                 self.assert_matches(source, reference)
-                result, expected = source.unflatten(dim, sizes), reference.unflatten(dim, sizes)
+                result, expected = self.unflatten(torch, source, dim, sizes), self.unflatten(reference_torch, reference, dim, sizes)
                 self.assert_matches(result, expected)
                 self.assertIsNot(result, source)
                 self.assertEqual(result.data_ptr(), source.data_ptr())
                 self.assertEqual(expected.data_ptr(), reference.data_ptr())
                 # Matching shape/strides plus storage identity checks aliases
                 # even when empty data_ptr() values are both null.
-                identity = source.unflatten(dim, (source.shape[dim],))
-                reference_identity = reference.unflatten(dim, (reference.shape[dim],))
+                identity = self.unflatten(torch, source, dim, (source.shape[dim],))
+                reference_identity = self.unflatten(reference_torch, reference, dim, (reference.shape[dim],))
                 self.assertEqual(identity.is_set_to(source), reference_identity.is_set_to(reference))
                 weights = np.arange(result.numel(), dtype=np.float32).reshape(result.shape) + 1
                 actual_weights = torch.tensor(weights.tolist()) if weights.size else torch.zeros(result.shape)
@@ -65,7 +69,7 @@ class UnflattenReferenceTests(unittest.TestCase):
                 self.assertEqual(actual_leaf.grad.shape, expected_leaf.grad.shape)
                 np.testing.assert_array_equal(np.asarray(actual_leaf.grad), expected_leaf.grad.numpy())
                 with torch.no_grad(), reference_torch.no_grad():
-                    self.assert_matches(source.unflatten(dim, sizes), reference.unflatten(dim, sizes))
+                    self.assert_matches(self.unflatten(torch, source, dim, sizes), self.unflatten(reference_torch, reference, dim, sizes))
 
     def test_positional_keyword_and_integer_forms(self):
         actual, expected = torch.zeros((2, 6)), reference_torch.zeros((2, 6))
@@ -84,7 +88,7 @@ class UnflattenReferenceTests(unittest.TestCase):
     def test_native_scope_rejects_cuda(self):
         source = torch.zeros((12,), device="cuda:0")
         with self.assertRaisesRegex(NotImplementedError, "only exact native CPU float32"):
-            source.unflatten(0, (3, 4))
+            self.unflatten(torch, source, 0, (3, 4))
 
     def assert_error_matches(self, actual, expected, args, kwargs):
         with self.assertRaises(Exception) as actual_error:

@@ -1,0 +1,17 @@
+{
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/.venv/bin/python",
+    "-I",
+    "-B",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/check_publication.py"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914",
+  "started_at": "2026-09-10T15:56:45.389972+00:00",
+  "ended_at": "2026-09-10T15:56:46.468010+00:00",
+  "wall_seconds": 1.078052930533886,
+  "exit_status": 0,
+  "log": "publication-check-attempt3.log",
+  "log_sha256": "c7b48db635b4090cdc43d1d1d77b9071d69e29bfced4f2847e1b9868668afabe",
+  "measurement_kind": "post-publication evidence/documentation verification; not a workload",
+  "checker_sha256": "ca0f5f3514225fe5a6ee34519942a96beb03c5e2e0c4b8a8a1ca03dde33ff31e"
+}

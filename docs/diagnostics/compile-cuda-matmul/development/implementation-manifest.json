@@ -1,0 +1,18 @@
+{
+  "ARCHITECTURE.md": "f882c844ab97cb23f0134ec54acd0248135191cf76772c55048db514cb923be7",
+  "FEATURES.md": "dfc73f22c1ef8b2a7ffece153a29673e1c8725c01a81adc68efcd62e91dcfc41",
+  "README.md": "096d54f68e5109e70be4639990eebad34e2f024120484c247c1e65ffac67e747",
+  "docs/README.md": "9dfef6db8c360206be9135cbb816f4a58c4955620239ef4540a6fae1467940e2",
+  "docs/compile-cuda-add.md": "3a5f285bb5932018a5f59780e0e8cc017eaa8b1c5394cdcf55d3f5b9ba9120f6",
+  "docs/cuda-matmul.md": "298710b33f12fa24b3d3a8e74c8dc728a8fcdf1d3fabc56f8bc63955e525fe4a",
+  "docs/supported-surface.md": "5d387e3e3cdd5f1bf90d321ba8d139bbcfbef8e3d059eb5dc4df84520f08bcfa",
+  "python/torch_rs/__init__.py": "8de5957cc2ce7c6d8bf243625c47369242a1d4895b74857e1531d765c787a7b1",
+  "python/torch_rs/_compile_bytecode.py": "f64317330152092ae990b024ac1f4e34dd5e0a627279ffb0e48b9e26ee490ae8",
+  "python/torch_rs/_compile_trace.py": "7d158b11ea15e975f8e2c2cdeca027850ee7bfa4eeba80f6d6a98fe13996032c",
+  "src/python.rs": "042e51f0fdf5285392b6d5ca7fb521cb84da0972875127955c370046b77dfa26",
+  "tests/test_cuda_matmul.py": "3959d1423a8ee865f4cd878e96f89511734344036a4ac504b79464cd26c0a04d",
+  "tests/test_compile_cuda_matmul.py": "a76f0a9ea57b813ee45a403d4e8f29fe20f204b7a3b854c6892515043281a15c",
+  "tests/test_compile_cuda_matmul_diagnostic.py": "c84748831411a26c8883986ffbbe958df614c484a44243d87264e0a8db9d7669",
+  "scripts/diagnose_compile_cuda_matmul.py": "9029157f4f0c790708602412c0e5a6fe3d12bbde76cb67bb460dcdae78fcf1e9",
+  "docs/compile-cuda-matmul.md": "9e8ca6773709cb61cc16229816e1eaf91eef0ff183a769f7205a43734f03ff49"
+}

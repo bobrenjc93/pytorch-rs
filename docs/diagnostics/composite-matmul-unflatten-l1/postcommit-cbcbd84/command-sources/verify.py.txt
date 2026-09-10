@@ -1,0 +1,92 @@
+"""Read-only integrity checks for the captured evidence, using committed accounting."""
+import datetime,hashlib,importlib.util,json,pathlib,subprocess,sys
+ROOT=pathlib.Path.cwd().resolve(); OUT=ROOT/'target/postcommit-cbcbd84'
+sys.path.insert(0,str(ROOT/'scripts'))
+import evaluate_cuda_math as math_eval
+import benchmark_compile_cuda as scoring
+import diagnose_compile_cuda_matmul as diagnostic
+
+def read(name): return json.loads((OUT/name).read_text())
+def digest(path): return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+def local(path):
+    p=pathlib.Path(path).resolve(); assert p.is_relative_to(ROOT),p
+    return p
+manifest=read('source-manifest.json')
+assert manifest=={p:digest(ROOT/p) for p in manifest}
+assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()=='cbcbd841e053170d46dcf05a0957c8bfc6c36538'
+assert not subprocess.check_output(['git','status','--porcelain'],text=True)
+build=read('native/build-record.json')
+source=math_eval.source_provenance()
+assert source=={k:build[k] for k in source}
+assert build['clean_checkout'] and build['source_unchanged_during_build'] and not build['git_status_before_build']
+for key in ('extension_path','source_extension_path'):
+    assert digest(local(build[key]))==build['extension_sha256']
+assert digest(local(build['wheel_path']))==build['wheel_sha256']
+for command in build['commands']:
+    assert command['exit_status']==0 and digest(local(command['log']))==command['log_sha256']
+receipts={}
+for path in sorted(OUT.glob('*.receipt.json')):
+    r=json.loads(path.read_text())
+    assert r['source_unchanged'] and r['source_before']==r['source_after']==source,path
+    assert r['git_status_before']==r['git_status_after']=='',path
+    assert digest(OUT/r['log'])==r['log_sha256'],path
+    assert digest(OUT/'record.py')==r['recorder_sha256'],path
+    assert digest(OUT/'source-manifest.json')==r['source_manifest_sha256'],path
+    expected=0
+    assert r['exit_status']==expected,path
+    receipts[path.name]={'exit_status':r['exit_status'],'log_sha256':r['log_sha256']}
+for name in ('provenance.json','scoring-provenance.json'):
+    p=read(name)
+    for value in (*p['imports'].values(),*p['loaded_cuda_libraries']):
+        assert digest(local(value['path']))==value['sha256'],value
+    assert p.get('git_status','')==''
+p=read('provenance.json')
+assert p['native']['sha256']==build['extension_sha256']
+assert read('scoring-provenance.json')['imports']['torch_rs.torch_rs']['sha256']==build['extension_sha256']
+math=read('fixed-math.json')
+assert math['source']==source and math['source_unchanged_during_run']
+assert math['seeds']==[8503945240872567646,8613321571747136749,4480763905421893394]
+assert len(math['trials'])==18
+assert math_eval.account(math_eval.corpus(),math['seeds'],math['trials'],build,source)==math['accounting']
+assert math['accounting']['passed']==math['accounting']['denominator']==6
+fixed=read('fixed-scoring.json')
+assert len(fixed['workload_results'])==4
+assert fixed['aggregates']==scoring._aggregate_workload_results(fixed['workload_results'])
+assert fixed['environment']['run_mode']=='full'
+assert [fixed['environment'][k] for k in ('warmups','samples','repeats')]==[5,17,3]
+assert fixed['aggregates']['denominator_weight']==1.0
+assert fixed['aggregates']['common_success_shape_count']==4
+for row,expected in zip(fixed['workload_results'],scoring.WORKLOAD_MATRIX,strict=True):
+    assert row['workload']['name']==expected['name']
+    assert row['workload']['shape']==list(expected['shape'])
+    for key in ('reference_workload','candidate'):
+        assert row[key]['steady']['sample_count']==17
+    assert row['candidate']['status']=='ok'
+    assert not row['candidate']['forwarded_to_pytorch'] and not row['candidate']['eager_fallback']
+timings=read('compiled-timings.json')
+assert timings['status']=='passed' and timings['measurement_kind']=='clean-commit'
+assert timings['git_status']=='' and timings['source']==timings['source_after']==source
+assert timings['harness_sha256']==digest(ROOT/'scripts/diagnose_compile_cuda_matmul.py')
+assert len(timings['cases'])==12
+assert timings['capped_geometric_parity']==diagnostic.aggregate(timings['cases'])
+assert all(v==0 for v in timings['cache_initial_files'].values())
+for cell,expected in zip(timings['cases'],diagnostic.cells(timings['seed']),strict=True):
+    assert cell['shape_mkn']==list(expected['shape_mkn']) and cell['offset']==expected['offset'] and cell['program']==expected['program']
+    assert cell['status']=='passed' and len(cell['orders'])==2
+    assert cell['input_hashes'] and cell['output_hashes']
+    for order in cell['orders']:
+        assert set(order['first_call_ms'])==set(order['wrapper_ms'])=={'native','pytorch'}
+        for sample in order['samples'].values():
+            assert len(sample['samples_us'])==31 and len(sample['calls_us'])==sample['checked_calls']==155
+    assert all(len(v['samples_us'])==62 for v in cell['timings'].values())
+for path in timings['imports'].values(): local(path)
+for lib in timings['loaded_cuda_libraries']: assert digest(local(lib['path']))==lib['sha256']
+result={'verified_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'commit':source['commit'],'source':source,
+        'git_status':'','all_tracked_files_unchanged_during_capture':True,'receipts':receipts,
+        'fixed_math_trials':18,'fixed_math_cases_passed':6,'fixed_scoring':fixed['aggregates'],
+        'compiled_timing_cells':12,'compiled_timing_parity':timings['capped_geometric_parity'],
+        'native_sha256':build['extension_sha256'],'failed_attempts_retained':[],
+        'failure_scope':'No failed measurement attempts in this capture. Prior capture attempts remain preserved at their original paths.',
+        'scope':'Evidence integrity only; independent review, ten gates and exact-head CI remain external requirements.'}
+(OUT/'verification.json').write_text(json.dumps(result,indent=2)+'\n')
+print(json.dumps(result,indent=2))

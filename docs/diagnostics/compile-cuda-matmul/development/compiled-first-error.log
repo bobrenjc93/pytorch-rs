@@ -1,0 +1,24 @@
+/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+E
+======================================================================
+ERROR: test_generated_capture_forms_changed_inputs_and_composition (tests.test_compile_cuda_matmul.CompileCudaMatmulTests.test_generated_capture_forms_changed_inputs_and_composition) (expr='x @ y', policy=(True, None), shape=(23, 36, 26), offset=0, changed=0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/tests/test_compile_cuda_matmul.py", line 89, in test_generated_capture_forms_changed_inputs_and_composition
+    actual = call_without_python(compiled, {fn.__code__}, *args[:2])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 435, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 825, in compiled_model
+    raise _compile_trace.CompileTraceUnsupportedError(
+torch_rs._compile_trace.CompileTraceUnsupportedError: torch.compile trace bytecode lowering hit recompile_limit=16; no additional input metadata variants will be compiled for this wrapper
+
+----------------------------------------------------------------------
+Ran 1 test in 5.299s
+
+FAILED (errors=1)

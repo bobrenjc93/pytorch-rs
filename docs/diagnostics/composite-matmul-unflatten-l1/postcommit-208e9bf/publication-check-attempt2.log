@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-208e9bf/check_publication.py", line 30, in <module>
+    assert worktree == ROOT.name, (str(p),worktree)
+           ^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ('/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/docs/diagnostics/composite-matmul-unflatten-l1/postcommit-208e9bf/rust-bridge.log', 'composite_8c539914)')
