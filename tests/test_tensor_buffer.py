@@ -24,11 +24,9 @@ class TensorBufferTests(unittest.TestCase):
         return tensor
 
     def test_numeric_array_and_memoryview_formats_copy_as_float32(self):
-        boolean_values = (
-            [0.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-            if sys.version_info >= (3, 14)
-            else [0.0, 1.0, 0.0, 1.0, 0.0, 1.0]
-        )
+        # Noncanonical bool storage depends on the interpreter build, not just
+        # its minor version. Tensor construction follows memoryview indexing.
+        boolean_values = list(memoryview(b"\x00\x01\x02\x03\xfe\xff").cast("?"))
         cases = (
             ("b", [-128, 0, 127]),
             ("B", [0, 128, 255]),
@@ -67,7 +65,7 @@ class TensorBufferTests(unittest.TestCase):
     def test_native_prefixed_formats(self):
         pointer_high_bit = 1 << (8 * struct.calcsize("@P") - 1)
         pointer_bytes = struct.pack("@PP", 123, pointer_high_bit)
-        boolean_values = [1.0, 1.0] if sys.version_info >= (3, 14) else [0.0, 1.0]
+        boolean_values = list(memoryview(b"\x02\x03").cast("@?"))
         for format_code, raw, expected in (
             ("@i", struct.pack("@ii", -7, 9), [-7.0, 9.0]),
             ("@f", struct.pack("@ff", -2.5, 3.25), [-2.5, 3.25]),
@@ -90,6 +88,28 @@ class TensorBufferTests(unittest.TestCase):
         exporter = array.array("i", [-8, -4, 0, 4, 8, 12])
         self.assert_tensor(memoryview(exporter)[1::2], [-4, 4, 12])
         self.assert_tensor(memoryview(exporter)[::-2], [12, 4, -4])
+
+    def test_boolean_storage_follows_interpreter_and_preserves_source(self):
+        for format_code in ("?", "@?"):
+            for raw in (bytes(range(256)), b"\x00\x01" * 4096):
+                for selection in (
+                    slice(None),
+                    slice(1, None, 3),
+                    slice(None, None, -1),
+                    slice(None, None, -2),
+                    slice(1, 1),
+                ):
+                    with self.subTest(
+                        format=format_code, size=len(raw), selection=selection,
+                    ):
+                        exporter = bytearray(raw)
+                        source = memoryview(exporter).cast(format_code)[selection]
+                        expected = list(source)
+                        tensor = self.assert_tensor(source, expected)
+                        self.assertEqual(bytes(exporter), raw)
+                        self.assertEqual(list(source), expected)
+                        exporter[:] = bytes(len(exporter))
+                        self.assertEqual(tensor.tolist(), expected)
 
     def test_numpy_and_ctypes_sequences_keep_sequence_dispatch(self):
         matrix = np.asarray([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
