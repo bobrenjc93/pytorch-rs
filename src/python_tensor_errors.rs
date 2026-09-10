@@ -34,6 +34,9 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::DuplicateDimension { .. }
         | TensorError::SqueezeDimensionsRankLimit
         | TensorError::FlattenStartAfterEnd
+        | TensorError::UnflattenEmptySizes
+        | TensorError::UnflattenScalar { .. }
+        | TensorError::UnflattenSizeMismatch { .. }
         | TensorError::FlattenNonConcreteInteger
         | TensorError::NonConcreteInteger
         | TensorError::ElementCountOverflow
@@ -53,6 +56,7 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::UnsupportedCudaAddition { .. }
         | TensorError::UnsupportedCudaScalarMultiplication { .. }
         | TensorError::UnsupportedCudaNegation { .. }
+        | TensorError::UnsupportedCudaSum { .. }
         | TensorError::UnsupportedCudaTransfer { .. } => {
             PyNotImplementedError::new_err(error.to_string())
         }

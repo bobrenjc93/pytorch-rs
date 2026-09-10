@@ -1,0 +1,4 @@
+42 row-sum cases passed: 30 exact cancellation/overflow and 12 wide-decimal comparisons.
+GLU native/reference gradients: [206115373056.0, 2.0611537240190114e+31] [206115373056.0, 2.0611537240190114e+31]
+Separate processes; candidate PyTorch imports: [] []
+Correctness only; nonfinite observations use explicit NaN/Infinity strings in strict JSON.

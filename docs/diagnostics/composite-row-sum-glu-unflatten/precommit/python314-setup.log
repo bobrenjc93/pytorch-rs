@@ -1,0 +1,6 @@
+Downloading cpython-3.14.7-linux-x86_64-gnu (download) (34.3MiB)
+ Downloaded cpython-3.14.7-linux-x86_64-gnu (download)
+Installed Python 3.14.7 in 827ms
+ + cpython-3.14.7-linux-x86_64-gnu
+warning: Failed to install executable for cpython-3.14.7-linux-x86_64-gnu
+  Caused by: Executable already exists at `/home/bobren/.local/bin/python3.14` but is not managed by uv; use `--force` to replace it

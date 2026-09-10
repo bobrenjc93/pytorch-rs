@@ -394,6 +394,71 @@ impl CudaFloat32Storage {
         elements: usize,
         launch: impl FnOnce(u64, u64, usize) -> Result<(), TensorError>,
     ) -> Result<Self, TensorError> {
+        self.unary_output(offset, elements, elements, |input, output| {
+            launch(input, output, elements)
+        })
+    }
+
+    pub(crate) fn sum_rows(
+        &self,
+        offset: usize,
+        rows: usize,
+        columns: usize,
+    ) -> Result<Self, TensorError> {
+        let elements = rows
+            .checked_mul(columns)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        // Keep scratch outside the launch closure: unary_output synchronizes
+        // after that closure returns, including on partial/final launch errors.
+        let mut scratch = None;
+        self.unary_output(offset, elements, rows, |input, output| {
+            let mut launches = Vec::new();
+            let mut scratch_elements = 0;
+            pointwise::RowSumSlice::for_each(rows, columns, |slice| {
+                let config = pointwise::RowSumConfig::current(slice.rows, slice.columns)?;
+                if config.ctas > 1 {
+                    let count = slice
+                        .rows
+                        .checked_mul(config.ctas)
+                        .ok_or(TensorError::IndexCalculationOverflow)?;
+                    scratch_elements = scratch_elements.max(count);
+                }
+                launches
+                    .try_reserve(1)
+                    .map_err(|_| TensorError::AllocationFailed { elements })?;
+                launches.push((slice, config));
+                Ok(())
+            })?;
+            if scratch_elements != 0 {
+                scratch = Some(Self::allocate(scratch_elements, self.device_index)?.0);
+            }
+            let partials = scratch.as_ref().map_or(0, |buffer| buffer.data_ptr as u64);
+            for (slice, config) in launches {
+                // SAFETY: each slice partitions the checked input/output ranges.
+                // Legacy-stream ordering permits scratch reuse and accumulation
+                // into output written by earlier column slices. Both allocations
+                // survive every launch and completion, including launch failure.
+                unsafe {
+                    pointwise::launch_sum_rows(
+                        input + (slice.input_offset * 4) as u64,
+                        output + (slice.output_offset * 4) as u64,
+                        partials,
+                        slice,
+                        &config,
+                    )?;
+                }
+            }
+            Ok(())
+        })
+    }
+
+    fn unary_output(
+        &self,
+        offset: usize,
+        elements: usize,
+        output_elements: usize,
+        launch: impl FnOnce(u64, u64) -> Result<(), TensorError>,
+    ) -> Result<Self, TensorError> {
         // Empty views may have offsets beyond storage; never form their pointer.
         if elements != 0
             && offset
@@ -402,13 +467,16 @@ impl CudaFloat32Storage {
         {
             return Err(TensorError::IndexCalculationOverflow);
         }
-        let (result, _guard) = Self::allocate(elements, self.device_index)?;
-        if elements != 0 {
+        let (result, _guard) = Self::allocate(output_elements, self.device_index)?;
+        if output_elements != 0 {
             // Bounds are checked and both allocations stay live through completion.
             let launched = launch(
-                (self.data_ptr + offset * 4) as u64,
+                if elements == 0 {
+                    0
+                } else {
+                    (self.data_ptr + offset * 4) as u64
+                },
                 result.data_ptr as u64,
-                elements,
             );
             let completed = self.runtime.check(
                 unsafe { (self.runtime.stream_synchronize)(std::ptr::without_provenance_mut(1)) },
@@ -938,6 +1006,52 @@ mod tests {
             )
             .unwrap();
         assert_eq!(current, 1);
+    }
+
+    #[test]
+    fn row_sum_bounds_empty_inputs_and_failure_cleanup() {
+        use super::{CACHE_HEALTHY, CudaFloat32Storage, Ordering};
+        use crate::TensorError;
+        if super::device_count() == 0 {
+            eprintln!("skipping CUDA row sum bounds: no CUDA runtime/device");
+            return;
+        }
+        let input = CudaFloat32Storage::from_host(&[1., 2., 3., 4.], 0).unwrap();
+        for (offset, rows, columns) in [(1, 2, 2), (usize::MAX, 1, 1), (0, usize::MAX, 2)] {
+            assert!(matches!(
+                input.sum_rows(offset, rows, columns),
+                Err(TensorError::IndexCalculationOverflow)
+            ));
+        }
+        assert_eq!(
+            input.sum_rows(usize::MAX, 0, usize::MAX).unwrap().elements,
+            0
+        );
+        assert_eq!(
+            input
+                .sum_rows(usize::MAX, 3, 0)
+                .unwrap()
+                .copy_range(0, 3)
+                .unwrap(),
+            [0.; 3]
+        );
+        assert_eq!(
+            input.sum_rows(1, 1, 3).unwrap().copy_range(0, 1).unwrap(),
+            [9.]
+        );
+        let error = TensorError::CudaRuntimeError {
+            operation: "cuLaunchKernel",
+            message: "injected reduction launch failure".into(),
+        };
+        // The reduction's differently sized output uses the same cleanup path.
+        let result = input.unary_output(0, 4, 2, |_, _| Err(error.clone()));
+        assert!(matches!(result, Err(actual) if actual == error));
+        assert!(!CACHE_HEALTHY.load(Ordering::Relaxed));
+        assert_eq!(input.copy_range(0, 4).unwrap(), [1., 2., 3., 4.]);
+        assert_eq!(
+            input.sum_rows(0, 2, 2).unwrap().copy_range(0, 2).unwrap(),
+            [3., 7.]
+        );
     }
 
     #[test]

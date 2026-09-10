@@ -1,0 +1,3 @@
+Verified final dirty-source build, source/wheel/installed/3.14 snapshot identities, evaluator, separate workers, runtime hashes, all command logs, and unchanged protected/prior evidence files.
+Source: {'commit': 'e360a656775367c60993ac3099d7e8d7d53554d2', 'source_sha256': '93cc9c5f3f438f4d2af21983232c8915dc5964fa2989fcc07f11eedf7ed13cec', 'production_diff_sha256': 'c6d84e5d59eaa2482bfc226eca7bc298355fdb891d1116ba1bf56204284f9971'}
+Extension: 42dd21e4f6be866aade8a285bdc9fc9579363b52ffb5e07773d2d4a09eb0fb6a

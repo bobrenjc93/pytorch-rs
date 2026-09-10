@@ -1,0 +1,372 @@
+// Native contiguous f32 row sum; appended to add.ptx's module directives.
+// Four independent float32 accumulators, aligned vector heads/tails, and
+// geometry-dependent x/y/CTA trees follow the PyTorch 2.13 CUDA reduction order.
+// No float64 promotion, FTZ, atomics on values, or external computation.
+.visible .entry sum_rows_f32(
+    .param .u64 input, .param .u64 output, .param .u64 scratch,
+    .param .u64 rows, .param .u64 columns, .param .u64 ctas,
+    .param .u32 reduce_y, .param .u32 vectorize, .param .u32 accumulate
+) {
+    .reg .pred p, valid, tail;
+    .reg .b32 x, y, bx, by, ry, vec, acc, t, delta, sh, addr, peer;
+    .reg .b64 a, b, tmp, nr, nc, np, row, base, rowstep, gridstep;
+    .reg .b64 part, partstep, idx, step, end, ptr, off, q, head;
+    .reg .f32 v0, v1, v2, v3, f0, f1, f2, f3, other;
+    .shared .align 4 .b8 shared[2048];
+    ld.param.u64 a, [input];
+    ld.param.u64 b, [output];
+    ld.param.u64 tmp, [scratch];
+    ld.param.u64 nr, [rows];
+    ld.param.u64 nc, [columns];
+    ld.param.u64 np, [ctas];
+    ld.param.u32 ry, [reduce_y];
+    ld.param.u32 vec, [vectorize];
+    ld.param.u32 acc, [accumulate];
+    mov.u32 x, %tid.x;
+    mov.u32 y, %tid.y;
+    mov.u32 bx, %ntid.x;
+    mov.u32 by, %ntid.y;
+    setp.ne.u32 p, ry, 0;
+    selp.u32 t, 1, by, p;
+    cvt.u64.u32 rowstep, t;
+    mov.u32 t, %ctaid.x;
+    cvt.u64.u32 base, t;
+    mul.lo.u64 base, base, rowstep;
+    mov.u32 t, %nctaid.x;
+    cvt.u64.u32 gridstep, t;
+    mul.lo.u64 gridstep, gridstep, rowstep;
+    mad.lo.u32 addr, y, bx, x;
+    shl.b32 addr, addr, 2;
+    mov.u32 sh, shared;
+    add.u32 addr, addr, sh;
+row_loop:
+    setp.ge.u64 p, base, nr;
+    @p bra finish;
+    cvt.u64.u32 row, y;
+    setp.ne.u32 p, ry, 0;
+    selp.u64 row, 0, row, p;
+    add.u64 row, base, row;
+    setp.lt.u64 valid, row, nr;
+    mov.u32 t, %ctaid.y;
+    cvt.u64.u32 part, t;
+    mov.u32 t, %nctaid.y;
+    cvt.u64.u32 partstep, t;
+partial_loop:
+    setp.ge.u64 p, part, np;
+    @p bra next_row;
+    mov.f32 v0, 0f00000000;
+    mov.f32 v1, 0f00000000;
+    mov.f32 v2, 0f00000000;
+    mov.f32 v3, 0f00000000;
+    @!valid bra reduce_x;
+    // Each y lane either owns a row or partitions this row with other y lanes.
+    setp.ne.u32 p, ry, 0;
+    selp.u32 t, y, 0, p;
+    mad.lo.u32 t, t, bx, x;
+    cvt.u64.u32 idx, t;
+    selp.u32 t, by, 1, p;
+    mul.wide.u32 step, t, bx;
+    mad.lo.u64 idx, part, step, idx;
+    mul.lo.u64 step, step, np;
+    setp.eq.u32 tail, y, 0;
+    setp.eq.u32 p, ry, 0;
+    or.pred tail, tail, p;
+    setp.eq.u64 p, part, 0;
+    and.pred tail, tail, p;
+    mul.lo.u64 off, row, nc;
+    shl.b64 off, off, 2;
+    add.u64 ptr, a, off;
+    mov.u64 end, nc;
+    setp.ne.u32 p, vec, 0;
+    @p bra vector_head;
+scalar_loop:
+    setp.ge.u64 p, idx, end;
+    @p bra combine;
+    shl.b64 off, idx, 2;
+    add.u64 off, ptr, off;
+    ld.global.f32 f0, [off];
+    add.rn.f32 v0, v0, f0;
+    add.u64 idx, idx, step;
+    setp.ge.u64 p, idx, end;
+    @p bra combine;
+    shl.b64 off, idx, 2;
+    add.u64 off, ptr, off;
+    ld.global.f32 f1, [off];
+    add.rn.f32 v1, v1, f1;
+    add.u64 idx, idx, step;
+    setp.ge.u64 p, idx, end;
+    @p bra combine;
+    shl.b64 off, idx, 2;
+    add.u64 off, ptr, off;
+    ld.global.f32 f2, [off];
+    add.rn.f32 v2, v2, f2;
+    add.u64 idx, idx, step;
+    setp.ge.u64 p, idx, end;
+    @p bra combine;
+    shl.b64 off, idx, 2;
+    add.u64 off, ptr, off;
+    ld.global.f32 f3, [off];
+    add.rn.f32 v3, v3, f3;
+    add.u64 idx, idx, step;
+    bra scalar_loop;
+vector_head:
+    and.b64 head, ptr, 15;
+    shr.u64 head, head, 2;
+    setp.eq.u64 p, head, 0;
+    @p bra vector_loop;
+    cvt.u64.u32 q, x;
+    setp.ge.u64 p, q, head;
+    and.pred p, p, tail;
+    setp.lt.u32 valid, x, 4;
+    and.pred p, p, valid;
+    @!p bra after_head;
+    sub.u64 off, q, head;
+    shl.b64 off, off, 2;
+    add.u64 off, ptr, off;
+    ld.global.f32 f0, [off];
+    add.rn.f32 v0, v0, f0;
+after_head:
+    sub.u64 head, 4, head;
+    sub.u64 end, end, head;
+    shl.b64 off, head, 2;
+    add.u64 ptr, ptr, off;
+vector_loop:
+    shl.b64 q, idx, 2;
+    add.u64 q, q, 3;
+    setp.ge.u64 p, q, end;
+    @p bra vector_tail;
+    shl.b64 off, idx, 4;
+    add.u64 off, ptr, off;
+    ld.global.v4.f32 {f0, f1, f2, f3}, [off];
+    add.rn.f32 v0, v0, f0;
+    add.rn.f32 v1, v1, f1;
+    add.rn.f32 v2, v2, f2;
+    add.rn.f32 v3, v3, f3;
+    add.u64 idx, idx, step;
+    bra vector_loop;
+vector_tail:
+    @!tail bra combine;
+    and.b64 q, end, 0xfffffffffffffffc;
+    cvt.u64.u32 off, x;
+    add.u64 q, q, off;
+    setp.ge.u64 p, q, end;
+    @p bra combine;
+    shl.b64 off, q, 2;
+    add.u64 off, ptr, off;
+    ld.global.f32 f0, [off];
+    add.rn.f32 v0, v0, f0;
+combine:
+    add.rn.f32 v0, v0, v1;
+    add.rn.f32 v0, v0, v2;
+    add.rn.f32 v0, v0, v3;
+reduce_x:
+    // Shared-memory x tree precedes descending shuffle-down, as in Reduce.cuh.
+    st.shared.f32 [addr], v0;
+    shr.u32 delta, bx, 1;
+rx_shared:
+    setp.lt.u32 p, delta, 32;
+    @p bra rx_warp_start;
+    bar.sync 0;
+    setp.ge.u32 p, x, delta;
+    @p bra rx_shared_next;
+    shl.b32 peer, delta, 2;
+    add.u32 peer, addr, peer;
+    ld.shared.f32 other, [peer];
+    add.rn.f32 v0, v0, other;
+    st.shared.f32 [addr], v0;
+rx_shared_next:
+    shr.u32 delta, delta, 1;
+    bra rx_shared;
+rx_warp_start:
+    bar.sync 0;
+    min.u32 delta, bx, 32;
+    shr.u32 delta, delta, 1;
+rx_warp:
+    setp.eq.u32 p, delta, 0;
+    @p bra rx_end;
+    shfl.sync.down.b32 other, v0, delta, 31, 0xffffffff;
+    add.rn.f32 v0, v0, other;
+    shr.u32 delta, delta, 1;
+    bra rx_warp;
+rx_end:
+    bar.sync 0;
+    setp.eq.u32 p, ry, 0;
+    @p bra store;
+    st.shared.f32 [addr], v0;
+    shr.u32 delta, by, 1;
+ry_loop:
+    setp.eq.u32 p, delta, 0;
+    @p bra ry_end;
+    bar.sync 0;
+    setp.ge.u32 p, y, delta;
+    @p bra ry_next;
+    mul.lo.u32 peer, delta, bx;
+    shl.b32 peer, peer, 2;
+    add.u32 peer, addr, peer;
+    ld.shared.f32 other, [peer];
+    add.rn.f32 v0, v0, other;
+    st.shared.f32 [addr], v0;
+ry_next:
+    shr.u32 delta, delta, 1;
+    bra ry_loop;
+ry_end:
+    bar.sync 0;
+store:
+    setp.ge.u64 p, row, nr;
+    @p bra next_partial;
+    setp.ne.u32 p, x, 0;
+    @p bra next_partial;
+    setp.ne.u32 p, ry, 0;
+    setp.ne.u32 valid, y, 0;
+    and.pred p, p, valid;
+    @p bra next_partial;
+    setp.gt.u64 p, np, 1;
+    @p bra store_partial;
+    shl.b64 off, row, 2;
+    add.u64 off, b, off;
+    setp.ne.u32 p, acc, 0;
+    @p ld.global.f32 other, [off];
+    @p add.rn.f32 v0, other, v0;
+    st.global.f32 [off], v0;
+    bra next_partial;
+store_partial:
+    mad.lo.u64 off, row, np, part;
+    shl.b64 off, off, 2;
+    add.u64 off, tmp, off;
+    st.global.f32 [off], v0;
+next_partial:
+    bar.sync 0;
+    setp.lt.u64 valid, row, nr;
+    add.u64 part, part, partstep;
+    bra partial_loop;
+next_row:
+    add.u64 base, base, gridstep;
+    bra row_loop;
+finish:
+    ret;
+}
+
+// A second legacy-stream launch orders all partial writes before final reads.
+// It replaces the reference's last-CTA semaphore without changing value order.
+.visible .entry sum_rows_finalize_f32(
+    .param .u64 input, .param .u64 output, .param .u64 scratch,
+    .param .u64 rows, .param .u64 columns, .param .u64 ctas,
+    .param .u32 reduce_y, .param .u32 vectorize, .param .u32 accumulate
+) {
+    .reg .pred p, valid, tail;
+    .reg .b32 x, y, bx, by, ry, vec, acc, t, delta, sh, addr, peer;
+    .reg .b64 a, b, tmp, nr, nc, np, row, base, rowstep, gridstep;
+    .reg .b64 part, partstep, idx, step, end, ptr, off, q, head;
+    .reg .f32 v0, v1, v2, v3, f0, f1, f2, f3, other;
+    .shared .align 4 .b8 shared[2048];
+    ld.param.u64 a, [input];
+    ld.param.u64 b, [output];
+    ld.param.u64 tmp, [scratch];
+    ld.param.u64 nr, [rows];
+    ld.param.u64 nc, [columns];
+    ld.param.u64 np, [ctas];
+    ld.param.u32 ry, [reduce_y];
+    ld.param.u32 vec, [vectorize];
+    ld.param.u32 acc, [accumulate];
+    mov.u32 x, %tid.x;
+    mov.u32 y, %tid.y;
+    mov.u32 bx, %ntid.x;
+    mov.u32 by, %ntid.y;
+    setp.ne.u32 p, ry, 0;
+    selp.u32 t, 1, by, p;
+    cvt.u64.u32 rowstep, t;
+    mov.u32 t, %ctaid.x;
+    cvt.u64.u32 base, t;
+    mul.lo.u64 base, base, rowstep;
+    mov.u32 t, %nctaid.x;
+    cvt.u64.u32 gridstep, t;
+    mul.lo.u64 gridstep, gridstep, rowstep;
+    mad.lo.u32 addr, y, bx, x;
+    shl.b32 addr, addr, 2;
+    mov.u32 sh, shared;
+    add.u32 addr, addr, sh;
+final_row_loop:
+    setp.ge.u64 p, base, nr;
+    @p bra finish;
+    mad.lo.u32 t, y, bx, x;
+    cvt.u64.u32 idx, t;
+    mul.wide.u32 step, bx, by;
+    mul.lo.u64 off, base, np;
+    shl.b64 off, off, 2;
+    add.u64 ptr, tmp, off;
+    mov.f32 v0, 0f00000000;
+partial_read:
+    setp.ge.u64 p, idx, np;
+    @p bra final_reduce;
+    shl.b64 off, idx, 2;
+    add.u64 off, ptr, off;
+    ld.global.f32 other, [off];
+    add.rn.f32 v0, v0, other;
+    add.u64 idx, idx, step;
+    bra partial_read;
+final_reduce:
+    st.shared.f32 [addr], v0;
+    shr.u32 delta, by, 1;
+fy_loop:
+    setp.eq.u32 p, delta, 0;
+    @p bra fy_end;
+    bar.sync 0;
+    setp.ge.u32 p, y, delta;
+    @p bra fy_next;
+    mul.lo.u32 peer, delta, bx;
+    shl.b32 peer, peer, 2;
+    add.u32 peer, addr, peer;
+    ld.shared.f32 other, [peer];
+    add.rn.f32 v0, v0, other;
+    st.shared.f32 [addr], v0;
+fy_next:
+    shr.u32 delta, delta, 1;
+    bra fy_loop;
+fy_end:
+    bar.sync 0;
+    // Shared-memory x tree precedes descending shuffle-down, as in Reduce.cuh.
+    st.shared.f32 [addr], v0;
+    shr.u32 delta, bx, 1;
+fx_shared:
+    setp.lt.u32 p, delta, 32;
+    @p bra fx_warp_start;
+    bar.sync 0;
+    setp.ge.u32 p, x, delta;
+    @p bra fx_shared_next;
+    shl.b32 peer, delta, 2;
+    add.u32 peer, addr, peer;
+    ld.shared.f32 other, [peer];
+    add.rn.f32 v0, v0, other;
+    st.shared.f32 [addr], v0;
+fx_shared_next:
+    shr.u32 delta, delta, 1;
+    bra fx_shared;
+fx_warp_start:
+    bar.sync 0;
+    min.u32 delta, bx, 32;
+    shr.u32 delta, delta, 1;
+fx_warp:
+    setp.eq.u32 p, delta, 0;
+    @p bra fx_end;
+    shfl.sync.down.b32 other, v0, delta, 31, 0xffffffff;
+    add.rn.f32 v0, v0, other;
+    shr.u32 delta, delta, 1;
+    bra fx_warp;
+fx_end:
+    bar.sync 0;
+    setp.eq.u32 p, x, 0;
+    setp.eq.u32 valid, y, 0;
+    and.pred p, p, valid;
+    shl.b64 off, base, 2;
+    add.u64 off, b, off;
+    setp.ne.u32 valid, acc, 0;
+    and.pred valid, p, valid;
+    @valid ld.global.f32 other, [off];
+    @valid add.rn.f32 v0, other, v0;
+    @p st.global.f32 [off], v0;
+    bar.sync 0;
+    add.u64 base, base, gridstep;
+    bra final_row_loop;
+finish:
+    ret;
+}

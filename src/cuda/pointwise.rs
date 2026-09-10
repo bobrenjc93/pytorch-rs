@@ -1,9 +1,15 @@
-//! Optional driver ABI for native pointwise kernels. PTX is embedded at build
+//! Optional driver ABI for native kernels. PTX is embedded at build
 //! time and JIT-compiled by the installed NVIDIA driver, without nvcc or NVRTC.
 use super::{CStr, Library, Mutex, OnceLock, Status, TensorError, c_char, c_int, c_void};
 
+#[path = "sum_rows.rs"]
+mod sum_rows;
+pub(super) use sum_rows::{RowSumConfig, RowSumSlice, launch_sum_rows};
+
 struct Driver {
     _library: Library,
+    device: unsafe extern "C" fn(*mut c_int) -> Status,
+    attribute: unsafe extern "C" fn(*mut c_int, c_int, c_int) -> Status,
     context: unsafe extern "C" fn(*mut *mut c_void) -> Status,
     load: unsafe extern "C" fn(*mut *mut c_void, *const c_void) -> Status,
     function: unsafe extern "C" fn(*mut *mut c_void, *mut c_void, *const c_char) -> Status,
@@ -29,7 +35,7 @@ struct Driver {
 struct Module {
     context: usize,
     _handle: usize,
-    functions: [usize; 5],
+    functions: [usize; 7],
 }
 
 enum Kernel {
@@ -37,6 +43,8 @@ enum Kernel {
     AddVector,
     MultiplyScalar,
     AddTrailingVector,
+    SumRows,
+    SumRowsFinalize,
     #[cfg(any(feature = "python-bindings", test))]
     Negate,
 }
@@ -56,6 +64,8 @@ fn driver() -> Result<&'static Driver, TensorError> {
                 .map_err(|error| error.to_string())?;
                 let loaded = || -> Result<Driver, libloading::Error> {
                     Ok(Driver {
+                        device: *library.get(b"cuCtxGetDevice\0")?,
+                        attribute: *library.get(b"cuDeviceGetAttribute\0")?,
                         context: *library.get(b"cuCtxGetCurrent\0")?,
                         load: *library.get(b"cuModuleLoadData\0")?,
                         function: *library.get(b"cuModuleGetFunction\0")?,
@@ -128,7 +138,7 @@ impl Driver {
             .try_reserve(1)
             .map_err(|_| TensorError::AllocationFailed { elements: 1 })?;
         let mut module = std::ptr::null_mut();
-        let mut functions = [0; 5];
+        let mut functions = [0; 7];
         // SAFETY: static NUL-terminated PTX and entry names; writable handles.
         unsafe {
             self.check(
@@ -140,6 +150,8 @@ impl Driver {
                         include_str!("mul_scalar.ptx"),
                         "\n",
                         include_str!("add_trailing_vector.ptx"),
+                        "\n",
+                        include_str!("sum_rows.ptx"),
                         "\n",
                         include_str!("neg.ptx"),
                         "\0"
@@ -154,6 +166,8 @@ impl Driver {
                 c"add_f32x4",
                 c"mul_scalar_f32",
                 c"add_trailing_vector_f32",
+                c"sum_rows_f32",
+                c"sum_rows_finalize_f32",
                 c"neg_f32",
             ]) {
                 let mut function = std::ptr::null_mut();

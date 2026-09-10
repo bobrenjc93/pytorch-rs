@@ -1,0 +1,3 @@
+Clean commit, build, wheel, installed/source extensions, 59 Python sources, evaluator accounting, worker processes, runtimes, preserved evidence and protected files verified.
+Source: {'commit': '02535d5fb191285b0e2ca62677a1ec5d29edbb01', 'source_sha256': '3a069cc2a431cef4821361e089f0c08e8c8fcd634b4f67a9c3340a31e5949e49', 'production_diff_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'}
+Runtime hashes: {'/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13': '96c42e418cec19054186b9429c321603cc190bf26a18104e19408117a2a817b0'}

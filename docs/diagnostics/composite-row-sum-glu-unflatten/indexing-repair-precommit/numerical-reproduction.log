@@ -1,0 +1,5 @@
+46 row-sum cases passed: 30 cancellation/overflow, 4 indexing-boundary and 12 wide-decimal comparisons.
+Indexing boundary outputs: [{'kind': 'indexing-boundary', 'width': 536870912, 'keepdim': False, 'values': [0.0]}, {'kind': 'indexing-boundary', 'width': 536870912, 'keepdim': True, 'values': [[0.0]]}, {'kind': 'indexing-boundary', 'width': 536870916, 'keepdim': False, 'values': [-1.0]}, {'kind': 'indexing-boundary', 'width': 536870916, 'keepdim': True, 'values': [[-1.0]]}] [{'kind': 'indexing-boundary', 'width': 536870912, 'keepdim': False, 'values': [0.0]}, {'kind': 'indexing-boundary', 'width': 536870912, 'keepdim': True, 'values': [[0.0]]}, {'kind': 'indexing-boundary', 'width': 536870916, 'keepdim': False, 'values': [-1.0]}, {'kind': 'indexing-boundary', 'width': 536870916, 'keepdim': True, 'values': [[-1.0]]}]
+GLU native/reference gradients: [206115373056.0, 2.0611537240190114e+31] [206115373056.0, 2.0611537240190114e+31]
+Separate processes; candidate PyTorch imports: [] []
+Correctness only; nonfinite observations use explicit NaN/Infinity strings in strict JSON.

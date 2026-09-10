@@ -1,0 +1,50 @@
+build_record: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/target/integration/capture/build-record.json
+extension: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so e805ae81c1cfe51b141c8694ee5bd75e7dffdcb9e83c8796f88f79711213cf69
+interpreter: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/.venv/bin/python 3.12.13 (main, Jul 20 2026, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-14)]
+reference: 2.13.0+cu130 13.0 NVIDIA H100
+{'rows': 1, 'pattern': [100000000.0, 1.0, 1.0, -100000000.0], 'keepdim': False, 'native': [0.0], 'reference': [0.0]}
+{'rows': 1, 'pattern': [100000000.0, 1.0, 1.0, -100000000.0], 'keepdim': True, 'native': [[0.0]], 'reference': [[0.0]]}
+{'rows': 1, 'pattern': [3.0000000054977558e+38, 0.0, 3.0000000054977558e+38, -3.0000000054977558e+38], 'keepdim': False, 'native': [inf], 'reference': [inf]}
+{'rows': 1, 'pattern': [3.0000000054977558e+38, 0.0, 3.0000000054977558e+38, -3.0000000054977558e+38], 'keepdim': True, 'native': [[inf]], 'reference': [[inf]]}
+{'rows': 1, 'pattern': [3.0000000054977558e+38, -3.0000000054977558e+38, 3.0000000054977558e+38, -3.0000000054977558e+38], 'keepdim': False, 'native': [nan], 'reference': [nan]}
+{'rows': 1, 'pattern': [3.0000000054977558e+38, -3.0000000054977558e+38, 3.0000000054977558e+38, -3.0000000054977558e+38], 'keepdim': True, 'native': [[nan]], 'reference': [[nan]]}
+{'rows': 1, 'pattern': [3.4028234663852886e+38, 0.0, 3.4028234663852886e+38, -3.4028234663852886e+38], 'keepdim': False, 'native': [inf], 'reference': [inf]}
+{'rows': 1, 'pattern': [3.4028234663852886e+38, 0.0, 3.4028234663852886e+38, -3.4028234663852886e+38], 'keepdim': True, 'native': [[inf]], 'reference': [[inf]]}
+{'rows': 1, 'pattern': [3.4028234663852886e+38, -3.4028234663852886e+38, 3.4028234663852886e+38, -3.4028234663852886e+38], 'keepdim': False, 'native': [nan], 'reference': [nan]}
+{'rows': 1, 'pattern': [3.4028234663852886e+38, -3.4028234663852886e+38, 3.4028234663852886e+38, -3.4028234663852886e+38], 'keepdim': True, 'native': [[nan]], 'reference': [[nan]]}
+{'rows': 2, 'pattern': [100000000.0, 1.0, 1.0, -100000000.0], 'keepdim': False, 'native': [0.0, 0.0], 'reference': [0.0, 0.0]}
+{'rows': 2, 'pattern': [100000000.0, 1.0, 1.0, -100000000.0], 'keepdim': True, 'native': [[0.0], [0.0]], 'reference': [[0.0], [0.0]]}
+{'rows': 2, 'pattern': [3.0000000054977558e+38, 0.0, 3.0000000054977558e+38, -3.0000000054977558e+38], 'keepdim': False, 'native': [inf, inf], 'reference': [inf, inf]}
+{'rows': 2, 'pattern': [3.0000000054977558e+38, 0.0, 3.0000000054977558e+38, -3.0000000054977558e+38], 'keepdim': True, 'native': [[inf], [inf]], 'reference': [[inf], [inf]]}
+{'rows': 2, 'pattern': [3.0000000054977558e+38, -3.0000000054977558e+38, 3.0000000054977558e+38, -3.0000000054977558e+38], 'keepdim': False, 'native': [nan, nan], 'reference': [nan, nan]}
+{'rows': 2, 'pattern': [3.0000000054977558e+38, -3.0000000054977558e+38, 3.0000000054977558e+38, -3.0000000054977558e+38], 'keepdim': True, 'native': [[nan], [nan]], 'reference': [[nan], [nan]]}
+{'rows': 2, 'pattern': [3.4028234663852886e+38, 0.0, 3.4028234663852886e+38, -3.4028234663852886e+38], 'keepdim': False, 'native': [inf, inf], 'reference': [inf, inf]}
+{'rows': 2, 'pattern': [3.4028234663852886e+38, 0.0, 3.4028234663852886e+38, -3.4028234663852886e+38], 'keepdim': True, 'native': [[inf], [inf]], 'reference': [[inf], [inf]]}
+{'rows': 2, 'pattern': [3.4028234663852886e+38, -3.4028234663852886e+38, 3.4028234663852886e+38, -3.4028234663852886e+38], 'keepdim': False, 'native': [nan, nan], 'reference': [nan, nan]}
+{'rows': 2, 'pattern': [3.4028234663852886e+38, -3.4028234663852886e+38, 3.4028234663852886e+38, -3.4028234663852886e+38], 'keepdim': True, 'native': [[nan], [nan]], 'reference': [[nan], [nan]]}
+{'rows': 17, 'pattern': [100000000.0, 1.0, 1.0, -100000000.0], 'keepdim': False, 'native': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 'reference': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}
+{'rows': 17, 'pattern': [100000000.0, 1.0, 1.0, -100000000.0], 'keepdim': True, 'native': [[0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0]], 'reference': [[0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], [0.0]]}
+{'rows': 17, 'pattern': [3.0000000054977558e+38, 0.0, 3.0000000054977558e+38, -3.0000000054977558e+38], 'keepdim': False, 'native': [inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf], 'reference': [inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf]}
+{'rows': 17, 'pattern': [3.0000000054977558e+38, 0.0, 3.0000000054977558e+38, -3.0000000054977558e+38], 'keepdim': True, 'native': [[inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf]], 'reference': [[inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf]]}
+{'rows': 17, 'pattern': [3.0000000054977558e+38, -3.0000000054977558e+38, 3.0000000054977558e+38, -3.0000000054977558e+38], 'keepdim': False, 'native': [nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan], 'reference': [nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan]}
+{'rows': 17, 'pattern': [3.0000000054977558e+38, -3.0000000054977558e+38, 3.0000000054977558e+38, -3.0000000054977558e+38], 'keepdim': True, 'native': [[nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan]], 'reference': [[nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan]]}
+{'rows': 17, 'pattern': [3.4028234663852886e+38, 0.0, 3.4028234663852886e+38, -3.4028234663852886e+38], 'keepdim': False, 'native': [inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf], 'reference': [inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf, inf]}
+{'rows': 17, 'pattern': [3.4028234663852886e+38, 0.0, 3.4028234663852886e+38, -3.4028234663852886e+38], 'keepdim': True, 'native': [[inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf]], 'reference': [[inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf], [inf]]}
+{'rows': 17, 'pattern': [3.4028234663852886e+38, -3.4028234663852886e+38, 3.4028234663852886e+38, -3.4028234663852886e+38], 'keepdim': False, 'native': [nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan], 'reference': [nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan]}
+{'rows': 17, 'pattern': [3.4028234663852886e+38, -3.4028234663852886e+38, 3.4028234663852886e+38, -3.4028234663852886e+38], 'keepdim': True, 'native': [[nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan]], 'reference': [[nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan], [nan]]}
+{'width': 65539, 'value': 0.1, 'native': [6553.8984375, 6553.8984375], 'reference': [6553.8984375, 6553.8984375]}
+{'width': 65539, 'value': -0.1, 'native': [-6553.8984375, -6553.8984375], 'reference': [-6553.8984375, -6553.8984375]}
+{'width': 65539, 'value': 0.01, 'native': [655.389892578125, 655.389892578125], 'reference': [655.389892578125, 655.389892578125]}
+{'width': 65539, 'value': 1.1, 'native': [72092.90625, 72092.90625], 'reference': [72092.90625, 72092.90625]}
+{'width': 1000000, 'value': 0.1, 'native': [100000.0, 100000.0], 'reference': [100000.0, 100000.0]}
+{'width': 1000000, 'value': -0.1, 'native': [-100000.0, -100000.0], 'reference': [-100000.0, -100000.0]}
+{'width': 1000000, 'value': 0.01, 'native': [10000.0, 10000.0], 'reference': [10000.0, 10000.0]}
+{'width': 1000000, 'value': 1.1, 'native': [1100000.0, 1100000.0], 'reference': [1100000.0, 1100000.0]}
+{'width': 1000003, 'value': 0.1, 'native': [100000.3046875, 100000.3046875], 'reference': [100000.3046875, 100000.3046875]}
+{'width': 1000003, 'value': -0.1, 'native': [-100000.3046875, -100000.3046875], 'reference': [-100000.3046875, -100000.3046875]}
+{'width': 1000003, 'value': 0.01, 'native': [10000.0302734375, 10000.0302734375], 'reference': [10000.0302734375, 10000.0302734375]}
+{'width': 1000003, 'value': 1.1, 'native': [1100003.375, 1100003.375], 'reference': [1100003.375, 1100003.375]}
+GLU:
+torch_rs [206115373056.0, 2.0611537240190114e+31]
+torch [206115373056.0, 2.0611537240190114e+31]
+all numerical regressions passed; correctness only

@@ -1,0 +1,960 @@
+{
+  "role": "reference",
+  "pid": 4024759,
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/.venv/bin/python",
+  "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/.venv/lib/python3.12/site-packages/torch/__init__.py",
+  "python": "3.12.13 (main, Jul 20 2026, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-14)]",
+  "started_at": "2026-09-10T12:33:27.625469+00:00",
+  "cases": [
+    {
+      "kind": "cancellation-overflow",
+      "rows": 1,
+      "pattern": [
+        100000000.0,
+        1.0,
+        1.0,
+        -100000000.0
+      ],
+      "keepdim": false,
+      "values": [
+        0.0
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 1,
+      "pattern": [
+        100000000.0,
+        1.0,
+        1.0,
+        -100000000.0
+      ],
+      "keepdim": true,
+      "values": [
+        [
+          0.0
+        ]
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 1,
+      "pattern": [
+        3.0000000054977558e+38,
+        0.0,
+        3.0000000054977558e+38,
+        -3.0000000054977558e+38
+      ],
+      "keepdim": false,
+      "values": [
+        "Infinity"
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 1,
+      "pattern": [
+        3.0000000054977558e+38,
+        0.0,
+        3.0000000054977558e+38,
+        -3.0000000054977558e+38
+      ],
+      "keepdim": true,
+      "values": [
+        [
+          "Infinity"
+        ]
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 1,
+      "pattern": [
+        3.0000000054977558e+38,
+        -3.0000000054977558e+38,
+        3.0000000054977558e+38,
+        -3.0000000054977558e+38
+      ],
+      "keepdim": false,
+      "values": [
+        "NaN"
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 1,
+      "pattern": [
+        3.0000000054977558e+38,
+        -3.0000000054977558e+38,
+        3.0000000054977558e+38,
+        -3.0000000054977558e+38
+      ],
+      "keepdim": true,
+      "values": [
+        [
+          "NaN"
+        ]
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 1,
+      "pattern": [
+        3.4028234663852886e+38,
+        0.0,
+        3.4028234663852886e+38,
+        -3.4028234663852886e+38
+      ],
+      "keepdim": false,
+      "values": [
+        "Infinity"
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 1,
+      "pattern": [
+        3.4028234663852886e+38,
+        0.0,
+        3.4028234663852886e+38,
+        -3.4028234663852886e+38
+      ],
+      "keepdim": true,
+      "values": [
+        [
+          "Infinity"
+        ]
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 1,
+      "pattern": [
+        3.4028234663852886e+38,
+        -3.4028234663852886e+38,
+        3.4028234663852886e+38,
+        -3.4028234663852886e+38
+      ],
+      "keepdim": false,
+      "values": [
+        "NaN"
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 1,
+      "pattern": [
+        3.4028234663852886e+38,
+        -3.4028234663852886e+38,
+        3.4028234663852886e+38,
+        -3.4028234663852886e+38
+      ],
+      "keepdim": true,
+      "values": [
+        [
+          "NaN"
+        ]
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 2,
+      "pattern": [
+        100000000.0,
+        1.0,
+        1.0,
+        -100000000.0
+      ],
+      "keepdim": false,
+      "values": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 2,
+      "pattern": [
+        100000000.0,
+        1.0,
+        1.0,
+        -100000000.0
+      ],
+      "keepdim": true,
+      "values": [
+        [
+          0.0
+        ],
+        [
+          0.0
+        ]
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 2,
+      "pattern": [
+        3.0000000054977558e+38,
+        0.0,
+        3.0000000054977558e+38,
+        -3.0000000054977558e+38
+      ],
+      "keepdim": false,
+      "values": [
+        "Infinity",
+        "Infinity"
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 2,
+      "pattern": [
+        3.0000000054977558e+38,
+        0.0,
+        3.0000000054977558e+38,
+        -3.0000000054977558e+38
+      ],
+      "keepdim": true,
+      "values": [
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ]
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 2,
+      "pattern": [
+        3.0000000054977558e+38,
+        -3.0000000054977558e+38,
+        3.0000000054977558e+38,
+        -3.0000000054977558e+38
+      ],
+      "keepdim": false,
+      "values": [
+        "NaN",
+        "NaN"
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 2,
+      "pattern": [
+        3.0000000054977558e+38,
+        -3.0000000054977558e+38,
+        3.0000000054977558e+38,
+        -3.0000000054977558e+38
+      ],
+      "keepdim": true,
+      "values": [
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ]
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 2,
+      "pattern": [
+        3.4028234663852886e+38,
+        0.0,
+        3.4028234663852886e+38,
+        -3.4028234663852886e+38
+      ],
+      "keepdim": false,
+      "values": [
+        "Infinity",
+        "Infinity"
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 2,
+      "pattern": [
+        3.4028234663852886e+38,
+        0.0,
+        3.4028234663852886e+38,
+        -3.4028234663852886e+38
+      ],
+      "keepdim": true,
+      "values": [
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ]
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 2,
+      "pattern": [
+        3.4028234663852886e+38,
+        -3.4028234663852886e+38,
+        3.4028234663852886e+38,
+        -3.4028234663852886e+38
+      ],
+      "keepdim": false,
+      "values": [
+        "NaN",
+        "NaN"
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 2,
+      "pattern": [
+        3.4028234663852886e+38,
+        -3.4028234663852886e+38,
+        3.4028234663852886e+38,
+        -3.4028234663852886e+38
+      ],
+      "keepdim": true,
+      "values": [
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ]
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 17,
+      "pattern": [
+        100000000.0,
+        1.0,
+        1.0,
+        -100000000.0
+      ],
+      "keepdim": false,
+      "values": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 17,
+      "pattern": [
+        100000000.0,
+        1.0,
+        1.0,
+        -100000000.0
+      ],
+      "keepdim": true,
+      "values": [
+        [
+          0.0
+        ],
+        [
+          0.0
+        ],
+        [
+          0.0
+        ],
+        [
+          0.0
+        ],
+        [
+          0.0
+        ],
+        [
+          0.0
+        ],
+        [
+          0.0
+        ],
+        [
+          0.0
+        ],
+        [
+          0.0
+        ],
+        [
+          0.0
+        ],
+        [
+          0.0
+        ],
+        [
+          0.0
+        ],
+        [
+          0.0
+        ],
+        [
+          0.0
+        ],
+        [
+          0.0
+        ],
+        [
+          0.0
+        ],
+        [
+          0.0
+        ]
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 17,
+      "pattern": [
+        3.0000000054977558e+38,
+        0.0,
+        3.0000000054977558e+38,
+        -3.0000000054977558e+38
+      ],
+      "keepdim": false,
+      "values": [
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity"
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 17,
+      "pattern": [
+        3.0000000054977558e+38,
+        0.0,
+        3.0000000054977558e+38,
+        -3.0000000054977558e+38
+      ],
+      "keepdim": true,
+      "values": [
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ]
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 17,
+      "pattern": [
+        3.0000000054977558e+38,
+        -3.0000000054977558e+38,
+        3.0000000054977558e+38,
+        -3.0000000054977558e+38
+      ],
+      "keepdim": false,
+      "values": [
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN"
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 17,
+      "pattern": [
+        3.0000000054977558e+38,
+        -3.0000000054977558e+38,
+        3.0000000054977558e+38,
+        -3.0000000054977558e+38
+      ],
+      "keepdim": true,
+      "values": [
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ]
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 17,
+      "pattern": [
+        3.4028234663852886e+38,
+        0.0,
+        3.4028234663852886e+38,
+        -3.4028234663852886e+38
+      ],
+      "keepdim": false,
+      "values": [
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity",
+        "Infinity"
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 17,
+      "pattern": [
+        3.4028234663852886e+38,
+        0.0,
+        3.4028234663852886e+38,
+        -3.4028234663852886e+38
+      ],
+      "keepdim": true,
+      "values": [
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ],
+        [
+          "Infinity"
+        ]
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 17,
+      "pattern": [
+        3.4028234663852886e+38,
+        -3.4028234663852886e+38,
+        3.4028234663852886e+38,
+        -3.4028234663852886e+38
+      ],
+      "keepdim": false,
+      "values": [
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN",
+        "NaN"
+      ]
+    },
+    {
+      "kind": "cancellation-overflow",
+      "rows": 17,
+      "pattern": [
+        3.4028234663852886e+38,
+        -3.4028234663852886e+38,
+        3.4028234663852886e+38,
+        -3.4028234663852886e+38
+      ],
+      "keepdim": true,
+      "values": [
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ],
+        [
+          "NaN"
+        ]
+      ]
+    },
+    {
+      "kind": "wide-decimal",
+      "width": 65539,
+      "value": 0.1,
+      "values": [
+        6553.8984375,
+        6553.8984375
+      ]
+    },
+    {
+      "kind": "wide-decimal",
+      "width": 65539,
+      "value": -0.1,
+      "values": [
+        -6553.8984375,
+        -6553.8984375
+      ]
+    },
+    {
+      "kind": "wide-decimal",
+      "width": 65539,
+      "value": 0.01,
+      "values": [
+        655.389892578125,
+        655.389892578125
+      ]
+    },
+    {
+      "kind": "wide-decimal",
+      "width": 65539,
+      "value": 1.1,
+      "values": [
+        72092.90625,
+        72092.90625
+      ]
+    },
+    {
+      "kind": "wide-decimal",
+      "width": 1000000,
+      "value": 0.1,
+      "values": [
+        100000.0,
+        100000.0
+      ]
+    },
+    {
+      "kind": "wide-decimal",
+      "width": 1000000,
+      "value": -0.1,
+      "values": [
+        -100000.0,
+        -100000.0
+      ]
+    },
+    {
+      "kind": "wide-decimal",
+      "width": 1000000,
+      "value": 0.01,
+      "values": [
+        10000.0,
+        10000.0
+      ]
+    },
+    {
+      "kind": "wide-decimal",
+      "width": 1000000,
+      "value": 1.1,
+      "values": [
+        1100000.0,
+        1100000.0
+      ]
+    },
+    {
+      "kind": "wide-decimal",
+      "width": 1000003,
+      "value": 0.1,
+      "values": [
+        100000.3046875,
+        100000.3046875
+      ]
+    },
+    {
+      "kind": "wide-decimal",
+      "width": 1000003,
+      "value": -0.1,
+      "values": [
+        -100000.3046875,
+        -100000.3046875
+      ]
+    },
+    {
+      "kind": "wide-decimal",
+      "width": 1000003,
+      "value": 0.01,
+      "values": [
+        10000.0302734375,
+        10000.0302734375
+      ]
+    },
+    {
+      "kind": "wide-decimal",
+      "width": 1000003,
+      "value": 1.1,
+      "values": [
+        1100003.375,
+        1100003.375
+      ]
+    },
+    {
+      "kind": "indexing-boundary",
+      "width": 536870912,
+      "keepdim": false,
+      "values": [
+        0.0
+      ]
+    },
+    {
+      "kind": "indexing-boundary",
+      "width": 536870912,
+      "keepdim": true,
+      "values": [
+        [
+          0.0
+        ]
+      ]
+    },
+    {
+      "kind": "indexing-boundary",
+      "width": 536870916,
+      "keepdim": false,
+      "values": [
+        -1.0
+      ]
+    },
+    {
+      "kind": "indexing-boundary",
+      "width": 536870916,
+      "keepdim": true,
+      "values": [
+        [
+          -1.0
+        ]
+      ]
+    }
+  ],
+  "reference_version": "2.13.0+cu130",
+  "gpu": "NVIDIA H100",
+  "glu_gradient": [
+    206115373056.0,
+    2.0611537240190114e+31
+  ],
+  "cuda_runtimes": [
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+      "version": 13000,
+      "status": 0
+    }
+  ],
+  "nvcc": "unused (no CUDA compilation by evaluator)",
+  "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+  "ended_at": "2026-09-10T12:33:28.230509+00:00"
+}

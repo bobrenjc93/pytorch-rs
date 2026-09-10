@@ -141,6 +141,12 @@ enum GradFn {
         output_elements: usize,
     },
     #[cfg(any(feature = "python-bindings", test))]
+    GluVector {
+        left: SavedTensor,
+        right: SavedTensor,
+        gate: SavedTensor,
+    },
+    #[cfg(any(feature = "python-bindings", test))]
     SquaredDifference {
         left: SavedTensor,
         right: SavedTensor,
@@ -238,7 +244,7 @@ impl GradFn {
                 }
             }
             #[cfg(any(feature = "python-bindings", test))]
-            Self::SquaredDifference { left, right, .. } => {
+            Self::SquaredDifference { left, right, .. } | Self::GluVector { left, right, .. } => {
                 left.take_parent(pending);
                 right.take_parent(pending);
             }
@@ -267,6 +273,12 @@ impl GradFn {
             #[cfg(any(feature = "python-bindings", test))]
             Self::SquaredDifference { left, right, .. } => {
                 if left.storage.is_none() || right.storage.is_none() {
+                    return Err(TensorError::BackwardGraphFreed);
+                }
+            }
+            #[cfg(any(feature = "python-bindings", test))]
+            Self::GluVector { left, gate, .. } => {
+                if left.storage.is_none() || gate.storage.is_none() {
                     return Err(TensorError::BackwardGraphFreed);
                 }
             }
@@ -309,6 +321,11 @@ impl GradFn {
             Self::SquaredDifference { left, right, .. } => {
                 left.storage = None;
                 right.storage = None;
+            }
+            #[cfg(any(feature = "python-bindings", test))]
+            Self::GluVector { left, gate, .. } => {
+                left.storage = None;
+                gate.storage = None;
             }
             Self::MultiplyScalar { scalar, .. } => *scalar = None,
             Self::SavedInputUnary(node) => node.input.storage = None,
@@ -1447,6 +1464,8 @@ impl Tensor {
             | GradFn::Transform { node, .. } => *node,
             #[cfg(any(feature = "python-bindings", test))]
             GradFn::SquaredDifference { .. } => AutogradNode::SquaredDifference,
+            #[cfg(any(feature = "python-bindings", test))]
+            GradFn::GluVector { .. } => AutogradNode::Glu,
             GradFn::SavedInputUnary(node) => node.identity,
             GradFn::SavedOutputUnary(node) => node.identity,
             GradFn::ZeroVjp(node) => node.identity,
@@ -4092,7 +4111,7 @@ impl Tensor {
     /// for an empty tensor, arithmetic overflow, or metadata allocation
     /// failure.
     pub fn reshape(&self, shape: impl AsRef<[i64]>) -> Result<Self, TensorError> {
-        let resolved = self.resolve_reshape_shape(shape.as_ref())?;
+        let resolved = Self::resolve_reshape_shape(shape.as_ref(), self.elements)?;
         self.reshape_resolved(resolved)
     }
 
@@ -4111,11 +4130,56 @@ impl Tensor {
     /// for an empty tensor, a stride-incompatible layout, arithmetic overflow,
     /// or metadata allocation failure.
     pub fn view(&self, shape: impl AsRef<[i64]>) -> Result<Self, TensorError> {
-        let resolved = self.resolve_reshape_shape(shape.as_ref())?;
+        let resolved = Self::resolve_reshape_shape(shape.as_ref(), self.elements)?;
         self.view_resolved(resolved)
     }
 
-    fn resolve_reshape_shape(&self, requested: &[i64]) -> Result<Vec<usize>, TensorError> {
+    /// Splits one dimension into sizes without copying storage.
+    ///
+    /// One size may be `-1`, inferred from the selected dimension alone.
+    /// Layout and first-order gradients use the same native view machinery as
+    /// [`Self::view`], including empty tensors and noncontiguous inputs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for scalar inputs, invalid dimensions, empty sizes,
+    /// invalid or incompatible sizes, ambiguous inference, or allocation failure.
+    pub fn unflatten(&self, dim: i64, sizes: impl AsRef<[i64]>) -> Result<Self, TensorError> {
+        let sizes = sizes.as_ref();
+        if sizes.is_empty() {
+            return Err(TensorError::UnflattenEmptySizes);
+        }
+        let axis = normalize_transpose_dimension(dim, self.shape.len())?;
+        if self.shape.is_empty() {
+            return Err(TensorError::UnflattenScalar {
+                dimension: dimension_for_error(axis),
+            });
+        }
+        let split = Self::resolve_reshape_shape(sizes, self.shape[axis]).map_err(|error| {
+            if let TensorError::ReshapeElementCountMismatch { shape, elements } = error {
+                TensorError::UnflattenSizeMismatch {
+                    sizes: shape,
+                    dimension: dimension_for_error(axis),
+                    size: elements,
+                }
+            } else {
+                error
+            }
+        })?;
+        let rank = (self.shape.len() - 1)
+            .checked_add(split.len())
+            .ok_or(TensorError::ElementCountOverflow)?;
+        let mut shape = try_result_vector(rank, self.elements)?;
+        shape.extend_from_slice(&self.shape[..axis]);
+        shape.extend_from_slice(&split);
+        shape.extend_from_slice(&self.shape[axis + 1..]);
+        self.view_resolved(shape)
+    }
+
+    fn resolve_reshape_shape(
+        requested: &[i64],
+        elements: usize,
+    ) -> Result<Vec<usize>, TensorError> {
         let mut inferred_index = None;
 
         for (index, dimension) in requested.iter().copied().enumerate() {
@@ -4129,12 +4193,12 @@ impl Tensor {
                 return Err(TensorError::ReshapeInvalidDimension {
                     dimension,
                     index,
-                    shape: try_clone_reshape_shape(requested, self.elements)?,
+                    shape: try_clone_reshape_shape(requested, elements)?,
                 });
             }
         }
 
-        let mut resolved = try_result_vector(requested.len(), self.elements)?;
+        let mut resolved = try_result_vector(requested.len(), elements)?;
         for dimension in requested.iter().copied() {
             let dimension = if dimension == -1 {
                 1
@@ -4150,36 +4214,36 @@ impl Tensor {
                 .copied()
                 .filter(|dimension| *dimension != -1)
                 .fold(1_i64, i64::wrapping_mul);
-            let elements =
-                i64::try_from(self.elements).map_err(|_| TensorError::ElementCountOverflow)?;
-            if !((specified_elements > 0 && elements % specified_elements == 0)
-                || elements == specified_elements)
+            let signed_elements =
+                i64::try_from(elements).map_err(|_| TensorError::ElementCountOverflow)?;
+            if !((specified_elements > 0 && signed_elements % specified_elements == 0)
+                || signed_elements == specified_elements)
             {
                 return Err(TensorError::ReshapeElementCountMismatch {
-                    shape: try_clone_reshape_shape(requested, self.elements)?,
-                    elements: self.elements,
+                    shape: try_clone_reshape_shape(requested, elements)?,
+                    elements,
                 });
             }
             if specified_elements == 0 {
-                if self.elements == 0 {
+                if elements == 0 {
                     return Err(TensorError::ReshapeAmbiguousZeroElements {
-                        shape: try_clone_reshape_shape(requested, self.elements)?,
+                        shape: try_clone_reshape_shape(requested, elements)?,
                     });
                 }
                 return Err(TensorError::ReshapeElementCountMismatch {
-                    shape: try_clone_reshape_shape(requested, self.elements)?,
-                    elements: self.elements,
+                    shape: try_clone_reshape_shape(requested, elements)?,
+                    elements,
                 });
             }
-            resolved[index] = usize::try_from(elements / specified_elements)
+            resolved[index] = usize::try_from(signed_elements / specified_elements)
                 .map_err(|_| TensorError::ElementCountOverflow)?;
         }
 
         let resolved_elements = element_count(&resolved)?;
-        if resolved_elements != self.elements {
+        if resolved_elements != elements {
             return Err(TensorError::ReshapeElementCountMismatch {
-                shape: try_clone_reshape_shape(requested, self.elements)?,
-                elements: self.elements,
+                shape: try_clone_reshape_shape(requested, elements)?,
+                elements,
             });
         }
 
@@ -4940,6 +5004,31 @@ impl Tensor {
         Ok(output)
     }
 
+    /// Composes GLU for matching vector halves, with a combined multiplication
+    /// and sigmoid VJP that scales by the sigmoid derivative before upstream.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn glu_vector_gate(&self, second: &Self) -> Result<Self, TensorError> {
+        if self.shape.len() != 1 || self.shape != second.shape {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "glu" });
+        }
+        // The caller materializes the gate half with differentiable clone.
+        // Use sigmoid itself so its owned-storage/finite-input checks remain.
+        let gate = second.sigmoid()?;
+        let mut output = self.mul(&gate)?;
+        if self.records_grad() || second.records_grad() {
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::GluVector {
+                        left: SavedTensor::try_from_tensor(self, true)?,
+                        right: SavedTensor::try_from_tensor(second, false)?,
+                        gate: SavedTensor::try_from_tensor(&gate.detach()?, true)?,
+                    })),
+                },
+            }));
+        }
+        Ok(output)
+    }
+
     /// Squares every element through the shared-operand multiplication kernel.
     ///
     /// # Errors
@@ -5417,17 +5506,18 @@ impl Tensor {
     /// The reduction materializes a fresh contiguous output. Empty reduction
     /// axes produce zero-filled outputs for each unreduced coordinate, matching
     /// `PyTorch`'s additive identity.
+    /// CUDA supports only contiguous float32 rows (dimension 1), without autograd.
     ///
     /// # Errors
     ///
     /// Returns an error when called for a non-rank-two tensor, an invalid
-    /// dimension, or when result allocation fails.
+    /// dimension, an unsupported CUDA layout/autograd/dimension, or when result
+    /// allocation or CUDA execution fails.
     pub fn sum_rank_two_dimension(
         &self,
         dimension: usize,
         keepdim: bool,
     ) -> Result<Self, TensorError> {
-        validate_cpu_storage_device("sum", self.device())?;
         let [rows, columns] = self.shape.as_slice() else {
             return Err(TensorError::DimensionOutOfRange {
                 dimension: dimension_for_error(dimension),
@@ -5440,6 +5530,42 @@ impl Tensor {
                 rank: self.shape.len(),
             });
         }
+
+        if self.is_cuda() {
+            let reason = if dimension != 1 {
+                Some("only matrix rows (dim=1) are supported")
+            } else if self.dtype() != DType::Float32 {
+                Some("only float32 is supported")
+            } else if self.requires_grad() {
+                Some("autograd is unsupported")
+            } else if !self.is_contiguous() {
+                Some("input must be contiguous")
+            } else {
+                None
+            };
+            if let Some(reason) = reason {
+                return Err(TensorError::UnsupportedCudaSum { reason });
+            }
+            let shape = reduced_rank_two_sum_shape(*rows, *columns, dimension, keepdim)?;
+            let elements = element_count(&shape)?;
+            validate_storage_capacity(elements)?;
+            let strides = contiguous_strides(&shape, elements)?;
+            let storage = self
+                .storage
+                .cuda_sum_rows_float32(self.offset, *rows, *columns)?;
+            return Ok(Self {
+                storage: Arc::new(storage),
+                shape,
+                strides,
+                offset: 0,
+                elements,
+                output_nr: 0,
+                leaf_requires_grad: requires_grad_flag(false),
+                view_requires_grad: None,
+                autograd: None,
+            });
+        }
+        validate_cpu_storage_device("sum", self.device())?;
 
         let shape = reduced_rank_two_sum_shape(*rows, *columns, dimension, keepdim)?;
         let elements = element_count(&shape)?;
@@ -6205,7 +6331,8 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                             }
                         }
                         #[cfg(any(feature = "python-bindings", test))]
-                        GradFn::SquaredDifference { left, right, .. } => {
+                        GradFn::SquaredDifference { left, right, .. }
+                        | GradFn::GluVector { left, right, .. } => {
                             push_saved_parent(&mut stack, right);
                             push_saved_parent(&mut stack, left);
                         }
@@ -6323,6 +6450,10 @@ fn apply_grad_fn(
             upstream,
             gradients,
         )?,
+        #[cfg(any(feature = "python-bindings", test))]
+        GradFn::GluVector { left, right, gate } => {
+            apply_glu_vector_grad_fn(left, right, gate, upstream, gradients)?;
+        }
         GradFn::Transform { input, mapping, .. } => {
             if let Some(meta) = &input.autograd {
                 let gradient = transform_backward(input, mapping, upstream)?;
@@ -7006,6 +7137,39 @@ fn apply_concat_grad_fn(
         axis_start = axis_start
             .checked_add(input_axis)
             .ok_or(TensorError::IndexCalculationOverflow)?;
+    }
+    Ok(())
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn apply_glu_vector_grad_fn(
+    left: &SavedTensor,
+    right: &SavedTensor,
+    gate: &SavedTensor,
+    upstream: &[f32],
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    debug_assert_eq!(left.elements, upstream.len());
+    debug_assert_eq!(right.elements, upstream.len());
+    if let Some(meta) = &left.autograd {
+        let mut gradient = try_result_vector(left.elements, left.elements)?;
+        gradient.extend(
+            upstream
+                .iter()
+                .enumerate()
+                .map(|(index, &value)| gate.value_at_linear_index(index) * value),
+        );
+        add_gradient(gradients, meta, left.output_nr, gradient);
+    }
+    if let Some(meta) = &right.autograd {
+        let mut gradient = try_result_vector(right.elements, right.elements)?;
+        gradient.extend(upstream.iter().enumerate().map(|(index, &value)| {
+            let sigmoid = gate.value_at_linear_index(index);
+            // Match GLU's chain-rule order in PyTorch. Multiplying left by
+            // upstream first can overflow even when the final VJP is finite.
+            (1.0 - sigmoid) * sigmoid * left.value_at_linear_index(index) * value
+        }));
+        add_gradient(gradients, meta, right.output_nr, gradient);
     }
     Ok(())
 }
@@ -9756,6 +9920,30 @@ mod tests {
         materialize_stack_small_rank_fast_path, requires_grad_flag, rsqrt_value, sqrt_value,
         squared_difference_value, try_result_vector, validate_view_bounds,
     };
+
+    #[test]
+    fn glu_vector_backward_scales_before_large_upstream_and_frees_saved_values() {
+        let leaf = Tensor::from_vec(vec![1e20, -20.0], [2])
+            .unwrap()
+            .with_requires_grad(true);
+        let halves = leaf.chunk_dimension(0, 2).unwrap();
+        let gate_input = halves[1].try_clone().unwrap();
+        let output = halves[0].glu_vector_gate(&gate_input).unwrap();
+        let loss = output.mul_scalar(1e20).unwrap().sum();
+        assert!(loss.item().unwrap().is_finite());
+        loss.backward().unwrap();
+        let gradient = leaf.grad().unwrap().unwrap().try_to_vec().unwrap();
+        assert!((gradient[0] / 2.061_153_7e11 - 1.0).abs() < 2e-6);
+        assert!((gradient[1] / 2.061_153_7e31 - 1.0).abs() < 2e-6);
+        assert!(matches!(
+            loss.backward(),
+            Err(TensorError::BackwardGraphFreed)
+        ));
+        assert_eq!(
+            leaf.grad().unwrap().unwrap().try_to_vec().unwrap(),
+            gradient
+        );
+    }
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
         Tensor {

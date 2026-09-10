@@ -1,0 +1,21 @@
+test_device_guard_restores_current_device (tests.test_cuda_sum_rows.CudaSumRowsDeviceTests.test_device_guard_restores_current_device) ... ok
+test_cross_thread_pool_release_on_both_devices (tests.test_cuda_add.CudaAddDeviceTests.test_cross_thread_pool_release_on_both_devices) ... ok
+test_device_restoration_success_failure_and_drop (tests.test_cuda_add.CudaAddDeviceTests.test_device_restoration_success_failure_and_drop) ... ok
+test_replay_eviction_restores_context_across_devices (tests.test_cuda_add.CudaAddDeviceTests.test_replay_eviction_restores_context_across_devices) ... ok
+test_same_device_guard_and_mixed_device_rejection (tests.test_cuda_add_trailing_vector.CudaAddTrailingVectorDeviceTests.test_same_device_guard_and_mixed_device_rejection) ... ok
+test_device_guard_and_context_cache (tests.test_cuda_neg.CudaNegDeviceTests.test_device_guard_and_context_cache) ... ok
+test_allocation_failure_restores_device_and_recovers (tests.test_cuda_mul_scalar.CudaMulScalarDeviceTests.test_allocation_failure_restores_device_and_recovers) ... ok
+test_ownership_restoration_and_mixed_device_rejection (tests.test_cuda_mul_scalar.CudaMulScalarDeviceTests.test_ownership_restoration_and_mixed_device_rejection) ... ok
+test_current_device_restored_on_success_failure_and_drop (tests.test_cuda_host_transfer.CudaHostTransferDeviceGuardTests.test_current_device_restored_on_success_failure_and_drop) ... ok
+test_current_device_restored_and_cross_device_rejected (tests.test_cuda_same_device_copy.CopyDeviceGuardTests.test_current_device_restored_and_cross_device_rejected) ... ok
+test_allocation_and_cpu_copy_preserve_current_cuda_device (tests.test_cuda_zero_roundtrip.CudaCurrentDeviceGuardTests.test_allocation_and_cpu_copy_preserve_current_cuda_device) ... ok
+test_matrix_zeros_on_explicit_device_preserve_current_device (tests.test_cuda_zero_roundtrip.CudaCurrentDeviceGuardTests.test_matrix_zeros_on_explicit_device_preserve_current_device) ... ok
+test_ordinals_captures_and_current_device_restoration (tests.test_compile_cuda_boundary.CompileCudaDeviceTests.test_ordinals_captures_and_current_device_restoration) ... ok
+test_ownership_restoration_and_cache_separation (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarDeviceTests.test_ownership_restoration_and_cache_separation) ... ok
+test_ownership_captures_and_device_restoration (tests.test_compile_cuda_neg.CompileCudaNegDeviceTests.test_ownership_captures_and_device_restoration) ... ok
+test_ordinals_and_restoration (tests.test_compile_cuda_trailing_vector.CompileCudaTrailingVectorDeviceTests.test_ordinals_and_restoration) ... ok
+
+----------------------------------------------------------------------
+Ran 16 tests in 15.374s
+
+OK

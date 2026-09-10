@@ -1,0 +1,6 @@
+test_candidate_worker_rejects_operand_mutation_on_cuda (tests.test_cuda_math_evaluator.CudaReferenceTests.test_candidate_worker_rejects_operand_mutation_on_cuda) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 3.941s
+
+OK

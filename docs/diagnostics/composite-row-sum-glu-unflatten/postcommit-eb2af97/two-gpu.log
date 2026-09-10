@@ -1,0 +1,7 @@
+test_device_guard_restores_current_device (tests.test_cuda_sum_rows.CudaSumRowsDeviceTests.test_device_guard_restores_current_device) ... ok
+test_split_launches_restore_device_on_success_rejection_and_destruction (tests.test_cuda_sum_rows_indexing.CudaSumRowsIndexingDeviceTests.test_split_launches_restore_device_on_success_rejection_and_destruction) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 1.142s
+
+OK

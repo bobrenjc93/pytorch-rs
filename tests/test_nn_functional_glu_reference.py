@@ -136,6 +136,154 @@ class FunctionalGluReferenceTests(unittest.TestCase):
                     self.assertIsNone(leaf.grad)
                     self.assertIsNone(ref_leaf.grad)
 
+    def assert_gradient_matches(self, actual, expected):
+        self.assertIsNotNone(actual)
+        self.assertEqual(tuple(actual.shape), tuple(expected.shape))
+        self.assertEqual(actual.requires_grad, expected.requires_grad)
+        self.assertEqual(actual.is_leaf, expected.is_leaf)
+        np.testing.assert_allclose(values(actual), values(expected), rtol=3e-6, atol=2e-7)
+
+    def test_generated_vector_backward_with_nonuniform_upstream(self):
+        rng = np.random.default_rng(20260910)
+        for length in [0, 2, 4, 6, 14, 32, 130]:
+            data = rng.uniform(-6, 6, length).astype(np.float32).tolist()
+            weights = rng.uniform(-2, 2, length // 2).astype(np.float32).tolist()
+            for dim in (0, -1):
+                with self.subTest(length=length, dim=dim):
+                    actual = torch.tensor(data, requires_grad=True)
+                    expected = reference.tensor(data, requires_grad=True)
+                    before = values(actual).copy().view(np.uint32)
+                    output = torch.nn.functional.glu(actual, dim)
+                    ref_output = reference.nn.functional.glu(expected, dim)
+                    self.assert_matches(output, ref_output)
+                    self.assertFalse(output.is_set_to(actual))
+                    (output * torch.tensor(weights)).sum().backward()
+                    (ref_output * reference.tensor(weights)).sum().backward()
+                    self.assert_gradient_matches(actual.grad, expected.grad)
+                    np.testing.assert_array_equal(values(actual).view(np.uint32), before)
+
+    def test_large_finite_inputs_and_upstream_do_not_overflow_backward(self):
+        # In each case first * upstream overflows float32, while GLU's
+        # output, weighted loss, and both input derivatives are representable.
+        cases = [(1e20, -20., 1e20), (-1e20, -20., 1e20),
+                 (1e20, -20., -1e20), (1e30, -40., 1e25),
+                 (1e30, -80., 1e30)]
+        for first, gate, upstream in cases:
+            for dim in (0, -1):
+                for strided in (False, True):
+                    with self.subTest(first=first, gate=gate, upstream=upstream,
+                                      dim=dim, strided=strided):
+                        outputs, losses, gradients = [], [], []
+                        for module in (torch, reference):
+                            data = [[0., first], [0., gate]] if strided else [first, gate]
+                            leaf = module.tensor(data, requires_grad=True)
+                            source = leaf.transpose(0, 1)[1] if strided else leaf
+                            output = module.nn.functional.glu(source, dim)
+                            loss = (output * upstream).sum()
+                            loss.backward()
+                            outputs.append(output)
+                            losses.append(loss)
+                            gradients.append(leaf.grad)
+                        for tensor in (*outputs, *losses, *gradients):
+                            self.assertTrue(np.isfinite(values(tensor)).all())
+                        self.assert_matches(*outputs)
+                        self.assert_matches(*losses)
+                        self.assert_gradient_matches(*gradients)
+
+    def test_repeated_use_accumulation_and_graph_lifetime(self):
+        actual = torch.tensor([-3., 2., -1., 0.5, -0.75, 1.25], requires_grad=True)
+        expected = reference.tensor(actual.tolist(), requires_grad=True)
+        for step in range(2):
+            with self.subTest(step=step):
+                losses = []
+                for module, leaf in ((torch, actual), (reference, expected)):
+                    output = module.nn.functional.glu(leaf)
+                    # Both repeated uses of one result and separate GLU calls
+                    # must accumulate both chunk halves into the same leaf.
+                    losses.append((output * module.tensor([0.25, -2., 1.5])
+                                   + output * output
+                                   + module.nn.functional.glu(leaf, 0)).sum())
+                losses[0].backward()
+                losses[1].backward()
+                self.assert_gradient_matches(actual.grad, expected.grad)
+                before = values(actual.grad).copy()
+                for loss in losses:
+                    with self.assertRaisesRegex(RuntimeError, 'backward through the graph a second time'):
+                        loss.backward()
+                np.testing.assert_array_equal(values(actual.grad), before)
+
+    def test_backward_through_tracked_views_and_nonleaves(self):
+        data = np.linspace(-3, 3, 24, dtype=np.float32).tolist()
+        transforms = {
+            'identity_view': lambda x: x.view(24),
+            'offset': lambda x: x.narrow(0, 4, 12),
+            'selected_row': lambda x: x.reshape(4, 6)[2],
+            'strided_offset': lambda x: x.reshape(6, 4).transpose(0, 1)[1],
+            'chunk_output': lambda x: x.chunk(2)[1],
+            'empty_offset': lambda x: x.narrow(0, 3, 0),
+            'nonleaf': lambda x: x * 0.5 + x,
+        }
+        for name, transform in transforms.items():
+            for dim in (0, -1):
+                with self.subTest(case=name, dim=dim):
+                    actual = torch.tensor(data, requires_grad=True)
+                    expected = reference.tensor(data, requires_grad=True)
+                    source, ref_source = transform(actual), transform(expected)
+                    metadata = (source.shape, source.stride(), source.storage_offset(), source.data_ptr())
+                    output = torch.nn.functional.glu(source, dim)
+                    ref_output = reference.nn.functional.glu(ref_source, dim)
+                    self.assert_matches(output, ref_output)
+                    weights = np.linspace(-1.5, 2., output.numel(), dtype=np.float32).tolist()
+                    (output * torch.tensor(weights)).sum().backward()
+                    (ref_output * reference.tensor(weights)).sum().backward()
+                    self.assert_gradient_matches(actual.grad, expected.grad)
+                    self.assertEqual(metadata, (source.shape, source.stride(), source.storage_offset(), source.data_ptr()))
+                    np.testing.assert_array_equal(values(actual), np.asarray(data, dtype=np.float32))
+
+    def test_vector_no_grad_preserves_existing_graph_and_restores_recording(self):
+        for length in (0, 6):
+            with self.subTest(length=length):
+                data = np.linspace(-2, 2, length * 2, dtype=np.float32).reshape(length, 2).tolist()
+                actual = torch.tensor(data, requires_grad=True) if length else torch.zeros((0, 2), requires_grad=True)
+                expected = reference.tensor(data, requires_grad=True) if length else reference.zeros((0, 2), requires_grad=True)
+                source, ref_source = actual.transpose(0, 1)[1], expected.transpose(0, 1)[1]
+                with torch.no_grad(), reference.no_grad():
+                    self.assert_matches(torch.nn.functional.glu(source), reference.nn.functional.glu(ref_source))
+                    self.assertFalse(torch.is_grad_enabled())
+                self.assertTrue(torch.is_grad_enabled())
+                self.assertIsNone(actual.grad)
+                self.assertIsNone(expected.grad)
+                output, ref_output = torch.nn.functional.glu(source), reference.nn.functional.glu(ref_source)
+                self.assert_matches(output, ref_output)
+                output.sum().backward()
+                ref_output.sum().backward()
+                self.assert_gradient_matches(actual.grad, expected.grad)
+
+    def test_forwarding_mode_preserves_vector_backward(self):
+        outputs, gradients, observations = [], [], []
+        for module in (torch, reference):
+            calls = []
+            function = module.nn.functional.glu
+            source = module.tensor([-2., 1., 0.25, -0.75], requires_grad=True)
+
+            class Forward(module.overrides.TorchFunctionMode):
+                def __torch_function__(self, func, types, args=(), kwargs=None):
+                    calls.append((func is function, kwargs))
+                    return func(*args, **(kwargs or {}))
+
+            mode = Forward()
+            with mode:
+                output = function(source, dim=0)
+                self.assertIs(module.overrides._get_current_function_mode(), mode)
+            self.assertIsNone(module.overrides._get_current_function_mode())
+            (output * module.tensor([0.5, -2.])).sum().backward()
+            outputs.append(output)
+            gradients.append(source.grad)
+            observations.append(calls)
+        self.assertEqual(observations[0], observations[1])
+        self.assert_matches(*outputs)
+        self.assert_gradient_matches(*gradients)
+
     def test_binding_scalar_dimension_and_odd_size_errors(self):
         class Index:
             def __index__(self):

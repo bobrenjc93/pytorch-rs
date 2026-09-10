@@ -1,0 +1,12 @@
+{
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/.venv/bin/python",
+    "-I",
+    "-B",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/target/postcommit-02535d5/reproduce.py",
+    "candidate"
+  ],
+  "started_at": "2026-09-10T12:06:59.532625+00:00",
+  "ended_at": "2026-09-10T12:07:00.258995+00:00",
+  "exit_status": 0
+}

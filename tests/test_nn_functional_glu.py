@@ -1,4 +1,4 @@
-"""Native inference boundaries for the composed functional GLU."""
+"""Native autograd and inference boundaries for the composed functional GLU."""
 import unittest
 
 import numpy as np
@@ -7,14 +7,14 @@ from torch_rs.nn.functional import glu
 
 
 class FunctionalGluTests(unittest.TestCase):
-    def test_active_recording_rejected_without_changing_input_or_graph(self):
+    def test_higher_rank_recording_rejected_without_changing_input_or_graph(self):
         leaf = torch.tensor([[-2.0, -0.0, 1.0, 2.0], [3.0, 4.0, 5.0, 6.0]], requires_grad=True)
         with torch.no_grad():
-            unrecorded_view = leaf[0]
+            unrecorded_view = leaf.view((2, 4))
         nonleaf = leaf + leaf
-        cases = [leaf, leaf[1], leaf.transpose(0, 1), unrecorded_view, nonleaf,
+        cases = [leaf, leaf.transpose(0, 1), unrecorded_view, nonleaf,
                  torch.zeros((2, 0), requires_grad=True),
-                 torch.tensor([float('inf'), float('nan')], requires_grad=True)]
+                 torch.ones((2, 2, 4), requires_grad=True)]
         for source in cases:
             with self.subTest(shape=source.shape, stride=source.stride()):
                 before = np.asarray(source).copy().view(np.uint32)
@@ -34,6 +34,37 @@ class FunctionalGluTests(unittest.TestCase):
         self.assertIsNone(leaf.grad)
         nonleaf.sum().backward()
         self.assertEqual(leaf.grad.tolist(), [[2.0] * 4] * 2)
+
+    def test_sigmoid_primitive_boundaries_remain_explicit(self):
+        leaf = torch.tensor([-2., 1., 0.5, -0.5], requires_grad=True)
+        gate = leaf.chunk(2)[1]
+        with self.assertRaisesRegex(RuntimeError, r'^sigmoid\(\): autograd recording is not supported$'):
+            gate.sigmoid()
+        self.assertIsNone(leaf.grad)
+        glu(leaf).sum().backward()
+        self.assertIsNotNone(leaf.grad)
+
+        for nonfinite in (float('inf'), -float('inf'), float('nan')):
+            with self.subTest(gate=nonfinite):
+                source = torch.tensor([1., nonfinite], requires_grad=True)
+                before = np.asarray(source).copy().view(np.uint32)
+                with self.assertRaisesRegex(RuntimeError, r'^sigmoid\(\): autograd recording is not supported$'):
+                    glu(source)
+                np.testing.assert_array_equal(np.asarray(source).view(np.uint32), before)
+                self.assertIsNone(source.grad)
+                with torch.no_grad():
+                    self.assertFalse(glu(source).requires_grad)
+                source.sum().backward()
+                self.assertEqual(source.grad.tolist(), [1., 1.])
+
+    def test_higher_order_backward_rejected_without_consuming_graph(self):
+        leaf = torch.tensor([-2., 1., 0.5, -0.5], requires_grad=True)
+        loss = glu(leaf).sum()
+        with self.assertRaisesRegex(NotImplementedError, 'does not support create_graph=True'):
+            loss.backward(create_graph=True)
+        self.assertIsNone(leaf.grad)
+        loss.backward()
+        self.assertIsNotNone(leaf.grad)
 
     def test_rank_boundary_in_grad_and_no_grad_modes(self):
         for shape in [(1, 2, 2, 2), (1, 1, 2, 2, 2), (0, 1, 2, 2)]:
