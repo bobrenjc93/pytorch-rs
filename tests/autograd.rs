@@ -5287,7 +5287,10 @@ fn div_scalar_weighted_scalar_empty_offset_and_transposed_backward() {
         .unwrap()
         .backward()
         .unwrap();
-    assert_eq!(scalar.grad().unwrap().unwrap().item().unwrap(), -1.5);
+    assert_eq!(
+        scalar.grad().unwrap().unwrap().item().unwrap().to_bits(),
+        (-1.5_f32).to_bits()
+    );
 
     let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
     let output = empty.transpose(0, 2).unwrap().div_scalar(0.0).unwrap();

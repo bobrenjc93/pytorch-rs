@@ -32,7 +32,7 @@ class DivScalarAutogradReferenceTests(unittest.TestCase):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(reference_torch.__version__)
 
-    def assert_tensor_matches(self, actual, expected):
+    def assert_tensor_matches(self, actual, expected, *, mean_forward=False):
         self.assertEqual(tuple(actual.shape), tuple(expected.shape))
         self.assertEqual(actual.stride(), expected.stride())
         self.assertEqual(actual.storage_offset(), expected.storage_offset())
@@ -44,6 +44,12 @@ class DivScalarAutogradReferenceTests(unittest.TestCase):
         b = expected.detach().numpy().reshape(-1)
         np.testing.assert_array_equal(np.isnan(a), np.isnan(b))
         valid = ~np.isnan(b)
+        if mean_forward:
+            # Full-tensor mean keeps its existing reduction-order allowance;
+            # division values and every backward comparison stay bit-exact.
+            finite_nonzero = np.isfinite(b) & (b != 0)
+            np.testing.assert_array_max_ulp(a[finite_nonzero], b[finite_nonzero], maxulp=1)
+            valid &= ~finite_nonzero
         # Exact finite/infinity/zero bits catch division order and signed zero.
         np.testing.assert_array_equal(a.view(np.uint32)[valid], b.view(np.uint32)[valid])
 
@@ -168,6 +174,82 @@ class DivScalarAutogradReferenceTests(unittest.TestCase):
                     results.append((output, detached_output))
                 for actual, expected in zip(*results):
                     self.assert_tensor_matches(actual, expected)
+
+    def test_division_composes_with_mean_l1_layouts_and_accumulation(self):
+        for layout in ("scalar", "empty", "contiguous", "transposed", "offset", "offset transposed", "transposed leaf"):
+            for flags in ((True, False), (False, True), (True, True)):
+                for reduction in ({}, {"reduction": "mean"}):
+                    with self.subTest(layout=layout, flags=flags, reduction=reduction):
+                        results = []
+                        for api in (torch, reference_torch):
+                            left, x = self.make_input(api, layout)
+                            right, y = self.make_input(api, layout)
+                            left.requires_grad_(flags[0])
+                            right.requires_grad_(flags[1])
+                            # Recreate views after changing the leaf recording flags.
+                            if not flags[0]:
+                                x = x.detach()
+                            if not flags[1]:
+                                y = y.detach()
+                            x, y = api.div(x, -3.0), api.divide(y, 2.0)
+                            mean = api.nn.functional.l1_loss(x, y, **reduction)
+                            loss = mean / -3.0 + mean / 2.0
+                            loss.backward()
+                            first = tuple(leaf.grad.clone() if flag else None for leaf, flag in zip((left, right), flags))
+                            for old in (loss, mean, x if flags[0] else y):
+                                with self.assertRaisesRegex(RuntimeError, "backward through the graph a second time"):
+                                    old.sum().backward()
+                            for leaf, flag in zip((left, right), flags):
+                                if flag:
+                                    gradient = leaf.grad
+                                    (leaf / 4.0).mean().backward()
+                                    self.assertIs(leaf.grad, gradient)
+                                else:
+                                    self.assertIsNone(leaf.grad)
+                            results.append((mean, first, (left.grad, right.grad)))
+                        self.assert_tensor_matches(results[0][0], results[1][0], mean_forward=True)
+                        for actuals, expecteds in zip(results[0][1:], results[1][1:]):
+                            for actual, expected, flag in zip(actuals, expecteds, flags):
+                                if flag:
+                                    self.assert_tensor_matches(actual, expected)
+
+    def test_shared_division_l1_edges_and_ieee_loss_weights(self):
+        for shared in ("same operand", "shared nonleaf", "overlapping views"):
+            for divisor in (-3.0, 0.0, -0.0, float("inf"), float("-inf"), float("nan"), 1e-40):
+                with self.subTest(shared=shared, divisor=divisor):
+                    results = []
+                    for api in (torch, reference_torch):
+                        leaf = api.tensor([-0.0, 0.0, -2.0, 4.0], requires_grad=True)
+                        divided = leaf / 2.0
+                        if shared == "same operand":
+                            x, y = divided, divided
+                        elif shared == "shared nonleaf":
+                            x, y = divided, divided / -2.0
+                        else:
+                            x, y = divided[:3], divided[1:]
+                        mean = api.nn.functional.l1_loss(x, y)
+                        loss = mean / divisor
+                        loss.backward()
+                        results.append((loss, leaf.grad))
+                    for actual, expected in zip(*results):
+                        self.assert_tensor_matches(actual, expected)
+
+    def test_division_does_not_bypass_l1_nonfinite_boundary(self):
+        for divisor in (0.0, -0.0, float("nan"), 1e-40):
+            with self.subTest(divisor=divisor):
+                leaf = torch.tensor([0.0, 4.0], requires_grad=True)
+                divided = leaf / divisor
+                target = torch.zeros(2, requires_grad=True)
+                for reduction in ({}, {"reduction": "mean"}):
+                    with self.assertRaises((RuntimeError, NotImplementedError)):
+                        torch.nn.functional.l1_loss(divided, target, **reduction)
+                    self.assertIsNone(leaf.grad)
+                    self.assertIsNone(target.grad)
+                # Rejecting the loss must leave the division graph usable.
+                divided.sum().backward()
+                expected = reference_torch.tensor([0.0, 4.0], requires_grad=True)
+                (expected / divisor).sum().backward()
+                self.assert_tensor_matches(leaf.grad, expected.grad)
 
     def test_cuda_division_remains_unsupported(self):
         if not torch.cuda.is_available() or not reference_torch.cuda.is_available():
