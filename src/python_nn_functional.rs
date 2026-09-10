@@ -496,31 +496,100 @@ fn resolve_linear_output(
     }
 }
 
-#[pyfunction]
-#[pyo3(signature = (input, weight, bias, mode_call=None))]
-fn _nn_functional_linear(
-    py: Python<'_>,
-    input: &Bound<'_, PyAny>,
-    weight: &Bound<'_, PyAny>,
-    bias: &Bound<'_, PyAny>,
-    mode_call: Option<(Py<PyAny>, Bound<'_, PyTuple>, Bound<'_, PyDict>)>,
-) -> PyResult<Py<PyAny>> {
-    if mode_call.is_none() && !python_torch_function_mode::is_empty() {
+fn bind_linear_arguments<'py>(
+    args: &Bound<'py, PyTuple>,
+    kwargs: Option<&Bound<'py, PyDict>>,
+) -> PyResult<[Bound<'py, PyAny>; 3]> {
+    if args.len() > 3 {
+        return Err(PyTypeError::new_err(format!(
+            "linear() takes from 2 to 3 positional arguments but {} were given",
+            args.len()
+        )));
+    }
+    let names = ["input", "weight", "bias"];
+    let mut values: [Option<Bound<'py, PyAny>>; 3] = std::array::from_fn(|_| None);
+    for (index, value) in args.iter().enumerate() {
+        values[index] = Some(value);
+    }
+    if let Some(kwargs) = kwargs {
+        for (key, value) in kwargs {
+            let key = key.extract::<String>()?;
+            let Some(index) = names.iter().position(|name| *name == key) else {
+                return Err(PyTypeError::new_err(format!(
+                    "linear() got an unexpected keyword argument '{key}'"
+                )));
+            };
+            if values[index].is_some() {
+                return Err(PyTypeError::new_err(format!(
+                    "linear() got multiple values for argument '{key}'"
+                )));
+            }
+            values[index] = Some(value);
+        }
+    }
+    if values[0].is_none() {
         return Err(PyTypeError::new_err(
-            "linear() does not support an active TorchFunctionMode",
+            "linear() missing 2 required positional argument: \"input\", \"weight\"",
         ));
     }
+    if values[1].is_none() {
+        return Err(PyTypeError::new_err(
+            "linear() missing 1 required positional arguments: \"weight\"",
+        ));
+    }
+    values[2].get_or_insert_with(|| args.py().None().into_bound(args.py()));
+    Ok(values.map(|value| value.expect("required operands checked and bias defaulted")))
+}
 
-    let input = exact_linear_tensor(input)?;
-    let weight = exact_linear_tensor(weight)?;
+// Preserve the public Python documentation's reStructuredText markup.
+#[allow(clippy::doc_markdown)]
+#[doc = r"
+linear(input, weight, bias=None) -> Tensor
+
+Applies the rank-1, rank-2, or rank-3 transformation
+:math:`\mathrm{output} = \mathrm{input} \, \mathrm{weight}^{T}`, with an
+optional rank-1 bias.
+
+The current native implementation requires exact ``torch_rs.Tensor`` operands
+with CPU ``float32`` storage and shape ``(in_features,)``,
+``(rows, in_features)``, or ``(batch, sequence, in_features)`` for ``input``
+and ``(out_features, in_features)`` for ``weight``. ``bias`` may be ``None`` or
+an exact rank-1 tensor with shape ``(out_features,)`` or the PyTorch-compatible
+singleton shape ``(1,)``. Biased rank-3 input must be contiguous; offset
+contiguous inputs and strided or offset weights and biases are supported.
+The operation returns a fresh, independent row-major tensor with the
+corresponding final dimension replaced by ``out_features``.
+
+Active ``TorchFunctionMode`` contexts receive the public callable and original
+positional and keyword arguments before native execution. Tensor subclasses
+and active autograd recording are not supported. Gradient-requiring input,
+weight, or supported bias operands may be used inside ``torch.no_grad()``.
+"]
+#[pyfunction(name = "linear", signature = (*args, **kwargs), text_signature = "(input, weight, bias=None)")]
+fn _nn_functional_linear(
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    // Receive the original call at the native boundary: Python **kwargs would
+    // turn an omitted dictionary into {}, changing the mode hook's arity.
+    // Keep only args/kwargs in this Rust signature so PyO3 forwards them raw;
+    // adding a Python token parameter selects parsing that drops empty kwargs.
+    let py = args.py();
+    let [input, weight, bias] = bind_linear_arguments(args, kwargs)?;
+    let input = exact_linear_tensor(&input)?;
+    let weight = exact_linear_tensor(&weight)?;
     let bias = (!bias.is_none())
-        .then(|| exact_linear_bias(bias))
+        .then(|| exact_linear_bias(&bias))
         .transpose()?;
-    if let Some((function, args, kwargs)) = mode_call
-        && let Some(result) =
-            dispatch_exact_tensor_function_mode(py, &function, "torch.nn.linear", &args, &kwargs)?
-    {
-        return Ok(result);
+    if !python_torch_function_mode::is_empty() {
+        let function = PyModule::import(py, "torch_rs.nn.functional")?
+            .getattr("linear")?
+            .unbind();
+        if let Some(result) =
+            dispatch_exact_tensor_function_mode(py, &function, "torch.nn.linear", args, kwargs)?
+        {
+            return Ok(result);
+        }
     }
     let input = input.try_borrow()?;
     let weight = weight.try_borrow()?;
@@ -800,10 +869,15 @@ fn _nn_functional_glu_vector(
 }
 
 pub(crate) fn add_nn_functional_bridges(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    let linear = wrap_pyfunction!(_nn_functional_linear, module)?;
+    linear.setattr("__module__", "torch_rs.nn.functional")?;
+    module.add("_nn_functional_linear", linear)?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", ("_nn_functional_linear",))?;
     for function in [
         wrap_pyfunction!(_nn_functional_dropout, module)?,
         wrap_pyfunction!(_nn_functional_dropout_tensor_autograd_suffix, module)?,
-        wrap_pyfunction!(_nn_functional_linear, module)?,
         wrap_pyfunction!(_nn_functional_l1_loss, module)?,
         wrap_pyfunction!(_nn_functional_mse_loss, module)?,
         wrap_pyfunction!(_nn_functional_softsign, module)?,

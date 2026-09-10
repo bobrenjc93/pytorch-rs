@@ -100,6 +100,120 @@ class LinearModeReferenceTests(unittest.TestCase):
                     self.run_modes(reference, shape, form, intercept),
                 )
 
+    @staticmethod
+    def positional_call(linear, operands, bias_form, expand_empty):
+        x, w, b = operands
+        if bias_form == "omitted":
+            if expand_empty:
+                return linear(x, w, **{})
+            return linear(x, w)
+        bias = None if bias_form == "none" else b
+        if expand_empty:
+            return linear(x, w, bias, **{})
+        return linear(x, w, bias)
+
+    def keyword_presence(self, module, bias_form, expand_empty, outcome):
+        operands = self.operands(module, (2, 3))
+        events = []
+        test = self
+
+        class Mode(module.overrides.TorchFunctionMode):
+            def __init__(self, name):
+                self.name = name
+
+            def __repr__(self):
+                return self.name
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                test.assertIs(func, module.nn.functional.linear)
+                test.assertEqual(types, ())
+                test.assertEqual(len(args), 2 if bias_form == "omitted" else 3)
+                test.assertIs(args[0], operands[0])
+                test.assertIs(args[1], operands[1])
+                if len(args) == 3:
+                    test.assertIs(args[2], None if bias_form == "none" else operands[2])
+                if expand_empty:
+                    test.assertEqual(kwargs, {})
+                else:
+                    test.assertIsNone(kwargs)
+                events.append((self.name, kwargs is None))
+                if outcome == "intercept":
+                    return "intercepted"
+                if outcome == "decline":
+                    return NotImplemented
+                if kwargs is None:
+                    return func(*args)
+                return func(*args, **kwargs)
+
+        with Mode("outer"), Mode("inner"):
+            if outcome == "decline":
+                with self.assertRaises(TypeError) as raised:
+                    self.positional_call(module.nn.functional.linear, operands, bias_form, expand_empty)
+                result = str(raised.exception)
+            else:
+                result = self.positional_call(module.nn.functional.linear, operands, bias_form, expand_empty)
+        self.assertEqual(module.overrides._get_current_function_mode_stack(), [])
+        self.assertEqual([name for name, _ in events], ["inner", "outer"] if outcome == "delegate" else ["inner"])
+        return events, result.tolist() if outcome == "delegate" else result
+
+    def test_direct_positional_calls_distinguish_omitted_and_empty_keywords(self):
+        for bias_form, expand_empty, outcome in itertools.product(
+            ("omitted", "none", "tensor"), (False, True), ("intercept", "delegate", "decline")
+        ):
+            with self.subTest(bias=bias_form, empty_keywords=expand_empty, outcome=outcome):
+                self.assertEqual(
+                    self.keyword_presence(torch_rs, bias_form, expand_empty, outcome),
+                    self.keyword_presence(reference, bias_form, expand_empty, outcome),
+                )
+
+    def test_three_argument_hooks_intercept_delegate_and_recover(self):
+        for bias_form, delegate in itertools.product(("omitted", "none", "tensor"), (False, True)):
+            results = []
+            for module in (torch_rs, reference):
+                operands = self.operands(module, (2, 3))
+                test = self
+
+                class Mode(module.overrides.TorchFunctionMode):
+                    def __torch_function__(self, func, types, args=()):
+                        test.assertIs(func, module.nn.functional.linear)
+                        test.assertEqual(types, ())
+                        return func(*args) if delegate else "intercepted"
+
+                outer, inner = Mode(), Mode()
+                with outer, inner:
+                    # Supplying even an empty dictionary must still call the
+                    # hook with four arguments and raise for this narrow hook.
+                    with self.assertRaises(TypeError):
+                        self.positional_call(module.nn.functional.linear, operands, bias_form, True)
+                    self.assertEqual(module.overrides._get_current_function_mode_stack(), [outer, inner])
+                    result = self.positional_call(module.nn.functional.linear, operands, bias_form, False)
+                self.assertEqual(module.overrides._get_current_function_mode_stack(), [])
+                results.append(result.tolist() if delegate else result)
+            with self.subTest(bias=bias_form, delegate=delegate):
+                self.assertEqual(*results)
+
+    def test_native_entry_point_argument_binding_errors_match(self):
+        observations = []
+        for module in (torch_rs, reference):
+            x, w, b = self.operands(module, (2, 3))
+            errors = []
+            for args, kwargs in (
+                ((), {}),
+                ((x,), {}),
+                ((), {"weight": w}),
+                ((x, w, b, None), {}),
+                ((x, w), {"input": x}),
+                ((x, w), {"weight": w}),
+                ((x, w, b), {"bias": b}),
+                ((x, w), {"unexpected": None}),
+            ):
+                with module.overrides.BaseTorchFunctionMode():
+                    with self.assertRaises(TypeError) as raised:
+                        module.nn.functional.linear(*args, **kwargs)
+                errors.append(str(raised.exception))
+            observations.append(errors)
+        self.assertEqual(*observations)
+
     def recovery(self, module, failure):
         x, w, b = self.operands(module, (2, 3))
         bad_weight = module.ones((2, 4))

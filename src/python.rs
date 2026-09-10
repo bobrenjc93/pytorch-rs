@@ -4955,7 +4955,7 @@ pub(crate) fn dispatch_exact_tensor_function_mode(
     function: &Py<PyAny>,
     qualified_name: &str,
     args: &Bound<'_, PyTuple>,
-    kwargs: &Bound<'_, PyDict>,
+    kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Option<Py<PyAny>>> {
     let active_mode = torch_function_mode_stack::pop();
     let Some(mode) = active_mode.get() else {
@@ -4963,14 +4963,8 @@ pub(crate) fn dispatch_exact_tensor_function_mode(
     };
     validate_torch_function_mode_handler(mode.bind(py))?;
     let handler = mode.bind(py).getattr("__torch_function__")?;
-    let result = call_torch_function_handler(
-        py,
-        &handler,
-        function,
-        &PyTuple::empty(py),
-        args,
-        Some(kwargs),
-    )?;
+    let result =
+        call_torch_function_handler(py, &handler, function, &PyTuple::empty(py), args, kwargs)?;
     if !is_not_implemented(py, &result) {
         return Ok(Some(result));
     }

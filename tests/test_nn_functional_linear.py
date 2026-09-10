@@ -233,13 +233,11 @@ class FunctionalLinearTests(unittest.TestCase):
 
         self.assertIs(imported, functional)
         self.assertIs(linear, functional.linear)
-        self.assertIs(type(linear), types.FunctionType)
+        self.assertIs(type(linear), types.BuiltinFunctionType)
         self.assertEqual(linear.__name__, "linear")
         self.assertEqual(linear.__qualname__, "linear")
         self.assertEqual(linear.__module__, "torch_rs.nn.functional")
-        self.assertEqual(linear.__wrapped__.__defaults__, (None,))
-        self.assertIsNone(linear.__kwdefaults__)
-        self.assertFalse(hasattr(linear, "__text_signature__"))
+        self.assertEqual(linear.__text_signature__, "(input, weight, bias=None)")
         self.assertTrue(linear.__doc__.startswith("\nlinear(input, weight, bias=None)"))
         normalized_doc = " ".join(linear.__doc__.split())
         for documented_limit in (
@@ -268,10 +266,7 @@ class FunctionalLinearTests(unittest.TestCase):
             self.assertNotIn(unsupported_claim, normalized_doc)
         signature = inspect.signature(linear)
         self.assertEqual(tuple(signature.parameters), ("input", "weight", "bias"))
-        self.assertIs(signature.parameters["input"].annotation, torch.Tensor)
-        self.assertIs(signature.parameters["weight"].annotation, torch.Tensor)
         self.assertIsNone(signature.parameters["bias"].default)
-        self.assertIs(signature.return_annotation, torch.Tensor)
         self.assertFalse(hasattr(torch, "_nn_functional_linear"))
 
         wildcard = {}
