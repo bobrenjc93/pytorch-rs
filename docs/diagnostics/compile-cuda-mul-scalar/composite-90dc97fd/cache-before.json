@@ -1,0 +1,40 @@
+{
+  "recorded_utc": "2026-09-10T05:44:54.427540+00:00",
+  "source_commit": "90dc97fd476342eceb5c45261e60404b36819d61",
+  "worktree_status": "",
+  "policy": "One run with new driver/Inductor/Triton caches, retaining any private native libraries from correctness tests, then exactly one reused-cache run. No timing selection or retries.",
+  "paths": {
+    "torch_rs_private_cuda_pointwise": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/checkout/target/torch_rs_private_cuda_pointwise",
+      "exists": true,
+      "files": {
+        "abc1ef92dd5c211d/libtorch_rs_private_pointwise.so": "53c6fa009bf406773118d5a5e830da895bb8e023645c7766b33e063e1d6bb7cf",
+        "abc1ef92dd5c211d/torch_rs_private_pointwise.cu": "22c19cfe066dc5ec5ef73e350a8c5ee6bf8aa5509f97b0df17e72aa7d7ef7139"
+      }
+    },
+    "torch_rs_private_cuda_pointwise_reduce": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/checkout/target/torch_rs_private_cuda_pointwise_reduce",
+      "exists": true,
+      "files": {
+        "008df4c027d70965/libtorch_rs_private_pointwise_reduce.so": "bbe42b7e6c9c14dbdd39be8f5d33915e33126cf6d739cad184530d46502d73b7",
+        "008df4c027d70965/torch_rs_private_pointwise_reduce.cu": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7"
+      }
+    },
+    "CUDA_CACHE_PATH": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/performance-cache/cuda",
+      "exists": false,
+      "files": {}
+    },
+    "TORCHINDUCTOR_CACHE_DIR": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/performance-cache/inductor",
+      "exists": false,
+      "files": {}
+    },
+    "TRITON_CACHE_DIR": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/performance-cache/triton",
+      "exists": false,
+      "files": {}
+    }
+  },
+  "gpu_processes": "gpu_uuid, pid, process_name, used_gpu_memory [MiB]\n"
+}
