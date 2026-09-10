@@ -123,8 +123,9 @@ on Windows) and the driver JIT; nvcc and NVRTC are not used. Results complete
 on the legacy default stream before return. Contiguous float32 CUDA negation
 (`-x`, `neg`, and `negative` methods/functions) also supports scalars, empties,
 and contiguous offset views; see [validation](cuda-neg-validation.md).
-Bounded eager native neg/add capture also supports contiguous float32 CUDA
-tensors; see the [capture guide](compile-cuda-add.md) for its guards and scope.
+Bounded eager native neg/add capture also supports scalar multiplication on
+contiguous float32 CUDA tensors; see the [capture guide](compile-cuda-add.md)
+for its guards and scope.
 Contiguous float32 CUDA scalar multiplication also uses the native driver kernel;
 see its [scope and validation](cuda-mul-scalar-validation.md).
 Noncontiguous CUDA negation/multiplication, tensor-tensor multiplication, other CUDA math, CUDA autograd,

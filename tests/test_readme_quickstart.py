@@ -445,7 +445,7 @@ README_SCOPE_REQUIRED_SNIPPETS = (
     "1-D zeros only",
     "No general CUDA math or accelerator training",
     "Bounded eager CPU capture",
-    "[CUDA neg/add capture](docs/compile-cuda-add.md)",
+    "[CUDA mul/neg/add capture](docs/compile-cuda-add.md)",
     "without fusion",
     "No full Inductor compiler",
     "general graph capture, or eager fallback",
@@ -461,9 +461,10 @@ SUPPORTED_SURFACE_DETAIL_SNIPPETS = (
     "Autograd inputs (including under `no_grad`), asynchronous copies, dtype changes",
     "Dtype-changing conversions, CUDA-to-CUDA copies, unindexed CUDA targets",
     '`x + y`, `x.add(y)`, and `torch.add(x, y)`',
-    "both inputs have identical shapes, are contiguous",
+    "inputs have identical shapes or shapes `(M, N)` and `(N,)` in either operand order",
+    "Compiler CUDA addition remains equal-shape-only",
     "numeric default-equivalent `alpha=1`",
-    "CUDA broadcasting, noncontiguous operands, Python scalar addition",
+    "other CUDA broadcasting, noncontiguous operands, Python scalar addition",
     "`torch.cuda.device_count()`",
     "`torch.cuda.is_available()`",
     "`torch.cuda.is_initialized()`",
@@ -556,7 +557,7 @@ DOCS_INDEX_EXAMPLES = (
 )
 DOCS_INDEX_GUIDES = (
     (
-        "CUDA neg/add graph capture",
+        "CUDA mul/neg/add graph capture",
         "compile-cuda-add.md",
         "Public bounded eager compilation, device/cache guards, unsupported cases, and reproduction.",
     ),

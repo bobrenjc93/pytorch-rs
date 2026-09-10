@@ -1,0 +1,35 @@
+{
+  "name": "scalar-guards-314",
+  "command": [
+    "target/post-commit-e8a4488/venv314/bin/python",
+    "-m",
+    "unittest",
+    "-v",
+    "tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_tensor_capture_and_stride_changes",
+    "tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_dynamic_scalar_node_metadata_rejects_before_execution",
+    "tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_malformed_late_nodes_and_execution_failure",
+    "tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_guarded_globals_helper_rebinding_and_limit",
+    "tests.test_compile_cuda_mul_scalar_diagnostic"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e",
+  "started_utc": "2026-09-10T04:23:37Z",
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": "0",
+    "PYO3_PYTHON": null,
+    "VIRTUAL_ENV": null,
+    "TORCH_RS_VERIFY_VIRTUALENV": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/post-commit-e8a4488/venv314",
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/cargo-home",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/post-commit-e8a4488/build312",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/post-commit-e8a4488/tmp",
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/cache/uv",
+    "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/python",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/post-commit-e8a4488/cache",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/post-commit-e8a4488/cache/cuda",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/post-commit-e8a4488/cache/inductor",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/post-commit-e8a4488/cache/triton",
+    "PYTHONPYCACHEPREFIX": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/post-commit-e8a4488/cache/pycache",
+    "PYTHONHASHSEED": null
+  },
+  "exit_code": 0,
+  "elapsed_seconds": 2.439102857373655
+}

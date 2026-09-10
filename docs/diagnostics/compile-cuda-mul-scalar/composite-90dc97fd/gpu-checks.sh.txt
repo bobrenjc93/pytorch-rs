@@ -1,0 +1,14 @@
+set -u
+source /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/env.sh
+cd "$INTEGRATION_ROOT/target/integration/checkout"
+while [[ ! -f ../logs/python-full312.receipt.json || ! -f ../logs/diagnostic-doc-command.receipt.json ]]; do sleep 2; done
+export TORCH_RS_VERIFY_VIRTUALENV="$INTEGRATION_ROOT/target/integration/venv312"
+python3 ../run.py mul-diagnostic-312 "$TORCH_RS_VERIFY_VIRTUALENV/bin/python" -m scripts.diagnose_compile_cuda_mul_scalar --case-set mul_neg_add_v1 --output ../mul-diagnostic-312.json
+python3 ../run.py neg-add-diagnostic-312 "$TORCH_RS_VERIFY_VIRTUALENV/bin/python" -m scripts.diagnose_compile_cuda_neg_add --case-set neg_add_v1 --output ../neg-add-diagnostic-312.json
+CUDA_VISIBLE_DEVICES=0,1 python3 ../run.py mul-diagnostic-two-device "$TORCH_RS_VERIFY_VIRTUALENV/bin/python" -m scripts.diagnose_compile_cuda_mul_scalar --case-set mul_neg_add_v1 --output ../mul-diagnostic-two-device.json
+CUDA_VISIBLE_DEVICES=0,1 python3 ../run.py two-device-tests "$TORCH_RS_VERIFY_VIRTUALENV/bin/python" -m unittest tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarDeviceTests tests.test_cuda_mul_scalar.CudaMulScalarDeviceTests tests.test_compile_cuda_neg.CompileCudaNegDeviceTests tests.test_compile_cuda_boundary.CompileCudaDeviceTests
+export CARGO_TARGET_DIR="$INTEGRATION_ROOT/target/integration/build-rust-release" PYO3_PYTHON="$TORCH_RS_VERIFY_VIRTUALENV/bin/python"
+python3 ../run.py rust-cuda cargo test --release --locked --test cuda_mul_scalar --test cuda_add --test cuda_neg
+export TORCH_RS_VERIFY_VIRTUALENV="$INTEGRATION_ROOT/target/integration/venv314"
+python3 ../run.py scalar-gpu314 "$TORCH_RS_VERIFY_VIRTUALENV/bin/python" -m unittest tests.test_compile_cuda_mul_scalar tests.test_compile_cuda_mul_scalar_diagnostic tests.test_cuda_mul_scalar
+python3 ../run.py mul-diagnostic-314 "$TORCH_RS_VERIFY_VIRTUALENV/bin/python" -m scripts.diagnose_compile_cuda_mul_scalar --case-set mul_neg_add_v1 --output ../mul-diagnostic-314.json

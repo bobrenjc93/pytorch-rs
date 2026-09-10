@@ -1,0 +1,30 @@
+{
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/venv312/bin/python",
+    "-m",
+    "unittest",
+    "tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarDeviceTests",
+    "tests.test_cuda_mul_scalar.CudaMulScalarDeviceTests",
+    "tests.test_compile_cuda_neg.CompileCudaNegDeviceTests",
+    "tests.test_compile_cuda_boundary.CompileCudaDeviceTests"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/checkout",
+  "started_utc": "2026-09-10T05:37:19.941644+00:00",
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": "0,1",
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/cache/uv",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/cache/cuda",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/build312",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/cache/inductor",
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/cargo-home",
+    "RUSTUP_TOOLCHAIN": "1.92.0",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/tmp",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/cache/triton",
+    "PYTHONPYCACHEPREFIX": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/cache/pycache"
+  },
+  "commit": "90dc97fd476342eceb5c45261e60404b36819d61",
+  "worktree_status": "",
+  "exit_code": 0,
+  "elapsed_seconds": 16.01074248086661,
+  "finished_utc": "2026-09-10T05:37:35.999636+00:00"
+}

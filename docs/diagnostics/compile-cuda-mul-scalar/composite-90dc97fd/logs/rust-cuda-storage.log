@@ -1,0 +1,24 @@
+   Compiling crossbeam-utils v0.8.23
+   Compiling either v1.18.0
+   Compiling cfg-if v1.0.4
+   Compiling libloading v0.8.9
+   Compiling crossbeam-epoch v0.9.21
+   Compiling crossbeam-deque v0.8.8
+   Compiling rayon-core v1.13.0
+   Compiling rayon v1.12.0
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/checkout)
+    Finished `release` profile [optimized] target(s) in 32.18s
+     Running unittests src/lib.rs (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/build-rust-release/release/deps/pytorch_rs-267aaace16a2aab8)
+
+running 8 tests
+test cuda::tests::cuda_allocation_checks_byte_overflow_before_loading_runtime ... ok
+test cuda::tests::standalone_native_cuda_roundtrip ... ok
+test cuda::pool::tests::pool_budgets_unused_memory_independently_of_large_live_allocations ... ok
+test cuda::tests::packed_copy_regions_validate_bounds_and_output_length ... ok
+test cuda::tests::negation_bounds_and_bitwise_values_without_python ... ok
+test cuda::replay::tests::repeated_live_arguments_use_bounded_graph_cache ... ok
+test cuda::tests::addition_checks_storage_bounds_and_restores_device ... ok
+test cuda::tests::scalar_multiplication_bounds_and_launch_failure_cleanup ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 0.56s
+

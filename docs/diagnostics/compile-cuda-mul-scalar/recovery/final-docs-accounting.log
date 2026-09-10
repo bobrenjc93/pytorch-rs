@@ -1,0 +1,24 @@
+test_benchmarking_indexes_historical_release_timing_reports (tests.test_readme_quickstart.ReadmeQuickstartTests.test_benchmarking_indexes_historical_release_timing_reports) ... ok
+test_detailed_support_contracts_live_in_focused_docs (tests.test_readme_quickstart.ReadmeQuickstartTests.test_detailed_support_contracts_live_in_focused_docs) ... ok
+test_docs_readme_indexes_contracts_guides_and_timing_evidence (tests.test_readme_quickstart.ReadmeQuickstartTests.test_docs_readme_indexes_contracts_guides_and_timing_evidence) ... ok
+test_entry_point_links_resolve (tests.test_readme_quickstart.ReadmeQuickstartTests.test_entry_point_links_resolve) ... ok
+test_first_success_example_is_short_and_runs (tests.test_readme_quickstart.ReadmeQuickstartTests.test_first_success_example_is_short_and_runs) ... ok
+test_readme_keeps_quickstart_scope_and_evaluation_route (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_keeps_quickstart_scope_and_evaluation_route) ... ok
+test_readme_links_contributing_guide (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_links_contributing_guide) ... ok
+test_readme_routes_benchmark_policy_to_focused_docs (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_routes_benchmark_policy_to_focused_docs) ... ok
+test_readme_routes_to_supported_surface_anchors (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_routes_to_supported_surface_anchors) ... ok
+test_readme_scope_is_scan_friendly_table (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_scope_is_scan_friendly_table) ... ok
+test_source_install_commands_are_locked (tests.test_readme_quickstart.ReadmeQuickstartTests.test_source_install_commands_are_locked) ... ok
+test_stale_wheel_recovery_uses_wheel_test_workflow (tests.test_readme_quickstart.ReadmeQuickstartTests.test_stale_wheel_recovery_uses_wheel_test_workflow) ... ok
+test_failed_reference_wrong_data_and_unsupported_results_are_retained (tests.test_compile_cuda_mul_scalar_diagnostic.ScalarDiagnosticAccountingTests.test_failed_reference_wrong_data_and_unsupported_results_are_retained) ... ok
+test_setup_failure_is_written_and_returns_nonzero (tests.test_compile_cuda_mul_scalar_diagnostic.ScalarDiagnosticAccountingTests.test_setup_failure_is_written_and_returns_nonzero) ... ok
+test_documented_command_on_real_cuda (tests.test_compile_cuda_neg_add_diagnostic.DiagnosticAccountingTests.test_documented_command_on_real_cuda) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_documented_commands_preserve_raw_results_and_exit_status (tests.test_compile_cuda_neg_add_diagnostic.DiagnosticAccountingTests.test_documented_commands_preserve_raw_results_and_exit_status) ... ok
+test_empty_matrix_and_provenance_errors_cannot_succeed (tests.test_compile_cuda_neg_add_diagnostic.DiagnosticAccountingTests.test_empty_matrix_and_provenance_errors_cannot_succeed) ... ok
+test_versioned_matrix_retains_addition_and_unsupported_guards (tests.test_compile_cuda_neg_add_diagnostic.DiagnosticAccountingTests.test_versioned_matrix_retains_addition_and_unsupported_guards) ... ok
+test_troubleshooting_supported_boundary_and_report_navigation (tests.test_compile_cuda_neg_add_diagnostic.DiagnosticDocumentationTests.test_troubleshooting_supported_boundary_and_report_navigation) ... ok
+
+----------------------------------------------------------------------
+Ran 19 tests in 0.357s
+
+OK (skipped=1)

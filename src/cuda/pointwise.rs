@@ -29,13 +29,14 @@ struct Driver {
 struct Module {
     context: usize,
     _handle: usize,
-    functions: [usize; 4],
+    functions: [usize; 5],
 }
 
 enum Kernel {
     Add,
     AddVector,
     MultiplyScalar,
+    AddTrailingVector,
     #[cfg(any(feature = "python-bindings", test))]
     Negate,
 }
@@ -127,7 +128,7 @@ impl Driver {
             .try_reserve(1)
             .map_err(|_| TensorError::AllocationFailed { elements: 1 })?;
         let mut module = std::ptr::null_mut();
-        let mut functions = [0; 4];
+        let mut functions = [0; 5];
         // SAFETY: static NUL-terminated PTX and entry names; writable handles.
         unsafe {
             self.check(
@@ -138,6 +139,8 @@ impl Driver {
                         "\n",
                         include_str!("mul_scalar.ptx"),
                         "\n",
+                        include_str!("add_trailing_vector.ptx"),
+                        "\n",
                         include_str!("neg.ptx"),
                         "\0"
                     )
@@ -146,11 +149,13 @@ impl Driver {
                 ),
                 "cuModuleLoadData",
             )?;
-            for (slot, name) in
-                functions
-                    .iter_mut()
-                    .zip([c"add_f32", c"add_f32x4", c"mul_scalar_f32", c"neg_f32"])
-            {
+            for (slot, name) in functions.iter_mut().zip([
+                c"add_f32",
+                c"add_f32x4",
+                c"mul_scalar_f32",
+                c"add_trailing_vector_f32",
+                c"neg_f32",
+            ]) {
                 let mut function = std::ptr::null_mut();
                 if let Err(error) = self.check(
                     (self.function)(&raw mut function, module, name.as_ptr()),
@@ -246,6 +251,51 @@ pub(super) unsafe fn launch_add(
         )
     })();
     (result, keepalive)
+}
+
+/// # Safety
+/// Matrix/output refer to `elements` live contiguous floats, vector to `columns`
+/// floats on the guarded device; columns is nonzero and divides elements.
+/// Output is fresh. Caller must complete the legacy stream even on launch error.
+pub(super) unsafe fn launch_add_trailing_vector(
+    mut matrix: u64,
+    mut vector: u64,
+    mut output: u64,
+    elements: usize,
+    columns: usize,
+) -> Result<(), TensorError> {
+    let driver = driver()?;
+    let function = driver.function(Kernel::AddTrailingVector)?;
+    let mut count = elements as u64;
+    let mut columns = columns as u64;
+    let mut arguments = [
+        (&raw mut matrix).cast(),
+        (&raw mut vector).cast(),
+        (&raw mut output).cast(),
+        (&raw mut count).cast(),
+        (&raw mut columns).cast(),
+    ];
+    let blocks = u32::try_from(elements.div_ceil(256).min(4096)).expect("bounded grid");
+    // SAFETY: arguments survive the launch copy and the function belongs to
+    // this context. The caller holds allocations through legacy-stream completion.
+    driver.check(
+        unsafe {
+            (driver.launch)(
+                function as *mut c_void,
+                blocks,
+                1,
+                1,
+                256,
+                1,
+                1,
+                0,
+                std::ptr::without_provenance_mut(1),
+                arguments.as_mut_ptr(),
+                std::ptr::null_mut(),
+            )
+        },
+        "cuLaunchKernel",
+    )
 }
 
 /// # Safety

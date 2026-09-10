@@ -4218,14 +4218,15 @@ impl Tensor {
         )
     }
 
-    /// Adds CPU tensors with trailing-dimension broadcasting, or same-shape
-    /// contiguous CUDA float32 tensors without autograd. CUDA completes before return.
+    /// Adds CPU tensors with trailing-dimension broadcasting, or contiguous CUDA
+    /// float32 tensors of equal shape or (M, N) and (N,), without autograd.
+    /// CUDA completes before return.
     ///
     /// # Errors
     ///
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails. CUDA also rejects mixed devices,
-    /// noncontiguous or unequal shapes, and autograd, and reports driver errors.
+    /// noncontiguous or other broadcast shapes, and autograd, and reports driver errors.
     pub fn add(&self, other: &Self) -> Result<Self, TensorError> {
         if self.is_cuda() || other.is_cuda() {
             return self.add_cuda(other);
@@ -4243,8 +4244,6 @@ impl Tensor {
             Some("only float32 is supported")
         } else if self.requires_grad() || other.requires_grad() {
             Some("autograd is unsupported")
-        } else if self.shape != other.shape {
-            Some("inputs must have the same shape; broadcasting is unsupported")
         } else if !self.is_contiguous() || !other.is_contiguous() {
             Some("inputs must be contiguous")
         } else {
@@ -4253,20 +4252,50 @@ impl Tensor {
         if let Some(reason) = reason {
             return Err(TensorError::UnsupportedCudaAddition { reason });
         }
-        let shape = try_clone_result_shape(&self.shape, self.elements)?;
-        let strides = contiguous_strides(&shape, self.elements)?;
-        let storage = self.storage.cuda_add_float32(
-            self.offset,
-            &other.storage,
-            other.offset,
-            self.elements,
+        // Normalize only the supported trailing-vector case. Equal shapes keep
+        // the existing vectorized/replay path, including scalars and empty views.
+        let (left, right, trailing_columns) = if self.shape == other.shape {
+            (self, other, None)
+        } else {
+            match (self.shape.as_slice(), other.shape.as_slice()) {
+                ([_, columns], [n]) if columns == n => (self, other, Some(*columns)),
+                ([n], [_, columns]) if columns == n => (other, self, Some(*columns)),
+                _ => {
+                    return Err(TensorError::UnsupportedCudaAddition {
+                        reason: "inputs must have the same shape or shapes (M, N) and (N,)",
+                    });
+                }
+            }
+        };
+        let shape = try_clone_result_shape(&left.shape, left.elements)?;
+        let strides = if trailing_columns.is_some() {
+            // Contiguous singleton/empty views can have noncanonical strides.
+            // Match TensorIterator's output ordering without changing the
+            // same-shape fast path; physical indexing is still contiguous.
+            elementwise_output_strides(
+                &shape,
+                &[
+                    ElementwiseLayout::from_tensor(left),
+                    ElementwiseLayout::from_tensor(right),
+                ],
+                left.elements,
+            )?
+        } else {
+            contiguous_strides(&shape, left.elements)?
+        };
+        let storage = left.storage.cuda_add_float32(
+            left.offset,
+            &right.storage,
+            right.offset,
+            left.elements,
+            trailing_columns,
         )?;
         Ok(Self {
             storage: Arc::new(storage),
             shape,
             strides,
             offset: 0,
-            elements: self.elements,
+            elements: left.elements,
             output_nr: 0,
             leaf_requires_grad: requires_grad_flag(false),
             view_requires_grad: None,
@@ -6601,8 +6630,106 @@ fn materialize_concat_small_rank_fast_path(
             debug_assert_eq!(data.len(), output_elements);
             Ok(Some(data))
         }
+        (3, 2) => materialize_concat_rank_3_depth(inputs, output_shape, output_elements),
         _ => Ok(None),
     }
+}
+
+fn materialize_concat_rank_3_depth(
+    inputs: &[&Tensor],
+    output_shape: &[usize],
+    output_elements: usize,
+) -> Result<Option<Vec<f32>>, TensorError> {
+    // dstack's normalized matrices and generic rank-three cat share this path.
+    // Borrow storage/strides once per input instead of decoding a dynamic-rank
+    // logical index for every value. Shared gradient buffers retain the fallback.
+    if inputs
+        .iter()
+        .any(|input| input.elements != 0 && input.owned_fixed_rank_parts::<3>().is_none())
+    {
+        return Ok(None);
+    }
+    let mut data = try_result_vector(output_elements, output_elements)?;
+    if output_elements == 0 {
+        return Ok(Some(data));
+    }
+    data.resize(output_elements, 0.0);
+    let [_, columns, output_depth] = output_shape else {
+        return Err(TensorError::IndexCalculationOverflow);
+    };
+    let output_row = columns
+        .checked_mul(*output_depth)
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+    let mut depth_start = 0;
+    for input in inputs {
+        if input.elements == 0 {
+            continue;
+        }
+        let (values, [_, _, depth], [row_stride, column_stride, depth_stride]) = input
+            .owned_fixed_rank_parts::<3>()
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let depth_end = depth_start + depth; // Validated concatenated axis sum.
+        for (row, output) in data.chunks_exact_mut(output_row).enumerate() {
+            let mut offset = row
+                .checked_mul(row_stride)
+                .and_then(|value| input.offset.checked_add(value))
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+            if depth == 1 && column_stride != 0 {
+                // Validate the whole strided row once. The zip then needs no
+                // checked offset arithmetic or storage lookup per column.
+                let end = (columns - 1)
+                    .checked_mul(column_stride)
+                    .and_then(|value| offset.checked_add(value))
+                    .and_then(|value| value.checked_add(1))
+                    .ok_or(TensorError::IndexCalculationOverflow)?;
+                let source = values
+                    .get(offset..end)
+                    .ok_or(TensorError::IndexCalculationOverflow)?;
+                for (destination, value) in output
+                    .chunks_exact_mut(*output_depth)
+                    .zip(source.iter().step_by(column_stride))
+                {
+                    destination[depth_start] = *value;
+                }
+                continue;
+            }
+            for (column, output) in output.chunks_exact_mut(*output_depth).enumerate() {
+                let destination = &mut output[depth_start..depth_end];
+                if depth == 1 {
+                    destination[0] = *values
+                        .get(offset)
+                        .ok_or(TensorError::IndexCalculationOverflow)?;
+                } else if depth_stride == 1 {
+                    let end = offset
+                        .checked_add(depth)
+                        .ok_or(TensorError::IndexCalculationOverflow)?;
+                    destination.copy_from_slice(
+                        values
+                            .get(offset..end)
+                            .ok_or(TensorError::IndexCalculationOverflow)?,
+                    );
+                } else {
+                    for (index, value) in destination.iter_mut().enumerate() {
+                        let source = index
+                            .checked_mul(depth_stride)
+                            .and_then(|value| offset.checked_add(value))
+                            .ok_or(TensorError::IndexCalculationOverflow)?;
+                        *value = *values
+                            .get(source)
+                            .ok_or(TensorError::IndexCalculationOverflow)?;
+                    }
+                }
+                if column + 1 != *columns {
+                    offset = offset
+                        .checked_add(column_stride)
+                        .ok_or(TensorError::IndexCalculationOverflow)?;
+                }
+            }
+        }
+        depth_start = depth_end;
+    }
+    debug_assert_eq!(depth_start, *output_depth);
+    Ok(Some(data))
 }
 
 fn can_append_rank_1_fast(input: &Tensor) -> bool {
@@ -13989,6 +14116,57 @@ mod tests {
                 let gradient = leaf.grad().unwrap().unwrap();
                 assert_eq!(gradient.shape(), leaf.shape());
                 assert!(gradient.as_slice().is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn cat_rank_3_depth_fast_path_matches_fallback_for_generated_views() {
+        let bits = [0, 0x8000_0000, 1, 0x7fc1_2345, 0x7f80_0000, 0xff80_0000];
+        for rows in [1, 2, 5] {
+            for columns in [1, 3, 7] {
+                for depths in [[1, 1, 1], [0, 2, 3], [3, 1, 2]] {
+                    for layout in 0..4 {
+                        let inputs = depths.map(|depth| {
+                            let strides = match layout {
+                                0 => [columns * depth, depth, 1],
+                                1 => [depth, rows * depth, 1],
+                                2 => [columns * depth * 2, depth * 2, 2],
+                                _ => [columns, 1, rows * columns],
+                            };
+                            let storage = (0..(rows * columns * depth * 2 + 3))
+                                .map(|index| bits[index % bits.len()])
+                                .collect::<Vec<_>>();
+                            owned_strided_rank_3_tensor(
+                                &storage,
+                                [rows, columns, depth],
+                                strides,
+                                3,
+                            )
+                        });
+                        let logical = inputs
+                            .iter()
+                            .map(|input| input.try_to_vec().unwrap())
+                            .collect::<Vec<_>>();
+                        let mut expected = Vec::new();
+                        for position in 0..rows * columns {
+                            for (values, depth) in logical.iter().zip(depths) {
+                                expected.extend(
+                                    values[position * depth..(position + 1) * depth]
+                                        .iter()
+                                        .map(|value| value.to_bits()),
+                                );
+                            }
+                        }
+                        assert_cat_fast_path_matches_shared_fallback(
+                            "generated rank-3 depth views",
+                            &inputs,
+                            2,
+                            &[rows, columns, depths.iter().sum()],
+                            &expected,
+                        );
+                    }
+                }
             }
         }
     }

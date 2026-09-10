@@ -1,0 +1,91 @@
+{
+  "recorded_utc": "2026-09-10T05:45:04.706973+00:00",
+  "source_commit": "90dc97fd476342eceb5c45261e60404b36819d61",
+  "worktree_status": "",
+  "policy": "One run with new driver/Inductor/Triton caches, retaining any private native libraries from correctness tests, then exactly one reused-cache run. No timing selection or retries.",
+  "paths": {
+    "torch_rs_private_cuda_pointwise": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/checkout/target/torch_rs_private_cuda_pointwise",
+      "exists": true,
+      "files": {
+        "abc1ef92dd5c211d/libtorch_rs_private_pointwise.so": "53c6fa009bf406773118d5a5e830da895bb8e023645c7766b33e063e1d6bb7cf",
+        "abc1ef92dd5c211d/torch_rs_private_pointwise.cu": "22c19cfe066dc5ec5ef73e350a8c5ee6bf8aa5509f97b0df17e72aa7d7ef7139"
+      }
+    },
+    "torch_rs_private_cuda_pointwise_reduce": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/checkout/target/torch_rs_private_cuda_pointwise_reduce",
+      "exists": true,
+      "files": {
+        "008df4c027d70965/libtorch_rs_private_pointwise_reduce.so": "bbe42b7e6c9c14dbdd39be8f5d33915e33126cf6d739cad184530d46502d73b7",
+        "008df4c027d70965/torch_rs_private_pointwise_reduce.cu": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7"
+      }
+    },
+    "CUDA_CACHE_PATH": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/performance-cache/cuda",
+      "exists": true,
+      "files": {}
+    },
+    "TORCHINDUCTOR_CACHE_DIR": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/performance-cache/inductor",
+      "exists": true,
+      "files": {
+        "aotautograd/a7ywtd47dpom7yqwnpcumj6sgaw4bpvyatc7rdc3rfydmec7wnox/2gwv5jt6abxphec45onmhic4w4qgayatb7fppb2vpnivw6ef7bc": "d1ad5ea67e006ef3905ceb9ac3a05cb7206060130fcaf787557b515b7885f845",
+        "aotautograd/afsijbcux5yhemydx3vh36on2qgk27jpnz5ftmux77w5puujjry2/vzmwklkazzrnjql7bhj2itkd7o2w5noxkrdtyig3v2drggn4s6b": "ae59652d40ce62d4c17f09d3a44d43fbb56eb5d754473c20dbae871319bc9783",
+        "aotautograd/ahah645iq7qrgl3igtynge7bi4kfvjzytzi4o3x5cpqjggesmmay/35oizwkspbtqffx6r5wzytmdvtdr4xp25t37u3lkwxpiybgqhcn": "df5c8cd95278670296fe8f6d9c4d83acc71e5dfaecf7fa6d6ab5de8c04d0389b",
+        "aotautograd/auk2s5ae6kcb3mh5chxrkudcdqasupv5dasg4uwcfbef3qk3eo5f/wxtjhbgnuy4sxrhllaz3k4jlnw6yukue4nkkj2fhjzratoosehd": "b5e69384cda6392bc4eb5833b5712b6dbd8a2a84e354a4e8a74e6209b9d221c6",
+        "fxgraph/r3/fr3saudp3vjacen3seuqcy4ypo2x4cud6kaqzqebqeyu5c6hsile/5hival6nnf46lqkddxswbx33e7duimyjlehd74pxxxvdqeohqyt": "e9d1502fcd6979e5c1431de560df7b27c7443309590e3ff1f7bdea3811c78627",
+        "fxgraph/ub/fubzimxwhleyez3hduwpf7fgh47uvz3myidrutozi3img7axno3l/r7ayy5y6acnhczzqoadrprbujm7wjisdizbjm3hclmipjdgwoy6": "8fc18c771e009a716730700717c4344b3f64a2434642966ce25b10f48cd6763d",
+        "fxgraph/uf/fufm2yhxof2u52z55cj4cf6xlhqzkr4ovoz7xgaxvy7qlqv2nbnv/ftqno6l4zneuwxowi44rfzqjz5eku7mszt2i2p5a52lksfmglbt": "2ce0d7797ccb494b5dd6473912e609cf48aa7d92ccf48d3fa0ee96a915865867",
+        "fxgraph/ux/fuxn4ll3hwsrgwb65ltexlhb5to4drr4wgj6lo2qclrw3psuziin/ypxnl2t2lcm4fba647or36w76rviukrdmk33obnjqvyyzn22pt7": "c3eed5ea7a5899c2841ee7dd1dfadff46a8a2a2362b7b705a985718cb75a7cfe",
+        "li/cli4bcb5mojhubqvnlfg627p7whjjbhxmze4wrwoyizb2kqfhz6c.py": "e3cbc225a603687a7bb4b519b55fac574c15c552b564e062490f2c4c6b762e76",
+        "pu/cpu3rrlyi5y3r6szwnx7baxh5xdicrhfhnedmptyzlqv4qmysjbr.py": "d43d2419aa816139d65e87650959c102310bf55e600d5a7374c0f2b826b02e46",
+        "pv/cpvtoyudkrgqpsujqih3ijgcvay56me5atbauooqgsilr7esfmqx.py": "fc7a75aa4750460f9c921e41a5517fea28aea7e53f9771c2e69067bb07ec3b32",
+        "qq/cqqoqioapcnuhs7anjsqiu2vc3bj3gd2p34slgoslty6v53wvobf.py": "29c33ac8a5da5358e0b6a523d176be33fc70943a20e2bfcc096ca865efe27b76",
+        "rk/crks2szpoekrbpj56of354y7my6kev6e5mb2w7vohbknljza2gn4.py": "686e6ce2b5f6bb48d53b26d6a8716c0e0ce68af15627c228a678d70aae5d7e6f",
+        "xc/cxcee6vgi64v7ulls3r4pbykz7zvzo4ffnsbfwjkla4skzmc5f46.py": "313dfa4ce3a2de7785a5e96b2ebab3a96d02faa96a7f0d81c8bc1a6c57ad0c2e",
+        "xc/cxcnterdpfkbm4woibcargc7tepfo6nsclfo6gqyl2dh32ycwkre.py": "20e9b41406541e38f11324d74c14df15a18ea3119bcf880d2668dc850837d225",
+        "xu/cxurvh7hisowot3puty6rco2ew7rrfieqdxdxmlfz4cschsj7kw5.py": "284c077bb216471214022cb44e5629b1791b2f22e7ac4d41fb869d9f26c9154b"
+      }
+    },
+    "TRITON_CACHE_DIR": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/performance-cache/triton",
+      "exists": true,
+      "files": {
+        "2VPI3QXRGG3FQRDJJBH34R4JEMX3WAMQJG3YUGZ4EWE7DY4LFMTQ/__grp__triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.json": "ce901b3a457698a23a55137f566ccd9e975da4a26d554ce6c1557be323c47154",
+        "2VPI3QXRGG3FQRDJJBH34R4JEMX3WAMQJG3YUGZ4EWE7DY4LFMTQ/triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.cubin": "3b8450a78ff8ca07a5d64ecf577f67ebf30324826fe6fd60842aaf6dff7ad4c0",
+        "2VPI3QXRGG3FQRDJJBH34R4JEMX3WAMQJG3YUGZ4EWE7DY4LFMTQ/triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.json": "176d3285f899165494fc258c20adac9d091ed0c204b617316098ce48ffad3d72",
+        "2VPI3QXRGG3FQRDJJBH34R4JEMX3WAMQJG3YUGZ4EWE7DY4LFMTQ/triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.llir": "d1bab402a34ad2644c187a9382181054d6ec9bc3d59c7181afad469c6fd076a0",
+        "2VPI3QXRGG3FQRDJJBH34R4JEMX3WAMQJG3YUGZ4EWE7DY4LFMTQ/triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.ptx": "e8b859311ca6b0d3eaa5ec72f5d0ef81e7aa8c5e12a3e538911e7fdb6f6e7604",
+        "2VPI3QXRGG3FQRDJJBH34R4JEMX3WAMQJG3YUGZ4EWE7DY4LFMTQ/triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.source": "adf4e9c85ccb45e09dd648aef54413668fd6958400ee942d1263112e8a8d5565",
+        "2VPI3QXRGG3FQRDJJBH34R4JEMX3WAMQJG3YUGZ4EWE7DY4LFMTQ/triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.ttgir": "ca96c0c4a185c25eb8083f6ca47f5fbfa13a7a1d7ad4fc7a30a6ec0e3b9c93fb",
+        "2VPI3QXRGG3FQRDJJBH34R4JEMX3WAMQJG3YUGZ4EWE7DY4LFMTQ/triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.ttir": "93ece2015a8a619fccd8a84ac72b2d87c696548580bfa54ff8886a0c84e74923",
+        "CLPLURID25EKE7DQN5EBTVXIIH3Q4FCPUUD6Q5PDVDGAMZ5TPMWQ/__grp__triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.json": "bac953d126818bb624c0f06f884c8990a3aef5ca30518be00b429feb1e02d778",
+        "CLPLURID25EKE7DQN5EBTVXIIH3Q4FCPUUD6Q5PDVDGAMZ5TPMWQ/triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.cubin": "b00128e6368e80bbc15e5545473a7ee2bee99ec4db0e7e616afa733b33da62d1",
+        "CLPLURID25EKE7DQN5EBTVXIIH3Q4FCPUUD6Q5PDVDGAMZ5TPMWQ/triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.json": "e7ed9ab7d8a71f4f6e0398161d3ffb8314a497782fae28a2895ae16a659edb08",
+        "CLPLURID25EKE7DQN5EBTVXIIH3Q4FCPUUD6Q5PDVDGAMZ5TPMWQ/triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.llir": "a678d187d3d9787194f96c3bd4c85d10e1fe45f8f5d2d22e00309cd9e19f4f55",
+        "CLPLURID25EKE7DQN5EBTVXIIH3Q4FCPUUD6Q5PDVDGAMZ5TPMWQ/triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.ptx": "9d7eae27016275908172cfbd6a1710b789378645ce70e96dbc6492628d14222d",
+        "CLPLURID25EKE7DQN5EBTVXIIH3Q4FCPUUD6Q5PDVDGAMZ5TPMWQ/triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.source": "fb0dd2a63f708b30bde2d06fccd1958f070848282900fa85c774fddb0a4ec8b4",
+        "CLPLURID25EKE7DQN5EBTVXIIH3Q4FCPUUD6Q5PDVDGAMZ5TPMWQ/triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.ttgir": "c29986dff9c2af100aefb7c25e75da8edcbe2c41a8e69c5207fa1632fe5f4936",
+        "CLPLURID25EKE7DQN5EBTVXIIH3Q4FCPUUD6Q5PDVDGAMZ5TPMWQ/triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.ttir": "4804205ffc9cfc67d2c3226defda71d5f54f2019fad8a1a7b624b4c95479d938",
+        "MIH4X24CEAJDWYGXCZ4EKW6DTWSUG2ZBSBPV7NGI62HAUKJ7F7BQ/cuda_utils.cpython-312-x86_64-linux-gnu.so": "d7c12f0976113dfa948c7da0b5ba5cf9418b8aa25c266c0c9c82ac44608cc3e7",
+        "OCYGABJKFDMIVHIPEFPWBYIS7ZYHXJ3BFYJKDWGAIOTLJURGVGKA/__grp__triton_red_fused_add_cos_mul_relu_sin_sub_sum_0.json": "87001b24991b6ba821e90b7d1c5b61e5a504ec0959dbfc3d9854c84805f26f3c",
+        "OCYGABJKFDMIVHIPEFPWBYIS7ZYHXJ3BFYJKDWGAIOTLJURGVGKA/triton_red_fused_add_cos_mul_relu_sin_sub_sum_0.cubin": "6898e7f3363b693742f80cf35adf4e8778548841a062fe7b1ab47231be2fc30e",
+        "OCYGABJKFDMIVHIPEFPWBYIS7ZYHXJ3BFYJKDWGAIOTLJURGVGKA/triton_red_fused_add_cos_mul_relu_sin_sub_sum_0.json": "d325083badf9fe2a2cb2863ff87c9eae889b6f381b39cf9ae2d7667db4b52367",
+        "OCYGABJKFDMIVHIPEFPWBYIS7ZYHXJ3BFYJKDWGAIOTLJURGVGKA/triton_red_fused_add_cos_mul_relu_sin_sub_sum_0.llir": "44e376ab3433c02da8ff306d8ebecdfb5b3ae6caf93cde2d9d00258815c9c9d1",
+        "OCYGABJKFDMIVHIPEFPWBYIS7ZYHXJ3BFYJKDWGAIOTLJURGVGKA/triton_red_fused_add_cos_mul_relu_sin_sub_sum_0.ptx": "c8ebc3cde14604945006acd9286e79e7b72eefd13f128401e97fb152667c9ced",
+        "OCYGABJKFDMIVHIPEFPWBYIS7ZYHXJ3BFYJKDWGAIOTLJURGVGKA/triton_red_fused_add_cos_mul_relu_sin_sub_sum_0.source": "aca4913ffcedc5e70f99e22ce182bb5355c32ad8600195c472792c9f6b6aa837",
+        "OCYGABJKFDMIVHIPEFPWBYIS7ZYHXJ3BFYJKDWGAIOTLJURGVGKA/triton_red_fused_add_cos_mul_relu_sin_sub_sum_0.ttgir": "e9ec43b34d37d0cae857143c1fea6e1d0721630ed36d72905f68d47027c8a87a",
+        "OCYGABJKFDMIVHIPEFPWBYIS7ZYHXJ3BFYJKDWGAIOTLJURGVGKA/triton_red_fused_add_cos_mul_relu_sin_sub_sum_0.ttir": "342c0ef80010f5cddf522623d1ad2b9454119611c685f4db1fe969664c6ea001",
+        "ZABU5G5NQZCMXRUIHKCPDVQN5LP4HLOUUPP46NLYBJQRYKLJOHWQ/__grp__triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.json": "d0761a191b004090b70bc1fa1d12209e715c98fe39a60ac1142d043a1a92a5bd",
+        "ZABU5G5NQZCMXRUIHKCPDVQN5LP4HLOUUPP46NLYBJQRYKLJOHWQ/triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.cubin": "ce5c5801ebd8da407653879dc61a85f4e5d7396fb61109321064f1f094c8a582",
+        "ZABU5G5NQZCMXRUIHKCPDVQN5LP4HLOUUPP46NLYBJQRYKLJOHWQ/triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.json": "0e84de40bd750bd47349d764be10c020c45b7a0c58f8c015394eb6b660e54c67",
+        "ZABU5G5NQZCMXRUIHKCPDVQN5LP4HLOUUPP46NLYBJQRYKLJOHWQ/triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.llir": "010c91974dc1c5baba6e381a7a5a644f6b9de0f66536efcb9062d343e4bc0c25",
+        "ZABU5G5NQZCMXRUIHKCPDVQN5LP4HLOUUPP46NLYBJQRYKLJOHWQ/triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.ptx": "6d0f29ec08bdfedb9f3d134722ead36eeb85f8c8683b26bb6e8c7b6d5c58e63c",
+        "ZABU5G5NQZCMXRUIHKCPDVQN5LP4HLOUUPP46NLYBJQRYKLJOHWQ/triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.source": "2e94718e8bab44acd301926ecdde944191dce30b936225050bc77ed039364c55",
+        "ZABU5G5NQZCMXRUIHKCPDVQN5LP4HLOUUPP46NLYBJQRYKLJOHWQ/triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.ttgir": "d3ed289af65f9fc30f2d1d73e5a61195845e27295ea5d4dc32285e4d88699dd3",
+        "ZABU5G5NQZCMXRUIHKCPDVQN5LP4HLOUUPP46NLYBJQRYKLJOHWQ/triton_per_fused_add_cos_mul_relu_sin_sub_sum_0.ttir": "b57b652ce7ce815ecf33fb00b9fef367452f6b3581219d3ae8b1fe6a53c30044"
+      }
+    }
+  },
+  "gpu_processes": "gpu_uuid, pid, process_name, used_gpu_memory [MiB]\n"
+}

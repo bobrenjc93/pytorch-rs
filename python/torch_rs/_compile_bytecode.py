@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import builtins as _builtins
 import dis as _dis
+import struct as _struct
+import sys as _sys
 import types as _types
 from dataclasses import dataclass, field
 
@@ -48,6 +50,23 @@ class _GlobalTensorCacheDependency:
 
 
 @dataclass(frozen=True, slots=True)
+class _BytecodeBuiltin:
+    target: str
+
+
+@dataclass(frozen=True, slots=True)
+class _BytecodeModule:
+    bindings: tuple
+
+
+@dataclass(frozen=True, slots=True)
+class _GlobalValueCacheDependency:
+    global_name: str
+    guard: object
+    value: object = field(compare=False, hash=False, repr=False)
+
+
+@dataclass(frozen=True, slots=True)
 class _GlobalLoadDependency:
     name: str
     instruction: object
@@ -66,6 +85,7 @@ class _CompileCacheRequest:
     input_metadatas: tuple
     helper_dependencies: tuple[_HelperCacheDependency, ...]
     global_tensor_dependencies: tuple[_GlobalTensorCacheDependency, ...]
+    global_value_dependencies: tuple[_GlobalValueCacheDependency, ...] = ()
     dynamic: bool = False
 
 
@@ -76,6 +96,7 @@ class _LoweringState:
     global_tensor_proxies: dict[str, _trace.CompileTraceTensorProxy] = field(
         default_factory=dict
     )
+    global_values: dict[str, object] = field(default_factory=dict)
     helper_call_count: int = 0
 
 
@@ -123,6 +144,10 @@ _METHOD_TARGETS = {
     "square": _MethodTarget("unary", "square", 0, "Tensor.square"),
     "detach": _MethodTarget("unary", "detach", 0, "Tensor.detach"),
     "float": _MethodTarget("unary", "float", 0, "Tensor.float"),
+    "mul": _MethodTarget("scalar", "mul_scalar", 1, "Tensor.mul"),
+    "multiply": _MethodTarget("scalar", "mul_scalar", 1, "Tensor.multiply"),
+    "__mul__": _MethodTarget("scalar", "mul_scalar", 1, "Tensor.__mul__"),
+    "__rmul__": _MethodTarget("scalar", "mul_scalar", 1, "Tensor.__rmul__"),
     "add": _MethodTarget("binary", "add", 1, "Tensor.add"),
     "__add__": _MethodTarget("binary", "add", 1, "Tensor.__add__"),
     "__radd__": _MethodTarget(
@@ -267,7 +292,7 @@ _OPCODE_FORMS = (
     _OpcodeForm("load_const", frozenset(("LOAD_CONST", "LOAD_SMALL_INT"))),
     _OpcodeForm("build_tuple", frozenset(("BUILD_TUPLE",))),
     _OpcodeForm("build_list", frozenset(("BUILD_LIST",))),
-    _OpcodeForm("binary", frozenset(("BINARY_ADD", "BINARY_OP", "INPLACE_ADD"))),
+    _OpcodeForm("binary", frozenset(("BINARY_ADD", "BINARY_MULTIPLY", "BINARY_OP", "INPLACE_ADD"))),
     _OpcodeForm("unary_neg", frozenset(("UNARY_NEGATIVE",))),
     _OpcodeForm("return", frozenset(("RETURN_VALUE", "RETURN_CONST"))),
 )
@@ -370,6 +395,35 @@ def _is_exact_native_tensor(value):
     return _builtins.type(value) is _trace._native.Tensor
 
 
+def _builtin_target(value):
+    # Immutable native binding owners establish identity, not callable names or
+    # source text. Public aliases are accepted only while they still match.
+    owner = _trace._native._VariableFunctionsClass
+    if value is owner.mul or value is owner.multiply:
+        return _BytecodeBuiltin("mul_scalar")
+    return None
+
+
+def _global_value_dependency(name, value):
+    if _builtins.type(value) in (_builtins.bool, _builtins.int, _builtins.float):
+        # Use the original type and binary64 bits, preserving signed zero and
+        # stable NaN guards without executing equality or conversion callbacks.
+        guard = (
+            _builtins.type(value),
+            _struct.pack("!d", value) if _builtins.type(value) is _builtins.float else value,
+        )
+        return _GlobalValueCacheDependency(name, guard, _BytecodeConstant(value))
+    builtin = _builtin_target(value)
+    if builtin is not None:
+        return _GlobalValueCacheDependency(name, value, builtin)
+    if _builtins.type(value) is _types.ModuleType and value is _sys.modules[__package__]:
+        bindings = tuple((attr, vars(value).get(attr)) for attr in ("mul", "multiply"))
+        if all(_builtin_target(fn) is not None for _, fn in bindings):
+            lowered = tuple((attr, _builtin_target(fn)) for attr, fn in bindings)
+            return _GlobalValueCacheDependency(name, (value, bindings), _BytecodeModule(lowered))
+    return None
+
+
 def _resolve_live_global_dependency(root_program, program, instruction, name):
     try:
         value = program.__globals__[name]
@@ -384,6 +438,10 @@ def _resolve_live_global_dependency(root_program, program, instruction, name):
             metadata=metadata,
             tensor=value,
         )
+
+    dependency = _global_value_dependency(name, value)
+    if dependency is not None:
+        return dependency
 
     helper = value
     helper_code = (
@@ -441,6 +499,7 @@ def _global_cache_dependencies_for_loads(
 ):
     helper_dependencies = []
     global_tensor_dependencies = []
+    global_value_dependencies = []
     for global_load in global_loads:
         dependency = _resolve_live_global_dependency(
             root_program,
@@ -450,6 +509,10 @@ def _global_cache_dependencies_for_loads(
         )
         if _builtins.isinstance(dependency, _GlobalTensorCacheDependency):
             global_tensor_dependencies.append(dependency)
+            continue
+
+        if _builtins.isinstance(dependency, _GlobalValueCacheDependency):
+            global_value_dependencies.append(dependency)
             continue
 
         helper_dependencies.append(dependency)
@@ -474,7 +537,7 @@ def _global_cache_dependencies_for_loads(
             )
             if instruction.opname == "LOAD_GLOBAL"
         )
-        nested_helpers, nested_tensors = _global_cache_dependencies_for_loads(
+        nested_helpers, nested_tensors, nested_values = _global_cache_dependencies_for_loads(
             root_program,
             helper,
             helper_loads,
@@ -482,12 +545,16 @@ def _global_cache_dependencies_for_loads(
         )
         helper_dependencies.extend(nested_helpers)
         global_tensor_dependencies.extend(nested_tensors)
-    return tuple(helper_dependencies), tuple(global_tensor_dependencies)
+        global_value_dependencies.extend(nested_values)
+    return (
+        tuple(helper_dependencies), tuple(global_tensor_dependencies),
+        tuple(global_value_dependencies),
+    )
 
 
 def _global_cache_dependencies(program, descriptor, input_metadatas):
     if not descriptor.global_loads:
-        return (), ()
+        return (), (), ()
     global_loads = _global_load_dependencies_from_instructions(
         program,
         _lowerable_bytecode_instructions(
@@ -513,6 +580,8 @@ def _resolve_global_dependency(state, program, instruction, name):
         for dependency in state.helper_dependencies:
             if dependency.global_name == name:
                 return dependency
+        if name in state.global_values:
+            return state.global_values[name]
         if name in state.global_tensor_proxies:
             return state.global_tensor_proxies[name]
         _unsupported_bytecode(program, instruction, "global dependency snapshot")
@@ -573,11 +642,14 @@ def prepare_compile_cache_request(
     else:
         _validate_function_code(program, descriptor.code)
     _validate_input_metadatas(descriptor.code, input_metadatas)
-    helper_dependencies, global_tensor_dependencies = _global_cache_dependencies(
-        program,
-        descriptor,
-        input_metadatas,
-    )
+    dependencies = _global_cache_dependencies(program, descriptor, input_metadatas)
+    helper_dependencies, global_tensor_dependencies, global_value_dependencies = dependencies
+    if global_value_dependencies and all(m.device.type == "cpu" for m in input_metadatas):
+        # Keep the established CPU global-access boundary. Scalar capture is
+        # deliberately admitted only for the bounded CUDA grammar.
+        _unsupported_bytecode(
+            program, descriptor.global_loads[0].instruction, "global or import access"
+        )
     all_metadatas = (*input_metadatas, *(d.metadata for d in global_tensor_dependencies))
     if any(m.device.type == "cuda" for m in all_metadatas):
         for metadata in all_metadatas:
@@ -595,11 +667,13 @@ def prepare_compile_cache_request(
             metadata_key,
             helper_dependencies,
             global_tensor_dependencies,
+            global_value_dependencies,
         ),
         descriptor=descriptor,
         input_metadatas=input_metadatas,
         helper_dependencies=helper_dependencies,
         global_tensor_dependencies=global_tensor_dependencies,
+        global_value_dependencies=global_value_dependencies,
         dynamic=dynamic,
     )
 
@@ -878,8 +952,13 @@ def _require_output_value(value, program, instruction, role):
 
 
 def _store_local(locals, stack, program, instruction, name):
+    value = _pop(stack, program, instruction)
+    if _builtins.isinstance(value, _BytecodeConstant):
+        _trace._normalize_mul_scalar(value.value)
+        locals[name] = value
+        return
     locals[name] = _require_output_value(
-        _pop(stack, program, instruction),
+        value,
         program,
         instruction,
         f"stored local {name!r}",
@@ -908,7 +987,9 @@ def _handle_load_global(
     del recorder, locals, active
     name = _global_name(program, instruction)
     dependency = _resolve_global_dependency(state, program, instruction, name)
-    if _builtins.isinstance(dependency, _trace.CompileTraceTensorProxy):
+    if _builtins.isinstance(dependency, (
+        _trace.CompileTraceTensorProxy, _BytecodeConstant, _BytecodeBuiltin, _BytecodeModule
+    )):
         stack.append(dependency)
         return
     stack.append(
@@ -930,6 +1011,13 @@ def _handle_load_method(
     active,
 ):
     del state, active
+    if stack and _builtins.isinstance(stack[-1], _BytecodeModule):
+        module = stack.pop()
+        for name, builtin in module.bindings:
+            if instruction.argval == name:
+                stack.append(builtin)
+                return
+        _unsupported_bytecode(program, instruction, "module attribute access")
     if not _load_attr_pushes_method(instruction):
         _unsupported_bytecode(program, instruction, "attribute access")
     receiver = _require_tensor(
@@ -983,6 +1071,9 @@ def _record_method_call(recorder, method, args, program, instruction):
         )
     if method_target.kind == "unary":
         return recorder.record_unary(method_target.target, method.receiver)
+
+    if method_target.kind == "scalar":
+        return _record_scalar_multiply(recorder, method.receiver, args[0], program, instruction)
 
     other = _require_tensor(
         args[0],
@@ -1052,6 +1143,11 @@ def _handle_call(recorder, locals, stack, program, instruction, state, active):
     args = [_pop(stack, program, instruction) for _ in range(argument_count)]
     args.reverse()
     callable_value = _pop(stack, program, instruction)
+    if _builtins.isinstance(callable_value, _BytecodeBuiltin):
+        if len(args) != 2:
+            _unsupported_bytecode(program, instruction, "scalar multiply argument count")
+        stack.append(_record_scalar_multiply(recorder, *args, program, instruction))
+        return
     if _builtins.isinstance(callable_value, _BytecodeMethod):
         stack.append(
             _record_method_call(
@@ -1095,7 +1191,18 @@ def _record_binary_add(recorder, stack, program, instruction):
     stack.append(recorder.record_binary("add", left, right, "Tensor.__add__"))
 
 
+def _record_scalar_multiply(recorder, left, right, program, instruction):
+    if _builtins.isinstance(left, _BytecodeConstant):
+        left, right = right, left
+    tensor = _require_tensor(left, program, instruction, "scalar multiply operand")
+    if not _builtins.isinstance(right, _BytecodeConstant):
+        _unsupported_bytecode(program, instruction, "non-constant scalar or Tensor multiplication")
+    return recorder.record_scalar("mul_scalar", tensor, right.value)
+
+
 def _binary_operator_symbol(instruction):
+    if instruction.opname == "BINARY_MULTIPLY":
+        return "*"
     if instruction.opname == "BINARY_ADD":
         return "+"
     if instruction.opname == "INPLACE_ADD":
@@ -1106,6 +1213,11 @@ def _binary_operator_symbol(instruction):
 def _handle_binary(recorder, locals, stack, program, instruction, state, active):
     del locals, state, active
     symbol = _binary_operator_symbol(instruction)
+    if symbol == "*":
+        right = _pop(stack, program, instruction)
+        left = _pop(stack, program, instruction)
+        stack.append(_record_scalar_multiply(recorder, left, right, program, instruction))
+        return
     if symbol == "+":
         _record_binary_add(recorder, stack, program, instruction)
         return
@@ -1302,6 +1414,7 @@ def lower_compile_graph(program, input_metadatas, *, name=None, compile_request=
         root_program=program,
         helper_dependencies=compile_request.helper_dependencies,
         global_tensor_proxies=global_tensor_proxies,
+        global_values={d.global_name: d.value for d in compile_request.global_value_dependencies},
     )
     output = _lower_function_body(
         recorder,

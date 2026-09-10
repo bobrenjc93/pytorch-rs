@@ -1,0 +1,162 @@
+{
+  "source": {
+    "commit": "953309445979c1340a9adffde93b2d1aef09893c",
+    "source_sha256": "6cd0f5d735f488bbbf9eed39d29f9b9b38041ccecb606f16452e2d90b8c0dba3",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "source_after": {
+    "commit": "953309445979c1340a9adffde93b2d1aef09893c",
+    "source_sha256": "6cd0f5d735f488bbbf9eed39d29f9b9b38041ccecb606f16452e2d90b8c0dba3",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "extension_sha256": "fde6fabde331f77f2943d4a58ecf379d187880d630df2c16255f9aa0057a2ad2",
+  "environment": {
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154/target/cargo-home",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154/target/post-commit-95330944/build",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154/.venv/bin/python",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "PYTHONPATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154/python"
+  },
+  "checks": [
+    {
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154/.venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_cuda_add_trailing_vector",
+        "tests.test_cuda_add",
+        "tests.test_cuda_neg",
+        "tests.test_cuda_mul_scalar",
+        "tests.test_cuda_native_views",
+        "tests.test_compile_cuda_boundary",
+        "tests.test_compile_cuda_neg",
+        "tests.test_tensor_add",
+        "tests.test_tensor_add_reference",
+        "tests.test_top_level_add",
+        "tests.test_top_level_add_reference"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154",
+      "started_at": "2026-09-10T04:51:09.223254+00:00",
+      "ended_at": "2026-09-10T04:51:53.429255+00:00",
+      "wall_seconds": 44.206007689237595,
+      "exit_status": 0,
+      "log": "python-focused.log",
+      "log_sha256": "df2d46709a1416c0d6ca33117246f791ebe80a09c6e648222c57654b659be21f",
+      "git_status_before": "",
+      "git_status_after": "",
+      "measured_commit": "953309445979c1340a9adffde93b2d1aef09893c",
+      "CUDA_VISIBLE_DEVICES": "0"
+    },
+    {
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154/.venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_cuda_add_trailing_vector.CudaAddTrailingVectorDeviceTests"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154",
+      "started_at": "2026-09-10T04:51:53.557862+00:00",
+      "ended_at": "2026-09-10T04:51:57.749968+00:00",
+      "wall_seconds": 4.192111955955625,
+      "exit_status": 0,
+      "log": "python-two-device.log",
+      "log_sha256": "3954e4112faaffbc830c4267b20bc1748ade4cdca7aa0ad5b3e190d7b65c51ca",
+      "git_status_before": "",
+      "git_status_after": "",
+      "measured_commit": "953309445979c1340a9adffde93b2d1aef09893c",
+      "CUDA_VISIBLE_DEVICES": "0,1"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--lib",
+        "cuda::",
+        "--",
+        "--test-threads=1"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154",
+      "started_at": "2026-09-10T04:51:57.869947+00:00",
+      "ended_at": "2026-09-10T04:52:03.621921+00:00",
+      "wall_seconds": 5.751972669735551,
+      "exit_status": 0,
+      "log": "rust-cuda.log",
+      "log_sha256": "43ce21b4467c80ad9ea0f7b915e3d2856274b04d1a6ae7f8ec275bee41bf147e",
+      "git_status_before": "",
+      "git_status_after": "",
+      "measured_commit": "953309445979c1340a9adffde93b2d1aef09893c",
+      "CUDA_VISIBLE_DEVICES": "0"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--test",
+        "cuda_add",
+        "--test",
+        "cuda_mul_scalar",
+        "--test",
+        "cuda_native_boundaries"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154",
+      "started_at": "2026-09-10T04:52:03.741054+00:00",
+      "ended_at": "2026-09-10T04:52:07.590712+00:00",
+      "wall_seconds": 3.8496624398976564,
+      "exit_status": 0,
+      "log": "rust-integration.log",
+      "log_sha256": "280bd1af07c9da7a2c7019a25ad94026f1ab10c464bf4b7d9bcdf065851688a7",
+      "git_status_before": "",
+      "git_status_after": "",
+      "measured_commit": "953309445979c1340a9adffde93b2d1aef09893c",
+      "CUDA_VISIBLE_DEVICES": "0"
+    },
+    {
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--all-targets",
+        "--features",
+        "python-bindings",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154",
+      "started_at": "2026-09-10T04:52:07.712435+00:00",
+      "ended_at": "2026-09-10T04:52:20.970116+00:00",
+      "wall_seconds": 13.257686003111303,
+      "exit_status": 0,
+      "log": "clippy.log",
+      "log_sha256": "c1a82b9624631e1225645cb9da1deb91032f8c79853fcaede822353ccc412f94",
+      "git_status_before": "",
+      "git_status_after": "",
+      "measured_commit": "953309445979c1340a9adffde93b2d1aef09893c",
+      "CUDA_VISIBLE_DEVICES": "0"
+    },
+    {
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154",
+      "started_at": "2026-09-10T04:52:21.096720+00:00",
+      "ended_at": "2026-09-10T04:52:21.629037+00:00",
+      "wall_seconds": 0.5323198949918151,
+      "exit_status": 0,
+      "log": "format.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_status_before": "",
+      "git_status_after": "",
+      "measured_commit": "953309445979c1340a9adffde93b2d1aef09893c",
+      "CUDA_VISIBLE_DEVICES": "0"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+Resolved 2 packages in 94ms
+Prepared 2 packages in 43ms
+Uninstalled 2 packages in 2ms
+Installed 2 packages in 22ms
+ - torch-rs==0.1.0 (from file:///data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/target/candidate-wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl)
+ + torch-rs==0.1.0 (from file:///data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/target/final-wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl)
+ ~ typing-extensions==4.16.0
