@@ -11065,6 +11065,26 @@
         "eval_d4c0b71e": 97,
         "eval_b7f2a91c": 4.4
       }
+    },
+    {
+      "key": "pr:1965",
+      "recordedAt": "2026-09-10T20:29:53.904Z",
+      "label": "PR #1965",
+      "kind": "composite",
+      "prNumber": 1965,
+      "title": "Reuse immutable compile analysis and enable owned CPU tanh compositions",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 98,
+        "eval_39340456": 86,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96,
+        "eval_a61c0e71": 100,
+        "eval_6f98c42d": 100,
+        "eval_d4c0b71e": 97,
+        "eval_b7f2a91c": 4.4
+      }
     }
   ]
 }
