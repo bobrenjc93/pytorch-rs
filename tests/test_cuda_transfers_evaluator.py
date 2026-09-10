@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -228,20 +229,58 @@ class IsolationTests(unittest.TestCase):
             package = Path(temp) / "python/torch_rs"
             package.mkdir(parents=True)
             (package / "__init__.py").write_text("try:\n import torch\nexcept RuntimeError:\n pass\n__version__ = 'fixture'\n")
-            code = f"""
+            for missing_maps in (False, True):
+                with self.subTest(missing_maps=missing_maps):
+                    code = f"""
 import sys, json
 from pathlib import Path
+from unittest.mock import patch
 sys.path.insert(0, {str(ROOT / 'scripts')!r})
 import evaluate_cuda_transfers as e
 e.ROOT = Path({temp!r})
-print(json.dumps(e.worker('candidate', {{'case': e.corpus()['cases'][0], 'seed': 9173}})))
+original_read_text = Path.read_text
+def read_text(path, *args, **kwargs):
+    if {missing_maps!r} and path == Path('/proc/self/maps'):
+        raise FileNotFoundError(2, 'No such file or directory', str(path))
+    return original_read_text(path, *args, **kwargs)
+with patch.object(Path, 'read_text', read_text):
+    print(json.dumps(e.worker('candidate', {{'case': e.corpus()['cases'][0], 'seed': 9173}})))
 """
-            completed = subprocess.run([sys.executable, "-I", "-B", "-c", code],
-                                       capture_output=True, text=True, timeout=30)
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            row = json.loads(completed.stdout)
-            self.assertEqual(row["status"], "forwarded")
-            self.assertEqual(row["blocked_imports"], ["torch"])
+                    completed = subprocess.run([sys.executable, "-I", "-B", "-c", code],
+                                               capture_output=True, text=True, timeout=30)
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    row = json.loads(completed.stdout)
+                    self.assertEqual(row["status"], "forwarded")
+                    self.assertEqual(row["blocked_imports"], ["torch"])
+                    if missing_maps:
+                        self.assertIn("/proc/self/maps", row["runtime_error"])
+
+    def test_missing_proc_maps_preserves_failures_and_invalidates_success(self):
+        case = evaluator.corpus()["cases"][0]
+        properties = SimpleNamespace(name="fixture", uuid="fixture", major=9,
+                                     minor=0, total_memory=1024)
+        for outcome, error in (("passed", None), ("unsupported", NotImplementedError("fixture")),
+                               ("failed", RuntimeError("fixture")), ("skipped", None)):
+            with self.subTest(outcome=outcome):
+                module = SimpleNamespace(
+                    __file__=__file__, __version__="2.13.0+cu130",
+                    version=SimpleNamespace(hip=None, cuda="13.0"),
+                    __config__=SimpleNamespace(show=lambda: "fixture"),
+                    cuda=SimpleNamespace(is_available=lambda: outcome != "skipped",
+                                         get_device_properties=lambda _: properties,
+                                         mem_get_info=lambda _: (512, 1024)))
+                with (patch.object(evaluator.importlib, "import_module", return_value=module),
+                      patch.object(evaluator, "Inspector"),
+                      patch.object(evaluator, "execute", side_effect=error),
+                      patch.object(Path, "read_text", autospec=True, side_effect=FileNotFoundError(
+                          2, "No such file or directory", "/proc/self/maps")) as read_text):
+                    row = evaluator.worker("reference", {"case": case, "seed": 9173})
+                read_text.assert_called_once_with(Path("/proc/self/maps"))
+                self.assertEqual(row["status"], "failed" if outcome == "passed" else outcome)
+                self.assertIn("/proc/self/maps", row["runtime_error"])
+                if error:
+                    self.assertEqual(row["error"], f"{type(error).__name__}: {error}")
+                self.assertFalse(evaluator.valid_execution(row, case, 9173, "reference"))
 
     def test_cli_enforces_device_and_seed_contract(self):
         for mask, args in (("", []), ("0", ["--seed", "1"]), ("0", ["--seed", "1", "--seed", "-1"])):

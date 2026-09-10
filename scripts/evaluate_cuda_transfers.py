@@ -199,7 +199,11 @@ def worker(role, request):
         try:
             result.update(common.runtime_provenance())
         except Exception as error:
-            result.update(status="failed", runtime_error=str(error))
+            result["runtime_error"] = str(error)
+            # Missing provenance invalidates success, but must not erase the
+            # original zero-credit verdict (including a forwarding attempt).
+            if result["status"] == "passed":
+                result["status"] = "failed"
     return result
 
 
