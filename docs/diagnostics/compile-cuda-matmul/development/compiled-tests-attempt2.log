@@ -1,0 +1,16 @@
+s./data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+.E
+======================================================================
+ERROR: test_guards_late_validation_recovery_and_captures (tests.test_compile_cuda_matmul.CompileCudaMatmulTests.test_guards_late_validation_recovery_and_captures)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/tests/test_compile_cuda_matmul.py", line 119, in test_guards_late_validation_recovery_and_captures
+    bias=native.ones((5,), device='cuda:0'))
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: ones(): device 'cuda:0' is not supported; only 'cpu' is implemented
+
+----------------------------------------------------------------------
+Ran 4 tests in 20.551s
+
+FAILED (errors=1, skipped=1)

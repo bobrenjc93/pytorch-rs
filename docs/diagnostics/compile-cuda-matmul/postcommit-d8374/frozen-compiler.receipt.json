@@ -1,0 +1,40 @@
+{
+  "command": [
+    ".venv/bin/python",
+    "-B",
+    "scripts/evaluate_torch_compile_coverage.py",
+    "--subset",
+    "full"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd",
+  "started_at": "2026-09-10T15:03:31.177835+00:00",
+  "ended_at": "2026-09-10T15:03:42.431017+00:00",
+  "wall_seconds": 11.253190323710442,
+  "exit_status": 0,
+  "log": "frozen-compiler.log",
+  "log_sha256": "fe510ad1e96e6837eac0de1fa139a4f52a23012bf4f5f53a260efa2ea1dfaa69",
+  "source_before": {
+    "commit": "d8374ec16f6c13fb09b18723c491d06fdaeaafaa",
+    "source_sha256": "cd83a4af5944328eba0c973e0d3ec6490a5537cda39c0d7c58ed966c9e32b329",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "source_after": {
+    "commit": "d8374ec16f6c13fb09b18723c491d06fdaeaafaa",
+    "source_sha256": "cd83a4af5944328eba0c973e0d3ec6490a5537cda39c0d7c58ed966c9e32b329",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "git_status_after": "",
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": "0",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "TORCH_RS_CUBLAS": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcublas.so.13",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/target/postcommit-d8374/native/build",
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/target/cargo-home",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/.venv/bin/python",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/target/postcommit-d8374/tmp",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/target/postcommit-d8374/cache",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/target/postcommit-d8374/cache/cuda",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/target/postcommit-d8374/cache/inductor",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/target/postcommit-d8374/cache/triton"
+  }
+}

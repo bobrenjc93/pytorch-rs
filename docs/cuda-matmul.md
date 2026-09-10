@@ -33,9 +33,9 @@ launch/completion failures use the established cache-disable/error path. The
 caller’s current device is restored, including on error and destruction.
 
 Noncontiguous inputs, mixed devices, other dtypes, vector or batched products,
-CUDA gradients, and compiled matmul remain unsupported. Inner-dimension
+and CUDA gradients remain unsupported. [Compiled CUDA matmul](compile-cuda-matmul.md) now captures the same tensor scope through positional forms. Inner-dimension
 mismatches report an error before launch. The existing CPU implementation and
-compiler support boundaries are unchanged.
+other compiler support boundaries are unchanged.
 
 ## Validation
 
@@ -44,7 +44,7 @@ The [Rust tests](../tests/cuda_matmul.rs), storage bounds unit test in
 generated dimensions and values, rectangular products, offsets, singleton and
 empty views, zero inner dimensions, output metadata, source preservation,
 independent allocations, retained views, thread/context lifetimes, stream
-completion, invalid inputs, and compiled-operation rejection. A rectangular
+completion, invalid inputs, and compiled-operation acceptance. A rectangular
 output exceeding 1,048,576 elements exercises large output indexing. Special
 values include NaNs, infinities, subnormals, signed zeros, and exact binary
 fraction products. Wide decimal products cover K=4096 through 1,000,000,

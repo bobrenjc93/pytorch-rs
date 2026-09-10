@@ -1,7 +1,8 @@
 # Ordinary CUDA scalar-multiply, negation and addition graph capture
 
 The generic bytecode compiler accepts exact native contiguous float32 CUDA
-Tensors for one- and two-input scalar-multiply/negation/addition graphs with
+Tensors for one- and two-input scalar-multiply/negation/addition graphs, plus
+[rank-2 matrix products](compile-cuda-matmul.md), with
 `torch.compile(fn, backend="eager", fullgraph=True)`. This is graph capture and
 native operation execution, with one Rust/CUDA kernel per recorded operation.
 This is unfused bounded capture, not a general Inductor compiler or a

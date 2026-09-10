@@ -1,0 +1,43 @@
+s../data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE..E..F..E............Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/__main__.py", line 18, in <module>
+    main(module=None)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/main.py", line 105, in __init__
+    self.runTests()
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/main.py", line 281, in runTests
+    self.result = testRunner.run(self.test)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/runner.py", line 240, in run
+    test(result)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/suite.py", line 84, in __call__
+    return self.run(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/suite.py", line 122, in run
+    test(result)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/suite.py", line 84, in __call__
+    return self.run(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/suite.py", line 122, in run
+    test(result)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/suite.py", line 84, in __call__
+    return self.run(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/suite.py", line 122, in run
+    test(result)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/case.py", line 690, in __call__
+    return self.run(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/case.py", line 634, in run
+    self._callTestMethod(testMethod)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/case.py", line 589, in _callTestMethod
+    if method() is not None:
+       ^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/tests/test_cuda_matmul.py", line 111, in test_wide_decimal_products
+    self.compare(b, tb)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/tests/test_cuda_add.py", line 53, in compare
+    b = np.asarray(expected.cpu().tolist(), dtype=np.float32)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt

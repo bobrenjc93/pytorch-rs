@@ -5,7 +5,7 @@ current baseline. See [FEATURES.md](../FEATURES.md) for the weighted coverage
 contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.
 For a short introduction and installation, start with the [README](../README.md).
 Compiler method variants, options, guards, and exclusions live under
-[JIT and compiler](#jit-and-compiler); the [CUDA mul/neg/add guide](compile-cuda-add.md)
+[JIT and compiler](#jit-and-compiler), [compiled CUDA matmul](compile-cuda-matmul.md); the [CUDA mul/neg/add guide](compile-cuda-add.md)
 explains the bounded eager CUDA capture path with a runnable example.
 
 ## Common adopter task quick index
@@ -1077,8 +1077,8 @@ division through `/`, `Tensor.div()`, `Tensor.divide()`, `torch.div()`, and
 For same-device contiguous CUDA float32 rank-2 operands, `@`, `Tensor.matmul`,
 and `torch.matmul` use native cuBLAS SGEMM without gradients. Rectangular,
 offset, overlapping-input, empty, and zero-inner-dimension products return
-fresh contiguous storage. Noncontiguous/vector/batched inputs, CUDA gradients,
-and compiled matmul remain unsupported. See [CUDA matmul](cuda-matmul.md) for
+fresh contiguous storage. Noncontiguous/vector/batched inputs and CUDA gradients
+remain unsupported. [Compiled CUDA matmul](compile-cuda-matmul.md) accepts `@`, positional `Tensor.matmul`/`Tensor.__matmul__`, and positional top-level `torch.matmul` (including native aliases), with the same tensor scope under `backend="eager"`. CPU matmul, `torch.mm`, keyword calls and gradients remain outside compiler scope. See [CUDA matmul](cuda-matmul.md) for
 optional library setup, numerical behavior, and reproducible checks.
 
 `torch.mm` is limited to exact native CPU float32 rank-2 operands and delegates
@@ -1472,6 +1472,17 @@ probe and does not import PyTorch.
   initialization and execution, process-group creation, initialized backend
   configuration, backend, rank, or world-size access, collectives, and every
   other distributed API remain unsupported.
+
+Compiled CUDA products also accept `@`, positional `Tensor.matmul` and
+`Tensor.__matmul__`, and positional top-level `torch.matmul` including native
+aliases, under the eager backend and existing fullgraph policies. The exact
+scope is same-device contiguous rank-2 float32 without gradients, including
+offsets, overlap and empty/zero-inner products. Products compose with supported
+scalar multiplication, negation and addition; bias tensors may be guarded global
+captures. CPU matmul capture, CUDA vector/batched products, `torch.mm`, keyword
+calls and three positional inputs remain rejected. See the
+[compiled matmul guide](compile-cuda-matmul.md) for guards, independent execution
+proofs and the separate stock `torch.compile` timing diagnostic.
 
 ### Unsupported boundaries
 
