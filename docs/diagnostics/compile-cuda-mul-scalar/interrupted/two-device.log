@@ -1,0 +1,53 @@
+test_ownership_restoration_and_cache_separation (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarDeviceTests.test_ownership_restoration_and_cache_separation) ... W0909 20:51:33.629000 3962390 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/8] torch._dynamo hit config.recompile_limit (8)
+W0909 20:51:33.629000 3962390 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/8]    function: 'composed' (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/tests/test_compile_cuda_mul_scalar.py:32)
+W0909 20:51:33.629000 3962390 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/8]    last reason: 0/7: tensor 'x' rank mismatch. expected 1, actual 2
+W0909 20:51:33.629000 3962390 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/8] To log all recompilation reasons, use TORCH_LOGS="recompiles".
+W0909 20:51:33.629000 3962390 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/8] To diagnose recompilation issues, see https://docs.pytorch.org/docs/main/user_guide/torch_compiler/compile/programming_model.recompilation.html
+ERROR
+test_ownership_captures_and_device_restoration (tests.test_compile_cuda_neg.CompileCudaNegDeviceTests.test_ownership_captures_and_device_restoration) ... ok
+test_ordinals_captures_and_current_device_restoration (tests.test_compile_cuda_boundary.CompileCudaDeviceTests.test_ordinals_captures_and_current_device_restoration) ... ok
+test_allocation_failure_restores_device_and_recovers (tests.test_cuda_mul_scalar.CudaMulScalarDeviceTests.test_allocation_failure_restores_device_and_recovers) ... ok
+test_ownership_restoration_and_mixed_device_rejection (tests.test_cuda_mul_scalar.CudaMulScalarDeviceTests.test_ownership_restoration_and_mixed_device_rejection) ... ok
+
+======================================================================
+ERROR: test_ownership_restoration_and_cache_separation (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarDeviceTests.test_ownership_restoration_and_cache_separation)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/.venv/lib64/python3.12/site-packages/torch/_dynamo/convert_frame.py", line 2024, in _compile
+    raise_unimplemented_cache_limit_exceeded()
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/.venv/lib64/python3.12/site-packages/torch/_dynamo/convert_frame.py", line 2008, in raise_unimplemented_cache_limit_exceeded
+    unimplemented(
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/.venv/lib64/python3.12/site-packages/torch/_dynamo/exc.py", line 727, in unimplemented
+    raise Unsupported(msg, gb_type, skip_frame)
+torch._dynamo.exc.Unsupported: Dynamo recompile limit exceeded
+  Explanation: Dynamo attempted to recompile the code object too many times, exceeding the recompile_limit cache size limit (currently set to 8). Excessive recompilations can degrade performance due to the compilation overhead of each recompilation.
+  Hint: To monitor recompilations, enable TORCH_LOGS=recompiles. If recompilations are expected, consider increasing torch._dynamo.config.recompile_limit to an appropriate value.
+  Hint: See https://docs.pytorch.org/docs/main/user_guide/torch_compiler/compile/programming_model.recompilation.html for tips on dealing with recompilations.
+
+  Developer debug context: Limit type: recompile_limit
+
+ For more details about this graph break, please visit: https://meta-pytorch.github.io/compile-graph-break-site/gb/gb0039.html
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/tests/test_compile_cuda_mul_scalar.py", line 411, in test_ownership_restoration_and_cache_separation
+    self.compare(result, reference(tx, tx))
+                         ^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/.venv/lib64/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 1166, in compile_wrapper
+    result = fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/.venv/lib64/python3.12/site-packages/torch/_dynamo/convert_frame.py", line 2628, in __call__
+    result = self._torchdynamo_orig_backend(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/.venv/lib64/python3.12/site-packages/torch/_dynamo/convert_frame.py", line 777, in __call__
+    result = _compile(
+             ^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/.venv/lib64/python3.12/site-packages/torch/_dynamo/convert_frame.py", line 2031, in _compile
+    raise FailOnRecompileLimitHit(
+torch._dynamo.exc.FailOnRecompileLimitHit: Hard failure due to fullgraph=True
+
+----------------------------------------------------------------------
+Ran 5 tests in 7.439s
+
+FAILED (errors=1)

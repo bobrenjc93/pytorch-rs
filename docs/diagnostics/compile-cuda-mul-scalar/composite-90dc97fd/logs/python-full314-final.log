@@ -1,0 +1,114 @@
+..............................................s...s.s..s..ss..............................................................................................................................................................................................................................................torch_rs/_grad_mode.py:25: DeprecationWarning: the (type, exc, tb) signature of throw() is deprecated, use the single-arg signature instead.
+........................../data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/venv314/lib/python3.14/site-packages/torch/utils/_contextlib.py:56: DeprecationWarning: the (type, exc, tb) signature of throw() is deprecated, use the single-arg signature instead.
+  response = gen.throw(*sys.exc_info())
+..............................................................................................................................................................s.......................s.......................s......................................................................................................................................................s...........................s..................................................................................................................................................................................................................................................................................W0909 22:34:30.824000 167609 torch/_dynamo/convert_frame.py:1994] [0/2] torch._dynamo hit config.recompile_limit (2)
+W0909 22:34:30.824000 167609 torch/_dynamo/convert_frame.py:1994] [0/2]    function: 'cpu_float32_recompile_limit_reset' (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/checkout314/tests/test_compile_corpus.py:278)
+W0909 22:34:30.824000 167609 torch/_dynamo/convert_frame.py:1994] [0/2]    last reason: 0/1: tensor 'x' rank mismatch. expected 1, actual 2
+W0909 22:34:30.824000 167609 torch/_dynamo/convert_frame.py:1994] [0/2] To log all recompilation reasons, use TORCH_LOGS="recompiles".
+W0909 22:34:30.824000 167609 torch/_dynamo/convert_frame.py:1994] [0/2] To diagnose recompilation issues, see https://docs.pytorch.org/docs/main/user_guide/torch_compiler/compile/programming_model.recompilation.html
+.............................ss.s..s...s............s..s...ss.s.sss....ssssssssssssssssssssss....sssssssss.....................................................................................................................................................................................................................................................................................sss................................ss............................................s..............s..............s.........................s............s.................s.........................................s...................sssssssssssssssssssssss.................sssssssssssssssssssssss...............s....sssssssssssssssss.................................................................................................................................................................................................................................................................................................................................................................................................................Exception ignored in PyDict_GetItemString(); consider using PyDict_GetItemStringRef():
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/checkout314/tests/test_finfo.py", line 327, in __eq__
+    raise RuntimeError("keyword equality trap")
+RuntimeError: keyword equality trap
+.........Exception ignored in PyDict_GetItemString(); consider using PyDict_GetItemStringRef():
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/checkout314/tests/test_finfo_reference.py", line 197, in __eq__
+    raise RuntimeError("keyword equality trap")
+RuntimeError: keyword equality trap
+Exception ignored in PyDict_GetItem(); consider using PyDict_GetItemRef() or PyDict_GetItemWithError():
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/checkout314/tests/test_finfo_reference.py", line 197, in __eq__
+    raise RuntimeError("keyword equality trap")
+RuntimeError: keyword equality trap
+Exception ignored in PyDict_GetItem(); consider using PyDict_GetItemRef() or PyDict_GetItemWithError():
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/checkout314/tests/test_finfo_reference.py", line 197, in __eq__
+    raise RuntimeError("keyword equality trap")
+RuntimeError: keyword equality trap
+..................................................................................................................s......................................s....s................................................................................................................................................................s................................................................................s.............................................s..........................................................................................s.s.......................s..........s.....................................................................................................................................................................................................................................................................................Exception ignored in PyDict_GetItemString(); consider using PyDict_GetItemStringRef():
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/checkout314/tests/test_movedim.py", line 406, in __eq__
+    raise RuntimeError("keyword equality failure")
+RuntimeError: keyword equality failure
+....................Exception ignored in PyDict_GetItemString(); consider using PyDict_GetItemStringRef():
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/checkout314/tests/test_movedim_reference.py", line 512, in __eq__
+    raise RuntimeError("keyword equality failure")
+RuntimeError: keyword equality failure
+Exception ignored in PyDict_GetItem(); consider using PyDict_GetItemRef() or PyDict_GetItemWithError():
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/checkout314/tests/test_movedim_reference.py", line 512, in __eq__
+    raise RuntimeError("keyword equality failure")
+RuntimeError: keyword equality failure
+Exception ignored in PyDict_GetItem(); consider using PyDict_GetItemRef() or PyDict_GetItemWithError():
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/checkout314/tests/test_movedim_reference.py", line 512, in __eq__
+    raise RuntimeError("keyword equality failure")
+RuntimeError: keyword equality failure
+.............................s..............................................................................................................................................................................................................................................................................................................................................................................................................................................s................................................................................................................................Exception ignored in PyDict_GetItem(); consider using PyDict_GetItemRef() or PyDict_GetItemWithError():
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/checkout314/tests/test_promote_types_reference.py", line 740, in __eq__
+    raise RuntimeError("keyword equality failed")
+RuntimeError: keyword equality failed
+...........................................................................................................................................................................................................................Traceback (most recent call last):
+  File "<frozen runpy>", line 203, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/lib/python3.14/unittest/__main__.py", line 18, in <module>
+    main(module=None)
+    ~~~~^^^^^^^^^^^^^
+  File "/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/lib/python3.14/unittest/main.py", line 104, in __init__
+    self.runTests()
+    ~~~~~~~~~~~~~^^
+  File "/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/lib/python3.14/unittest/main.py", line 270, in runTests
+    self.result = testRunner.run(self.test)
+                  ~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/lib/python3.14/unittest/runner.py", line 257, in run
+    test(result)
+    ~~~~^^^^^^^^
+  File "/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/lib/python3.14/unittest/suite.py", line 84, in __call__
+    return self.run(*args, **kwds)
+           ~~~~~~~~^^^^^^^^^^^^^^^
+  File "/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/lib/python3.14/unittest/suite.py", line 122, in run
+    test(result)
+    ~~~~^^^^^^^^
+  File "/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/lib/python3.14/unittest/suite.py", line 84, in __call__
+    return self.run(*args, **kwds)
+           ~~~~~~~~^^^^^^^^^^^^^^^
+  File "/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/lib/python3.14/unittest/suite.py", line 122, in run
+    test(result)
+    ~~~~^^^^^^^^
+  File "/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/lib/python3.14/unittest/suite.py", line 84, in __call__
+    return self.run(*args, **kwds)
+           ~~~~~~~~^^^^^^^^^^^^^^^
+  File "/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/lib/python3.14/unittest/suite.py", line 122, in run
+    test(result)
+    ~~~~^^^^^^^^
+  File "/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/lib/python3.14/unittest/case.py", line 725, in __call__
+    return self.run(*args, **kwds)
+           ~~~~~~~~^^^^^^^^^^^^^^^
+  File "/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/lib/python3.14/unittest/case.py", line 669, in run
+    self._callTestMethod(testMethod)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/lib/python3.14/unittest/case.py", line 615, in _callTestMethod
+    result = method()
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/checkout314/tests/test_resolve_neg_reference.py", line 482, in test_torch_function_mode_dispatch_matches_pytorch_2_13
+    self.mode_dispatch_observation("torch"),
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/checkout314/tests/test_resolve_neg_reference.py", line 471, in mode_dispatch_observation
+    result = subprocess.run(
+        [sys.executable, "-c", f"MODULE = {module_name!r}\n" + source],
+    ...<2 lines>...
+        text=True,
+    )
+  File "/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/lib/python3.14/subprocess.py", line 557, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/lib/python3.14/subprocess.py", line 1221, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/lib/python3.14/subprocess.py", line 2153, in _communicate
+    ready = selector.select(timeout)
+  File "/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/lib/python3.14/selectors.py", line 398, in select
+    fd_event_list = self._selector.poll(timeout)
+KeyboardInterrupt

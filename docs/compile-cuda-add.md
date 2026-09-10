@@ -1,9 +1,9 @@
-# Marker-free CUDA negation and addition graph capture
+# Ordinary CUDA scalar-multiply, negation and addition graph capture
 
 The generic bytecode compiler accepts exact native contiguous float32 CUDA
-Tensors for one- and two-input negation/addition graphs with
+Tensors for one- and two-input scalar-multiply/negation/addition graphs with
 `torch.compile(fn, backend="eager", fullgraph=True)`. This is graph capture and
-native operation execution, with one Rust/CUDA kernel per negation or addition.
+native operation execution, with one Rust/CUDA kernel per recorded operation.
 This is unfused bounded capture, not a general Inductor compiler or a
 performance-parity claim.
 It does not provide Inductor-style fusion, general default-backend CUDA
@@ -13,14 +13,24 @@ compilation, or a new CUDA performance score.
 import torch_rs as torch
 
 def combine(left, right):
-    intermediate = -right + left.neg()
-    return intermediate.negative().add(left)
+    intermediate = -right + left.mul(0.5)
+    return 2 * intermediate
 
 compiled = torch.compile(combine, backend="eager", fullgraph=True)
 x = torch.tensor([1., 2., 3.]).to("cuda:0")
 y = torch.tensor([4., 5., 6.]).to("cuda:0")
-assert compiled(x, y).cpu().tolist() == [6., 9., 12.]
+assert compiled(x, y).cpu().tolist() == [-7., -8., -9.]
 ```
+
+`x * scalar`, `scalar * x`, positional `.mul(scalar)`/`.multiply(scalar)`
+and positional `torch_rs.mul`/`torch_rs.multiply` calls (including imported
+aliases) compose with negation and addition. Scalars must be exact Python
+`bool`, `int`, or `float` literals, local constants, or module globals, including
+globals read by the existing same-module helper. Conversion uses the public
+scalar multiplication parser, including integer overflow and float32 rounding.
+Scalar function arguments, closures, numeric subclasses/NumPy scalars, complex
+values, arithmetic on captured scalars, kwargs and `out` remain unsupported.
+Top-level calls require the native callable identity; patched bindings reject.
 
 Unary `-`, zero-argument `.neg()` and `.negative()` compose arbitrarily with
 operator `+` and positional `.add(tensor)`. This syntax supports
@@ -39,14 +49,14 @@ shapes and requires equal CUDA addition operand shapes before executing any
 operation. Dynamic shapes do not enable broadcasting.
 
 CUDA graphs reject other unary operations (including `float` and `detach`), scalar
-number operands, broadcasting, noncontiguous layouts, gradients, mixed CPU/CUDA
-inputs, and mixed CUDA ordinals. Keyword method arguments, other operations,
+number operands outside multiplication, broadcasting, noncontiguous layouts,
+gradients, mixed CPU/CUDA inputs, and mixed CUDA ordinals. Keyword method arguments, other operations,
 closures, mutations, top-level `torch.neg`/`negative` calls, unsupported bytecode,
-and unsupported compiler options retain their existing rejection behavior. Float64 CUDA tensors and CUDA tensors requiring
-gradients cannot currently be constructed by the native substrate; the
+and unsupported compiler options retain their existing rejection behavior.
+Float64 CUDA tensors and CUDA tensors requiring gradients cannot currently be constructed by the native substrate; the
 compiler metadata boundary also explicitly rejects those properties.
-Eager [CUDA scalar multiplication](cuda-mul-scalar-validation.md) does not change
-this grammar: scalar multiplication still rejects before execution or cache insertion.
+The compiler reuses [native CUDA scalar multiplication](cuda-mul-scalar-validation.md);
+CPU multiplication capture and tensor-tensor multiplication remain unsupported.
 
 ## Metadata and cache contract
 
@@ -55,13 +65,20 @@ requires-grad, and storage offset from the actual tensor, without Python
 property dispatch. The compiler uses that native device metadata. CUDA input and
 capture metadata guard the exact offset as well as shape/stride/dtype/device;
 negation and addition outputs own fresh CUDA storage with canonical contiguous
-strides and offset zero, including scalar, empty, and offset-view inputs. CPU traces
-retain their established offset-polymorphic behavior (`storage_offset=None`
+strides and offset zero, including scalar, empty, and offset-view inputs. Scalar
+multiplication instead uses the shared scalar layout planner, which can preserve
+noncanonical singleton stride ordering. CPU traces retain their established offset-polymorphic behavior (`storage_offset=None`
 in trace metadata), while the raw native metadata hook reports their real offset.
 
 CPU, CUDA:0, and CUDA:1 specializations cannot share cache entries. Global
 identity and metadata remain part of the key, including globals loaded by a
-helper. Every call checks current input and capture devices and layouts.
+helper. Scalar globals also guard exact type and value (binary64 bits for floats,
+including signed zero and NaNs); literals are guarded by the function code.
+A specialization stores the validated float32 scalar value. Scalar and callable
+bindings are reread on every call before cache lookup; helper dependencies use
+the same snapshots. Changed values specialize subject to `recompile_limit`,
+and unsupported replacements reject. Every call checks current input and capture
+devices and layouts.
 Rebinding a global creates a specialization or hits the existing recompile
 limit; an incompatible device transition is rejected. Rejected calls leave the
 graph cache unchanged. A new graph is published only after successful native
@@ -69,6 +86,15 @@ execution, and the entire graph is validated before executing any operation.
 Private metadata-only recorders can still describe unsupported CUDA unary graphs;
 the executor rejects these before any kernel runs. Native unary hooks admit
 only negation on CUDA and retain CPU-only guards for all other unary targets.
+
+## Scalar multiplication validation
+
+[Scalar capture validation](compile-cuda-mul-scalar-validation.md) describes the
+independent generated graphlets, concrete programs, cache/alias/fail-closed tests,
+and `mul_neg_add_v1` non-scoring diagnostic. Reference tracing uses PyTorch 2.13
+`backend="eager"`; it provides correctness coverage, not Inductor performance parity.
+The frozen 38-case compile corpus, addition-only and neg/add diagnostics, private
+four-workload benchmark, scores and historical reports remain unchanged.
 
 ## Negation validation
 
@@ -99,9 +125,9 @@ all three negation spellings and composed graphs, and records every raw outcome.
 Run from a clean checkout of the committed implementation with a freshly built
 release wheel, PyTorch 2.13.0, and caches/temp directories inside the worktree.
 Write all diagnostic outputs under ignored `target/` first; copy retained
-reports into `docs/diagnostics/` only after all measurements have finished and
-the checkout is still clean. The report's `base_commit` identifies the committed
-source measured by the diagnostic.
+reports into `docs/diagnostics/` after measurements have finished. The report's
+`base_commit` records HEAD; use `worktree_status` and `source_sha256` to identify
+the actual measured source. A report with source edits is not exact-HEAD evidence.
 
 ```bash
 mkdir -p target/tmp target/cache

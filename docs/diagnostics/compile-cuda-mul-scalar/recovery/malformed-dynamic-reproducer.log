@@ -1,0 +1,167 @@
+test_dynamic_scalar_node_metadata_rejects_before_execution (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_dynamic_scalar_node_metadata_rejects_before_execution) ... 
+  test_dynamic_scalar_node_metadata_rejects_before_execution (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_dynamic_scalar_node_metadata_rejects_before_execution) (metadata=CompileTraceTensorMetadata(shape=(5,), stride=(1,), dtype=torch.float32, device='cpu', requires_grad=False, storage_offset=0)) ... FAIL
+  test_dynamic_scalar_node_metadata_rejects_before_execution (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_dynamic_scalar_node_metadata_rejects_before_execution) (metadata=CompileTraceTensorMetadata(shape=(5,), stride=(1,), dtype=torch.float32, device='cuda:1', requires_grad=False, storage_offset=0)) ... FAIL
+  test_dynamic_scalar_node_metadata_rejects_before_execution (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_dynamic_scalar_node_metadata_rejects_before_execution) (metadata=CompileTraceTensorMetadata(shape=(5,), stride=(1,), dtype=torch.float64, device='cuda:0', requires_grad=False, storage_offset=0)) ... FAIL
+  test_dynamic_scalar_node_metadata_rejects_before_execution (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_dynamic_scalar_node_metadata_rejects_before_execution) (metadata=CompileTraceTensorMetadata(shape=(5,), stride=(1,), dtype=torch.float32, device='cuda:0', requires_grad=True, storage_offset=0)) ... FAIL
+  test_dynamic_scalar_node_metadata_rejects_before_execution (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_dynamic_scalar_node_metadata_rejects_before_execution) (metadata=CompileTraceTensorMetadata(shape=(5,), stride=(2,), dtype=torch.float32, device='cuda:0', requires_grad=False, storage_offset=0)) ... FAIL
+  test_dynamic_scalar_node_metadata_rejects_before_execution (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_dynamic_scalar_node_metadata_rejects_before_execution) (metadata=CompileTraceTensorMetadata(shape=(5,), stride=(1,), dtype=torch.float32, device='cuda:0', requires_grad=False, storage_offset=1)) ... FAIL
+  test_dynamic_scalar_node_metadata_rejects_before_execution (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_dynamic_scalar_node_metadata_rejects_before_execution) (metadata=None) ... FAIL
+
+======================================================================
+FAIL: test_dynamic_scalar_node_metadata_rejects_before_execution (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_dynamic_scalar_node_metadata_rejects_before_execution) (metadata=CompileTraceTensorMetadata(shape=(5,), stride=(1,), dtype=torch.float32, device='cpu', requires_grad=False, storage_offset=0))
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/tests/test_compile_cuda_mul_scalar.py", line 402, in test_dynamic_scalar_node_metadata_rejects_before_execution
+    malformed.forward(x, x)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/.venv/lib64/python3.12/site-packages/torch_rs/_compile_trace.py", line 184, in forward
+    return execute_compile_trace_graph(self, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/.venv/lib64/python3.12/site-packages/torch_rs/_compile_trace.py", line 1042, in execute_compile_trace_graph
+    output = _execute_operation(operation, values)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1198, in _execute_mock_call
+    raise effect
+AssertionError: executed malformed graph
+
+======================================================================
+FAIL: test_dynamic_scalar_node_metadata_rejects_before_execution (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_dynamic_scalar_node_metadata_rejects_before_execution) (metadata=CompileTraceTensorMetadata(shape=(5,), stride=(1,), dtype=torch.float32, device='cuda:1', requires_grad=False, storage_offset=0))
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/tests/test_compile_cuda_mul_scalar.py", line 402, in test_dynamic_scalar_node_metadata_rejects_before_execution
+    malformed.forward(x, x)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/.venv/lib64/python3.12/site-packages/torch_rs/_compile_trace.py", line 184, in forward
+    return execute_compile_trace_graph(self, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/.venv/lib64/python3.12/site-packages/torch_rs/_compile_trace.py", line 1042, in execute_compile_trace_graph
+    output = _execute_operation(operation, values)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1198, in _execute_mock_call
+    raise effect
+AssertionError: executed malformed graph
+
+======================================================================
+FAIL: test_dynamic_scalar_node_metadata_rejects_before_execution (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_dynamic_scalar_node_metadata_rejects_before_execution) (metadata=CompileTraceTensorMetadata(shape=(5,), stride=(1,), dtype=torch.float64, device='cuda:0', requires_grad=False, storage_offset=0))
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/tests/test_compile_cuda_mul_scalar.py", line 402, in test_dynamic_scalar_node_metadata_rejects_before_execution
+    malformed.forward(x, x)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/.venv/lib64/python3.12/site-packages/torch_rs/_compile_trace.py", line 184, in forward
+    return execute_compile_trace_graph(self, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/.venv/lib64/python3.12/site-packages/torch_rs/_compile_trace.py", line 1042, in execute_compile_trace_graph
+    output = _execute_operation(operation, values)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1198, in _execute_mock_call
+    raise effect
+AssertionError: executed malformed graph
+
+======================================================================
+FAIL: test_dynamic_scalar_node_metadata_rejects_before_execution (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_dynamic_scalar_node_metadata_rejects_before_execution) (metadata=CompileTraceTensorMetadata(shape=(5,), stride=(1,), dtype=torch.float32, device='cuda:0', requires_grad=True, storage_offset=0))
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/tests/test_compile_cuda_mul_scalar.py", line 402, in test_dynamic_scalar_node_metadata_rejects_before_execution
+    malformed.forward(x, x)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/.venv/lib64/python3.12/site-packages/torch_rs/_compile_trace.py", line 184, in forward
+    return execute_compile_trace_graph(self, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/.venv/lib64/python3.12/site-packages/torch_rs/_compile_trace.py", line 1042, in execute_compile_trace_graph
+    output = _execute_operation(operation, values)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1198, in _execute_mock_call
+    raise effect
+AssertionError: executed malformed graph
+
+======================================================================
+FAIL: test_dynamic_scalar_node_metadata_rejects_before_execution (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_dynamic_scalar_node_metadata_rejects_before_execution) (metadata=CompileTraceTensorMetadata(shape=(5,), stride=(2,), dtype=torch.float32, device='cuda:0', requires_grad=False, storage_offset=0))
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/tests/test_compile_cuda_mul_scalar.py", line 402, in test_dynamic_scalar_node_metadata_rejects_before_execution
+    malformed.forward(x, x)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/.venv/lib64/python3.12/site-packages/torch_rs/_compile_trace.py", line 184, in forward
+    return execute_compile_trace_graph(self, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/.venv/lib64/python3.12/site-packages/torch_rs/_compile_trace.py", line 1042, in execute_compile_trace_graph
+    output = _execute_operation(operation, values)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1198, in _execute_mock_call
+    raise effect
+AssertionError: executed malformed graph
+
+======================================================================
+FAIL: test_dynamic_scalar_node_metadata_rejects_before_execution (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_dynamic_scalar_node_metadata_rejects_before_execution) (metadata=CompileTraceTensorMetadata(shape=(5,), stride=(1,), dtype=torch.float32, device='cuda:0', requires_grad=False, storage_offset=1))
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/tests/test_compile_cuda_mul_scalar.py", line 402, in test_dynamic_scalar_node_metadata_rejects_before_execution
+    malformed.forward(x, x)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/.venv/lib64/python3.12/site-packages/torch_rs/_compile_trace.py", line 184, in forward
+    return execute_compile_trace_graph(self, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/.venv/lib64/python3.12/site-packages/torch_rs/_compile_trace.py", line 1042, in execute_compile_trace_graph
+    output = _execute_operation(operation, values)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1198, in _execute_mock_call
+    raise effect
+AssertionError: executed malformed graph
+
+======================================================================
+FAIL: test_dynamic_scalar_node_metadata_rejects_before_execution (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_dynamic_scalar_node_metadata_rejects_before_execution) (metadata=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/tests/test_compile_cuda_mul_scalar.py", line 402, in test_dynamic_scalar_node_metadata_rejects_before_execution
+    malformed.forward(x, x)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/.venv/lib64/python3.12/site-packages/torch_rs/_compile_trace.py", line 184, in forward
+    return execute_compile_trace_graph(self, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/.venv/lib64/python3.12/site-packages/torch_rs/_compile_trace.py", line 1042, in execute_compile_trace_graph
+    output = _execute_operation(operation, values)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1198, in _execute_mock_call
+    raise effect
+AssertionError: executed malformed graph
+
+----------------------------------------------------------------------
+Ran 1 test in 0.392s
+
+FAILED (failures=7)

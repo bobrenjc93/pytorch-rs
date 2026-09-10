@@ -153,6 +153,7 @@ class CompileTraceOperation:
     target: str
     inputs: tuple[str, ...]
     metadata: CompileTraceTensorMetadata
+    scalar: object = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,9 +207,12 @@ _SUPPORTED_BINARY_METHODS = (
     "Tensor.add",
 )
 _SUPPORTED_BINARY_TARGETS = frozenset(("add",))
-_SUPPORTED_OPERATION_TARGETS = _SUPPORTED_UNARY_TARGETS | _SUPPORTED_BINARY_TARGETS
+_SUPPORTED_SCALAR_TARGETS = frozenset(("mul_scalar",))
+_SUPPORTED_OPERATION_TARGETS = (
+    _SUPPORTED_UNARY_TARGETS | _SUPPORTED_BINARY_TARGETS | _SUPPORTED_SCALAR_TARGETS
+)
 _SUPPORTED_OPERATION_DESCRIPTION = ", ".join(
-    (*_SUPPORTED_UNARY_METHODS, *_SUPPORTED_BINARY_METHODS)
+    (*_SUPPORTED_UNARY_METHODS, *_SUPPORTED_BINARY_METHODS, "Tensor.mul (CUDA scalar)")
 )
 
 
@@ -568,6 +572,34 @@ def _binary_output_metadata(left_metadata, right_metadata, *, grad_enabled=None)
     )
 
 
+def _normalize_mul_scalar(value):
+    # Exact immutable Python numbers only: no arbitrary conversion callbacks,
+    # NumPy objects, subclasses, complex promotion, or Tensor operands.
+    if _builtins.type(value) not in (_builtins.bool, _builtins.int, _builtins.float):
+        raise CompileTraceUnsupportedError(
+            "torch.compile scalar multiplication requires an exact bool, int or float constant"
+        )
+    return _native._compile_trace_mul_scalar_value(value)
+
+
+def _scalar_output_metadata(input_metadata):
+    if input_metadata.device.type != "cuda":
+        raise CompileTraceUnsupportedError(
+            "torch.compile scalar multiplication only supports CUDA"
+        )
+    _validate_cuda_metadata(input_metadata)
+    return CompileTraceTensorMetadata(
+        shape=input_metadata.shape,
+        stride=_elementwise_output_stride(
+            input_metadata.shape, ((input_metadata.shape, input_metadata.stride),)
+        ),
+        dtype=input_metadata.dtype,
+        device=input_metadata.device,
+        requires_grad=False,
+        storage_offset=0,
+    )
+
+
 def _metadata_from_data(data, *, dtype, device, requires_grad):
     shape = _normalize_shape(_infer_shape(data))
     return CompileTraceTensorMetadata(
@@ -834,6 +866,11 @@ def _execute_operation(operation, values):
     if operation.target not in _SUPPORTED_OPERATION_TARGETS:
         _unsupported_operation(f"Tensor.{operation.target}")
 
+    if operation.target in _SUPPORTED_SCALAR_TARGETS:
+        return _native._compile_trace_scalar(
+            values[operation.inputs[0]], operation.scalar, operation.target
+        )
+
     if operation.target in _SUPPORTED_UNARY_TARGETS:
         if len(operation.inputs) != 1:
             raise CompileTraceUnsupportedError(
@@ -874,6 +911,29 @@ def _execute_operation(operation, values):
 
 
 def _expected_operation_metadata(operation, metadata_values, *, grad_enabled):
+    # Validate the complete node before any graph operation can execute, even
+    # for graphs built manually or modified with dataclasses.replace().
+    if operation.op != "call_method":
+        raise CompileTraceUnsupportedError("torch.compile trace requires call_method nodes")
+    if operation.target in _SUPPORTED_SCALAR_TARGETS:
+        if len(operation.inputs) != 1:
+            raise CompileTraceUnsupportedError("torch.compile scalar operation requires one Tensor input")
+        _normalize_mul_scalar(operation.scalar)
+        expected = _scalar_output_metadata(metadata_values[operation.inputs[0]])
+        # Dynamic graphs recompute shapes, but their declared scalar outputs
+        # must still describe fresh contiguous CUDA float32 storage. Validate
+        # this before any earlier node can launch, including on cache hits.
+        declared = operation.metadata
+        if not _builtins.isinstance(declared, CompileTraceTensorMetadata):
+            raise CompileTraceUnsupportedError("torch.compile scalar output metadata is malformed")
+        if declared.device != expected.device or declared.storage_offset != 0:
+            raise CompileTraceUnsupportedError(
+                "torch.compile scalar output requires matching CUDA device and zero storage offset"
+            )
+        _validate_cuda_metadata(declared)
+        return expected
+    if operation.scalar is not None:
+        raise CompileTraceUnsupportedError("torch.compile non-scalar operation has a scalar payload")
     if operation.target in _SUPPORTED_UNARY_TARGETS:
         if len(operation.inputs) != 1:
             raise CompileTraceUnsupportedError(
@@ -1116,11 +1176,17 @@ class CompileTraceTensorProxy:
     def __rsub__(self, other):
         _unsupported_operation("Tensor.__rsub__")
 
+    def mul(self, other):
+        return self._recorder.record_scalar("mul_scalar", self, other)
+
+    def multiply(self, other):
+        return self.mul(other)
+
     def __mul__(self, other):
-        _unsupported_operation("Tensor.__mul__")
+        return self.mul(other)
 
     def __rmul__(self, other):
-        _unsupported_operation("Tensor.__rmul__")
+        return self.mul(other)
 
     def __truediv__(self, other):
         _unsupported_operation("Tensor.__truediv__")
@@ -1268,6 +1334,20 @@ class CompileTraceRecorder:
             metadata=metadata,
         )
         self._operations.append(operation)
+        return CompileTraceTensorProxy(self, name, metadata)
+
+    def record_scalar(self, target, input, scalar):
+        self._ensure_open()
+        if target not in _SUPPORTED_SCALAR_TARGETS:
+            _unsupported_operation(f"Tensor.{target}")
+        self._require_owned_proxy(input)
+        metadata = _scalar_output_metadata(input.metadata)
+        scalar = _normalize_mul_scalar(scalar)
+        name = self._next_operation_name(target)
+        self._operations.append(CompileTraceOperation(
+            name=name, op="call_method", target=target, inputs=(input.name,),
+            metadata=metadata, scalar=scalar,
+        ))
         return CompileTraceTensorProxy(self, name, metadata)
 
     def record_binary(self, target, left, right, operation_name):

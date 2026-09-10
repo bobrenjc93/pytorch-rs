@@ -1,0 +1,33 @@
+{
+  "name": "final-docs-accounting",
+  "command": [
+    ".venv/bin/python",
+    "-m",
+    "unittest",
+    "-v",
+    "tests.test_readme_quickstart",
+    "tests.test_compile_cuda_mul_scalar_diagnostic",
+    "tests.test_compile_cuda_neg_add_diagnostic"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e",
+  "started_utc": "2026-09-10T04:16:55Z",
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": "",
+    "PYO3_PYTHON": null,
+    "VIRTUAL_ENV": null,
+    "TORCH_RS_VERIFY_VIRTUALENV": null,
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/cargo-home",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/build",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/tmp",
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/cache/uv",
+    "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/python",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/cache",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/cache/cuda",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/cache/inductor",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/cache/triton",
+    "PYTHONPYCACHEPREFIX": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/cache/pycache",
+    "PYTHONHASHSEED": null
+  },
+  "exit_code": 0,
+  "elapsed_seconds": 1.7684112787246704
+}

@@ -1,0 +1,47 @@
+import datetime,hashlib,json,pathlib,re,subprocess
+root=pathlib.Path.cwd(); out=root.parent
+record=json.loads((out/'results.json').read_text())
+record['recorded_utc']=datetime.datetime.now(datetime.timezone.utc).isoformat()
+record['commands']=[json.loads(p.read_text()) for p in sorted((out/'logs').glob('*.receipt.json'))]
+setup={
+ 'build312':'Unused initial wheel built with host Python 3.12.14+meta before the managed build; its former .venv was subsequently replaced.',
+ 'rust-debug':'Host Python lacked the static libpython required by PyO3; the managed-interpreter debug run supersedes this setup failure.',
+ 'python-full312':'Initial full GPU run: documented CLI used an uninstalled environment; the stack validator rejected the noncanonical environment path. Corrected CLI/stack checks and canonical full suites supersede these setup failures.',
+ 'python-full314':'Initial full portable run rejected a noncanonical virtualenv path in the stack validator.',
+ 'python-full312-portable':'A symlinked .venv still fails the stack validator real-directory contract; canonical environment checks supersede this attempt.',
+ 'python-full314-final':'Interrupted after confirming the symlinked environment cannot satisfy the stack validator; rerun fully with a real .venv.',
+ 'provenance314':'Initial audit incorrectly required the reused read-only base interpreter to be inside the worktree; the corrected audit records its actual identity and hash.',
+ 'cuda-math':'Initial evaluator run correctly awarded zero because its direct-source import contract requires the built extension in python/torch_rs; after copying the verified wheel extension, a fresh corrected measurement supersedes it.',
+ 'rust-cuda':'Command used nonexistent cuda_neg test target; corrected invocation includes cuda_add, cuda_mul_scalar and cuda_native_boundaries.',
+}
+record['superseded_setup_attempts']={name:{'reason':reason,'receipt':'logs/'+name+'.receipt.json','log':'logs/'+name+'.log'} for name,reason in setup.items()}
+record['scope_note']='Superseded setup records retain their original timestamps and paths as historical attempts, not current runtime/build claims. Successful managed builds, canonical full suites and refreshed diagnostics supply current evidence. No implementation or test assertion changed.'
+required=('fmt','clippy','clippy-bindings','rust-debug-managed','rust-debug-no-bindings','rust-cuda-corrected','rust-cuda-storage','linear-and-docs','python-full312-canonical','python-full314-canonical','two-device-tests','scalar-gpu314','frozen-compile','cuda-math-corrected','cuda-performance-fresh','cuda-performance-reused')
+record['gates']={}
+for name in required:
+ receipt=json.loads((out/'logs'/(name+'.receipt.json')).read_text())
+ assert receipt['exit_code']==0,(name,receipt['exit_code'])
+ record['gates'][name]={'exit_code':receipt['exit_code'],'receipt':'logs/'+name+'.receipt.json','log':'logs/'+name+'.log'}
+for version in ('312','314'):
+ log=(out/'logs'/f'python-full{version}-canonical.log').read_text()
+ assert re.search(r'Ran 5398 tests .*\n\nOK \(skipped=150\)',log),log[-1000:]
+record['known_gate_failure']={'gate':'cargo test --release --locked --all-targets','result':'160 library tests passed, two NaN-payload assertions failed; unchanged test names and all assertion values match the preserved source baseline. Assertions are unchanged.','log':'logs/rust-release.log','historical_baseline':'../recovery/baseline-rust-release.log','status':'not a passing release gate'}
+math=json.loads((root/'target/composite-evidence/cuda-math.json').read_text())
+assert math['source_unchanged_during_run'] and math['accounting']['passed']==3 and math['accounting']['denominator']==6
+record['cuda_math']={'passed':3,'denominator':6,'seeds':math['seeds'],'unsupported_cases_retain_zero_credit':True}
+record['cuda_performance']={}
+for state in ('fresh','reused'):
+ report=json.loads((root/'target/composite-evidence'/f'cuda-performance-{state}.json').read_text())
+ assert report['environment']['run_mode']=='full'
+ assert report['aggregates']['common_success_shape_count']==4
+ assert len(report['workload_results'])==4
+ record['cuda_performance'][state]=report['aggregates']
+record['independent_gates']='Author integration checks only; Burner independent review, calibrated evaluation and delivery gates remain separate and are not waived.'
+record['documentation_check']={'receipt':json.loads((out/'logs/final-linear-and-docs.receipt.json').read_text()),'result':'52 checks, OK; includes final descriptive coverage and evidence links.'}
+assert record['documentation_check']['receipt']['exit_code']==0
+source=root/'target/composite-evidence/math-build-record.json'
+reference=json.loads(source.read_text())['provenance']
+assert (source.parent/reference).resolve()==out/'provenance-312.json'
+record['raw_record_path_conventions']={'commands':'Relative command paths resolve against each receipt cwd.','math-build-record.json':{'original_location':str(source),'provenance_reference_resolves_to':str((source.parent/reference).resolve()),'note':'Raw build-record relative paths retain their original measured-file location; the archive copy does not rewrite provenance.'}}
+(out/'results.json').write_text(json.dumps(record,indent=2)+'\n')
+print('Verified canonical full suites, unchanged diagnostics, CUDA math/performance outcomes, and retained release-gate failures.')

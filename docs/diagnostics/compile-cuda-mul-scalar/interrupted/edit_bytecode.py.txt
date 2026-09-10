@@ -1,0 +1,130 @@
+from pathlib import Path
+p=Path('python/torch_rs/_compile_bytecode.py');s=p.read_text()
+s=s.replace('import types as _types','import types as _types\nimport struct as _struct\nimport sys as _sys')
+pos=s.index('@dataclass(frozen=True, slots=True)\nclass _GlobalLoadDependency:')
+s=s[:pos]+'''@dataclass(frozen=True, slots=True)
+class _BytecodeBuiltin:
+    target: str
+
+
+@dataclass(frozen=True, slots=True)
+class _BytecodeModule:
+    bindings: tuple
+
+
+@dataclass(frozen=True, slots=True)
+class _GlobalValueCacheDependency:
+    global_name: str
+    guard: object
+    value: object = field(compare=False, hash=False, repr=False)
+
+
+'''+s[pos:]
+s=s.replace('    dynamic: bool = False\n\n\n@dataclass(slots=True)', '    global_value_dependencies: tuple[_GlobalValueCacheDependency, ...] = ()\n    dynamic: bool = False\n\n\n@dataclass(slots=True)')
+s=s.replace('    helper_call_count: int = 0','    global_values: dict[str, object] = field(default_factory=dict)\n    helper_call_count: int = 0')
+s=s.replace('    "add": _MethodTarget', '''    "mul": _MethodTarget("scalar", "mul_scalar", 1, "Tensor.mul"),
+    "multiply": _MethodTarget("scalar", "mul_scalar", 1, "Tensor.multiply"),
+    "__mul__": _MethodTarget("scalar", "mul_scalar", 1, "Tensor.__mul__"),
+    "__rmul__": _MethodTarget("scalar", "mul_scalar", 1, "Tensor.__rmul__"),
+    "add": _MethodTarget''')
+s=s.replace('("BINARY_ADD", "BINARY_OP", "INPLACE_ADD")', '("BINARY_ADD", "BINARY_MULTIPLY", "BINARY_OP", "INPLACE_ADD")')
+pos=s.index('def _resolve_live_global_dependency(')
+s=s[:pos]+'''def _builtin_target(value):
+    # Immutable native binding owners establish identity, not callable names or
+    # source text. Public aliases are accepted only while they still match.
+    owner = _trace._native._VariableFunctionsClass
+    if value is owner.mul or value is owner.multiply:
+        return _BytecodeBuiltin("mul_scalar")
+    return None
+
+
+def _global_value_dependency(name, value):
+    if _builtins.type(value) in (_builtins.bool, _builtins.int, _builtins.float):
+        # Use the original type and binary64 bits, preserving signed zero and
+        # stable NaN guards without executing equality or conversion callbacks.
+        guard = (_builtins.type(value),
+                 _struct.pack("!d", value) if _builtins.type(value) is _builtins.float else value)
+        return _GlobalValueCacheDependency(name, guard, _BytecodeConstant(value))
+    builtin = _builtin_target(value)
+    if builtin is not None:
+        return _GlobalValueCacheDependency(name, value, builtin)
+    if _builtins.type(value) is _types.ModuleType and value is _sys.modules[__package__]:
+        bindings = tuple((attr, vars(value).get(attr)) for attr in ("mul", "multiply"))
+        if all(_builtin_target(fn) is not None for _, fn in bindings):
+            lowered = tuple((attr, _builtin_target(fn)) for attr, fn in bindings)
+            return _GlobalValueCacheDependency(name, (value, bindings), _BytecodeModule(lowered))
+    return None
+
+
+'''+s[pos:]
+s=s.replace('    helper = value\n', '''    dependency = _global_value_dependency(name, value)
+    if dependency is not None:
+        return dependency
+
+    helper = value
+''')
+s=s.replace('    global_tensor_dependencies = []\n', '    global_tensor_dependencies = []\n    global_value_dependencies = []\n')
+s=s.replace('        helper_dependencies.append(dependency)\n', '''        if _builtins.isinstance(dependency, _GlobalValueCacheDependency):
+            global_value_dependencies.append(dependency)
+            continue
+
+        helper_dependencies.append(dependency)
+''')
+s=s.replace('        nested_helpers, nested_tensors = _global_cache_dependencies_for_loads(', '        nested_helpers, nested_tensors, nested_values = _global_cache_dependencies_for_loads(')
+s=s.replace('        global_tensor_dependencies.extend(nested_tensors)\n    return tuple(helper_dependencies), tuple(global_tensor_dependencies)', '        global_tensor_dependencies.extend(nested_tensors)\n        global_value_dependencies.extend(nested_values)\n    return (tuple(helper_dependencies), tuple(global_tensor_dependencies),\n            tuple(global_value_dependencies))')
+s=s.replace('        return (), ()\n','        return (), (), ()\n')
+s=s.replace('        if name in state.global_tensor_proxies:', '        if name in state.global_values:\n            return state.global_values[name]\n        if name in state.global_tensor_proxies:')
+s=s.replace('    helper_dependencies, global_tensor_dependencies = _global_cache_dependencies(', '    helper_dependencies, global_tensor_dependencies, global_value_dependencies = _global_cache_dependencies(')
+s=s.replace('            global_tensor_dependencies,\n        ),', '            global_tensor_dependencies,\n            global_value_dependencies,\n        ),')
+s=s.replace('        global_tensor_dependencies=global_tensor_dependencies,\n', '        global_tensor_dependencies=global_tensor_dependencies,\n        global_value_dependencies=global_value_dependencies,\n')
+s=s.replace('    locals[name] = _require_output_value(\n        _pop(stack, program, instruction),', '''    value = _pop(stack, program, instruction)
+    if _builtins.isinstance(value, _BytecodeConstant):
+        _trace._normalize_mul_scalar(value.value)
+        locals[name] = value
+        return
+    locals[name] = _require_output_value(
+        value,''')
+s=s.replace('    if _builtins.isinstance(dependency, _trace.CompileTraceTensorProxy):', '''    if _builtins.isinstance(dependency, (
+        _trace.CompileTraceTensorProxy, _BytecodeConstant, _BytecodeBuiltin, _BytecodeModule
+    )):''')
+s=s.replace('    if not _load_attr_pushes_method(instruction):\n', '''    if stack and _builtins.isinstance(stack[-1], _BytecodeModule):
+        module = stack.pop()
+        for name, builtin in module.bindings:
+            if instruction.argval == name:
+                stack.append(builtin)
+                return
+        _unsupported_bytecode(program, instruction, "module attribute access")
+    if not _load_attr_pushes_method(instruction):
+''')
+s=s.replace('    other = _require_tensor(\n        args[0],', '''    if method_target.kind == "scalar":
+        return _record_scalar_multiply(recorder, method.receiver, args[0], program, instruction)
+
+    other = _require_tensor(
+        args[0],''')
+s=s.replace('    if _builtins.isinstance(callable_value, _BytecodeMethod):', '''    if _builtins.isinstance(callable_value, _BytecodeBuiltin):
+        if len(args) != 2:
+            _unsupported_bytecode(program, instruction, "scalar multiply argument count")
+        stack.append(_record_scalar_multiply(recorder, *args, program, instruction))
+        return
+    if _builtins.isinstance(callable_value, _BytecodeMethod):''')
+pos=s.index('def _binary_operator_symbol(')
+s=s[:pos]+'''def _record_scalar_multiply(recorder, left, right, program, instruction):
+    if _builtins.isinstance(left, _BytecodeConstant):
+        left, right = right, left
+    tensor = _require_tensor(left, program, instruction, "scalar multiply operand")
+    if not _builtins.isinstance(right, _BytecodeConstant):
+        _unsupported_bytecode(program, instruction, "non-constant scalar or Tensor multiplication")
+    return recorder.record_scalar("mul_scalar", tensor, right.value)
+
+
+'''+s[pos:]
+s=s.replace('    if instruction.opname == "BINARY_ADD":','    if instruction.opname == "BINARY_MULTIPLY":\n        return "*"\n    if instruction.opname == "BINARY_ADD":')
+s=s.replace('    if symbol == "+":\n', '''    if symbol == "*":
+        right = _pop(stack, program, instruction)
+        left = _pop(stack, program, instruction)
+        stack.append(_record_scalar_multiply(recorder, left, right, program, instruction))
+        return
+    if symbol == "+":
+''')
+s=s.replace('        global_tensor_proxies=global_tensor_proxies,\n', '        global_tensor_proxies=global_tensor_proxies,\n        global_values={d.global_name: d.value for d in compile_request.global_value_dependencies},\n')
+p.write_text(s)

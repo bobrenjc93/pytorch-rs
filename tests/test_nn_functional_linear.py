@@ -244,11 +244,10 @@ class FunctionalLinearTests(unittest.TestCase):
         normalized_doc = " ".join(linear.__doc__.split())
         for documented_limit in (
             "rank-1, rank-2, or rank-3 transformation",
-            "optional rank-1 bias for rank-1 or rank-2 input",
+            "optional rank-1 bias",
             "exact ``torch_rs.Tensor`` operands",
             "CPU ``float32`` storage",
-            "For rank-1 or rank-2 input, ``bias`` may instead be an exact rank-1 tensor",
-            "For rank-3 input, ``bias`` must be ``None``",
+            "Biased rank-3 input must be contiguous",
             "exact rank-1 tensor",
             "``(out_features,)``",
             "PyTorch-compatible singleton shape ``(1,)``",
@@ -523,6 +522,56 @@ class FunctionalLinearTests(unittest.TestCase):
             )
             for form, call in calls:
                 self.assert_matches_composition(call(), expected, case=(case, form))
+
+    def test_rank_three_bias_values_and_empty_inner_dimension(self):
+        for inner in (0, 4):
+            input_values = np.arange(6 * inner, dtype=np.float32).reshape(
+                2, 3, inner
+            )
+            weight_values = np.arange(5 * inner, dtype=np.float32).reshape(
+                5, inner
+            )
+            for bias_values in ([0.5], [0.5, -1.0, 2.0, 3.0, -4.0]):
+                with self.subTest(inner=inner, bias=bias_values):
+                    input = torch.tensor(
+                        input_values.reshape(-1).tolist()
+                    ).reshape(2, 3, inner)
+                    weight = torch.tensor(
+                        weight_values.reshape(-1).tolist()
+                    ).reshape(5, inner)
+                    bias = torch.tensor(bias_values)
+                    actual = functional.linear(input, weight, bias)
+                    expected = input_values @ weight_values.T + np.array(
+                        bias_values, dtype=np.float32
+                    )
+                    np.testing.assert_array_equal(np.asarray(actual), expected)
+                    self.assertEqual(actual.shape, (2, 3, 5))
+                    self.assertTrue(actual.is_contiguous())
+                    self.assertFalse(actual.requires_grad)
+
+    def test_biased_noncontiguous_rank_three_inputs_are_explicitly_rejected(
+        self,
+    ):
+        for input in (
+            torch.ones((2, 4, 3)).transpose(1, 2),
+            torch.ones((3, 2, 4)).transpose(0, 1),
+            torch.ones((2, 2, 4, 3))[1].transpose(1, 2),
+        ):
+            self.assertFalse(input.is_contiguous())
+            for bias_width in (1, 5):
+                with self.subTest(
+                    stride=input.stride(), bias_width=bias_width
+                ):
+                    with self.assertRaisesRegex(
+                        NotImplementedError,
+                        r"^torch_rs\.nn\.functional\.linear only supports bias "
+                        r"for contiguous rank-3 input$",
+                    ):
+                        functional.linear(
+                            input,
+                            torch.ones((5, 4)),
+                            torch.ones((bias_width,)),
+                        )
 
     def test_every_call_returns_fresh_storage_including_empty_outputs(self):
         cases = tuple(
@@ -801,11 +850,13 @@ class FunctionalLinearTests(unittest.TestCase):
         with self.assertRaisesRegex(
             NotImplementedError,
             r"^torch_rs\.nn\.functional\.linear only supports bias "
-            r"for rank-1 or rank-2 input$",
+            r"for contiguous rank-3 input$",
         ):
-            functional.linear(rank_three, plain_matrix, torch.ones((2,)))
+            functional.linear(
+                rank_three.transpose(1, 2), plain_matrix, torch.ones((2,))
+            )
 
-        for input in (vector, plain_matrix):
+        for input in (vector, plain_matrix, rank_three):
             for shape in ((), (1, 2), (1, 1, 2)):
                 with self.subTest(input=input.shape, bias_shape=shape):
                     with self.assertRaisesRegex(

@@ -1,0 +1,40 @@
+import datetime, hashlib, json, pathlib, subprocess
+root=pathlib.Path.cwd(); out=root.parent
+sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+assert subprocess.check_output(['git','status','--porcelain'],text=True)==''
+reports={}
+for name in ('mul-diagnostic-312','mul-diagnostic-314','mul-diagnostic-two-device','neg-add-diagnostic-312'):
+    p=out/(name+'.json'); report=json.loads(p.read_text())
+    historical=root/'docs/diagnostics/compile-cuda-mul-scalar/post-commit-e8a4488'/(name+'.json')
+    old=json.loads(historical.read_text())
+    assert report['base_commit']==commit and report['worktree_status']==''
+    assert report['summary']==old['summary']
+    for current, previous in zip(report['cases'],old['cases'],strict=True):
+        for key in ('program','shape','kind','backend','fullgraph','expected_supported','reference_eligible','native_outcome','native_outputs','reference_outputs','expectation_met'):
+            assert current.get(key)==previous.get(key),(name,key)
+        assert current['expectation_met']
+    for p,digest in report['source_sha256'].items(): assert sha(root/p)==digest,p
+    for p in (report['native_extension'],report['environment']['executable'],report['environment']['package'],report['environment']['native_runtime_library']):
+        pathlib.Path(p).absolute().relative_to(out)
+        assert pathlib.Path(p).exists(),p
+    assert sha(pathlib.Path(report['native_extension']))==report['native_extension_sha256']
+    if name.startswith('mul-'):
+        assert report['generated_programs']==old['generated_programs']
+        assert report['grammar_seed']==791406 and report['input_seeds']==[19092675,19092676]
+    reports[name]={'summary':report['summary'],'sha256':sha(out/(name+'.json')),'supersedes':'../post-commit-e8a4488/'+name+'.json'}
+for version in ('312','314'):
+    report=json.loads((out/f'provenance-{version}.json').read_text())
+    assert report['measured_code_commit']==commit and report['worktree_status']==''
+    for p,digest in report['source_sha256'].items(): assert sha(root/p)==digest,p
+    assert sha(pathlib.Path(report['wheel']))==report['wheel_sha256']
+    assert sha(pathlib.Path(report['native_extension']))==report['native_extension_sha256']
+# Verify the preserved source records byte-for-byte against the composite commit.
+paths=subprocess.check_output(['git','ls-files','docs/diagnostics/compile-cuda-mul-scalar'],text=True).splitlines()
+for path in paths:
+    original=subprocess.check_output(['git','show',commit+':'+path])
+    assert (root/path).read_bytes()==original,path
+receipts=[json.loads(p.read_text()) for p in sorted((out/'logs').glob('*.receipt.json'))]
+record={'measured_code_commit':commit,'measured_worktree_status':'','recorded_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'reports':reports,'checks':{'every_case_and_output_matches_source_pr':True,'source_native_and_wheel_hashes_verified':True,'original_scalar_evidence_files_preserved':len(paths),'frozen_compile_corpus':'38/38 eligible cases; bounded corpus only'},'commands':receipts,'scope':'Composite integration validation; scalar eager-reference diagnostics establish bounded correctness, not universal compile support or CUDA performance gains.'}
+(out/'results.json').write_text(json.dumps(record,indent=2)+'\n')
+print('Verified clean composite provenance, all scalar case outcomes, all output hashes, and preserved evidence.')

@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/checkout/../provenance.py", line 31, in <module>
+    pathlib.Path(path).absolute().relative_to(out)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/lib/python3.14/pathlib/__init__.py", line 490, in relative_to
+    raise ValueError(f"{str(self)!r} is not in the subpath of {str(other)!r}")
+ValueError: '/home/bobren/.local/share/uv/python/cpython-3.14-linux-x86_64-gnu/bin/python3.14' is not in the subpath of '/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration'

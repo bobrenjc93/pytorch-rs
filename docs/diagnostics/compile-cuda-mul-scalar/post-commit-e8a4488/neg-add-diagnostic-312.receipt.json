@@ -1,0 +1,32 @@
+{
+  "name": "neg-add-diagnostic-312",
+  "command": [
+    "target/post-commit-e8a4488/venv312/bin/python",
+    "scripts/diagnose_compile_cuda_neg_add.py",
+    "--case-set",
+    "neg_add_v1",
+    "--output",
+    "target/post-commit-e8a4488/neg-add-diagnostic-312.json"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e",
+  "started_utc": "2026-09-10T04:22:42Z",
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": "0",
+    "PYO3_PYTHON": null,
+    "VIRTUAL_ENV": null,
+    "TORCH_RS_VERIFY_VIRTUALENV": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/post-commit-e8a4488/venv312",
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/cargo-home",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/post-commit-e8a4488/build312",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/post-commit-e8a4488/tmp",
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/cache/uv",
+    "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/python",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/post-commit-e8a4488/cache",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/post-commit-e8a4488/cache/cuda",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/post-commit-e8a4488/cache/inductor",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/post-commit-e8a4488/cache/triton",
+    "PYTHONPYCACHEPREFIX": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/post-commit-e8a4488/cache/pycache",
+    "PYTHONHASHSEED": null
+  },
+  "exit_code": 0,
+  "elapsed_seconds": 10.411614377051592
+}

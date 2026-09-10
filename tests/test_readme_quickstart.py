@@ -445,7 +445,7 @@ README_SCOPE_REQUIRED_SNIPPETS = (
     "1-D zeros only",
     "No general CUDA math or accelerator training",
     "Bounded eager CPU capture",
-    "[CUDA neg/add capture](docs/compile-cuda-add.md)",
+    "[CUDA mul/neg/add capture](docs/compile-cuda-add.md)",
     "without fusion",
     "No full Inductor compiler",
     "general graph capture, or eager fallback",
@@ -556,7 +556,7 @@ DOCS_INDEX_EXAMPLES = (
 )
 DOCS_INDEX_GUIDES = (
     (
-        "CUDA neg/add graph capture",
+        "CUDA mul/neg/add graph capture",
         "compile-cuda-add.md",
         "Public bounded eager compilation, device/cache guards, unsupported cases, and reproduction.",
     ),

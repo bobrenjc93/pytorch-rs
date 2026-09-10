@@ -1,0 +1,27 @@
+set -u
+source /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/env.sh
+cd "$INTEGRATION_ROOT/target/integration/checkout"
+while [[ ! -f ../logs/mul-diagnostic-314.receipt.json || ! -f ../logs/python-full312-canonical.receipt.json || ! -f ../logs/python-full314-canonical.receipt.json ]]; do sleep 2; done
+export TORCH_RS_VERIFY_VIRTUALENV="$INTEGRATION_ROOT/target/integration/venv312"
+export CARGO_TARGET_DIR="$INTEGRATION_ROOT/target/integration/build-managed312"
+mkdir -p target/composite-evidence
+"$TORCH_RS_VERIFY_VIRTUALENV/bin/python" - <<'PY'
+import json,pathlib
+from scripts.evaluate_cuda_math import source_provenance
+out=pathlib.Path.cwd().parent
+p=json.loads((out/'provenance-312.json').read_text())
+b=p['build']
+assert b['exit_code']==0
+record={**source_provenance(),'build_command':b['command'],'rustc':p['toolchain']['rustc'],'cargo':p['toolchain']['cargo'],'extension_sha256':p['native_extension_sha256'],'native_extension':p['native_extension'],'build_receipt':b,'provenance':'../../../provenance-312.json'}
+pathlib.Path('target/composite-evidence/math-build-record.json').write_text(json.dumps(record,indent=2)+'\n')
+PY
+python3 ../run.py cuda-math "$TORCH_RS_VERIFY_VIRTUALENV/bin/python" scripts/evaluate_cuda_math.py --seed 8503945240872567646 --seed 8613321571747136749 --seed 4480763905421893394 --build-record target/composite-evidence/math-build-record.json --output target/composite-evidence/cuda-math.json
+export CUDA_CACHE_PATH="$INTEGRATION_ROOT/target/integration/performance-cache/cuda"
+export TORCHINDUCTOR_CACHE_DIR="$INTEGRATION_ROOT/target/integration/performance-cache/inductor"
+export TRITON_CACHE_DIR="$INTEGRATION_ROOT/target/integration/performance-cache/triton"
+export XDG_CACHE_HOME="$INTEGRATION_ROOT/target/integration/performance-cache"
+python3 ../performance-cache.py cache-before.json
+python3 ../run.py cuda-performance-fresh "$TORCH_RS_VERIFY_VIRTUALENV/bin/python" scripts/benchmark_compile_cuda.py --output target/composite-evidence/cuda-performance-fresh.json
+python3 ../performance-cache.py cache-after-fresh.json
+python3 ../run.py cuda-performance-reused "$TORCH_RS_VERIFY_VIRTUALENV/bin/python" scripts/benchmark_compile_cuda.py --output target/composite-evidence/cuda-performance-reused.json
+python3 ../performance-cache.py cache-after-reused.json

@@ -49,7 +49,7 @@ The same assertion-only smoke check is available as
 | --- | --- | --- |
 | CPU tensors | Native `float32` construction, views, selected math and NN functions, limited first-order autograd. | No additional tensor dtypes or full training stack. |
 | NVIDIA CUDA | Native storage, synchronous CPU transfers, same-shape contiguous `float32` addition, negation, and [scalar multiplication](docs/cuda-mul-scalar-validation.md). | Direct factories: 1-D zeros only. No general CUDA math or accelerator training. |
-| `torch.compile` | Bounded eager CPU capture and [CUDA neg/add capture](docs/compile-cuda-add.md), without fusion. | No full Inductor compiler, general graph capture, or eager fallback. |
+| `torch.compile` | Bounded eager CPU capture and [CUDA mul/neg/add capture](docs/compile-cuda-add.md), without fusion. | No full Inductor compiler, general graph capture, or eager fallback. |
 | Compatibility helpers | Selected device/backend probes, state, data, and JIT helpers. | No full module, `DataLoader`, optimizer, model-serialization, or distributed stacks. |
 
 The [exhaustive supported surface](docs/supported-surface.md) owns exact method
