@@ -1,0 +1,9 @@
+import datetime, hashlib, json, os, pathlib, subprocess, sys, time
+name, *command = sys.argv[1:]
+root = pathlib.Path.cwd()
+out = root / 'target/graph-plan' / name
+start = time.time()
+with out.with_suffix('.log').open('x') as log:
+    result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT)
+out.with_suffix('.receipt.json').write_text(json.dumps(dict(command=command, cwd=str(root), started_at=datetime.datetime.fromtimestamp(start,datetime.timezone.utc).isoformat(), elapsed_seconds=time.time()-start, exit_status=result.returncode, log_sha256=hashlib.sha256(out.with_suffix('.log').read_bytes()).hexdigest(), commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(), status=subprocess.check_output(['git','status','--porcelain'],text=True), environment={k:v for k,v in os.environ.items() if k.startswith(('CUDA','TORCH','TRITON','CARGO','UV_','OMP_','MKL_')) or k in ('TMPDIR','XDG_CACHE_HOME')}),indent=2)+'\n')
+sys.exit(result.returncode)

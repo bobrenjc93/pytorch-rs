@@ -1,0 +1,617 @@
+diff --git a/docs/compile-cuda-matmul.md b/docs/compile-cuda-matmul.md
+index 8b6d33c..57ca160 100644
+--- a/docs/compile-cuda-matmul.md
++++ b/docs/compile-cuda-matmul.md
+@@ -23,14 +23,22 @@ assert compiled(a * 2, b).cpu().tolist() == [[6.] * 4] * 2
+ 
+ The bytecode frontend emits an actual `matmul` graph node. Whole-graph metadata
+ validation checks the inner dimension, output size, layout and device before
+-execution, including dynamic cache hits. The native bridge independently calls
+-`Tensor::matmul` and its existing cuBLAS SGEMM implementation. Float32
++execution, including dynamic cache hits. Composed CUDA graphs use one native
++bridge: it plans every node's shape and stride before launching, then calls
++the existing native operations in order and checks intermediate metadata in
++Rust. `Tensor::matmul` still uses its existing cuBLAS SGEMM implementation. Float32
+ accumulation, disabled TF32, independent offsets, overlapping inputs, contiguous
+ singleton layouts, empty/zero-inner products, fresh contiguous output storage,
+ input preservation, device restoration and completion/lifetimes have the same
+ contract as [eager CUDA matmul](cuda-matmul.md). No Python body, PyTorch or
+ libTorch operator runs on the candidate execution path.
+ 
++The bridge retains all input borrows and intermediate allocations, and each
++native operation still completes and restores the current device before the
++next node. Calls return fresh storage; repeated output leaves keep their
++identity. This reduces Python/PyO3 execution overhead without kernel fusion,
++CUDA graph replay, algebraic rewriting or changes to ordinary eager tensors.
++
+ Negation, scalar multiplication, equal-shape addition and trailing-vector
+ addition compose before/after products, including repeated products and
+ list/tuple tensor outputs with aliases. Existing same-module helpers and guarded
+@@ -63,10 +71,10 @@ export CUDA_VISIBLE_DEVICES=0
+ export PYO3_PYTHON="$PWD/.venv/bin/python"
+ .venv/bin/maturin build --release --locked --out target/wheels
+ uv pip install --python .venv/bin/python --force-reinstall target/wheels/*.whl
+-.venv/bin/python -B -m unittest tests.test_compile_cuda_matmul tests.test_compile_cuda_matmul_diagnostic
++.venv/bin/python -B -m unittest tests.test_compile_cuda_graph tests.test_compile_cuda_matmul tests.test_compile_cuda_matmul_diagnostic
+ cargo test --locked --features python-bindings --lib compiled_matmul_bridge
+ cargo test --locked --test cuda_matmul
+-CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -B -m unittest tests.test_compile_cuda_matmul.CompileCudaMatmulDeviceTests
++CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -B -m unittest tests.test_compile_cuda_graph.CudaGraphDeviceTests tests.test_compile_cuda_matmul.CompileCudaMatmulDeviceTests
+ .venv/bin/python -B scripts/diagnose_compile_cuda_matmul.py \
+   --build-record target/capture/build-record.json --output target/compiled-matmul.json
+ ```
+@@ -103,5 +111,11 @@ not nvcc; pointwise kernels use driver-JIT PTX. This unfused eager-backend graph
+ diagnostic is separate from the fixed four-shape CUDA scoring workload and does
+ not establish general Inductor parity.
+ 
+-[Current measured evidence](diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md)
+-contains results, source/native/runtime identities, command receipts and raw samples.
++[Prior implementation evidence](diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md)
++contains results, source/native/runtime identities, command receipts and raw samples
++for the per-node bridge. It is not a baseline measurement of the composed bridge.
++Development comparisons must start from merged main, keep the diagnostic's
++default 12 cells unchanged, and declare held-out seeds before measurement.
++After Burner commits the implementation, repeat the clean-build procedure
++above before publishing new commit-bound evidence. Independent review, all ten
++non-regressing gates and exact-head CI remain required for managed merge.
+diff --git a/python/torch_rs/_compile_trace.py b/python/torch_rs/_compile_trace.py
+index 8cf5291..2480165 100644
+--- a/python/torch_rs/_compile_trace.py
++++ b/python/torch_rs/_compile_trace.py
+@@ -829,6 +829,7 @@ def _materialize_graph_output(
+     dynamic=False,
+     metadata_values=None,
+     memo=None,
++    metadata_only=False,
+ ):
+     if _builtins.isinstance(output_spec, _builtins.str):
+         try:
+@@ -852,7 +853,7 @@ def _materialize_graph_output(
+                 )
+             expected_metadata = metadata_values[output_spec]
+         _require_matching_metadata(
+-            _metadata_from_native_tensor(output),
++            output if metadata_only else _metadata_from_native_tensor(output),
+             expected_metadata,
+             value_name=output_spec,
+             check_requires_grad=False,
+@@ -890,6 +891,7 @@ def _materialize_graph_output(
+                 dynamic=dynamic,
+                 metadata_values=metadata_values,
+                 memo=memo,
++                metadata_only=metadata_only,
+             )
+             for index, (child_output, child_metadata) in enumerate(
+                 zip(output_spec.elements, metadata_spec.elements)
+@@ -906,6 +908,7 @@ def _materialize_graph_output(
+             dynamic=dynamic,
+             metadata_values=metadata_values,
+             memo=memo,
++            metadata_only=metadata_only,
+         )
+         for index, (child_output, child_metadata) in enumerate(
+             zip(output_spec.elements, metadata_spec.elements)
+@@ -1004,11 +1007,25 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled):
+             raise CompileTraceUnsupportedError(
+                 f"torch.compile trace CUDA unary operation {operation.target!r} is unsupported"
+             )
+-        return _unary_output_metadata(
++        expected = _unary_output_metadata(
+             metadata_values[input_name],
+             operation.target,
+             grad_enabled=grad_enabled,
+         )
++        if expected.device.type == "cuda":
++            declared = operation.metadata
++            if not _builtins.isinstance(declared, CompileTraceTensorMetadata):
++                raise CompileTraceUnsupportedError("torch.compile unary output metadata is malformed")
++            if (
++                declared.device != expected.device
++                or declared.storage_offset != 0
++                or len(declared.shape) != len(expected.shape)
++            ):
++                raise CompileTraceUnsupportedError(
++                    "torch.compile unary output requires matching CUDA device, rank and zero storage offset"
++                )
++            _validate_cuda_metadata(declared)
++        return expected
+ 
+     if operation.target not in _SUPPORTED_BINARY_TARGETS:
+         _unsupported_operation(f"Tensor.{operation.target}")
+@@ -1127,6 +1144,33 @@ def execute_compile_trace_graph(graph, *inputs):
+             )
+         metadata_values[operation.name] = expected_metadata
+ 
++    if len(graph.operations) > 1 and all(
++        metadata.device.type == "cuda" for metadata in metadata_values.values()
++    ):
++        # Validate the output tree too before the native bridge can launch.
++        # Reuse the materializer's structural/metadata checks without tensors.
++        _materialize_graph_output(
++            graph.output, graph.output_metadata, metadata_values,
++            value_name="output", dynamic=graph.dynamic,
++            metadata_values=metadata_values, metadata_only=True,
++        )
++        indices = {name: index for index, name in enumerate(metadata_values)}
++        nodes = [
++            (operation.target, tuple(indices[name] for name in operation.inputs),
++             operation.scalar, metadata_values[operation.name].shape,
++             metadata_values[operation.name].stride)
++            for operation in graph.operations
++        ]
++        # All frontend guards above remain live on every call. Native planning
++        # independently checks every node, then validates intermediate results
++        # without round trips through Python metadata objects between kernels.
++        outputs = _native._compile_trace_cuda_graph(tuple(values.values()), nodes)
++        values.update((operation.name, output) for operation, output in zip(graph.operations, outputs))
++        return _materialize_graph_output(
++            graph.output, graph.output_metadata, values, value_name="output",
++            dynamic=graph.dynamic, metadata_values=metadata_values,
++        )
++
+     for operation in graph.operations:
+         output = _execute_operation(operation, values)
+         output_metadata = _metadata_from_native_tensor(output)
+diff --git a/src/python.rs b/src/python.rs
+index d41418e..93f6abd 100644
+--- a/src/python.rs
++++ b/src/python.rs
+@@ -1,3 +1,5 @@
++#[path = "python_compile_cuda_graph.rs"]
++mod compile_cuda_graph;
+ #[path = "python_unflatten.rs"]
+ mod unflatten;
+ pub(crate) use unflatten::unflatten_variable_function;
+@@ -25939,6 +25941,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
+     module.add_function(wrap_pyfunction!(compile_trace_unary, module)?)?;
+     module.add_function(wrap_pyfunction!(compile_trace_binary, module)?)?;
+     module.add_function(wrap_pyfunction!(compile_trace_scalar, module)?)?;
++    module.add_function(wrap_pyfunction!(compile_cuda_graph::execute, module)?)?;
+     module.add_function(wrap_pyfunction!(compile_trace_mul_scalar_value, module)?)?;
+     let exports = module.getattr("__all__")?;
+     for name in [
+@@ -25949,6 +25952,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
+         "_compile_trace_unary",
+         "_compile_trace_binary",
+         "_compile_trace_scalar",
++        "_compile_trace_cuda_graph",
+         "_compile_trace_mul_scalar_value",
+     ] {
+         exports.call_method1("remove", (name,))?;
+diff --git a/src/python_compile_cuda_graph.rs b/src/python_compile_cuda_graph.rs
+new file mode 100644
+index 0000000..5a8f0b6
+--- /dev/null
++++ b/src/python_compile_cuda_graph.rs
+@@ -0,0 +1,102 @@
++//! One bridge for composed CUDA captures; eager Tensor methods stay unchanged.
++use super::{CoreTensor, DType, PyTensor, compile_trace_mul_scalar_value, tensor_error};
++use crate::tensor::cuda_graph::{Layout, Operation};
++use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError, PyTypeError, PyValueError};
++use pyo3::prelude::*;
++use pyo3::types::PyTuple;
++
++// Shape/stride declarations have already passed the frontend's whole-graph
++// checks. Recompute them natively too, before any storage allocation or launch.
++type Node<'py> = (
++    String,
++    Vec<usize>,
++    Bound<'py, PyAny>,
++    Vec<usize>,
++    Vec<usize>,
++);
++
++#[pyfunction(name = "_compile_trace_cuda_graph", signature = (inputs, nodes, /))]
++pub(super) fn execute(
++    inputs: &Bound<'_, PyTuple>,
++    nodes: Vec<Node<'_>>,
++) -> PyResult<Vec<PyTensor>> {
++    let mut owners = Vec::with_capacity(inputs.len());
++    for input in inputs.iter() {
++        if !input.is_exact_instance_of::<PyTensor>() {
++            return Err(PyTypeError::new_err(
++                "CUDA graph requires exact native Tensor inputs",
++            ));
++        }
++        owners.push(input.cast_into::<PyTensor>()?);
++    }
++    let guards = owners
++        .iter()
++        .map(|input| input.try_borrow().map_err(PyErr::from))
++        .collect::<PyResult<Vec<_>>>()?;
++    let tensors: Vec<&CoreTensor> = guards.iter().map(|input| &input.inner).collect();
++    let Some(first) = tensors.first() else {
++        return Err(PyValueError::new_err("CUDA graph requires inputs"));
++    };
++    for input in &tensors {
++        if !input.is_cuda()
++            || input.device() != first.device()
++            || input.dtype() != DType::Float32
++            || input.requires_grad()
++            || !input.is_contiguous()
++        {
++            return Err(PyNotImplementedError::new_err(
++                "CUDA graph requires contiguous same-device CUDA float32 inputs without gradients",
++            ));
++        }
++    }
++    let mut layouts: Vec<_> = tensors
++        .iter()
++        .map(|tensor| Layout::from_tensor(tensor))
++        .collect();
++    let mut operations = Vec::with_capacity(nodes.len());
++    for (target, indices, scalar, shape, strides) in nodes {
++        let operation = match (target.as_str(), indices.as_slice()) {
++            ("mul_scalar", &[input]) => {
++                Operation::MulScalar(input, compile_trace_mul_scalar_value(&scalar)?)
++            }
++            ("neg", &[input]) if scalar.is_none() => Operation::Neg(input),
++            ("add", &[left, right]) if scalar.is_none() => Operation::Add(left, right),
++            ("matmul", &[left, right]) if scalar.is_none() => Operation::Matmul(left, right),
++            _ => {
++                return Err(PyNotImplementedError::new_err(
++                    "unsupported CUDA graph node",
++                ));
++            }
++        };
++        let layout = operation
++            .layout(&layouts)
++            .map_err(|error| tensor_error(&error))?;
++        if layout.shape != shape || layout.strides != strides {
++            return Err(PyValueError::new_err("CUDA graph output metadata mismatch"));
++        }
++        layouts.push(layout);
++        operations.push(operation);
++    }
++    // Retain all input borrows and every intermediate, including unused nodes.
++    // Existing core operations synchronize even on launch errors and restore
++    // the current device. No tensor clone/copy, Python call, or PyO3 crossing is
++    // performed between nodes. Every call still allocates fresh result storage.
++    let mut outputs = Vec::with_capacity(operations.len());
++    for (index, operation) in operations.into_iter().enumerate() {
++        let output = operation
++            .execute(&tensors, &outputs)
++            .map_err(|error| tensor_error(&error))?;
++        if !layouts[tensors.len() + index].matches(&output)
++            || output.device() != first.device()
++            || output.dtype() != DType::Float32
++            || output.requires_grad()
++            || output.storage_offset() != 0
++        {
++            return Err(PyRuntimeError::new_err(
++                "CUDA graph native result metadata mismatch",
++            ));
++        }
++        outputs.push(output);
++    }
++    Ok(outputs.into_iter().map(PyTensor::new).collect())
++}
+diff --git a/src/tensor.rs b/src/tensor.rs
+index 3e44535..e4b88a9 100644
+--- a/src/tensor.rs
++++ b/src/tensor.rs
+@@ -1,4 +1,8 @@
+ use std::collections::{HashMap, HashSet};
++
++#[cfg(feature = "python-bindings")]
++#[path = "tensor_cuda_graph.rs"]
++pub(crate) mod cuda_graph;
+ use std::fmt::Formatter;
+ use std::iter::FusedIterator;
+ use std::sync::{
+diff --git a/src/tensor_cuda_graph.rs b/src/tensor_cuda_graph.rs
+new file mode 100644
+index 0000000..f388a83
+--- /dev/null
++++ b/src/tensor_cuda_graph.rs
+@@ -0,0 +1,131 @@
++//! Metadata planning for the existing CUDA capture operations. No allocation
++//! of tensor storage or kernel launch is allowed while constructing this plan.
++use super::{ElementwiseLayout, Tensor, TensorError, elementwise_output_strides, validated_layout};
++
++#[derive(Clone, Copy)]
++pub(crate) enum Operation {
++    Neg(usize),
++    MulScalar(usize, f32),
++    Add(usize, usize),
++    Matmul(usize, usize),
++}
++
++pub(crate) struct Layout {
++    pub(crate) shape: Vec<usize>,
++    pub(crate) strides: Vec<usize>,
++}
++
++impl Layout {
++    pub(crate) fn from_tensor(tensor: &Tensor) -> Self {
++        Self {
++            shape: tensor.shape().to_vec(),
++            strides: tensor.stride().to_vec(),
++        }
++    }
++
++    fn elementwise(&self) -> ElementwiseLayout<'_> {
++        ElementwiseLayout {
++            shape: &self.shape,
++            strides: &self.strides,
++        }
++    }
++
++    pub(crate) fn matches(&self, tensor: &Tensor) -> bool {
++        self.shape == tensor.shape() && self.strides == tensor.stride()
++    }
++}
++
++impl Operation {
++    pub(crate) fn layout(self, values: &[Layout]) -> Result<Layout, TensorError> {
++        let get = |index| {
++            values
++                .get(index)
++                .ok_or(TensorError::IndexCalculationOverflow)
++        };
++        let shape = match self {
++            Self::Neg(input) | Self::MulScalar(input, _) => get(input)?.shape.clone(),
++            Self::Add(left, right) => {
++                let (left, right) = (get(left)?, get(right)?);
++                if left.shape == right.shape {
++                    left.shape.clone()
++                } else {
++                    match (left.shape.as_slice(), right.shape.as_slice()) {
++                        ([_, columns], [n]) if columns == n => left.shape.clone(),
++                        ([n], [_, columns]) if columns == n => right.shape.clone(),
++                        _ => {
++                            return Err(TensorError::UnsupportedCudaAddition {
++                                reason: "inputs must have the same shape or shapes (M, N) and (N,)",
++                            });
++                        }
++                    }
++                }
++            }
++            Self::Matmul(left, right) => {
++                let (left, right) = (get(left)?, get(right)?);
++                let ([rows, inner], [other_inner, columns]) =
++                    (left.shape.as_slice(), right.shape.as_slice())
++                else {
++                    return Err(TensorError::UnsupportedCudaMatmul {
++                        reason: "operands must be rank-2 matrices",
++                    });
++                };
++                if inner != other_inner {
++                    return Err(TensorError::MatmulInnerDimensionMismatch {
++                        left: left.shape.clone(),
++                        right: right.shape.clone(),
++                    });
++                }
++                if [*rows, *inner, *columns]
++                    .iter()
++                    .any(|&n| i64::try_from(n).is_err())
++                {
++                    return Err(TensorError::IndexCalculationOverflow);
++                }
++                vec![*rows, *columns]
++            }
++        };
++        let (elements, canonical) = validated_layout(&shape)?;
++        elements
++            .checked_mul(4)
++            .filter(|&bytes| isize::try_from(bytes).is_ok())
++            .ok_or(TensorError::AllocationFailed { elements })?;
++        let strides = match self {
++            Self::MulScalar(input, _) => {
++                elementwise_output_strides(&shape, &[get(input)?.elementwise()], elements)?
++            }
++            Self::Add(left, right) if get(left)?.shape != get(right)?.shape => {
++                // Eager addition normalizes the matrix operand to the left.
++                let (left, right) = (get(left)?, get(right)?);
++                let operands = if left.shape.len() == 2 {
++                    [left.elementwise(), right.elementwise()]
++                } else {
++                    [right.elementwise(), left.elementwise()]
++                };
++                elementwise_output_strides(&shape, &operands, elements)?
++            }
++            _ => canonical,
++        };
++        Ok(Layout { shape, strides })
++    }
++
++    pub(crate) fn execute(
++        self,
++        inputs: &[&Tensor],
++        outputs: &[Tensor],
++    ) -> Result<Tensor, TensorError> {
++        // Indices were checked for the entire plan before the first launch.
++        let get = |index: usize| {
++            if index < inputs.len() {
++                inputs[index]
++            } else {
++                &outputs[index - inputs.len()]
++            }
++        };
++        match self {
++            Self::Neg(input) => get(input).negate(),
++            Self::MulScalar(input, scalar) => get(input).mul_scalar(scalar),
++            Self::Add(left, right) => get(left).add(get(right)),
++            Self::Matmul(left, right) => get(left).matmul(get(right)),
++        }
++    }
++}
+diff --git a/tests/test_compile_cuda_graph.py b/tests/test_compile_cuda_graph.py
+new file mode 100644
+index 0000000..461f92a
+--- /dev/null
++++ b/tests/test_compile_cuda_graph.py
+@@ -0,0 +1,173 @@
++"""Composed native graph execution, independent of scoring corpora."""
++from concurrent.futures import ThreadPoolExecutor
++import ctypes
++from dataclasses import replace
++import gc
++import unittest
++from unittest.mock import patch
++
++import numpy as np
++import torch_rs as native
++from torch_rs import _compile_trace
++from tests.test_compile_cuda_boundary import compile_with_cache
++from tests.test_compile_cuda_mul_scalar import call_without_python, make_program
++from tests.test_cuda_add import Comparison, available, runtime, torch, upload
++
++
++def composed(x, y):
++    z = -(x * 0.5) @ (y * -2)
++    return [z, (z, x), z + z]
++
++
++class GraphBridgeScopeTests(unittest.TestCase):
++    def test_cpu_inputs_rejected(self):
++        with self.assertRaisesRegex(NotImplementedError, 'CUDA float32'):
++            _compile_trace._native._compile_trace_cuda_graph((native.ones((2, 2)),), [])
++
++
++@unittest.skipUnless(available('0'), 'requires real CUDA with CUDA_VISIBLE_DEVICES=0')
++class CudaGraphTests(Comparison, unittest.TestCase):
++    def test_single_bridge_new_data_aliases_and_completion(self):
++        compiled, _ = compile_with_cache(composed)
++        lib = runtime()
++        retained = []
++        bridge = _compile_trace._native._compile_trace_cuda_graph
++        with patch.object(_compile_trace._native, '_compile_trace_cuda_graph', wraps=bridge) as calls, \
++             patch.object(_compile_trace, '_execute_operation', side_effect=AssertionError('per-node Python execution')):
++            for v in (1., 3., -2.):
++                base = native.full((3 + 7 * 7,), v).to('cuda:0')
++                a = base[3:].reshape(7, 7)
++                # Overlapping input views with different offsets.
++                b = base[1:50].reshape(7, 7)
++                out = call_without_python(compiled, {composed.__code__}, a, b)
++                self.assertEqual(lib.cudaStreamQuery(ctypes.c_void_p(1)), 0)
++                self.assertIs(out[0], out[1][0]); self.assertIs(out[1][1], a)
++                self.assertEqual(out[0].cpu().tolist(), [[7 * v * v] * 7] * 7)
++                self.assertEqual(out[2].cpu().tolist(), [[14 * v * v] * 7] * 7)
++                self.assertEqual(base.cpu().tolist(), [v] * 52)
++                self.assertNotIn(out[0].data_ptr(), [a.data_ptr(), b.data_ptr(), *(x.data_ptr() for x in retained)])
++                retained.append(out[0])
++                del base, a, b, out
++                gc.collect()
++            self.assertEqual(calls.call_count, 3)
++        for out, v in zip(retained, (1., 3., -2.)):
++            self.assertEqual(out.cpu().tolist(), [[7 * v * v] * 7] * 7)
++
++    def test_late_validation_before_bridge_and_failure_recovery(self):
++        fn = make_program('def program(x,y):\n    return (-x) @ y\n')
++        a, b = native.ones((3, 7)).to('cuda:0'), native.ones((7, 5)).to('cuda:0')
++        for dynamic in (False, True):
++            compiled, cache = compile_with_cache(fn, dynamic=dynamic)
++            compiled(a, b)
++            graph = next(iter(cache.graphs.values()))
++            last = graph.operations[-1]
++            changes = ({'inputs': ('missing',)}, {'target': 'relu'}, {'scalar': 2},
++                       {'metadata': replace(last.metadata, storage_offset=3)},
++                       {'metadata': replace(last.metadata, device='cuda:1')},
++                       {'metadata': replace(last.metadata, requires_grad=True)})
++            bad_graphs = [replace(graph, operations=(*graph.operations[:-1], replace(last, **c))) for c in changes]
++            bad_graphs += [replace(graph, output='missing'), replace(graph, output_metadata=None)]
++            with patch.object(_compile_trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('early launch')):
++                for bad in bad_graphs:
++                    with self.assertRaises((NotImplementedError, ValueError)):
++                        bad.forward(a, b)
++                with self.assertRaisesRegex(RuntimeError, 'dimension'):
++                    compiled(a, native.ones((8, 5)).to('cuda:0'))
++            self.assertEqual(compiled(a, b).cpu().tolist(), [[-7.] * 5] * 3)
++            fresh, fresh_cache = compile_with_cache(fn, dynamic=dynamic)
++            with patch.object(_compile_trace._native, '_compile_trace_cuda_graph', side_effect=RuntimeError('launch failed')):
++                with self.assertRaisesRegex(RuntimeError, 'launch failed'):
++                    fresh(a, b)
++            self.assertEqual(fresh_cache.graphs, {})
++            self.assertEqual(fresh(a, b).cpu().tolist(), [[-7.] * 5] * 3)
++
++    def test_native_bridge_preflights_all_nodes(self):
++        a, b = native.ones((3, 7)).to('cuda:0'), native.ones((7, 5)).to('cuda:0')
++        bridge = _compile_trace._native._compile_trace_cuda_graph
++        first = ('neg', (0,), None, (3, 7), (7, 1))
++        bad_nodes = [
++            ('matmul', (2, 0), None, (3, 7), (7, 1)),
++            ('matmul', (2, 1), None, (3, 5), (1, 3)),
++            ('matmul', (2, 1), None, (3, 6), (6, 1)),
++            ('add', (2, 99), None, (3, 7), (7, 1)),
++            ('neg', (2,), 1., (3, 7), (7, 1)),
++            ('mul_scalar', (2,), 2**64, (3, 7), (7, 1)),
++            ('relu', (2,), None, (3, 7), (7, 1)),
++        ]
++        for last in bad_nodes:
++            with self.subTest(last=last), self.assertRaises((NotImplementedError, RuntimeError, ValueError, OverflowError)):
++                bridge((a, b), [first, last])
++        out = bridge((a, b), [first, ('matmul', (2, 1), None, (3, 5), (5, 1))])
++        self.assertEqual(out[-1].cpu().tolist(), [[-7.] * 5] * 3)
++
++    def test_late_neg_declared_metadata_rejected_before_execution(self):
++        fn = make_program('def program(x,y):\n    return -(x @ y)\n')
++        a, b = native.ones((3, 7)).to('cuda:0'), native.ones((7, 5)).to('cuda:0')
++        for dynamic in (False, True):
++            compiled, cache = compile_with_cache(fn, dynamic=dynamic)
++            compiled(a, b)
++            graph = next(iter(cache.graphs.values()))
++            node = graph.operations[-1]
++            declarations = [None] + [replace(node.metadata, **change) for change in (
++                {'device': 'cuda:1'}, {'storage_offset': 3}, {'requires_grad': True},
++                {'dtype': _compile_trace.CompileTraceDType('torch.float64')},
++                {'stride': (1, 3)}, {'shape': (15,), 'stride': (1,)},
++            )]
++            with patch.object(_compile_trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('early launch')):
++                for metadata in declarations:
++                    bad = replace(graph, operations=(*graph.operations[:-1], replace(node, metadata=metadata)))
++                    with self.assertRaises((NotImplementedError, ValueError)):
++                        bad.forward(a, b)
++            self.assertEqual(compiled(a, b).cpu().tolist(), [[-7.] * 5] * 3)
++
++    def test_composition_preserves_wide_overflow_and_signed_zero(self):
++        # Compare bitwise with the same native operations executed eagerly:
++        # moving/scaling a matmul could otherwise conceal changed FP rounding.
++        compiled, _ = compile_with_cache(composed, limit=32)
++        for k in (4, 1031, 65539):
++            for pattern in ([2.**127, 2.**127, -2.**127, -2.**127],
++                            [0., -0., np.inf, np.nan], [0.1, -0.2, 0.1, 0.1]):
++                values = np.resize(np.array(pattern, dtype=np.float32), (3, k))
++                a = upload(native, values.ravel(), values.shape)
++                b = native.full((k, 5), 0.1).to('cuda:0')
++                expected = composed(a, b)
++                actual = call_without_python(compiled, {composed.__code__}, a, b)
++                for x, y in zip((actual[0], actual[2]), (expected[0], expected[2])):
++                    x, y = [np.asarray(t.cpu().tolist(), dtype=np.float32) for t in (x, y)]
++                    np.testing.assert_array_equal(x.view(np.uint32), y.view(np.uint32))
++
++    def test_threaded_intermediate_lifetimes(self):
++        def run(value):
++            a = native.full((17, 31), value).to('cuda:0')
++            b = native.ones((31, 9)).to('cuda:0')
++            compiled, _ = compile_with_cache(composed)
++            return compiled(a, b)[0]
++        with ThreadPoolExecutor(max_workers=3) as pool:
++            results = list(pool.map(run, range(1, 10)))
++        gc.collect()
++        for value, result in enumerate(results, 1):
++            self.assertEqual(result.cpu().tolist(), [[31. * value] * 9] * 17)
++
++
++@unittest.skipUnless(available('0,1'), 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1')
++class CudaGraphDeviceTests(unittest.TestCase):
++    def test_composed_restoration_and_mixed_devices(self):
++        compiled, _ = compile_with_cache(composed)
++        previous = torch.cuda.current_device()
++        try:
++            for ordinal in (0, 1):
++                torch.cuda.set_device(1 - ordinal)
++                for m, k, n in ((3, 7, 5), (0, 7, 5), (3, 0, 5), (3, 7, 0)):
++                    a = native.ones((m, k)).to(f'cuda:{ordinal}')
++                    b = native.ones((k, n)).to(f'cuda:{ordinal}')
++                    result = compiled(a, b)
++                    self.assertEqual(result[0].cpu().tolist(), [[float(k)] * n] * m)
++                    self.assertEqual(torch.cuda.current_device(), 1 - ordinal)
++                    wrong = b.cpu().to(f'cuda:{1 - ordinal}')
++                    with self.assertRaises(NotImplementedError):
++                        compiled(a, wrong)
++                    with self.assertRaises(NotImplementedError):
++                        _compile_trace._native._compile_trace_cuda_graph((a, wrong), [])
++                    self.assertEqual(torch.cuda.current_device(), 1 - ordinal)
++        finally:
++            torch.cuda.set_device(previous)

@@ -7,6 +7,7 @@ import unittest
 
 import numpy as np
 import torch_rs as torch
+from torch_rs.torch_rs import _nn_functional_dropout_tensor_autograd_suffix
 
 
 DIV_DOC = "\ndiv(value, *, rounding_mode=None) -> Tensor\n\nSee :func:`torch.div`\n"
@@ -101,7 +102,7 @@ class TensorDivisionMethodTests(unittest.TestCase):
                 self.assertNotEqual(result.data_ptr(), special.data_ptr())
                 self.assertNotEqual(result.data_ptr(), divisors.data_ptr())
 
-    def test_active_autograd_is_rejected_but_no_grad_uses_native_division(self):
+    def test_scalar_autograd_and_unsupported_tensor_denominators(self):
         for name in ("div", "divide"):
             left = torch.tensor([[2.0, 3.0]], requires_grad=True)
             right = torch.tensor([[5.0], [7.0]], requires_grad=True)
@@ -115,11 +116,11 @@ class TensorDivisionMethodTests(unittest.TestCase):
                 self.assertIsNone(right.grad)
 
             with self.subTest(name=name, case="scalar operand"):
-                with self.assertRaisesRegex(
-                    RuntimeError,
-                    rf"^{name}\(\): autograd recording is not supported$",
-                ):
-                    getattr(left, name)(2.0)
+                output = getattr(left, name)(2.0)
+                self.assertTrue(output.requires_grad)
+                self.assertEqual(_nn_functional_dropout_tensor_autograd_suffix(output), ", grad_fn=<DivBackward0>")
+                output.sum().backward()
+                self.assertEqual(left.grad.tolist(), [[0.5, 0.5]])
 
             with self.subTest(name=name, case="no_grad"):
                 with torch.no_grad():

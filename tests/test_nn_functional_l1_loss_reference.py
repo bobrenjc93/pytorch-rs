@@ -2008,6 +2008,15 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
         return leaves, operands
 
     def test_unreduced_weighted_backward_layouts_match_pytorch_2_13(self):
+        self.check_backward_layouts({"reduction": "none"})
+
+    def test_mean_backward_layouts_match_pytorch_2_13(self):
+        for reduction in ({}, {"reduction": "mean"}):
+            for scale in (1.0, -2.5):
+                with self.subTest(reduction=reduction, scale=scale):
+                    self.check_backward_layouts(reduction, scale=scale)
+
+    def check_backward_layouts(self, reduction, *, scale=1.0):
         for case in (
             "dense", "scalar", "empty", "transposed", "offset",
             "offset transposed", "mixed layout", "channels last", "overflow",
@@ -2019,22 +2028,31 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                     for module in (torch, reference_torch):
                         leaves, operands = self.backward_operands(module, case, flags)
                         before = [np.asarray(value.detach()).copy() for value in leaves]
-                        output = module.nn.functional.l1_loss(*operands, reduction="none")
+                        output = module.nn.functional.l1_loss(*operands, **reduction)
                         self.assertTrue(output.requires_grad)
                         self.assertFalse(output.is_leaf)
                         if module is reference_torch:
-                            self.assertEqual(output.grad_fn.name(), "AbsBackward0")
+                            self.assertEqual(
+                                output.grad_fn.name(),
+                                "AbsBackward0" if reduction.get("reduction") == "none"
+                                else "MeanBackward0",
+                            )
                         for operand in operands:
                             if output.numel():
                                 self.assertNotEqual(output.data_ptr(), operand.data_ptr())
-                        weights = np.resize(
-                            np.array([0.5, -2.0, 3.0, -4.0, 1.5, -0.25], dtype=np.float32),
-                            output.numel(),
-                        ).reshape(tuple(output.shape))
-                        weights = module.tensor(
-                            weights.reshape(-1).tolist(), dtype=module.float32,
-                        ).reshape(tuple(output.shape))
-                        (output * weights).sum().backward()
+                        if reduction.get("reduction") == "none":
+                            weights = np.resize(
+                                np.array([0.5, -2.0, 3.0, -4.0, 1.5, -0.25], dtype=np.float32),
+                                output.numel(),
+                            ).reshape(tuple(output.shape))
+                            weights = module.tensor(
+                                weights.reshape(-1).tolist(), dtype=module.float32,
+                            ).reshape(tuple(output.shape))
+                            (output * weights).sum().backward()
+                        elif scale == 1.0:
+                            output.backward()
+                        else:
+                            (output * scale).backward()
                         for leaf, original in zip(leaves, before):
                             np.testing.assert_array_equal(np.asarray(leaf.detach()), original)
                         results.append((output, leaves))
@@ -2060,6 +2078,14 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                             self.assertIsNone(expected.grad)
 
     def test_unreduced_shared_operands_and_repeated_use_match_pytorch_2_13(self):
+        self.check_shared_operands_and_repeated_use({"reduction": "none"})
+
+    def test_mean_shared_operands_and_repeated_use_match_pytorch_2_13(self):
+        for reduction in ({}, {"reduction": "mean"}):
+            with self.subTest(reduction=reduction):
+                self.check_shared_operands_and_repeated_use(reduction)
+
+    def check_shared_operands_and_repeated_use(self, reduction):
         for case in ("same tensor", "shared views", "shared nonleaf", "repeated loss"):
             with self.subTest(case=case):
                 results = []
@@ -2080,9 +2106,11 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                         input, target = leaf * 2.0, leaf * -1.
                     else:
                         input, target = leaf, module.zeros_like(leaf)
-                    output = module.nn.functional.l1_loss(input, target, reduction="none")
+                    if reduction.get("reduction") != "none":
+                        weights = -2.5
+                    output = module.nn.functional.l1_loss(input, target, **reduction)
                     if case == "repeated loss":
-                        second = module.nn.functional.l1_loss(input, target, reduction="none")
+                        second = module.nn.functional.l1_loss(input, target, **reduction)
                         loss = (output * weights + output * 0.5 + second * -2.0).sum()
                     else:
                         loss = (output * weights).sum()
@@ -2090,7 +2118,7 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                     first_grad = leaf.grad.clone()
                     # A new graph accumulates into the existing leaf gradient.
                     fresh = module.nn.functional.l1_loss(
-                        leaf, module.zeros_like(leaf), reduction="none",
+                        leaf, module.zeros_like(leaf), **reduction,
                     )
                     (fresh * -0.5).sum().backward()
                     results.append((output, first_grad, leaf.grad))
@@ -2098,13 +2126,24 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                     self.assert_matches(actual, expected, case=case)
 
     def test_unreduced_backward_releases_graph_matches_pytorch_2_13(self):
+        self.check_backward_releases_graph({"reduction": "none"})
+
+    def test_mean_backward_releases_graph_matches_pytorch_2_13(self):
+        for reduction in ({}, {"reduction": "mean"}):
+            with self.subTest(reduction=reduction):
+                self.check_backward_releases_graph(reduction)
+
+    def check_backward_releases_graph(self, reduction):
         results = []
         for module in (torch, reference_torch):
             input = module.tensor([-3.0, 0.0, 2.0], dtype=module.float32, requires_grad=True)
             target = module.tensor([1.0, -0.0, 4.0], dtype=module.float32, requires_grad=True)
             weights = module.tensor([0.5, -2.0, 3.0], dtype=module.float32)
-            output = module.nn.functional.l1_loss(input, target, reduction="none")
-            loss = (output * weights).sum()
+            output = module.nn.functional.l1_loss(input, target, **reduction)
+            loss = (
+                (output * weights).sum() if reduction.get("reduction") == "none"
+                else output * -2.5
+            )
             loss.backward()
             input_grad, target_grad = input.grad.clone(), target.grad.clone()
             # Both the scalar root and the saved abs node have been released.
@@ -2147,7 +2186,7 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                     target_requires_grad=target_requires_grad,
                     reduction=reduction,
                 ):
-                    if reduction == "none":
+                    if reduction in ("none", "mean"):
                         self.assertTrue(
                             functional.l1_loss(
                                 actual_input, actual_target, reduction=reduction,

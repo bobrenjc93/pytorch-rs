@@ -10,6 +10,7 @@ pub(crate) enum AutogradNode {
     Clone,
     Concat,
     Cos,
+    Divide,
     Exp,
     Floor,
     #[cfg(any(feature = "python-bindings", test))]
@@ -61,6 +62,7 @@ impl AutogradNode {
             Self::Clone => "CloneBackward0",
             Self::Concat => "CatBackward0",
             Self::Cos => "CosBackward0",
+            Self::Divide => "DivBackward0",
             Self::Exp => "ExpBackward0",
             Self::Floor => "FloorBackward0",
             #[cfg(any(feature = "python-bindings", test))]

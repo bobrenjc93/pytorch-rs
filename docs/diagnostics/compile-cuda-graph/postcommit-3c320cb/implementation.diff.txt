@@ -1,0 +1,1532 @@
+diff --git a/python/torch_rs/_compile_trace.py b/python/torch_rs/_compile_trace.py
+index 8cf5291..2480165 100644
+--- a/python/torch_rs/_compile_trace.py
++++ b/python/torch_rs/_compile_trace.py
+@@ -829,6 +829,7 @@ def _materialize_graph_output(
+     dynamic=False,
+     metadata_values=None,
+     memo=None,
++    metadata_only=False,
+ ):
+     if _builtins.isinstance(output_spec, _builtins.str):
+         try:
+@@ -852,7 +853,7 @@ def _materialize_graph_output(
+                 )
+             expected_metadata = metadata_values[output_spec]
+         _require_matching_metadata(
+-            _metadata_from_native_tensor(output),
++            output if metadata_only else _metadata_from_native_tensor(output),
+             expected_metadata,
+             value_name=output_spec,
+             check_requires_grad=False,
+@@ -890,6 +891,7 @@ def _materialize_graph_output(
+                 dynamic=dynamic,
+                 metadata_values=metadata_values,
+                 memo=memo,
++                metadata_only=metadata_only,
+             )
+             for index, (child_output, child_metadata) in enumerate(
+                 zip(output_spec.elements, metadata_spec.elements)
+@@ -906,6 +908,7 @@ def _materialize_graph_output(
+             dynamic=dynamic,
+             metadata_values=metadata_values,
+             memo=memo,
++            metadata_only=metadata_only,
+         )
+         for index, (child_output, child_metadata) in enumerate(
+             zip(output_spec.elements, metadata_spec.elements)
+@@ -1004,11 +1007,25 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled):
+             raise CompileTraceUnsupportedError(
+                 f"torch.compile trace CUDA unary operation {operation.target!r} is unsupported"
+             )
+-        return _unary_output_metadata(
++        expected = _unary_output_metadata(
+             metadata_values[input_name],
+             operation.target,
+             grad_enabled=grad_enabled,
+         )
++        if expected.device.type == "cuda":
++            declared = operation.metadata
++            if not _builtins.isinstance(declared, CompileTraceTensorMetadata):
++                raise CompileTraceUnsupportedError("torch.compile unary output metadata is malformed")
++            if (
++                declared.device != expected.device
++                or declared.storage_offset != 0
++                or len(declared.shape) != len(expected.shape)
++            ):
++                raise CompileTraceUnsupportedError(
++                    "torch.compile unary output requires matching CUDA device, rank and zero storage offset"
++                )
++            _validate_cuda_metadata(declared)
++        return expected
+ 
+     if operation.target not in _SUPPORTED_BINARY_TARGETS:
+         _unsupported_operation(f"Tensor.{operation.target}")
+@@ -1127,6 +1144,33 @@ def execute_compile_trace_graph(graph, *inputs):
+             )
+         metadata_values[operation.name] = expected_metadata
+ 
++    if len(graph.operations) > 1 and all(
++        metadata.device.type == "cuda" for metadata in metadata_values.values()
++    ):
++        # Validate the output tree too before the native bridge can launch.
++        # Reuse the materializer's structural/metadata checks without tensors.
++        _materialize_graph_output(
++            graph.output, graph.output_metadata, metadata_values,
++            value_name="output", dynamic=graph.dynamic,
++            metadata_values=metadata_values, metadata_only=True,
++        )
++        indices = {name: index for index, name in enumerate(metadata_values)}
++        nodes = [
++            (operation.target, tuple(indices[name] for name in operation.inputs),
++             operation.scalar, metadata_values[operation.name].shape,
++             metadata_values[operation.name].stride)
++            for operation in graph.operations
++        ]
++        # All frontend guards above remain live on every call. Native planning
++        # independently checks every node, then validates intermediate results
++        # without round trips through Python metadata objects between kernels.
++        outputs = _native._compile_trace_cuda_graph(tuple(values.values()), nodes)
++        values.update((operation.name, output) for operation, output in zip(graph.operations, outputs))
++        return _materialize_graph_output(
++            graph.output, graph.output_metadata, values, value_name="output",
++            dynamic=graph.dynamic, metadata_values=metadata_values,
++        )
++
+     for operation in graph.operations:
+         output = _execute_operation(operation, values)
+         output_metadata = _metadata_from_native_tensor(output)
+diff --git a/python/torch_rs/nn/functional.py b/python/torch_rs/nn/functional.py
+index 196df2f..00d0c99 100644
+--- a/python/torch_rs/nn/functional.py
++++ b/python/torch_rs/nn/functional.py
+@@ -43,25 +43,29 @@ absolute-difference result with the supported full-tensor sum. The operation
+ returns a fresh, independent tensor with PyTorch-compatible values, shape,
+ strides, scalar metadata, and size-mismatch warning.
+ 
+-For active autograd recording, only ``reduction='none'`` with matching shapes
+-and finite values in both operands is supported, through native subtraction
+-and absolute value. Either operand or both may require gradients, including
+-shared operands and supported views (scalar, empty, transposed, offset, and
+-channels-last). First-order backward multiplies the upstream gradient by
++For active autograd recording, ``reduction='none'`` and default or explicit
++``reduction='mean'`` support matching shapes and finite values in both operands
++through native subtraction and absolute value, followed by the supported
++full-tensor mean for mean reduction. Either operand or both may require
++gradients, including shared operands and supported views (scalar, empty,
++transposed, offset, and channels-last). First-order backward multiplies the upstream gradient by
+ ``sign(input - target)`` for input and its negative for target; equal elements,
+ including signed zeros, have zero gradient. Finiteness applies to logical view
+ elements, not unused storage; finite operands whose difference overflows are
+-also supported. Nonuniform weighting may be applied to the unreduced output
+-before summing. Backward uses the existing scalar-loss API; explicit backward
+-gradients, graph retention, higher-order differentiation, and the ``weight``
+-argument remain unsupported.
++also supported. Mean backward divides the upstream gradient by the element
++count before the absolute-value derivative; an empty mean is NaN with empty
++gradients. Scalar weighting may be applied to the mean loss. Nonuniform
++weighting may be applied to the unreduced output before summing. Repeated uses
++accumulate leaf gradients, and backward releases the graph. Backward uses the
++existing scalar-loss API; explicit backward gradients, graph retention,
++higher-order differentiation, and the ``weight`` argument remain unsupported.
+ Existing leaf-gradient layout handling may produce different singleton strides
+ from PyTorch after channels-last copies; logical gradient values are preserved.
+ 
+ Unbroadcastable shapes, legacy ``size_average``/``reduce`` behavior, weights,
+ unsupported dtypes or devices, Tensor subclasses, active ``TorchFunctionMode``
+ contexts, and module loss wrappers are not supported. Active autograd recording
+-with broadcasting, nonfinite operands, or reduced losses remains unsupported.
++with broadcasting, nonfinite operands, or ``reduction='sum'`` remains unsupported.
+ Gradient-requiring operands may use the inference paths inside ``torch.no_grad()``.
+ """
+ 
+diff --git a/src/autograd_node.rs b/src/autograd_node.rs
+index 838974a..70e9c93 100644
+--- a/src/autograd_node.rs
++++ b/src/autograd_node.rs
+@@ -10,6 +10,7 @@ pub(crate) enum AutogradNode {
+     Clone,
+     Concat,
+     Cos,
++    Divide,
+     Exp,
+     Floor,
+     #[cfg(any(feature = "python-bindings", test))]
+@@ -61,6 +62,7 @@ impl AutogradNode {
+             Self::Clone => "CloneBackward0",
+             Self::Concat => "CatBackward0",
+             Self::Cos => "CosBackward0",
++            Self::Divide => "DivBackward0",
+             Self::Exp => "ExpBackward0",
+             Self::Floor => "FloorBackward0",
+             #[cfg(any(feature = "python-bindings", test))]
+diff --git a/src/python.rs b/src/python.rs
+index d41418e..a259171 100644
+--- a/src/python.rs
++++ b/src/python.rs
+@@ -1,3 +1,5 @@
++#[path = "python_compile_cuda_graph.rs"]
++mod compile_cuda_graph;
+ #[path = "python_unflatten.rs"]
+ mod unflatten;
+ pub(crate) use unflatten::unflatten_variable_function;
+@@ -7646,11 +7648,6 @@ fn apply_top_level_division(
+         (BoundDivOperand::Tensor(input), BoundDivOperand::Scalar(scalar)) => {
+             let input = input.try_borrow()?;
+             validate_top_level_division_tensor(operation, &input)?;
+-            if is_grad_enabled() && input.inner.requires_grad() {
+-                return Err(PyRuntimeError::new_err(
+-                    operation.autograd_unsupported_error(),
+-                ));
+-            }
+             let scalar = parse_top_level_mul_scalar(scalar)?;
+             BinaryOperation::Divide.apply_scalar(&input.inner, scalar, false)
+         }
+@@ -7929,11 +7926,6 @@ fn apply_tensor_division_method(
+         }
+         (BoundDivOperand::Tensor(tensor), BoundDivOperand::Scalar(scalar)) => {
+             let tensor = tensor.try_borrow()?;
+-            if is_grad_enabled() && tensor.inner.requires_grad() {
+-                return Err(PyRuntimeError::new_err(
+-                    operation.autograd_unsupported_error(),
+-                ));
+-            }
+             let scalar = parse_top_level_mul_scalar(scalar)?;
+             BinaryOperation::Divide.apply_scalar(&tensor.inner, scalar, false)
+         }
+@@ -25939,6 +25931,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
+     module.add_function(wrap_pyfunction!(compile_trace_unary, module)?)?;
+     module.add_function(wrap_pyfunction!(compile_trace_binary, module)?)?;
+     module.add_function(wrap_pyfunction!(compile_trace_scalar, module)?)?;
++    module.add_function(wrap_pyfunction!(compile_cuda_graph::execute, module)?)?;
+     module.add_function(wrap_pyfunction!(compile_trace_mul_scalar_value, module)?)?;
+     let exports = module.getattr("__all__")?;
+     for name in [
+@@ -25949,6 +25942,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
+         "_compile_trace_unary",
+         "_compile_trace_binary",
+         "_compile_trace_scalar",
++        "_compile_trace_cuda_graph",
+         "_compile_trace_mul_scalar_value",
+     ] {
+         exports.call_method1("remove", (name,))?;
+diff --git a/src/python_compile_cuda_graph.rs b/src/python_compile_cuda_graph.rs
+new file mode 100644
+index 0000000..5a8f0b6
+--- /dev/null
++++ b/src/python_compile_cuda_graph.rs
+@@ -0,0 +1,102 @@
++//! One bridge for composed CUDA captures; eager Tensor methods stay unchanged.
++use super::{CoreTensor, DType, PyTensor, compile_trace_mul_scalar_value, tensor_error};
++use crate::tensor::cuda_graph::{Layout, Operation};
++use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError, PyTypeError, PyValueError};
++use pyo3::prelude::*;
++use pyo3::types::PyTuple;
++
++// Shape/stride declarations have already passed the frontend's whole-graph
++// checks. Recompute them natively too, before any storage allocation or launch.
++type Node<'py> = (
++    String,
++    Vec<usize>,
++    Bound<'py, PyAny>,
++    Vec<usize>,
++    Vec<usize>,
++);
++
++#[pyfunction(name = "_compile_trace_cuda_graph", signature = (inputs, nodes, /))]
++pub(super) fn execute(
++    inputs: &Bound<'_, PyTuple>,
++    nodes: Vec<Node<'_>>,
++) -> PyResult<Vec<PyTensor>> {
++    let mut owners = Vec::with_capacity(inputs.len());
++    for input in inputs.iter() {
++        if !input.is_exact_instance_of::<PyTensor>() {
++            return Err(PyTypeError::new_err(
++                "CUDA graph requires exact native Tensor inputs",
++            ));
++        }
++        owners.push(input.cast_into::<PyTensor>()?);
++    }
++    let guards = owners
++        .iter()
++        .map(|input| input.try_borrow().map_err(PyErr::from))
++        .collect::<PyResult<Vec<_>>>()?;
++    let tensors: Vec<&CoreTensor> = guards.iter().map(|input| &input.inner).collect();
++    let Some(first) = tensors.first() else {
++        return Err(PyValueError::new_err("CUDA graph requires inputs"));
++    };
++    for input in &tensors {
++        if !input.is_cuda()
++            || input.device() != first.device()
++            || input.dtype() != DType::Float32
++            || input.requires_grad()
++            || !input.is_contiguous()
++        {
++            return Err(PyNotImplementedError::new_err(
++                "CUDA graph requires contiguous same-device CUDA float32 inputs without gradients",
++            ));
++        }
++    }
++    let mut layouts: Vec<_> = tensors
++        .iter()
++        .map(|tensor| Layout::from_tensor(tensor))
++        .collect();
++    let mut operations = Vec::with_capacity(nodes.len());
++    for (target, indices, scalar, shape, strides) in nodes {
++        let operation = match (target.as_str(), indices.as_slice()) {
++            ("mul_scalar", &[input]) => {
++                Operation::MulScalar(input, compile_trace_mul_scalar_value(&scalar)?)
++            }
++            ("neg", &[input]) if scalar.is_none() => Operation::Neg(input),
++            ("add", &[left, right]) if scalar.is_none() => Operation::Add(left, right),
++            ("matmul", &[left, right]) if scalar.is_none() => Operation::Matmul(left, right),
++            _ => {
++                return Err(PyNotImplementedError::new_err(
++                    "unsupported CUDA graph node",
++                ));
++            }
++        };
++        let layout = operation
++            .layout(&layouts)
++            .map_err(|error| tensor_error(&error))?;
++        if layout.shape != shape || layout.strides != strides {
++            return Err(PyValueError::new_err("CUDA graph output metadata mismatch"));
++        }
++        layouts.push(layout);
++        operations.push(operation);
++    }
++    // Retain all input borrows and every intermediate, including unused nodes.
++    // Existing core operations synchronize even on launch errors and restore
++    // the current device. No tensor clone/copy, Python call, or PyO3 crossing is
++    // performed between nodes. Every call still allocates fresh result storage.
++    let mut outputs = Vec::with_capacity(operations.len());
++    for (index, operation) in operations.into_iter().enumerate() {
++        let output = operation
++            .execute(&tensors, &outputs)
++            .map_err(|error| tensor_error(&error))?;
++        if !layouts[tensors.len() + index].matches(&output)
++            || output.device() != first.device()
++            || output.dtype() != DType::Float32
++            || output.requires_grad()
++            || output.storage_offset() != 0
++        {
++            return Err(PyRuntimeError::new_err(
++                "CUDA graph native result metadata mismatch",
++            ));
++        }
++        outputs.push(output);
++    }
++    Ok(outputs.into_iter().map(PyTensor::new).collect())
++}
+diff --git a/src/python_nn_functional.rs b/src/python_nn_functional.rs
+index 88b266d..e2174c3 100644
+--- a/src/python_nn_functional.rs
++++ b/src/python_nn_functional.rs
+@@ -703,7 +703,7 @@ fn _nn_functional_l1_loss(
+         warn_loss_broadcast(py, "l1_loss", input_shape, target_shape)?;
+     }
+     if is_grad_enabled() && (input.inner().requires_grad() || target.inner().requires_grad()) {
+-        if reduction != L1LossReduction::None
++        if reduction == L1LossReduction::Sum
+             || input_shape != target_shape
+             || !input.inner().logical_values().all(f32::is_finite)
+             || !target.inner().logical_values().all(f32::is_finite)
+@@ -720,6 +720,11 @@ fn _nn_functional_l1_loss(
+             .sub(target.inner())
+             .and_then(|difference| difference.abs())
+             .map_err(|error| tensor_error(&error))?;
++        let output = if reduction == L1LossReduction::Mean {
++            output.mean().map_err(|error| tensor_error(&error))?
++        } else {
++            output
++        };
+         return PyTensor::new(output).into_py_any(py);
+     }
+ 
+diff --git a/src/tensor.rs b/src/tensor.rs
+index 3e44535..2c5fb8f 100644
+--- a/src/tensor.rs
++++ b/src/tensor.rs
+@@ -1,4 +1,8 @@
+ use std::collections::{HashMap, HashSet};
++
++#[cfg(feature = "python-bindings")]
++#[path = "tensor_cuda_graph.rs"]
++pub(crate) mod cuda_graph;
+ use std::fmt::Formatter;
+ use std::iter::FusedIterator;
+ use std::sync::{
+@@ -157,6 +161,10 @@ enum GradFn {
+         input: SavedTensor,
+         scalar: Option<f32>,
+     },
++    DivideScalar {
++        input: SavedTensor,
++        scalar: Option<f32>,
++    },
+     Negate {
+         input: SavedTensor,
+         #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
+@@ -249,6 +257,7 @@ impl GradFn {
+                 right.take_parent(pending);
+             }
+             Self::MultiplyScalar { input, .. }
++            | Self::DivideScalar { input, .. }
+             | Self::Negate { input, .. }
+             | Self::Sum { input, .. }
+             | Self::Mean { input, .. }
+@@ -282,7 +291,7 @@ impl GradFn {
+                     return Err(TensorError::BackwardGraphFreed);
+                 }
+             }
+-            Self::MultiplyScalar { input, scalar } => {
++            Self::MultiplyScalar { input, scalar } | Self::DivideScalar { input, scalar } => {
+                 if input.autograd.is_some() && scalar.is_none() {
+                     return Err(TensorError::BackwardGraphFreed);
+                 }
+@@ -327,7 +336,9 @@ impl GradFn {
+                 left.storage = None;
+                 gate.storage = None;
+             }
+-            Self::MultiplyScalar { scalar, .. } => *scalar = None,
++            Self::MultiplyScalar { scalar, .. } | Self::DivideScalar { scalar, .. } => {
++                *scalar = None;
++            }
+             Self::SavedInputUnary(node) => node.input.storage = None,
+             Self::SavedOutputUnary(node) => node.output.storage = None,
+             Self::AddSubtract { .. }
+@@ -1458,6 +1469,7 @@ impl Tensor {
+             .unwrap_or_else(std::sync::PoisonError::into_inner);
+         let node = match grad_fn.as_ref()? {
+             GradFn::Multiply { .. } | GradFn::MultiplyScalar { .. } => AutogradNode::Multiply,
++            GradFn::DivideScalar { .. } => AutogradNode::Divide,
+             GradFn::AddSubtract { node, .. }
+             | GradFn::Concat { node, .. }
+             | GradFn::Negate { node, .. }
+@@ -5191,16 +5203,23 @@ impl Tensor {
+     }
+ 
+     /// Divides every element by a scalar using IEEE 754 true division.
++    /// Records a first-order CPU backward edge without saving input values.
+     ///
+     /// # Errors
+     ///
+-    /// Returns an error when gradient recording is enabled for this tensor, or
+-    /// when result allocation fails.
++    /// Returns an error for non-CPU storage or when result allocation fails.
+     pub fn div_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
++        let mut output = self.div_scalar_values(scalar)?;
+         if self.records_grad() {
+-            return Err(TensorError::AutogradRecordingUnsupported { operation: "div" });
++            let input = SavedTensor::try_from_tensor(self, false)?;
++            let scalar = input.autograd.is_some().then_some(scalar);
++            output.autograd = Some(Arc::new(AutogradMeta {
++                kind: AutogradKind::NonLeaf {
++                    grad_fn: Mutex::new(Some(GradFn::DivideScalar { input, scalar })),
++                },
++            }));
+         }
+-        self.div_scalar_values(scalar)
++        Ok(output)
+     }
+ 
+     fn div_scalar_values(&self, scalar: f32) -> Result<Self, TensorError> {
+@@ -6384,6 +6403,7 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
+                             push_saved_parent(&mut stack, left);
+                         }
+                         GradFn::MultiplyScalar { input, .. }
++                        | GradFn::DivideScalar { input, .. }
+                         | GradFn::Negate { input, .. }
+                         | GradFn::Sum { input, .. }
+                         | GradFn::Mean { input, .. }
+@@ -6434,6 +6454,9 @@ fn apply_grad_fn(
+         GradFn::MultiplyScalar { input, scalar } => {
+             apply_multiply_scalar_grad_fn(input, *scalar, upstream, gradients)?;
+         }
++        GradFn::DivideScalar { input, scalar } => {
++            apply_divide_scalar_grad_fn(input, *scalar, upstream, gradients)?;
++        }
+         GradFn::Negate { input, .. } => {
+             apply_negate_grad_fn(input, upstream, gradients)?;
+         }
+@@ -6527,6 +6550,23 @@ fn apply_multiply_scalar_grad_fn(
+     Ok(())
+ }
+ 
++fn apply_divide_scalar_grad_fn(
++    input: &SavedTensor,
++    scalar: Option<f32>,
++    upstream: &[f32],
++    gradients: &mut Gradients,
++) -> Result<(), TensorError> {
++    if let Some(meta) = &input.autograd {
++        let scalar = scalar.ok_or(TensorError::BackwardGraphFreed)?;
++        let mut gradient = try_result_vector(input.elements, input.elements)?;
++        // PyTorch's DivBackward0 divides the upstream float32 gradient directly.
++        // Multiplying by a reciprocal changes rounding, overflow and subnormals.
++        gradient.extend(upstream.iter().map(|value| value / scalar));
++        add_gradient(gradients, meta, input.output_nr, gradient);
++    }
++    Ok(())
++}
++
+ fn apply_negate_grad_fn(
+     input: &SavedTensor,
+     upstream: &[f32],
+@@ -19203,6 +19243,26 @@ mod tests {
+         assert!(output.requires_grad());
+     }
+ 
++    #[test]
++    fn div_scalar_edges_do_not_retain_input_or_output_storage() {
++        let leaf = Tensor::ones([4]).unwrap().with_requires_grad(true);
++        let input = leaf.mul_scalar(4.0).unwrap();
++        let input_storage = Arc::downgrade(&input.storage);
++        let output = input.div_scalar(2.0).unwrap();
++        let output_storage = Arc::downgrade(&output.storage);
++        let loss = output.sum();
++        drop(input);
++        drop(output);
++        assert!(input_storage.upgrade().is_none());
++        assert!(output_storage.upgrade().is_none());
++        loss.backward().unwrap();
++        assert_eq!(
++            leaf.grad().unwrap().unwrap().try_to_vec().unwrap(),
++            [2.0; 4]
++        );
++        assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
++    }
++
+     #[test]
+     fn rsqrt_saves_only_output_storage_and_releases_it_after_backward() {
+         let leaf = Tensor::ones([4]).unwrap().with_requires_grad(true);
+diff --git a/src/tensor_cuda_graph.rs b/src/tensor_cuda_graph.rs
+new file mode 100644
+index 0000000..f388a83
+--- /dev/null
++++ b/src/tensor_cuda_graph.rs
+@@ -0,0 +1,131 @@
++//! Metadata planning for the existing CUDA capture operations. No allocation
++//! of tensor storage or kernel launch is allowed while constructing this plan.
++use super::{ElementwiseLayout, Tensor, TensorError, elementwise_output_strides, validated_layout};
++
++#[derive(Clone, Copy)]
++pub(crate) enum Operation {
++    Neg(usize),
++    MulScalar(usize, f32),
++    Add(usize, usize),
++    Matmul(usize, usize),
++}
++
++pub(crate) struct Layout {
++    pub(crate) shape: Vec<usize>,
++    pub(crate) strides: Vec<usize>,
++}
++
++impl Layout {
++    pub(crate) fn from_tensor(tensor: &Tensor) -> Self {
++        Self {
++            shape: tensor.shape().to_vec(),
++            strides: tensor.stride().to_vec(),
++        }
++    }
++
++    fn elementwise(&self) -> ElementwiseLayout<'_> {
++        ElementwiseLayout {
++            shape: &self.shape,
++            strides: &self.strides,
++        }
++    }
++
++    pub(crate) fn matches(&self, tensor: &Tensor) -> bool {
++        self.shape == tensor.shape() && self.strides == tensor.stride()
++    }
++}
++
++impl Operation {
++    pub(crate) fn layout(self, values: &[Layout]) -> Result<Layout, TensorError> {
++        let get = |index| {
++            values
++                .get(index)
++                .ok_or(TensorError::IndexCalculationOverflow)
++        };
++        let shape = match self {
++            Self::Neg(input) | Self::MulScalar(input, _) => get(input)?.shape.clone(),
++            Self::Add(left, right) => {
++                let (left, right) = (get(left)?, get(right)?);
++                if left.shape == right.shape {
++                    left.shape.clone()
++                } else {
++                    match (left.shape.as_slice(), right.shape.as_slice()) {
++                        ([_, columns], [n]) if columns == n => left.shape.clone(),
++                        ([n], [_, columns]) if columns == n => right.shape.clone(),
++                        _ => {
++                            return Err(TensorError::UnsupportedCudaAddition {
++                                reason: "inputs must have the same shape or shapes (M, N) and (N,)",
++                            });
++                        }
++                    }
++                }
++            }
++            Self::Matmul(left, right) => {
++                let (left, right) = (get(left)?, get(right)?);
++                let ([rows, inner], [other_inner, columns]) =
++                    (left.shape.as_slice(), right.shape.as_slice())
++                else {
++                    return Err(TensorError::UnsupportedCudaMatmul {
++                        reason: "operands must be rank-2 matrices",
++                    });
++                };
++                if inner != other_inner {
++                    return Err(TensorError::MatmulInnerDimensionMismatch {
++                        left: left.shape.clone(),
++                        right: right.shape.clone(),
++                    });
++                }
++                if [*rows, *inner, *columns]
++                    .iter()
++                    .any(|&n| i64::try_from(n).is_err())
++                {
++                    return Err(TensorError::IndexCalculationOverflow);
++                }
++                vec![*rows, *columns]
++            }
++        };
++        let (elements, canonical) = validated_layout(&shape)?;
++        elements
++            .checked_mul(4)
++            .filter(|&bytes| isize::try_from(bytes).is_ok())
++            .ok_or(TensorError::AllocationFailed { elements })?;
++        let strides = match self {
++            Self::MulScalar(input, _) => {
++                elementwise_output_strides(&shape, &[get(input)?.elementwise()], elements)?
++            }
++            Self::Add(left, right) if get(left)?.shape != get(right)?.shape => {
++                // Eager addition normalizes the matrix operand to the left.
++                let (left, right) = (get(left)?, get(right)?);
++                let operands = if left.shape.len() == 2 {
++                    [left.elementwise(), right.elementwise()]
++                } else {
++                    [right.elementwise(), left.elementwise()]
++                };
++                elementwise_output_strides(&shape, &operands, elements)?
++            }
++            _ => canonical,
++        };
++        Ok(Layout { shape, strides })
++    }
++
++    pub(crate) fn execute(
++        self,
++        inputs: &[&Tensor],
++        outputs: &[Tensor],
++    ) -> Result<Tensor, TensorError> {
++        // Indices were checked for the entire plan before the first launch.
++        let get = |index: usize| {
++            if index < inputs.len() {
++                inputs[index]
++            } else {
++                &outputs[index - inputs.len()]
++            }
++        };
++        match self {
++            Self::Neg(input) => get(input).negate(),
++            Self::MulScalar(input, scalar) => get(input).mul_scalar(scalar),
++            Self::Add(left, right) => get(left).add(get(right)),
++            Self::Matmul(left, right) => get(left).matmul(get(right)),
++        }
++    }
++}
+diff --git a/tests/autograd.rs b/tests/autograd.rs
+index 02d914a..51573b6 100644
+--- a/tests/autograd.rs
++++ b/tests/autograd.rs
+@@ -264,7 +264,7 @@ fn reciprocal_records_saved_input_vjp_for_views_and_honors_no_grad() {
+ }
+ 
+ #[test]
+-fn division_rejects_recording_before_planning_and_honors_no_grad() {
++fn tensor_and_reflected_division_reject_recording_and_honor_no_grad() {
+     let left = Tensor::from_vec(vec![2.0, 8.0, 4.0, 16.0], [2, 2])
+         .unwrap()
+         .with_requires_grad(true);
+@@ -273,7 +273,6 @@ fn division_rejects_recording_before_planning_and_honors_no_grad() {
+         .with_requires_grad(true);
+     let unsupported = TensorError::AutogradRecordingUnsupported { operation: "div" };
+     assert_eq!(left.div(&right), Err(unsupported.clone()));
+-    assert_eq!(left.div_scalar(2.0), Err(unsupported.clone()));
+     assert_eq!(left.scalar_div(2.0), Err(unsupported.clone()));
+     assert_eq!(right.div(&left), Err(unsupported.clone()));
+ 
+@@ -282,7 +281,9 @@ fn division_rejects_recording_before_planning_and_honors_no_grad() {
+         .reshape([0, i64::MAX, 3])
+         .unwrap()
+         .with_requires_grad(true);
+-    assert_eq!(extreme.div_scalar(2.0), Err(unsupported));
++    let extreme_output = extreme.div_scalar(2.0).unwrap();
++    extreme_output.sum().backward().unwrap();
++    assert_eq!(extreme.grad().unwrap().unwrap().shape(), extreme.shape());
+ 
+     {
+         let _guard = no_grad();
+@@ -5273,3 +5274,124 @@ fn rsqrt_accumulates_shared_edges_and_fresh_graphs() {
+     assert_eq!(values(&leaf.grad().unwrap().unwrap()), [-1.5, -0.1875]);
+     assert!(!leaf.grad().unwrap().unwrap().requires_grad());
+ }
++
++#[test]
++fn div_scalar_weighted_scalar_empty_offset_and_transposed_backward() {
++    let scalar = Tensor::from_vec(vec![4.0], [])
++        .unwrap()
++        .with_requires_grad(true);
++    scalar
++        .div_scalar(-2.0)
++        .unwrap()
++        .mul_scalar(3.0)
++        .unwrap()
++        .backward()
++        .unwrap();
++    assert_eq!(
++        scalar.grad().unwrap().unwrap().item().unwrap().to_bits(),
++        (-1.5_f32).to_bits()
++    );
++
++    let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
++    let output = empty.transpose(0, 2).unwrap().div_scalar(0.0).unwrap();
++    assert_eq!(output.shape(), [3, 0, 2]);
++    output.sum().backward().unwrap();
++    assert_eq!(empty.grad().unwrap().unwrap().shape(), [2, 0, 3]);
++    assert!(values(&empty.grad().unwrap().unwrap()).is_empty());
++
++    for transposed in [false, true] {
++        let leaf = Tensor::from_vec(vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0], [2, 2, 2])
++            .unwrap()
++            .with_requires_grad(true);
++        let offset = leaf.index([1]).unwrap();
++        let input = if transposed {
++            offset.transpose(0, 1).unwrap()
++        } else {
++            offset
++        };
++        let output = input.div_scalar(-2.0).unwrap();
++        assert_eq!(input.storage_offset(), 4);
++        assert_eq!(output.stride(), if transposed { [1, 2] } else { [2, 1] });
++        assert_eq!(output.storage_offset(), 0);
++        assert!(!output.shares_storage_with(&input));
++        let weights = Tensor::from_vec(vec![1.0, -2.0, 3.0, -4.0], [2, 2]).unwrap();
++        let loss = output.mul(&weights).unwrap().sum();
++        loss.backward().unwrap();
++        let expected = if transposed {
++            [0.0, 0.0, 0.0, 0.0, -0.5, -1.5, 1.0, 2.0]
++        } else {
++            [0.0, 0.0, 0.0, 0.0, -0.5, 1.0, -1.5, 2.0]
++        };
++        assert_eq!(values(&leaf.grad().unwrap().unwrap()), expected);
++        assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
++        assert_eq!(values(&leaf.grad().unwrap().unwrap()), expected);
++    }
++}
++
++#[test]
++fn div_scalar_vjp_matches_pytorch_float32_division_order() {
++    // PyTorch 2.13 CPU float32: ((x / divisor) * weight).sum().backward().
++    // These cases distinguish direct division from multiplication by 1/divisor.
++    let cases = [
++        (0x40e0_0000, 0x4040_0000, 0x4015_5555), // 7/3 rounds differently
++        (0x7f7f_ffff, 0x7f7f_ffff, 0x3f80_0000),
++        (0x0001_16c2, 0x0001_16c2, 0x3f80_0000), // reciprocal overflows
++        (0x0000_0001, 0x0000_0001, 0x3f80_0000),
++        (0x0080_0000, 0x4000_0000, 0x0040_0000), // subnormal result
++        (0x7f7f_ffff, 0x0000_0001, 0x7f80_0000), // overflow
++        (0x0000_0001, 0x4000_0000, 0x0000_0000), // underflow
++        (0x0000_0000, 0xc000_0000, 0x8000_0000),
++        (0x3f80_0000, 0x0000_0000, 0x7f80_0000),
++        (0xbf80_0000, 0x8000_0000, 0x7f80_0000),
++        (0x0000_0000, 0x0000_0000, 0xffc0_0000),
++        (0x3f80_0000, 0x7f80_0000, 0x0000_0000),
++        (0xbf80_0000, 0x7f80_0000, 0x8000_0000),
++        (0x3f80_0000, 0xff80_0000, 0x8000_0000),
++        (0x7f80_0000, 0x7f80_0000, 0xffc0_0000),
++        (0x3f80_0000, 0x7fc0_0000, 0x7fc0_0000),
++    ];
++    for (weight, divisor, expected) in cases {
++        let leaf = Tensor::from_vec(vec![2.0], [1])
++            .unwrap()
++            .with_requires_grad(true);
++        leaf.div_scalar(f32::from_bits(divisor))
++            .unwrap()
++            .mul_scalar(f32::from_bits(weight))
++            .unwrap()
++            .sum()
++            .backward()
++            .unwrap();
++        let actual = leaf.grad().unwrap().unwrap().item().unwrap();
++        if f32::from_bits(expected).is_nan() {
++            assert!(actual.is_nan());
++        } else {
++            assert_eq!(
++                actual.to_bits(),
++                expected,
++                "weight={weight:x}, divisor={divisor:x}"
++            );
++        }
++    }
++}
++
++#[test]
++fn div_scalar_accumulates_shared_edges_and_fresh_graphs_and_honors_no_grad() {
++    let leaf = Tensor::from_vec(vec![2.0, 4.0], [2])
++        .unwrap()
++        .with_requires_grad(true);
++    let output = leaf.div_scalar(2.0).unwrap();
++    output.add(&output).unwrap().sum().backward().unwrap();
++    assert_eq!(values(&leaf.grad().unwrap().unwrap()), [1.0, 1.0]);
++    assert_eq!(
++        output.sum().backward(),
++        Err(TensorError::BackwardGraphFreed)
++    );
++    leaf.div_scalar(4.0).unwrap().sum().backward().unwrap();
++    assert_eq!(values(&leaf.grad().unwrap().unwrap()), [1.25, 1.25]);
++    assert!(!leaf.grad().unwrap().unwrap().requires_grad());
++    let _guard = no_grad();
++    let detached = leaf.div_scalar(2.0).unwrap();
++    assert!(!detached.requires_grad());
++    assert!(detached.is_leaf());
++    assert_eq!(values(&detached), [1.0, 2.0]);
++}
+diff --git a/tests/test_compile_cuda_graph.py b/tests/test_compile_cuda_graph.py
+new file mode 100644
+index 0000000..461f92a
+--- /dev/null
++++ b/tests/test_compile_cuda_graph.py
+@@ -0,0 +1,173 @@
++"""Composed native graph execution, independent of scoring corpora."""
++from concurrent.futures import ThreadPoolExecutor
++import ctypes
++from dataclasses import replace
++import gc
++import unittest
++from unittest.mock import patch
++
++import numpy as np
++import torch_rs as native
++from torch_rs import _compile_trace
++from tests.test_compile_cuda_boundary import compile_with_cache
++from tests.test_compile_cuda_mul_scalar import call_without_python, make_program
++from tests.test_cuda_add import Comparison, available, runtime, torch, upload
++
++
++def composed(x, y):
++    z = -(x * 0.5) @ (y * -2)
++    return [z, (z, x), z + z]
++
++
++class GraphBridgeScopeTests(unittest.TestCase):
++    def test_cpu_inputs_rejected(self):
++        with self.assertRaisesRegex(NotImplementedError, 'CUDA float32'):
++            _compile_trace._native._compile_trace_cuda_graph((native.ones((2, 2)),), [])
++
++
++@unittest.skipUnless(available('0'), 'requires real CUDA with CUDA_VISIBLE_DEVICES=0')
++class CudaGraphTests(Comparison, unittest.TestCase):
++    def test_single_bridge_new_data_aliases_and_completion(self):
++        compiled, _ = compile_with_cache(composed)
++        lib = runtime()
++        retained = []
++        bridge = _compile_trace._native._compile_trace_cuda_graph
++        with patch.object(_compile_trace._native, '_compile_trace_cuda_graph', wraps=bridge) as calls, \
++             patch.object(_compile_trace, '_execute_operation', side_effect=AssertionError('per-node Python execution')):
++            for v in (1., 3., -2.):
++                base = native.full((3 + 7 * 7,), v).to('cuda:0')
++                a = base[3:].reshape(7, 7)
++                # Overlapping input views with different offsets.
++                b = base[1:50].reshape(7, 7)
++                out = call_without_python(compiled, {composed.__code__}, a, b)
++                self.assertEqual(lib.cudaStreamQuery(ctypes.c_void_p(1)), 0)
++                self.assertIs(out[0], out[1][0]); self.assertIs(out[1][1], a)
++                self.assertEqual(out[0].cpu().tolist(), [[7 * v * v] * 7] * 7)
++                self.assertEqual(out[2].cpu().tolist(), [[14 * v * v] * 7] * 7)
++                self.assertEqual(base.cpu().tolist(), [v] * 52)
++                self.assertNotIn(out[0].data_ptr(), [a.data_ptr(), b.data_ptr(), *(x.data_ptr() for x in retained)])
++                retained.append(out[0])
++                del base, a, b, out
++                gc.collect()
++            self.assertEqual(calls.call_count, 3)
++        for out, v in zip(retained, (1., 3., -2.)):
++            self.assertEqual(out.cpu().tolist(), [[7 * v * v] * 7] * 7)
++
++    def test_late_validation_before_bridge_and_failure_recovery(self):
++        fn = make_program('def program(x,y):\n    return (-x) @ y\n')
++        a, b = native.ones((3, 7)).to('cuda:0'), native.ones((7, 5)).to('cuda:0')
++        for dynamic in (False, True):
++            compiled, cache = compile_with_cache(fn, dynamic=dynamic)
++            compiled(a, b)
++            graph = next(iter(cache.graphs.values()))
++            last = graph.operations[-1]
++            changes = ({'inputs': ('missing',)}, {'target': 'relu'}, {'scalar': 2},
++                       {'metadata': replace(last.metadata, storage_offset=3)},
++                       {'metadata': replace(last.metadata, device='cuda:1')},
++                       {'metadata': replace(last.metadata, requires_grad=True)})
++            bad_graphs = [replace(graph, operations=(*graph.operations[:-1], replace(last, **c))) for c in changes]
++            bad_graphs += [replace(graph, output='missing'), replace(graph, output_metadata=None)]
++            with patch.object(_compile_trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('early launch')):
++                for bad in bad_graphs:
++                    with self.assertRaises((NotImplementedError, ValueError)):
++                        bad.forward(a, b)
++                with self.assertRaisesRegex(RuntimeError, 'dimension'):
++                    compiled(a, native.ones((8, 5)).to('cuda:0'))
++            self.assertEqual(compiled(a, b).cpu().tolist(), [[-7.] * 5] * 3)
++            fresh, fresh_cache = compile_with_cache(fn, dynamic=dynamic)
++            with patch.object(_compile_trace._native, '_compile_trace_cuda_graph', side_effect=RuntimeError('launch failed')):
++                with self.assertRaisesRegex(RuntimeError, 'launch failed'):
++                    fresh(a, b)
++            self.assertEqual(fresh_cache.graphs, {})
++            self.assertEqual(fresh(a, b).cpu().tolist(), [[-7.] * 5] * 3)
++
++    def test_native_bridge_preflights_all_nodes(self):
++        a, b = native.ones((3, 7)).to('cuda:0'), native.ones((7, 5)).to('cuda:0')
++        bridge = _compile_trace._native._compile_trace_cuda_graph
++        first = ('neg', (0,), None, (3, 7), (7, 1))
++        bad_nodes = [
++            ('matmul', (2, 0), None, (3, 7), (7, 1)),
++            ('matmul', (2, 1), None, (3, 5), (1, 3)),
++            ('matmul', (2, 1), None, (3, 6), (6, 1)),
++            ('add', (2, 99), None, (3, 7), (7, 1)),
++            ('neg', (2,), 1., (3, 7), (7, 1)),
++            ('mul_scalar', (2,), 2**64, (3, 7), (7, 1)),
++            ('relu', (2,), None, (3, 7), (7, 1)),
++        ]
++        for last in bad_nodes:
++            with self.subTest(last=last), self.assertRaises((NotImplementedError, RuntimeError, ValueError, OverflowError)):
++                bridge((a, b), [first, last])
++        out = bridge((a, b), [first, ('matmul', (2, 1), None, (3, 5), (5, 1))])
++        self.assertEqual(out[-1].cpu().tolist(), [[-7.] * 5] * 3)
++
++    def test_late_neg_declared_metadata_rejected_before_execution(self):
++        fn = make_program('def program(x,y):\n    return -(x @ y)\n')
++        a, b = native.ones((3, 7)).to('cuda:0'), native.ones((7, 5)).to('cuda:0')
++        for dynamic in (False, True):
++            compiled, cache = compile_with_cache(fn, dynamic=dynamic)
++            compiled(a, b)
++            graph = next(iter(cache.graphs.values()))
++            node = graph.operations[-1]
++            declarations = [None] + [replace(node.metadata, **change) for change in (
++                {'device': 'cuda:1'}, {'storage_offset': 3}, {'requires_grad': True},
++                {'dtype': _compile_trace.CompileTraceDType('torch.float64')},
++                {'stride': (1, 3)}, {'shape': (15,), 'stride': (1,)},
++            )]
++            with patch.object(_compile_trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('early launch')):
++                for metadata in declarations:
++                    bad = replace(graph, operations=(*graph.operations[:-1], replace(node, metadata=metadata)))
++                    with self.assertRaises((NotImplementedError, ValueError)):
++                        bad.forward(a, b)
++            self.assertEqual(compiled(a, b).cpu().tolist(), [[-7.] * 5] * 3)
++
++    def test_composition_preserves_wide_overflow_and_signed_zero(self):
++        # Compare bitwise with the same native operations executed eagerly:
++        # moving/scaling a matmul could otherwise conceal changed FP rounding.
++        compiled, _ = compile_with_cache(composed, limit=32)
++        for k in (4, 1031, 65539):
++            for pattern in ([2.**127, 2.**127, -2.**127, -2.**127],
++                            [0., -0., np.inf, np.nan], [0.1, -0.2, 0.1, 0.1]):
++                values = np.resize(np.array(pattern, dtype=np.float32), (3, k))
++                a = upload(native, values.ravel(), values.shape)
++                b = native.full((k, 5), 0.1).to('cuda:0')
++                expected = composed(a, b)
++                actual = call_without_python(compiled, {composed.__code__}, a, b)
++                for x, y in zip((actual[0], actual[2]), (expected[0], expected[2])):
++                    x, y = [np.asarray(t.cpu().tolist(), dtype=np.float32) for t in (x, y)]
++                    np.testing.assert_array_equal(x.view(np.uint32), y.view(np.uint32))
++
++    def test_threaded_intermediate_lifetimes(self):
++        def run(value):
++            a = native.full((17, 31), value).to('cuda:0')
++            b = native.ones((31, 9)).to('cuda:0')
++            compiled, _ = compile_with_cache(composed)
++            return compiled(a, b)[0]
++        with ThreadPoolExecutor(max_workers=3) as pool:
++            results = list(pool.map(run, range(1, 10)))
++        gc.collect()
++        for value, result in enumerate(results, 1):
++            self.assertEqual(result.cpu().tolist(), [[31. * value] * 9] * 17)
++
++
++@unittest.skipUnless(available('0,1'), 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1')
++class CudaGraphDeviceTests(unittest.TestCase):
++    def test_composed_restoration_and_mixed_devices(self):
++        compiled, _ = compile_with_cache(composed)
++        previous = torch.cuda.current_device()
++        try:
++            for ordinal in (0, 1):
++                torch.cuda.set_device(1 - ordinal)
++                for m, k, n in ((3, 7, 5), (0, 7, 5), (3, 0, 5), (3, 7, 0)):
++                    a = native.ones((m, k)).to(f'cuda:{ordinal}')
++                    b = native.ones((k, n)).to(f'cuda:{ordinal}')
++                    result = compiled(a, b)
++                    self.assertEqual(result[0].cpu().tolist(), [[float(k)] * n] * m)
++                    self.assertEqual(torch.cuda.current_device(), 1 - ordinal)
++                    wrong = b.cpu().to(f'cuda:{1 - ordinal}')
++                    with self.assertRaises(NotImplementedError):
++                        compiled(a, wrong)
++                    with self.assertRaises(NotImplementedError):
++                        _compile_trace._native._compile_trace_cuda_graph((a, wrong), [])
++                    self.assertEqual(torch.cuda.current_device(), 1 - ordinal)
++        finally:
++            torch.cuda.set_device(previous)
+diff --git a/tests/test_div_scalar_autograd_reference.py b/tests/test_div_scalar_autograd_reference.py
+new file mode 100644
+index 0000000..1f5ca27
+--- /dev/null
++++ b/tests/test_div_scalar_autograd_reference.py
+@@ -0,0 +1,287 @@
++"""First-order CPU scalar division differentials against PyTorch 2.13."""
++
++import unittest
++
++import numpy as np
++import torch_rs as torch
++from torch_rs.torch_rs import _nn_functional_dropout_tensor_autograd_suffix
++
++try:
++    import torch as reference_torch
++except ImportError:
++    reference_torch = None
++
++
++FORMS = (
++    ("operator", lambda api, x, divisor: x / divisor),
++    ("div method", lambda api, x, divisor: x.div(divisor)),
++    ("divide method", lambda api, x, divisor: x.divide(divisor)),
++    ("div method keywords", lambda api, x, divisor: x.div(other=divisor, rounding_mode=None)),
++    ("divide method x2", lambda api, x, divisor: x.divide(x2=divisor, rounding_mode=None)),
++    ("div function", lambda api, x, divisor: api.div(x, divisor)),
++    ("divide function", lambda api, x, divisor: api.divide(x, divisor)),
++    ("div function keywords", lambda api, x, divisor: api.div(input=x, other=divisor, rounding_mode=None, out=None)),
++    ("divide function keywords", lambda api, x, divisor: api.divide(input=x, other=divisor, rounding_mode=None)),
++)
++
++
++@unittest.skipIf(reference_torch is None, "install the reference dependency group")
++class DivScalarAutogradReferenceTests(unittest.TestCase):
++    @classmethod
++    def setUpClass(cls):
++        if reference_torch.__version__.split("+")[0] != "2.13.0":
++            raise AssertionError(reference_torch.__version__)
++
++    def assert_tensor_matches(self, actual, expected, *, mean_forward=False):
++        self.assertEqual(tuple(actual.shape), tuple(expected.shape))
++        self.assertEqual(actual.stride(), expected.stride())
++        self.assertEqual(actual.storage_offset(), expected.storage_offset())
++        self.assertEqual(actual.requires_grad, expected.requires_grad)
++        self.assertEqual(actual.is_leaf, expected.is_leaf)
++        self.assertEqual(str(actual.dtype), str(expected.dtype))
++        self.assertEqual(str(actual.device), str(expected.device))
++        a = np.asarray(actual.detach()).reshape(-1)
++        b = expected.detach().numpy().reshape(-1)
++        np.testing.assert_array_equal(np.isnan(a), np.isnan(b))
++        valid = ~np.isnan(b)
++        if mean_forward:
++            # Full-tensor mean keeps its existing reduction-order allowance;
++            # division values and every backward comparison stay bit-exact.
++            finite_nonzero = np.isfinite(b) & (b != 0)
++            np.testing.assert_array_max_ulp(a[finite_nonzero], b[finite_nonzero], maxulp=1)
++            valid &= ~finite_nonzero
++        # Exact finite/infinity/zero bits catch division order and signed zero.
++        np.testing.assert_array_equal(a.view(np.uint32)[valid], b.view(np.uint32)[valid])
++
++    @staticmethod
++    def make_input(api, layout):
++        if layout == "scalar":
++            leaf = api.tensor(7.0, requires_grad=True)
++        elif layout == "empty":
++            leaf = api.zeros((2, 0, 3), requires_grad=True)
++        else:
++            leaf = api.tensor(
++                [[[1.0, -2.0], [3.0, -4.0]], [[5.0, -6.0], [7.0, -8.0]]],
++                requires_grad=True,
++            )
++        if layout == "transposed":
++            return leaf, leaf.transpose(0, 2)
++        if layout == "offset":
++            return leaf, leaf[1]
++        if layout == "offset transposed":
++            return leaf, leaf[1].transpose(0, 1)
++        if layout == "transposed leaf":
++            leaf = leaf.detach().transpose(0, 2).requires_grad_()
++        if layout == "empty":
++            return leaf, leaf.transpose(0, 2)
++        return leaf, leaf
++
++    def test_weighted_layouts_and_public_forms(self):
++        for name, divide in FORMS:
++            for layout in ("scalar", "empty", "contiguous", "transposed", "offset", "offset transposed", "transposed leaf"):
++                with self.subTest(form=name, layout=layout):
++                    actual_leaf, actual_input = self.make_input(torch, layout)
++                    expected_leaf, expected_input = self.make_input(reference_torch, layout)
++                    actual = divide(torch, actual_input, -3.0)
++                    expected = divide(reference_torch, expected_input, -3.0)
++                    self.assert_tensor_matches(actual, expected)
++                    # PyTorch selects DivBackward2 for the explicit rounding_mode
++                    # overload, even when None. Both use the same first-order VJP;
++                    # the shared native primitive identifies itself as DivBackward0.
++                    expected_node = "DivBackward2" if "keywords" in name or "x2" in name else "DivBackward0"
++                    self.assertEqual(type(expected.grad_fn).__name__, expected_node)
++                    self.assertEqual(
++                        _nn_functional_dropout_tensor_autograd_suffix(actual),
++                        ", grad_fn=<DivBackward0>",
++                    )
++                    if actual.numel():
++                        self.assertNotEqual(actual.data_ptr(), actual_input.data_ptr())
++                    weights = np.arange(actual.numel(), dtype=np.float32).reshape(tuple(actual.shape)) * 1.25 - 2.0
++                    actual_weights = torch.tensor(weights.reshape(-1).tolist()).reshape(tuple(actual.shape))
++                    expected_weights = reference_torch.tensor(weights.reshape(-1).tolist()).reshape(tuple(expected.shape))
++                    actual_loss = (actual * actual_weights).sum()
++                    expected_loss = (expected * expected_weights).sum()
++                    actual_loss.backward()
++                    expected_loss.backward()
++                    self.assert_tensor_matches(actual_leaf.grad, expected_leaf.grad)
++                    self.assert_tensor_matches(actual_input, expected_input)
++                    for loss in (actual_loss, expected_loss):
++                        with self.assertRaisesRegex(RuntimeError, "backward through the graph a second time"):
++                            loss.backward()
++                    self.assert_tensor_matches(actual_leaf.grad, expected_leaf.grad)
++
++    def test_scalar_conversion_and_float32_extremes(self):
++        weights = np.asarray([
++            0x00000000, 0x80000000, 0x3f800000, 0xbf800000,
++            0x40e00000, 0x7f7fffff, 0x00800000, 0x000116c2,
++            0x00000001, 0x80000001, 0x7f800000, 0xff800000, 0x7fc12345,
++        ], dtype=np.uint32).view(np.float32)
++        divisors = (
++            True, False, -2, 3, 16777217, np.bool_(True), np.int64(3),
++            np.float32(-3.0), 3.0000001, 0.0, -0.0,
++            float("inf"), float("-inf"), float("nan"), 1e40, 1e-50,
++            float(np.finfo(np.float32).max), float(np.finfo(np.float32).tiny),
++            1e-40, float(np.nextafter(np.float32(0), np.float32(1))),
++        )
++        for name, divide in FORMS:
++            for divisor in divisors:
++                with self.subTest(form=name, divisor=divisor, scalar_type=type(divisor).__name__):
++                    # Nonfinite inputs must not contaminate the input-independent VJP.
++                    actual_leaf = torch.tensor(weights.tolist(), requires_grad=True)
++                    expected_leaf = reference_torch.tensor(weights.tolist(), requires_grad=True)
++                    actual = divide(torch, actual_leaf, divisor)
++                    expected = divide(reference_torch, expected_leaf, divisor)
++                    self.assert_tensor_matches(actual, expected)
++                    (actual * torch.tensor(weights.tolist())).sum().backward()
++                    (expected * reference_torch.tensor(weights.tolist())).sum().backward()
++                    self.assert_tensor_matches(actual_leaf.grad, expected_leaf.grad)
++
++    def test_repeated_use_accumulation_and_graph_release(self):
++        for name, divide in FORMS:
++            with self.subTest(form=name):
++                leaves = []
++                for api in (torch, reference_torch):
++                    leaf = api.tensor([2.0, 4.0], requires_grad=True)
++                    output = divide(api, leaf * 2.0, 3.0)
++                    loss = (output * api.tensor([7.0, -2.0]) + output).sum()
++                    loss.backward()
++                    gradient = leaf.grad
++                    # A fresh graph accumulates in the same leaf-gradient object.
++                    divide(api, leaf, -4.0).sum().backward()
++                    self.assertIs(leaf.grad, gradient)
++                    self.assertFalse(gradient.requires_grad)
++                    with self.assertRaisesRegex(RuntimeError, "backward through the graph a second time"):
++                        output.sum().backward()
++                    leaves.append(leaf)
++                self.assert_tensor_matches(leaves[0].grad, leaves[1].grad)
++
++    def test_no_grad_and_detached_inputs(self):
++        for name, divide in FORMS:
++            with self.subTest(form=name):
++                results = []
++                for api in (torch, reference_torch):
++                    leaf, input_tensor = self.make_input(api, "offset transposed")
++                    with api.no_grad():
++                        output = divide(api, input_tensor, -3.0)
++                    if api is reference_torch:
++                        self.assertIsNone(output.grad_fn)
++                    else:
++                        self.assertEqual(_nn_functional_dropout_tensor_autograd_suffix(output), "")
++                    self.assertFalse(output.requires_grad)
++                    self.assertIsNone(leaf.grad)
++                    detached_output = divide(api, input_tensor.detach(), 3.0)
++                    self.assertFalse(detached_output.requires_grad)
++                    results.append((output, detached_output))
++                for actual, expected in zip(*results):
++                    self.assert_tensor_matches(actual, expected)
++
++    def test_division_composes_with_mean_l1_layouts_and_accumulation(self):
++        for layout in ("scalar", "empty", "contiguous", "transposed", "offset", "offset transposed", "transposed leaf"):
++            for flags in ((True, False), (False, True), (True, True)):
++                for reduction in ({}, {"reduction": "mean"}):
++                    with self.subTest(layout=layout, flags=flags, reduction=reduction):
++                        results = []
++                        for api in (torch, reference_torch):
++                            left, x = self.make_input(api, layout)
++                            right, y = self.make_input(api, layout)
++                            left.requires_grad_(flags[0])
++                            right.requires_grad_(flags[1])
++                            # Recreate views after changing the leaf recording flags.
++                            if not flags[0]:
++                                x = x.detach()
++                            if not flags[1]:
++                                y = y.detach()
++                            x, y = api.div(x, -3.0), api.divide(y, 2.0)
++                            mean = api.nn.functional.l1_loss(x, y, **reduction)
++                            loss = mean / -3.0 + mean / 2.0
++                            loss.backward()
++                            first = tuple(leaf.grad.clone() if flag else None for leaf, flag in zip((left, right), flags))
++                            for old in (loss, mean, x if flags[0] else y):
++                                with self.assertRaisesRegex(RuntimeError, "backward through the graph a second time"):
++                                    old.sum().backward()
++                            for leaf, flag in zip((left, right), flags):
++                                if flag:
++                                    gradient = leaf.grad
++                                    (leaf / 4.0).mean().backward()
++                                    self.assertIs(leaf.grad, gradient)
++                                else:
++                                    self.assertIsNone(leaf.grad)
++                            results.append((mean, first, (left.grad, right.grad)))
++                        self.assert_tensor_matches(results[0][0], results[1][0], mean_forward=True)
++                        for actuals, expecteds in zip(results[0][1:], results[1][1:]):
++                            for actual, expected, flag in zip(actuals, expecteds, flags):
++                                if flag:
++                                    self.assert_tensor_matches(actual, expected)
++
++    def test_shared_division_l1_edges_and_ieee_loss_weights(self):
++        for shared in ("same operand", "shared nonleaf", "overlapping views"):
++            for divisor in (-3.0, 0.0, -0.0, float("inf"), float("-inf"), float("nan"), 1e-40):
++                with self.subTest(shared=shared, divisor=divisor):
++                    results = []
++                    for api in (torch, reference_torch):
++                        leaf = api.tensor([-0.0, 0.0, -2.0, 4.0], requires_grad=True)
++                        divided = leaf / 2.0
++                        if shared == "same operand":
++                            x, y = divided, divided
++                        elif shared == "shared nonleaf":
++                            x, y = divided, divided / -2.0
++                        else:
++                            x, y = divided[:3], divided[1:]
++                        mean = api.nn.functional.l1_loss(x, y)
++                        loss = mean / divisor
++                        loss.backward()
++                        results.append((loss, leaf.grad))
++                    for actual, expected in zip(*results):
++                        self.assert_tensor_matches(actual, expected)
++
++    def test_division_does_not_bypass_l1_nonfinite_boundary(self):
++        for divisor in (0.0, -0.0, float("nan"), 1e-40):
++            with self.subTest(divisor=divisor):
++                leaf = torch.tensor([0.0, 4.0], requires_grad=True)
++                divided = leaf / divisor
++                target = torch.zeros(2, requires_grad=True)
++                for reduction in ({}, {"reduction": "mean"}):
++                    with self.assertRaises((RuntimeError, NotImplementedError)):
++                        torch.nn.functional.l1_loss(divided, target, **reduction)
++                    self.assertIsNone(leaf.grad)
++                    self.assertIsNone(target.grad)
++                # Rejecting the loss must leave the division graph usable.
++                divided.sum().backward()
++                expected = reference_torch.tensor([0.0, 4.0], requires_grad=True)
++                (expected / divisor).sum().backward()
++                self.assert_tensor_matches(leaf.grad, expected.grad)
++
++    def test_cuda_division_remains_unsupported(self):
++        if not torch.cuda.is_available() or not reference_torch.cuda.is_available():
++            self.skipTest("CUDA division boundary requires an NVIDIA GPU")
++        leaf = torch.zeros((2, 2), device="cuda:0")
++        for name, divide in FORMS:
++            with self.subTest(form=name):
++                with self.assertRaises((RuntimeError, NotImplementedError)):
++                    divide(torch, leaf, 3.0)
++        self.assertEqual(leaf.cpu().tolist(), [[0.0, 0.0], [0.0, 0.0]])
++
++    def test_unsupported_forms_leave_graph_and_gradients_unchanged(self):
++        leaf = torch.tensor([2.0], requires_grad=True)
++        output = leaf / 3.0
++        for call in (
++            lambda: leaf / torch.tensor(2.0),
++            lambda: torch.tensor(2.0) / leaf,
++            lambda: 2.0 / leaf,
++            lambda: torch.div(2.0, leaf),
++            lambda: torch.divide(leaf, torch.tensor(2.0)),
++            lambda: leaf.div(2.0, rounding_mode="floor"),
++            lambda: torch.divide(leaf, 2.0, rounding_mode="trunc"),
++            lambda: output.backward(create_graph=True),
++            lambda: output.backward(retain_graph=True),
++        ):
++            with self.subTest(call=call):
++                with self.assertRaises((RuntimeError, NotImplementedError)):
++                    call()
++                self.assertIsNone(leaf.grad)
++        output.backward()
++        self.assertEqual(leaf.grad.item(), np.float32(1.0 / 3.0))
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/test_nn_functional_l1_loss.py b/tests/test_nn_functional_l1_loss.py
+index 3ce4c32..9fd8c63 100644
+--- a/tests/test_nn_functional_l1_loss.py
++++ b/tests/test_nn_functional_l1_loss.py
+@@ -1360,22 +1360,26 @@ class FunctionalL1LossTests(unittest.TestCase):
+                             ).transpose(0, 1)
+                             for side, flag in enumerate(flags)
+                         )
+-                        with self.assertRaisesRegex(
+-                            RuntimeError,
+-                            r"^l1_loss\(\): autograd recording is not supported$",
+-                        ):
+-                            functional.l1_loss(*operands, reduction="none")
+-                        with torch.no_grad():
+-                            actual = functional.l1_loss(*operands, reduction="none")
+-                            expected = (operands[0] - operands[1]).abs()
+-                        self.assert_matches_composition(actual, expected, case=value)
++                        for reduction in ({"reduction": "none"}, {}, {"reduction": "mean"}):
++                            with self.assertRaisesRegex(
++                                RuntimeError,
++                                r"^l1_loss\(\): autograd recording is not supported$",
++                            ):
++                                functional.l1_loss(*operands, **reduction)
++                            with torch.no_grad():
++                                actual = functional.l1_loss(*operands, **reduction)
++                                expected = (operands[0] - operands[1]).abs()
++                                if reduction.get("reduction") != "none":
++                                    expected = expected.mean()
++                            self.assert_matches_composition(actual, expected, case=value)
+ 
+     def test_matching_shape_is_required_even_for_same_element_count(self):
+         input = torch.tensor([1.0], requires_grad=True)
+         target = torch.tensor([[2.0]], requires_grad=True)
+-        with self.assertWarns(UserWarning):
+-            with self.assertRaisesRegex(RuntimeError, "autograd recording is not supported"):
+-                functional.l1_loss(input, target, reduction="none")
++        for reduction in ({"reduction": "none"}, {}, {"reduction": "mean"}):
++            with self.assertWarns(UserWarning):
++                with self.assertRaisesRegex(RuntimeError, "autograd recording is not supported"):
++                    functional.l1_loss(input, target, **reduction)
+         self.assertIsNone(input.grad)
+         self.assertIsNone(target.grad)
+ 
+@@ -1413,7 +1417,7 @@ class FunctionalL1LossTests(unittest.TestCase):
+                     ),
+                 ):
+                     with self.subTest(form=form):
+-                        if form == "none":
++                        if form in ("none", "mean", "default mean"):
+                             self.assertTrue(call().requires_grad)
+                         else:
+                             with self.assertRaisesRegex(
+diff --git a/tests/test_nn_functional_l1_loss_reference.py b/tests/test_nn_functional_l1_loss_reference.py
+index 7f23327..9131c2d 100644
+--- a/tests/test_nn_functional_l1_loss_reference.py
++++ b/tests/test_nn_functional_l1_loss_reference.py
+@@ -2008,6 +2008,15 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
+         return leaves, operands
+ 
+     def test_unreduced_weighted_backward_layouts_match_pytorch_2_13(self):
++        self.check_backward_layouts({"reduction": "none"})
++
++    def test_mean_backward_layouts_match_pytorch_2_13(self):
++        for reduction in ({}, {"reduction": "mean"}):
++            for scale in (1.0, -2.5):
++                with self.subTest(reduction=reduction, scale=scale):
++                    self.check_backward_layouts(reduction, scale=scale)
++
++    def check_backward_layouts(self, reduction, *, scale=1.0):
+         for case in (
+             "dense", "scalar", "empty", "transposed", "offset",
+             "offset transposed", "mixed layout", "channels last", "overflow",
+@@ -2019,22 +2028,31 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
+                     for module in (torch, reference_torch):
+                         leaves, operands = self.backward_operands(module, case, flags)
+                         before = [np.asarray(value.detach()).copy() for value in leaves]
+-                        output = module.nn.functional.l1_loss(*operands, reduction="none")
++                        output = module.nn.functional.l1_loss(*operands, **reduction)
+                         self.assertTrue(output.requires_grad)
+                         self.assertFalse(output.is_leaf)
+                         if module is reference_torch:
+-                            self.assertEqual(output.grad_fn.name(), "AbsBackward0")
++                            self.assertEqual(
++                                output.grad_fn.name(),
++                                "AbsBackward0" if reduction.get("reduction") == "none"
++                                else "MeanBackward0",
++                            )
+                         for operand in operands:
+                             if output.numel():
+                                 self.assertNotEqual(output.data_ptr(), operand.data_ptr())
+-                        weights = np.resize(
+-                            np.array([0.5, -2.0, 3.0, -4.0, 1.5, -0.25], dtype=np.float32),
+-                            output.numel(),
+-                        ).reshape(tuple(output.shape))
+-                        weights = module.tensor(
+-                            weights.reshape(-1).tolist(), dtype=module.float32,
+-                        ).reshape(tuple(output.shape))
+-                        (output * weights).sum().backward()
++                        if reduction.get("reduction") == "none":
++                            weights = np.resize(
++                                np.array([0.5, -2.0, 3.0, -4.0, 1.5, -0.25], dtype=np.float32),
++                                output.numel(),
++                            ).reshape(tuple(output.shape))
++                            weights = module.tensor(
++                                weights.reshape(-1).tolist(), dtype=module.float32,
++                            ).reshape(tuple(output.shape))
++                            (output * weights).sum().backward()
++                        elif scale == 1.0:
++                            output.backward()
++                        else:
++                            (output * scale).backward()
+                         for leaf, original in zip(leaves, before):
+                             np.testing.assert_array_equal(np.asarray(leaf.detach()), original)
+                         results.append((output, leaves))
+@@ -2060,6 +2078,14 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
+                             self.assertIsNone(expected.grad)
+ 
+     def test_unreduced_shared_operands_and_repeated_use_match_pytorch_2_13(self):
++        self.check_shared_operands_and_repeated_use({"reduction": "none"})
++
++    def test_mean_shared_operands_and_repeated_use_match_pytorch_2_13(self):
++        for reduction in ({}, {"reduction": "mean"}):
++            with self.subTest(reduction=reduction):
++                self.check_shared_operands_and_repeated_use(reduction)
++
++    def check_shared_operands_and_repeated_use(self, reduction):
+         for case in ("same tensor", "shared views", "shared nonleaf", "repeated loss"):
+             with self.subTest(case=case):
+                 results = []
+@@ -2080,9 +2106,11 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
+                         input, target = leaf * 2.0, leaf * -1.
+                     else:
+                         input, target = leaf, module.zeros_like(leaf)
+-                    output = module.nn.functional.l1_loss(input, target, reduction="none")
++                    if reduction.get("reduction") != "none":
++                        weights = -2.5
++                    output = module.nn.functional.l1_loss(input, target, **reduction)
+                     if case == "repeated loss":
+-                        second = module.nn.functional.l1_loss(input, target, reduction="none")
++                        second = module.nn.functional.l1_loss(input, target, **reduction)
+                         loss = (output * weights + output * 0.5 + second * -2.0).sum()
+                     else:
+                         loss = (output * weights).sum()
+@@ -2090,7 +2118,7 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
+                     first_grad = leaf.grad.clone()
+                     # A new graph accumulates into the existing leaf gradient.
+                     fresh = module.nn.functional.l1_loss(
+-                        leaf, module.zeros_like(leaf), reduction="none",
++                        leaf, module.zeros_like(leaf), **reduction,
+                     )
+                     (fresh * -0.5).sum().backward()
+                     results.append((output, first_grad, leaf.grad))
+@@ -2098,13 +2126,24 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
+                     self.assert_matches(actual, expected, case=case)
+ 
+     def test_unreduced_backward_releases_graph_matches_pytorch_2_13(self):
++        self.check_backward_releases_graph({"reduction": "none"})
++
++    def test_mean_backward_releases_graph_matches_pytorch_2_13(self):
++        for reduction in ({}, {"reduction": "mean"}):
++            with self.subTest(reduction=reduction):
++                self.check_backward_releases_graph(reduction)
++
++    def check_backward_releases_graph(self, reduction):
+         results = []
+         for module in (torch, reference_torch):
+             input = module.tensor([-3.0, 0.0, 2.0], dtype=module.float32, requires_grad=True)
+             target = module.tensor([1.0, -0.0, 4.0], dtype=module.float32, requires_grad=True)
+             weights = module.tensor([0.5, -2.0, 3.0], dtype=module.float32)
+-            output = module.nn.functional.l1_loss(input, target, reduction="none")
+-            loss = (output * weights).sum()
++            output = module.nn.functional.l1_loss(input, target, **reduction)
++            loss = (
++                (output * weights).sum() if reduction.get("reduction") == "none"
++                else output * -2.5
++            )
+             loss.backward()
+             input_grad, target_grad = input.grad.clone(), target.grad.clone()
+             # Both the scalar root and the saved abs node have been released.
+@@ -2147,7 +2186,7 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
+                     target_requires_grad=target_requires_grad,
+                     reduction=reduction,
+                 ):
+-                    if reduction == "none":
++                    if reduction in ("none", "mean"):
+                         self.assertTrue(
+                             functional.l1_loss(
+                                 actual_input, actual_target, reduction=reduction,
+diff --git a/tests/test_tensor_div.py b/tests/test_tensor_div.py
+index a3c0042..99a7112 100644
+--- a/tests/test_tensor_div.py
++++ b/tests/test_tensor_div.py
+@@ -7,6 +7,7 @@ import unittest
+ 
+ import numpy as np
+ import torch_rs as torch
++from torch_rs.torch_rs import _nn_functional_dropout_tensor_autograd_suffix
+ 
+ 
+ DIV_DOC = "\ndiv(value, *, rounding_mode=None) -> Tensor\n\nSee :func:`torch.div`\n"
+@@ -101,7 +102,7 @@ class TensorDivisionMethodTests(unittest.TestCase):
+                 self.assertNotEqual(result.data_ptr(), special.data_ptr())
+                 self.assertNotEqual(result.data_ptr(), divisors.data_ptr())
+ 
+-    def test_active_autograd_is_rejected_but_no_grad_uses_native_division(self):
++    def test_scalar_autograd_and_unsupported_tensor_denominators(self):
+         for name in ("div", "divide"):
+             left = torch.tensor([[2.0, 3.0]], requires_grad=True)
+             right = torch.tensor([[5.0], [7.0]], requires_grad=True)
+@@ -115,11 +116,11 @@ class TensorDivisionMethodTests(unittest.TestCase):
+                 self.assertIsNone(right.grad)
+ 
+             with self.subTest(name=name, case="scalar operand"):
+-                with self.assertRaisesRegex(
+-                    RuntimeError,
+-                    rf"^{name}\(\): autograd recording is not supported$",
+-                ):
+-                    getattr(left, name)(2.0)
++                output = getattr(left, name)(2.0)
++                self.assertTrue(output.requires_grad)
++                self.assertEqual(_nn_functional_dropout_tensor_autograd_suffix(output), ", grad_fn=<DivBackward0>")
++                output.sum().backward()
++                self.assertEqual(left.grad.tolist(), [[0.5, 0.5]])
+ 
+             with self.subTest(name=name, case="no_grad"):
+                 with torch.no_grad():
+diff --git a/tests/test_top_level_div.py b/tests/test_top_level_div.py
+index c4245d0..180c720 100644
+--- a/tests/test_top_level_div.py
++++ b/tests/test_top_level_div.py
+@@ -8,6 +8,7 @@ import unittest
+ 
+ import numpy as np
+ import torch_rs as torch
++from torch_rs.torch_rs import _nn_functional_dropout_tensor_autograd_suffix
+ 
+ 
+ DIV_DOC = r"""
+@@ -239,7 +240,7 @@ class TopLevelDivTests(unittest.TestCase):
+                 case=(name, "scalar-left nan numerator payload"),
+             )
+ 
+-    def test_active_autograd_is_rejected_but_no_grad_uses_native_division(self):
++    def test_scalar_autograd_and_unsupported_tensor_denominators(self):
+         for name in ("div", "divide"):
+             function = getattr(torch, name)
+             left = torch.tensor([[2.0, 3.0]], requires_grad=True)
+@@ -255,11 +256,11 @@ class TopLevelDivTests(unittest.TestCase):
+                 self.assertIsNone(right.grad)
+ 
+             with self.subTest(name=name, case="scalar operand"):
+-                with self.assertRaisesRegex(
+-                    RuntimeError,
+-                    rf"^{name}\(\): autograd recording is not supported$",
+-                ):
+-                    function(left, 2.0)
++                output = function(left, 2.0)
++                self.assertTrue(output.requires_grad)
++                self.assertEqual(_nn_functional_dropout_tensor_autograd_suffix(output), ", grad_fn=<DivBackward0>")
++                output.sum().backward()
++                self.assertEqual(left.grad.tolist(), [[0.5, 0.5]])
+                 with self.assertRaisesRegex(
+                     RuntimeError,
+                     rf"^{name}\(\): autograd recording is not supported$",

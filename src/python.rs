@@ -1,3 +1,5 @@
+#[path = "python_compile_cuda_graph.rs"]
+mod compile_cuda_graph;
 #[path = "python_unflatten.rs"]
 mod unflatten;
 pub(crate) use unflatten::unflatten_variable_function;
@@ -7646,11 +7648,6 @@ fn apply_top_level_division(
         (BoundDivOperand::Tensor(input), BoundDivOperand::Scalar(scalar)) => {
             let input = input.try_borrow()?;
             validate_top_level_division_tensor(operation, &input)?;
-            if is_grad_enabled() && input.inner.requires_grad() {
-                return Err(PyRuntimeError::new_err(
-                    operation.autograd_unsupported_error(),
-                ));
-            }
             let scalar = parse_top_level_mul_scalar(scalar)?;
             BinaryOperation::Divide.apply_scalar(&input.inner, scalar, false)
         }
@@ -7929,11 +7926,6 @@ fn apply_tensor_division_method(
         }
         (BoundDivOperand::Tensor(tensor), BoundDivOperand::Scalar(scalar)) => {
             let tensor = tensor.try_borrow()?;
-            if is_grad_enabled() && tensor.inner.requires_grad() {
-                return Err(PyRuntimeError::new_err(
-                    operation.autograd_unsupported_error(),
-                ));
-            }
             let scalar = parse_top_level_mul_scalar(scalar)?;
             BinaryOperation::Divide.apply_scalar(&tensor.inner, scalar, false)
         }
@@ -25939,6 +25931,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
     module.add_function(wrap_pyfunction!(compile_trace_unary, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_binary, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_scalar, module)?)?;
+    module.add_function(wrap_pyfunction!(compile_cuda_graph::execute, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_mul_scalar_value, module)?)?;
     let exports = module.getattr("__all__")?;
     for name in [
@@ -25949,6 +25942,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
         "_compile_trace_unary",
         "_compile_trace_binary",
         "_compile_trace_scalar",
+        "_compile_trace_cuda_graph",
         "_compile_trace_mul_scalar_value",
     ] {
         exports.call_method1("remove", (name,))?;

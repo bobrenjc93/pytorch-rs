@@ -1,0 +1,23 @@
+The actual orchestration invocation (from the composite worktree):
+source target/composite-postcommit-3c320cb/env.sh
+.venv/bin/python target/composite-postcommit-3c320cb/capture.py > target/composite-postcommit-3c320cb/capture.log 2>&1
+
+inspection.json records the timestamp of the initial clean-source inspection,
+the complete declared seed sequence, and that build-capture did not exist.
+commands.json and each per-command receipt record actual subprocess argv,
+start/end timestamps, status, source identities and output log hashes.
+No outer shell-launch duration was measured or inferred.
+
+Environment preparation reused the already installed worktree-local interpreter,
+locked dependency environment and Cargo download cache. No Python installation
+or dependency resolution was performed in this post-commit step. Before launch,
+new directories under this capture root were asserted absent and created for
+TMPDIR=tmp, XDG_CACHE_HOME=cache, CUDA_CACHE_PATH=cuda,
+TRITON_CACHE_DIR=triton, TORCHINDUCTOR_CACHE_DIR=inductor,
+CARGO_TARGET_DIR=rust-checks and PYTHONPYCACHEPREFIX=pycache.
+The build tool overrides the Rust target with the new build-capture/build path.
+Correctness checks warm CUDA before the diagnostic sequence. Each diagnostic
+records its own initial Triton/Inductor cache counts. Fixed scoring uses its
+separate initially absent scoring-triton and scoring-inductor directories;
+existing worktree-local private kernel binaries may be reused and are hashed
+by verification.json. No claim of a cold dependency installation is made.

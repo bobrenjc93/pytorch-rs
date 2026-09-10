@@ -1,0 +1,15 @@
+"""Record the post-capture audit invocation and unmodified JSON output."""
+import datetime,hashlib,json,pathlib,subprocess,sys,time
+R=pathlib.Path.cwd();O=R/'target/composite-postcommit-3c320cb';sys.path.insert(0,str(R/'scripts'))
+from evaluate_cuda_math import source_provenance
+
+def sha(p):
+ with open(p,'rb') as f:return hashlib.file_digest(f,'sha256').hexdigest()
+def status():return subprocess.check_output(['git','status','--porcelain'],text=True)
+assert not status();before=source_provenance();start=datetime.datetime.now(datetime.timezone.utc).isoformat();tick=time.monotonic();command=[sys.executable,str(O/'verify.py')]
+with (O/'verification.json').open('x') as stdout,(O/'verification.stderr.log').open('x') as stderr:
+ result=subprocess.run(command,stdout=stdout,stderr=stderr)
+record=dict(command=command,cwd=str(R),started_at=start,ended_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),wall_seconds=time.monotonic()-tick,exit_status=result.returncode,source_before=before,source_after=source_provenance(),status_before='',status_after=status(),stdout=str(O/'verification.json'),stdout_sha256=sha(O/'verification.json'),stderr=str(O/'verification.stderr.log'),stderr_sha256=sha(O/'verification.stderr.log'),audit_script_sha256=sha(O/'verify.py'))
+(O/'verification.receipt.json').write_text(json.dumps(record,indent=2)+'\n');print('verification',result.returncode,flush=True)
+assert record['source_before']==record['source_after'] and not record['status_after']
+sys.exit(result.returncode)

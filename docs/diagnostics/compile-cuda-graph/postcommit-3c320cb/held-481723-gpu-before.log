@@ -1,0 +1,2 @@
+gpu_uuid, pid, process_name, used_gpu_memory [MiB]
+GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 1223544, /data/users/njriasan/fbsource/buck-out/v2/art/fbcode/80f51047feac0f6b/mslk/test/gemm/__fp8_gemm__/fp8_gemm#link-tree/runtime/bin/fp8_gemm#native-main#platform-runtime#python#py_version_3_12, 940 MiB

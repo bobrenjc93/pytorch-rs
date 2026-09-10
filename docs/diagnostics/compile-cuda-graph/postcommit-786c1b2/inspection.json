@@ -1,0 +1,18 @@
+{
+  "commit": "786c1b2e18ca83ecbe6e09606d33309d00187b2f",
+  "base": "fbb0aa0f5ad37fc0b868d0d153fb90aeeb41b6f3",
+  "status": "",
+  "diff_names": "M\tdocs/compile-cuda-matmul.md\nM\tpython/torch_rs/_compile_trace.py\nM\tsrc/python.rs\nA\tsrc/python_compile_cuda_graph.rs\nM\tsrc/tensor.rs\nA\tsrc/tensor_cuda_graph.rs\nA\ttests/test_compile_cuda_graph.py\n",
+  "source": {
+    "commit": "786c1b2e18ca83ecbe6e09606d33309d00187b2f",
+    "source_sha256": "979e3fb0b5aafc492cb45aa6ba573ab332210a933f62141c4351e79a1b5679b7",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "started_at": "2026-09-10T17:33:02.163922+00:00",
+  "held_out_seeds": [
+    481723,
+    926051
+  ],
+  "primary_seed": 798431,
+  "build_target_absent": true
+}

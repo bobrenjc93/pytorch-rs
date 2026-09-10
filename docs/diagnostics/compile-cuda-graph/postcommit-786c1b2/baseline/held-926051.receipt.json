@@ -1,0 +1,37 @@
+{
+  "command": [
+    ".venv/bin/python",
+    "scripts/diagnose_compile_cuda_matmul.py",
+    "--build-record",
+    "target/graph-plan/baseline-build/build-record.json",
+    "--output",
+    "target/graph-plan/baseline-held-926051.json",
+    "--seed",
+    "926051"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f",
+  "started_at": "2026-09-10T17:17:58.749134+00:00",
+  "elapsed_seconds": 42.666316747665405,
+  "exit_status": 0,
+  "log_sha256": "995f50e1d68684a8fc9b37ab646106847f5debb88f781c4dde64d8f7c63bee0d",
+  "commit": "fbb0aa0f5ad37fc0b868d0d153fb90aeeb41b6f3",
+  "status": "",
+  "environment": {
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan/uv",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan/cuda",
+    "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan/python",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan/cargo-target",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan/inductor",
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan/cargo",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan/tmp",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan/triton",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan/cache",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "TORCH_RS_CUBLAS": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcublas.so.13",
+    "OMP_NUM_THREADS": "1",
+    "CUDA_HOME": "/usr/local/cuda-12.6",
+    "CARGO_HTTP_PROXY": "http://fwdproxy:8080",
+    "MKL_NUM_THREADS": "1"
+  }
+}

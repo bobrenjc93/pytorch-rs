@@ -1,0 +1,55 @@
+"""Evidence orchestration: invoke committed tools without changing workloads."""
+import datetime,hashlib,json,os,pathlib,subprocess,sys,time
+R=pathlib.Path.cwd();O=R/'target/composite-postcommit-3c320cb';COMMIT='3c320cb2e36ae1f165437e095ecf69cbcd1f59f4'
+sys.path.insert(0,str(R/'scripts'))
+from evaluate_cuda_math import source_provenance
+
+def sha(p):
+ with open(p,'rb') as f:return hashlib.file_digest(f,'sha256').hexdigest()
+def git(*args):return subprocess.check_output(['git',*args],text=True)
+def stamp():return datetime.datetime.now(datetime.timezone.utc).isoformat()
+def save(n,v):(O/n).write_text(json.dumps(v,indent=2)+'\n')
+assert git('rev-parse','HEAD').strip()==COMMIT and not git('status','--porcelain')
+paths=[p for p in git('ls-files','-z','--','src','python','tests','scripts','.github','Cargo.toml','Cargo.lock','pyproject.toml','uv.lock','rust-toolchain.toml','AGENTS.md').split('\0') if p]
+manifest={p:sha(R/p) for p in paths};save('source-manifest.json',manifest)
+source=source_provenance();sequence=[('primary',798431),('held-481723',481723),('held-926051',926051),('primary-repeat',798431)]
+save('inspection.json',dict(commit=COMMIT,base=git('rev-parse','main').strip(),source=source,status=git('status','--porcelain'),started_at=stamp(),sequence=sequence,build_target_absent=not (O/'build-capture').exists(),scope='clean committed composite evidence; historical baseline retained; no new optimization or paired-baseline claim',diff_names=git('diff','main...HEAD','--name-status')))
+(O/'implementation.diff.txt').write_text(git('diff','main...HEAD','--','src','python','tests','scripts','Cargo.toml','Cargo.lock','pyproject.toml','uv.lock','rust-toolchain.toml'))
+env={k:v for k,v in os.environ.items() if k.startswith(('CUDA','TORCH','TRITON','CARGO','UV_','OMP_','MKL_','OPENBLAS_','PYO3_','RUSTUP_','PYTHONPYCACHE')) or k in ('TMPDIR','XDG_CACHE_HOME','VIRTUAL_ENV','GIT_OPTIONAL_LOCKS')};save('environment.json',env)
+commands=[];failures=[]
+def run(name,command,overrides=None,required=False):
+ assert git('rev-parse','HEAD').strip()==COMMIT and not git('status','--porcelain')
+ before=source_provenance();assert before==source
+ started=stamp();tick=time.monotonic();log=O/(name+'.log');child=os.environ | (overrides or {})
+ with log.open('x') as stream:result=subprocess.run(command,cwd=R,env=child,stdout=stream,stderr=subprocess.STDOUT)
+ record=dict(command=command,cwd=str(R),started_at=started,ended_at=stamp(),wall_seconds=time.monotonic()-tick,exit_status=result.returncode,log=str(log),log_sha256=sha(log),source_before=before,source_after=source_provenance(),status_before='',status_after=git('status','--porcelain'),source_manifest_sha256=sha(O/'source-manifest.json'),environment=env | (overrides or {}))
+ save(name+'.receipt.json',record);commands.append(record);save('commands.json',commands);print(name,result.returncode,flush=True)
+ assert record['source_after']==source and not record['status_after']
+ if result.returncode:
+  failures.append(name)
+  if required:raise RuntimeError('prerequisite failed: '+name)
+py=str(R/'.venv/bin/python')
+run('preflight',[py,'-c',"import sys,torch,subprocess; print(sys.executable,sys.base_prefix,sys.version,torch.__file__,torch.__version__,torch.version.cuda,torch.cuda.is_available()); print(subprocess.check_output(['nvidia-smi','--query-gpu=index,uuid,name,memory.total,driver_version,compute_cap','--format=csv'],text=True)); print(subprocess.check_output(['nvcc','--version'],text=True))"],required=True)
+run('fresh-build',[py,'scripts/capture_depth_concat_build.py','--output',str(O/'build-capture')],required=True)
+run('wheel-verifier',[py,'-I','.github/scripts/verify_native_extension.py'],required=True)
+run('clippy',['cargo','clippy','--all-targets','--','-D','warnings'],required=True)
+run('clippy-bindings',['cargo','clippy','--all-targets','--features','python-bindings','--','-D','warnings'],required=True)
+run('focused-cpu',[py,'-m','unittest','tests.test_div_scalar_autograd_reference','tests.test_nn_functional_l1_loss','tests.test_nn_functional_l1_loss_reference','tests.test_tensor_div','tests.test_top_level_div'],required=True)
+run('cuda-regressions',[py,'-m','unittest','tests.test_compile_cuda_graph','tests.test_compile_cuda_matmul','tests.test_cuda_matmul','tests.test_compile_cuda_matmul_diagnostic'],required=True)
+classes=['tests.test_compile_cuda_graph.CudaGraphDeviceTests','tests.test_compile_cuda_matmul.CompileCudaMatmulDeviceTests','tests.test_cuda_matmul.CudaMatmulDeviceTests','tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarDeviceTests','tests.test_compile_cuda_neg.CompileCudaNegDeviceTests','tests.test_compile_cuda_trailing_vector.CompileCudaTrailingVectorDeviceTests','tests.test_compile_cuda_boundary.CompileCudaDeviceTests']
+run('two-gpu',[py,'-m','unittest',*classes],{'CUDA_VISIBLE_DEVICES':'0,1'},required=True)
+for name,seed in sequence:
+ run(name+'-gpu-before',['nvidia-smi','--query-compute-apps=gpu_uuid,pid,process_name,used_memory','--format=csv'])
+ run(name,[py,'scripts/diagnose_compile_cuda_matmul.py','--build-record',str(O/'build-capture/build-record.json'),'--output',str(O/(name+'.json')),'--seed',str(seed)])
+ run(name+'-gpu-after',['nvidia-smi','--query-compute-apps=gpu_uuid,pid,process_name,used_memory','--format=csv'])
+run('fixed-math',[py,'scripts/evaluate_cuda_math.py','--build-record',str(O/'build-capture/build-record.json'),'--output',str(O/'fixed-math.json'),'--seed','8503945240872567646','--seed','8613321571747136749','--seed','4480763905421893394'])
+run('frozen-compiler',[py,'scripts/evaluate_torch_compile_coverage.py','--subset','full'])
+scoring={}
+for key,name in [('TRITON_CACHE_DIR','scoring-triton'),('TORCHINDUCTOR_CACHE_DIR','scoring-inductor')]:
+ p=O/name;p.mkdir();scoring[key]=str(p)
+run('scoring-gpu-before',['nvidia-smi','--query-compute-apps=gpu_uuid,pid,process_name,used_memory','--format=csv'])
+run('fixed-scoring',[py,'scripts/benchmark_compile_cuda.py','--output',str(O/'fixed-scoring.json')],scoring)
+run('scoring-gpu-after',['nvidia-smi','--query-compute-apps=gpu_uuid,pid,process_name,used_memory','--format=csv'])
+assert manifest=={p:sha(R/p) for p in paths}
+save('capture-complete.json',dict(commit=COMMIT,source=source,status=git('status','--porcelain'),ended_at=stamp(),command_count=len(commands),failed_commands=failures,source_test_harness_unchanged=True))
+sys.exit(bool(failures))

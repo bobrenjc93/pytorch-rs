@@ -1,4 +1,8 @@
 use std::collections::{HashMap, HashSet};
+
+#[cfg(feature = "python-bindings")]
+#[path = "tensor_cuda_graph.rs"]
+pub(crate) mod cuda_graph;
 use std::fmt::Formatter;
 use std::iter::FusedIterator;
 use std::sync::{
@@ -157,6 +161,10 @@ enum GradFn {
         input: SavedTensor,
         scalar: Option<f32>,
     },
+    DivideScalar {
+        input: SavedTensor,
+        scalar: Option<f32>,
+    },
     Negate {
         input: SavedTensor,
         #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
@@ -249,6 +257,7 @@ impl GradFn {
                 right.take_parent(pending);
             }
             Self::MultiplyScalar { input, .. }
+            | Self::DivideScalar { input, .. }
             | Self::Negate { input, .. }
             | Self::Sum { input, .. }
             | Self::Mean { input, .. }
@@ -282,7 +291,7 @@ impl GradFn {
                     return Err(TensorError::BackwardGraphFreed);
                 }
             }
-            Self::MultiplyScalar { input, scalar } => {
+            Self::MultiplyScalar { input, scalar } | Self::DivideScalar { input, scalar } => {
                 if input.autograd.is_some() && scalar.is_none() {
                     return Err(TensorError::BackwardGraphFreed);
                 }
@@ -327,7 +336,9 @@ impl GradFn {
                 left.storage = None;
                 gate.storage = None;
             }
-            Self::MultiplyScalar { scalar, .. } => *scalar = None,
+            Self::MultiplyScalar { scalar, .. } | Self::DivideScalar { scalar, .. } => {
+                *scalar = None;
+            }
             Self::SavedInputUnary(node) => node.input.storage = None,
             Self::SavedOutputUnary(node) => node.output.storage = None,
             Self::AddSubtract { .. }
@@ -1458,6 +1469,7 @@ impl Tensor {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let node = match grad_fn.as_ref()? {
             GradFn::Multiply { .. } | GradFn::MultiplyScalar { .. } => AutogradNode::Multiply,
+            GradFn::DivideScalar { .. } => AutogradNode::Divide,
             GradFn::AddSubtract { node, .. }
             | GradFn::Concat { node, .. }
             | GradFn::Negate { node, .. }
@@ -5191,16 +5203,23 @@ impl Tensor {
     }
 
     /// Divides every element by a scalar using IEEE 754 true division.
+    /// Records a first-order CPU backward edge without saving input values.
     ///
     /// # Errors
     ///
-    /// Returns an error when gradient recording is enabled for this tensor, or
-    /// when result allocation fails.
+    /// Returns an error for non-CPU storage or when result allocation fails.
     pub fn div_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
+        let mut output = self.div_scalar_values(scalar)?;
         if self.records_grad() {
-            return Err(TensorError::AutogradRecordingUnsupported { operation: "div" });
+            let input = SavedTensor::try_from_tensor(self, false)?;
+            let scalar = input.autograd.is_some().then_some(scalar);
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::DivideScalar { input, scalar })),
+                },
+            }));
         }
-        self.div_scalar_values(scalar)
+        Ok(output)
     }
 
     fn div_scalar_values(&self, scalar: f32) -> Result<Self, TensorError> {
@@ -6384,6 +6403,7 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                             push_saved_parent(&mut stack, left);
                         }
                         GradFn::MultiplyScalar { input, .. }
+                        | GradFn::DivideScalar { input, .. }
                         | GradFn::Negate { input, .. }
                         | GradFn::Sum { input, .. }
                         | GradFn::Mean { input, .. }
@@ -6433,6 +6453,9 @@ fn apply_grad_fn(
         }
         GradFn::MultiplyScalar { input, scalar } => {
             apply_multiply_scalar_grad_fn(input, *scalar, upstream, gradients)?;
+        }
+        GradFn::DivideScalar { input, scalar } => {
+            apply_divide_scalar_grad_fn(input, *scalar, upstream, gradients)?;
         }
         GradFn::Negate { input, .. } => {
             apply_negate_grad_fn(input, upstream, gradients)?;
@@ -6522,6 +6545,23 @@ fn apply_multiply_scalar_grad_fn(
         let scalar = scalar.ok_or(TensorError::BackwardGraphFreed)?;
         let mut gradient = try_result_vector(input.elements, input.elements)?;
         gradient.extend(upstream.iter().map(|value| value * scalar));
+        add_gradient(gradients, meta, input.output_nr, gradient);
+    }
+    Ok(())
+}
+
+fn apply_divide_scalar_grad_fn(
+    input: &SavedTensor,
+    scalar: Option<f32>,
+    upstream: &[f32],
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    if let Some(meta) = &input.autograd {
+        let scalar = scalar.ok_or(TensorError::BackwardGraphFreed)?;
+        let mut gradient = try_result_vector(input.elements, input.elements)?;
+        // PyTorch's DivBackward0 divides the upstream float32 gradient directly.
+        // Multiplying by a reciprocal changes rounding, overflow and subnormals.
+        gradient.extend(upstream.iter().map(|value| value / scalar));
         add_gradient(gradients, meta, input.output_nr, gradient);
     }
     Ok(())
@@ -19201,6 +19241,26 @@ mod tests {
             );
         }
         assert!(output.requires_grad());
+    }
+
+    #[test]
+    fn div_scalar_edges_do_not_retain_input_or_output_storage() {
+        let leaf = Tensor::ones([4]).unwrap().with_requires_grad(true);
+        let input = leaf.mul_scalar(4.0).unwrap();
+        let input_storage = Arc::downgrade(&input.storage);
+        let output = input.div_scalar(2.0).unwrap();
+        let output_storage = Arc::downgrade(&output.storage);
+        let loss = output.sum();
+        drop(input);
+        drop(output);
+        assert!(input_storage.upgrade().is_none());
+        assert!(output_storage.upgrade().is_none());
+        loss.backward().unwrap();
+        assert_eq!(
+            leaf.grad().unwrap().unwrap().try_to_vec().unwrap(),
+            [2.0; 4]
+        );
+        assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
     }
 
     #[test]

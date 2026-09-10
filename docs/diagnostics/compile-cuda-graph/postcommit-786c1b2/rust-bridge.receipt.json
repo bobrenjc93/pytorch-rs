@@ -1,0 +1,52 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "--offline",
+    "--features",
+    "python-bindings",
+    "--lib",
+    "compiled_matmul_bridge"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f",
+  "started_at": "2026-09-10T17:39:29.039265+00:00",
+  "ended_at": "2026-09-10T17:39:44.623471+00:00",
+  "wall_seconds": 15.584237695671618,
+  "exit_status": 0,
+  "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan-postcommit-786c1b2/rust-bridge.log",
+  "log_sha256": "a0ef0b40f47b040a3116625ba2a5a87d190d1d449865cd9d73bb652e843ead34",
+  "source_before": {
+    "commit": "786c1b2e18ca83ecbe6e09606d33309d00187b2f",
+    "source_sha256": "979e3fb0b5aafc492cb45aa6ba573ab332210a933f62141c4351e79a1b5679b7",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "source_after": {
+    "commit": "786c1b2e18ca83ecbe6e09606d33309d00187b2f",
+    "source_sha256": "979e3fb0b5aafc492cb45aa6ba573ab332210a933f62141c4351e79a1b5679b7",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "status_before": "",
+  "status_after": "",
+  "environment": {
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan/uv",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan-postcommit-786c1b2/cuda",
+    "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan/python",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan-postcommit-786c1b2/rust-tests",
+    "OPENBLAS_NUM_THREADS": "1",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan-postcommit-786c1b2/inductor",
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan/cargo",
+    "VIRTUAL_ENV": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/.venv",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan-postcommit-786c1b2/tmp",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan-postcommit-786c1b2/triton",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan-postcommit-786c1b2/cache",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "TORCH_RS_CUBLAS": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcublas.so.13",
+    "OMP_NUM_THREADS": "1",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/.venv/bin/python",
+    "CUDA_HOME": "/usr/local/cuda-12.6",
+    "CARGO_HTTP_PROXY": "http://fwdproxy:8080",
+    "MKL_NUM_THREADS": "1"
+  }
+}

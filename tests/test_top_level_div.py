@@ -8,6 +8,7 @@ import unittest
 
 import numpy as np
 import torch_rs as torch
+from torch_rs.torch_rs import _nn_functional_dropout_tensor_autograd_suffix
 
 
 DIV_DOC = r"""
@@ -239,7 +240,7 @@ class TopLevelDivTests(unittest.TestCase):
                 case=(name, "scalar-left nan numerator payload"),
             )
 
-    def test_active_autograd_is_rejected_but_no_grad_uses_native_division(self):
+    def test_scalar_autograd_and_unsupported_tensor_denominators(self):
         for name in ("div", "divide"):
             function = getattr(torch, name)
             left = torch.tensor([[2.0, 3.0]], requires_grad=True)
@@ -255,11 +256,11 @@ class TopLevelDivTests(unittest.TestCase):
                 self.assertIsNone(right.grad)
 
             with self.subTest(name=name, case="scalar operand"):
-                with self.assertRaisesRegex(
-                    RuntimeError,
-                    rf"^{name}\(\): autograd recording is not supported$",
-                ):
-                    function(left, 2.0)
+                output = function(left, 2.0)
+                self.assertTrue(output.requires_grad)
+                self.assertEqual(_nn_functional_dropout_tensor_autograd_suffix(output), ", grad_fn=<DivBackward0>")
+                output.sum().backward()
+                self.assertEqual(left.grad.tolist(), [[0.5, 0.5]])
                 with self.assertRaisesRegex(
                     RuntimeError,
                     rf"^{name}\(\): autograd recording is not supported$",

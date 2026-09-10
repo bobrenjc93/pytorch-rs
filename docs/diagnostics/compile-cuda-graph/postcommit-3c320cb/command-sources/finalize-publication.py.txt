@@ -1,0 +1,23 @@
+"""Finish copying publisher stdout after the publisher has exited."""
+import datetime,hashlib,json,pathlib,shutil,subprocess,sys,time
+R=pathlib.Path.cwd();O=R/'target/composite-postcommit-3c320cb';D=R/'docs/diagnostics/compile-cuda-graph/postcommit-3c320cb'
+def sha(p):
+ with open(p,'rb') as f:return hashlib.file_digest(f,'sha256').hexdigest()
+def stamp():return datetime.datetime.now(datetime.timezone.utc).isoformat()
+start=stamp();tick=time.monotonic();old_index_sha=sha(D/'artifact-hashes.json');index=json.loads((D/'artifact-hashes.json').read_text());repairs=[]
+for name,entry in index.items():
+ src=pathlib.Path(entry['source']);assert src.resolve().is_relative_to(R)
+ actual=sha(src);assert sha(D/name)==entry['sha256'],name
+ if actual!=entry['sha256']:
+  assert name=='publication.log',name
+  repairs.append(dict(path=name,initial_published_sha256=entry['sha256'],completed_original_sha256=actual,reason='Publisher stdout was copied before publisher exited; recopying the actual completed original.'))
+  shutil.copyfile(src,D/name);assert sha(D/name)==actual
+  entry['sha256']=actual
+assert len(repairs)==1
+for name,entry in index.items():assert sha(D/name)==sha(entry['source'])==entry['sha256']
+record=dict(command=[sys.executable,str(O/'finalize-publication.py')],cwd=str(R),started_at=start,ended_at=stamp(),wall_seconds=time.monotonic()-tick,exit_status=0,previous_copy_index_sha256=old_index_sha,repairs=repairs,measured_reports_and_receipts_unchanged=True,code_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),git_status=subprocess.check_output(['git','status','--porcelain'],text=True))
+(O/'publication-finalization.json').write_text(json.dumps(record,indent=2)+'\n')
+for src,name in [(O/'publication-finalization.json','publication-finalization.json'),(O/'finalize-publication.py','command-sources/finalize-publication.py.txt')]:
+ shutil.copyfile(src,D/name);index[name]=dict(source=str(src),sha256=sha(src));assert sha(D/name)==index[name]['sha256']
+(D/'artifact-hashes.json').write_text(json.dumps(index,indent=2)+'\n')
+print('Publication copy index verified:',len(index),'artifacts; completed publisher log recopied without altering measurements.')
