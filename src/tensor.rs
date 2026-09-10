@@ -845,7 +845,7 @@ impl Tensor {
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
-    /// Allocates a rank-one float32 CUDA zero tensor using the optional runtime.
+    /// Allocates a rank-one or rank-two float32 CUDA zero tensor using the optional runtime.
     ///
     /// # Errors
     /// Returns layout, allocation, or CUDA runtime errors.
@@ -854,9 +854,9 @@ impl Tensor {
         device: Device,
     ) -> Result<Self, TensorError> {
         let shape = shape.into();
-        if shape.len() != 1 {
+        if !matches!(shape.len(), 1 | 2) {
             return Err(TensorError::UnsupportedCudaZeroTensor {
-                reason: "shape rank is not 1",
+                reason: "shape rank is not 1 or 2",
             });
         }
         let Device::Cuda(device_index) = device else {

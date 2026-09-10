@@ -10316,7 +10316,7 @@ fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
             };
             return Err(creation_factory_error(&error, &shape, scalar_dimension));
         }
-        if unindexed_cuda_device && dimensions.len() == 1 {
+        if unindexed_cuda_device && matches!(dimensions.len(), 1 | 2) {
             return Err(PyNotImplementedError::new_err(
                 "zeros(): unindexed CUDA devices are not supported; use 'cuda:0'",
             ));

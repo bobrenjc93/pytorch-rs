@@ -1,0 +1,43 @@
+{
+  "source": {
+    "commit": "6b0f68b0d2408bd8bda5073ec332fd88f02a67fb",
+    "source_sha256": "2c9a3794d6b0bd7e168bb970d9d9ddf93f41244e849e44d6839c83cb40b9e20b",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "environment": {
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cargo-home",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/build",
+    "RUSTUP_TOOLCHAIN": "1.92.0",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/venv/bin/python",
+    "VIRTUAL_ENV": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/venv",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/tmp",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/cache",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/cache/cuda",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "CUDA_VISIBLE_DEVICES": "0"
+  },
+  "runs": [
+    {
+      "command": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/venv/bin/python /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/scripts/evaluate_cuda_transfers.py --reference-python /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/venv/bin/python --candidate-python /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/venv/bin/python --build-record /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/build-record.json --output /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/transfers.json",
+      "started_at_utc": "2026-09-10T09:10:50.303400+00:00",
+      "finished_at_utc": "2026-09-10T09:11:37.479728+00:00",
+      "duration_seconds": 47.176333544775844,
+      "exit_code": 0,
+      "git_status_before": "",
+      "git_status_after": "",
+      "log": "transfers.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_b2cb3c68/target/cuda-rank2-postcommit/venv/bin/python -m unittest -v tests.test_cuda_zero_roundtrip.CudaZeroRoundtripTests.test_generated_matrix_zeros_and_cpu_copies_match_pytorch tests.test_cuda_zero_roundtrip.CudaZeroBoundaryTests",
+      "started_at_utc": "2026-09-10T09:11:37.533920+00:00",
+      "finished_at_utc": "2026-09-10T09:11:39.612836+00:00",
+      "duration_seconds": 2.07892457395792,
+      "exit_code": 0,
+      "git_status_before": "",
+      "git_status_after": "",
+      "log": "focused-tests.log",
+      "log_sha256": "0623fbccc9a724abfd4a060ad68b60bd2bdd31b4516923e453a0c3e077ffdc89"
+    }
+  ]
+}

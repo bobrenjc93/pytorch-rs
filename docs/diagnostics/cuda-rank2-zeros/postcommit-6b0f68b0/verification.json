@@ -1,0 +1,191 @@
+{
+  "measured_commit": "6b0f68b0d2408bd8bda5073ec332fd88f02a67fb",
+  "verified_at_utc": "2026-09-10T09:11:39.842411+00:00",
+  "source_and_extension_unchanged": true,
+  "evaluator_and_matrix_unchanged": true,
+  "recomputed_accounting_matches": true,
+  "all_worker_executables_packages_and_cuda_runtimes_within_worktree": true,
+  "candidate_torch_forwarding_detected": false,
+  "git_status_porcelain": "",
+  "report_sha256": "ac9627354ee3a4fd1e45dacbec834887b3292d6067035739f345f744fbedc685",
+  "evaluator_selected_seeds": [
+    8417970381438833507,
+    3794413297053346249,
+    2257496142127917571
+  ],
+  "accounting": {
+    "denominator": 6,
+    "passed": 5,
+    "fraction": 0.8333333333333334,
+    "cases": [
+      {
+        "case_id": "cuda_f32_vector_zero_roundtrip",
+        "reference_eligible": true,
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 8417970381438833507,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 3794413297053346249,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 2257496142127917571,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      },
+      {
+        "case_id": "cuda_f32_matrix_zero_roundtrip",
+        "reference_eligible": true,
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 8417970381438833507,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 3794413297053346249,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 2257496142127917571,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      },
+      {
+        "case_id": "cuda_f32_contiguous_cpu_upload",
+        "reference_eligible": true,
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 8417970381438833507,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 3794413297053346249,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 2257496142127917571,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      },
+      {
+        "case_id": "cuda_f32_strided_cpu_upload",
+        "reference_eligible": true,
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 8417970381438833507,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 3794413297053346249,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 2257496142127917571,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      },
+      {
+        "case_id": "cuda_f32_view_to_cpu_copy",
+        "reference_eligible": true,
+        "credit": 1,
+        "trials": [
+          {
+            "seed": 8417970381438833507,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 3794413297053346249,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          },
+          {
+            "seed": 2257496142127917571,
+            "reference_eligible": true,
+            "candidate_outcome": "passed",
+            "credit": 1,
+            "reason": "passed"
+          }
+        ]
+      },
+      {
+        "case_id": "cuda_f32_same_device_copy",
+        "reference_eligible": true,
+        "credit": 0,
+        "trials": [
+          {
+            "seed": 8417970381438833507,
+            "reference_eligible": true,
+            "candidate_outcome": "unsupported",
+            "credit": 0,
+            "reason": "candidate_missing_unsupported_skipped_forwarded_incorrect_or_invalid"
+          },
+          {
+            "seed": 3794413297053346249,
+            "reference_eligible": true,
+            "candidate_outcome": "unsupported",
+            "credit": 0,
+            "reason": "candidate_missing_unsupported_skipped_forwarded_incorrect_or_invalid"
+          },
+          {
+            "seed": 2257496142127917571,
+            "reference_eligible": true,
+            "candidate_outcome": "unsupported",
+            "credit": 0,
+            "reason": "candidate_missing_unsupported_skipped_forwarded_incorrect_or_invalid"
+          }
+        ]
+      }
+    ]
+  }
+}

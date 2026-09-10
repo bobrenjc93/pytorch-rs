@@ -110,7 +110,8 @@ available to Rust embedders before the first backend call.
 Use `CUDA_VISIBLE_DEVICES=0` for single-GPU checks. Record the loaded libcudart
 path (on Linux, `/proc/self/maps`), PyTorch version, driver and GPU model;
 `nvcc --version` describes the compiler and need not match the runtime. Public
-CUDA tensors support rank-1 float32 zeros, metadata views, and synchronous
+CUDA tensors support rank-1 and rank-2 float32 zeros on explicit devices
+(including empty dimensions), metadata views, and synchronous
 `.cpu()` / `.to("cpu")` transfers. CPU float32 tensors without autograd can be
 copied using `.to("cuda:N")` or the equivalent indexed `torch.device` and
 `device=` forms. Scalars, empty tensors, dense and sparse views are supported;
