@@ -182,25 +182,23 @@ class TensorRsqrtTests(unittest.TestCase):
                 source_bits,
             )
 
-    def test_grad_recording_is_rejected_before_planning_and_no_grad_is_allowed(self):
+    def test_grad_recording_and_no_grad_preserve_forward_values(self):
         leaf = torch.tensor(
             [[-4.0, -0.0, 1.0], [4.0, 9.0, 16.0]], requires_grad=True
         )
         source = leaf.transpose(0, 1)[1]
         source_bits = np.asarray(source, dtype=np.float32).view(np.uint32).copy()
 
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^rsqrt\(\): autograd recording is not supported$",
-        ):
-            source.rsqrt()
+        output = source.rsqrt()
+        self.assertTrue(output.requires_grad)
+        self.assertFalse(output.is_leaf)
 
         extreme = torch.zeros((0,), requires_grad=True).reshape(
             (0, sys.maxsize, 3)
         )
         with self.assertRaisesRegex(
             RuntimeError,
-            r"^rsqrt\(\): autograd recording is not supported$",
+            "Stride calculation overflowed",
         ):
             extreme.rsqrt()
 
@@ -344,13 +342,10 @@ class TensorRsqrtTests(unittest.TestCase):
         self.assertEqual(forwarded.tolist(), [0.5])
 
         order.clear()
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^rsqrt\(\): autograd recording is not supported$",
-        ):
-            with ForwardingMode("lower"):
-                with ForwardingMode("upper"):
-                    tensor.rsqrt()
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                output = tensor.rsqrt()
+        self.assertTrue(output.requires_grad)
         self.assertEqual(order, ["upper", "lower"])
 
         invalid_mode = RecordingMode()
@@ -358,6 +353,16 @@ class TensorRsqrtTests(unittest.TestCase):
             with invalid_mode:
                 plain.rsqrt(1)
         self.assertEqual(invalid_mode.calls, [])
+
+    def test_cuda_rsqrt_remains_unsupported(self):
+        if not torch.cuda.is_available():
+            self.skipTest("CUDA rsqrt rejection requires an NVIDIA device/runtime")
+        source = torch.tensor([4.0]).to("cuda:0")
+        for call in (source.rsqrt, lambda: torch.rsqrt(source)):
+            with self.assertRaisesRegex(NotImplementedError, "unary operation.*cuda"):
+                call()
+        self.assertEqual(source.cpu().tolist(), [4.0])
+        self.assertFalse(source.requires_grad)
 
     def test_inplace_and_method_out_forms_remain_unsupported(self):
         tensor = torch.tensor([4.0])
@@ -456,11 +461,8 @@ class TopLevelRsqrtTests(unittest.TestCase):
         source = leaf.transpose(0, 1)[1]
         for form, call in self.supported_calls(source):
             with self.subTest(form=form, mode="recording"):
-                with self.assertRaisesRegex(
-                    RuntimeError,
-                    r"^rsqrt\(\): autograd recording is not supported$",
-                ):
-                    call()
+                output = call()
+                self.assertTrue(output.requires_grad)
             with self.subTest(form=form, mode="no_grad"):
                 with torch.no_grad():
                     actual = call()
@@ -472,7 +474,7 @@ class TopLevelRsqrtTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             RuntimeError,
-            r"^rsqrt\(\): autograd recording is not supported$",
+            "Stride calculation overflowed",
         ):
             torch.rsqrt(extreme)
         with torch.no_grad():

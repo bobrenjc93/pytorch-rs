@@ -86,6 +86,30 @@ fn driver() -> Result<&'static Driver, TensorError> {
         })
 }
 
+pub(super) fn current_context() -> Result<usize, TensorError> {
+    let driver = driver()?;
+    let mut context = std::ptr::null_mut();
+    // SAFETY: writable context handle; the caller holds the runtime device guard.
+    driver.check(
+        unsafe { (driver.context)(&raw mut context) },
+        "cuCtxGetCurrent",
+    )?;
+    if context.is_null() {
+        // A new host thread can hit the allocation cache without calling
+        // cudaMalloc; cudaGetDevice alone does not bind a driver context.
+        // SAFETY: cudaFree(NULL) initializes the guarded runtime device's
+        // primary context without releasing any allocation. Do this only
+        // on the cold-thread path, before loading or launching a module.
+        let runtime = super::runtime()?;
+        runtime.check(unsafe { (runtime.free)(std::ptr::null_mut()) }, "cudaFree")?;
+        driver.check(
+            unsafe { (driver.context)(&raw mut context) },
+            "cuCtxGetCurrent",
+        )?;
+    }
+    Ok(context as usize)
+}
+
 impl Driver {
     fn check(&self, status: Status, operation: &'static str) -> Result<(), TensorError> {
         if status == 0 {
@@ -105,33 +129,12 @@ impl Driver {
     }
 
     fn function(&self, kernel: Kernel) -> Result<usize, TensorError> {
-        let mut context = std::ptr::null_mut();
-        // SAFETY: writable context handle; the caller holds the runtime device guard.
-        self.check(
-            unsafe { (self.context)(&raw mut context) },
-            "cuCtxGetCurrent",
-        )?;
-        if context.is_null() {
-            // A new host thread can hit the allocation cache without calling
-            // cudaMalloc; cudaGetDevice alone does not bind a driver context.
-            // SAFETY: cudaFree(NULL) initializes the guarded runtime device's
-            // primary context without releasing any allocation. Do this only
-            // on the cold-thread path, before loading or launching a module.
-            let runtime = super::runtime()?;
-            runtime.check(unsafe { (runtime.free)(std::ptr::null_mut()) }, "cudaFree")?;
-            self.check(
-                unsafe { (self.context)(&raw mut context) },
-                "cuCtxGetCurrent",
-            )?;
-        }
+        let context = current_context()?;
         let mut modules = self
             .modules
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(entry) = modules
-            .iter()
-            .find(|entry| entry.context == context as usize)
-        {
+        if let Some(entry) = modules.iter().find(|entry| entry.context == context) {
             return Ok(entry.functions[kernel as usize]);
         }
         modules
@@ -182,7 +185,7 @@ impl Driver {
             }
         }
         modules.push(Module {
-            context: context as usize,
+            context,
             _handle: module as usize,
             functions,
         });

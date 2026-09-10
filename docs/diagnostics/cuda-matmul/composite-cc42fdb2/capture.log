@@ -1,0 +1,145 @@
+preflight passed
+{
+  "denominator": 6,
+  "passed": 6,
+  "fraction": 1.0,
+  "cases": [
+    {
+      "case_id": "cuda_f32_add_same_shape",
+      "credit": 1,
+      "trials": [
+        {
+          "seed": 8503945240872567646,
+          "credit": 1,
+          "reason": "passed"
+        },
+        {
+          "seed": 8613321571747136749,
+          "credit": 1,
+          "reason": "passed"
+        },
+        {
+          "seed": 4480763905421893394,
+          "credit": 1,
+          "reason": "passed"
+        }
+      ]
+    },
+    {
+      "case_id": "cuda_f32_add_trailing_vector",
+      "credit": 1,
+      "trials": [
+        {
+          "seed": 8503945240872567646,
+          "credit": 1,
+          "reason": "passed"
+        },
+        {
+          "seed": 8613321571747136749,
+          "credit": 1,
+          "reason": "passed"
+        },
+        {
+          "seed": 4480763905421893394,
+          "credit": 1,
+          "reason": "passed"
+        }
+      ]
+    },
+    {
+      "case_id": "cuda_f32_neg",
+      "credit": 1,
+      "trials": [
+        {
+          "seed": 8503945240872567646,
+          "credit": 1,
+          "reason": "passed"
+        },
+        {
+          "seed": 8613321571747136749,
+          "credit": 1,
+          "reason": "passed"
+        },
+        {
+          "seed": 4480763905421893394,
+          "credit": 1,
+          "reason": "passed"
+        }
+      ]
+    },
+    {
+      "case_id": "cuda_f32_mul_scalar",
+      "credit": 1,
+      "trials": [
+        {
+          "seed": 8503945240872567646,
+          "credit": 1,
+          "reason": "passed"
+        },
+        {
+          "seed": 8613321571747136749,
+          "credit": 1,
+          "reason": "passed"
+        },
+        {
+          "seed": 4480763905421893394,
+          "credit": 1,
+          "reason": "passed"
+        }
+      ]
+    },
+    {
+      "case_id": "cuda_f32_sum_axis",
+      "credit": 1,
+      "trials": [
+        {
+          "seed": 8503945240872567646,
+          "credit": 1,
+          "reason": "passed"
+        },
+        {
+          "seed": 8613321571747136749,
+          "credit": 1,
+          "reason": "passed"
+        },
+        {
+          "seed": 4480763905421893394,
+          "credit": 1,
+          "reason": "passed"
+        }
+      ]
+    },
+    {
+      "case_id": "cuda_f32_matmul",
+      "credit": 1,
+      "trials": [
+        {
+          "seed": 8503945240872567646,
+          "credit": 1,
+          "reason": "passed"
+        },
+        {
+          "seed": 8613321571747136749,
+          "credit": 1,
+          "reason": "passed"
+        },
+        {
+          "seed": 4480763905421893394,
+          "credit": 1,
+          "reason": "passed"
+        }
+      ]
+    }
+  ]
+}
+public-timings passed
+python-focused passed
+python-two-device passed
+rust-matmul passed
+rust-bounds passed
+rust-rsqrt-storage passed
+rust-rsqrt-autograd passed
+rust-rsqrt-grad-mode passed
+evaluator-tests passed
+numerical-probes passed
+Clean-commit capture complete

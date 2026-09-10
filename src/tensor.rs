@@ -5303,17 +5303,14 @@ impl Tensor {
     }
 
     /// Computes the reciprocal square root of every element using unary output
-    /// layout planning.
+    /// layout planning and a saved-output first-order VJP.
     ///
     /// # Errors
     ///
-    /// Returns an error when gradient recording is enabled for this tensor, or
-    /// when result metadata or storage allocation fails.
+    /// Returns an error when result metadata or storage allocation fails.
     pub fn rsqrt(&self) -> Result<Self, TensorError> {
-        if self.records_grad() {
-            return Err(TensorError::AutogradRecordingUnsupported { operation: "rsqrt" });
-        }
-        self.unary_map(rsqrt_value)
+        let output = self.unary_map(rsqrt_value)?;
+        self.finish_saved_output_unary_vjp(output, AutogradNode::Rsqrt, apply_rsqrt_vjp)
     }
 
     /// Computes the natural logarithm of every element using unary output
@@ -5699,17 +5696,67 @@ impl Tensor {
         Ok(self.value_at_linear_index(0))
     }
 
-    /// Multiplies two rank-2 matrices.
+    /// Multiplies two rank-2 matrices. CUDA supports contiguous float32 operands
+    /// on the same device without autograd, including offset and empty views.
     ///
     /// # Errors
     ///
     /// Returns an error unless both tensors are matrices with compatible inner
-    /// dimensions.
+    /// dimensions, CUDA layout/device/autograd is unsupported, or allocation
+    /// or kernel execution fails.
     pub fn matmul(&self, other: &Self) -> Result<Self, TensorError> {
+        if self.is_cuda() || other.is_cuda() {
+            return self.cuda_matmul(other);
+        }
         validate_cpu_storage_device("matmul", self.device())?;
         validate_cpu_storage_device("matmul", other.device())?;
         self.matmul_with_initializer(other, |_, _, output_elements| {
             filled_storage(output_elements, 0.0)
+        })
+    }
+
+    fn cuda_matmul(&self, other: &Self) -> Result<Self, TensorError> {
+        let reason = if self.device() != other.device() {
+            Some("operands must be on the same CUDA device")
+        } else if self.dtype() != DType::Float32 || other.dtype() != DType::Float32 {
+            Some("only float32 is supported")
+        } else if self.requires_grad() || other.requires_grad() {
+            Some("autograd is unsupported")
+        } else if self.shape.len() != 2 || other.shape.len() != 2 {
+            Some("operands must be rank-2 matrices")
+        } else if !self.is_contiguous() || !other.is_contiguous() {
+            Some("operands must be contiguous")
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            return Err(TensorError::UnsupportedCudaMatmul { reason });
+        }
+        let (rows, inner, columns) = (self.shape[0], self.shape[1], other.shape[1]);
+        if inner != other.shape[0] {
+            return Err(TensorError::MatmulInnerDimensionMismatch {
+                left: self.shape.clone(),
+                right: other.shape.clone(),
+            });
+        }
+        let shape = try_clone_result_shape(&[rows, columns], 0)?;
+        let (elements, strides) = validated_layout(&shape)?;
+        let storage = self.storage.cuda_matmul_float32(
+            self.offset,
+            &other.storage,
+            other.offset,
+            [rows, inner, columns],
+        )?;
+        Ok(Self {
+            storage: Arc::new(storage),
+            shape,
+            strides,
+            offset: 0,
+            elements,
+            output_nr: 0,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
+            autograd: None,
         })
     }
 
@@ -7632,6 +7679,19 @@ fn apply_exp_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>
     }
 }
 
+fn apply_rsqrt_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
+    if let Some(saved_values) = output.contiguous_slice() {
+        debug_assert_eq!(saved_values.len(), upstream.len());
+        gradient.extend(saved_values.iter().zip(upstream).map(
+            |(&saved_value, &upstream_value)| rsqrt_backward_value(saved_value, upstream_value),
+        ));
+    } else {
+        gradient.extend(upstream.iter().enumerate().map(|(index, &value)| {
+            rsqrt_backward_value(output.value_at_linear_index(index), value)
+        }));
+    }
+}
+
 fn apply_sigmoid_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
     // Supported sigmoid inputs save contiguous outputs at every rank. Keep the
     // generic fallback because the saved-output node itself is layout-agnostic.
@@ -9480,6 +9540,14 @@ fn reciprocal_backward_value(input: f32, upstream: f32) -> f32 {
         return reciprocal;
     }
     -upstream * (reciprocal * reciprocal)
+}
+
+#[inline]
+fn rsqrt_backward_value(output: f32, upstream: f32) -> f32 {
+    // PyTorch evaluates -0.5 * grad * result.pow(3), with pow(3) using
+    // (result * result) * result. Keep the float32 intermediates: moving
+    // the gradient into the cube changes overflow and underflow behavior.
+    (-0.5 * upstream) * ((output * output) * output)
 }
 
 #[inline]
@@ -14990,6 +15058,10 @@ mod tests {
         );
         assert_eq!(source.sqrt().unwrap().grad_fn_name(), Some("SqrtBackward0"));
         assert_eq!(
+            source.rsqrt().unwrap().grad_fn_name(),
+            Some("RsqrtBackward0")
+        );
+        assert_eq!(
             source.reciprocal().unwrap().grad_fn_name(),
             Some("ReciprocalBackward0")
         );
@@ -19129,6 +19201,23 @@ mod tests {
             );
         }
         assert!(output.requires_grad());
+    }
+
+    #[test]
+    fn rsqrt_saves_only_output_storage_and_releases_it_after_backward() {
+        let leaf = Tensor::ones([4]).unwrap().with_requires_grad(true);
+        let input = leaf.mul_scalar(4.0).unwrap();
+        let input_storage = Arc::downgrade(&input.storage);
+        let output = input.rsqrt().unwrap();
+        let output_storage = Arc::downgrade(&output.storage);
+        let loss = output.sum();
+        drop(input);
+        drop(output);
+        assert!(input_storage.upgrade().is_none());
+        assert!(output_storage.upgrade().is_some());
+        loss.backward().unwrap();
+        assert!(output_storage.upgrade().is_none());
+        assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
     }
 
     #[test]

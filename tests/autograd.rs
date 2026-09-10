@@ -322,24 +322,20 @@ fn division_rejects_recording_before_planning_and_honors_no_grad() {
 }
 
 #[test]
-fn reciprocal_square_root_rejects_recording_before_planning_and_honors_no_grad() {
+fn reciprocal_square_root_records_grad_and_honors_no_grad() {
     let leaf = Tensor::from_vec(vec![-4.0, -0.0, 1.0, 4.0], [2, 2])
         .unwrap()
         .with_requires_grad(true);
-    assert_eq!(
-        leaf.rsqrt(),
-        Err(TensorError::AutogradRecordingUnsupported { operation: "rsqrt" })
-    );
+    let output = leaf.rsqrt().unwrap();
+    assert!(output.requires_grad());
+    assert!(!output.is_leaf());
 
     let extreme = Tensor::zeros([0])
         .unwrap()
         .reshape([0, i64::MAX, 3])
         .unwrap()
         .with_requires_grad(true);
-    assert_eq!(
-        extreme.rsqrt(),
-        Err(TensorError::AutogradRecordingUnsupported { operation: "rsqrt" })
-    );
+    assert_eq!(extreme.rsqrt(), Err(TensorError::StrideCalculationOverflow));
 
     let source_bits = leaf.logical_values().map(f32::to_bits).collect::<Vec<_>>();
     {
@@ -5127,4 +5123,153 @@ fn multiply_backward_preserves_first_negative_zero_contribution() {
             .to_bits(),
         0.0_f32.to_bits()
     );
+}
+
+#[test]
+fn rsqrt_weighted_scalar_empty_offset_and_transposed_backward() {
+    let scalar = Tensor::from_vec(vec![4.0], [])
+        .unwrap()
+        .with_requires_grad(true);
+    scalar
+        .rsqrt()
+        .unwrap()
+        .mul_scalar(-2.0)
+        .unwrap()
+        .backward()
+        .unwrap();
+    assert_eq!(
+        scalar.grad().unwrap().unwrap().item().unwrap().to_bits(),
+        0.125_f32.to_bits()
+    );
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+    let output = empty.transpose(0, 2).unwrap().rsqrt().unwrap();
+    assert_eq!(output.shape(), [3, 0, 2]);
+    output.sum().backward().unwrap();
+    assert_eq!(empty.grad().unwrap().unwrap().shape(), [2, 0, 3]);
+    assert!(values(&empty.grad().unwrap().unwrap()).is_empty());
+
+    for transposed in [false, true] {
+        let leaf = Tensor::from_vec(vec![1.0, 4.0, 16.0, 64.0, 1.0, 4.0, 16.0, 64.0], [2, 2, 2])
+            .unwrap()
+            .with_requires_grad(true);
+        let offset = leaf.index([1]).unwrap();
+        let input = if transposed {
+            offset.transpose(0, 1).unwrap()
+        } else {
+            offset
+        };
+        assert_eq!(input.storage_offset(), 4);
+        let output = input.rsqrt().unwrap();
+        assert_eq!(output.stride(), if transposed { [1, 2] } else { [2, 1] });
+        assert_eq!(output.storage_offset(), 0);
+        assert!(!output.shares_storage_with(&input));
+        let weights = Tensor::from_vec(vec![1.0, -2.0, 3.0, -4.0], [2, 2]).unwrap();
+        let loss = output.mul(&weights).unwrap().sum();
+        loss.backward().unwrap();
+        let expected = if transposed {
+            [0.0, 0.0, 0.0, 0.0, -0.5, -0.1875, 0.015_625, 0.003_906_25]
+        } else {
+            [0.0, 0.0, 0.0, 0.0, -0.5, 0.125, -0.023_437_5, 0.003_906_25]
+        };
+        assert_eq!(values(&leaf.grad().unwrap().unwrap()), expected);
+        assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+        assert_eq!(values(&leaf.grad().unwrap().unwrap()), expected);
+    }
+}
+
+#[test]
+fn rsqrt_vjp_matches_pytorch_float32_order_at_extremes() {
+    // PyTorch 2.13 CPU float32, (input.rsqrt() * weights).sum().backward().
+    // The last three cases distinguish cubing first and scaling grad first
+    // from algebraic rewrites that change overflow/underflow or rounding.
+    let input_bits = [
+        0x0000_0000,
+        0x8000_0000,
+        0x0000_0001,
+        0x8000_0001,
+        0x0080_0000,
+        0x3f80_0000,
+        0x4080_0000,
+        0x7f7f_ffff,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7fc1_2345,
+        0x0d80_0000,
+        0x7180_0000,
+        0x3faa_aaab,
+    ];
+    let weight_bits = [
+        0x3f80_0000,
+        0xbf80_0000,
+        0x0000_0000,
+        0x3f80_0000,
+        0x3f80_0000,
+        0x3f80_0000,
+        0xc000_0000,
+        0x3f80_0000,
+        0x3f80_0000,
+        0x3f80_0000,
+        0x3f80_0000,
+        0x0da2_4260,
+        0x7149_f2ca,
+        0x0001_16c2,
+    ];
+    let expected_bits = [
+        0xff80_0000,
+        0xff80_0000,
+        0xffc0_0000,
+        0xffc0_0000,
+        0xff80_0000,
+        0xbf00_0000,
+        0x3e00_0000,
+        0x8000_0000,
+        0x8000_0000,
+        0xffc0_0000,
+        0x7fc1_2345,
+        0xff80_0000,
+        0x8000_0000,
+        0x8000_5a87,
+    ];
+    let leaf = Tensor::from_vec(input_bits.map(f32::from_bits).to_vec(), [input_bits.len()])
+        .unwrap()
+        .with_requires_grad(true);
+    let weights = Tensor::from_vec(
+        weight_bits.map(f32::from_bits).to_vec(),
+        [weight_bits.len()],
+    )
+    .unwrap();
+    leaf.rsqrt()
+        .unwrap()
+        .mul(&weights)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+    for (actual, expected) in leaf
+        .grad()
+        .unwrap()
+        .unwrap()
+        .logical_values()
+        .zip(expected_bits)
+    {
+        if f32::from_bits(expected).is_nan() {
+            assert!(actual.is_nan());
+        } else {
+            assert_eq!(actual.to_bits(), expected);
+        }
+    }
+}
+
+#[test]
+fn rsqrt_accumulates_shared_edges_and_fresh_graphs() {
+    let leaf = Tensor::from_vec(vec![1.0, 4.0], [2])
+        .unwrap()
+        .with_requires_grad(true);
+    let output = leaf.rsqrt().unwrap();
+    output.add(&output).unwrap().sum().backward().unwrap();
+    assert_eq!(values(&leaf.grad().unwrap().unwrap()), [-1.0, -0.125]);
+    leaf.rsqrt().unwrap().sum().backward().unwrap();
+    assert_eq!(values(&leaf.grad().unwrap().unwrap()), [-1.5, -0.1875]);
+    assert!(!leaf.grad().unwrap().unwrap().requires_grad());
 }

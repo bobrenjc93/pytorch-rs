@@ -1,0 +1,25 @@
+{
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python",
+    "-B",
+    "-c",
+    "\nimport json,sys\nfrom pathlib import Path\nsys.path.insert(0,str(Path('scripts').resolve()))\nfrom evaluate_cuda_math import source_provenance,sha256,runtime_provenance\nimport torch\nimport torch_rs as native\nimport torch_rs.torch_rs as extension\nimport numpy as np\ntorch.backends.cuda.matmul.allow_tf32=False\nresults=[]\nfor k in (4096,8192,16384,32768,65536,65539,131072,262144,1000000):\n for value,weight in ((.1,1.),(-.1,1.),(.1,.1),(-.1,.1)):\n  observed=[]\n  for module in (native,torch):\n   a=module.full((1,k),value,dtype=module.float32).to('cuda:0')\n   b=module.full((k,1),weight,dtype=module.float32).to('cuda:0')\n   observed.append((a@b).cpu().item())\n  np.testing.assert_allclose(*observed,rtol=1e-5,atol=1e-4)\n  results.append(dict(k=k,left=value,right=weight,native=observed[0],pytorch=observed[1]))\nfor k in (1031,2048):\n for repeat in range(2):\n  observed=[]\n  for module in (native,torch):\n   a=module.tensor([2.**127,2.**127,-2.**127,-2.**127]+[0.]*(k-4),dtype=module.float32).reshape(1,k).to('cuda:0')\n   b=module.ones((k,1),dtype=module.float32).to('cuda:0')\n   observed.append((a@b).cpu().item())\n  assert observed==[0.,0.],observed\n  results.append(dict(k=k,repeat=repeat,probe='intermediate overflow cancellation',native=observed[0],pytorch=observed[1]))\nprint(json.dumps(dict(measurement_kind='clean-code',source=source_provenance(),extension=extension.__file__,extension_sha256=sha256(extension.__file__),runtime=runtime_provenance(),tf32=False,rtol=1e-5,atol=1e-4,results=results),indent=2))\n"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805",
+  "started_at": "2026-09-10T14:01:50.213608+00:00",
+  "ended_at": "2026-09-10T14:01:52.368605+00:00",
+  "wall_seconds": 2.155003952793777,
+  "exit_status": 0,
+  "log": "numerical-probes.log",
+  "log_sha256": "b04b5ce88b1f80fbe0e58c13f84ce964118f1b28d13a406257bd602e824995ef",
+  "commit": "cc42fdb265af856d8110404e91ff6cf8dd70a5e7",
+  "measurement_kind": "clean-code",
+  "git_status": "",
+  "cuda_visible_devices": "0",
+  "source_after": {
+    "commit": "cc42fdb265af856d8110404e91ff6cf8dd70a5e7",
+    "source_sha256": "03c2563f6ef1532b2279e778012f434f67fd002ed0c30da03183dfcc0699331e",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "extension_sha256": "1faf970c2684071aa7475a227ff972085a260f3081cd931fa361dbb09c95cada"
+}

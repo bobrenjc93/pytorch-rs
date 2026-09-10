@@ -1,0 +1,306 @@
+{
+  "measurement_kind": "clean-code",
+  "source": {
+    "commit": "cc42fdb265af856d8110404e91ff6cf8dd70a5e7",
+    "source_sha256": "03c2563f6ef1532b2279e778012f434f67fd002ed0c30da03183dfcc0699331e",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/python/torch_rs/torch_rs.abi3.so",
+  "extension_sha256": "1faf970c2684071aa7475a227ff972085a260f3081cd931fa361dbb09c95cada",
+  "runtime": {
+    "cuda_runtimes": [
+      {
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+        "version": 13000,
+        "status": 0
+      }
+    ],
+    "nvcc": "unused (no CUDA compilation by evaluator)",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13"
+  },
+  "tf32": false,
+  "rtol": 1e-05,
+  "atol": 0.0001,
+  "results": [
+    {
+      "k": 4096,
+      "left": 0.1,
+      "right": 1.0,
+      "native": 409.6000061035156,
+      "pytorch": 409.6000061035156
+    },
+    {
+      "k": 4096,
+      "left": -0.1,
+      "right": 1.0,
+      "native": -409.6000061035156,
+      "pytorch": -409.6000061035156
+    },
+    {
+      "k": 4096,
+      "left": 0.1,
+      "right": 0.1,
+      "native": 40.96000289916992,
+      "pytorch": 40.96000289916992
+    },
+    {
+      "k": 4096,
+      "left": -0.1,
+      "right": 0.1,
+      "native": -40.96000289916992,
+      "pytorch": -40.96000289916992
+    },
+    {
+      "k": 8192,
+      "left": 0.1,
+      "right": 1.0,
+      "native": 819.2019653320312,
+      "pytorch": 819.2019653320312
+    },
+    {
+      "k": 8192,
+      "left": -0.1,
+      "right": 1.0,
+      "native": -819.2019653320312,
+      "pytorch": -819.2019653320312
+    },
+    {
+      "k": 8192,
+      "left": 0.1,
+      "right": 0.1,
+      "native": 81.91993713378906,
+      "pytorch": 81.91993713378906
+    },
+    {
+      "k": 8192,
+      "left": -0.1,
+      "right": 0.1,
+      "native": -81.91993713378906,
+      "pytorch": -81.91993713378906
+    },
+    {
+      "k": 16384,
+      "left": 0.1,
+      "right": 1.0,
+      "native": 1638.4034423828125,
+      "pytorch": 1638.4034423828125
+    },
+    {
+      "k": 16384,
+      "left": -0.1,
+      "right": 1.0,
+      "native": -1638.4034423828125,
+      "pytorch": -1638.4034423828125
+    },
+    {
+      "k": 16384,
+      "left": 0.1,
+      "right": 0.1,
+      "native": 163.84002685546875,
+      "pytorch": 163.84002685546875
+    },
+    {
+      "k": 16384,
+      "left": -0.1,
+      "right": 0.1,
+      "native": -163.84002685546875,
+      "pytorch": -163.84002685546875
+    },
+    {
+      "k": 32768,
+      "left": 0.1,
+      "right": 1.0,
+      "native": 3276.800048828125,
+      "pytorch": 3276.800048828125
+    },
+    {
+      "k": 32768,
+      "left": -0.1,
+      "right": 1.0,
+      "native": -3276.800048828125,
+      "pytorch": -3276.800048828125
+    },
+    {
+      "k": 32768,
+      "left": 0.1,
+      "right": 0.1,
+      "native": 327.67999267578125,
+      "pytorch": 327.67999267578125
+    },
+    {
+      "k": 32768,
+      "left": -0.1,
+      "right": 0.1,
+      "native": -327.67999267578125,
+      "pytorch": -327.67999267578125
+    },
+    {
+      "k": 65536,
+      "left": 0.1,
+      "right": 1.0,
+      "native": 6553.6005859375,
+      "pytorch": 6553.6005859375
+    },
+    {
+      "k": 65536,
+      "left": -0.1,
+      "right": 1.0,
+      "native": -6553.6005859375,
+      "pytorch": -6553.6005859375
+    },
+    {
+      "k": 65536,
+      "left": 0.1,
+      "right": 0.1,
+      "native": 655.3600463867188,
+      "pytorch": 655.3600463867188
+    },
+    {
+      "k": 65536,
+      "left": -0.1,
+      "right": 0.1,
+      "native": -655.3600463867188,
+      "pytorch": -655.3600463867188
+    },
+    {
+      "k": 65539,
+      "left": 0.1,
+      "right": 1.0,
+      "native": 6553.900390625,
+      "pytorch": 6553.900390625
+    },
+    {
+      "k": 65539,
+      "left": -0.1,
+      "right": 1.0,
+      "native": -6553.900390625,
+      "pytorch": -6553.900390625
+    },
+    {
+      "k": 65539,
+      "left": 0.1,
+      "right": 0.1,
+      "native": 655.3900756835938,
+      "pytorch": 655.3900756835938
+    },
+    {
+      "k": 65539,
+      "left": -0.1,
+      "right": 0.1,
+      "native": -655.3900756835938,
+      "pytorch": -655.3900756835938
+    },
+    {
+      "k": 131072,
+      "left": 0.1,
+      "right": 1.0,
+      "native": 13107.2001953125,
+      "pytorch": 13107.2001953125
+    },
+    {
+      "k": 131072,
+      "left": -0.1,
+      "right": 1.0,
+      "native": -13107.2001953125,
+      "pytorch": -13107.2001953125
+    },
+    {
+      "k": 131072,
+      "left": 0.1,
+      "right": 0.1,
+      "native": 1310.719970703125,
+      "pytorch": 1310.719970703125
+    },
+    {
+      "k": 131072,
+      "left": -0.1,
+      "right": 0.1,
+      "native": -1310.719970703125,
+      "pytorch": -1310.719970703125
+    },
+    {
+      "k": 262144,
+      "left": 0.1,
+      "right": 1.0,
+      "native": 26214.40234375,
+      "pytorch": 26214.40234375
+    },
+    {
+      "k": 262144,
+      "left": -0.1,
+      "right": 1.0,
+      "native": -26214.40234375,
+      "pytorch": -26214.40234375
+    },
+    {
+      "k": 262144,
+      "left": 0.1,
+      "right": 0.1,
+      "native": 2621.43994140625,
+      "pytorch": 2621.43994140625
+    },
+    {
+      "k": 262144,
+      "left": -0.1,
+      "right": 0.1,
+      "native": -2621.43994140625,
+      "pytorch": -2621.43994140625
+    },
+    {
+      "k": 1000000,
+      "left": 0.1,
+      "right": 1.0,
+      "native": 100000.0078125,
+      "pytorch": 100000.0078125
+    },
+    {
+      "k": 1000000,
+      "left": -0.1,
+      "right": 1.0,
+      "native": -100000.0078125,
+      "pytorch": -100000.0078125
+    },
+    {
+      "k": 1000000,
+      "left": 0.1,
+      "right": 0.1,
+      "native": 10000.0009765625,
+      "pytorch": 10000.0009765625
+    },
+    {
+      "k": 1000000,
+      "left": -0.1,
+      "right": 0.1,
+      "native": -10000.0009765625,
+      "pytorch": -10000.0009765625
+    },
+    {
+      "k": 1031,
+      "repeat": 0,
+      "probe": "intermediate overflow cancellation",
+      "native": 0.0,
+      "pytorch": 0.0
+    },
+    {
+      "k": 1031,
+      "repeat": 1,
+      "probe": "intermediate overflow cancellation",
+      "native": 0.0,
+      "pytorch": 0.0
+    },
+    {
+      "k": 2048,
+      "repeat": 0,
+      "probe": "intermediate overflow cancellation",
+      "native": 0.0,
+      "pytorch": 0.0
+    },
+    {
+      "k": 2048,
+      "repeat": 1,
+      "probe": "intermediate overflow cancellation",
+      "native": 0.0,
+      "pytorch": 0.0
+    }
+  ]
+}

@@ -1,0 +1,316 @@
+{
+  "verified_at": "2026-09-10T14:02:03.052204+00:00",
+  "commit": "cc42fdb265af856d8110404e91ff6cf8dd70a5e7",
+  "git_status_before_publication": "",
+  "source": {
+    "commit": "cc42fdb265af856d8110404e91ff6cf8dd70a5e7",
+    "source_sha256": "03c2563f6ef1532b2279e778012f434f67fd002ed0c30da03183dfcc0699331e",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "source_test_harness_files_verified": 855,
+  "historical_files_unchanged": 20,
+  "native_sha256": "1faf970c2684071aa7475a227ff972085a260f3081cd931fa361dbb09c95cada",
+  "native_build_bound": true,
+  "worktree_paths_verified": true,
+  "six_case_accounting_recomputed": true,
+  "case_trials": 18,
+  "workers": [
+    {
+      "case": "cuda_f32_add_same_shape",
+      "seed": 8503945240872567646,
+      "role": "candidate",
+      "pid": 2192897,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/python/torch_rs/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_add_same_shape",
+      "seed": 8503945240872567646,
+      "role": "reference",
+      "pid": 2189363,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_add_same_shape",
+      "seed": 8613321571747136749,
+      "role": "candidate",
+      "pid": 2197782,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/python/torch_rs/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_add_same_shape",
+      "seed": 8613321571747136749,
+      "role": "reference",
+      "pid": 2193629,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_add_same_shape",
+      "seed": 4480763905421893394,
+      "role": "candidate",
+      "pid": 2203457,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/python/torch_rs/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_add_same_shape",
+      "seed": 4480763905421893394,
+      "role": "reference",
+      "pid": 2199885,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_add_trailing_vector",
+      "seed": 8503945240872567646,
+      "role": "candidate",
+      "pid": 2207317,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/python/torch_rs/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_add_trailing_vector",
+      "seed": 8503945240872567646,
+      "role": "reference",
+      "pid": 2204643,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_add_trailing_vector",
+      "seed": 8613321571747136749,
+      "role": "candidate",
+      "pid": 2209986,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/python/torch_rs/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_add_trailing_vector",
+      "seed": 8613321571747136749,
+      "role": "reference",
+      "pid": 2208711,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_add_trailing_vector",
+      "seed": 4480763905421893394,
+      "role": "candidate",
+      "pid": 2214618,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/python/torch_rs/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_add_trailing_vector",
+      "seed": 4480763905421893394,
+      "role": "reference",
+      "pid": 2210270,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_neg",
+      "seed": 8503945240872567646,
+      "role": "candidate",
+      "pid": 2219053,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/python/torch_rs/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_neg",
+      "seed": 8503945240872567646,
+      "role": "reference",
+      "pid": 2215324,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_neg",
+      "seed": 8613321571747136749,
+      "role": "candidate",
+      "pid": 2221715,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/python/torch_rs/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_neg",
+      "seed": 8613321571747136749,
+      "role": "reference",
+      "pid": 2219991,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_neg",
+      "seed": 4480763905421893394,
+      "role": "candidate",
+      "pid": 2227066,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/python/torch_rs/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_neg",
+      "seed": 4480763905421893394,
+      "role": "reference",
+      "pid": 2222205,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_mul_scalar",
+      "seed": 8503945240872567646,
+      "role": "candidate",
+      "pid": 2232317,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/python/torch_rs/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_mul_scalar",
+      "seed": 8503945240872567646,
+      "role": "reference",
+      "pid": 2227460,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_mul_scalar",
+      "seed": 8613321571747136749,
+      "role": "candidate",
+      "pid": 2237715,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/python/torch_rs/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_mul_scalar",
+      "seed": 8613321571747136749,
+      "role": "reference",
+      "pid": 2234014,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_mul_scalar",
+      "seed": 4480763905421893394,
+      "role": "candidate",
+      "pid": 2240558,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/python/torch_rs/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_mul_scalar",
+      "seed": 4480763905421893394,
+      "role": "reference",
+      "pid": 2238859,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_sum_axis",
+      "seed": 8503945240872567646,
+      "role": "candidate",
+      "pid": 2243652,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/python/torch_rs/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_sum_axis",
+      "seed": 8503945240872567646,
+      "role": "reference",
+      "pid": 2240813,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_sum_axis",
+      "seed": 8613321571747136749,
+      "role": "candidate",
+      "pid": 2248541,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/python/torch_rs/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_sum_axis",
+      "seed": 8613321571747136749,
+      "role": "reference",
+      "pid": 2244406,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_sum_axis",
+      "seed": 4480763905421893394,
+      "role": "candidate",
+      "pid": 2251923,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/python/torch_rs/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_sum_axis",
+      "seed": 4480763905421893394,
+      "role": "reference",
+      "pid": 2249069,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_matmul",
+      "seed": 8503945240872567646,
+      "role": "candidate",
+      "pid": 2256198,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/python/torch_rs/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_matmul",
+      "seed": 8503945240872567646,
+      "role": "reference",
+      "pid": 2252558,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_matmul",
+      "seed": 8613321571747136749,
+      "role": "candidate",
+      "pid": 2260340,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/python/torch_rs/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_matmul",
+      "seed": 8613321571747136749,
+      "role": "reference",
+      "pid": 2256687,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_matmul",
+      "seed": 4480763905421893394,
+      "role": "candidate",
+      "pid": 2262848,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/python/torch_rs/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    },
+    {
+      "case": "cuda_f32_matmul",
+      "seed": 4480763905421893394,
+      "role": "reference",
+      "pid": 2261122,
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python"
+    }
+  ],
+  "timing_cases_retained": 22,
+  "raw_timing_samples_per_implementation_per_case": 62,
+  "timing_aggregation_recomputed": true,
+  "capped_geometric_parity": 0.9162183658371302,
+  "independent_numerical_reproductions": 40,
+  "source_ancestry_retained": true,
+  "evaluator_and_matrix_unchanged_from_main": true,
+  "checks_log_hashes_verified": true,
+  "verification_script_sha256": "99c5aac46cd7af42f6ef254d2452c20f7e589e553ba2446cfb51d50d277aff39"
+}

@@ -1,0 +1,24 @@
+test_candidate_worker_rejects_operand_mutation_on_cuda (tests.test_cuda_math_evaluator.CudaReferenceTests.test_candidate_worker_rejects_operand_mutation_on_cuda) ... ok
+test_six_reference_cases_run_in_isolated_processes_on_real_cuda (tests.test_cuda_math_evaluator.CudaReferenceTests.test_six_reference_cases_run_in_isolated_processes_on_real_cuda) ... ok
+test_complete_and_partial_credit_use_six (tests.test_cuda_math_evaluator.FixedDenominatorTests.test_complete_and_partial_credit_use_six) ... ok
+test_duplicate_and_unknown_rows_cannot_inflate_credit (tests.test_cuda_math_evaluator.FixedDenominatorTests.test_duplicate_and_unknown_rows_cannot_inflate_credit) ... ok
+test_fixed_cases_and_unchanged_weights (tests.test_cuda_math_evaluator.FixedDenominatorTests.test_fixed_cases_and_unchanged_weights) ... ok
+test_forwarding_cpu_fallback_wrong_device_and_malformed_results_are_zero (tests.test_cuda_math_evaluator.FixedDenominatorTests.test_forwarding_cpu_fallback_wrong_device_and_malformed_results_are_zero) ... ok
+test_incorrect_and_nonfinite_outputs_are_zero (tests.test_cuda_math_evaluator.FixedDenominatorTests.test_incorrect_and_nonfinite_outputs_are_zero) ... ok
+test_inputs_are_evaluator_selected_and_reproducible (tests.test_cuda_math_evaluator.FixedDenominatorTests.test_inputs_are_evaluator_selected_and_reproducible) ... ok
+test_insufficient_seed_trials_cannot_earn_credit (tests.test_cuda_math_evaluator.FixedDenominatorTests.test_insufficient_seed_trials_cannot_earn_credit) ... ok
+test_missing_failed_skipped_forwarded_unsupported_are_zero (tests.test_cuda_math_evaluator.FixedDenominatorTests.test_missing_failed_skipped_forwarded_unsupported_are_zero) ... ok
+test_missing_or_mutated_post_operation_inputs_cannot_earn_credit (tests.test_cuda_math_evaluator.FixedDenominatorTests.test_missing_or_mutated_post_operation_inputs_cannot_earn_credit) ... ok
+test_opposite_signed_seeds_cannot_earn_credit_for_duplicate_workloads (tests.test_cuda_math_evaluator.FixedDenominatorTests.test_opposite_signed_seeds_cannot_earn_credit_for_duplicate_workloads) ... ok
+test_reference_failure_never_removes_denominator (tests.test_cuda_math_evaluator.FixedDenominatorTests.test_reference_failure_never_removes_denominator) ... ok
+test_stale_or_missing_build_receipt_is_zero (tests.test_cuda_math_evaluator.FixedDenominatorTests.test_stale_or_missing_build_receipt_is_zero) ... ok
+test_tolerance_is_not_exact_equality (tests.test_cuda_math_evaluator.FixedDenominatorTests.test_tolerance_is_not_exact_equality) ... ok
+test_candidate_worker_rejects_a_forwarding_package (tests.test_cuda_math_evaluator.IsolationTests.test_candidate_worker_rejects_a_forwarding_package) ... ok
+test_cli_rejects_negative_and_opposite_signed_seeds (tests.test_cuda_math_evaluator.IsolationTests.test_cli_rejects_negative_and_opposite_signed_seeds) ... ok
+test_real_import_blocker_rejects_even_swallowed_forwarding (tests.test_cuda_math_evaluator.IsolationTests.test_real_import_blocker_rejects_even_swallowed_forwarding) ... ok
+test_worker_crash_timeout_invalid_json_and_missing_interpreter_fail_closed (tests.test_cuda_math_evaluator.IsolationTests.test_worker_crash_timeout_invalid_json_and_missing_interpreter_fail_closed) ... ok
+
+----------------------------------------------------------------------
+Ran 19 tests in 28.496s
+
+OK

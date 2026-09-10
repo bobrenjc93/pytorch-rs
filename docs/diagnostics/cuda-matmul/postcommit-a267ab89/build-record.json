@@ -1,0 +1,56 @@
+{
+  "commit": "a267ab89a31573e68d0045f1cbcf55d8ea243307",
+  "source_sha256": "707ec5d124910b4c4247e84024fbf7179e78bb5144467548eb64dea2a80e9502",
+  "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "command": [
+    "cargo",
+    "build",
+    "--locked",
+    "--release",
+    "--features",
+    "extension-module"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5",
+  "started_at": "2026-09-10T13:08:32.127251+00:00",
+  "ended_at": "2026-09-10T13:09:14.443080+00:00",
+  "wall_seconds": 42.31582863908261,
+  "exit_status": 0,
+  "log": "build.log",
+  "log_sha256": "6dc0dda7baad4a9260ae3f05823bd46a7115f9e7638e00c75bc182bd06df0b21",
+  "build_command": "cargo build --locked --release --features extension-module",
+  "source_unchanged_during_build": true,
+  "git_status_before_build": "",
+  "clean_checkout": true,
+  "measurement_kind": "clean-code",
+  "extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5/python/torch_rs/torch_rs.abi3.so",
+  "extension_sha256": "78943559de1dc2fdf37d4ef20065e7f523b2900f90fdeb72e12108a85bde4fd9",
+  "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+  "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)",
+  "nvcc": "unused; embedded PTX JIT-compiled by NVIDIA driver",
+  "available_nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0\n",
+  "python_executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5/.venv/bin/python",
+  "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
+  "environment": {
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5/target/cuda-matmul/cargo-home",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5/target/cuda-matmul-postcommit/build",
+    "RUSTC": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustc",
+    "RUSTDOC": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustdoc",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5/.venv/bin/python",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5/target/cuda-matmul-postcommit/tmp",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5/target/cuda-matmul-postcommit/cuda-cache",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5/target/cuda-matmul-postcommit/xdg-cache",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "PATH": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_a96b83b5/.venv/bin:/usr/local/cuda-12.6/bin:/usr/local/bin:/usr/bin:/bin"
+  },
+  "cache_state": "empty Cargo build target; previously fetched Cargo registry; local Python environment; evaluator allocates a new temporary CUDA JIT cache",
+  "profile": {
+    "name": "release",
+    "lto": "thin",
+    "codegen_units": 1,
+    "features": [
+      "extension-module"
+    ],
+    "pyo3_abi": "abi3-py310"
+  }
+}

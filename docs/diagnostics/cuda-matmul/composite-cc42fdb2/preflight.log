@@ -1,0 +1,32 @@
+{
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python",
+  "base_prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/target/local/python",
+  "packages": {
+    "torch": {
+      "version": "2.13.0+cu130",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/torch/__init__.py"
+    },
+    "numpy": {
+      "version": "2.5.1",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/numpy/__init__.py"
+    },
+    "typing_extensions": {
+      "version": null,
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/lib/python3.12/site-packages/typing_extensions.py"
+    }
+  },
+  "pytorch_cuda": "13.0",
+  "gpu": "NVIDIA H100"
+}
+index, name, memory.total [MiB], driver_version, compute_cap
+0, NVIDIA H100, 97871 MiB, 580.82.07, 9.0
+1, NVIDIA H100, 97871 MiB, 580.82.07, 9.0
+2, NVIDIA H100, 97871 MiB, 580.82.07, 9.0
+3, NVIDIA H100, 97871 MiB, 580.82.07, 9.0
+4, NVIDIA H100, 97871 MiB, 580.82.07, 9.0
+5, NVIDIA H100, 97871 MiB, 580.82.07, 9.0
+6, NVIDIA H100, 97871 MiB, 580.82.07, 9.0
+7, NVIDIA H100, 97871 MiB, 580.82.07, 9.0
+
+pid, process_name, used_gpu_memory [MiB]
+

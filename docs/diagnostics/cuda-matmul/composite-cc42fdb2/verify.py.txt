@@ -1,0 +1,112 @@
+"""Read-only verification of this evidence capture; no scoring changes."""
+from pathlib import Path
+import importlib.util
+import json
+import math
+import statistics
+import subprocess
+import sys
+from datetime import datetime,timezone
+ROOT=Path.cwd().resolve()
+OUT=ROOT/'target/postcommit-cc42fdb2'
+sys.path.insert(0,str(ROOT/'scripts'))
+import evaluate_cuda_math as evaluator
+
+def read(name):return json.loads((OUT/name).read_text())
+def sha(path):return evaluator.sha256(path)
+def local(path):
+ p=Path(path).resolve();assert p.is_relative_to(ROOT),p
+ return p
+
+def git(*args):return subprocess.check_output(['git',*args],text=True,cwd=ROOT)
+source=read('source-record.json')
+build=read('build-record.json')
+run=read('run-record.json')
+report=read('evaluation.json')
+timing=read('public-timings.json')
+finish=read('completion.json')
+expected=evaluator.source_provenance()
+assert expected['commit']==source['commit']=='cc42fdb265af856d8110404e91ff6cf8dd70a5e7'
+assert git('status','--porcelain')==''
+assert source['source_provenance']==report['source']==finish['source']==expected
+assert all(build[key]==expected[key] for key in expected)
+assert build['clean_checkout'] and build['git_status_before_build']=='' and build['measurement_kind']=='clean-code'
+assert source['build_target_initially_absent'] and source['state_directory_initially_absent']
+assert finish['git_status']=='' and finish['all_commands_passed']
+for path,digest in source['code_test_harness_hashes'].items():assert sha(ROOT/path)==digest,path
+for path,digest in source['historical_source_evidence'].items():assert sha(ROOT/path)==digest,path
+for name in ('scripts/evaluate_cuda_math.py','docs/hardware-heterogeneity-matrix-v1.json'):
+ assert git('diff','96205cb01e85f6961a4d8ea40aa792b485289d84','HEAD','--',name)==''
+assert report['seeds']==[8503945240872567646,8613321571747136749,4480763905421893394]
+assert report['accounting']==evaluator.account(evaluator.corpus(),report['seeds'],report['trials'],build,expected)
+assert report['accounting']['passed']==report['accounting']['denominator']==6
+assert len(report['trials'])==18
+assert report['source_unchanged_during_run'] and run['source_before']==run['source_after']==expected
+assert run['report_sha256']==sha(OUT/'evaluation.json')
+assert run['build_record_sha256']==sha(OUT/'build-record.json')
+assert run['evaluator_sha256']==sha(ROOT/'scripts/evaluate_cuda_math.py')
+assert run['matrix_sha256']==sha(ROOT/'docs/hardware-heterogeneity-matrix-v1.json')
+assert build['extension_sha256']==sha(local(build['extension_path']))==finish['extension_sha256']
+workers=[]
+for trial in report['trials']:
+ for role in ('candidate','reference'):
+  worker=trial[role]
+  case=next(c for c in evaluator.corpus()['cases'] if c['id']==trial['case_id'])
+  assert evaluator.valid_execution(worker,case,trial['seed'],role)
+  local(worker['package']);local(worker['executable'])
+  assert worker['inputs']==worker['inputs_after']
+  for runtime in worker['cuda_runtimes']:
+   local(runtime['path']);assert runtime['version']==13000 and runtime['status']==0
+  if role=='candidate':
+   local(worker['extension']['path'])
+   assert worker['extension']['sha256']==build['extension_sha256']
+   assert worker['blocked_imports']==worker['loaded_torch_modules']==[]
+  workers.append({'case':trial['case_id'],'seed':trial['seed'],'role':role,'pid':worker['pid'],'package':worker['package'],'executable':worker['executable']})
+assert timing['measurement_kind']=='clean-code' and timing['git_status']==''
+assert timing['source']==timing['source_after']==expected
+assert timing['build_record_sha256']==sha(OUT/'build-record.json')
+assert timing['harness_sha256']==sha(ROOT/'scripts/benchmark_cuda_matmul.py')
+assert timing['extension_sha256']==build['extension_sha256']
+local(timing['executable']);local(timing['extension'])
+for p in timing['packages'].values():local(p)
+assert len(timing['cases'])==22 and timing['status']=='passed'
+assert {tuple(c['shape_mkn'])+(c['offset'],) for c in timing['cases']}=={tuple(s)+(o,) for s in timing['shapes'] for o in timing['offsets']}
+parities=[]
+for case in timing['cases']:
+ assert case['output_and_inputs_validated']
+ for role in ('native','pytorch'):
+  raw=[v for order in case['orders'] for v in order['samples'][role]]
+  assert len(raw)==62 and raw==case['timings'][role]['samples_us']
+  assert all(math.isfinite(v) and v>0 for v in raw)
+  assert statistics.median(raw)==case['timings'][role]['median_us']
+  assert sorted(raw)[int(.1*(len(raw)-1))]==case['timings'][role]['p10_us']
+  assert sorted(raw)[int(.9*(len(raw)-1))]==case['timings'][role]['p90_us']
+ parity=min(1.,case['timings']['pytorch']['median_us']/case['timings']['native']['median_us'])
+ assert parity==case['capped_parity'];parities.append(parity)
+assert math.exp(statistics.mean(map(math.log,parities)))==timing['capped_geometric_parity']
+for lib in timing['loaded_cuda_libraries']:assert sha(local(lib['path']))==lib['sha256']
+for runtime in timing['runtime']['cuda_runtimes']:local(runtime['path']);assert runtime['version']==13000
+for receipt in [build,run,*read('commands.json')]:
+ assert receipt['exit_status']==0
+ assert receipt['log_sha256']==sha(OUT/receipt['log'])
+ if 'git_status' in receipt:assert receipt['git_status']==''
+assert build['ended_at']<=run['started_at']<=run['ended_at']<=timing['started_at']<=timing['ended_at']<=finish['finished_at']
+probes=read('numerical-probes.log')
+assert probes['source']==expected and probes['extension_sha256']==build['extension_sha256']
+assert probes['measurement_kind']=='clean-code' and len(probes['results'])==40
+for probe in probes['results']:
+ assert abs(probe['native']-probe['pytorch'])<=1e-4+1e-5*abs(probe['pytorch'])
+for item in probes['results'][-4:]:assert item['native']==item['pytorch']==0.
+for commit in ('4b88da0fb3d77b59b9d9fc30a7eeacfbc368bf4a','27aab89dafbea9e2affe064a580d60aaf5029bde','770662db22b01a59e6bdc24412b76c3937c704ab'):
+ subprocess.run(['git','merge-base','--is-ancestor',commit,expected['commit']],check=True)
+# Only repository/worktree provenance paths are constrained here. System
+# driver/compiler/tool search paths are read-only external tool contracts.
+for path in OUT.glob('*.json'):
+ text=path.read_text()
+ prefix=str(ROOT.parent.parent.parent) # repository root containing .burner
+ import re
+ for recorded in re.findall(r'/data/users/bobren/a/pytorch-rs-burner[^\s";:]*',text):
+  assert recorded.startswith(str(ROOT)),(path,recorded)
+verification={'verified_at':datetime.now(timezone.utc).isoformat(),'commit':expected['commit'],'git_status_before_publication':git('status','--porcelain'),'source':expected,'source_test_harness_files_verified':len(source['code_test_harness_hashes']),'historical_files_unchanged':len(source['historical_source_evidence']),'native_sha256':build['extension_sha256'],'native_build_bound':True,'worktree_paths_verified':True,'six_case_accounting_recomputed':True,'case_trials':18,'workers':workers,'timing_cases_retained':22,'raw_timing_samples_per_implementation_per_case':62,'timing_aggregation_recomputed':True,'capped_geometric_parity':timing['capped_geometric_parity'],'independent_numerical_reproductions':40,'source_ancestry_retained':True,'evaluator_and_matrix_unchanged_from_main':True,'checks_log_hashes_verified':True,'verification_script_sha256':sha(__file__)}
+(OUT/'evidence-checks.json').write_text(json.dumps(verification,indent=2)+'\n')
+print(json.dumps({k:v for k,v in verification.items() if k!='workers'},indent=2))

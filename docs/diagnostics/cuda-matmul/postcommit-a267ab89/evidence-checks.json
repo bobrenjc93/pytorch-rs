@@ -1,0 +1,36 @@
+{
+  "measured_commit": "a267ab89a31573e68d0045f1cbcf55d8ea243307",
+  "verified_at": "2026-09-10T13:11:31.274604+00:00",
+  "clean_checkout": true,
+  "source": {
+    "commit": "a267ab89a31573e68d0045f1cbcf55d8ea243307",
+    "source_sha256": "707ec5d124910b4c4247e84024fbf7179e78bb5144467548eb64dea2a80e9502",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "source_and_binary_binding_verified": true,
+  "all_worker_paths_local": true,
+  "all_runtime_versions": 13000,
+  "accounting_recomputed": true,
+  "evaluator_and_corpus_unchanged": true,
+  "all_receipt_log_hashes_verified": true,
+  "production_and_test_hashes": {
+    "scripts/evaluate_cuda_math.py": "29a97d07bad0d82c261e28aa880de68cdf46df0731d5ff0aa9802ec5bb8e605b",
+    "docs/hardware-heterogeneity-matrix-v1.json": "a077f00f5eb50e2dceb2bd41a8453977955a8114fed203b7235f3a8befb24698",
+    "docs/diagnostics/composite-cuda-neg/reproduce.py": "cd8a34fe235643f37c11aec32416e44b6ebd2eaa84514b6f34a8aea428a77112",
+    "tests/test_cuda_matmul.py": "09d2929228e131cd4b4dfc78053c2533e2653a6264d8bf842ce2e800d0c70c22",
+    "tests/cuda_matmul.rs": "03a741be89143e3f19a42b1d5c56beaa8f79e15020c36ac034c1d4a7f1eb7f61"
+  },
+  "artifacts": {
+    "build-record.json": "eb74db6635069b0d3e2f78a971f6c5a36f4cc35537210201f661b0194b179daf",
+    "build.log": "6dc0dda7baad4a9260ae3f05823bd46a7115f9e7638e00c75bc182bd06df0b21",
+    "run-record.json": "eee70af518d4c7b05d9d494e8bad135a50fe3c9d5cdd0767cbd18304f9fbf0de",
+    "run.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evaluation.json": "a7490fb2f2ce178bfd36f58e4f04276490a76bb0ddb3558d06bf4860dc03ab64",
+    "checks-record.json": "14e971854bb2f37fa9358cd755cdb40c6c324b4f0ce1b02cc010dd1b89c4915d",
+    "python-matmul.log": "f6a7d948a0eea54dd57a869eedf6e1295091fd9911f74ae1404f01af1242de81",
+    "rust-matmul.log": "fba9f2fd526e9795c91585ea753880fd5678409305d3eef43bc3b2a42826c10d",
+    "rust-bounds.log": "0da66a0c417660418d2cce1e750d066cfc20ec6ab3d3f275526fa578992c48c2",
+    "python-two-device.log": "1629bf65a9078c95005bbdf738ea16a273742d0b3616a6eaab864243d21a90c0",
+    "evaluator-tests.log": "e643dfcf1878fa539dae0d6964dc84bd33300cc0108d10931acd68d9891471c9"
+  }
+}
