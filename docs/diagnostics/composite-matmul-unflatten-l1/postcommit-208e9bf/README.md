@@ -1,5 +1,10 @@
 # Clean composite capture: CUDA matmul, unflatten and L1 gradients
 
+**Refresh required:** the subsequent unflatten conversion-order repair changes
+the implementation measured here. These raw records are retained unchanged and
+are stale for the current candidate. Burner must commit the repair before a
+fresh clean-commit capture; see [review validation](../../../composite-matmul-unflatten-l1-validation.md#review-repair-unflatten-conversion-order).
+
 Measured code commit: **`208e9bff072bc9354ca0aec3e4a5330c1bde53ca`**, against
 main `046b7a21e4e2fb7b59b56ea8a9679a9d9c5b0981`, on 2026-09-10 UTC.
 The native build, checks, workloads and integrity verification all completed

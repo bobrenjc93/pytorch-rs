@@ -126,11 +126,15 @@ separate requirements.
 These reports retain their original source-worktree identities and measure the
 matmul source PR only. They are stale for the combined implementation and do not
 supply composite performance credit. All raw records, failed attempts and
-sampling results remain unchanged. The fresh combined-commit capture below
-supersedes their applicability to this composite. See
+sampling results remain unchanged. The combined-commit capture below measured
+the integration before its latest review repair. See
 [integration validation](composite-matmul-unflatten-l1-validation.md).
 
 ## Clean composite capture
+
+The unflatten conversion-order review repair makes this capture stale for the
+current candidate. Raw records remain unchanged; a fresh clean-commit capture
+is required after Burner commits the repair.
 
 The [combined capture](diagnostics/composite-matmul-unflatten-l1/postcommit-208e9bf/README.md)
 measures **`208e9bff072bc9354ca0aec3e4a5330c1bde53ca`** from an absent native

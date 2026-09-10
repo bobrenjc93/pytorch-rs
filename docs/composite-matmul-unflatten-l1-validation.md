@@ -29,7 +29,27 @@ regression covers that failure path; the matrix, warmups, sample counts, timing
 intervals and aggregation are unchanged. Feature summaries now include the
 public unflatten operation and the supported L1 gradient subset.
 
-## Clean committed validation
+## Review repair: unflatten conversion order
+
+Independent review reproduced a second binding defect: `dim` conversion ran
+before `sizes` unpacking. The public binding now fully converts sizes first,
+matching PyTorch 2.13 when dimension conversion mutates the sizes list or both
+arguments have conversion errors. Schema validation and override dispatch still
+precede conversion; dimension-range and empty-size checks retain their order.
+Permanent positional/keyword differentials cover list replacement and clearing,
+competing overflow/type errors, and dimension hooks skipped after sizes errors.
+
+Both new regressions failed against the source-matched pre-repair wheel.
+With a fresh local release wheel, all 76 focused unflatten/L1 tests passed,
+including real H100
+CUDA rejection, aliases, gradients and nested-mode restoration. Rustfmt and the
+isolated wheel verifier passed; installed Python/native sources, interpreter,
+reference imports and CUDA libraries resolved locally and matched the build.
+Build/provenance records, actual command receipts and the failing pre-repair log
+remain under `target/review-unflatten-order/`. These are development checks of
+the uncommitted repair, not final clean-commit evidence.
+
+## Clean committed validation before the review repair
 
 Burner committed the integrated implementation as
 `208e9bff072bc9354ca0aec3e4a5330c1bde53ca`. The
@@ -42,7 +62,8 @@ four fixed scoring shapes passed. The separate 12-cell diagnostic retained all
 raw samples and slower composed results, with 77.46% capped geometric parity.
 Its clean source, build, runtime, compiler and command receipts are published;
 the failed scoring import attempt is retained alongside the isolated retry.
-These results supersede development evidence for the committed composite.
+These results measured the pre-repair composite. They are now stale for the
+current candidate and remain unchanged pending the required clean-commit refresh.
 
 ## Development validation (preserved)
 
@@ -99,11 +120,10 @@ logs also remain available. No failed attempt was overwritten.
 
 ## Remaining managed handoff
 
-Implementation commit and clean-commit evidence capture are complete. The
-publication adds only evidence and documentation; no implementation, dependency,
-test, benchmark harness, evaluator or supported behavior changed during capture.
-Independent exact-head review, all ten non-regressing current-definition gates,
-exact-head CI, confirmed source PR delivery, continued dispatch pause and managed
-merge remain Burner-owned requirements. The source reports and development
-measurements above retain their original identities and provide no substitute
-for these remaining requirements.
+Burner must commit the conversion-order repair before final evidence is
+regenerated with the existing clean-build and capture procedure. The prior raw
+records retain their measured identities; they do not supply current-candidate
+performance credit after this source change. Independent exact-head review,
+all ten non-regressing current-definition gates, exact-head CI, confirmed source
+PR delivery, continued dispatch pause and managed merge remain Burner-owned
+requirements. Development checks do not replace these requirements.

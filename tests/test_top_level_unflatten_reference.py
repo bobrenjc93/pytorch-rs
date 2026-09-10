@@ -154,6 +154,56 @@ class TopLevelUnflattenReferenceTests(method_tests.UnflattenReferenceTests):
                             return module.unflatten(source, Dim(1), Sizes((2, 3)))
                         self.assert_matches(call(torch), call(reference_torch))
 
+    def test_sizes_are_converted_before_dimension_side_effects(self):
+        for keyword in (False, True):
+            for replacement in ([3, 2], []):
+                with self.subTest(keyword=keyword, replacement=replacement):
+                    def contract(module):
+                        sizes, events = [2, 3], []
+
+                        class Dim(np.int64):
+                            def __index__(self):
+                                events.append('dim')
+                                sizes[:] = replacement
+                                return 0
+
+                        source = module.tensor([0., 1., 2., 3., 4., 5.])
+                        if keyword:
+                            result = module.unflatten(input=source, dim=Dim(0), sizes=sizes)
+                        else:
+                            result = module.unflatten(source, Dim(0), sizes)
+                        self.assertEqual(tuple(result.shape), (2, 3))
+                        self.assertEqual(events, ['dim'])
+                        self.assertEqual(sizes, replacement)
+                        self.assertEqual(result.data_ptr(), source.data_ptr())
+                        return result
+
+                    self.assert_matches(contract(torch), contract(reference_torch))
+
+    def test_sizes_conversion_errors_precede_dimension_conversion(self):
+        for keyword in (False, True):
+            for sizes in ((2, 3.0), (2, 2**100), (2, object())):
+                for dim_value in (2**100, -(2**100), 'side_effect'):
+                    with self.subTest(keyword=keyword, sizes=sizes, dim=dim_value):
+                        events = []
+
+                        class Dim(np.int64):
+                            def __index__(self):
+                                events.append('dim')
+                                return 0
+
+                        def call(module):
+                            dim = Dim(0) if dim_value == 'side_effect' else dim_value
+                            source = module.ones(6)
+                            if keyword:
+                                return module.unflatten(input=source, dim=dim, sizes=sizes)
+                            return module.unflatten(source, dim, sizes)
+
+                        self.assert_call_error_matches(
+                            lambda: call(torch), lambda: call(reference_torch),
+                        )
+                        self.assertEqual(events, [])
+
     def test_sizes_subclasses_still_dispatch_stored_element_overrides(self):
         def contract(module, base, position):
             events = []

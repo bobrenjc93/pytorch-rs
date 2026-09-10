@@ -93,7 +93,6 @@ pub(crate) fn unflatten_variable_function(
             "unflatten(): only exact native CPU float32 Tensor inputs are supported",
         ));
     }
-    let dim = extract_dimension_swap_dimension(&dim.value)?;
     let sizes =
         NativeSizes::from_value(&sizes.value).expect("native sizes were validated before dispatch");
     let mut parsed = try_size_vector(sizes.len())?;
@@ -111,6 +110,9 @@ pub(crate) fn unflatten_variable_function(
         })?;
         try_push_size(&mut parsed, value)?;
     }
+    // PyTorch fully unpacks sizes before converting dim: __index__ on an
+    // accepted dimension can mutate sizes, and sizes conversion errors win.
+    let dim = extract_dimension_swap_dimension(&dim.value)?;
     // The generated top-level binding checks dim before the method's empty-
     // sizes guard. Scalar dimensions use the public [-1, 0] range here.
     let tensor = input.value.cast::<PyTensor>()?.try_borrow()?;
