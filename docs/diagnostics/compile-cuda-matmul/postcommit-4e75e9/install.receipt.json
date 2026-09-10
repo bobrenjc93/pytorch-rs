@@ -1,0 +1,32 @@
+{
+  "command": [
+    "uv",
+    "pip",
+    "install",
+    "--python",
+    ".venv/bin/python",
+    "--force-reinstall",
+    "--no-deps",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_ab372605/target/selection-postcommit-4e75e9/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_ab372605",
+  "cuda_visible_devices": "0",
+  "started_at": "2026-09-10T20:58:50.378268+00:00",
+  "ended_at": "2026-09-10T20:58:50.507441+00:00",
+  "wall_seconds": 0.12917787674814463,
+  "exit_status": 0,
+  "expected_exit_status": 0,
+  "source_before": {
+    "commit": "4e75e9ae177b37d022799394732db49ad95358a6",
+    "source_sha256": "2fe1d2ab1404f3bc26ff3c6e1dc20216603f6577b09ab38cce4703b4205c67cc",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "source_after": {
+    "commit": "4e75e9ae177b37d022799394732db49ad95358a6",
+    "source_sha256": "2fe1d2ab1404f3bc26ff3c6e1dc20216603f6577b09ab38cce4703b4205c67cc",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "git_status_before": "",
+  "git_status_after": "",
+  "log_sha256": "8df07328eb44a305b06f6fb828c598c67e28f14a1fab347a2d9e4b899012dcf6"
+}

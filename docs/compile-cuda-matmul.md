@@ -175,3 +175,9 @@ retains all six primary/held-out reports on GPU0 and explicitly selected GPU2,
 identity/multi-device rejection reports, golden tests and independent review.
 It proves routing and unchanged work; it is not clean-commit qualification or
 a library speedup claim.
+
+[Clean GPU selection evidence](diagnostics/compile-cuda-matmul/postcommit-4e75e9/README.md)
+records implementation `4e75e9ae`: all six full reports passed on GPU0 and
+UUID-selected GPU2, with retained mismatch/multi-device/absent-mask rejections,
+fresh wheel provenance and unchanged-work checks. Independent review and merge
+gates remain separate; no cross-GPU speedup is claimed.
