@@ -17,7 +17,9 @@ unless ``copy=True`` or an indexed CPU device such as ``"cpu:0"`` is requested;
 CPU copy requests return a fresh Tensor and record ``ToCopyBackward0`` when
 autograd is active. CPU tensors without autograd support synchronized copies
 to explicit CUDA devices, preserving dense strides and packing sparse views.
-Native CUDA tensors support synchronized transfer to CPU.
+Native CUDA tensors support synchronized transfer to CPU. Contiguous rank-1
+CUDA tensors without autograd also support same-device ``copy=True``;
+ordinary same-device requests return ``self``.
 
 Supported forms include ``to()``, ``to(torch.float32)``, ``to(torch.float)``,
 ``to("cpu")``, ``to(torch.device("cpu"))``, ``to(device="cpu")``,
@@ -29,7 +31,7 @@ or CUDA. ``copy`` may be ``True`` or ``False``;
 or ``torch.preserve_format``.
 
 Unsupported: dtype-changing conversions such as ``torch.float64``, autograd
-through CUDA transfers, CUDA-to-CUDA copies, unindexed CUDA targets, devices
+through CUDA transfers, cross-device CUDA copies, unindexed CUDA targets, devices
 other than CPU and CUDA, ``non_blocking=True``, memory formats other than
 ``torch.preserve_format``, Tensor subclasses, and non-native tensors.
 

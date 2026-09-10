@@ -652,7 +652,7 @@ unindexed CPU string or `torch.device` targets, same-native-tensor targets, and
 equivalent keyword forms return the original Python tensor; `copy=True` and
 indexed CPU targets such as `"cpu:0"` return a fresh clone with
 clone-compatible values, metadata, and autograd behavior. Dtype-changing
-conversions, CUDA-to-CUDA copies, unindexed CUDA targets, non-preserve memory
+conversions, cross-device CUDA copies, unindexed CUDA targets, non-preserve memory
 formats for `to`, tensor subclasses, and
 `non_blocking=True` remain unsupported.
 
@@ -673,6 +673,21 @@ computation is forwarded to installed PyTorch. Autograd inputs (including under
 broader CUDA math remain unsupported. Ordinary factory support is unchanged:
 only rank-1 float32 `zeros` can create CUDA storage directly. See the
 [CUDA setup and focused tests](troubleshooting.md#optional-native-cuda-runtime).
+
+Contiguous rank-1 native CUDA float32 tensors with `requires_grad=False` support
+`Tensor.clone()` (also `torch.clone`) and same-device `Tensor.to("cuda:N", copy=True)`.
+Only omitted/`None` or explicit `torch.preserve_format` memory format is supported.
+Both use one checked native device-to-device `cudaMemcpy` path, with a device
+guard and explicit stream completion before returning independent owned storage.
+Contiguous offset views, empty vectors and contiguous singleton views are included;
+shape, dtype and preserve-format strides match PyTorch, output offset is zero,
+and source values and metadata are unchanged. Ordinary same-device `to()` retains
+Python object identity, including for views outside the copy subset. Noncontiguous
+copies, other ranks, cross-device CUDA copies, dtype conversion, autograd and
+`non_blocking=True` remain unsupported. See `tests/cuda_same_device_copy.rs` and
+`tests/test_cuda_same_device_copy.py` for native and real-CUDA differentials, and
+[H100 validation](cuda-same-device-copy-validation.md) for build/runtime provenance
+and results from the unchanged transfer evaluator.
 
 Ordinary exact native CUDA float32 tensors support `x + y`, `x.add(y)`, and
 `torch.add(x, y)` when inputs have identical shapes or shapes `(M, N)` and
