@@ -1,0 +1,302 @@
+[
+  {
+    "name": "factory-candidate-seed0",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/python312-managed-venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d",
+    "PYTHONHASHSEED": "0",
+    "started": "2026-09-09T21:29:15.555030+00:00",
+    "finished": "2026-09-09T21:29:18.697012+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "factory-baseline-seed0",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source",
+    "PYTHONHASHSEED": "0",
+    "started": "2026-09-09T21:29:18.698231+00:00",
+    "finished": "2026-09-09T21:29:21.871122+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "factory-candidate-seed1",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/python312-managed-venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d",
+    "PYTHONHASHSEED": "1",
+    "started": "2026-09-09T21:29:21.872135+00:00",
+    "finished": "2026-09-09T21:29:25.096922+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "factory-baseline-seed1",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source",
+    "PYTHONHASHSEED": "1",
+    "started": "2026-09-09T21:29:25.097328+00:00",
+    "finished": "2026-09-09T21:29:28.570129+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "factory-candidate-seed2",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/python312-managed-venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d",
+    "PYTHONHASHSEED": "2",
+    "started": "2026-09-09T21:29:28.572004+00:00",
+    "finished": "2026-09-09T21:29:31.793148+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "factory-baseline-seed2",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source",
+    "PYTHONHASHSEED": "2",
+    "started": "2026-09-09T21:29:31.794275+00:00",
+    "finished": "2026-09-09T21:29:34.884678+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "factory-candidate-seed3",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/python312-managed-venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d",
+    "PYTHONHASHSEED": "3",
+    "started": "2026-09-09T21:29:34.885739+00:00",
+    "finished": "2026-09-09T21:29:38.038427+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "factory-baseline-seed3",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source",
+    "PYTHONHASHSEED": "3",
+    "started": "2026-09-09T21:29:38.039496+00:00",
+    "finished": "2026-09-09T21:29:41.129501+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "factory-candidate-seed4",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/python312-managed-venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d",
+    "PYTHONHASHSEED": "4",
+    "started": "2026-09-09T21:29:41.130554+00:00",
+    "finished": "2026-09-09T21:29:44.281104+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "factory-baseline-seed4",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source",
+    "PYTHONHASHSEED": "4",
+    "started": "2026-09-09T21:29:44.283935+00:00",
+    "finished": "2026-09-09T21:29:47.489131+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "factory-candidate-seed5",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/python312-managed-venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d",
+    "PYTHONHASHSEED": "5",
+    "started": "2026-09-09T21:29:47.490730+00:00",
+    "finished": "2026-09-09T21:29:50.708441+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "factory-baseline-seed5",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source",
+    "PYTHONHASHSEED": "5",
+    "started": "2026-09-09T21:29:50.710499+00:00",
+    "finished": "2026-09-09T21:29:53.803813+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "factory-candidate-seed6",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/python312-managed-venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d",
+    "PYTHONHASHSEED": "6",
+    "started": "2026-09-09T21:29:53.806303+00:00",
+    "finished": "2026-09-09T21:29:56.945680+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "factory-baseline-seed6",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source",
+    "PYTHONHASHSEED": "6",
+    "started": "2026-09-09T21:29:56.947066+00:00",
+    "finished": "2026-09-09T21:30:00.093884+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "factory-candidate-seed7",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/python312-managed-venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d",
+    "PYTHONHASHSEED": "7",
+    "started": "2026-09-09T21:30:00.094885+00:00",
+    "finished": "2026-09-09T21:30:03.726857+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "factory-baseline-seed7",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source",
+    "PYTHONHASHSEED": "7",
+    "started": "2026-09-09T21:30:03.729392+00:00",
+    "finished": "2026-09-09T21:30:06.801971+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "factory-candidate-seed8",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/python312-managed-venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d",
+    "PYTHONHASHSEED": "8",
+    "started": "2026-09-09T21:30:06.804452+00:00",
+    "finished": "2026-09-09T21:30:09.783678+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "factory-baseline-seed8",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source",
+    "PYTHONHASHSEED": "8",
+    "started": "2026-09-09T21:30:09.785984+00:00",
+    "finished": "2026-09-09T21:30:12.824779+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "factory-candidate-seed9",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/python312-managed-venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d",
+    "PYTHONHASHSEED": "9",
+    "started": "2026-09-09T21:30:12.827115+00:00",
+    "finished": "2026-09-09T21:30:15.919756+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "factory-baseline-seed9",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source",
+    "PYTHONHASHSEED": "9",
+    "started": "2026-09-09T21:30:15.922028+00:00",
+    "finished": "2026-09-09T21:30:19.028547+00:00",
+    "exit_code": 0
+  }
+]

@@ -1,0 +1,10 @@
+test_documented_command_on_real_cuda (tests.test_compile_cuda_neg_add_diagnostic.DiagnosticAccountingTests.test_documented_command_on_real_cuda) ... skipped 'requires optional PyTorch reference dependency'
+test_documented_commands_preserve_raw_results_and_exit_status (tests.test_compile_cuda_neg_add_diagnostic.DiagnosticAccountingTests.test_documented_commands_preserve_raw_results_and_exit_status) ... skipped 'requires optional PyTorch reference dependency'
+test_empty_matrix_and_provenance_errors_cannot_succeed (tests.test_compile_cuda_neg_add_diagnostic.DiagnosticAccountingTests.test_empty_matrix_and_provenance_errors_cannot_succeed) ... skipped 'requires optional PyTorch reference dependency'
+test_versioned_matrix_retains_addition_and_unsupported_guards (tests.test_compile_cuda_neg_add_diagnostic.DiagnosticAccountingTests.test_versioned_matrix_retains_addition_and_unsupported_guards) ... skipped 'requires optional PyTorch reference dependency'
+test_troubleshooting_supported_boundary_and_report_navigation (tests.test_compile_cuda_neg_add_diagnostic.DiagnosticDocumentationTests.test_troubleshooting_supported_boundary_and_report_navigation) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.000s
+
+OK (skipped=4)

@@ -1,0 +1,18 @@
+{
+  "command": [
+    "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/.venv/bin/python",
+    "-m",
+    "maturin",
+    "build",
+    "--release",
+    "--locked",
+    "--out",
+    "target/paired/wheels"
+  ],
+  "cwd": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate",
+  "started_epoch": 1788992306.3077314,
+  "seconds": 45.76983428001404,
+  "exit_code": 0,
+  "log": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/target/paired/reports/native-build.log",
+  "log_sha256": "5b171ce3d679c8525f0421944f35a8494cddadd82f002d98018af323c5b78bcc"
+}

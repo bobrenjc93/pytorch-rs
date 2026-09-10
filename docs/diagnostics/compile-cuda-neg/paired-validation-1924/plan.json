@@ -1,0 +1,23 @@
+{
+  "order": [
+    "baseline",
+    "candidate",
+    "candidate",
+    "baseline",
+    "baseline",
+    "candidate"
+  ],
+  "cpu": 24,
+  "gpu": 0,
+  "commits": {
+    "baseline": "e4cddf0ecb45c23c683953fa2f8c45904b170a80",
+    "candidate": "c41a850446c0cd94e70027b13d197a9c8413ff15"
+  },
+  "cache_policy": "first invocation per checkout cold, subsequent invocations reuse that checkout caches",
+  "benchmark_options": [
+    "--include-unprepared-comparison"
+  ],
+  "runs": 6,
+  "no_retry_or_selection": true,
+  "purpose": "paired diagnostic; does not alter Burner scores"
+}

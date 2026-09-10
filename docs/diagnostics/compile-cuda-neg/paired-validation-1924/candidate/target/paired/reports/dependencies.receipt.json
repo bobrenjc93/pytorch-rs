@@ -1,0 +1,19 @@
+{
+  "command": [
+    "uv",
+    "--no-config",
+    "sync",
+    "--locked",
+    "--group",
+    "reference",
+    "--no-install-project",
+    "--python",
+    "/data/users/bobren/a/pytorch-rs-burner/.venv/bin/python"
+  ],
+  "cwd": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate",
+  "started_epoch": 1788992290.976042,
+  "seconds": 15.19325041770935,
+  "exit_code": 0,
+  "log": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/target/paired/reports/dependencies.log",
+  "log_sha256": "2ebcf060d32f6420ac12838a45eaf359ce73a4862029d05d1567efcb8aade101"
+}

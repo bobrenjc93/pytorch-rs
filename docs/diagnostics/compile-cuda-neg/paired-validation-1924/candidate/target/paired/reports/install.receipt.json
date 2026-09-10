@@ -1,0 +1,19 @@
+{
+  "command": [
+    "uv",
+    "--no-config",
+    "pip",
+    "install",
+    "--python",
+    "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/.venv/bin/python",
+    "--force-reinstall",
+    "--no-deps",
+    "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/target/paired/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl"
+  ],
+  "cwd": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate",
+  "started_epoch": 1788992352.131095,
+  "seconds": 0.11474847793579102,
+  "exit_code": 0,
+  "log": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/target/paired/reports/install.log",
+  "log_sha256": "82f4c039336e0fe33c6eed7693f479ac32aff7ca927c96b8dd5a0fdc79761c84"
+}

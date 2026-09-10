@@ -1,0 +1,51 @@
+{
+  "order": [
+    "baseline",
+    "candidate",
+    "candidate",
+    "baseline",
+    "baseline",
+    "candidate"
+  ],
+  "scores": [
+    100,
+    100,
+    100,
+    100,
+    100,
+    100
+  ],
+  "runs": 6,
+  "reference_eligible_native_passes": 24,
+  "workloads": [
+    {
+      "name": "square_256x256",
+      "baseline_native_us": 35.400333333333336,
+      "candidate_native_us": 33.38366666666666,
+      "candidate_over_baseline": 0.9430325514825659,
+      "percent_change": -5.696744851743407
+    },
+    {
+      "name": "square_1024x1024",
+      "baseline_native_us": 35.841,
+      "candidate_native_us": 34.589,
+      "candidate_over_baseline": 0.9650679389525961,
+      "percent_change": -3.4932061047403873
+    },
+    {
+      "name": "tall_4096x256",
+      "baseline_native_us": 37.74733333333334,
+      "candidate_native_us": 36.76233333333334,
+      "candidate_over_baseline": 0.9739054414439873,
+      "percent_change": -2.6094558556012726
+    },
+    {
+      "name": "wide_256x4096",
+      "baseline_native_us": 34.028333333333336,
+      "candidate_native_us": 34.162,
+      "candidate_over_baseline": 1.0039280991330752,
+      "percent_change": 0.3928099133075236
+    }
+  ],
+  "scope": "Matched Python 3.12.12, CPU 24, H100 GPU 0; four fixed forward-only workloads. No benchmark changes or retries. Does not identify the cause of earlier Python 3.12.14+meta unpinned timing variation or establish general compiler parity."
+}

@@ -1,0 +1,59 @@
+[
+  {
+    "name": "cuda-performance-confirm-1",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv/bin/python",
+      "scripts/benchmark_compile_cuda.py",
+      "--include-unprepared-comparison",
+      "--output",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/integration-checks/cuda-performance-confirm-1.json"
+    ],
+    "started": "2026-09-09T21:38:04.584277+00:00",
+    "finished": "2026-09-09T21:38:18.370942+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "cuda-performance-confirm-2",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv/bin/python",
+      "scripts/benchmark_compile_cuda.py",
+      "--include-unprepared-comparison",
+      "--output",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/integration-checks/cuda-performance-confirm-2.json"
+    ],
+    "started": "2026-09-09T21:38:18.371950+00:00",
+    "finished": "2026-09-09T21:38:32.561521+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "rust-cuda-add",
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--test",
+      "cuda_add",
+      "--",
+      "--nocapture"
+    ],
+    "started": "2026-09-09T21:38:32.622650+00:00",
+    "finished": "2026-09-09T21:38:33.835836+00:00",
+    "exit_code": 0,
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13"
+  },
+  {
+    "name": "rust-cuda",
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "cuda",
+      "--",
+      "--nocapture"
+    ],
+    "started": "2026-09-09T21:38:33.836817+00:00",
+    "finished": "2026-09-09T21:38:35.322729+00:00",
+    "exit_code": 0,
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13"
+  }
+]

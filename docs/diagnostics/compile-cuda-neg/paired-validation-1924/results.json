@@ -1,0 +1,1718 @@
+[
+  {
+    "number": 1,
+    "variant": "baseline",
+    "source": {
+      "commit": "e4cddf0ecb45c23c683953fa2f8c45904b170a80",
+      "tree": "c972688c83fb63c8149b1b0c7a9b494b66432c23",
+      "benchmark_sha256": "a1401b964e58a01a6bacc8bb941b7de37021c2a7861c3ef901a2fc8a5c784959",
+      "lock_sha256": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced",
+      "git_status": ""
+    },
+    "receipt": {
+      "command": [
+        "taskset",
+        "-c",
+        "24",
+        "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/.venv/bin/python",
+        "-B",
+        "scripts/benchmark_compile_cuda.py",
+        "--include-unprepared-comparison",
+        "--output",
+        "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/target/paired/reports/run-1.json"
+      ],
+      "cwd": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline",
+      "started_epoch": 1788992448.7029016,
+      "seconds": 17.48965620994568,
+      "exit_code": 0,
+      "log": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/target/paired/reports/run-1.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "report": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/target/paired/reports/run-1.json",
+    "native_sha256": "6a6a555f2175e600dcb25a1026b1b1af81183daff3c25a6f301d7bc548e996cb",
+    "report_sha256": "16fd8a99234a519786e178f1e29816bb24cf7558631a3f24ccca7999e7f3d732",
+    "aggregates": {
+      "common_success_geomean_speed_ratio": 1.2158798184168775,
+      "common_success_shape_count": 4,
+      "common_success_weight": 1.0,
+      "coverage_adjusted_capped_speed_ratio": 1.0,
+      "coverage_adjusted_overall_percent": 100.0,
+      "denominator_weight": 1.0,
+      "full_matrix_weight": 1.0,
+      "per_workload": [
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "square_256x256",
+          "pytorch_cold_first_call_us": 3078700.705,
+          "pytorch_steady_median_us": 39.85366666666666,
+          "shape": [
+            256,
+            256
+          ],
+          "steady_speed_ratio": 1.1792886451511086,
+          "torch_rs_cold_first_call_us": 120.493,
+          "torch_rs_steady_median_us": 33.794666666666664,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "square_1024x1024",
+          "pytorch_cold_first_call_us": 821024.507,
+          "pytorch_steady_median_us": 41.92033333333334,
+          "shape": [
+            1024,
+            1024
+          ],
+          "steady_speed_ratio": 1.16961952326479,
+          "torch_rs_cold_first_call_us": 133.221,
+          "torch_rs_steady_median_us": 35.841,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "tall_4096x256",
+          "pytorch_cold_first_call_us": 814535.772,
+          "pytorch_steady_median_us": 50.99733333333334,
+          "shape": [
+            4096,
+            256
+          ],
+          "steady_speed_ratio": 1.367721864132524,
+          "torch_rs_cold_first_call_us": 135.495,
+          "torch_rs_steady_median_us": 37.28633333333334,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "wide_256x4096",
+          "pytorch_cold_first_call_us": 264238.05,
+          "pytorch_steady_median_us": 39.623,
+          "shape": [
+            256,
+            4096
+          ],
+          "steady_speed_ratio": 1.158510793820964,
+          "torch_rs_cold_first_call_us": 128.985,
+          "torch_rs_steady_median_us": 34.20166666666666,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        }
+      ],
+      "torch_rs_cuda_compile_score_percent": 100.0,
+      "workload_count": 4,
+      "zero_credit_cell_count": 0,
+      "zero_credit_unsupported_cell_count": 0,
+      "zero_credit_weight": 0
+    },
+    "environment": {
+      "benchmark_version": "torch_compile_cuda_h100_reference_benchmark_v11",
+      "cuda_visible_devices": "0",
+      "git": {
+        "diff_stat": "",
+        "head": "e4cddf0ecb45c23c683953fa2f8c45904b170a80",
+        "status_short": ""
+      },
+      "gpu": {
+        "nvcc_version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0",
+        "nvidia_smi": [
+          {
+            "compute_capability": "9.0",
+            "driver_version": "580.82.07",
+            "index": "0",
+            "memory_total_mib": "97871",
+            "name": "NVIDIA H100"
+          }
+        ],
+        "torch_cuda_device_capability": [
+          9,
+          0
+        ],
+        "torch_cuda_device_index": 0,
+        "torch_cuda_device_name": "NVIDIA H100",
+        "torch_cuda_memory_free_bytes": 101293686784,
+        "torch_cuda_memory_total_bytes": 102085492736,
+        "torch_cuda_multiprocessor_count": 132,
+        "torch_cuda_total_memory_bytes": 102085492736
+      },
+      "platform": "Linux-6.13.2-0_fbk12_0_g0b66b3635210-x86_64-with-glibc2.34",
+      "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
+      "python_executable": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/.venv/bin/python",
+      "pytorch": {
+        "cuda_available": true,
+        "cuda_device_count": 1,
+        "cuda_runtime": "13.0",
+        "cudnn_version": 92000,
+        "git_version": "cf30153c4c131c8164ee7798e5022d810682e2cb",
+        "path": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/.venv/lib/python3.12/site-packages/torch/__init__.py",
+        "version": "2.13.0+cu130"
+      },
+      "reference_compile_config": {
+        "backend": "inductor",
+        "dynamic": false,
+        "fullgraph": true,
+        "mode": null,
+        "options": null
+      },
+      "repeats": 3,
+      "run_mode": "full",
+      "samples": 17,
+      "schema_version": "torch_compile_cuda_h100_shape_matrix_report_v1",
+      "torch_rs": {
+        "path": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+        "version": "0.1.0"
+      },
+      "warmups": 5,
+      "workload": {
+        "base_seed": 20260904,
+        "dtype": "torch.float32",
+        "expression_version": "h100_cuda_pointwise_reduce_float32_v1",
+        "name": "h100_cuda_pointwise_reduce_float32"
+      },
+      "workload_matrix": {
+        "full_weight_total": 1.0,
+        "full_workloads": [
+          {
+            "description": "small square latency-sensitive row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_256x256",
+            "seed": 20260904,
+            "shape": [
+              256,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "legacy square throughput row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_1024x1024",
+            "seed": 20260905,
+            "shape": [
+              1024,
+              1024
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "many short rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "tall_4096x256",
+            "seed": 20260906,
+            "shape": [
+              4096,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "few wide rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "wide_256x4096",
+            "seed": 20260907,
+            "shape": [
+              256,
+              4096
+            ],
+            "weight": 0.25
+          }
+        ],
+        "quick_subset": false,
+        "quick_subset_is_strict": false,
+        "quick_workload_names": [
+          "square_1024x1024"
+        ],
+        "selected_weight_total": 1.0,
+        "selected_workloads": [
+          {
+            "description": "small square latency-sensitive row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_256x256",
+            "seed": 20260904,
+            "shape": [
+              256,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "legacy square throughput row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_1024x1024",
+            "seed": 20260905,
+            "shape": [
+              1024,
+              1024
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "many short rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "tall_4096x256",
+            "seed": 20260906,
+            "shape": [
+              4096,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "few wide rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "wide_256x4096",
+            "seed": 20260907,
+            "shape": [
+              256,
+              4096
+            ],
+            "weight": 0.25
+          }
+        ],
+        "version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1"
+      },
+      "workload_matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+      "workload_version": "h100_cuda_pointwise_reduce_float32_v1"
+    }
+  },
+  {
+    "number": 2,
+    "variant": "candidate",
+    "source": {
+      "commit": "c41a850446c0cd94e70027b13d197a9c8413ff15",
+      "tree": "eb74beea8f043ec17a5b54131be38682461242d1",
+      "benchmark_sha256": "a1401b964e58a01a6bacc8bb941b7de37021c2a7861c3ef901a2fc8a5c784959",
+      "lock_sha256": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced",
+      "git_status": ""
+    },
+    "receipt": {
+      "command": [
+        "taskset",
+        "-c",
+        "24",
+        "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/.venv/bin/python",
+        "-B",
+        "scripts/benchmark_compile_cuda.py",
+        "--include-unprepared-comparison",
+        "--output",
+        "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/target/paired/reports/run-2.json"
+      ],
+      "cwd": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate",
+      "started_epoch": 1788992468.6411657,
+      "seconds": 17.752638578414917,
+      "exit_code": 0,
+      "log": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/target/paired/reports/run-2.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "report": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/target/paired/reports/run-2.json",
+    "native_sha256": "b72e8f7f446db3b3380e83a24914be2c3a4469f3b6524fbcdff03750c06e4a5d",
+    "report_sha256": "d244a9f0d6076fa6a8ef5c9a8e84ab81da0322fbcaf9069c08057be668e52cca",
+    "aggregates": {
+      "common_success_geomean_speed_ratio": 1.235236469553332,
+      "common_success_shape_count": 4,
+      "common_success_weight": 1.0,
+      "coverage_adjusted_capped_speed_ratio": 1.0,
+      "coverage_adjusted_overall_percent": 100.0,
+      "denominator_weight": 1.0,
+      "full_matrix_weight": 1.0,
+      "per_workload": [
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "square_256x256",
+          "pytorch_cold_first_call_us": 3246445.644,
+          "pytorch_steady_median_us": 40.220666666666666,
+          "shape": [
+            256,
+            256
+          ],
+          "steady_speed_ratio": 1.1770179973662391,
+          "torch_rs_cold_first_call_us": 125.83,
+          "torch_rs_steady_median_us": 34.17166666666667,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "square_1024x1024",
+          "pytorch_cold_first_call_us": 821433.728,
+          "pytorch_steady_median_us": 43.385666666666665,
+          "shape": [
+            1024,
+            1024
+          ],
+          "steady_speed_ratio": 1.2533534911937756,
+          "torch_rs_cold_first_call_us": 123.357,
+          "torch_rs_steady_median_us": 34.61566666666666,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "tall_4096x256",
+          "pytorch_cold_first_call_us": 804285.025,
+          "pytorch_steady_median_us": 49.69866666666666,
+          "shape": [
+            4096,
+            256
+          ],
+          "steady_speed_ratio": 1.3573060711717206,
+          "torch_rs_cold_first_call_us": 122.986,
+          "torch_rs_steady_median_us": 36.61566666666666,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "wide_256x4096",
+          "pytorch_cold_first_call_us": 260560.554,
+          "pytorch_steady_median_us": 39.72,
+          "shape": [
+            256,
+            4096
+          ],
+          "steady_speed_ratio": 1.1626953925414203,
+          "torch_rs_cold_first_call_us": 120.502,
+          "torch_rs_steady_median_us": 34.162,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        }
+      ],
+      "torch_rs_cuda_compile_score_percent": 100.0,
+      "workload_count": 4,
+      "zero_credit_cell_count": 0,
+      "zero_credit_unsupported_cell_count": 0,
+      "zero_credit_weight": 0
+    },
+    "environment": {
+      "benchmark_version": "torch_compile_cuda_h100_reference_benchmark_v11",
+      "cuda_visible_devices": "0",
+      "git": {
+        "diff_stat": "",
+        "head": "c41a850446c0cd94e70027b13d197a9c8413ff15",
+        "status_short": ""
+      },
+      "gpu": {
+        "nvcc_version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0",
+        "nvidia_smi": [
+          {
+            "compute_capability": "9.0",
+            "driver_version": "580.82.07",
+            "index": "0",
+            "memory_total_mib": "97871",
+            "name": "NVIDIA H100"
+          }
+        ],
+        "torch_cuda_device_capability": [
+          9,
+          0
+        ],
+        "torch_cuda_device_index": 0,
+        "torch_cuda_device_name": "NVIDIA H100",
+        "torch_cuda_memory_free_bytes": 100088741888,
+        "torch_cuda_memory_total_bytes": 102085492736,
+        "torch_cuda_multiprocessor_count": 132,
+        "torch_cuda_total_memory_bytes": 102085492736
+      },
+      "platform": "Linux-6.13.2-0_fbk12_0_g0b66b3635210-x86_64-with-glibc2.34",
+      "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
+      "python_executable": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/.venv/bin/python",
+      "pytorch": {
+        "cuda_available": true,
+        "cuda_device_count": 1,
+        "cuda_runtime": "13.0",
+        "cudnn_version": 92000,
+        "git_version": "cf30153c4c131c8164ee7798e5022d810682e2cb",
+        "path": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/.venv/lib/python3.12/site-packages/torch/__init__.py",
+        "version": "2.13.0+cu130"
+      },
+      "reference_compile_config": {
+        "backend": "inductor",
+        "dynamic": false,
+        "fullgraph": true,
+        "mode": null,
+        "options": null
+      },
+      "repeats": 3,
+      "run_mode": "full",
+      "samples": 17,
+      "schema_version": "torch_compile_cuda_h100_shape_matrix_report_v1",
+      "torch_rs": {
+        "path": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+        "version": "0.1.0"
+      },
+      "warmups": 5,
+      "workload": {
+        "base_seed": 20260904,
+        "dtype": "torch.float32",
+        "expression_version": "h100_cuda_pointwise_reduce_float32_v1",
+        "name": "h100_cuda_pointwise_reduce_float32"
+      },
+      "workload_matrix": {
+        "full_weight_total": 1.0,
+        "full_workloads": [
+          {
+            "description": "small square latency-sensitive row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_256x256",
+            "seed": 20260904,
+            "shape": [
+              256,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "legacy square throughput row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_1024x1024",
+            "seed": 20260905,
+            "shape": [
+              1024,
+              1024
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "many short rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "tall_4096x256",
+            "seed": 20260906,
+            "shape": [
+              4096,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "few wide rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "wide_256x4096",
+            "seed": 20260907,
+            "shape": [
+              256,
+              4096
+            ],
+            "weight": 0.25
+          }
+        ],
+        "quick_subset": false,
+        "quick_subset_is_strict": false,
+        "quick_workload_names": [
+          "square_1024x1024"
+        ],
+        "selected_weight_total": 1.0,
+        "selected_workloads": [
+          {
+            "description": "small square latency-sensitive row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_256x256",
+            "seed": 20260904,
+            "shape": [
+              256,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "legacy square throughput row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_1024x1024",
+            "seed": 20260905,
+            "shape": [
+              1024,
+              1024
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "many short rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "tall_4096x256",
+            "seed": 20260906,
+            "shape": [
+              4096,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "few wide rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "wide_256x4096",
+            "seed": 20260907,
+            "shape": [
+              256,
+              4096
+            ],
+            "weight": 0.25
+          }
+        ],
+        "version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1"
+      },
+      "workload_matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+      "workload_version": "h100_cuda_pointwise_reduce_float32_v1"
+    }
+  },
+  {
+    "number": 3,
+    "variant": "candidate",
+    "source": {
+      "commit": "c41a850446c0cd94e70027b13d197a9c8413ff15",
+      "tree": "eb74beea8f043ec17a5b54131be38682461242d1",
+      "benchmark_sha256": "a1401b964e58a01a6bacc8bb941b7de37021c2a7861c3ef901a2fc8a5c784959",
+      "lock_sha256": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced",
+      "git_status": ""
+    },
+    "receipt": {
+      "command": [
+        "taskset",
+        "-c",
+        "24",
+        "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/.venv/bin/python",
+        "-B",
+        "scripts/benchmark_compile_cuda.py",
+        "--include-unprepared-comparison",
+        "--output",
+        "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/target/paired/reports/run-3.json"
+      ],
+      "cwd": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate",
+      "started_epoch": 1788992488.8212328,
+      "seconds": 12.188104152679443,
+      "exit_code": 0,
+      "log": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/target/paired/reports/run-3.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "report": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/target/paired/reports/run-3.json",
+    "native_sha256": "b72e8f7f446db3b3380e83a24914be2c3a4469f3b6524fbcdff03750c06e4a5d",
+    "report_sha256": "fc8e9a7f42c35febdea9ceb381b5281a2d582a793ad45c709ad359447b48f02e",
+    "aggregates": {
+      "common_success_geomean_speed_ratio": 1.2342848447817063,
+      "common_success_shape_count": 4,
+      "common_success_weight": 1.0,
+      "coverage_adjusted_capped_speed_ratio": 1.0,
+      "coverage_adjusted_overall_percent": 100.0,
+      "denominator_weight": 1.0,
+      "full_matrix_weight": 1.0,
+      "per_workload": [
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "square_256x256",
+          "pytorch_cold_first_call_us": 1849917.288,
+          "pytorch_steady_median_us": 38.98233333333334,
+          "shape": [
+            256,
+            256
+          ],
+          "steady_speed_ratio": 1.170031615175284,
+          "torch_rs_cold_first_call_us": 140.062,
+          "torch_rs_steady_median_us": 33.31733333333334,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "square_1024x1024",
+          "pytorch_cold_first_call_us": 38958.416,
+          "pytorch_steady_median_us": 45.05833333333334,
+          "shape": [
+            1024,
+            1024
+          ],
+          "steady_speed_ratio": 1.3253230582191111,
+          "torch_rs_cold_first_call_us": 119.571,
+          "torch_rs_steady_median_us": 33.998,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "tall_4096x256",
+          "pytorch_cold_first_call_us": 37139.104,
+          "pytorch_steady_median_us": 47.431666666666665,
+          "shape": [
+            4096,
+            256
+          ],
+          "steady_speed_ratio": 1.2902245958272505,
+          "torch_rs_cold_first_call_us": 124.187,
+          "torch_rs_steady_median_us": 36.76233333333334,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "wide_256x4096",
+          "pytorch_cold_first_call_us": 36488.58,
+          "pytorch_steady_median_us": 38.545,
+          "shape": [
+            256,
+            4096
+          ],
+          "steady_speed_ratio": 1.160050561290517,
+          "torch_rs_cold_first_call_us": 120.463,
+          "torch_rs_steady_median_us": 33.227,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        }
+      ],
+      "torch_rs_cuda_compile_score_percent": 100.0,
+      "workload_count": 4,
+      "zero_credit_cell_count": 0,
+      "zero_credit_unsupported_cell_count": 0,
+      "zero_credit_weight": 0
+    },
+    "environment": {
+      "benchmark_version": "torch_compile_cuda_h100_reference_benchmark_v11",
+      "cuda_visible_devices": "0",
+      "git": {
+        "diff_stat": "",
+        "head": "c41a850446c0cd94e70027b13d197a9c8413ff15",
+        "status_short": ""
+      },
+      "gpu": {
+        "nvcc_version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0",
+        "nvidia_smi": [
+          {
+            "compute_capability": "9.0",
+            "driver_version": "580.82.07",
+            "index": "0",
+            "memory_total_mib": "97871",
+            "name": "NVIDIA H100"
+          }
+        ],
+        "torch_cuda_device_capability": [
+          9,
+          0
+        ],
+        "torch_cuda_device_index": 0,
+        "torch_cuda_device_name": "NVIDIA H100",
+        "torch_cuda_memory_free_bytes": 100088741888,
+        "torch_cuda_memory_total_bytes": 102085492736,
+        "torch_cuda_multiprocessor_count": 132,
+        "torch_cuda_total_memory_bytes": 102085492736
+      },
+      "platform": "Linux-6.13.2-0_fbk12_0_g0b66b3635210-x86_64-with-glibc2.34",
+      "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
+      "python_executable": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/.venv/bin/python",
+      "pytorch": {
+        "cuda_available": true,
+        "cuda_device_count": 1,
+        "cuda_runtime": "13.0",
+        "cudnn_version": 92000,
+        "git_version": "cf30153c4c131c8164ee7798e5022d810682e2cb",
+        "path": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/.venv/lib/python3.12/site-packages/torch/__init__.py",
+        "version": "2.13.0+cu130"
+      },
+      "reference_compile_config": {
+        "backend": "inductor",
+        "dynamic": false,
+        "fullgraph": true,
+        "mode": null,
+        "options": null
+      },
+      "repeats": 3,
+      "run_mode": "full",
+      "samples": 17,
+      "schema_version": "torch_compile_cuda_h100_shape_matrix_report_v1",
+      "torch_rs": {
+        "path": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+        "version": "0.1.0"
+      },
+      "warmups": 5,
+      "workload": {
+        "base_seed": 20260904,
+        "dtype": "torch.float32",
+        "expression_version": "h100_cuda_pointwise_reduce_float32_v1",
+        "name": "h100_cuda_pointwise_reduce_float32"
+      },
+      "workload_matrix": {
+        "full_weight_total": 1.0,
+        "full_workloads": [
+          {
+            "description": "small square latency-sensitive row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_256x256",
+            "seed": 20260904,
+            "shape": [
+              256,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "legacy square throughput row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_1024x1024",
+            "seed": 20260905,
+            "shape": [
+              1024,
+              1024
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "many short rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "tall_4096x256",
+            "seed": 20260906,
+            "shape": [
+              4096,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "few wide rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "wide_256x4096",
+            "seed": 20260907,
+            "shape": [
+              256,
+              4096
+            ],
+            "weight": 0.25
+          }
+        ],
+        "quick_subset": false,
+        "quick_subset_is_strict": false,
+        "quick_workload_names": [
+          "square_1024x1024"
+        ],
+        "selected_weight_total": 1.0,
+        "selected_workloads": [
+          {
+            "description": "small square latency-sensitive row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_256x256",
+            "seed": 20260904,
+            "shape": [
+              256,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "legacy square throughput row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_1024x1024",
+            "seed": 20260905,
+            "shape": [
+              1024,
+              1024
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "many short rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "tall_4096x256",
+            "seed": 20260906,
+            "shape": [
+              4096,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "few wide rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "wide_256x4096",
+            "seed": 20260907,
+            "shape": [
+              256,
+              4096
+            ],
+            "weight": 0.25
+          }
+        ],
+        "version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1"
+      },
+      "workload_matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+      "workload_version": "h100_cuda_pointwise_reduce_float32_v1"
+    }
+  },
+  {
+    "number": 4,
+    "variant": "baseline",
+    "source": {
+      "commit": "e4cddf0ecb45c23c683953fa2f8c45904b170a80",
+      "tree": "c972688c83fb63c8149b1b0c7a9b494b66432c23",
+      "benchmark_sha256": "a1401b964e58a01a6bacc8bb941b7de37021c2a7861c3ef901a2fc8a5c784959",
+      "lock_sha256": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced",
+      "git_status": ""
+    },
+    "receipt": {
+      "command": [
+        "taskset",
+        "-c",
+        "24",
+        "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/.venv/bin/python",
+        "-B",
+        "scripts/benchmark_compile_cuda.py",
+        "--include-unprepared-comparison",
+        "--output",
+        "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/target/paired/reports/run-4.json"
+      ],
+      "cwd": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline",
+      "started_epoch": 1788992503.692,
+      "seconds": 11.989850759506226,
+      "exit_code": 0,
+      "log": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/target/paired/reports/run-4.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "report": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/target/paired/reports/run-4.json",
+    "native_sha256": "6a6a555f2175e600dcb25a1026b1b1af81183daff3c25a6f301d7bc548e996cb",
+    "report_sha256": "e5b870055f83d8ec64d25c7864c046d47a4d750294898aa854e0755c9573e6ee",
+    "aggregates": {
+      "common_success_geomean_speed_ratio": 1.2278735012737618,
+      "common_success_shape_count": 4,
+      "common_success_weight": 1.0,
+      "coverage_adjusted_capped_speed_ratio": 1.0,
+      "coverage_adjusted_overall_percent": 100.0,
+      "denominator_weight": 1.0,
+      "full_matrix_weight": 1.0,
+      "per_workload": [
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "square_256x256",
+          "pytorch_cold_first_call_us": 1866447.746,
+          "pytorch_steady_median_us": 45.045,
+          "shape": [
+            256,
+            256
+          ],
+          "steady_speed_ratio": 1.2322415333831815,
+          "torch_rs_cold_first_call_us": 122.035,
+          "torch_rs_steady_median_us": 36.55533333333334,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "square_1024x1024",
+          "pytorch_cold_first_call_us": 38223.244,
+          "pytorch_steady_median_us": 42.55766666666666,
+          "shape": [
+            1024,
+            1024
+          ],
+          "steady_speed_ratio": 1.2264810705399771,
+          "torch_rs_cold_first_call_us": 118.619,
+          "torch_rs_steady_median_us": 34.699,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "tall_4096x256",
+          "pytorch_cold_first_call_us": 35471.041,
+          "pytorch_steady_median_us": 50.07233333333333,
+          "shape": [
+            4096,
+            256
+          ],
+          "steady_speed_ratio": 1.3059622339685628,
+          "torch_rs_cold_first_call_us": 133.202,
+          "torch_rs_steady_median_us": 38.34133333333334,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "wide_256x4096",
+          "pytorch_cold_first_call_us": 34937.914,
+          "pytorch_steady_median_us": 39.18933333333334,
+          "shape": [
+            256,
+            4096
+          ],
+          "steady_speed_ratio": 1.1516677278738308,
+          "torch_rs_cold_first_call_us": 118.97,
+          "torch_rs_steady_median_us": 34.028333333333336,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        }
+      ],
+      "torch_rs_cuda_compile_score_percent": 100.0,
+      "workload_count": 4,
+      "zero_credit_cell_count": 0,
+      "zero_credit_unsupported_cell_count": 0,
+      "zero_credit_weight": 0
+    },
+    "environment": {
+      "benchmark_version": "torch_compile_cuda_h100_reference_benchmark_v11",
+      "cuda_visible_devices": "0",
+      "git": {
+        "diff_stat": "",
+        "head": "e4cddf0ecb45c23c683953fa2f8c45904b170a80",
+        "status_short": ""
+      },
+      "gpu": {
+        "nvcc_version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0",
+        "nvidia_smi": [
+          {
+            "compute_capability": "9.0",
+            "driver_version": "580.82.07",
+            "index": "0",
+            "memory_total_mib": "97871",
+            "name": "NVIDIA H100"
+          }
+        ],
+        "torch_cuda_device_capability": [
+          9,
+          0
+        ],
+        "torch_cuda_device_index": 0,
+        "torch_cuda_device_name": "NVIDIA H100",
+        "torch_cuda_memory_free_bytes": 100088741888,
+        "torch_cuda_memory_total_bytes": 102085492736,
+        "torch_cuda_multiprocessor_count": 132,
+        "torch_cuda_total_memory_bytes": 102085492736
+      },
+      "platform": "Linux-6.13.2-0_fbk12_0_g0b66b3635210-x86_64-with-glibc2.34",
+      "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
+      "python_executable": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/.venv/bin/python",
+      "pytorch": {
+        "cuda_available": true,
+        "cuda_device_count": 1,
+        "cuda_runtime": "13.0",
+        "cudnn_version": 92000,
+        "git_version": "cf30153c4c131c8164ee7798e5022d810682e2cb",
+        "path": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/.venv/lib/python3.12/site-packages/torch/__init__.py",
+        "version": "2.13.0+cu130"
+      },
+      "reference_compile_config": {
+        "backend": "inductor",
+        "dynamic": false,
+        "fullgraph": true,
+        "mode": null,
+        "options": null
+      },
+      "repeats": 3,
+      "run_mode": "full",
+      "samples": 17,
+      "schema_version": "torch_compile_cuda_h100_shape_matrix_report_v1",
+      "torch_rs": {
+        "path": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+        "version": "0.1.0"
+      },
+      "warmups": 5,
+      "workload": {
+        "base_seed": 20260904,
+        "dtype": "torch.float32",
+        "expression_version": "h100_cuda_pointwise_reduce_float32_v1",
+        "name": "h100_cuda_pointwise_reduce_float32"
+      },
+      "workload_matrix": {
+        "full_weight_total": 1.0,
+        "full_workloads": [
+          {
+            "description": "small square latency-sensitive row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_256x256",
+            "seed": 20260904,
+            "shape": [
+              256,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "legacy square throughput row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_1024x1024",
+            "seed": 20260905,
+            "shape": [
+              1024,
+              1024
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "many short rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "tall_4096x256",
+            "seed": 20260906,
+            "shape": [
+              4096,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "few wide rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "wide_256x4096",
+            "seed": 20260907,
+            "shape": [
+              256,
+              4096
+            ],
+            "weight": 0.25
+          }
+        ],
+        "quick_subset": false,
+        "quick_subset_is_strict": false,
+        "quick_workload_names": [
+          "square_1024x1024"
+        ],
+        "selected_weight_total": 1.0,
+        "selected_workloads": [
+          {
+            "description": "small square latency-sensitive row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_256x256",
+            "seed": 20260904,
+            "shape": [
+              256,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "legacy square throughput row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_1024x1024",
+            "seed": 20260905,
+            "shape": [
+              1024,
+              1024
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "many short rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "tall_4096x256",
+            "seed": 20260906,
+            "shape": [
+              4096,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "few wide rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "wide_256x4096",
+            "seed": 20260907,
+            "shape": [
+              256,
+              4096
+            ],
+            "weight": 0.25
+          }
+        ],
+        "version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1"
+      },
+      "workload_matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+      "workload_version": "h100_cuda_pointwise_reduce_float32_v1"
+    }
+  },
+  {
+    "number": 5,
+    "variant": "baseline",
+    "source": {
+      "commit": "e4cddf0ecb45c23c683953fa2f8c45904b170a80",
+      "tree": "c972688c83fb63c8149b1b0c7a9b494b66432c23",
+      "benchmark_sha256": "a1401b964e58a01a6bacc8bb941b7de37021c2a7861c3ef901a2fc8a5c784959",
+      "lock_sha256": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced",
+      "git_status": ""
+    },
+    "receipt": {
+      "command": [
+        "taskset",
+        "-c",
+        "24",
+        "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/.venv/bin/python",
+        "-B",
+        "scripts/benchmark_compile_cuda.py",
+        "--include-unprepared-comparison",
+        "--output",
+        "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/target/paired/reports/run-5.json"
+      ],
+      "cwd": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline",
+      "started_epoch": 1788992518.9651742,
+      "seconds": 12.203739643096924,
+      "exit_code": 0,
+      "log": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/target/paired/reports/run-5.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "report": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/target/paired/reports/run-5.json",
+    "native_sha256": "6a6a555f2175e600dcb25a1026b1b1af81183daff3c25a6f301d7bc548e996cb",
+    "report_sha256": "6ff831c2c31e377b3a38badd4c85b9cb2ba480706d71e74a6b5fad63edeb3c1c",
+    "aggregates": {
+      "common_success_geomean_speed_ratio": 1.2112253473596637,
+      "common_success_shape_count": 4,
+      "common_success_weight": 1.0,
+      "coverage_adjusted_capped_speed_ratio": 1.0,
+      "coverage_adjusted_overall_percent": 100.0,
+      "denominator_weight": 1.0,
+      "full_matrix_weight": 1.0,
+      "per_workload": [
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "square_256x256",
+          "pytorch_cold_first_call_us": 1843370.785,
+          "pytorch_steady_median_us": 40.164,
+          "shape": [
+            256,
+            256
+          ],
+          "steady_speed_ratio": 1.1345655878946526,
+          "torch_rs_cold_first_call_us": 116.376,
+          "torch_rs_steady_median_us": 35.400333333333336,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "square_1024x1024",
+          "pytorch_cold_first_call_us": 41120.537,
+          "pytorch_steady_median_us": 42.998333333333335,
+          "shape": [
+            1024,
+            1024
+          ],
+          "steady_speed_ratio": 1.1693120733885076,
+          "torch_rs_cold_first_call_us": 118.319,
+          "torch_rs_steady_median_us": 36.772333333333336,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "tall_4096x256",
+          "pytorch_cold_first_call_us": 36832.63,
+          "pytorch_steady_median_us": 51.431333333333335,
+          "shape": [
+            4096,
+            256
+          ],
+          "steady_speed_ratio": 1.3625156743964253,
+          "torch_rs_cold_first_call_us": 119.891,
+          "torch_rs_steady_median_us": 37.74733333333334,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "wide_256x4096",
+          "pytorch_cold_first_call_us": 36937.629,
+          "pytorch_steady_median_us": 40.187333333333335,
+          "shape": [
+            256,
+            4096
+          ],
+          "steady_speed_ratio": 1.19068876291307,
+          "torch_rs_cold_first_call_us": 130.878,
+          "torch_rs_steady_median_us": 33.751333333333335,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        }
+      ],
+      "torch_rs_cuda_compile_score_percent": 100.0,
+      "workload_count": 4,
+      "zero_credit_cell_count": 0,
+      "zero_credit_unsupported_cell_count": 0,
+      "zero_credit_weight": 0
+    },
+    "environment": {
+      "benchmark_version": "torch_compile_cuda_h100_reference_benchmark_v11",
+      "cuda_visible_devices": "0",
+      "git": {
+        "diff_stat": "",
+        "head": "e4cddf0ecb45c23c683953fa2f8c45904b170a80",
+        "status_short": ""
+      },
+      "gpu": {
+        "nvcc_version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0",
+        "nvidia_smi": [
+          {
+            "compute_capability": "9.0",
+            "driver_version": "580.82.07",
+            "index": "0",
+            "memory_total_mib": "97871",
+            "name": "NVIDIA H100"
+          }
+        ],
+        "torch_cuda_device_capability": [
+          9,
+          0
+        ],
+        "torch_cuda_device_index": 0,
+        "torch_cuda_device_name": "NVIDIA H100",
+        "torch_cuda_memory_free_bytes": 100088741888,
+        "torch_cuda_memory_total_bytes": 102085492736,
+        "torch_cuda_multiprocessor_count": 132,
+        "torch_cuda_total_memory_bytes": 102085492736
+      },
+      "platform": "Linux-6.13.2-0_fbk12_0_g0b66b3635210-x86_64-with-glibc2.34",
+      "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
+      "python_executable": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/.venv/bin/python",
+      "pytorch": {
+        "cuda_available": true,
+        "cuda_device_count": 1,
+        "cuda_runtime": "13.0",
+        "cudnn_version": 92000,
+        "git_version": "cf30153c4c131c8164ee7798e5022d810682e2cb",
+        "path": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/.venv/lib/python3.12/site-packages/torch/__init__.py",
+        "version": "2.13.0+cu130"
+      },
+      "reference_compile_config": {
+        "backend": "inductor",
+        "dynamic": false,
+        "fullgraph": true,
+        "mode": null,
+        "options": null
+      },
+      "repeats": 3,
+      "run_mode": "full",
+      "samples": 17,
+      "schema_version": "torch_compile_cuda_h100_shape_matrix_report_v1",
+      "torch_rs": {
+        "path": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+        "version": "0.1.0"
+      },
+      "warmups": 5,
+      "workload": {
+        "base_seed": 20260904,
+        "dtype": "torch.float32",
+        "expression_version": "h100_cuda_pointwise_reduce_float32_v1",
+        "name": "h100_cuda_pointwise_reduce_float32"
+      },
+      "workload_matrix": {
+        "full_weight_total": 1.0,
+        "full_workloads": [
+          {
+            "description": "small square latency-sensitive row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_256x256",
+            "seed": 20260904,
+            "shape": [
+              256,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "legacy square throughput row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_1024x1024",
+            "seed": 20260905,
+            "shape": [
+              1024,
+              1024
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "many short rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "tall_4096x256",
+            "seed": 20260906,
+            "shape": [
+              4096,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "few wide rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "wide_256x4096",
+            "seed": 20260907,
+            "shape": [
+              256,
+              4096
+            ],
+            "weight": 0.25
+          }
+        ],
+        "quick_subset": false,
+        "quick_subset_is_strict": false,
+        "quick_workload_names": [
+          "square_1024x1024"
+        ],
+        "selected_weight_total": 1.0,
+        "selected_workloads": [
+          {
+            "description": "small square latency-sensitive row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_256x256",
+            "seed": 20260904,
+            "shape": [
+              256,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "legacy square throughput row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_1024x1024",
+            "seed": 20260905,
+            "shape": [
+              1024,
+              1024
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "many short rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "tall_4096x256",
+            "seed": 20260906,
+            "shape": [
+              4096,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "few wide rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "wide_256x4096",
+            "seed": 20260907,
+            "shape": [
+              256,
+              4096
+            ],
+            "weight": 0.25
+          }
+        ],
+        "version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1"
+      },
+      "workload_matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+      "workload_version": "h100_cuda_pointwise_reduce_float32_v1"
+    }
+  },
+  {
+    "number": 6,
+    "variant": "candidate",
+    "source": {
+      "commit": "c41a850446c0cd94e70027b13d197a9c8413ff15",
+      "tree": "eb74beea8f043ec17a5b54131be38682461242d1",
+      "benchmark_sha256": "a1401b964e58a01a6bacc8bb941b7de37021c2a7861c3ef901a2fc8a5c784959",
+      "lock_sha256": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced",
+      "git_status": ""
+    },
+    "receipt": {
+      "command": [
+        "taskset",
+        "-c",
+        "24",
+        "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/.venv/bin/python",
+        "-B",
+        "scripts/benchmark_compile_cuda.py",
+        "--include-unprepared-comparison",
+        "--output",
+        "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/target/paired/reports/run-6.json"
+      ],
+      "cwd": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate",
+      "started_epoch": 1788992533.5752287,
+      "seconds": 11.987053394317627,
+      "exit_code": 0,
+      "log": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/target/paired/reports/run-6.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "report": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/target/paired/reports/run-6.json",
+    "native_sha256": "b72e8f7f446db3b3380e83a24914be2c3a4469f3b6524fbcdff03750c06e4a5d",
+    "report_sha256": "cb6b780178fe9111fb4607334a1fb46577e4d5d2ce6c34144649009d8eec5458",
+    "aggregates": {
+      "common_success_geomean_speed_ratio": 1.2391489304797025,
+      "common_success_shape_count": 4,
+      "common_success_weight": 1.0,
+      "coverage_adjusted_capped_speed_ratio": 1.0,
+      "coverage_adjusted_overall_percent": 100.0,
+      "denominator_weight": 1.0,
+      "full_matrix_weight": 1.0,
+      "per_workload": [
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "square_256x256",
+          "pytorch_cold_first_call_us": 1811975.839,
+          "pytorch_steady_median_us": 42.74466666666667,
+          "shape": [
+            256,
+            256
+          ],
+          "steady_speed_ratio": 1.280406586055057,
+          "torch_rs_cold_first_call_us": 159.601,
+          "torch_rs_steady_median_us": 33.38366666666666,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "square_1024x1024",
+          "pytorch_cold_first_call_us": 35364.029,
+          "pytorch_steady_median_us": 42.404333333333334,
+          "shape": [
+            1024,
+            1024
+          ],
+          "steady_speed_ratio": 1.225948519278769,
+          "torch_rs_cold_first_call_us": 127.904,
+          "torch_rs_steady_median_us": 34.589,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "tall_4096x256",
+          "pytorch_cold_first_call_us": 36203.599,
+          "pytorch_steady_median_us": 49.925666666666665,
+          "shape": [
+            4096,
+            256
+          ],
+          "steady_speed_ratio": 1.354994255317224,
+          "torch_rs_cold_first_call_us": 125.339,
+          "torch_rs_steady_median_us": 36.845666666666666,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "wide_256x4096",
+          "pytorch_cold_first_call_us": 32981.293,
+          "pytorch_steady_median_us": 38.471666666666664,
+          "shape": [
+            256,
+            4096
+          ],
+          "steady_speed_ratio": 1.1085018920839815,
+          "torch_rs_cold_first_call_us": 124.758,
+          "torch_rs_steady_median_us": 34.706,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        }
+      ],
+      "torch_rs_cuda_compile_score_percent": 100.0,
+      "workload_count": 4,
+      "zero_credit_cell_count": 0,
+      "zero_credit_unsupported_cell_count": 0,
+      "zero_credit_weight": 0
+    },
+    "environment": {
+      "benchmark_version": "torch_compile_cuda_h100_reference_benchmark_v11",
+      "cuda_visible_devices": "0",
+      "git": {
+        "diff_stat": "",
+        "head": "c41a850446c0cd94e70027b13d197a9c8413ff15",
+        "status_short": ""
+      },
+      "gpu": {
+        "nvcc_version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0",
+        "nvidia_smi": [
+          {
+            "compute_capability": "9.0",
+            "driver_version": "580.82.07",
+            "index": "0",
+            "memory_total_mib": "97871",
+            "name": "NVIDIA H100"
+          }
+        ],
+        "torch_cuda_device_capability": [
+          9,
+          0
+        ],
+        "torch_cuda_device_index": 0,
+        "torch_cuda_device_name": "NVIDIA H100",
+        "torch_cuda_memory_free_bytes": 99784654848,
+        "torch_cuda_memory_total_bytes": 102085492736,
+        "torch_cuda_multiprocessor_count": 132,
+        "torch_cuda_total_memory_bytes": 102085492736
+      },
+      "platform": "Linux-6.13.2-0_fbk12_0_g0b66b3635210-x86_64-with-glibc2.34",
+      "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
+      "python_executable": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/.venv/bin/python",
+      "pytorch": {
+        "cuda_available": true,
+        "cuda_device_count": 1,
+        "cuda_runtime": "13.0",
+        "cudnn_version": 92000,
+        "git_version": "cf30153c4c131c8164ee7798e5022d810682e2cb",
+        "path": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/.venv/lib/python3.12/site-packages/torch/__init__.py",
+        "version": "2.13.0+cu130"
+      },
+      "reference_compile_config": {
+        "backend": "inductor",
+        "dynamic": false,
+        "fullgraph": true,
+        "mode": null,
+        "options": null
+      },
+      "repeats": 3,
+      "run_mode": "full",
+      "samples": 17,
+      "schema_version": "torch_compile_cuda_h100_shape_matrix_report_v1",
+      "torch_rs": {
+        "path": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+        "version": "0.1.0"
+      },
+      "warmups": 5,
+      "workload": {
+        "base_seed": 20260904,
+        "dtype": "torch.float32",
+        "expression_version": "h100_cuda_pointwise_reduce_float32_v1",
+        "name": "h100_cuda_pointwise_reduce_float32"
+      },
+      "workload_matrix": {
+        "full_weight_total": 1.0,
+        "full_workloads": [
+          {
+            "description": "small square latency-sensitive row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_256x256",
+            "seed": 20260904,
+            "shape": [
+              256,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "legacy square throughput row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_1024x1024",
+            "seed": 20260905,
+            "shape": [
+              1024,
+              1024
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "many short rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "tall_4096x256",
+            "seed": 20260906,
+            "shape": [
+              4096,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "few wide rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "wide_256x4096",
+            "seed": 20260907,
+            "shape": [
+              256,
+              4096
+            ],
+            "weight": 0.25
+          }
+        ],
+        "quick_subset": false,
+        "quick_subset_is_strict": false,
+        "quick_workload_names": [
+          "square_1024x1024"
+        ],
+        "selected_weight_total": 1.0,
+        "selected_workloads": [
+          {
+            "description": "small square latency-sensitive row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_256x256",
+            "seed": 20260904,
+            "shape": [
+              256,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "legacy square throughput row reduction",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "square_1024x1024",
+            "seed": 20260905,
+            "shape": [
+              1024,
+              1024
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "many short rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "tall_4096x256",
+            "seed": 20260906,
+            "shape": [
+              4096,
+              256
+            ],
+            "weight": 0.25
+          },
+          {
+            "description": "few wide rows with the same total element count",
+            "matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+            "name": "wide_256x4096",
+            "seed": 20260907,
+            "shape": [
+              256,
+              4096
+            ],
+            "weight": 0.25
+          }
+        ],
+        "version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1"
+      },
+      "workload_matrix_version": "h100_cuda_pointwise_reduce_float32_shape_matrix_v1",
+      "workload_version": "h100_cuda_pointwise_reduce_float32_v1"
+    }
+  }
+]
