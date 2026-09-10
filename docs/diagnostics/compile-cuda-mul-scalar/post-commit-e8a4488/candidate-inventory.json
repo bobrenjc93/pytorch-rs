@@ -1,0 +1,761 @@
+{
+  "base": "f88b7e8bb622d8aad58819b7985fb39d279a51c1",
+  "candidate": "e8a4488aa0751348a8e91f744b2d76e934576ba9",
+  "changed_files": [
+    {
+      "path": "README.md",
+      "sha256": "d9980ee7f87236123c96076281720bef6b39f5667eb06758fb949d8cd49858ae",
+      "classification": "implementation, test, harness or support documentation; no post-commit code changes"
+    },
+    {
+      "path": "docs/README.md",
+      "sha256": "e24788108b575095a1f46060dba5e19ba33e4b8cc4a131ecb8d07df68600e5ff",
+      "classification": "implementation, test, harness or support documentation; no post-commit code changes"
+    },
+    {
+      "path": "docs/compile-cuda-add.md",
+      "sha256": "85eac90df190bbd1142b73257f6b8f4057ec0d62bcb1012f48686517099c4e6a",
+      "classification": "implementation, test, harness or support documentation; no post-commit code changes"
+    },
+    {
+      "path": "docs/compile-cuda-mul-scalar-validation.md",
+      "sha256": "c9e5c5973f30181426329672cd157b1970be1dcb7ddab274e0bc0f551fae143f",
+      "classification": "implementation, test, harness or support documentation; no post-commit code changes"
+    },
+    {
+      "path": "docs/cuda-mul-scalar-validation.md",
+      "sha256": "8568a5f93c643b7df1cf1d6ab6ed17e6af85a5f07c0f1a13531caeed2ca0aa0f",
+      "classification": "implementation, test, harness or support documentation; no post-commit code changes"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/archive-manifest.json",
+      "sha256": "e5bb4ed6d85c2ab89f600bb1b1ae15317332bc3bc915ed7a77c9fc0e8e91b760",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/baseline-buffer.log",
+      "sha256": "91ef760d9a4cf5f22f6155458eb9632760a13a084c6f5deefe06c9118a301020",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/baseline-build.log",
+      "sha256": "28f556b2a38a02bfba94a02c4770b7d86b1f5a0e42a3cfb7239ce2162911b928",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/baseline-factory.log",
+      "sha256": "bdf1fbfb847b5160269b73eaf3c9be20ff2a54dcd642b3419e7c0365a3dd3d99",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/baseline-install.log",
+      "sha256": "6c8f528b3eb067209c6071eaad453bcecba304bfcfc647f879cef8d0c76f98bf",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/baseline-provenance.json",
+      "sha256": "e0c3387f29dcc34b85391327f15279f4244f7c239ec59b0a5fe7d8bfc6ed95e0",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/baseline-provenance.log",
+      "sha256": "9eed5be076e8e40a192f689d039a815f516183be25eb3177f8e52ed688edf35b",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/candidate-build.log",
+      "sha256": "2d3cd9ae7f82ee7cba9001c0cf30f3d89dcf2ecf130c8bb13f6f9a9a0652d7db",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/candidate-build2.log",
+      "sha256": "981f1f8876d27fc4d29bae86a08de149107c72162bc0de2cd9c3abe29624aa65",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/candidate-install.log",
+      "sha256": "a3b9b68668ae6d6c8ee7759fdff329a47e1d711fffc33607c301c4b2550b2e1f",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/candidate-install2.log",
+      "sha256": "822a38b530bbcf3005fdabb80f643cffdc2a9d44fffd94da2ff66f64c4160c47",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/compile-evaluation.log",
+      "sha256": "fd386594ae04f88df5f677505530fc330d708a79f6060471ea3c9183e646e8d1",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/compile-second.log",
+      "sha256": "26ba35b45dcf5ecdab3644975ccb51a8e2acafb4acd06f9a7058a1dd8a279a88",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/diff-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/docs-final.log",
+      "sha256": "13b04dba3f22d64dfceb52851d481ee05a86603d8272be120060782afc72a7bc",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/edit_bytecode.py.txt",
+      "sha256": "11ea54b6081b2ccbbe0124d14662763875a34c7754b75da9f745a4783033d451",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/edit_compiler.py.txt",
+      "sha256": "3d5210615b2216cbcfc9d20683ec12eec0ccc1578bb22bfe927629b2b6b0eb2e",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/edit_docs.py.txt",
+      "sha256": "3a4ada80ce4c93d2a7946a541b8c0b980e3382dc11d3c262facf2866f0d80076",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/edit_native.py.txt",
+      "sha256": "3246a16b602c8df7603dfbfc14f38d42bc175397875120a8bdff810d59793108",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/env.sh.txt",
+      "sha256": "a9bad672a7397c7fff0c69fdafbc1fda7501722f6b974d48c4aa2b4faa122bca",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/environment.log",
+      "sha256": "a213dd325aac575e348413d14eea40f39e48b27493d87e09e654c2dabfd9e1bf",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/factory-final.log",
+      "sha256": "bdf1fbfb847b5160269b73eaf3c9be20ff2a54dcd642b3419e7c0365a3dd3d99",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/final-build-record.json",
+      "sha256": "5e350b3ad79a43ffc803380d2f5821dba0b9e027c2091886b9ad21b868d79fed",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/final-build.log",
+      "sha256": "437b017bc4d3c98b383ea6d41006705d726d53b3072eb5b6696b1e4a93632ea9",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/final-checks.json",
+      "sha256": "aad2ba64e3a67af175ba7fabbbcf0aa91ae1c9ddf2b482355abdc71066acc290",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/final-import.log",
+      "sha256": "717ee53c02de3d07a373314cbd02c4e633348c76aaaa824f7b6dc93e491d0a32",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/final-install.log",
+      "sha256": "0abbaa0616b767de0ff3d415a5a00d66247d4086e515dc6efda8138a963f3c9d",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/final-provenance.json",
+      "sha256": "1ca34be512f870f099a21b2a2e89a99caf32f4b577bc1cf5c935ec979494fe1e",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/final-run.log",
+      "sha256": "8c1f8922ded2931e4f9d11ddc9389b08aa46bdecf8365dbb6fdc38b1102ae888",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/format-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/mul-diagnostic-current.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/mul-diagnostic.json",
+      "sha256": "dafa9dfb2ed2307dc7f20ca6903c10d881c53b1649ef1f0c32ba71592aed32b6",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/mul-diagnostic.log",
+      "sha256": "0d64d8de29c821e97a72328c4deada8d11fea97ba3039c558d4100a93225b488",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/mul-initial.log",
+      "sha256": "fde8e0d189e77bab9232d432d97e5bff8fca0e60732afdddd708baae5b19bba3",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/neg-add-diagnostic.json",
+      "sha256": "dcaf3a8abe9e6c2dfe708a8bb0e96bce4f7a9a5d60879e4ea69120fed2f7ff5d",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/neg-add-diagnostic.log",
+      "sha256": "2a73a65d8dec00cd2148b967cb5f03bdc19a1c5b9a3e2d2fbeb3bc66c3c5fa60",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/portable-initial.log",
+      "sha256": "6130ed93d6c536f5911c739e515cbeb5a532b358516f59b131a9b2beb03ab145",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/python-final.log",
+      "sha256": "cb0bb352ff9d7eb783076fd634c5bb00756e13f61933f6c78091370ab0d50a99",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/regression-initial.log",
+      "sha256": "6e9e980f20ae50fffe375476272a60e8e16b026719d15529d496ce52c3b75669",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/run_final.py.txt",
+      "sha256": "422a08711b15a4e4c62531e22aac24b0c165a5ca945993587299c7c08fbdc5aa",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/rust-final.log",
+      "sha256": "4d0e376e86f3b1285a7d23e3ad26768c66eb8dd4071b4fdb2b655f7b7f4a50a1",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/stride-fixture-correction.log",
+      "sha256": "24528b3d36ef75a5d30318fb9a1611cfda6e5cb48efc529765d4a7ed60e12dca",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/two-device-corrected.log",
+      "sha256": "ef8680cd7a424e5d805ab80c060cecd157bef886241db0409a3bb47229ba2c79",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/interrupted/two-device.log",
+      "sha256": "1c6479b9a376f6bf548ad9cad1c0238321144c61c02509df76a0ca2e7c2c1ccf",
+      "classification": "historical interrupted checkpoint"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/baseline-export-initial.log",
+      "sha256": "d4a35dabf2e7137c3044e7962b05e6dfe3448cb4ab600b28a62a57fa7a57fc62",
+      "classification": "preserved baseline/setup failure"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/baseline-rust-release-setup-failed.log",
+      "sha256": "126f3d4b3028f7efdb5a936b0601a7f602978e2a66b7981b5dc686cbd36dc018",
+      "classification": "preserved baseline/setup failure"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/baseline-rust-release.log",
+      "sha256": "f60301120cea750be78848d3ed33ee0bb0a3ef8c2be1e43d421eefd584396f17",
+      "classification": "preserved baseline/setup failure"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/baseline-source-provenance.json",
+      "sha256": "312884e051dd8ac8d2753712313ebbb8a5790d996bd00c5e15de337bad7b29c7",
+      "classification": "preserved baseline/setup failure"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/build-312.log",
+      "sha256": "09a83f4d8cf4fbbb83b4e2d62ace8c7c2061b79565f519ae34d39938c5125c70",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/build-314.log",
+      "sha256": "5abc9c25ec4f836262d570c119993922966e7c70102937a0d40c585b958ebadd",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/build-314.receipt.json",
+      "sha256": "90083ebe2f7b430ddd34658650756673dfb786fe4b8ef263b02d406e03c50c52",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/check-evidence.py.txt",
+      "sha256": "7ec24060e59eb5c21e00b43132b243d6a77561f31e5b3a9b223735eac7ad80e6",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/clippy.log",
+      "sha256": "6531f5453a5427590af5b3a4aff92a2d58b0a8bd9c6dbcd34b256213ed341956",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/clippy.receipt.json",
+      "sha256": "febd1c6fdd9f4c15829b4fa45f8e937c4ccb672851bbd48d29f1b2e98dc58c99",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/diagnostic-accounting.log",
+      "sha256": "c48c9d7b77fcdd34b5b758261537d6a37d101f6a68a241d2510832087c7756f5",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/diagnostic-accounting.receipt.json",
+      "sha256": "c886b308a16a8846005240929f116671b9d987052711413ebb50b023588388b3",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/env.sh.txt",
+      "sha256": "0967152744d6b13d65643cd0107bcba3c409aee3e8dcaa82f60941dc6fcb188a",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/evidence-integrity.json",
+      "sha256": "7d1b833596d725281d98a1af8fce60e63683d170222d8a7d0c757b68e83174b2",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/evidence-integrity.log",
+      "sha256": "f4a44656d3503fc2a188dabb5e8413b39af283848bd59c0a39144d0dbb64a604",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/evidence-integrity.receipt.json",
+      "sha256": "0906214af7c8d6e04ee72810b337145276f240f209964dd248807d58a3cb0817",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/factory-pinned-312.log",
+      "sha256": "bdf1fbfb847b5160269b73eaf3c9be20ff2a54dcd642b3419e7c0365a3dd3d99",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/factory-pinned-312.receipt.json",
+      "sha256": "a51eb90afb39a670ed19b1c9c6c3a537308732c921ef033c029dfa41274d6906",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-build-312.log",
+      "sha256": "03b34f1bd641a54c415f7d281d807ef8565bc30e8352c2d0444141da8a927bc7",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-build-312.receipt.json",
+      "sha256": "f8afe965aa529c7c4aca45d68f645eae50ab30368abcf15f7e56c9bf60432476",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-build-314.log",
+      "sha256": "7ce20d6d7a4fb7a1799e68c721042887c20d4adfa22377e92be5968a0c600ae8",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-build-314.receipt.json",
+      "sha256": "aed1c49883507e40d519098046767ad51caa9ac5769ecca2dcaccac22c0dcc6a",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-diff-check.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-diff-check.receipt.json",
+      "sha256": "19c1470370c3fd639e3a18f47a9722ae28f41e2cf5ba18598e5a00097946f697",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-docs-accounting.log",
+      "sha256": "c3cee01cbfc4cefc8f78cc0cc76179f04e5ac86a0a5fc639fd16a50f4994c297",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-docs-accounting.receipt.json",
+      "sha256": "15777b0dcb0669c52c18094f89d87855698b6d7fafb6616ebb8d0b7285dabc41",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-frozen-compile-corpus.log",
+      "sha256": "3910633629d9bb336261dca53c74d094250d26f31ff081fa613b25944c02f2dc",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-frozen-compile-corpus.receipt.json",
+      "sha256": "3f955689d179b7fc3da0e5a0538e4a3cbc727192cc37a819bb48cd89a7984fbf",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-install-312.log",
+      "sha256": "ef88f4017214d8243445aaffb62261f202fb2c9a87e5bf1d42bd57651b58e84a",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-install-312.receipt.json",
+      "sha256": "51485f2998dc0af9877d4bb574debe40bfbdf8291180761d9d20385308aa8213",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-install-314.log",
+      "sha256": "ea1f1b71c1cc3e830f990bd8d3e0e9c3cfb5f6e97bef728f90a39d9ab73293da",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-install-314.receipt.json",
+      "sha256": "b5826b9b1b2710f346f591fe56f893bce56da98a1a853d62c6fb6db6319ed423",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-mul-diagnostic-312.json",
+      "sha256": "ded4048937fd1408453686d96ee8df3c70878cac2e4773a0c65786f7c7253a34",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-mul-diagnostic-312.log",
+      "sha256": "0d64d8de29c821e97a72328c4deada8d11fea97ba3039c558d4100a93225b488",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-mul-diagnostic-312.receipt.json",
+      "sha256": "ba49de98d62d09db285986f84fde6e58e947aef4a9164f55a643bfd3e2d2dd79",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-mul-diagnostic-314.json",
+      "sha256": "f72b48d052a42f7c99034ca7fa2851e116cb1178a56cc18711cf1fdbc69f9b40",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-mul-diagnostic-314.log",
+      "sha256": "0d64d8de29c821e97a72328c4deada8d11fea97ba3039c558d4100a93225b488",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-mul-diagnostic-314.receipt.json",
+      "sha256": "38fbf4a88ad8dca66df402ec1a496ceb3ebbaaa37b6ef65690b9e914332e1a79",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-mul-diagnostic-two-device.json",
+      "sha256": "8656bda0dac7ed222d4f0ed27188029c6ac0d0e198148ee04bc02ceb4f2084f0",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-mul-diagnostic-two-device.log",
+      "sha256": "b0adee4180e62e2f289a13a64e0e28b551481fdc589bcd504428fc7efd1974dd",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-mul-diagnostic-two-device.receipt.json",
+      "sha256": "794d5001f89cc6bb7e2c86809bf31b7ec45e96bcaf9bf910994d0d9fcea2e997",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-neg-add-diagnostic-312.json",
+      "sha256": "cac70f5e9f0da545dfd2c253b0ee839f01bec4a36da599ce587e219124ac9924",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-neg-add-diagnostic-312.log",
+      "sha256": "2a73a65d8dec00cd2148b967cb5f03bdc19a1c5b9a3e2d2fbeb3bc66c3c5fa60",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-neg-add-diagnostic-312.receipt.json",
+      "sha256": "3a0e1d9da0c5b62e4a2e5a97a9372a7309e80745f186359be9788ea2f478e1b9",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-provenance-312.json",
+      "sha256": "e9fc17ebfec4def2e2f761bca3eadb1edb8bb36fcc178a974f063356d9dac28a",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-provenance-312.log",
+      "sha256": "b87d31b47b18d4ef3cec366edcbb55ea62ca60e24f441025eb38e153e1289a19",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-provenance-312.receipt.json",
+      "sha256": "23e3f6169770fc22949d04783c51b04288bf174fd67ff2335df9f999a9a9f4d9",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-provenance-314.json",
+      "sha256": "007a1f98f88270d33017385c775cfaa164e1a4f6ee8aee33f7ea42fd16419adb",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-provenance-314.log",
+      "sha256": "b87d31b47b18d4ef3cec366edcbb55ea62ca60e24f441025eb38e153e1289a19",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-provenance-314.receipt.json",
+      "sha256": "f6ac48ef75b4e806c35951e910513368b1897850e254b60eebabec6a3158289a",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-python-combined-312.log",
+      "sha256": "d7481e0ef5fe395eee1458879fe8413438f31b7f7c42cfa54fcdffedb647fbab",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-python-combined-312.receipt.json",
+      "sha256": "fec3f03b835b984c6f94adf50274d29b87848b905c60c220772647ef2e4db4a5",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-python-compiler-314.log",
+      "sha256": "510f88fb7c70e1cfd5d28fcbfe9396b27522d1f6dda4004d64622ad0a95a8f6e",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-python-compiler-314.receipt.json",
+      "sha256": "96d6b323c3ba011ec8d74da98ec722aab11b0b49303c01324a0236b7e06e747b",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-two-device-312.log",
+      "sha256": "ffe74abd21858d5aa3dc715b9232f50d179d22d083db7acab070e230204dff88",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-two-device-312.receipt.json",
+      "sha256": "6636401363e6ceafa477218030f2e9186cfaaf47843fd19bbbd1fd437d8ec8cf",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-verify-312.log",
+      "sha256": "266f824ed07d9eac4505edee775b76fa9a9390c7547d27737432b995ecb20f59",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-verify-312.receipt.json",
+      "sha256": "637165087fee439d34add261b198047a7d9c3f671eca68c73648f8d9c3394197",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-verify-314.log",
+      "sha256": "b293d1776c20d02fb639d915828c5c1838cae23eee121003efe0f40f564fab24",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/final-verify-314.receipt.json",
+      "sha256": "ba34de0d9a361ebf4e10b86508ee1b0f8e311d5b037bd88f7e0eabf4351484c4",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/fmt.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/fmt.receipt.json",
+      "sha256": "df355314f816847aeadcc7035d6e3e90d0109fdf094352cfde875e94b2b0cf71",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/initial-commands.json",
+      "sha256": "266077edb21454c02cfd6c8243de7f7e6ac6df88946353f5c039e2d610c3ce17",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/install-312.log",
+      "sha256": "43a5f19d61adb6849b334992f81747421f59be98ea4b63069e354a67c0c3c881",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/install-312.receipt.json",
+      "sha256": "3a3777f241c0573e4a17ea067526a334539bac2c52743d7043ff7805eb16cd26",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/malformed-dynamic-reproducer.log",
+      "sha256": "1193f12ba8dd5a519a230a1c06234e88b8c69ada533f64650e580d96b9614e6b",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/malformed-dynamic-reproducer.receipt.json",
+      "sha256": "22d4f7f907980d42280420a83ec77939a37217ecd344ad0712e2c8264ba945b2",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/manifest.json",
+      "sha256": "de2ed5222328574c9a8c8ef5c7f5613252e68831be5d3c76d71c15f5c78a81c8",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/post-artifact-diff-check.log",
+      "sha256": "16e5e4224e765c6ec243fbbe8a181c646fb22f6288594427c1414a7e44fcb66d",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/post-artifact-diff-check.receipt.json",
+      "sha256": "3ca0b50b5b4e71ff597740f8032fbde535c08df7b4c21376aa2900543ebc9e99",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/provenance-312.json",
+      "sha256": "0928b63f064f148dd8c69300399109512d2192463a7558dfddfccd056adfbfe1",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/provenance-312.log",
+      "sha256": "b87d31b47b18d4ef3cec366edcbb55ea62ca60e24f441025eb38e153e1289a19",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/provenance-312.receipt.json",
+      "sha256": "c3ef34613c4445d6fecf6183a695bde3ab320378df8ef8bfecaaac3c5aaab2c8",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/provenance.py.txt",
+      "sha256": "feab90992dd6ea2a0def82169785497337b5da719015c1d3b12b04fe1db9bee5",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/python-combined-312.log",
+      "sha256": "90d1c0223e7f54002f2aa84e3c013d708cb36ce83c27ce1bb413a22f0c383085",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/python-combined-312.receipt.json",
+      "sha256": "30f00d89d0de4c897dbac3fa115996238f09e229f5de5dc8d7d7e4f56b115af0",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/results.json",
+      "sha256": "59ad5beaff48d1d0a09f1619f036bd638cf990fca411846c0a77fa7c4b5faf79",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/run.py.txt",
+      "sha256": "7052c1efbbe654d821c19d857de06ab062767e608fa00fa5a63a7175eaf2fb69",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/rust-cuda-integration.log",
+      "sha256": "45cdd8a78dc2d1b918279496aef1b462bb74dd95190244abb3163d8e3d523af9",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/rust-cuda-integration.receipt.json",
+      "sha256": "a8c593e6a50200bb33bb14a5cf34c7b1ed94a7370f17fb145cac073cacd7a7c4",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/rust-debug-cpu.log",
+      "sha256": "a12e443bfb5fa34c599660338162374d9c912bc3d070cc9f5033d5c5c730c96a",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/rust-debug-cpu.receipt.json",
+      "sha256": "0b3b0ebf0f6a29b8ba03a9f38442657cbbcda892fa43855a32f1b2ce66f4c734",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/rust-release.log",
+      "sha256": "1387989c3156375b7a8b650305e5e6475f78ba3477ebdd5068dcf226781c283f",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/rust-release.receipt.json",
+      "sha256": "f9c30ec495d4adf155a086f1f2ea3340e572c0403e87e9d34e7fc439fb48690b",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/source-diff-check.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/source-diff-check.receipt.json",
+      "sha256": "288e260bdd4e850e0d448a69ff46f030a8b949d1974d0f2700fb73f5a5af38d5",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/uv-sync-312.log",
+      "sha256": "be5e787aceb830227d0338620cbca4f0a50489f7b780e6674537269d7454a43a",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/uv-sync-314.log",
+      "sha256": "c73b2e28c7df46c532650595e927557e1606a0c6cb889d17eb8253e1d94aa2d0",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/verify-312.log",
+      "sha256": "266f824ed07d9eac4505edee775b76fa9a9390c7547d27737432b995ecb20f59",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/verify-312.receipt.json",
+      "sha256": "092b71ed13507d6dd2402a1df1e88d89b2ed1081a5d43ae712e7c4f45f3bd847",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/diagnostics/compile-cuda-mul-scalar/recovery/wheel-sha256.json",
+      "sha256": "631f009e8e696f9444d79c6aa547169b3d91ed2badf11649395f4370d9b695a1",
+      "classification": "author recovery evidence: final measurements to refresh; earlier attempts preserved"
+    },
+    {
+      "path": "docs/supported-surface.md",
+      "sha256": "1faa7eb8337c4bd51074292e569e8bf981c4acee4c40202ad2589e7154915a25",
+      "classification": "implementation, test, harness or support documentation; no post-commit code changes"
+    },
+    {
+      "path": "docs/troubleshooting.md",
+      "sha256": "c35afea1b3b877c84133344f841ec1f350a9cdc8b4df20c42bd8e88325bdefab",
+      "classification": "implementation, test, harness or support documentation; no post-commit code changes"
+    },
+    {
+      "path": "python/torch_rs/__init__.py",
+      "sha256": "7e47a8707aaa60b39d32aa57b3876fe4171c65f4d38d44b2f0d8d44816905540",
+      "classification": "implementation, test, harness or support documentation; no post-commit code changes"
+    },
+    {
+      "path": "python/torch_rs/_compile_bytecode.py",
+      "sha256": "4e7327b3f78db6c30f526389e15194cf8c7bbcd910b07141acfeb724d7acb078",
+      "classification": "implementation, test, harness or support documentation; no post-commit code changes"
+    },
+    {
+      "path": "python/torch_rs/_compile_trace.py",
+      "sha256": "44ccd9373f983f10910ba6ec5614a86786a21bf3ec2d549bb3d8166313a0aa30",
+      "classification": "implementation, test, harness or support documentation; no post-commit code changes"
+    },
+    {
+      "path": "scripts/diagnose_compile_cuda_mul_scalar.py",
+      "sha256": "43a757e504f0a0ab74315e29fcc2ce828433829544b6f9afb5ae85f4ab8bdf43",
+      "classification": "implementation, test, harness or support documentation; no post-commit code changes"
+    },
+    {
+      "path": "src/python.rs",
+      "sha256": "a03420efa7d0fe651c88c9856cba983d4d9433934abe0d6d35251100f592e313",
+      "classification": "implementation, test, harness or support documentation; no post-commit code changes"
+    },
+    {
+      "path": "tests/test_compile_cuda_mul_scalar.py",
+      "sha256": "3d4cb05ba62c01c830ad9be171eb09199a3d8961fce12958eff6a229e455b72f",
+      "classification": "implementation, test, harness or support documentation; no post-commit code changes"
+    },
+    {
+      "path": "tests/test_compile_cuda_mul_scalar_diagnostic.py",
+      "sha256": "6bc058954d726437c00ebe991f89b88c793353a2beaf2c3e7ffb70d8a132bf33",
+      "classification": "implementation, test, harness or support documentation; no post-commit code changes"
+    },
+    {
+      "path": "tests/test_cuda_mul_scalar.py",
+      "sha256": "3f884d6b96e05f492946ce0dc72727e2923cbe81a644132f4010275765eb4745",
+      "classification": "implementation, test, harness or support documentation; no post-commit code changes"
+    },
+    {
+      "path": "tests/test_readme_quickstart.py",
+      "sha256": "0e4550f4cc8bdfa222393b93e5caa51e33ed6a03e190abf9dff0d5db6036c734",
+      "classification": "implementation, test, harness or support documentation; no post-commit code changes"
+    }
+  ]
+}

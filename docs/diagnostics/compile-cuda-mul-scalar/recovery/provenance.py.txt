@@ -1,0 +1,38 @@
+import ctypes, hashlib, importlib.metadata as md, json, os, pathlib, platform, subprocess, sys, sysconfig
+import torch_rs, torch_rs.torch_rs as native, torch
+root = pathlib.Path.cwd()
+def sha(path): return hashlib.sha256(path.read_bytes()).hexdigest()
+files = subprocess.check_output(['git','ls-files','--cached','--others','--exclude-standard','src','python','tests','scripts','Cargo.toml','Cargo.lock','pyproject.toml','uv.lock']).decode().splitlines()
+files += ['tests/test_compile_cuda_mul_scalar.py','scripts/diagnose_compile_cuda_mul_scalar.py']
+sources = {p:sha(root/p) for p in sorted(set(files)) if (root/p).is_file()}
+package = pathlib.Path(torch_rs.__file__).parent
+installed = {}
+for source in (root/'python/torch_rs').rglob('*.py'):
+    rel = source.relative_to(root/'python/torch_rs')
+    dest = package/rel
+    assert sha(source) == sha(dest), rel
+    installed[str(rel)] = sha(dest)
+from torch_rs._cuda_public_storage import _candidate_libraries
+runtime_path = os.environ.get('TORCH_RS_CUDART') or _candidate_libraries()[0]
+runtime = ctypes.CDLL(runtime_path)
+version = ctypes.c_int()
+assert runtime.cudaRuntimeGetVersion(ctypes.byref(version)) == 0
+record = {'base_commit':subprocess.check_output(['git','rev-parse','HEAD']).decode().strip(),
+          'checkpoint_commit':'9a1512de97392beadde70875f58f35f76f4cbe7e',
+          'attribution':'uncommitted recovery candidate identified by source hashes; base_commit alone is not the tested source',
+          'source_sha256':sources, 'installed_python_sha256':installed,
+          'python':sys.version,'executable':sys.executable,'base_executable':sys._base_executable,'prefix':sys.prefix,
+          'python_build':platform.python_build(),'python_compiler':platform.python_compiler(),
+          'python_config':{k:sysconfig.get_config_var(k) for k in ('CONFIG_ARGS','CC','CFLAGS','SOABI','Py_DEBUG','Py_GIL_DISABLED')},
+          'packages':{d.metadata['Name']:d.version for d in md.distributions()},
+          'package':torch_rs.__file__,'native_extension':native.__file__,
+          'native_extension_sha256':sha(pathlib.Path(native.__file__)),
+          'torch':torch.__version__,'torch_cuda':torch.version.cuda,'torch_path':torch.__file__,
+          'gpu':torch.cuda.get_device_name(0),'native_runtime_library':runtime_path,'native_runtime_version':version.value,
+          'native_kernel_compiler':'NVIDIA driver JIT of embedded PTX; nvcc unused',
+          'build':'maturin build --release --locked; extension-module, abi3-py310; thin LTO, codegen-units=1',
+          'tools':{tool:subprocess.check_output(args,stderr=subprocess.STDOUT).decode() for tool,args in (
+              ('rustc',['rustc','-Vv']),('cargo',['cargo','-V']),('nvcc',['nvcc','--version']),
+              ('nvidia-smi',['nvidia-smi','--query-gpu=index,name,memory.total,driver_version,compute_cap','--format=csv']))}}
+pathlib.Path(sys.argv[1]).write_text(json.dumps(record,indent=2)+'\n')
+print('installed sources match current tree; native SHA256',record['native_extension_sha256'])

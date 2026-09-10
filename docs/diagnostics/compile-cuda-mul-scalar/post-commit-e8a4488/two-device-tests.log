@@ -1,0 +1,12 @@
+test_ownership_restoration_and_cache_separation (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarDeviceTests.test_ownership_restoration_and_cache_separation) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/post-commit-e8a4488/venv312/lib64/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ok
+test_ownership_captures_and_device_restoration (tests.test_compile_cuda_neg.CompileCudaNegDeviceTests.test_ownership_captures_and_device_restoration) ... ok
+test_ordinals_captures_and_current_device_restoration (tests.test_compile_cuda_boundary.CompileCudaDeviceTests.test_ordinals_captures_and_current_device_restoration) ... ok
+test_allocation_failure_restores_device_and_recovers (tests.test_cuda_mul_scalar.CudaMulScalarDeviceTests.test_allocation_failure_restores_device_and_recovers) ... ok
+test_ownership_restoration_and_mixed_device_rejection (tests.test_cuda_mul_scalar.CudaMulScalarDeviceTests.test_ownership_restoration_and_mixed_device_rejection) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 9.670s
+
+OK

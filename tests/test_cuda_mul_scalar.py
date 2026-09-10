@@ -186,9 +186,8 @@ class CudaMulScalarTests(Comparison, unittest.TestCase):
         self.assertEqual(native.mul(x, Override()), 'override')
 
     def test_compiler_rejection_does_not_execute_or_cache(self):
-        programs = (lambda x: x * 1.25, lambda x: 1.25 * x,
-                    lambda x: x.mul(1.25), lambda x: (x + x) * -1.5,
-                    lambda x: x * x)
+        programs = (lambda x: x * x, lambda x: (x * 1.25) * x,
+                    lambda x: x.mul(other=1.25))
         x = native.ones((257,)).to('cuda:0')
         for program in programs:
             for fullgraph in (False, True):

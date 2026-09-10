@@ -1,0 +1,7 @@
+test_recorder_scalar_nodes_reject_cpu_and_unsupported_metadata (tests.test_compile_cuda_mul_scalar.CompileScalarMetadataTests.test_recorder_scalar_nodes_reject_cpu_and_unsupported_metadata) ... ok
+test_scalar_conversion_and_native_fail_closed_without_gpu (tests.test_compile_cuda_mul_scalar.CompileScalarMetadataTests.test_scalar_conversion_and_native_fail_closed_without_gpu) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+OK

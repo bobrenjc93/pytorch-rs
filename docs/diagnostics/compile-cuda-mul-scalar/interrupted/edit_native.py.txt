@@ -1,0 +1,51 @@
+from pathlib import Path
+p=Path('src/python.rs');s=p.read_text()
+pos=s.index('\nfn scalar_tensor_impl(', s.index('fn compile_trace_binary('))
+s=s[:pos]+'''
+// Restrict compiler constants before using the public multiplication conversion
+// contract. In particular parse_top_level_mul_scalar assumes a numeric operand.
+#[pyfunction(name = "_compile_trace_mul_scalar_value", signature = (scalar, /))]
+fn compile_trace_mul_scalar_value(scalar: &Bound<'_, PyAny>) -> PyResult<f32> {
+    if !(scalar.is_exact_instance_of::<PyBool>()
+        || scalar.is_exact_instance_of::<PyInt>()
+        || scalar.is_exact_instance_of::<PyFloat>())
+    {
+        return Err(PyNotImplementedError::new_err(
+            "torch.compile scalar multiplication requires an exact bool, int or float constant",
+        ));
+    }
+    parse_top_level_mul_scalar(scalar)
+}
+
+#[pyfunction(name = "_compile_trace_scalar", signature = (input, scalar, target, /))]
+fn compile_trace_scalar(
+    input: &Bound<'_, PyAny>,
+    scalar: &Bound<'_, PyAny>,
+    target: &str,
+) -> PyResult<PyTensor> {
+    if !input.is_exact_instance_of::<PyTensor>() {
+        return Err(PyTypeError::new_err("_compile_trace_scalar(): expected exact native Tensor"));
+    }
+    if target != "mul_scalar" {
+        return Err(PyNotImplementedError::new_err(format!(
+            "_compile_trace_scalar(): unsupported target {target:?}"
+        )));
+    }
+    let tensor = input.cast::<PyTensor>()?.try_borrow()?;
+    if !tensor.inner.is_cuda() {
+        return Err(PyNotImplementedError::new_err(
+            "torch.compile scalar multiplication only supports CUDA",
+        ));
+    }
+    let scalar = compile_trace_mul_scalar_value(scalar)?;
+    // Reuse kernel, layout, device restoration, completion and autograd checks.
+    tensor.inner.mul_scalar(scalar)
+        .map(PyTensor::new)
+        .map_err(|error| tensor_error(&error))
+}
+''' + s[pos:]
+s=s.replace('    module.add_function(wrap_pyfunction!(compile_trace_binary, module)?)?;', '''    module.add_function(wrap_pyfunction!(compile_trace_binary, module)?)?;
+    module.add_function(wrap_pyfunction!(compile_trace_scalar, module)?)?;
+    module.add_function(wrap_pyfunction!(compile_trace_mul_scalar_value, module)?)?;''')
+s=s.replace('        "_compile_trace_binary",', '        "_compile_trace_binary",\n        "_compile_trace_scalar",\n        "_compile_trace_mul_scalar_value",')
+p.write_text(s)

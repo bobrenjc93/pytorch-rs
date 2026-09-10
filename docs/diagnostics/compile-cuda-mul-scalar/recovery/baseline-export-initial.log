@@ -1,0 +1,4 @@
+git archive f88b7e8bb622d8aad58819b7985fb39d279a51c1 Cargo.toml Cargo.lock src tests benches examples python pyproject.toml | tar -x -C target/baseline-f88b7e8
+fatal: pathspec 'benches' did not match any files
+tar: This does not look like a tar archive
+No source was extracted; subsequent cargo command exited 101 (missing manifest).

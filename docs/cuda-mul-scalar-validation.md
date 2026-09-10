@@ -26,11 +26,14 @@ remain unsupported.
 
 Noncontiguous CUDA layouts, dtype conversion/complex promotion, autograd,
 tensor-tensor multiplication, explicit `out` (including `out=None` under the
-existing multiplication bindings), in-place variants, and scalar-multiply
-compiler capture remain rejected. CUDA dropout's former CPU-only nonidentity
+existing multiplication bindings), and in-place variants remain rejected. Bounded
+[compiled scalar multiplication](compile-cuda-add.md) accepts a narrower scalar
+and argument grammar than the public eager API. CUDA dropout's former CPU-only
+nonidentity
 boundary is retained. Existing CPU arithmetic, scalar conversion errors,
-overrides, layout and autograd behavior are unchanged. Eager multiplication
-adds no compiler capture or cache-preflight support.
+overrides, layout and autograd behavior are unchanged. Compiler support is
+validated separately in the
+[scalar capture guide](compile-cuda-mul-scalar-validation.md).
 
 ## Validation and provenance
 
@@ -42,7 +45,7 @@ zeros, subnormals, infinities and NaNs; irregular block/grid tails; a fully
 materialized 17,000,003-element result exceeding the 64 MiB front cache; offset,
 singleton and empty views; immutable inputs; output ownership; fresh-thread
 context initialization; independent-stream reads; overrides; unsupported
-boundaries; and compiler rejection before graph execution or cache insertion.
+boundaries; and unsupported compiler rejection before graph execution or cache insertion.
 Non-NaN values compare bitwise; NaNs compare by classification rather than payload.
 Two-device tests use only GPUs 0,1, query driver pointer memory type/device/managed
 attributes, and check ownership and device restoration

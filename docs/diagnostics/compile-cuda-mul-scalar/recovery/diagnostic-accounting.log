@@ -1,0 +1,8 @@
+test_failed_reference_wrong_data_and_unsupported_results_are_retained (tests.test_compile_cuda_mul_scalar_diagnostic.ScalarDiagnosticAccountingTests.test_failed_reference_wrong_data_and_unsupported_results_are_retained) ... ok
+test_setup_failure_is_written_and_returns_nonzero (tests.test_compile_cuda_mul_scalar_diagnostic.ScalarDiagnosticAccountingTests.test_setup_failure_is_written_and_returns_nonzero) ... ok
+test_troubleshooting_supported_boundary_and_report_navigation (tests.test_compile_cuda_neg_add_diagnostic.DiagnosticDocumentationTests.test_troubleshooting_supported_boundary_and_report_navigation) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.054s
+
+OK

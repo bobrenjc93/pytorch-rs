@@ -1,0 +1,27 @@
+    Finished `release` profile [optimized] target(s) in 0.05s
+     Running tests/cuda_add.rs (target/build/release/deps/cuda_add-25a906ca2dfae1f8)
+
+running 3 tests
+test ieee_edges_and_rejections ... ok
+test cross_thread_output_ownership_and_reuse ... ok
+test shapes_offsets_aliases_and_completion ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.45s
+
+     Running tests/cuda_mul_scalar.rs (target/build/release/deps/cuda_mul_scalar-b2dbc8574d102599)
+
+running 1 test
+test generated_scalar_multiplication_shapes_views_and_boundaries ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s
+
+     Running tests/cuda_native_boundaries.rs (target/build/release/deps/cuda_native_boundaries-e2b6cbb32b34291f)
+
+running 4 tests
+test fallible_cpu_apis_preserve_values_and_gradients ... ok
+test host_to_device_rejects_unsupported_inputs_without_runtime ... ok
+test standalone_cuda_operations_reject_before_cpu_storage_access ... ok
+test native_nonzero_cpu_cuda_roundtrips_preserve_layout_and_lifetimes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+

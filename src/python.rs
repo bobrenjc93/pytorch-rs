@@ -9565,7 +9565,7 @@ fn _backward_leaf_roots(roots: &Bound<'_, PyAny>) -> PyResult<()> {
     CoreTensor::backward_leaf_roots(&native_roots).map_err(|error| tensor_error(&error))
 }
 
-// CUDA tracing supports addition and negation. Keep other unary execution
+// CUDA tracing supports addition, negation and scalar multiplication. Keep other unary execution
 // guarded even for alias/identity operations supported by public eager APIs.
 fn require_compile_cpu_tensor(tensor: &CoreTensor) -> PyResult<()> {
     if !tensor.device().is_cpu() {
@@ -9691,6 +9691,52 @@ fn compile_trace_binary(
         }
     };
     output
+        .map(PyTensor::new)
+        .map_err(|error| tensor_error(&error))
+}
+
+// Restrict compiler constants before using the public multiplication conversion
+// contract. In particular parse_top_level_mul_scalar assumes a numeric operand.
+#[pyfunction(name = "_compile_trace_mul_scalar_value", signature = (scalar, /))]
+fn compile_trace_mul_scalar_value(scalar: &Bound<'_, PyAny>) -> PyResult<f32> {
+    if !(scalar.is_exact_instance_of::<PyBool>()
+        || scalar.is_exact_instance_of::<PyInt>()
+        || scalar.is_exact_instance_of::<PyFloat>())
+    {
+        return Err(PyNotImplementedError::new_err(
+            "torch.compile scalar multiplication requires an exact bool, int or float constant",
+        ));
+    }
+    parse_top_level_mul_scalar(scalar)
+}
+
+#[pyfunction(name = "_compile_trace_scalar", signature = (input, scalar, target, /))]
+fn compile_trace_scalar(
+    input: &Bound<'_, PyAny>,
+    scalar: &Bound<'_, PyAny>,
+    target: &str,
+) -> PyResult<PyTensor> {
+    if !input.is_exact_instance_of::<PyTensor>() {
+        return Err(PyTypeError::new_err(
+            "_compile_trace_scalar(): expected exact native Tensor",
+        ));
+    }
+    if target != "mul_scalar" {
+        return Err(PyNotImplementedError::new_err(format!(
+            "_compile_trace_scalar(): unsupported target {target:?}"
+        )));
+    }
+    let tensor = input.cast::<PyTensor>()?.try_borrow()?;
+    if !tensor.inner.is_cuda() {
+        return Err(PyNotImplementedError::new_err(
+            "torch.compile scalar multiplication only supports CUDA",
+        ));
+    }
+    let scalar = compile_trace_mul_scalar_value(scalar)?;
+    // Reuse kernel, layout, device restoration, completion and autograd checks.
+    tensor
+        .inner
+        .mul_scalar(scalar)
         .map(PyTensor::new)
         .map_err(|error| tensor_error(&error))
 }
@@ -25808,6 +25854,8 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
     module.add_function(wrap_pyfunction!(compile_trace_grad_enabled, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_unary, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_binary, module)?)?;
+    module.add_function(wrap_pyfunction!(compile_trace_scalar, module)?)?;
+    module.add_function(wrap_pyfunction!(compile_trace_mul_scalar_value, module)?)?;
     let exports = module.getattr("__all__")?;
     for name in [
         "_MAX_BACKWARD_LEAF_ROOTS",
@@ -25816,6 +25864,8 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
         "_compile_trace_grad_enabled",
         "_compile_trace_unary",
         "_compile_trace_binary",
+        "_compile_trace_scalar",
+        "_compile_trace_mul_scalar_value",
     ] {
         exports.call_method1("remove", (name,))?;
     }
