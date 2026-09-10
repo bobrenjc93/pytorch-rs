@@ -1,0 +1,82 @@
+"""Audit this publication's source/build receipts; no workload or scoring changes."""
+import hashlib, json, pathlib, pstats, re, sys, zipfile
+ROOT = pathlib.Path.cwd()
+OUT = ROOT/'target/static-analysis'
+sys.path.insert(0,str(ROOT/'scripts'))
+from evaluate_cuda_math import sha256, source_provenance
+
+def read(path):
+    return json.loads((OUT/path).read_text())
+baseline = read('baseline/source-manifest.json')
+final = read('candidate/source-manifest-final.json')
+changed = [p for p,h in baseline.items() if not (ROOT/p).is_file() or sha256(ROOT/p) != h]
+assert changed == ['python/torch_rs/_compile_bytecode.py'], changed
+assert all(sha256(ROOT/p) == h for p,h in final.items())
+assert set(final)-set(baseline) == {'tests/test_compile_static_analysis.py'}
+assert sha256(ROOT/'tests/test_compile_static_analysis.py') == sha256(OUT/'candidate/test_compile_static_analysis.final.py.txt')
+identities = {'base_commit':source_provenance()['commit'], 'implementation_commit':None, 'publication_commit':None,
+              'reason':'Agent may not commit. Candidate is an uncommitted development snapshot; clean capture and delivery gates remain outstanding.',
+              'existing_changed_paths':changed,'added_test_paths':sorted(set(final)-set(baseline)),
+              'baseline_complete_manifest_sha256':sha256(OUT/'baseline/source-manifest.json'),
+              'candidate_complete_manifest_sha256':sha256(OUT/'candidate/source-manifest-final.json')}
+builds = {}
+for label,path,manifest in [('baseline','baseline/build-capture/build-record.json',baseline),
+                            ('candidate','candidate/final-build-capture/build-record.json',final)]:
+    build = read(path)
+    assert build['clean_checkout'] == (label == 'baseline')
+    wheel = pathlib.Path(build['wheel_path'])
+    assert sha256(wheel) == build['wheel_sha256']
+    with zipfile.ZipFile(wheel) as archive:
+        native, = [n for n in archive.namelist() if n.endswith('.so')]
+        assert hashlib.sha256(archive.read(native)).hexdigest() == build['extension_sha256']
+        for source,digest in manifest.items():
+            if source.startswith('python/torch_rs/') and source.endswith('.py'):
+                assert hashlib.sha256(archive.read(source.removeprefix('python/'))).hexdigest() == digest
+    for command in build['commands']:
+        assert command['exit_status'] == 0
+        assert sha256(command['log']) == command['log_sha256']
+    builds[label] = {key:build[key] for key in ('source_sha256','production_diff_sha256','wheel_sha256','extension_sha256','interpreter_sha256','python','rustc','profile')}
+assert builds['baseline']['extension_sha256'] == builds['candidate']['extension_sha256']
+assert builds['baseline']['interpreter_sha256'] == builds['candidate']['interpreter_sha256']
+identities['builds'] = builds
+profiles = []
+for side in ('baseline','candidate'):
+    rows=[]
+    for i in range(12):
+        stats=pstats.Stats(str(OUT/side/f'cell-{i}.prof'))
+        row={'cell':i,'program':'composed' if i%2 else 'matmul','profiled_elapsed_s':stats.total_tt}
+        for name in ('_global_cache_dependencies','_lowerable_bytecode_instructions','_global_load_dependencies_from_instructions','_resolve_live_global_dependency'):
+            values=[value for key,value in stats.stats.items() if key[2]==name]
+            row[name]={'calls':sum(v[1] for v in values),'cumulative_s':sum(v[3] for v in values)}
+        if i%2:
+            assert row['_resolve_live_global_dependency']['calls'] == 200
+            assert row['_lowerable_bytecode_instructions']['calls'] == (200 if side=='baseline' else 0)
+            assert row['_global_load_dependencies_from_instructions']['calls'] == (200 if side=='baseline' else 0)
+        rows.append(row)
+    profiles.append({'side':side,'cells':rows})
+(OUT/'profiles.json').write_text(json.dumps(profiles,indent=2)+'\n')
+commands=[]
+for path in sorted(OUT.rglob('*.receipt.json')):
+    receipt=json.loads(path.read_text())
+    if 'command' not in receipt:
+        continue
+    log=path.with_name(path.name.removesuffix('.receipt.json')+'.log')
+    assert sha256(log)==receipt['log_sha256'], str(path)
+    commands.append({'receipt':str(path.relative_to(OUT)),'exit_status':receipt['exit_status'],'wall_seconds':receipt['wall_seconds']})
+identities['commands']=commands
+identities['raw_calls_verified']=read('comparison.json')['raw_calls_verified']
+assert identities['raw_calls_verified'] == 59520
+rust=(OUT/'candidate/rust-tests.log').read_text()
+identities['rust_test_totals']={key:sum(int(m.group(i+1)) for m in re.finditer(r'test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored;',rust)) for i,key in enumerate(('passed','failed','ignored'))}
+for side in ('baseline','candidate'):
+    for name in ('primary','held-481723','held-926051','primary-repeat'):
+        report=read(f'{side}/{name}.json')
+        assert report['status']=='passed' and len(report['cases'])==12
+        manifest = baseline if side=='baseline' else final
+        assert report['installed_source_manifest'] == {p:h for p,h in manifest.items() if p.startswith('python/torch_rs/') and p.endswith('.py')}
+        for library in report['loaded_cuda_libraries']:
+            assert sha256(library['path']) == library['sha256']
+        compiler = report['reference_triton_compiler']
+        assert sha256(compiler['ptxas_path']) == compiler['ptxas_sha256']
+(OUT/'identities.json').write_text(json.dumps(identities,indent=2)+'\n')
+print(json.dumps({'existing_changed_paths':changed,'raw_calls':identities['raw_calls_verified'],'rust_test_totals':identities['rust_test_totals'],'profiles':'all 12 cells per side verified; live resolution retained'},indent=2))

@@ -1,0 +1,160 @@
+"""Copy this task's evidence bytes to a new publication directory only."""
+import json, pathlib, shutil, hashlib
+ROOT=pathlib.Path.cwd()
+OUT=ROOT/'target/static-analysis'
+PUB=ROOT/'docs/diagnostics/compile-cuda-graph/static-analysis-b7936239-development'
+PUB.mkdir(parents=True,exist_ok=False)
+def digest(p): return hashlib.sha256(p.read_bytes()).hexdigest()
+hashes={}
+def copy(source,relative):
+    target=PUB/relative
+    target.parent.mkdir(parents=True,exist_ok=True)
+    shutil.copyfile(source,target)
+    assert digest(source)==digest(target)
+    hashes[str(relative)]=digest(target)
+for side in ('baseline','candidate'):
+    for path in sorted((OUT/side).iterdir()):
+        if path.is_file(): copy(path,path.relative_to(OUT))
+    for name in ('build-capture','final-build-capture'):
+        path=OUT/side/name
+        if path.exists():
+            for file in sorted(path.iterdir()):
+                if file.is_file(): copy(file,file.relative_to(OUT))
+for path in sorted(OUT.iterdir()):
+    if path.is_file() and path.suffix in ('.json','.log'):
+        copy(path,path.name)
+for name in ('env.sh','candidate-env.sh','run.py','profile_graph.py','compare.py','audit.py','publish.py'):
+    copy(OUT/name,pathlib.Path('command-sources')/(name+'.txt'))
+comparison=json.loads((OUT/'comparison.json').read_text())
+identities=json.loads((OUT/'identities.json').read_text())
+text=(OUT/'notes.md').read_text()
+text=text.replace('Candidate profiling is separate from timings.',
+'''Candidate profiling is separate from timings. It confirms zero repeated root
+disassemblies/static scans and 200 live resolutions per composed cell. See
+[profile accounting](profiles.json) and the baseline/candidate raw `.prof` files.''')
+text=text.replace('Empty process snapshots do not prove exclusive use between snapshots.',
+'''The candidate repeat was heavily contended by another user's FP8 GEMM test;
+[the additional inventory](candidate/repeat-contention.log) records GPU 0 at
+95% utilization. Its after inventory still shows that workload. The candidate
+profile after inventory also has an unresolved `[No data]` PID; no timing claim
+is drawn from profile durations. Fixed-math began while the FP8 test was still
+visible, and fixed-scoring's before/after inventories were empty. Empty process
+snapshots do not prove exclusive use between snapshots.''')
+section='''## Complete paired development data
+
+All **96 cells passed correctness** across four baseline and four candidate
+reports. [Accounting](comparison.json) verifies **59,520 raw calls**, both
+orders, block/pooled medians, unchanged policies, input hashes and all first-call
+observations. There are **20 native-latency regressions among 48 paired cells**;
+the worst ratio is **0.0290x**. Per-cell reference drift spans **0.7776–21.4418x**.
+All of these observations are retained, including the heavily regressing repeat.
+
+The tables use geometric means of per-cell medians. Native speedup is baseline
+native latency / candidate native latency; reference drift is candidate reference
+latency / baseline reference latency, so drift above 1 means the reference slowed.
+
+All 12 cells:
+
+| Run | Baseline native µs | Candidate native µs | Native speedup | Reference drift |
+| --- | ---: | ---: | ---: | ---: |
+'''
+for pair in comparison['pairs']:
+    g=pair['groups']['all']
+    section+=f"| {pair['name']} | {g['baseline_native_us']:.2f} | {g['candidate_native_us']:.2f} | {g['native_speedup']:.4f}x | {g['reference_drift']:.4f}x |\n"
+section+='''
+The six composed cells affected by this change:
+
+| Run | Baseline native µs | Candidate native µs | Native speedup | Reference drift |
+| --- | ---: | ---: | ---: | ---: |
+'''
+for pair in comparison['pairs']:
+    g=pair['groups']['composed']
+    section+=f"| {pair['name']} | {g['baseline_native_us']:.2f} | {g['candidate_native_us']:.2f} | {g['native_speedup']:.4f}x | {g['reference_drift']:.4f}x |\n"
+section+='''
+Unchanged 12-cell capped diagnostic parity (not the four-shape score):
+
+| Run | Baseline | Candidate | Raw baseline | Raw candidate |
+| --- | ---: | ---: | --- | --- |
+'''
+for pair in comparison['pairs']:
+    n=pair['name']
+    section+=f"| {n} | {100*pair['baseline_parity']:.4f}% | {100*pair['candidate_parity']:.4f}% | [report](baseline/{n}.json) | [report](candidate/{n}.json) |\n"
+section+='''
+The first three pairs show development improvements in composed latency, but
+**the complete paired data does not establish repeatable native acceleration**.
+The repeat, baseline held-out contention and uncommitted candidate prevent a
+clean milestone claim. Higher capped parity in the other pairs is not used as
+proof of native acceleration. The unfused native `backend="eager"` path also
+does not establish general Inductor parity.
+
+## Checks
+
+- [Focused regressions](candidate/focused-retry.log): 6/6 passed, including
+  warm CPU/CUDA analysis reuse, per-call resolution, in-place capture data,
+  helper/name/module/default/code changes, recursion/cross-module/closure
+  rejection, inactive globals, code replacement to branches/exception handling,
+  cache limits, metadata/method guards and launch-failure recovery.
+- [Full CPU suite](candidate/cpu-suite.log): 5,590 run, 230 skips, no failures.
+- [H100 compiler suite](candidate/h100-compiler.log): 142 run, six device-mask
+  skips, no failures. [Two GPUs](candidate/two-gpu.log): all seven passed.
+- [Python 3.14 compiler compatibility](candidate/python314-compiler.log):
+  55 run, one hardware skip, no failures, using a separate local interpreter.
+- [Rust](candidate/rust-tests.log): 397 passed; [fmt](candidate/rust-fmt.log)
+  and [clippy](candidate/rust-clippy.log) passed. The separate native H100
+  [bridge](candidate/rust-h100-bridge.log) and
+  [matmul](candidate/rust-h100-matmul.log) tests passed.
+- [Installed-wheel verification](candidate/wheel-verifier.log) passed.
+- [Frozen compiler corpus](candidate/frozen-compiler.log): 38/38; separate
+  [fixed math](candidate/fixed-math.json): 18/18 trials;
+  [four-shape scoring](candidate/fixed-scoring.json): all four eligible,
+  capped 100%, uncapped common-success ratio 1.3194x. These narrow scores
+  do not measure this root-analysis change or establish broad parity.
+- [Source/build audit](audit.log): every previous tracked file is byte-identical
+  except the production edit; the only added code file is the focused test.
+  Wheels, all installed Python source manifests and loaded runtime hashes match
+  their respective captured sources. Prior publications are unchanged.
+
+'''
+text=text.replace('## Build and delivery boundary',section+'## Build and delivery boundary')
+text+='''
+## Identities, receipts and reproduction
+
+[Identity record](identities.json) binds the complete baseline and final candidate
+source manifests, including tests and unchanged harnesses. All commands have
+adjacent `.receipt.json` files with argv, times, status, environment, source
+identities, log hashes and GPU inventories. The three empty-target build records
+are [baseline](baseline/build-capture/build-record.json),
+[initial candidate](candidate/build-capture/build-record.json) and
+[final measured candidate](candidate/final-build-capture/build-record.json).
+The final candidate source/test snapshot is the measured implementation;
+this evidence publication is a later working-tree addition, with no commit ID
+for either stage until Burner creates them.
+
+'''
+for side in ('baseline','candidate'):
+    b=identities['builds'][side]
+    text+=f"- {side.capitalize()} production SHA-256: `{b['source_sha256']}`.\n"
+text+=f"- Shared native extension SHA-256: `{identities['builds']['candidate']['extension_sha256']}`.\n"
+text+='''
+Reproduction uses the unchanged `scripts/capture_depth_concat_build.py` and
+`scripts/diagnose_compile_cuda_matmul.py`. Worktree-local environment settings
+are in [env.sh](command-sources/env.sh.txt); the separate candidate cache paths
+are in [candidate-env.sh](command-sources/candidate-env.sh.txt). The receipts
+contain the exact commands used here, including `--allow-dirty` for development
+candidate captures. After Burner commits the implementation, build into a new
+absent target and omit `--allow-dirty` for each diagnostic. Keep the declared
+four-run order and all 12 cells, including failures, both timing orders and raw
+calls. Do not treat these development files as the required clean candidate run.
+
+[Artifact hashes](artifact-hashes.json) verify byte-for-byte copies from this
+worktree's `target/static-analysis` outputs. `command-sources/` preserves the
+local orchestration and read-only accounting source; no repository evaluator,
+workload, scoring corpus or managed progress generator was added or altered.
+Wheel binaries and caches stay under `target`; their hashes and build commands
+are published here.
+'''
+(PUB/'README.md').write_text(text)
+hashes['README.md']=digest(PUB/'README.md')
+(PUB/'artifact-hashes.json').write_text(json.dumps(hashes,indent=2)+'\n')
+print(PUB)
+print(len(hashes),'artifacts; all copied bytes verified')

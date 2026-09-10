@@ -1,0 +1,238 @@
+{
+  "base_commit": "b7936239ceb7d7713a15ecd8a2c82c4bddd6d214",
+  "implementation_commit": null,
+  "publication_commit": null,
+  "reason": "Agent may not commit. Candidate is an uncommitted development snapshot; clean capture and delivery gates remain outstanding.",
+  "existing_changed_paths": [
+    "python/torch_rs/_compile_bytecode.py"
+  ],
+  "added_test_paths": [
+    "tests/test_compile_static_analysis.py"
+  ],
+  "baseline_complete_manifest_sha256": "07e87fc66d04a51a6b47dd4fb2617fe32f0d77c5f17dd27fac5e83c119db5d27",
+  "candidate_complete_manifest_sha256": "9389aa6ece23ac55660be602eac29c3023c2d9a8b2f9419b2f47be76b11e0700",
+  "builds": {
+    "baseline": {
+      "source_sha256": "5349cb16843b1f26de92c30516af7502f0a7ce52054377955ad4fbe9499c3aed",
+      "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "wheel_sha256": "37c10a9b42d85d2e6a3ebba414590d0d40c238a45d20f1fedfae6b1dd233e90c",
+      "extension_sha256": "338651d909ae8edc5ae96d382494404c5a9a9d1f315a522df61337dd5781d235",
+      "interpreter_sha256": "f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526",
+      "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+      "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)\nbinary: rustc\ncommit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234\ncommit-date: 2025-12-08\nhost: x86_64-unknown-linux-gnu\nrelease: 1.92.0\nLLVM version: 21.1.3\n",
+      "profile": {
+        "name": "release",
+        "lto": "thin",
+        "codegen_units": 1,
+        "features": [
+          "extension-module"
+        ]
+      }
+    },
+    "candidate": {
+      "source_sha256": "19b0f414624dbbc6d3c5596bb0a990076e18173a7f5da4fbe24a55b8b1e97c7c",
+      "production_diff_sha256": "fc1d6bdcd42d4c422ad916d0884964b3c897eea831f09ce5e9094f30f94615b8",
+      "wheel_sha256": "05636290a052198d4376137f2ef1d42ed62c446df26dadb84a3b9369adf0545e",
+      "extension_sha256": "338651d909ae8edc5ae96d382494404c5a9a9d1f315a522df61337dd5781d235",
+      "interpreter_sha256": "f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526",
+      "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+      "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)\nbinary: rustc\ncommit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234\ncommit-date: 2025-12-08\nhost: x86_64-unknown-linux-gnu\nrelease: 1.92.0\nLLVM version: 21.1.3\n",
+      "profile": {
+        "name": "release",
+        "lto": "thin",
+        "codegen_units": 1,
+        "features": [
+          "extension-module"
+        ]
+      }
+    }
+  },
+  "commands": [
+    {
+      "receipt": "baseline/fresh-build.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 47.18707970995456
+    },
+    {
+      "receipt": "baseline/held-481723.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 46.45669976901263
+    },
+    {
+      "receipt": "baseline/held-926051.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 47.50441215466708
+    },
+    {
+      "receipt": "baseline/new-regressions-before-fix.receipt.json",
+      "exit_status": 1,
+      "wall_seconds": 3.665861445479095
+    },
+    {
+      "receipt": "baseline/primary-repeat.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 74.6785021359101
+    },
+    {
+      "receipt": "baseline/primary.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 80.15260893944651
+    },
+    {
+      "receipt": "baseline/profile.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 4.909746138378978
+    },
+    {
+      "receipt": "candidate/cpu-suite.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 417.8668747683987
+    },
+    {
+      "receipt": "candidate/final-build.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 46.833414058201015
+    },
+    {
+      "receipt": "candidate/fixed-math.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 48.281734365969896
+    },
+    {
+      "receipt": "candidate/fixed-scoring.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 12.988836573436856
+    },
+    {
+      "receipt": "candidate/focused-retry.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 3.6834861114621162
+    },
+    {
+      "receipt": "candidate/focused.receipt.json",
+      "exit_status": 1,
+      "wall_seconds": 41.275755539536476
+    },
+    {
+      "receipt": "candidate/fresh-build.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 47.76750192698091
+    },
+    {
+      "receipt": "candidate/frozen-compiler.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 11.678879423066974
+    },
+    {
+      "receipt": "candidate/h100-compiler.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 202.09282103460282
+    },
+    {
+      "receipt": "candidate/held-481723.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 45.972923529334366
+    },
+    {
+      "receipt": "candidate/held-926051.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 45.87808590289205
+    },
+    {
+      "receipt": "candidate/portable-focused.receipt.json",
+      "exit_status": 1,
+      "wall_seconds": 2.7726113125681877
+    },
+    {
+      "receipt": "candidate/primary-repeat.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 97.66161767952144
+    },
+    {
+      "receipt": "candidate/primary.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 81.59610204957426
+    },
+    {
+      "receipt": "candidate/profile.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 2.9692314686253667
+    },
+    {
+      "receipt": "candidate/python314-compiler.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 1.2596891159191728
+    },
+    {
+      "receipt": "candidate/python314-install.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 0.999940880574286
+    },
+    {
+      "receipt": "candidate/python314-packages.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 0.9094411972910166
+    },
+    {
+      "receipt": "candidate/python314-venv.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 0.15366121381521225
+    },
+    {
+      "receipt": "candidate/repeat-contention.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 0.8486453583464026
+    },
+    {
+      "receipt": "candidate/rust-clippy.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 13.10454195830971
+    },
+    {
+      "receipt": "candidate/rust-fmt.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 0.581569635309279
+    },
+    {
+      "receipt": "candidate/rust-h100-bridge.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 0.6617881469428539
+    },
+    {
+      "receipt": "candidate/rust-h100-matmul.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 2.6527567142620683
+    },
+    {
+      "receipt": "candidate/rust-tests.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 14.79749474581331
+    },
+    {
+      "receipt": "candidate/two-gpu.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 16.323045199736953
+    },
+    {
+      "receipt": "candidate/wheel-verifier.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 0.3757043471559882
+    },
+    {
+      "receipt": "cargo-fetch.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 0.7408104091882706
+    },
+    {
+      "receipt": "comparison.receipt.json",
+      "exit_status": 0,
+      "wall_seconds": 0.07367850188165903
+    }
+  ],
+  "raw_calls_verified": 59520,
+  "rust_test_totals": {
+    "passed": 397,
+    "failed": 0,
+    "ignored": 0
+  }
+}

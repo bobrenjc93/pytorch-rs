@@ -1,0 +1,102 @@
+{
+  "command": [
+    ".venv/bin/python",
+    "-m",
+    "unittest",
+    "tests.test_compile_cuda_boundary.CompileCudaDeviceTests",
+    "tests.test_compile_cuda_graph.CudaGraphDeviceTests",
+    "tests.test_compile_cuda_matmul.CompileCudaMatmulDeviceTests",
+    "tests.test_cuda_matmul.CudaMatmulDeviceTests",
+    "tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarDeviceTests",
+    "tests.test_compile_cuda_neg.CompileCudaNegDeviceTests",
+    "tests.test_compile_cuda_trailing_vector.CompileCudaTrailingVectorDeviceTests"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a",
+  "started_at": "2026-09-10T19:02:30.014794+00:00",
+  "source_before": {
+    "commit": "b7936239ceb7d7713a15ecd8a2c82c4bddd6d214",
+    "source_sha256": "19b0f414624dbbc6d3c5596bb0a990076e18173a7f5da4fbe24a55b8b1e97c7c",
+    "production_diff_sha256": "fc1d6bdcd42d4c422ad916d0884964b3c897eea831f09ce5e9094f30f94615b8"
+  },
+  "status_before": " M python/torch_rs/_compile_bytecode.py\n?? tests/test_compile_static_analysis.py\n",
+  "inventory_before": {
+    "gpu": {
+      "args": [
+        "nvidia-smi",
+        "--query-gpu=index,name,uuid,memory.used,utilization.gpu",
+        "--format=csv"
+      ],
+      "returncode": 0,
+      "stdout": "index, name, uuid, memory.used [MiB], utilization.gpu [%]\n0, NVIDIA H100, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 1523 MiB, 0 %\n1, NVIDIA H100, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 130 MiB, 0 %\n2, NVIDIA H100, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 4 MiB, 0 %\n3, NVIDIA H100, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 4 MiB, 0 %\n4, NVIDIA H100, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 102 MiB, 0 %\n5, NVIDIA H100, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 108 MiB, 0 %\n6, NVIDIA H100, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 60 MiB, 0 %\n7, NVIDIA H100, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 114 MiB, 0 %\n",
+      "stderr": ""
+    },
+    "processes": {
+      "args": [
+        "nvidia-smi",
+        "--query-compute-apps=gpu_uuid,pid,process_name,used_memory",
+        "--format=csv"
+      ],
+      "returncode": 0,
+      "stdout": "gpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 1533752, .venv/bin/python, 1402 MiB\n",
+      "stderr": ""
+    }
+  },
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": "0,1",
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/uv-cache",
+    "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/uv-python-bin",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/cuda",
+    "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/uv-python",
+    "UV_TOOL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/uv-tools",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/rust-tests",
+    "OPENBLAS_NUM_THREADS": "1",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/inductor",
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/cargo",
+    "RUSTUP_TOOLCHAIN": "1.92.0",
+    "VIRTUAL_ENV": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/tmp",
+    "UV_TOOL_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/uv-tool-bin",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/triton",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/target/static-analysis/cache",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "TORCH_RS_CUBLAS": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcublas.so.13",
+    "OMP_NUM_THREADS": "1",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv/bin/python",
+    "CUDA_HOME": "/usr/local/cuda-12.6",
+    "CARGO_HTTP_PROXY": "http://fwdproxy:8080",
+    "MKL_NUM_THREADS": "1",
+    "UV_PROJECT_ENVIRONMENT": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0812516a/.venv"
+  },
+  "ended_at": "2026-09-10T19:02:46.762411+00:00",
+  "wall_seconds": 16.323045199736953,
+  "exit_status": 0,
+  "source_after": {
+    "commit": "b7936239ceb7d7713a15ecd8a2c82c4bddd6d214",
+    "source_sha256": "19b0f414624dbbc6d3c5596bb0a990076e18173a7f5da4fbe24a55b8b1e97c7c",
+    "production_diff_sha256": "fc1d6bdcd42d4c422ad916d0884964b3c897eea831f09ce5e9094f30f94615b8"
+  },
+  "status_after": " M python/torch_rs/_compile_bytecode.py\n?? tests/test_compile_static_analysis.py\n",
+  "inventory_after": {
+    "gpu": {
+      "args": [
+        "nvidia-smi",
+        "--query-gpu=index,name,uuid,memory.used,utilization.gpu",
+        "--format=csv"
+      ],
+      "returncode": 0,
+      "stdout": "index, name, uuid, memory.used [MiB], utilization.gpu [%]\n0, NVIDIA H100, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 1523 MiB, 0 %\n1, NVIDIA H100, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 130 MiB, 0 %\n2, NVIDIA H100, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 4 MiB, 0 %\n3, NVIDIA H100, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 4 MiB, 0 %\n4, NVIDIA H100, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 102 MiB, 0 %\n5, NVIDIA H100, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 108 MiB, 0 %\n6, NVIDIA H100, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 60 MiB, 0 %\n7, NVIDIA H100, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 114 MiB, 0 %\n",
+      "stderr": ""
+    },
+    "processes": {
+      "args": [
+        "nvidia-smi",
+        "--query-compute-apps=gpu_uuid,pid,process_name,used_memory",
+        "--format=csv"
+      ],
+      "returncode": 0,
+      "stdout": "gpu_uuid, pid, process_name, used_gpu_memory [MiB]\nGPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 1533752, .venv/bin/python, 1402 MiB\n",
+      "stderr": ""
+    }
+  },
+  "log_sha256": "14509ec06b435667e019b5a5bdf019fe7cb6d29a05d18dc8c13f37b0ad2a9ecb"
+}

@@ -1,0 +1,516 @@
+[
+  {
+    "side": "baseline",
+    "cells": [
+      {
+        "cell": 0,
+        "program": "matmul",
+        "profiled_elapsed_s": 0.038643889,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 2.4881e-05
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 1,
+        "program": "composed",
+        "profiled_elapsed_s": 0.09961618200000001,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 0.030910647000000003
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.016745709
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.010337536000000001
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.003112183
+        }
+      },
+      {
+        "cell": 2,
+        "program": "matmul",
+        "profiled_elapsed_s": 0.037180783,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 2.4953000000000003e-05
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 3,
+        "program": "composed",
+        "profiled_elapsed_s": 0.10102294099999999,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 0.031613656000000004
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.017132908000000002
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.010504911
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.003253344
+        }
+      },
+      {
+        "cell": 4,
+        "program": "matmul",
+        "profiled_elapsed_s": 0.04020507600000001,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 2.4513e-05
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 5,
+        "program": "composed",
+        "profiled_elapsed_s": 0.10324448799999995,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 0.031184218000000003
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.016914386
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.010327251
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.0031778120000000003
+        }
+      },
+      {
+        "cell": 6,
+        "program": "matmul",
+        "profiled_elapsed_s": 0.04035774299999999,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 2.5532000000000002e-05
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 7,
+        "program": "composed",
+        "profiled_elapsed_s": 0.10092308000000003,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 0.030965016
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.016689226
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.010382202
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.003167225
+        }
+      },
+      {
+        "cell": 8,
+        "program": "matmul",
+        "profiled_elapsed_s": 0.04025486800000002,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 2.4786000000000003e-05
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 9,
+        "program": "composed",
+        "profiled_elapsed_s": 0.10488750000000004,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 0.031381556000000005
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.017029081
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.010436131000000001
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.0031612460000000004
+        }
+      },
+      {
+        "cell": 10,
+        "program": "matmul",
+        "profiled_elapsed_s": 0.039543028,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 2.5872000000000002e-05
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 11,
+        "program": "composed",
+        "profiled_elapsed_s": 0.10370445400000003,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 0.031312069000000005
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.016939866
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 200,
+          "cumulative_s": 0.010430697000000001
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.0031958560000000004
+        }
+      }
+    ]
+  },
+  {
+    "side": "candidate",
+    "cells": [
+      {
+        "cell": 0,
+        "program": "matmul",
+        "profiled_elapsed_s": 0.03739149300000001,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 2.5539e-05
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 1,
+        "program": "composed",
+        "profiled_elapsed_s": 0.07002702599999999,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 0.0032410150000000003
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.0028171520000000003
+        }
+      },
+      {
+        "cell": 2,
+        "program": "matmul",
+        "profiled_elapsed_s": 0.03752013,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 2.5912000000000002e-05
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 3,
+        "program": "composed",
+        "profiled_elapsed_s": 0.07181323200000005,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 0.003250447
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.002839728
+        }
+      },
+      {
+        "cell": 4,
+        "program": "matmul",
+        "profiled_elapsed_s": 0.041706054000000006,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 2.5251000000000003e-05
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 5,
+        "program": "composed",
+        "profiled_elapsed_s": 0.07575945200000003,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 0.003316522
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.00290053
+        }
+      },
+      {
+        "cell": 6,
+        "program": "matmul",
+        "profiled_elapsed_s": 0.038797058,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 2.5986e-05
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 7,
+        "program": "composed",
+        "profiled_elapsed_s": 0.073047382,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 0.0032866590000000004
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.00286022
+        }
+      },
+      {
+        "cell": 8,
+        "program": "matmul",
+        "profiled_elapsed_s": 0.04248566800000002,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 2.6854e-05
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 9,
+        "program": "composed",
+        "profiled_elapsed_s": 0.07685136400000002,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 0.0033625770000000003
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.0029477920000000003
+        }
+      },
+      {
+        "cell": 10,
+        "program": "matmul",
+        "profiled_elapsed_s": 0.04171603299999999,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 2.7275000000000002e-05
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 0,
+          "cumulative_s": 0
+        }
+      },
+      {
+        "cell": 11,
+        "program": "composed",
+        "profiled_elapsed_s": 0.073377618,
+        "_global_cache_dependencies": {
+          "calls": 200,
+          "cumulative_s": 0.0032396910000000003
+        },
+        "_lowerable_bytecode_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_global_load_dependencies_from_instructions": {
+          "calls": 0,
+          "cumulative_s": 0
+        },
+        "_resolve_live_global_dependency": {
+          "calls": 200,
+          "cumulative_s": 0.00281436
+        }
+      }
+    ]
+  }
+]

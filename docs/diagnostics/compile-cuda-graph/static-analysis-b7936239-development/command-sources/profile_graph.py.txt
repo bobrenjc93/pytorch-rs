@@ -1,0 +1,28 @@
+"""Separate profiling of every native cell; never used as timing evidence."""
+import cProfile, json, pathlib, pstats, sys
+ROOT = pathlib.Path.cwd()
+sys.path.insert(0, str(ROOT / 'scripts'))
+import diagnose_compile_cuda_matmul as diagnostic
+import torch, torch_rs as native
+output = pathlib.Path(sys.argv[1])
+for index, cell in enumerate(diagnostic.cells(798431)):
+    m, k, n = cell['shape_mkn']
+    offset = cell['offset']
+    a = native.ones((offset + m*k,)).to('cuda:0')[offset:].reshape(m,k)
+    b = native.ones((offset + k*n,)).to('cuda:0')[offset:].reshape(k,n)
+    bias = native.ones((n,)).to('cuda:0')
+    fn = native.compile(diagnostic.program(native,bias,cell['program']=='composed'), backend='eager',fullgraph=True,dynamic=False)
+    for _ in range(20):
+        result = fn(a,b)
+        torch.cuda.synchronize()
+    profile = cProfile.Profile()
+    profile.enable()
+    for _ in range(200):
+        torch.cuda.synchronize()
+        result = fn(a,b)
+        torch.cuda.synchronize()
+    profile.disable()
+    assert result.cpu().tolist()
+    profile.dump_stats(str(output / f'cell-{index}.prof'))
+    print(index, cell, flush=True)
+    pstats.Stats(profile).strip_dirs().sort_stats('cumulative').print_stats(40)
