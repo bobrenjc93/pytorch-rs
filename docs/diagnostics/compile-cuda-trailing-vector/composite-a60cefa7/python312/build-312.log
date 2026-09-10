@@ -1,0 +1,5 @@
+Resolved 1 package in 1ms
+Prepared 1 package in 45ms
+Installed 1 package in 27ms
+ + torch-rs==0.1.0 (from file:///data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/cuda-add-diagnostic/composite-final-312/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl)
+/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/cuda-add-diagnostic/composite-final-312/build-record.json

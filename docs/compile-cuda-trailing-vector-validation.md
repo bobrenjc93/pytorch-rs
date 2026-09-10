@@ -17,6 +17,16 @@ captured scalar/tensor/callable changes, malformed graph metadata, aliasing,
 source/output lifetimes and blocked Python-body/PyTorch-import execution.
 The two-device class checks CUDA ordinals and current-device restoration.
 
+## Integrated final captures
+
+The [clean `a60cefa7` composite evidence](diagnostics/compile-cuda-trailing-vector/composite-a60cefa7/README.md)
+retains raw `trailing_vector_v1` results for Python 3.12 and 3.14 on H100 GPU0
+and bounded GPUs0,1 checks, focused large-empty stride regression logs, source
+and build identities, setup attempts, and independent review. Both full suites
+ran 5,443 tests with 17 skips and no failures; the Python 3.12 run used the
+repository's exact-HEAD fresh-wheel script. These are correctness captures,
+with full-suite totals separate from focused reruns and no performance claim.
+
 ## Reproduce in the evidence phase
 
 Run from the clean committed implementation, with a real canonical `.venv` in

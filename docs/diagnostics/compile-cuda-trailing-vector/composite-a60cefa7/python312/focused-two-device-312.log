@@ -1,0 +1,6 @@
+test_ordinals_and_restoration (tests.test_compile_cuda_trailing_vector.CompileCudaTrailingVectorDeviceTests.test_ordinals_and_restoration) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.611s
+
+OK

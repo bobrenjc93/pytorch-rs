@@ -1,0 +1,15 @@
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/scripts/build_cuda_add_diagnostic.py", line 121, in <module>
+    main()
+    ~~~~^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/scripts/build_cuda_add_diagnostic.py", line 47, in main
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+         ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bobren/.local/share/uv/python/cpython-3.14.5-linux-x86_64-gnu/lib/python3.14/tarfile.py", line 1925, in open
+    raise ReadError(f"file could not be opened successfully:\n{error_msgs_summary}")
+tarfile.ReadError: file could not be opened successfully:
+- method gz: ReadError('not a gzip file')
+- method bz2: ReadError('not a bzip2 file')
+- method xz: ReadError('not an lzma file')
+- method zst: ReadError('not a zstd file')
+- method tar: ReadError('end of file header')

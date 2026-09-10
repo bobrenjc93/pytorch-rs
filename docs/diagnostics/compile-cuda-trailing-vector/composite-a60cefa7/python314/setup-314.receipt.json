@@ -1,0 +1,34 @@
+{
+  "command": [
+    "bash",
+    "-c",
+    "uv venv --clear --python 3.14 && uv sync --locked --no-install-project --group dev --group reference"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314",
+  "started_utc": "2026-09-10T08:17:52.851297+00:00",
+  "source_commit": "a60cefa7c2ea7792bace10381218365a14da5fd6",
+  "source_status": "",
+  "environment": {
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/target/uv-cache",
+    "PYTHONNOUSERSITE": "1",
+    "NUMEXPR_NUM_THREADS": "1",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/target/cache/cuda",
+    "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/target/uv-python",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/target/build",
+    "OPENBLAS_NUM_THREADS": "1",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/target/cache/inductor",
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/target/cargo-home",
+    "RUSTUP_TOOLCHAIN": "1.92.0",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/target/tmp",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/target/cache/triton",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_674e1877/target/python314/target/cache",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "OMP_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1"
+  },
+  "returncode": 0,
+  "elapsed_seconds": 16.665721205994487,
+  "finished_utc": "2026-09-10T08:18:09.596732+00:00",
+  "log_sha256": "008c796c9b68caf681fbb38d8234809685ce73a1b74230d6609352b2458aabd6"
+}
