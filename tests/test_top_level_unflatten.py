@@ -1,6 +1,7 @@
 import inspect
 import pickle
 import unittest
+from unittest.mock import patch
 
 import torch_rs as torch
 
@@ -31,6 +32,14 @@ class TopLevelUnflattenTests(unittest.TestCase):
 
         with self.assertRaisesRegex(TypeError, 'must be Tensor'):
             torch.unflatten(Duck(), 0, (1,))
+
+    def test_native_execution_bypasses_replaceable_method_attributes(self):
+        source = torch.tensor([0., 1., 2., 3., 4., 5.])
+        with patch.object(torch.Tensor, 'unflatten', side_effect=AssertionError('public method lookup')), \
+             patch.object(torch.Tensor, '_unflatten', side_effect=AssertionError('private method lookup')):
+            result = torch.unflatten(source, 0, (2, 3))
+        self.assertEqual(result.tolist(), [[0., 1., 2.], [3., 4., 5.]])
+        self.assertEqual(result.data_ptr(), source.data_ptr())
 
     def test_dtype_extension_keyword_remains_rejected(self):
         source = torch.ones((6,))

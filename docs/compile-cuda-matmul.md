@@ -89,11 +89,14 @@ changed-data checks. Compiler disk caches are retained across orders and their
 initial state is recorded: reversed-order first calls are not claimed to be
 cold-cache compiles. Each cell contributes `min(1, reference/native median)`;
 the fixed geometric mean is zero if any planned cell fails or is missing.
-No slow or failed cells are dropped. Attempts cannot overwrite earlier reports.
+No slow or failed cells are dropped. Failed output checks retain preceding
+raw calls and complete samples, including the unfinished block and the count
+of calls whose outputs passed validation. Attempts cannot overwrite earlier reports.
 `--allow-dirty` labels development evidence and cannot qualify a clean commit.
 
 The diagnostic records source/binary hashes, command, local imports/libraries,
-Python/PyTorch/CUDA/GPU/driver and compiler identities. Native matmul uses cuBLAS,
+Python/PyTorch/CUDA/GPU/driver and compiler identities, including the selected
+local Triton/PTX assembler path, version and hash. Native matmul uses cuBLAS,
 not nvcc; pointwise kernels use driver-JIT PTX. It changes no evaluator, weight,
 threshold, fixed workload or Burner-managed progress artifact. Existing bounded
 100-point scores do not establish universal coverage.
@@ -106,9 +109,9 @@ merge-coupled requirements and this implementation agent does not commit.
 
 The [development validation index](diagnostics/compile-cuda-matmul/development/README.md) retains H100 results, raw timings, independent review and unsuccessful attempts. It is explicitly uncommitted evidence, not merge qualification.
 
-## Clean implementation capture
+## Source implementation capture
 
-The [clean post-commit capture](diagnostics/compile-cuda-matmul/postcommit-d8374/README.md)
+The [source PR post-commit capture](diagnostics/compile-cuda-matmul/postcommit-d8374/README.md)
 measured **`d8374ec16f6c13fb09b18723c491d06fdaeaafaa`** with a fresh installed
 release wheel on H100. All 12 timing cells passed with **79.48% capped geometric
 parity**, retaining slower composed cells, raw samples, both execution orders,
@@ -119,3 +122,11 @@ separate GPUs 0,1 checks and focused Rust tests passed. All measurements complet
 with clean tracked status before artifact publication. Development records
 remain unchanged; independent review, ten merge gates and exact-head CI remain
 separate requirements.
+
+These reports retain their original source-worktree identities and measure the
+matmul source PR only. They are stale for the combined implementation and do not
+supply composite performance credit. All raw records, failed attempts and
+sampling results remain unchanged. After Burner commits the combined repairs,
+repeat the clean-build and capture procedure above in this composite worktree;
+final evidence, independent exact-head review, all ten gates and exact-head CI
+remain pending. See [integration validation](composite-matmul-unflatten-l1-validation.md).

@@ -1,5 +1,6 @@
 import re
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import torch_rs as torch
@@ -14,6 +15,59 @@ class TopLevelUnflattenReferenceTests(method_tests.UnflattenReferenceTests):
     @staticmethod
     def unflatten(module, source, dim, sizes):
         return module.unflatten(source, dim, sizes)
+
+    def test_replaced_method_preserves_native_views_and_l1_gradients(self):
+        # Compose the two new CPU surfaces with offset/transposed views and
+        # unequal upstream weights, all the way back to both original leaves.
+        def contract(module):
+            left = module.tensor([[0., 1., 2., 3., 4., 5.],
+                                  [6., 7., 8., 9., 10., 11.]], requires_grad=True)
+            right = module.tensor([[9., 3., 2., 4., 0., 9.],
+                                   [0., 8., 1., 9., 15., 2.]], requires_grad=True)
+            source, target = left.transpose(0, 1)[1:5], right.transpose(0, 1)[1:5]
+            with patch.object(module.Tensor, 'unflatten', side_effect=AssertionError('method lookup')) as replaced:
+                result = module.unflatten(source, 0, (2, 2))
+                other = module.unflatten(input=target, dim=0, sizes=(2, -1))
+                loss = module.nn.functional.l1_loss(result, other, reduction='none')
+                weights = module.tensor([[[1., -2.], [3., -4.]], [[5., -6.], [7., -8.]]])
+                (loss * weights).sum().backward()
+                replaced.assert_not_called()
+            metadata = (tuple(result.shape), result.stride(), result.storage_offset(),
+                        result.data_ptr() == source.data_ptr(), result.requires_grad, result.is_leaf)
+            gradients = left.grad.tolist(), right.grad.tolist()
+            del source, target, left, right
+            return metadata, result.tolist(), loss.tolist(), gradients
+
+        self.assertEqual(contract(torch), contract(reference_torch))
+
+    def test_replaced_method_preserves_dispatch_errors_and_mode_restoration(self):
+        # The public operation still dispatches legitimately; forwarding and
+        # exceptions must restore both nested modes without a method lookup.
+        def contract(module):
+            events = []
+            source = module.ones((6,))
+
+            class Mode(module.overrides.TorchFunctionMode):
+                def __init__(self, label):
+                    self.label = label
+
+                def __torch_function__(self, func, types, args=(), kwargs=None):
+                    events.append((self.label, func is module.unflatten))
+                    return func(*args, **(kwargs or {}))
+
+            with patch.object(module.Tensor, 'unflatten', side_effect=AssertionError('method lookup')) as replaced:
+                with Mode('outer'), Mode('inner'):
+                    for dim, sizes in ((99, ()), (0, ()), (0, (2, 4))):
+                        with self.assertRaises(Exception) as raised:
+                            module.unflatten(source, dim, sizes)
+                        events.append((type(raised.exception).__name__, str(raised.exception)))
+                        self.assertEqual(len(module.overrides._get_current_function_mode_stack()), 2)
+                    result = module.unflatten(source, 0, (2, 3))
+                replaced.assert_not_called()
+            self.assertEqual(module.overrides._get_current_function_mode_stack(), [])
+            return result.tolist(), events
+
+        self.assertEqual(contract(torch), contract(reference_torch))
 
     def test_positional_keyword_and_integer_forms(self):
         def contract(module):

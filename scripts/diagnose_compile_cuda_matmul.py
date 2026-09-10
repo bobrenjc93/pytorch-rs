@@ -49,6 +49,30 @@ def program(module, bias, composed):
     return namespace['workload']
 
 
+def sample_order(calls, inputs, order, synchronize, check, entry):
+    # Attach observations immediately so an exception retains complete blocks
+    # and even the individual calls in an unfinished or failed block. The
+    # caller's exception handler publishes this same entry with the failed cell.
+    samples = {key: [] for key in order}
+    entry['samples'] = {key: {'samples_us': samples[key], 'calls_us': [],
+                              'checked_calls': 0} for key in order}
+    for _ in range(31):
+        for key in order:
+            elapsed = 0
+            record = entry['samples'][key]
+            for _ in range(5):
+                synchronize(); start = time.perf_counter_ns()
+                result = calls[key](*inputs[key]); synchronize()
+                duration = time.perf_counter_ns() - start
+                elapsed += duration
+                record['calls_us'].append(duration / 1000)
+                check(result)  # Materialization/checking stays outside timing.
+                record['checked_calls'] += 1
+            samples[key].append(elapsed / 5000)
+            record.update(summary(samples[key]))
+    return samples
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build-record', type=Path, required=True)
@@ -120,6 +144,16 @@ def main():
         report['nvcc'] = subprocess.check_output(['nvcc','--version'],text=True)
         report['native_cuda_compiler'] = 'nvcc unused; cuBLAS SGEMM and driver-JIT embedded PTX'
         report['rustc'] = subprocess.check_output(['rustc','--version'],text=True)
+        import triton
+        from triton.backends.nvidia.compiler import get_ptxas
+        major, minor = torch.cuda.get_device_capability(0)
+        ptxas = local(get_ptxas(major * 10 + minor).path)
+        report['reference_triton_compiler'] = {
+            'triton_version': triton.__version__, 'triton_path': str(local(triton.__file__)),
+            'ptxas_path': str(ptxas), 'ptxas_sha256': sha256(ptxas),
+            'ptxas_version': subprocess.check_output([str(ptxas), '--version'], text=True),
+            'pytorch_build': torch.__config__.show(),
+        }
         report['cache_initial_files'] = {key: len(list(local(os.environ[key]).rglob('*'))) for key in ('TRITON_CACHE_DIR','TORCHINDUCTOR_CACHE_DIR')}
         torch.backends.cuda.matmul.allow_tf32 = False
         torch.set_num_threads(1)
@@ -139,13 +173,15 @@ def main():
                     return np.asarray(value.cpu().tolist(),dtype=np.float32).reshape(tuple(value.shape))
                 expected = array(fns['pytorch'](*inputs['pytorch']))
                 output_hashes = []
+                cell['output_hashes'] = output_hashes
+                cell['input_hashes'] = [hashlib.sha256(v.tobytes()).hexdigest() for v in vals]
                 def check(value):
                     assert tuple(value.shape) == (m,n) and value.stride() == (n,1)
                     assert str(value.device) == 'cuda:0' and str(value.dtype) == 'torch.float32'
                     assert value.storage_offset() == 0 and not value.requires_grad
                     actual = array(value)
-                    np.testing.assert_allclose(actual,expected,rtol=1e-5,atol=1e-4,equal_nan=True)
                     output_hashes.append(hashlib.sha256(actual.tobytes()).hexdigest())
+                    np.testing.assert_allclose(actual,expected,rtol=1e-5,atol=1e-4,equal_nan=True)
                 all_samples = {'native': [], 'pytorch': []}
                 for order in report['policy']['orders']:
                     torch._dynamo.reset()
@@ -189,18 +225,9 @@ def main():
                     for key in order:
                         for _ in range(10):
                             torch.cuda.synchronize(); result = calls[key](*inputs[key]); torch.cuda.synchronize()
-                    samples = {key: [] for key in order}
-                    for _ in range(31):
-                        for key in order:
-                            elapsed = 0
-                            for _ in range(5):
-                                torch.cuda.synchronize(); start = time.perf_counter_ns()
-                                result = calls[key](*inputs[key]); torch.cuda.synchronize()
-                                elapsed += time.perf_counter_ns()-start
-                                check(result)  # materialize outside the timed interval
-                            samples[key].append(elapsed/5000)
+                    samples = sample_order(calls, inputs, order, torch.cuda.synchronize, check, entry)
                     for key in order:
-                        entry['samples'][key] = summary(samples[key]); all_samples[key].extend(samples[key])
+                        all_samples[key].extend(samples[key])
                         for value,original in zip(bases[key],vals):
                             np.testing.assert_array_equal(array(value).view(np.uint32),original.view(np.uint32))
                         np.testing.assert_array_equal(array(biases[key]),bias_values)
@@ -208,7 +235,6 @@ def main():
                 cell['timings'] = {key: summary(samples) for key,samples in all_samples.items()}
                 cell['capped_parity'] = min(1.,statistics.median(all_samples['pytorch'])/statistics.median(all_samples['native']))
                 cell['output_hashes'] = sorted(set(output_hashes))
-                cell['input_hashes'] = [hashlib.sha256(v.tobytes()).hexdigest() for v in vals]
                 cell['checks'] = 'every timed output, changed inputs, fresh storage, all source/bias bits, shape/stride/device/dtype'
                 cell['status'] = 'passed'
             except Exception:

@@ -16,6 +16,34 @@ use crate::{
     python_tensor_errors::tensor_error,
 };
 
+pub(crate) fn validate_unflatten_storage(tensor: &PyTensor) -> PyResult<()> {
+    if tensor.inner().dtype() != DType::Float32 || tensor.inner().device() != Device::Cpu {
+        return Err(PyNotImplementedError::new_err(
+            "unflatten(): only exact native CPU float32 Tensor inputs are supported",
+        ));
+    }
+    Ok(())
+}
+
+// Both Python bindings call this after their own schema and scope checks.
+// Already-parsed integers reach the retained view/autograd implementation
+// without converting them again or looking up a Python-owned method.
+pub(crate) fn unflatten_native(tensor: &PyTensor, dim: i64, sizes: &[i64]) -> PyResult<PyTensor> {
+    tensor
+        .inner()
+        .unflatten(dim, sizes)
+        .map(PyTensor::new)
+        .map_err(|error| match error {
+            TensorError::UnflattenScalar { .. }
+            | TensorError::ReshapeMultipleInferredDimensions
+            | TensorError::ReshapeInvalidDimension { .. }
+            | TensorError::ReshapeAmbiguousZeroElements { .. } => {
+                PyRuntimeError::new_err(format!("unflatten got an unexpected error:\n{error}"))
+            }
+            _ => tensor_error(&error),
+        })
+}
+
 #[pymethods]
 impl PyTensorBase {
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -100,14 +128,12 @@ impl PyTensor {
         sizes: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
         let tensor = slf.try_borrow()?;
-        if !slf.as_any().is_exact_instance_of::<Self>()
-            || tensor.inner().dtype() != DType::Float32
-            || tensor.inner().device() != Device::Cpu
-        {
+        if !slf.as_any().is_exact_instance_of::<Self>() {
             return Err(PyNotImplementedError::new_err(
                 "unflatten(): only exact native CPU float32 Tensor inputs are supported",
             ));
         }
+        validate_unflatten_storage(&tensor)?;
         if dim.is_instance_of::<PyBool>() || !dim.hasattr("__index__")? {
             return Err(PyTypeError::new_err(format!(
                 "unflatten(): argument 'dim' (position 1) must be int, not {}",
@@ -139,19 +165,7 @@ impl PyTensor {
             })?;
             parsed.push(size);
         }
-        tensor
-            .inner()
-            .unflatten(dim, parsed)
-            .map(Self::new)
-            .map_err(|error| match error {
-                TensorError::UnflattenScalar { .. }
-                | TensorError::ReshapeMultipleInferredDimensions
-                | TensorError::ReshapeInvalidDimension { .. }
-                | TensorError::ReshapeAmbiguousZeroElements { .. } => {
-                    PyRuntimeError::new_err(format!("unflatten got an unexpected error:\n{error}"))
-                }
-                _ => tensor_error(&error),
-            })
+        unflatten_native(&tensor, dim, &parsed)
     }
 
     /// Alias for [`Tensor.dim()`](https://pytorch.org/docs/stable/generated/torch.Tensor.dim.html).

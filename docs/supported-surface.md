@@ -838,6 +838,9 @@ accepts positional/keyword calls and PyTorch 2.13 legacy input aliases
 `__torch_function__` operand and mode dispatch. Schema validation precedes
 dispatch; shape inference and view construction follow it. Overrides receive
 `torch.unflatten` itself, including when forwarding through nested modes.
+After dispatch, both bindings call shared Rust view/error logic directly;
+replacing `Tensor.unflatten` or its private Python-visible native entry does not
+change top-level execution. The public binding converts schema integers once.
 The top-level dimension schema accepts Python and NumPy integer types,
 excluding bool, and rejects ordinary objects that only implement `__index__`.
 Accepted integer dimensions and list/tuple sizes take precedence over their

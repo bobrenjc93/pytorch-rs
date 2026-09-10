@@ -1,4 +1,4 @@
-//! Public unflatten binding; all view construction stays in Tensor.unflatten.
+//! Public unflatten binding over the shared native view implementation.
 
 use super::{
     ParsedCallArgument, ProbedTorchFunctionOverride, PyTensor, call_torch_function_handler,
@@ -10,7 +10,9 @@ use super::{
     torch_function_mode_stack, try_push_size, try_size_vector,
     validate_torch_function_mode_handler, variable_function,
 };
-use pyo3::exceptions::{PyMemoryError, PyNotImplementedError, PyTypeError};
+use crate::python_tensor_shape::{unflatten_native, validate_unflatten_storage};
+use pyo3::IntoPyObjectExt;
+use pyo3::exceptions::{PyMemoryError, PyNotImplementedError, PyRuntimeError, PyTypeError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyList, PyTuple};
 
@@ -111,17 +113,15 @@ pub(crate) fn unflatten_variable_function(
     }
     // The generated top-level binding checks dim before the method's empty-
     // sizes guard. Scalar dimensions use the public [-1, 0] range here.
+    let tensor = input.value.cast::<PyTensor>()?.try_borrow()?;
     if parsed.is_empty() {
-        let tensor = input.value.cast::<PyTensor>()?.try_borrow()?;
         normalize_dimension(dim, tensor.inner.shape().len().max(1))?;
+        return Err(PyRuntimeError::new_err(
+            "unflatten: sizes must be non-empty",
+        ));
     }
-    // The method owns native scope checks, selected-dimension inference,
-    // strides, offsets, aliasing, and first-order autograd. Normalizing the
-    // schema's integers here also preserves top-level unpacking diagnostics.
-    Ok(input
-        .value
-        .call_method1("unflatten", (dim, PyTuple::new(py, parsed)?))?
-        .unbind())
+    validate_unflatten_storage(&tensor)?;
+    unflatten_native(&tensor, dim, &parsed)?.into_py_any(py)
 }
 
 fn bind_arguments<'py>(
