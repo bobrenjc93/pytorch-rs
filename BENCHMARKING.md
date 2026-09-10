@@ -32,6 +32,12 @@ Rust/Python/PyTorch versions, OS, CPU/GPU, thread settings, compile time, and
 dependency-installation time. No result may silently fall back to a different
 device or dtype.
 
+Generated stack-validator package paths are compared by resolved identity within
+the current worktree's `.venv`, so an internal `lib64 -> lib` alias is valid.
+Interpreter paths retain their lexical identity because `.venv/bin/python` may
+link to a base interpreter. See [stack provenance validation](docs/top-level-stack-provenance.md)
+for the reproduction, rejection coverage, and interpreter checks.
+
 ## Historical release timing reports
 
 These reports are historical release evidence snapshots: they record the code,

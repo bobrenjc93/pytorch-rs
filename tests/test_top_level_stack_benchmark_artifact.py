@@ -8,6 +8,8 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +43,202 @@ def _has_reference_torch_2_13():
     except ImportError:
         return False
     return reference_torch.__version__.split("+", 1)[0] == "2.13.0"
+
+
+class StackRuntimePathTests(unittest.TestCase):
+    def setUp(self):
+        target = REPOSITORY_ROOT / "target"
+        target.mkdir(exist_ok=True)
+        temporary = tempfile.TemporaryDirectory(prefix="stack-paths-", dir=target)
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.venv = self.root / ".venv"
+        self.packages = self.venv / "lib" / "python-test" / "site-packages"
+        self.packages.mkdir(parents=True)
+        self.module = self.packages / "module.py"
+        self.module.write_text("# fixture\n", encoding="utf-8")
+        self.other = self.packages / "other.py"
+        self.other.write_bytes(self.module.read_bytes())
+        self.alias = self.venv / "lib64"
+        try:
+            self.alias.symlink_to("lib", target_is_directory=True)
+        except (OSError, NotImplementedError) as error:
+            self.skipTest(f"symlinks unavailable: {error}")
+        self.alias_module = self.alias / self.module.relative_to(self.venv / "lib")
+
+    def check_paths(self, recorded, current, *, resolve_aliases=True):
+        errors = []
+        validate_top_level_stack_benchmark._validate_recorded_path(
+            errors,
+            "package.path",
+            str(recorded),
+            str(current),
+            root=self.venv,
+            resolve_aliases=resolve_aliases,
+        )
+        return "\n".join(errors)
+
+    def test_package_aliases_compare_by_resolved_identity(self):
+        for recorded in (self.module, self.alias_module):
+            for current in (self.module, self.alias_module):
+                with self.subTest(recorded=recorded, current=current):
+                    self.assertEqual(self.check_paths(recorded, current), "")
+
+    def test_different_existing_files_are_not_aliases(self):
+        self.assertIn("mismatch", self.check_paths(self.alias_module, self.other))
+
+    def test_missing_broken_looping_and_directory_paths_are_rejected(self):
+        broken = self.packages / "broken.py"
+        broken.symlink_to("absent.py")
+        loop = self.packages / "loop.py"
+        loop.symlink_to(loop.name)
+        for invalid in (self.packages / "absent.py", broken, loop, self.packages):
+            for recorded, current in ((invalid, self.module), (self.module, invalid)):
+                with self.subTest(recorded=recorded, current=current):
+                    self.assertTrue(self.check_paths(recorded, current))
+
+    def test_outside_origins_and_symlink_escapes_are_rejected(self):
+        # All simulated parent, sibling, and global installs stay in the fixture.
+        for name in ("parent", "sibling", "global"):
+            outside = self.root / name / "site-packages" / "module.py"
+            outside.parent.mkdir(parents=True)
+            outside.write_bytes(self.module.read_bytes())
+            escape = self.packages / f"{name}.py"
+            escape.symlink_to(outside)
+            for recorded, current in (
+                (outside, outside),
+                (escape, escape),
+                (escape, self.module),
+                (self.module, escape),
+            ):
+                with self.subTest(recorded=recorded, current=current):
+                    self.assertIn("outside", self.check_paths(recorded, current))
+
+    def test_external_alias_back_into_environment_is_rejected(self):
+        external_alias = self.root / "external.py"
+        external_alias.symlink_to(self.module)
+        self.assertIn("outside", self.check_paths(external_alias, self.module))
+        self.assertIn("outside", self.check_paths(self.module, external_alias))
+
+    def test_symlinked_environment_is_rejected(self):
+        actual = self.root / "external-venv"
+        self.venv.rename(actual)
+        self.venv.symlink_to(actual, target_is_directory=True)
+        self.assertIn("resolves outside", self.check_paths(self.module, self.module))
+
+    def test_parent_traversal_and_relative_paths_are_rejected(self):
+        traversal = self.venv / ".." / ".venv" / self.module.relative_to(self.venv)
+        self.assertIn("outside", self.check_paths(traversal, self.module))
+        self.assertIn("not absolute", self.check_paths("module.py", self.module))
+        self.assertIn("not absolute", self.check_paths(self.module, "module.py"))
+
+    def test_interpreter_symlink_keeps_lexical_identity(self):
+        base = self.root / "base-python"
+        base.write_bytes(b"interpreter fixture")
+        executable = self.venv / "bin" / "python"
+        executable.parent.mkdir()
+        executable.symlink_to(base)
+        other_executable = executable.with_name("python3")
+        other_executable.symlink_to(base)
+        self.assertEqual(
+            self.check_paths(executable, executable, resolve_aliases=False), ""
+        )
+        self.assertIn("outside", self.check_paths(base, executable, resolve_aliases=False))
+        self.assertIn("outside", self.check_paths(executable, base, resolve_aliases=False))
+        self.assertIn(
+            "mismatch", self.check_paths(other_executable, executable, resolve_aliases=False)
+        )
+        self.assertIn("resolves outside", self.check_paths(executable, executable))
+
+    def test_runtime_origin_prefix_loader_and_native_identity_checks(self):
+        validator = validate_top_level_stack_benchmark
+        suffix = importlib.machinery.EXTENSION_SUFFIXES[0]
+        native_path = self.packages / f"torch_rs{suffix}"
+        native_path.write_bytes(b"native fixture")
+
+        def module(path, *, native=False):
+            loader = (
+                importlib.machinery.ExtensionFileLoader("torch_rs.torch_rs", str(path))
+                if native
+                else None
+            )
+            return SimpleNamespace(
+                __spec__=SimpleNamespace(origin=str(path), loader=loader),
+                __version__="fixture",
+            )
+
+        alias_native = self.alias / native_path.relative_to(self.venv / "lib")
+        native = module(alias_native, native=True)
+        package = module(self.module)
+        package._C = module(native_path, native=True)
+        modules = {
+            "numpy": module(self.module),
+            "torch": module(self.module),
+            "torch_rs": package,
+            "torch_rs.torch_rs": native,
+        }
+        executable = self.venv / "python"
+        executable.write_bytes(b"interpreter fixture")
+        environment = {
+            "python_executable": str(executable),
+            **{
+                name: {"version": "fixture", "path": str(self.alias_module)}
+                for name in ("numpy", "pytorch", "torch_rs")
+            },
+        }
+        environment["torch_rs"]["extension_path"] = str(native_path)
+
+        def validate():
+            errors = []
+            validator._validate_current_runtime_paths(errors, environment)
+            return "\n".join(errors)
+
+        with (
+            mock.patch.dict(sys.modules, modules),
+            mock.patch.object(validator, "REPOSITORY_ROOT", self.root),
+            mock.patch.object(sys, "executable", str(executable)),
+            mock.patch.object(sys, "prefix", str(self.venv)),
+            mock.patch.object(
+                validator.benchmark_top_level_stack,
+                "_package_version",
+                return_value="fixture",
+            ),
+        ):
+            self.assertEqual(validate(), "")
+            with mock.patch.object(sys, "prefix", str(self.root)):
+                self.assertIn("prefix mismatch", validate())
+            with mock.patch.object(modules["numpy"].__spec__, "origin", str(self.other)):
+                self.assertIn("numpy.path mismatch", validate())
+            with mock.patch.object(native.__spec__, "loader", None):
+                self.assertIn("not a native extension", validate())
+            with mock.patch.object(package, "_C", module(self.other)):
+                self.assertIn("torch_rs._C identity mismatch", validate())
+            with mock.patch.object(native.__spec__, "origin", str(self.other)):
+                self.assertIn("unrecognized ABI suffix", validate())
+            with mock.patch.object(
+                native.__spec__, "origin", str(self.packages / f"absent{suffix}")
+            ):
+                self.assertIn("cannot resolve", validate())
+            with mock.patch.object(modules["numpy"].__spec__, "origin", None):
+                self.assertIn("current numpy.path is unavailable", validate())
+            with mock.patch.dict(environment["numpy"], {"path": None}):
+                self.assertIn("missing provenance field numpy.path", validate())
+            with mock.patch.dict(environment["numpy"], {"version": "wrong"}):
+                self.assertIn("numpy.version mismatch", validate())
+            outside = self.root / f"global{suffix}"
+            outside.write_bytes(b"outside environment fixture")
+            for section, key, imported in (
+                ("numpy", "path", modules["numpy"]),
+                ("pytorch", "path", modules["torch"]),
+                ("torch_rs", "path", package),
+                ("torch_rs", "extension_path", native),
+            ):
+                with (
+                    self.subTest(section=section, key=key),
+                    mock.patch.dict(environment[section], {key: str(outside)}),
+                    mock.patch.object(imported.__spec__, "origin", str(outside)),
+                ):
+                    self.assertIn(f"{section}.{key} is outside", validate())
 
 
 class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
@@ -177,6 +375,11 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
             )
 
             report = json.loads(artifact_path.read_text(encoding="utf-8"))
+            for section, key in validate_top_level_stack_benchmark.RUNTIME_PACKAGE_PATHS:
+                path = Path(report["environment"][section][key])
+                self.assertEqual(path, path.resolve(strict=True))
+                self.assertTrue(path.is_relative_to(REPOSITORY_ROOT / ".venv"))
+            self.assertEqual(report["environment"]["python_executable"], sys.executable)
             validate_top_level_stack_benchmark.validate_artifact_dict(
                 report,
                 expected_seed=20260908,
@@ -449,7 +652,7 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                         "python_executable",
                         str(REPOSITORY_ROOT.parent / "stale-venv" / "bin" / "python"),
                     ),
-                    "python_executable mismatch",
+                    "python_executable is outside",
                 ),
                 (
                     "numpy-path",
@@ -457,7 +660,7 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                         "path",
                         str(REPOSITORY_ROOT.parent / "stale" / "numpy.py"),
                     ),
-                    "numpy.path mismatch",
+                    "numpy.path is outside",
                 ),
                 (
                     "torch-rs-path",
@@ -470,7 +673,7 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                             / "__init__.py"
                         ),
                     ),
-                    "torch_rs.path mismatch",
+                    "torch_rs.path is outside",
                 ),
                 (
                     "torch-rs-extension-path",
@@ -478,7 +681,7 @@ class TopLevelStackBenchmarkArtifactTests(unittest.TestCase):
                         "extension_path",
                         str(REPOSITORY_ROOT.parent / "stale" / "torch_rs.abi3.so"),
                     ),
-                    "torch_rs.extension_path mismatch",
+                    "torch_rs.extension_path is outside",
                 ),
             )
             for label, mutate, expected_message in tamper_cases:
