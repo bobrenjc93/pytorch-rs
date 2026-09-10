@@ -29,16 +29,11 @@ They do not establish combined-candidate correctness or performance.
 
 ## Qualification boundary
 
-Burner committed the earlier implementation as
-`02535d5fb191285b0e2ca62677a1ec5d29edbb01`. Its clean capture below predates the
-review-requested indexing-boundary repair and is now stale for the current
-implementation. Its raw measurements and provenance remain unchanged. Burner
-must commit the indexing repair and then refresh the clean build, full six-case
-CUDA evaluator capture, and numerical reproductions before qualification.
-The new dirty-source checks are development diagnostics, not a substitute for
-that required capture. The earlier `--allow-dirty` capture
-remains explicitly labeled `precommit-diagnostic`, with `clean_checkout=false`;
-its raw files and original provenance have not been rewritten.
+Burner committed the complete indexing repair as
+`eb2af972ac6fd538951024bb109db89079a6c77e`. The new clean capture below fulfills
+the deferred measurement step and supersedes the stale 02535d5 capture as
+current-implementation evidence. Earlier clean and precommit captures retain
+their original measurements, source identities and dirty flags unchanged.
 
 Combined independent review, all ten exact-definition evaluation gates against
 the current baseline, and final exact-head CI remain required before managed
@@ -47,6 +42,37 @@ merge. These correctness captures claim no performance score.
 No evaluator, corpus, weight, benchmark validator, dependency lock, or
 Burner-managed progress artifact was changed. No branch, commit, push, or PR was
 created.
+
+## Current clean capture at eb2af97
+
+The [clean evidence bundle](diagnostics/composite-row-sum-glu-unflatten/postcommit-eb2af97/README.md)
+measures `eb2af972ac6fd538951024bb109db89079a6c77e` from this composite's canonical
+`.venv`. The existing build tool ran without `--allow-dirty`, using an empty
+Cargo target and locked offline dependencies. Build, evaluator, reproduction,
+test and audit captures started and ended with clean git status. Publication
+followed capture; only evidence and accompanying documentation changed.
+
+The unchanged six-case CUDA evaluator passed five cases at both original seeds
+`7763153567161607008` and `2618969910755569448`, including row sums. Unsupported
+matmul remained zero in the full denominator. On the same new extension,
+53 focused tests produced 51 passes and two device-mask skips. Both skipped
+tests then passed separately with devices 0,1, including the split-launch guard.
+All original and indexing-boundary regressions ran without memory skips.
+
+Separate-process reproduction passed 46 row-sum comparisons and GLU's finite
+large-upstream gradient. This includes all required cancellation/overflow and
+wide-row examples, and the sparse 536,870,916-column input now returns `-1` in
+both implementations with either keepdim form. Its 536,870,912-column control
+returns `0`. Candidate processes imported no PyTorch.
+
+The [audit](diagnostics/composite-row-sum-glu-unflatten/postcommit-eb2af97/evidence-audit.json)
+verifies source, native extension, wheel, all 59 installed Python sources,
+interpreter, evaluator, actual CUDA runtime paths/hashes and local worker
+identities. The new extension SHA-256 is
+`42dd21e4f6be866aade8a285bdc9fc9579363b52ffb5e07773d2d4a09eb0fb6a`.
+Raw command receipts retain clean status, UTC timestamps, cache state, build
+configuration and outcomes. No capture failed. Full Rust/Python suites were
+not repeated in this evidence step; their earlier records remain below.
 
 ## Review repair: 32-bit indexing boundary
 
@@ -86,7 +112,8 @@ GLU's finite overflow gradient. Candidate workers imported no PyTorch. The final
 audit verifies source, wheel, both interpreter installations, the refreshed
 3.14 snapshot, evaluator and actual runtime hashes. An initial Clippy diagnostic
 was corrected; its raw log remains. No tolerance or supported domain changed.
-These are explicitly precommit diagnostics; fresh clean evidence remains required.
+These remain explicitly precommit diagnostics. The clean eb2af97 capture above
+now fulfills the deferred measurement step.
 
 ## Earlier clean capture at 02535d5 (stale after indexing repair)
 
@@ -96,7 +123,7 @@ measures `02535d5fb191285b0e2ca62677a1ec5d29edbb01` from this composite's real
 repository build tool ran without `--allow-dirty`, built a fresh release wheel
 in an empty Cargo target, and verified unchanged source. Evidence publication
 followed measurement; that post-commit step changed only reports and documentation.
-The subsequent indexing repair requires a new clean capture, as stated above.
+The clean eb2af97 capture above supersedes these results for the indexing repair.
 
 The unchanged six-case CUDA math evaluator passed five cases at both selected
 seeds `7763153567161607008` and `2618969910755569448`, including

@@ -52,10 +52,9 @@ Existing CPU sum bindings, override dispatch, and CPU autograd are unchanged.
 ## Validation
 
 The [combined integration report](composite-row-sum-glu-unflatten-validation.md)
-records the repaired kernel's clean post-commit capture, earlier full-suite checks,
-and the remaining independent review and CI gates.
-That capture predates the indexing-boundary repair and must be refreshed after
-Burner commits this repair; it is not current-implementation evidence.
+records the [clean eb2af97 capture](diagnostics/composite-row-sum-glu-unflatten/postcommit-eb2af97/README.md),
+including the indexing-boundary repair, earlier full-suite checks, and the
+remaining independent review and CI gates.
 
 [Python differentials](../tests/test_cuda_sum_rows.py) cover generated rectangular
 shapes, same-sign decimal rows through width 1,000,003, irregular widths,
