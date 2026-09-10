@@ -8,8 +8,8 @@ Partial scratch survives both launches and synchronous completion, including
 errors. Public rank, layout, dtype, dimension, autograd, and compilation limits
 are unchanged.
 
-All three requested source heads are ancestors of merge HEAD
-`24ca75e`. GLU's dedicated vector backward ordering and unflatten's native view,
+All three requested source heads are ancestors of the original composite merge
+`24ca75e` and the committed repair below. GLU's dedicated vector backward ordering and unflatten's native view,
 shape inference, aliasing, error, and first-order gradient behavior were already
 integrated; no replacement of those implementations was needed. Existing Rust
 and Python regressions remain, with additional row-sum differentials for device
@@ -29,20 +29,56 @@ They do not establish combined-candidate correctness or performance.
 
 ## Qualification boundary
 
-The user prohibits commits because Burner owns delivery. Accordingly the fresh
-capture uses the repository build tool's explicit `--allow-dirty` mode and is
-labeled `precommit-diagnostic`, with `clean_checkout=false`. It must not be
-represented as clean-code evidence or exact-head validation. Burner still must
-commit the complete repair, capture fresh evidence from clean code, run the
-combined independent review and all ten exact-definition gates against the
-current baseline, and complete exact-head CI before merge. No performance score
-is claimed from correctness checks.
+Burner committed the implementation as
+`02535d5fb191285b0e2ca62677a1ec5d29edbb01`. The clean capture below now fulfills
+the deferred post-commit measurement step. The earlier `--allow-dirty` capture
+remains explicitly labeled `precommit-diagnostic`, with `clean_checkout=false`;
+its raw files and original provenance have not been rewritten.
+
+Combined independent review, all ten exact-definition evaluation gates against
+the current baseline, and final exact-head CI remain required before managed
+merge. These correctness captures claim no performance score.
 
 No evaluator, corpus, weight, benchmark validator, dependency lock, or
 Burner-managed progress artifact was changed. No branch, commit, push, or PR was
 created.
 
-## Environment and validation
+## Clean post-commit capture
+
+The [clean evidence bundle](diagnostics/composite-row-sum-glu-unflatten/postcommit-02535d5/README.md)
+measures `02535d5fb191285b0e2ca62677a1ec5d29edbb01` from this composite's real
+`.venv`, with empty git status before and after every capture. The existing
+repository build tool ran without `--allow-dirty`, built a fresh release wheel
+in an empty Cargo target, and verified unchanged source. Evidence publication
+followed measurement; this step changes only reports and documentation.
+
+The unchanged six-case CUDA math evaluator passed five cases at both selected
+seeds `7763153567161607008` and `2618969910755569448`, including
+`cuda_f32_sum_axis`. Unsupported CUDA matmul remained zero in the denominator.
+The focused Python run completed 49 tests (48 passed, one two-device
+mask skip); that restoration test then passed separately with devices 0,1.
+The suite includes all committed row-sum, GLU, unflatten and strict README checks.
+Full Rust and Python 3.12/3.14 suites were not repeated in this evidence step;
+their earlier complete records remain below.
+
+A separate-process reproduction captured 30 exact cancellation/overflow cases
+(`3e38` and float32 maximum, 1/2/17 rows, both keepdim forms), 12 wide-decimal
+cases at widths 65,539/1,000,000/1,000,003, and the finite GLU overflow regression.
+All passed on the new extension. Reference and candidate processes were
+separate, and candidate processes imported no PyTorch. The broader committed
+suite covers random dynamic range, vector/geometry boundaries, offsets,
+subnormals, nonfinite values, empty axes, storage and gradient behavior.
+
+The [audit](diagnostics/composite-row-sum-glu-unflatten/postcommit-02535d5/evidence-audit.json)
+verifies the source fingerprint, all installed/wheel Python sources, native
+binary and wheel, interpreter, evaluator, actual runtime paths and hashes, and
+local worker package/executable identities. The new extension SHA-256 is
+`e805ae81c1cfe51b141c8694ee5bd75e7dffdcb9e83c8796f88f79711213cf69`.
+It matches the previous binary bytes, but this capture independently binds a
+fresh build and measurements to the clean committed implementation. Raw logs,
+commands, timestamps, cache state and hashes are retained. No capture failed.
+
+## Precommit environment and validation
 
 Ordinary GPU work used `CUDA_VISIBLE_DEVICES=0`; two-device runs used only `0,1`.
 Hardware: NVIDIA H100, compute capability 9.0, driver 580.82.07. Reference PyTorch
@@ -90,7 +126,7 @@ and negative decimal values without changing tolerances. GLU's `x=[1e20,-20]`,
 upstream `1e20` case produced identical native/reference gradients:
 `[206115373056.0, 2.0611537240190114e31]`.
 
-## Corrections retained in the logs
+## Precommit corrections retained in the logs
 
 An initial test invocation ran before the first wheel build completed and
 failed to find the wheel/package; it was rerun after installation. Initial
@@ -111,7 +147,7 @@ rerun, followed by a complete corrected Python 3.14 suite; the original log and
 correction receipts are retained.
 
 
-## Retained records
+## Retained precommit records
 
 Both interpreters used the same native extension bytes, SHA-256
 `e805ae81c1cfe51b141c8694ee5bd75e7dffdcb9e83c8796f88f79711213cf69`.

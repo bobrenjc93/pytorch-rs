@@ -42,7 +42,8 @@ Existing CPU sum bindings, override dispatch, and CPU autograd are unchanged.
 ## Validation
 
 The [combined integration report](composite-row-sum-glu-unflatten-validation.md)
-records the repaired kernel's checks and the remaining clean-code and CI gates.
+records the repaired kernel's clean post-commit capture, earlier full-suite checks,
+and the remaining independent review and CI gates.
 
 [Python differentials](../tests/test_cuda_sum_rows.py) cover generated rectangular
 shapes, same-sign decimal rows through width 1,000,003, irregular widths,
@@ -63,8 +64,9 @@ The artifacts below belong to the original row-sum source, before the composite
 float32-tree repair. They are retained under their original identities and paths,
 not as proof of the combined candidate. Their float64 kernel failed the later
 cancellation and overflow regressions; passing the six-case corpus did not make
-that source merge-qualified. A fresh clean-code composite capture is still
-required after Burner commits the repaired implementation and tests.
+that source merge-qualified. The repaired composite now has a separate
+[clean capture at 02535d5](diagnostics/composite-row-sum-glu-unflatten/postcommit-02535d5/README.md);
+these historical measurements remain pinned to their original source.
 
 The source capture measures implementation commit
 `f1040cdf723cf9b172f27d50d3580bbb21f3c430`, including the wide-row accuracy fix.

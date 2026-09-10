@@ -1,0 +1,39 @@
+{
+  "command": [
+    ".venv/bin/python",
+    "-B",
+    "-m",
+    "unittest",
+    "-v",
+    "tests.test_cuda_sum_rows.CudaSumRowsDeviceTests"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f",
+  "commit": "02535d5fb191285b0e2ca62677a1ec5d29edbb01",
+  "started_at": "2026-09-10T12:06:38.599181+00:00",
+  "ended_at": "2026-09-10T12:06:41.694847+00:00",
+  "wall_seconds": 3.095668740570545,
+  "exit_status": 0,
+  "git_status_before": "",
+  "git_status_after": "",
+  "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/target/postcommit-02535d5/two-gpu.log",
+  "log_sha256": "ea14284e320fa1b619dbbf80254818509c5b0078222a5eaad608111640205706",
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": "0,1",
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/target/uv-cache",
+    "PYTHONNOUSERSITE": "1",
+    "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/target/python-bin",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/target/cuda-cache",
+    "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/target/uv-python",
+    "UV_TOOL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/target/uv-tools",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/target/cargo-build",
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/target/cargo-home",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/target/tmp",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/target/triton-cache",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/target/cache",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "TORCH_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/target/torch-cache",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/.venv/bin/python",
+    "CUDA_HOME": "/usr/local/cuda-12.6",
+    "UV_PROJECT_ENVIRONMENT": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/.venv"
+  }
+}
