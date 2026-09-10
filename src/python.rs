@@ -4948,6 +4948,34 @@ pub(crate) fn dispatch_tensorbase_method_mode(
     )?)
 }
 
+/// Dispatch a native operation whose operands are exact tensors (no subclass
+/// handlers). Explicit delegation reaches the next mode; `NotImplemented` fails.
+pub(crate) fn dispatch_exact_tensor_function_mode(
+    py: Python<'_>,
+    function: &Py<PyAny>,
+    qualified_name: &str,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Option<Py<PyAny>>> {
+    let active_mode = torch_function_mode_stack::pop();
+    let Some(mode) = active_mode.get() else {
+        return Ok(None);
+    };
+    validate_torch_function_mode_handler(mode.bind(py))?;
+    let handler = mode.bind(py).getattr("__torch_function__")?;
+    let result =
+        call_torch_function_handler(py, &handler, function, &PyTuple::empty(py), args, kwargs)?;
+    if !is_not_implemented(py, &result) {
+        return Ok(Some(result));
+    }
+    Err(torch_function_dispatch_error(
+        py,
+        qualified_name,
+        Some(mode),
+        None,
+    )?)
+}
+
 fn torch_function_dispatch_error(
     py: Python<'_>,
     function: &str,

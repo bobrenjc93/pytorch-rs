@@ -13,33 +13,10 @@ from ..torch_rs import (
     _nn_functional_dropout,
     _nn_functional_glu_vector,
     _nn_functional_l1_loss,
-    _nn_functional_linear,
+    _nn_functional_linear as linear,
     _nn_functional_mse_loss,
     _nn_functional_softsign,
 )
-
-
-_LINEAR_DOC = r"""
-linear(input, weight, bias=None) -> Tensor
-
-Applies the rank-1, rank-2, or rank-3 transformation
-:math:`\mathrm{output} = \mathrm{input} \, \mathrm{weight}^{T}`, with an
-optional rank-1 bias.
-
-The current native implementation requires exact ``torch_rs.Tensor`` operands
-with CPU ``float32`` storage and shape ``(in_features,)``,
-``(rows, in_features)``, or ``(batch, sequence, in_features)`` for ``input``
-and ``(out_features, in_features)`` for ``weight``. ``bias`` may be ``None`` or
-an exact rank-1 tensor with shape ``(out_features,)`` or the PyTorch-compatible
-singleton shape ``(1,)``. Biased rank-3 input must be contiguous; offset
-contiguous inputs and strided or offset weights and biases are supported.
-The operation returns a fresh, independent row-major tensor with the
-corresponding final dimension replaced by ``out_features``.
-
-Tensor subclasses, active ``TorchFunctionMode`` contexts, and active autograd
-recording are not supported. Gradient-requiring input, weight, or supported
-bias operands may be used inside ``torch.no_grad()``.
-"""
 
 
 _L1_LOSS_DOC = r"""
@@ -393,13 +370,6 @@ def softsign(input):
         input,
         {},
     )
-
-
-def linear(input: Tensor, weight: Tensor, bias: Tensor | None = None) -> Tensor:
-    return _nn_functional_linear(input, weight, bias)
-
-
-linear.__doc__ = _LINEAR_DOC
 
 
 def l1_loss(
