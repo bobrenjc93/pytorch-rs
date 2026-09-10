@@ -25586,7 +25586,7 @@ fn flatten_buffer(
     if format == b'e' && value.py().version_info() < (3, 12) {
         return Err(buffer_shape_error(value)?);
     }
-    if format == b'e' || (format == b'?' && value.py().version_info() >= (3, 14)) {
+    if format == b'e' {
         let mut output = Vec::new();
         output.try_reserve_exact(elements).map_err(|_| {
             PyMemoryError::new_err("unable to allocate native tensor storage for buffer")
@@ -25613,6 +25613,19 @@ fn flatten_buffer(
     output.try_reserve_exact(elements).map_err(|_| {
         PyMemoryError::new_err("unable to allocate native tensor storage for buffer")
     })?;
+    if format == b'?' {
+        for (index, &byte) in bytes.iter().enumerate() {
+            // Canonical bool storage is unambiguous. For other bytes, follow
+            // memoryview indexing: CPython builds of the same minor version
+            // can disagree (e.g. low-bit versus nonzero conversion).
+            output.push(if byte <= 1 {
+                f32::from(byte)
+            } else {
+                view.get_item(index)?.extract::<f32>()?
+            });
+        }
+        return Ok(Some((output, vec![elements])));
+    }
     for item in bytes.chunks_exact(item_size) {
         let Some(converted) = buffer_item_as_f32(format, item) else {
             return Err(buffer_shape_error(value)?);
@@ -25662,7 +25675,6 @@ fn buffer_item_as_f32(format: u8, bytes: &[u8]) -> Option<f32> {
     Some(match (format, bytes.len()) {
         (b'b', 1) => f32::from(i8::from_ne_bytes(bytes.try_into().ok()?)),
         (b'B', 1) => f32::from(u8::from_ne_bytes(bytes.try_into().ok()?)),
-        (b'?', 1) => f32::from(bytes[0] & 1),
         (b'h', 2) => f32::from(i16::from_ne_bytes(bytes.try_into().ok()?)),
         (b'H', 2) => f32::from(u16::from_ne_bytes(bytes.try_into().ok()?)),
         (b'i' | b'l' | b'n', 4) => i32::from_ne_bytes(bytes.try_into().ok()?) as f32,

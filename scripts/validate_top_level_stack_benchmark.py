@@ -656,6 +656,21 @@ def run_validator(args, cases, workloads, validator_context):
         affinity,
         args,
     )
+    # Package aliases are identities within this environment; the interpreter
+    # remains a lexical .venv/bin path even when it links to a base Python.
+    path_errors = []
+    for section, key in RUNTIME_PACKAGE_PATHS:
+        path = _require_recorded_path(
+            path_errors,
+            f"{section}.{key}",
+            environment[section][key],
+            root=REPOSITORY_ROOT / ".venv",
+            resolve_aliases=True,
+        )
+        if path is not None:
+            environment[section][key] = str(path)
+    if path_errors:
+        raise AssertionError("\n".join(path_errors))
     environment["benchmark_integrity"].update(
         {
             "workload_set": WORKLOAD_SET,
@@ -1010,7 +1025,17 @@ def _absolute_non_resolved(path):
     return REPOSITORY_ROOT / path
 
 
-def _require_recorded_path(errors, label, value, *, root):
+RUNTIME_PACKAGE_PATHS = (
+    ("numpy", "path"),
+    ("pytorch", "path"),
+    ("torch_rs", "path"),
+    ("torch_rs", "extension_path"),
+)
+
+
+def _require_recorded_path(errors, label, value, *, root, resolve_aliases=False):
+    # Both spellings must belong to root. Do not resolve root itself: a .venv
+    # symlink to another environment must not make that environment admissible.
     if not isinstance(value, str) or not value:
         errors.append(f"missing provenance field {label}")
         return None
@@ -1021,10 +1046,25 @@ def _require_recorded_path(errors, label, value, *, root):
     absolute = _absolute_non_resolved(path)
     try:
         absolute.relative_to(root)
+        if ".." in absolute.parts:
+            raise ValueError("parent traversal")
     except ValueError:
         errors.append(f"{label} is outside {root}: {value}")
-    if not absolute.exists():
-        errors.append(f"{label} does not exist: {value}")
+        return None
+    if resolve_aliases:
+        try:
+            absolute = absolute.resolve(strict=True)
+        except (OSError, RuntimeError) as error:
+            errors.append(f"{label} cannot resolve: {value}: {error}")
+            return None
+        try:
+            absolute.relative_to(root)
+        except ValueError:
+            errors.append(f"{label} resolves outside {root}: {value} -> {absolute}")
+            return None
+    if not absolute.is_file():
+        errors.append(f"{label} does not exist or is not a file: {value}")
+        return None
     return absolute
 
 
@@ -1033,17 +1073,33 @@ def _module_path(module):
     origin = getattr(spec, "origin", None) or getattr(module, "__file__", None)
     if origin in (None, "built-in", "frozen"):
         return None
-    return str(Path(origin).resolve(strict=True))
+    # Keep the spelling until both lexical and resolved containment are checked.
+    return str(origin)
 
 
-def _validate_recorded_path(errors, label, recorded, current, *, root):
-    recorded_path = _require_recorded_path(errors, label, recorded, root=root)
+def _validate_recorded_path(
+    errors, label, recorded, current, *, root, resolve_aliases=False
+):
+    recorded_path = _require_recorded_path(
+        errors, label, recorded, root=root, resolve_aliases=resolve_aliases
+    )
     if current in (None, ""):
         errors.append(f"current {label} is unavailable")
         return
-    current_path = _absolute_non_resolved(current)
-    if recorded_path is not None and recorded_path != current_path:
+    current_path = _require_recorded_path(
+        errors,
+        f"current {label}",
+        current,
+        root=root,
+        resolve_aliases=resolve_aliases,
+    )
+    if (
+        recorded_path is not None
+        and current_path is not None
+        and recorded_path != current_path
+    ):
         errors.append(f"{label} mismatch: {recorded!r} != {str(current_path)!r}")
+    return current_path
 
 
 def _validate_current_runtime_paths(errors, environment):
@@ -1062,6 +1118,10 @@ def _validate_current_runtime_paths(errors, environment):
         native = None
 
     expected_venv = REPOSITORY_ROOT / ".venv"
+    if Path(sys.prefix).resolve() != expected_venv:
+        errors.append(
+            f"current python prefix mismatch: {sys.prefix!r} != {str(expected_venv)!r}"
+        )
     _validate_recorded_path(
         errors,
         "python_executable",
@@ -1087,13 +1147,15 @@ def _validate_current_runtime_paths(errors, environment):
             _module_path(native) if native is not None else None,
         ),
     )
+    current_paths = {}
     for label, recorded, current in runtime_paths:
-        _validate_recorded_path(
+        current_paths[label] = _validate_recorded_path(
             errors,
             label,
             recorded,
             current,
-            root=REPOSITORY_ROOT,
+            root=expected_venv,
+            resolve_aliases=True,
         )
 
     if native is not None:
@@ -1103,14 +1165,20 @@ def _validate_current_runtime_paths(errors, environment):
             importlib.machinery.ExtensionFileLoader,
         ):
             errors.append("torch_rs.torch_rs is not a native extension module")
-        native_path = _module_path(native)
+        native_path = current_paths["torch_rs.extension_path"]
         if native_path is not None and not Path(native_path).name.endswith(
             tuple(importlib.machinery.EXTENSION_SUFFIXES)
         ):
             errors.append(f"native module has an unrecognized ABI suffix: {native_path}")
         torch_rs_c_path = _module_path(getattr(torch_rs, "_C", None))
-        if native_path != torch_rs_c_path:
-            errors.append("torch_rs._C does not point to torch_rs.torch_rs")
+        _validate_recorded_path(
+            errors,
+            "torch_rs._C identity",
+            torch_rs_c_path,
+            str(native_path) if native_path is not None else None,
+            root=expected_venv,
+            resolve_aliases=True,
+        )
 
     current_versions = {
         "numpy.version": np.__version__,
