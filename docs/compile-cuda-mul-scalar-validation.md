@@ -26,6 +26,11 @@ tensors cannot be constructed publicly, so those compiler boundaries additionall
 use explicit metadata tests. Two-device tests check driver pointer ownership,
 cache separation, current-device restoration and rejection on GPUs 0,1.
 
+The historical `mul_neg_add_v1` diagnostic retains two obsolete matrix/vector
+rejection expectations and now exits 1 on GPU 0. Preserve its raw results; use
+[trailing-vector validation](compile-cuda-trailing-vector-validation.md) for the
+new capability. Historical measurements below remain attributed to their sources.
+
 ## Reproduction
 
 Build a release wheel from the current source, install it in a fresh worktree-local

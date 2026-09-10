@@ -146,6 +146,12 @@ CUDA_VISIBLE_DEVICES=0 cargo test --locked --test cuda_add
 CUDA_VISIBLE_DEVICES=0 cargo test --locked cuda
 ```
 
+The historical `neg_add_v1` diagnostic now reports four obsolete matrix/vector
+rejection expectations (exit 1 on GPU 0). Preserve that result; use the
+[current trailing-vector diagnostic](compile-cuda-trailing-vector-validation.md)
+for the new supported relation.
+
+
 Hardware-only tests skip clearly when the reference runtime or required devices
 are unavailable. The two-device test checks current-device restoration after
 copies, addition, invalid ordinals/mixed devices, cached drops and backing-allocation releases. GPU transfer diagnostics

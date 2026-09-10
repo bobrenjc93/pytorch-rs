@@ -551,10 +551,15 @@ def _binary_output_metadata(left_metadata, right_metadata, *, grad_enabled=None)
     if left_metadata.device.type == "cuda":
         _validate_cuda_metadata(left_metadata)
         _validate_cuda_metadata(right_metadata)
-        if left_metadata.shape != right_metadata.shape:
+        left_shape, right_shape = left_metadata.shape, right_metadata.shape
+        if not (
+            left_shape == right_shape
+            or (len(left_shape) == 2 and right_shape == (left_shape[1],))
+            or (len(right_shape) == 2 and left_shape == (right_shape[1],))
+        ):
             raise CompileTraceUnsupportedError(
-                "torch.compile trace CUDA addition requires the same shape; "
-                "broadcasting is unsupported"
+                "torch.compile trace CUDA addition requires the same shape "
+                "or shapes (M, N) and (N,); broader broadcasting is unsupported"
             )
     if grad_enabled is None:
         grad_enabled = _grad_enabled()
@@ -962,11 +967,29 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled):
         )
 
     left_name, right_name = operation.inputs
-    return _binary_output_metadata(
+    expected = _binary_output_metadata(
         metadata_values[left_name],
         metadata_values[right_name],
         grad_enabled=grad_enabled,
     )
+    if expected.device.type == "cuda":
+        # Dynamic execution derives concrete output sizes/strides from current
+        # inputs, but even a private/modified graph must declare a valid CUDA
+        # result before any earlier operation executes. CPU metadata remains
+        # governed by its existing offset and autograd contracts.
+        declared = operation.metadata
+        if not _builtins.isinstance(declared, CompileTraceTensorMetadata):
+            raise CompileTraceUnsupportedError("torch.compile addition output metadata is malformed")
+        if (
+            declared.device != expected.device
+            or declared.storage_offset != 0
+            or len(declared.shape) != len(expected.shape)
+        ):
+            raise CompileTraceUnsupportedError(
+                "torch.compile addition output requires matching CUDA device, rank and zero storage offset"
+            )
+        _validate_cuda_metadata(declared)
+    return expected
 
 
 def execute_compile_trace_graph(graph, *inputs):

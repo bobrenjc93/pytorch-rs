@@ -14,9 +14,10 @@ outputs form no input pointers and launch no kernel. Same-shape addition keeps
 its existing scalar/vectorized kernels and replay cache.
 
 Other broadcasts, noncontiguous inputs, mixed devices, other dtypes, nonunit
-`alpha`, `out=`, and autograd remain unsupported. Compiler CUDA addition still
-requires equal shapes, including the private native trace entrypoint. This
-change adds no compiler, reduction, matrix multiplication, or performance claim.
+`alpha`, `out=`, and autograd remain unsupported. The [bounded compiler](compile-cuda-add.md) also captures this exact shape
+relation through operator and positional method addition, sharing the native
+validation boundary. No reduction, matrix multiplication, or performance claim
+is added.
 
 ## Historical source validation (PR #1936)
 

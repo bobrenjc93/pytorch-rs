@@ -973,8 +973,9 @@ def compile(
     on a single device, including scalar, empty, and offset views. CUDA guards
     include the device ordinal and storage offset. Scalar multiplication accepts
     exact bool/int/float constants, with type/value guards on captured globals;
-    scalar arguments, broadcasts, gradients and unary operations other than
-    negation are rejected. This is native graph capture without fusion.
+    addition accepts equal shapes or exactly ``(M,N)`` and ``(N,)`` in either
+    order. Scalar arguments, broader broadcasts, gradients and unary operations
+    other than negation are rejected. This is native graph capture without fusion.
     A private benchmark-only H100 CUDA pointwise-reduce
     workload is supported for ``backend="inductor"``, ``fullgraph=True``, and
     ``dynamic=False`` when called with the exact CUDA benchmark tensor inputs.

@@ -86,3 +86,6 @@ gates.
 - [MSE loss timings](mse-loss-release-timings.md): `torch.nn.functional.mse_loss` release evidence.
 - [L1 loss timings](l1-loss-release-timings.md): `torch.nn.functional.l1_loss(reduction="none")` release evidence.
 - [L1 loss sum timings](l1-loss-sum-release-timings.md): `torch.nn.functional.l1_loss(reduction="sum")` release evidence.
+
+[Compiled CUDA matrix/vector addition](compile-cuda-trailing-vector-validation.md)
+records the bounded shape extension and non-scoring diagnostic commands.

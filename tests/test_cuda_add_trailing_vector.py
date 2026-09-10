@@ -130,11 +130,11 @@ class CudaAddTrailingVectorTests(Comparison, unittest.TestCase):
         with self.assertRaises(NotImplementedError):
             native.add(x, v, alpha=2)
 
-    def test_compiler_still_rejects_broadcast_before_execution(self):
+    def test_compiler_rejects_broader_broadcast_before_execution(self):
         from unittest.mock import patch
         from torch_rs import _compile_trace
         from tests.test_compile_cuda_boundary import add_inputs, compile_with_cache
-        x, v = native.ones((3, 7)).to("cuda:0"), native.ones((7,)).to("cuda:0")
+        x, v = native.ones((3, 7)).to("cuda:0"), native.ones((1, 7)).to("cuda:0")
         for left, right in ((x, v), (v, x)):
             with self.assertRaisesRegex(NotImplementedError, "same shape"):
                 _compile_trace._native._compile_trace_binary(left, right, "add")

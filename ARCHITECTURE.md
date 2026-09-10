@@ -131,13 +131,17 @@ to avoid the copy engine's per-row cost. Large gaps are always skipped; no
 allocation or transfer grows with an arbitrary backing span. Packed outputs
 retain CPU clone's dimension ordering, including transposed and selected views.
 CUDA addition accepts same-shape contiguous float32 inputs on one device,
-including offsets, scalars and empty tensors. Eager addition also accepts
+including offsets, scalars and empty tensors. Eager and compiled addition accept
 contiguous `(M, N)` and `(N,)` on that device in either operand order. The
 64-bit grid-stride trailing-vector kernel preserves independent bounds checks,
 device restoration, fresh storage, and completion before return; empty outputs
 launch no kernel. Other broadcasts, noncontiguous layouts, other dtypes,
-nonunit alpha, concrete out, and autograd remain excluded. Compiler addition
-still requires equal shapes, including its private native entrypoint.
+nonunit alpha, concrete out, and autograd remain excluded. The compiler metadata
+planner admits the same bounded relation, derives singleton/empty output strides
+with its elementwise planner, and guards inputs before execution. Its private
+native bridge delegates independent validation to `Tensor::add`, sharing the
+eager kernel boundary. Compiled add syntax remains operator/positional method
+only; compiler alpha/out forms remain unsupported.
 Native float32 CUDA negation
 also accepts contiguous inputs, offsets, scalars, and empties. The
 [src/cuda/neg.ptx](src/cuda/neg.ptx) sign-bit kernel uses the shared 64-bit
