@@ -1,4 +1,6 @@
+import ctypes
 import os
+import random
 import subprocess
 import sys
 import unittest
@@ -38,8 +40,82 @@ _CUDA_ROUNDTRIP_SKIP_REASON = _cuda_roundtrip_test_unavailable()
 _CUDA_TWO_GPU_SKIP_REASON = _cuda_two_gpu_test_unavailable()
 
 
+class CudaZeroBoundaryTests(unittest.TestCase):
+    """Validation errors must not require an installed CUDA runtime or GPU."""
+
+    def test_unindexed_devices_rejected_for_both_supported_ranks(self):
+        for shape in ((0,), (3,), (0, 0), (0, 7), (5, 0), (2, 3)):
+            for device in ("cuda", "cuda:255", "cuda:511", torch.device("cuda"),
+                           torch.device("cuda:255")):
+                with self.subTest(shape=shape, device=device):
+                    with self.assertRaisesRegex(NotImplementedError, "unindexed CUDA"):
+                        torch.zeros(shape, device=device)
+
+    def test_matrix_zeros_retain_gradient_and_dtype_restrictions(self):
+        for shape in ((0, 0), (0, 7), (5, 0), (2, 3)):
+            with self.subTest(shape=shape):
+                with self.assertRaisesRegex(RuntimeError, "requires_grad is true"):
+                    torch.zeros(shape, device="cuda:0", requires_grad=True)
+                for name in ("float64", "float16", "int64", "bool"):
+                    dtype = getattr(reference_torch, name) if reference_torch else name
+                    with self.subTest(dtype=dtype):
+                        with self.assertRaisesRegex(TypeError, "dtype"):
+                            torch.zeros(shape, device="cuda:0", dtype=dtype)
+
+    def test_matrix_storage_capacity_overflow_precedes_allocation(self):
+        with self.assertRaisesRegex(RuntimeError, "Storage size calculation overflowed"):
+            torch.zeros((2**31, 2**31), device="cuda:0")
+
+
 @unittest.skipIf(_CUDA_ROUNDTRIP_SKIP_REASON is not None, _CUDA_ROUNDTRIP_SKIP_REASON)
 class CudaZeroRoundtripTests(unittest.TestCase):
+    def test_generated_matrix_zeros_and_cpu_copies_match_pytorch(self):
+        rng = random.Random(20260910)
+        shapes = [(0, 0), (0, 13), (7, 0), (1, 17), (19, 1)]
+        shapes += [(rng.randrange(2, 32), rng.randrange(33, 96)) for _ in range(12)]
+        shapes += [(columns, rows) for rows, columns in shapes[5:]]
+        for shape in shapes:
+            for device_object in (False, True):
+                with self.subTest(shape=shape, device_object=device_object):
+                    actual = torch.zeros(
+                        shape, dtype=torch.float32, requires_grad=False,
+                        device=torch.device("cuda:0") if device_object else "cuda:0",
+                    )
+                    expected = reference_torch.zeros(
+                        shape, dtype=reference_torch.float32, requires_grad=False,
+                        device=reference_torch.device("cuda:0") if device_object else "cuda:0",
+                    )
+                    second = torch.zeros(*shape, device="cuda:0")
+                    reference_torch.cuda.synchronize(0)
+                    self.assertEqual(
+                        self.cuda_metadata(torch, actual),
+                        self.cuda_metadata(reference_torch, expected),
+                    )
+                    self.assertEqual(actual.storage_offset(), 0)
+                    self.assertTrue(actual.is_contiguous())
+                    self.assertEqual(
+                        self.cpu_copy_observation(actual), self.cpu_copy_observation(expected)
+                    )
+                    copies = [actual.cpu(), actual.to("cpu")]
+                    expected_cpu = expected.cpu()
+                    for copied in copies:
+                        self.assertEqual(copied.shape, expected_cpu.shape)
+                        self.assertEqual(copied.stride(), expected_cpu.stride())
+                        self.assertEqual(copied.tolist(), expected_cpu.tolist())
+                        self.assertEqual(str(copied.device), "cpu")
+                        self.assertIsNot(copied, actual)
+                    if actual.numel():
+                        self.assertNotEqual(actual.data_ptr(), second.data_ptr())
+                        self.assertNotEqual(copies[0].data_ptr(), copies[1].data_ptr())
+                        # Mutate the CPU copy without requiring native item assignment.
+                        ctypes.c_float.from_address(copies[0].data_ptr()).value = 9.0
+                        self.assertEqual(copies[1].tolist(), expected_cpu.tolist())
+                        self.assertEqual(actual.cpu().tolist(), expected_cpu.tolist())
+                    else:
+                        self.assertEqual(second.data_ptr(), 0)
+                    del actual
+                    self.assertEqual(second.cpu().tolist(), expected_cpu.tolist())
+
     def test_tensor_copy_construction_rejects_cuda_before_sequence_conversion(self):
         expected = reference_torch.zeros((0,), device="cuda:0")
         with warnings.catch_warnings():
@@ -422,8 +498,8 @@ assert "torch" not in sys.modules
                 ):
                     torch.nn.functional.linear(input, weight, bias)
 
-        # Public CUDA weights are currently 1-D, so the binding rejects their
-        # rank before reaching the native matrix multiplication device guard.
+        # These 1-D CUDA weights fail rank validation before the native
+        # matrix multiplication device guard.
         for weight in (cuda_singleton, cuda_empty):
             with self.subTest(cuda_weight_numel=weight.numel()):
                 with self.assertRaises(NotImplementedError):
@@ -451,9 +527,9 @@ assert "torch" not in sys.modules
                 lambda: reference_torch.zeros((), device="cuda:0"),
             ),
             (
-                "rank_two",
-                lambda module: module.zeros((1, 1), device="cuda:0"),
-                lambda: reference_torch.zeros((1, 1), device="cuda:0"),
+                "rank_three",
+                lambda module: module.zeros((1, 1, 1), device="cuda:0"),
+                lambda: reference_torch.zeros((1, 1, 1), device="cuda:0"),
             ),
             (
                 "float64_dtype",
@@ -512,6 +588,19 @@ class CudaCurrentDeviceGuardTests(unittest.TestCase):
     def setUp(self):
         self._previous_device = reference_torch.cuda.current_device()
         self.addCleanup(reference_torch.cuda.set_device, self._previous_device)
+
+    def test_matrix_zeros_on_explicit_device_preserve_current_device(self):
+        reference_torch.cuda.set_device(0)
+        for shape in ((3, 5), (0, 5), (3, 0), (0, 0)):
+            with self.subTest(shape=shape):
+                actual = torch.zeros(shape, device="cuda:1")
+                expected = reference_torch.zeros(shape, device="cuda:1")
+                self.assertEqual(reference_torch.cuda.current_device(), 0)
+                self.assertEqual(str(actual.device), str(expected.device))
+                self.assertEqual(actual.stride(), expected.stride())
+                for copy in (actual.cpu, lambda: actual.to("cpu")):
+                    self.assertEqual(copy().tolist(), expected.cpu().tolist())
+                    self.assertEqual(reference_torch.cuda.current_device(), 0)
 
     def test_allocation_and_cpu_copy_preserve_current_cuda_device(self):
         reference_torch.cuda.set_device(0)

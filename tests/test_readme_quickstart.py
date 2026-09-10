@@ -442,7 +442,7 @@ README_SCOPE_REQUIRED_SNIPPETS = (
     "limited first-order autograd",
     "synchronous CPU transfers",
     "same-shape contiguous `float32` addition",
-    "1-D zeros only",
+    "1-D and 2-D float32 zeros only",
     "No general CUDA math or accelerator training",
     "Bounded eager CPU capture",
     "[CUDA mul/neg/add capture](docs/compile-cuda-add.md)",
@@ -457,7 +457,7 @@ README_SCOPE_REQUIRED_SNIPPETS = (
 SUPPORTED_SURFACE_DETAIL_SNIPPETS = (
     'synchronous `Tensor.to("cuda:N")`',
     "Scalars, empty tensors, contiguous inputs, offset views, transposes",
-    "only rank-1 float32 `zeros` can create CUDA storage directly",
+    "only rank-1 and rank-2 float32 `zeros` can create CUDA storage directly",
     "Autograd inputs (including under `no_grad`), asynchronous copies, dtype changes",
     "Dtype-changing conversions, CUDA-to-CUDA copies, unindexed CUDA targets",
     '`x + y`, `x.add(y)`, and `torch.add(x, y)`',

@@ -384,7 +384,7 @@ fn format_device_error(formatter: &mut Formatter<'_>, error: &TensorError) -> st
         ),
         TensorError::UnsupportedCudaZeroTensor { reason } => write!(
             formatter,
-            "zeros(): CUDA storage is only implemented for 1-D float32 tensors with requires_grad=False ({reason})"
+            "zeros(): CUDA storage is only implemented for 1-D or 2-D float32 tensors with requires_grad=False ({reason})"
         ),
         TensorError::CudaRuntimeError { operation, message } => {
             write!(formatter, "{operation}(): CUDA runtime error: {message}")
