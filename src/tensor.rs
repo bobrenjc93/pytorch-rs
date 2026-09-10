@@ -4111,7 +4111,7 @@ impl Tensor {
     /// for an empty tensor, arithmetic overflow, or metadata allocation
     /// failure.
     pub fn reshape(&self, shape: impl AsRef<[i64]>) -> Result<Self, TensorError> {
-        let resolved = self.resolve_reshape_shape(shape.as_ref())?;
+        let resolved = Self::resolve_reshape_shape(shape.as_ref(), self.elements)?;
         self.reshape_resolved(resolved)
     }
 
@@ -4130,11 +4130,56 @@ impl Tensor {
     /// for an empty tensor, a stride-incompatible layout, arithmetic overflow,
     /// or metadata allocation failure.
     pub fn view(&self, shape: impl AsRef<[i64]>) -> Result<Self, TensorError> {
-        let resolved = self.resolve_reshape_shape(shape.as_ref())?;
+        let resolved = Self::resolve_reshape_shape(shape.as_ref(), self.elements)?;
         self.view_resolved(resolved)
     }
 
-    fn resolve_reshape_shape(&self, requested: &[i64]) -> Result<Vec<usize>, TensorError> {
+    /// Splits one dimension into sizes without copying storage.
+    ///
+    /// One size may be `-1`, inferred from the selected dimension alone.
+    /// Layout and first-order gradients use the same native view machinery as
+    /// [`Self::view`], including empty tensors and noncontiguous inputs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for scalar inputs, invalid dimensions, empty sizes,
+    /// invalid or incompatible sizes, ambiguous inference, or allocation failure.
+    pub fn unflatten(&self, dim: i64, sizes: impl AsRef<[i64]>) -> Result<Self, TensorError> {
+        let sizes = sizes.as_ref();
+        if sizes.is_empty() {
+            return Err(TensorError::UnflattenEmptySizes);
+        }
+        let axis = normalize_transpose_dimension(dim, self.shape.len())?;
+        if self.shape.is_empty() {
+            return Err(TensorError::UnflattenScalar {
+                dimension: dimension_for_error(axis),
+            });
+        }
+        let split = Self::resolve_reshape_shape(sizes, self.shape[axis]).map_err(|error| {
+            if let TensorError::ReshapeElementCountMismatch { shape, elements } = error {
+                TensorError::UnflattenSizeMismatch {
+                    sizes: shape,
+                    dimension: dimension_for_error(axis),
+                    size: elements,
+                }
+            } else {
+                error
+            }
+        })?;
+        let rank = (self.shape.len() - 1)
+            .checked_add(split.len())
+            .ok_or(TensorError::ElementCountOverflow)?;
+        let mut shape = try_result_vector(rank, self.elements)?;
+        shape.extend_from_slice(&self.shape[..axis]);
+        shape.extend_from_slice(&split);
+        shape.extend_from_slice(&self.shape[axis + 1..]);
+        self.view_resolved(shape)
+    }
+
+    fn resolve_reshape_shape(
+        requested: &[i64],
+        elements: usize,
+    ) -> Result<Vec<usize>, TensorError> {
         let mut inferred_index = None;
 
         for (index, dimension) in requested.iter().copied().enumerate() {
@@ -4148,12 +4193,12 @@ impl Tensor {
                 return Err(TensorError::ReshapeInvalidDimension {
                     dimension,
                     index,
-                    shape: try_clone_reshape_shape(requested, self.elements)?,
+                    shape: try_clone_reshape_shape(requested, elements)?,
                 });
             }
         }
 
-        let mut resolved = try_result_vector(requested.len(), self.elements)?;
+        let mut resolved = try_result_vector(requested.len(), elements)?;
         for dimension in requested.iter().copied() {
             let dimension = if dimension == -1 {
                 1
@@ -4169,36 +4214,36 @@ impl Tensor {
                 .copied()
                 .filter(|dimension| *dimension != -1)
                 .fold(1_i64, i64::wrapping_mul);
-            let elements =
-                i64::try_from(self.elements).map_err(|_| TensorError::ElementCountOverflow)?;
-            if !((specified_elements > 0 && elements % specified_elements == 0)
-                || elements == specified_elements)
+            let signed_elements =
+                i64::try_from(elements).map_err(|_| TensorError::ElementCountOverflow)?;
+            if !((specified_elements > 0 && signed_elements % specified_elements == 0)
+                || signed_elements == specified_elements)
             {
                 return Err(TensorError::ReshapeElementCountMismatch {
-                    shape: try_clone_reshape_shape(requested, self.elements)?,
-                    elements: self.elements,
+                    shape: try_clone_reshape_shape(requested, elements)?,
+                    elements,
                 });
             }
             if specified_elements == 0 {
-                if self.elements == 0 {
+                if elements == 0 {
                     return Err(TensorError::ReshapeAmbiguousZeroElements {
-                        shape: try_clone_reshape_shape(requested, self.elements)?,
+                        shape: try_clone_reshape_shape(requested, elements)?,
                     });
                 }
                 return Err(TensorError::ReshapeElementCountMismatch {
-                    shape: try_clone_reshape_shape(requested, self.elements)?,
-                    elements: self.elements,
+                    shape: try_clone_reshape_shape(requested, elements)?,
+                    elements,
                 });
             }
-            resolved[index] = usize::try_from(elements / specified_elements)
+            resolved[index] = usize::try_from(signed_elements / specified_elements)
                 .map_err(|_| TensorError::ElementCountOverflow)?;
         }
 
         let resolved_elements = element_count(&resolved)?;
-        if resolved_elements != self.elements {
+        if resolved_elements != elements {
             return Err(TensorError::ReshapeElementCountMismatch {
-                shape: try_clone_reshape_shape(requested, self.elements)?,
-                elements: self.elements,
+                shape: try_clone_reshape_shape(requested, elements)?,
+                elements,
             });
         }
 

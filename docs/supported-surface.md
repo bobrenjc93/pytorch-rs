@@ -821,6 +821,19 @@ integer `size=` keywords, mixed shape/dtype calls, and cross-dtype
 reinterpretation remain unsupported. Invalid bool-first, negative, overflow,
 product-mismatch, and ambiguous empty-inference shapes remain error cases.
 
+`Tensor.unflatten(dim, sizes)` splits an integer dimension of an exact native
+CPU float32 tensor into a non-empty list, tuple, or `torch.Size` of integer
+sizes. Positional and keyword forms, negative dimensions, and one inferred
+`-1` size are supported. Inference uses the selected dimension's size, even
+when another dimension is empty. The result uses native view construction,
+sharing storage and preserving offsets with PyTorch-compatible values,
+shapes, strides, and first-order gradients for contiguous, transposed, offset,
+singleton, and empty inputs. Scalar inputs, out-of-range dimensions, invalid
+sizes, incompatible products, and ambiguous empty inference are rejected.
+Error types and semantic diagnostics match PyTorch; build-specific C++
+backtraces are omitted. Named dimensions, a top-level `torch.unflatten`, other
+dtypes/devices, tensor subclasses, and override modes remain unsupported.
+
 `torch.reshape(input, shape)` accepts tuple, list, and `torch.Size` shapes plus
 PyTorch 2.13 legacy input aliases and delegates values, shape inference,
 view-or-copy layout, errors, and first-order autograd to the same reshape

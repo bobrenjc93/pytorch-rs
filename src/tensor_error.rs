@@ -63,6 +63,15 @@ pub enum TensorError {
     SqueezeDimensionsRankLimit,
     FlattenStartAfterEnd,
     FlattenNonConcreteInteger,
+    UnflattenEmptySizes,
+    UnflattenScalar {
+        dimension: i64,
+    },
+    UnflattenSizeMismatch {
+        sizes: Vec<i64>,
+        dimension: i64,
+        size: usize,
+    },
     NonConcreteInteger,
     ReshapeMultipleInferredDimensions,
     ReshapeInvalidDimension {
@@ -196,26 +205,16 @@ impl Display for TensorError {
                 format_squeeze_error(formatter, error)
             }
             Self::FlattenStartAfterEnd => format_flatten_error(formatter),
+            error @ (Self::UnflattenEmptySizes
+            | Self::UnflattenScalar { .. }
+            | Self::UnflattenSizeMismatch { .. }) => format_unflatten_error(formatter, error),
             Self::FlattenNonConcreteInteger | Self::NonConcreteInteger => {
                 format_non_concrete_integer_error(formatter)
             }
-            Self::ReshapeMultipleInferredDimensions => format_reshape_inference_error(formatter),
-            Self::ReshapeInvalidDimension {
-                dimension,
-                index,
-                shape,
-            } => write!(
-                formatter,
-                "invalid shape dimension {dimension} at index {index} of shape {shape:?}"
-            ),
-            Self::ReshapeAmbiguousZeroElements { shape } => write!(
-                formatter,
-                "cannot reshape tensor of 0 elements into shape {shape:?} because the unspecified dimension size -1 can be any value and is ambiguous"
-            ),
-            Self::ReshapeElementCountMismatch { shape, elements } => write!(
-                formatter,
-                "shape '{shape:?}' is invalid for input of size {elements}"
-            ),
+            error @ (Self::ReshapeMultipleInferredDimensions
+            | Self::ReshapeInvalidDimension { .. }
+            | Self::ReshapeAmbiguousZeroElements { .. }
+            | Self::ReshapeElementCountMismatch { .. }) => format_reshape_error(formatter, error),
             error @ (Self::ViewIncompatibleLayout
             | Self::ElementCountOverflow
             | Self::StrideCalculationOverflow
@@ -339,12 +338,52 @@ fn format_flatten_error(formatter: &mut Formatter<'_>) -> std::fmt::Result {
     formatter.write_str("flatten() has invalid args: start_dim cannot come after end_dim")
 }
 
+fn format_unflatten_error(formatter: &mut Formatter<'_>, error: &TensorError) -> std::fmt::Result {
+    match error {
+        TensorError::UnflattenEmptySizes => write!(formatter, "unflatten: sizes must be non-empty"),
+        TensorError::UnflattenScalar { dimension } => write!(
+            formatter,
+            "Dimension specified as {dimension} but tensor has no dimensions"
+        ),
+        TensorError::UnflattenSizeMismatch {
+            sizes,
+            dimension,
+            size,
+        } => write!(
+            formatter,
+            "unflatten: Provided sizes {sizes:?} don't multiply up to the size of dim {dimension} ({size}) in the input tensor"
+        ),
+        _ => unreachable!("only unflatten errors are passed to this formatter"),
+    }
+}
+
 fn format_non_concrete_integer_error(formatter: &mut Formatter<'_>) -> std::fmt::Result {
     formatter.write_str("SymIntArrayRef expected to contain only concrete integers")
 }
 
-fn format_reshape_inference_error(formatter: &mut Formatter<'_>) -> std::fmt::Result {
-    formatter.write_str("only one dimension can be inferred")
+fn format_reshape_error(formatter: &mut Formatter<'_>, error: &TensorError) -> std::fmt::Result {
+    match error {
+        TensorError::ReshapeMultipleInferredDimensions => {
+            formatter.write_str("only one dimension can be inferred")
+        }
+        TensorError::ReshapeInvalidDimension {
+            dimension,
+            index,
+            shape,
+        } => write!(
+            formatter,
+            "invalid shape dimension {dimension} at index {index} of shape {shape:?}"
+        ),
+        TensorError::ReshapeAmbiguousZeroElements { shape } => write!(
+            formatter,
+            "cannot reshape tensor of 0 elements into shape {shape:?} because the unspecified dimension size -1 can be any value and is ambiguous"
+        ),
+        TensorError::ReshapeElementCountMismatch { shape, elements } => write!(
+            formatter,
+            "shape '{shape:?}' is invalid for input of size {elements}"
+        ),
+        _ => unreachable!("only reshape errors are passed to this formatter"),
+    }
 }
 
 fn format_stride_error(formatter: &mut Formatter<'_>, error: &TensorError) -> std::fmt::Result {
