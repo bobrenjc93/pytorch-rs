@@ -124,6 +124,70 @@ class CompileCudaTrailingVectorTests(Comparison, unittest.TestCase):
                     self.assertEqual(graph.operations[-1].metadata.storage_offset, 0)
                     self.compare(_compile_trace._native._compile_trace_binary(*args2, "add"), refs2[0] + refs2[1])
 
+    def assert_empty_layout_matches(self, actual, expected):
+        # Never materialize a (huge, 0) tensor as nested lists: the outer list
+        # alone would be huge. Flatten first, then materialize and synchronize.
+        self.assertEqual(tuple(actual.shape), tuple(expected.shape))
+        self.assertEqual(actual.stride(), expected.stride())
+        self.assertEqual(actual.storage_offset(), expected.storage_offset())
+        self.assertEqual(str(actual.dtype), str(expected.dtype))
+        self.assertEqual(str(actual.device), str(expected.device))
+        self.assertEqual(actual.requires_grad, expected.requires_grad)
+        self.assertEqual(actual.is_contiguous(), expected.is_contiguous())
+        self.assertEqual(actual.numel(), 0)
+        self.assertEqual(actual.reshape(0).cpu().tolist(), expected.reshape(0).cpu().tolist())
+        torch.cuda.synchronize()
+
+    @staticmethod
+    def large_empty_inputs(module, columns, rows, offset=0):
+        base = module.zeros(offset, dtype=module.float32).to("cuda:0")
+        empty = base[offset:]
+        return empty.reshape(0, columns)[:, :rows].t(), empty
+
+    def test_large_empty_signed_byte_strides_all_policies(self):
+        # Exercise signed-byte comparisons, zero/positive wrap, and negative
+        # output-stride recovery. All these layouts contain zero elements.
+        layouts = [(size, size) for size in
+                   (2**61 - 1, 2**61, 2**61 + 1, 2**62, 2**62 + 2, 2**63 - 1)]
+        layouts += [(2**62 + 5, 2**61), (2**62 + 5, 2**62 + 2)]
+        for columns, rows in layouts:
+            for offset in (0, 3):
+                args = self.large_empty_inputs(native, columns, rows, offset)
+                refs = self.large_empty_inputs(torch, columns, rows, offset)
+                for reverse in (False, True):
+                    ordered, reference_args = (args[::-1], refs[::-1]) if reverse else (args, refs)
+                    for program in (addition, composed):
+                        eager = program(*reference_args)
+                        self.assert_empty_layout_matches(program(*ordered), eager)
+                        for policy in POLICIES:
+                            with self.subTest(columns=columns, rows=rows, offset=offset,
+                                              reverse=reverse, program=program.__name__, policy=policy):
+                                torch._dynamo.reset()
+                                reference = torch.compile(program, backend="eager",
+                                                          fullgraph=policy[0], dynamic=policy[1])
+                                expected = reference(*reference_args)
+                                self.assert_empty_layout_matches(expected, eager)
+                                compiled, cache = compile_with_cache(program, *policy)
+                                actual = call_without_python(compiled, (program.__code__,), *ordered)
+                                self.assert_empty_layout_matches(actual, expected)
+                                graph = next(iter(cache.graphs.values()))
+                                self.assertEqual(graph.operations[-1].metadata.stride, actual.stride())
+                                with patch.object(_compile_bytecode, "lower_compile_graph",
+                                                  side_effect=AssertionError("cache miss")):
+                                    self.assert_empty_layout_matches(compiled(*ordered), expected)
+
+    def test_large_empty_dynamic_cache_replans_wrapped_strides(self):
+        for reverse in (False, True):
+            compiled, cache = compile_with_cache(addition, dynamic=True)
+            for rows in (2**61 - 1, 2**61, 2**62, 2**62 + 2):
+                args = self.large_empty_inputs(native, 2**62 + 5, rows, 3)
+                refs = self.large_empty_inputs(torch, 2**62 + 5, rows, 3)
+                if reverse:
+                    args, refs = args[::-1], refs[::-1]
+                with self.subTest(reverse=reverse, rows=rows):
+                    self.assert_empty_layout_matches(compiled(*args), addition(*refs))
+                    self.assertEqual(len(cache.graphs), 1)
+
     def test_dynamic_guards_invalidated_cache_and_forged_metadata(self):
         for dynamic in (None, False, True):
             compiled, cache = compile_with_cache(composed, dynamic=dynamic)

@@ -368,7 +368,19 @@ def _layout_is_non_overlapping_and_dense(shape, stride):
     return True
 
 
-def _elementwise_output_stride(shape, operand_layouts):
+def _signed_int64(value):
+    return (value + (1 << 63)) % (1 << 64) - (1 << 63)
+
+
+def _elementwise_output_stride(shape, operand_layouts, *, cuda=False):
+    # The shared native float32 planner compares signed 64-bit byte strides.
+    # Empty CUDA views can wrap even though they allocate no elements. Keep
+    # CPU tracing's existing arithmetic separate from this native CUDA path.
+    if cuda:
+        operand_layouts = tuple(
+            (input_shape, tuple(_signed_int64(s * 4) for s in input_stride))
+            for input_shape, input_stride in operand_layouts
+        )
     rank = len(shape)
     permutation = list(range(rank - 1, -1, -1))
 
@@ -394,11 +406,26 @@ def _elementwise_output_stride(shape, operand_layouts):
         return _contiguous_stride(shape)
 
     stride = [0] * rank
-    next_stride = 1
+    next_stride = 4 if cuda else 1
     for position, axis in enumerate(permutation):
         stride[axis] = next_stride
         if position + 1 < rank:
             next_stride *= shape[axis]
+            if cuda:
+                next_stride = _signed_int64(next_stride)
+    if cuda:
+        # Match elementwise_output_strides in src/tensor.rs, including the
+        # recovery of negative wrapped strides in TensorIterator outputs.
+        # Byte strides remain multiples of four, so division is exact.
+        for axis in range(rank - 1, -1, -1):
+            value = stride[axis] // 4
+            if value >= 0:
+                stride[axis] = value
+            else:
+                stride[axis] = (
+                    1 if axis + 1 == rank
+                    else stride[axis + 1] * max(shape[axis + 1], 1)
+                )
     return tuple(stride)
 
 
@@ -495,6 +522,7 @@ def _binary_output_stride(left_metadata, right_metadata, output_shape):
             (left_metadata.shape, left_metadata.stride),
             (right_metadata.shape, right_metadata.stride),
         ),
+        cuda=left_metadata.device.type == "cuda",
     )
 
 
@@ -596,7 +624,8 @@ def _scalar_output_metadata(input_metadata):
     return CompileTraceTensorMetadata(
         shape=input_metadata.shape,
         stride=_elementwise_output_stride(
-            input_metadata.shape, ((input_metadata.shape, input_metadata.stride),)
+            input_metadata.shape, ((input_metadata.shape, input_metadata.stride),),
+            cuda=True,
         ),
         dtype=input_metadata.dtype,
         device=input_metadata.device,
