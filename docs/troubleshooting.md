@@ -46,6 +46,10 @@ uv sync --locked --no-install-project --group reference
 
 The version printed before any local suffix should be `2.13.0`.
 
+For historical `nn.factory_kwargs` order-only failures, see the
+[cache-state diagnosis and regression check](factory-kwargs-cache-parity.md).
+Changing the hash seed or warming caches alone does not fix the assertions.
+
 ## Stale Wheel Installs
 
 If tests import an older `torch-rs` wheel, rebuild and reinstall from this

@@ -1,0 +1,65 @@
+[
+  {
+    "name": "baseline-build",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/bin/maturin",
+      "build",
+      "--release",
+      "--locked",
+      "--out",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/wheels"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source",
+    "started": "2026-09-09T21:19:51.374906+00:00",
+    "finished": "2026-09-09T21:20:36.450240+00:00",
+    "exit_code": 0,
+    "PYTHONHASHSEED": "6"
+  },
+  {
+    "name": "baseline-install",
+    "command": [
+      "uv",
+      "--no-config",
+      "pip",
+      "install",
+      "--python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/bin/python",
+      "--force-reinstall",
+      "--no-deps",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source",
+    "started": "2026-09-09T21:20:36.451369+00:00",
+    "finished": "2026-09-09T21:20:36.583989+00:00",
+    "exit_code": 0,
+    "PYTHONHASHSEED": "6"
+  },
+  {
+    "name": "baseline-provenance",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/bin/python",
+      ".github/scripts/verify_native_extension.py"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source",
+    "started": "2026-09-09T21:20:36.584785+00:00",
+    "finished": "2026-09-09T21:20:36.718495+00:00",
+    "exit_code": 0,
+    "PYTHONHASHSEED": "6"
+  },
+  {
+    "name": "baseline-known-failures",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_tensor_buffer_reference",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source",
+    "started": "2026-09-09T21:20:36.719309+00:00",
+    "finished": "2026-09-09T21:20:40.009422+00:00",
+    "exit_code": 0,
+    "PYTHONHASHSEED": "6"
+  }
+]

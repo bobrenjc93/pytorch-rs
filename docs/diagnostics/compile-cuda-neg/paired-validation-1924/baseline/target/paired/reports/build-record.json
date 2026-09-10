@@ -1,0 +1,31 @@
+{
+  "commit": "e4cddf0ecb45c23c683953fa2f8c45904b170a80",
+  "tree": "c972688c83fb63c8149b1b0c7a9b494b66432c23",
+  "benchmark_sha256": "a1401b964e58a01a6bacc8bb941b7de37021c2a7861c3ef901a2fc8a5c784959",
+  "lock_sha256": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced",
+  "git_status": "",
+  "wheel": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/target/paired/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+  "wheel_sha256": "b18c4cc1cb3bd57f6038201ad23e65c34e776c01bd932fe4f76e692974553cd5",
+  "native": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+  "native_sha256": "6a6a555f2175e600dcb25a1026b1b1af81183daff3c25a6f301d7bc548e996cb",
+  "versions": {
+    "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
+    "executable": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/.venv/bin/python",
+    "torch": "2.13.0+cu130",
+    "torch_cuda": "13.0",
+    "numpy": "2.5.1"
+  },
+  "environment": {
+    "CARGO_HOME": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/target/paired/cargo-home",
+    "CARGO_TARGET_DIR": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/target/paired/native-build",
+    "PYO3_PYTHON": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/.venv/bin/python",
+    "RUSTC": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustc",
+    "RUSTDOC": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustdoc",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "PYTHONHASHSEED": "0",
+    "UV_CACHE_DIR": "/tmp/pytorch-rs-1924-paired.9gl9RC/uv-cache"
+  },
+  "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+  "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0",
+  "build_cache": "new empty native target; shared download cache inside paired-validation root"
+}

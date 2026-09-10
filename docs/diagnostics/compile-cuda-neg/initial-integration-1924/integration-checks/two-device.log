@@ -1,0 +1,11 @@
+test_ownership_captures_and_device_restoration (tests.test_compile_cuda_neg.CompileCudaNegDeviceTests.test_ownership_captures_and_device_restoration) ... ok
+test_ordinals_captures_and_current_device_restoration (tests.test_compile_cuda_boundary.CompileCudaDeviceTests.test_ordinals_captures_and_current_device_restoration) ... ok
+test_device_guard_and_context_cache (tests.test_cuda_neg.CudaNegDeviceTests.test_device_guard_and_context_cache) ... ok
+test_cross_thread_pool_release_on_both_devices (tests.test_cuda_add.CudaAddDeviceTests.test_cross_thread_pool_release_on_both_devices) ... ok
+test_device_restoration_success_failure_and_drop (tests.test_cuda_add.CudaAddDeviceTests.test_device_restoration_success_failure_and_drop) ... ok
+test_replay_eviction_restores_context_across_devices (tests.test_cuda_add.CudaAddDeviceTests.test_replay_eviction_restores_context_across_devices) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 8.076s
+
+OK

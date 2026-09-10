@@ -1,0 +1,66 @@
+[
+  {
+    "name": "factory-candidate-cache-warm-seed0",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/python312-managed-venv/bin/python",
+      "-c",
+      "import torch,sys,json,hashlib; print(json.dumps({\"python\":sys.version,\"reference_source\":torch.nn.__file__,\"reference_source_sha256\":hashlib.sha256(open(torch.nn.__file__,\"rb\").read()).hexdigest(),\"reference_cache\":torch.nn.__cached__,\"reference_cache_sha256\":hashlib.sha256(open(torch.nn.__cached__,\"rb\").read()).hexdigest()}))"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d",
+    "started": "2026-09-09T21:31:11.535264+00:00",
+    "finished": "2026-09-09T21:31:14.476027+00:00",
+    "exit_code": 0,
+    "PYTHONHASHSEED": "0",
+    "PYTHONPYCACHEPREFIX": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/factory-cache-repro/candidate",
+    "PYTHONDONTWRITEBYTECODE": null
+  },
+  {
+    "name": "factory-candidate-cache-test-seed6",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/python312-managed-venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d",
+    "started": "2026-09-09T21:31:14.476886+00:00",
+    "finished": "2026-09-09T21:31:16.018846+00:00",
+    "exit_code": 1,
+    "PYTHONHASHSEED": "6",
+    "PYTHONPYCACHEPREFIX": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/factory-cache-repro/candidate",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  {
+    "name": "factory-baseline-cache-warm-seed0",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/bin/python",
+      "-c",
+      "import torch,sys,json,hashlib; print(json.dumps({\"python\":sys.version,\"reference_source\":torch.nn.__file__,\"reference_source_sha256\":hashlib.sha256(open(torch.nn.__file__,\"rb\").read()).hexdigest(),\"reference_cache\":torch.nn.__cached__,\"reference_cache_sha256\":hashlib.sha256(open(torch.nn.__cached__,\"rb\").read()).hexdigest()}))"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source",
+    "started": "2026-09-09T21:31:16.020619+00:00",
+    "finished": "2026-09-09T21:31:19.091762+00:00",
+    "exit_code": 0,
+    "PYTHONHASHSEED": "0",
+    "PYTHONPYCACHEPREFIX": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/factory-cache-repro/baseline",
+    "PYTHONDONTWRITEBYTECODE": null
+  },
+  {
+    "name": "factory-baseline-cache-test-seed6",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_nn_factory_kwargs_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source",
+    "started": "2026-09-09T21:31:19.092637+00:00",
+    "finished": "2026-09-09T21:31:20.519862+00:00",
+    "exit_code": 1,
+    "PYTHONHASHSEED": "6",
+    "PYTHONPYCACHEPREFIX": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/factory-cache-repro/baseline",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  }
+]

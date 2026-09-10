@@ -1,0 +1,12 @@
+{
+  "timestamp_utc": "2026-09-09T21:40:32.031544+00:00",
+  "processes": [
+    {
+      "gpu_uuid": "GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1",
+      "pid": 3484218,
+      "used_memory_mib": 1604,
+      "cwd_inside_current_worktree": null
+    }
+  ],
+  "scope": "post-benchmark observation, not a measurement of contention during any earlier sample"
+}

@@ -1,0 +1,19 @@
+{
+  "command": [
+    "taskset",
+    "-c",
+    "24",
+    "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/.venv/bin/python",
+    "-B",
+    "scripts/benchmark_compile_cuda.py",
+    "--include-unprepared-comparison",
+    "--output",
+    "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/target/paired/reports/run-4.json"
+  ],
+  "cwd": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline",
+  "started_epoch": 1788992503.692,
+  "seconds": 11.989850759506226,
+  "exit_code": 0,
+  "log": "/tmp/pytorch-rs-1924-paired.9gl9RC/baseline/target/paired/reports/run-4.log",
+  "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

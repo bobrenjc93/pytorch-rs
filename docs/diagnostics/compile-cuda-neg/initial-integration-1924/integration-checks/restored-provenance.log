@@ -1,0 +1,5 @@
+verified native-extension provenance for torch-rs 0.1.0
+interpreter: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv/bin/python
+virtualenv: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv
+torch_rs: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv/lib/python3.12/site-packages/torch_rs/__init__.py
+torch_rs.torch_rs: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so

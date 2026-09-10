@@ -1,0 +1,61 @@
+test_canonical_values_freshness_and_input_preservation_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_canonical_values_freshness_and_input_preservation_match) ... 
+  test_canonical_values_freshness_and_input_preservation_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_canonical_values_freshness_and_input_preservation_match) (case=5) ... FAIL
+test_canonical_values_freshness_and_input_preservation_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_canonical_values_freshness_and_input_preservation_match) ... FAIL
+test_errors_and_call_validation_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_errors_and_call_validation_match) ... ok
+test_imports_metadata_documentation_copy_and_pickle_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_imports_metadata_documentation_copy_and_pickle_match) ... ok
+test_mapping_access_and_failure_order_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_mapping_access_and_failure_order_match) ... FAIL
+test_reload_behavior_matches (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_reload_behavior_matches) ... ok
+
+======================================================================
+FAIL: test_canonical_values_freshness_and_input_preservation_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_canonical_values_freshness_and_input_preservation_match) (case=5)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/tests/test_nn_factory_kwargs_reference.py", line 153, in test_canonical_values_freshness_and_input_preservation_match
+    self.assertEqual(list(actual), list(expected))
+AssertionError: Lists differ: ['memory_format', 'dtype', 'device'] != ['device', 'memory_format', 'dtype']
+
+First differing element 0:
+'memory_format'
+'device'
+
+- ['memory_format', 'dtype', 'device']
++ ['device', 'memory_format', 'dtype']
+
+======================================================================
+FAIL: test_canonical_values_freshness_and_input_preservation_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_canonical_values_freshness_and_input_preservation_match)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/tests/test_nn_factory_kwargs_reference.py", line 188, in test_canonical_values_freshness_and_input_preservation_match
+    self.assertEqual(list(actual), list(expected))
+AssertionError: Lists differ: ['dtype', 'device'] != ['device', 'dtype']
+
+First differing element 0:
+'dtype'
+'device'
+
+- ['dtype', 'device']
++ ['device', 'dtype']
+
+======================================================================
+FAIL: test_mapping_access_and_failure_order_match (tests.test_nn_factory_kwargs_reference.FactoryKwargsReferenceTests.test_mapping_access_and_failure_order_match)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/tests/test_nn_factory_kwargs_reference.py", line 360, in test_mapping_access_and_failure_order_match
+    self.assertEqual(list(actual), list(expected))
+AssertionError: Lists differ: ['pin_memory', 'requires_grad', 'memory_format', 'dtype', 'device'] != ['pin_memory', 'requires_grad', 'device', 'memory_format', 'dtype']
+
+First differing element 2:
+'memory_format'
+'device'
+
+- ['pin_memory', 'requires_grad', 'memory_format', 'dtype', 'device']
+?                                                         ----------
+
++ ['pin_memory', 'requires_grad', 'device', 'memory_format', 'dtype']
+?                                 ++++++++++
+
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.002s
+
+FAILED (failures=3)

@@ -1,0 +1,41 @@
+{
+  "timestamp_utc": "2026-09-09T21:41:03.834770+00:00",
+  "source": {
+    "commit": "764f159b0ae08e3a9be4793bc7c528844b322380",
+    "source_sha256": "8410743f4640d29b08c1599f025161046e2ac785f0284c9fcf137abcb79494e9",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "installed_native_sha256": "dcd9618c0afa51ae9c30ff98edb5566204fda17a9523ae5c8e0a74ccb7b56a89",
+  "installed_package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+  "historical_hashes_verified": 49,
+  "protected_paths_unchanged": [
+    "src",
+    "python",
+    "Cargo.toml",
+    "Cargo.lock",
+    "pyproject.toml",
+    "uv.lock",
+    "rust-toolchain.toml",
+    "README.md",
+    "FEATURES.md",
+    "docs/supported-surface.md",
+    "scripts/evaluate_torch_compile_coverage.py",
+    "scripts/evaluate_torch_compile_coverage.sh",
+    "scripts/evaluate_cuda_math.py",
+    "scripts/benchmark_compile_cuda.py",
+    "scripts/diagnose_compile_cuda_add.py",
+    "docs/diagnostics",
+    ".burner",
+    "docs/burner-evaluation-history.json",
+    "docs/burner-evaluation-progress.svg"
+  ],
+  "final_change_sha256": {
+    "scripts/diagnose_compile_cuda_neg_add.py": "d2843aae45eeea228574480379000676665e1455a70797cfa36f88d6a76a5592",
+    "tests/test_compile_cuda_neg_add_diagnostic.py": "821468d38a62ef8c6f940eece7f876a95d7ccc51b06f409441d3d12d477c7b01",
+    "docs/README.md": "82cccb44ecbca5363bb3a79813d4520c353b4f17b429d3b1475e6a742b7d409b",
+    "docs/compile-cuda-add.md": "f1db6ac794f03d387af96d7b34e283de698ae09cbbe051f01a217b438f4ec56f",
+    "docs/compile-cuda-neg-validation.md": "9d743db9dcb45fc4341932721032dca23157759cc1501b01cd80c048f08db49b",
+    "docs/troubleshooting.md": "37124a6fd663cd92170a3779809891966966754e13b03ef495dc4967020ccd3a"
+  },
+  "git_status": " M docs/README.md\n M docs/compile-cuda-add.md\n M docs/compile-cuda-neg-validation.md\n M docs/troubleshooting.md\n?? scripts/diagnose_compile_cuda_neg_add.py\n?? tests/test_compile_cuda_neg_add_diagnostic.py\n"
+}

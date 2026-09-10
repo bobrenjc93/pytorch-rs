@@ -69,6 +69,41 @@ class FactoryKwargsReferenceTests(unittest.TestCase):
                 "nn.factory_kwargs differentials require pinned PyTorch 2.13.0"
             )
 
+    def assert_results_match(self, actual, expected, nested=()):
+        self.assertIs(type(actual), dict)
+        self.assertIs(type(expected), dict)
+        self.assertEqual(actual, expected)
+        for key in expected:
+            self.assertIs(actual[key], expected[key])
+        # Only the nested mapping's prefix has stable insertion order. Direct
+        # keys come from a set whose layout can change on a .pyc roundtrip,
+        # even with identical source and PYTHONHASHSEED (see the cache test).
+        prefix = list(dict(nested))
+        self.assertEqual(list(actual)[:len(prefix)], prefix)
+        self.assertEqual(list(expected)[:len(prefix)], prefix)
+
+    def assert_access_preamble(self, outer):
+        self.assertEqual(
+            outer.events[:2], [("keys",), ("get", "factory_kwargs", {})]
+        )
+        self.assertIs(type(outer.events[1][2]), dict)
+
+    def assert_successful_access(self, outer, result, nested):
+        self.assert_access_preamble(outer)
+        remaining = iter(outer.events[2:])
+        visited = []
+        fetched = []
+        for event in remaining:
+            self.assertEqual(len(event), 2)
+            operation, key = event
+            self.assertEqual(operation, "contains")
+            visited.append(key)
+            if key in outer.values:
+                self.assertEqual(next(remaining, None), ("getitem", key))
+                fetched.append(key)
+        self.assertCountEqual(visited, ("device", "dtype", "memory_format"))
+        self.assertEqual(list(result), list(nested) + fetched)
+
     def assert_errors_match(self, actual_call, expected_call):
         with self.assertRaises(BaseException) as actual_raised:
             actual_call()
@@ -125,6 +160,16 @@ class FactoryKwargsReferenceTests(unittest.TestCase):
             lambda: {
                 "factory_kwargs": [("dtype", dtype), ("extra", extra)]
             },
+            lambda: {
+                "dtype": dtype,
+                "memory_format": memory_format,
+                "factory_kwargs": OrderedDict((("extra", extra), ("device", device))),
+            },
+            lambda: {
+                "factory_kwargs": [
+                    ("dtype", extra), ("device", device), ("dtype", dtype)
+                ]
+            },
         )
 
         for case, make_input in enumerate(cases):
@@ -147,15 +192,23 @@ class FactoryKwargsReferenceTests(unittest.TestCase):
                 actual = nn.factory_kwargs(actual_input)
                 expected = reference_nn.factory_kwargs(expected_input)
 
-                self.assertIs(type(actual), dict)
-                self.assertIs(type(expected), dict)
-                self.assertEqual(actual, expected)
-                self.assertEqual(list(actual), list(expected))
+                self.assert_results_match(
+                    actual,
+                    expected,
+                    actual_nested_snapshot
+                    if actual_nested_snapshot is not None else (),
+                )
                 if actual_input is not None:
                     self.assertIsNot(actual, actual_input)
                     self.assertEqual(actual_input, actual_outer_snapshot)
                     self.assertEqual(expected_input, expected_outer_snapshot)
+                    self.assertEqual(list(actual_input), list(actual_outer_snapshot))
+                    self.assertEqual(
+                        list(expected_input), list(expected_outer_snapshot)
+                    )
                 if actual_nested_snapshot is not None:
+                    self.assertIsNot(actual, actual_input["factory_kwargs"])
+                    self.assertIsNot(expected, expected_input["factory_kwargs"])
                     self.assertEqual(
                         actual_input["factory_kwargs"], actual_nested_snapshot
                     )
@@ -184,10 +237,7 @@ class FactoryKwargsReferenceTests(unittest.TestCase):
         expected_user_dict = UserDict(device=device, dtype=dtype)
         actual = nn.factory_kwargs(actual_user_dict)
         expected = reference_nn.factory_kwargs(expected_user_dict)
-        self.assertEqual(actual, expected)
-        self.assertEqual(list(actual), list(expected))
-        self.assertIs(type(actual), dict)
-        self.assertIs(type(expected), dict)
+        self.assert_results_match(actual, expected)
 
     def test_errors_and_call_validation_match(self):
         error_cases = (
@@ -356,10 +406,21 @@ class FactoryKwargsReferenceTests(unittest.TestCase):
         actual = nn.factory_kwargs(actual_outer)
         expected = reference_nn.factory_kwargs(expected_outer)
 
-        self.assertEqual(actual, expected)
-        self.assertEqual(list(actual), list(expected))
-        self.assertEqual(actual_outer.events, expected_outer.events)
+        self.assert_results_match(actual, expected, actual_nested.values)
+        self.assert_successful_access(actual_outer, actual, actual_nested.values)
+        self.assert_successful_access(expected_outer, expected, expected_nested.values)
         self.assertEqual(actual_nested.events, expected_nested.events)
+        self.assertEqual(
+            actual_nested.events,
+            [("keys",), ("getitem", "pin_memory"), ("getitem", "requires_grad")],
+        )
+
+        # Missing direct keys must still be queried, but never fetched.
+        for function in (nn.factory_kwargs, reference_nn.factory_kwargs):
+            outer = _TrackingOuterMapping({"dtype": object()})
+            result = function(outer)
+            self.assertIs(result["dtype"], outer.values["dtype"])
+            self.assert_successful_access(outer, result, ())
 
         actual_unexpected = _TrackingOuterMapping({"unexpected": 1})
         expected_unexpected = _TrackingOuterMapping({"unexpected": 1})
@@ -370,17 +431,32 @@ class FactoryKwargsReferenceTests(unittest.TestCase):
         self.assertEqual(actual_unexpected.events, expected_unexpected.events)
         self.assertEqual(actual_unexpected.events, [("keys",), ("keys",)])
 
-        actual_duplicate = _TrackingOuterMapping(
-            {"device": "outer", "factory_kwargs": {"device": "nested"}}
-        )
-        expected_duplicate = _TrackingOuterMapping(
-            {"device": "outer", "factory_kwargs": {"device": "nested"}}
-        )
-        self.assert_errors_match(
-            lambda: nn.factory_kwargs(actual_duplicate),
-            lambda: reference_nn.factory_kwargs(expected_duplicate),
-        )
-        self.assertEqual(actual_duplicate.events, expected_duplicate.events)
+        for key in ("device", "dtype", "memory_format"):
+            with self.subTest(duplicate=key):
+                actual_duplicate = _TrackingOuterMapping(
+                    {key: "outer", "factory_kwargs": {key: "nested"}}
+                )
+                expected_duplicate = _TrackingOuterMapping(
+                    {key: "outer", "factory_kwargs": {key: "nested"}}
+                )
+                self.assert_errors_match(
+                    lambda: nn.factory_kwargs(actual_duplicate),
+                    lambda: reference_nn.factory_kwargs(expected_duplicate),
+                )
+                for outer in (actual_duplicate, expected_duplicate):
+                    self.assert_access_preamble(outer)
+                    visits = outer.events[2:]
+                    self.assertEqual(visits[-1], ("contains", key))
+                    # Absent-key visits before the duplicate depend on set
+                    # order too. No fetch may occur before this error.
+                    self.assertEqual(len(visits), len(set(visits)))
+                    self.assertTrue(set(visits) <= {
+                        ("contains", "device"), ("contains", "dtype"),
+                        ("contains", "memory_format"),
+                    })
+                    self.assertEqual(
+                        outer.values, {key: "outer", "factory_kwargs": {key: "nested"}}
+                    )
 
     def test_reload_behavior_matches(self):
         def reload_outcome(module):
