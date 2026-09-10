@@ -30,20 +30,26 @@ re-lowering on the changed input.
 
 ## Reproduction and clean-commit handoff
 
+The required clean-commit refresh is now captured at
+[`postcommit-10b4cc76`](diagnostics/cuda-compilation-observer-v1/postcommit-10b4cc76/campaign.json).
+It measures evaluator-only commit `10b4cc76f1bf211714e7588b2b92790895a1d6a6`
+against the pinned historical candidate, with both checkouts clean before and
+after execution. Development records below remain unchanged historical evidence.
+
 Portable checks (no GPU or installed torch required):
 
 ```bash
 python3 -B -m unittest discover -s tests -p test_cuda_compilation_evaluator.py
 python3 -B -m unittest discover -s tests -p test_cuda_observer_campaign.py
 python3 -B scripts/cuda_compilation_campaign.py validate \
-  --evidence docs/diagnostics/cuda-compilation-observer-v1/development
+  --evidence docs/diagnostics/cuda-compilation-observer-v1/postcommit-10b4cc76
 ```
 
-After Burner commits this evaluator-only change, run from that exact checkout:
+To reproduce from the committed evaluator-only code, use a new output directory:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python3 -B scripts/cuda_compilation_campaign.py run \
-  --baseline-commit <full-final-evaluator-only-commit> \
+  --baseline-commit 10b4cc76f1bf211714e7588b2b92790895a1d6a6 \
   --output target/cuda-observer-final
 python3 -B scripts/cuda_compilation_campaign.py validate \
   --evidence target/cuda-observer-final
@@ -90,13 +96,13 @@ Publish the complete directory without replacing prior attempts. Builds and
 virtual environments remain ignored under `target/`; wheel and extension
 hashes, fresh build commands and logs remain in the publication.
 
-Burner must rebuild and recompare from the final evaluator-only commit before
-independent review and normal gates. That commit hash does not exist during
-this implementation task, whose instructions prohibit creating commits. The
-runner takes it explicitly and records it in the run receipt, avoiding a
-self-referential or invented hash in the manifest. Development results cannot
-satisfy this handoff by relabelling their receipt. The future evidence refresh
-should publish a separate directory, leaving the development evidence intact.
+The post-commit refresh rebuilt and re-compared both revisions using the
+committed runner without `--development`. The runner records the measured
+commit explicitly in its receipt, avoiding a self-referential hash in the
+manifest. The subsequent publication changes only evidence and its
+documentation; implementation, dependencies, tests and harnesses remain at
+`10b4cc76`. Development results were not relabelled or overwritten. Independent
+review and normal gates remain separate requirements.
 
 ## Review and measurement boundaries
 
@@ -109,8 +115,9 @@ independent or human review.
 
 [BENCHMARKING.md](../BENCHMARKING.md) requires: “Benchmark changes are separate,
 human-reviewed campaign changes and never earn implementation impact in the
-same comparison.” Human campaign approval remains required, together with the
-clean-commit refresh, independent review and normal gates. This document does
+same comparison.” Human campaign approval remains required, together with
+independent review and normal gates. The clean-commit refresh is complete; it
+does not approve the branch. This document does
 not fabricate approval or amend that policy.
 
 This correctness-only campaign does not run a performance benchmark. Latency
@@ -172,7 +179,44 @@ selection, excludes inherited Rust cache wrappers, and cross-checks interpreter
 and CUDA library hashes; it also validates the publication and rejected-attempt
 inventories. The final validator passed against the unchanged raw capture.
 These changes do not alter any pinned observer bytes or workload. They are
-another reason to execute the mandatory final-commit refresh, rather than
-presenting development evidence as final-head evidence. Burner must invoke the
-manifest's refresh command and publish its result; no external Burner producer
-or installation was edited to automate that handoff.
+included in the committed runner used for the separate post-commit refresh.
+No external Burner producer or installation was edited for that handoff.
+
+## Clean-commit results
+
+The [new capture](diagnostics/cuda-compilation-observer-v1/postcommit-10b4cc76/campaign.json)
+uses baseline code `10b4cc76f1bf211714e7588b2b92790895a1d6a6` (unchanged main
+production) and historical candidate `b3659e76011239388da710d4de2f30c52018016f`
+(production `e9adfdca71626190a17e36544af97b1066499bbe`). Both were fetched into
+new, separately owned clean checkouts under this worktree's
+`target/cuda-observer-postcommit-10b4cc76/`, with new local interpreters,
+dependency trees, build caches and release wheels. No candidate files were
+overlaid, and all controller snapshots match the committed campaign files.
+
+Using the same two manifest seeds, options, inputs, tolerances and H100 GPU0,
+the fixed slots were `[1, 1, 1, 1, 0, 1]` for the baseline (**5/6**) and
+`[1, 1, 1, 1, 1, 1]` for the historical candidate (**6/6**). All 24 reference
+workers passed. The baseline retained both missing-reduction failures with
+their exact errors and zero credit. Its other 10 native workers and all 12
+historical-candidate native workers passed, including changed-input execution
+through the same wrapper without forwarding, original-body execution or
+re-lowering. All 17 rejection controls passed in each environment.
+
+The [raw audit](diagnostics/cuda-compilation-observer-v1/postcommit-10b4cc76/checks/raw-audit.json)
+checked all 48 distinct worker results, reconstructed the declared seeded
+float32 inputs, and compared 3,220 native output values against the reference.
+The observed maximum absolute difference was zero for every passing case;
+the unchanged tolerances remained enforced. It also verified actual local
+interpreter paths, wheel/source/extension hashes, pinned observer and production
+hashes, and clean before/after status for both checkouts. The new
+[portable validation](diagnostics/cuda-compilation-observer-v1/postcommit-10b4cc76/checks/portable-validation.json)
+passed against the published files. Full command output, compiler/runtime
+identity, GPU utilization/memory snapshots and all unsupported outcomes are
+retained. The environment again used driver 580.82.07, PyTorch `2.13.0+cu130`,
+CUDA runtime `13000`, Rust/Cargo 1.92.0 and installed, unused nvcc 12.6.85.
+
+These are author-run measurements and audits. No independent campaign review
+or human approval occurred in this evidence-refresh step. The historical
+candidate's success does not add row-sum capability or implementation credit
+to this evaluator-only branch. No performance workloads or latency samples
+were measured, and no timing speedup is claimed.

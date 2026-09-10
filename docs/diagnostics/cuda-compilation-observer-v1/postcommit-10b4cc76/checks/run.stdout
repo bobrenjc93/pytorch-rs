@@ -1,0 +1,35 @@
+{
+  "mode": "clean-commit",
+  "results": {
+    "baseline": {
+      "passed": 5,
+      "denominator": 6,
+      "slots": [
+        1,
+        1,
+        1,
+        1,
+        0,
+        1
+      ],
+      "compared_native_output_values": 1596
+    },
+    "candidate": {
+      "passed": 6,
+      "denominator": 6,
+      "slots": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "compared_native_output_values": 1624
+    }
+  },
+  "expected_outcomes_observed": true,
+  "human_approval": false,
+  "independent_review": false,
+  "implementation_credit_claimed": false
+}
