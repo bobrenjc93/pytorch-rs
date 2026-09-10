@@ -1,0 +1,23 @@
+{"shape": [1, 65539, 1], "offset": 0, "native_us": 19.9442, "pytorch_us": 16.659399999999998}
+{"shape": [1, 65539, 1], "offset": 3, "native_us": 19.954, "pytorch_us": 16.559}
+{"shape": [64, 64, 64], "offset": 0, "native_us": 20.2836, "pytorch_us": 17.6087}
+{"shape": [64, 64, 64], "offset": 3, "native_us": 20.150399999999998, "pytorch_us": 17.6205}
+{"shape": [128, 128, 128], "offset": 0, "native_us": 21.3793, "pytorch_us": 18.8245}
+{"shape": [128, 128, 128], "offset": 3, "native_us": 21.3571, "pytorch_us": 18.7351}
+{"shape": [512, 512, 512], "offset": 0, "native_us": 30.407899999999998, "pytorch_us": 27.8089}
+{"shape": [512, 512, 512], "offset": 3, "native_us": 30.8276, "pytorch_us": 28.218600000000002}
+{"shape": [1024, 1024, 1024], "offset": 0, "native_us": 71.8266, "pytorch_us": 70.33430000000001}
+{"shape": [1024, 1024, 1024], "offset": 3, "native_us": 72.62989999999999, "pytorch_us": 71.8707}
+{"shape": [2048, 2048, 2048], "offset": 0, "native_us": 368.08090000000004, "pytorch_us": 354.5397}
+{"shape": [2048, 2048, 2048], "offset": 3, "native_us": 365.38009999999997, "pytorch_us": 352.84400000000005}
+{"shape": [127, 1025, 65], "offset": 0, "native_us": 23.845, "pytorch_us": 20.7053}
+{"shape": [127, 1025, 65], "offset": 3, "native_us": 24.0454, "pytorch_us": 21.1338}
+{"shape": [800, 800, 800], "offset": 0, "native_us": 55.282700000000006, "pytorch_us": 53.1601}
+{"shape": [800, 800, 800], "offset": 3, "native_us": 55.7392, "pytorch_us": 53.1084}
+{"shape": [1379, 1379, 1379], "offset": 0, "native_us": 158.3021, "pytorch_us": 157.50799999999998}
+{"shape": [1379, 1379, 1379], "offset": 3, "native_us": 156.1948, "pytorch_us": 153.97629999999998}
+{"shape": [222, 221, 770], "offset": 0, "native_us": 24.7605, "pytorch_us": 22.0833}
+{"shape": [222, 221, 770], "offset": 3, "native_us": 24.5591, "pytorch_us": 22.0643}
+{"shape": [956, 1117, 206], "offset": 0, "native_us": 38.4932, "pytorch_us": 35.806200000000004}
+{"shape": [956, 1117, 206], "offset": 3, "native_us": 38.8857, "pytorch_us": 36.1827}
+Capped geometric parity: 91.6218%

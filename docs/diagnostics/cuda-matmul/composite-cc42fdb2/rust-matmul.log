@@ -1,0 +1,10 @@
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805)
+    Finished `release` profile [optimized] target(s) in 15.53s
+     Running tests/cuda_matmul.rs (target/postcommit-cc42fdb2-build/release/deps/cuda_matmul-9df213826ea3435e)
+
+running 2 tests
+test invalid_inputs_remain_rejected ... ok
+test generated_rectangles_offsets_metadata_and_lifetimes ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.53s
+

@@ -1,0 +1,27 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "--release",
+    "--lib",
+    "rsqrt"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805",
+  "started_at": "2026-09-10T14:01:24.190677+00:00",
+  "ended_at": "2026-09-10T14:01:24.216591+00:00",
+  "wall_seconds": 0.02590928226709366,
+  "exit_status": 0,
+  "log": "rust-rsqrt-storage.log",
+  "log_sha256": "1fee4bbfa6e3ade654e8381a9f27eb516130810b211bfc617723157345ded5e6",
+  "commit": "cc42fdb265af856d8110404e91ff6cf8dd70a5e7",
+  "measurement_kind": "clean-code",
+  "git_status": "",
+  "cuda_visible_devices": "0",
+  "source_after": {
+    "commit": "cc42fdb265af856d8110404e91ff6cf8dd70a5e7",
+    "source_sha256": "03c2563f6ef1532b2279e778012f434f67fd002ed0c30da03183dfcc0699331e",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "extension_sha256": "1faf970c2684071aa7475a227ff972085a260f3081cd931fa361dbb09c95cada"
+}

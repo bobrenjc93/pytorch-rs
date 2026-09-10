@@ -1,0 +1,11 @@
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805)
+    Finished `release` profile [optimized] target(s) in 6.71s
+     Running tests/autograd.rs (target/postcommit-cc42fdb2-build/release/deps/autograd-76beee02333176cf)
+
+running 3 tests
+test rsqrt_accumulates_shared_edges_and_fresh_graphs ... ok
+test rsqrt_vjp_matches_pytorch_float32_order_at_extremes ... ok
+test rsqrt_weighted_scalar_empty_offset_and_transposed_backward ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 85 filtered out; finished in 0.00s
+

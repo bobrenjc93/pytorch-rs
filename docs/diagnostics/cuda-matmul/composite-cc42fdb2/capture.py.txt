@@ -1,0 +1,133 @@
+"""Evidence command orchestration; all workloads use committed repository code."""
+from pathlib import Path
+import hashlib
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+
+ROOT=Path.cwd().resolve()
+OUT=ROOT/'target/postcommit-cc42fdb2'
+COMMIT='cc42fdb265af856d8110404e91ff6cf8dd70a5e7'
+spec=importlib.util.spec_from_file_location('capture',ROOT/'docs/diagnostics/composite-cuda-neg/reproduce.py')
+capture=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(capture)
+capture.OUT=OUT
+
+def git(*args):
+    return subprocess.check_output(['git',*args],cwd=ROOT,text=True)
+
+def clean():
+    assert git('rev-parse','HEAD').strip()==COMMIT
+    assert git('status','--porcelain')=='',git('status','--porcelain')
+
+def hashes():
+    files=git('ls-files','--','src','python','tests','scripts','Cargo.toml','Cargo.lock','pyproject.toml','uv.lock','rust-toolchain.toml').splitlines()
+    return {path:capture.sha256(ROOT/path) for path in files}
+
+clean()
+initial=hashes()
+assert not Path(os.environ['CARGO_TARGET_DIR']).exists()
+state=ROOT/'target/postcommit-cc42fdb2-state'
+assert not state.exists()
+for key in ('TMPDIR','CUDA_CACHE_PATH','XDG_CACHE_HOME','TRITON_CACHE_DIR','TORCHINDUCTOR_CACHE_DIR','MPLCONFIGDIR'):
+    path=Path(os.environ[key]).resolve()
+    assert path.is_relative_to(ROOT)
+    path.mkdir(parents=True,exist_ok=False)
+for key in ('CARGO_HOME','PYO3_PYTHON','TORCH_RS_CUDART','TORCH_RS_CUBLAS'):
+    assert Path(os.environ[key]).resolve().is_relative_to(ROOT)
+assert Path(sys.executable).resolve().is_relative_to(ROOT)
+assert Path(sys.base_prefix).resolve().is_relative_to(ROOT)
+changed=git('diff','--name-only','96205cb01e85f6961a4d8ea40aa792b485289d84',COMMIT).splitlines()
+capture.write('source-record.json',dict(commit=COMMIT,base='96205cb01e85f6961a4d8ea40aa792b485289d84',
+    started_at=capture.stamp(),root=str(ROOT),git_status=git('status','--porcelain'),
+    source_provenance=capture.source_provenance(),code_test_harness_hashes=initial,
+    candidate_files=changed,historical_source_evidence={p:capture.sha256(ROOT/p) for p in changed if p.startswith('docs/diagnostics/cuda-matmul/')},
+    executable=sys.executable,resolved_executable=str(Path(sys.executable).resolve()),base_prefix=sys.base_prefix,
+    build_target_initially_absent=True,state_directory_initially_absent=True,
+    reused='worktree-local Python packages/interpreter, previously fetched worktree-local Cargo registry; external Rust toolchain and driver inspected/executed read-only',
+    environment={key:os.environ.get(key) for key in ('CARGO_HOME','CARGO_TARGET_DIR','PYO3_PYTHON','TORCH_RS_CUDART','TORCH_RS_CUBLAS','TMPDIR','CUDA_CACHE_PATH','XDG_CACHE_HOME','TRITON_CACHE_DIR','TORCHINDUCTOR_CACHE_DIR','MPLCONFIGDIR','CUDA_VISIBLE_DEVICES','PYTHONPATH','PYTHONDONTWRITEBYTECODE')},
+    orchestration_sha256=capture.sha256(__file__),environment_script_sha256=capture.sha256(OUT/'environment.sh')))
+commands=[]
+
+def run(label,command,mask='0'):
+    clean()
+    os.environ['CUDA_VISIBLE_DEVICES']=mask
+    receipt=capture.capture(command,label)
+    receipt.update(commit=COMMIT,measurement_kind='clean-code',git_status=git('status','--porcelain'),
+                   cuda_visible_devices=mask,source_after=capture.source_provenance(),
+                   extension_sha256=capture.sha256(ROOT/'python/torch_rs/torch_rs.abi3.so') if (ROOT/'python/torch_rs/torch_rs.abi3.so').exists() else None)
+    capture.write(label+'.receipt.json',receipt)
+    commands.append(receipt)
+    capture.write('commands.json',commands)
+    assert receipt['exit_status']==0,receipt
+    assert hashes()==initial
+    clean()
+    print(label,'passed',flush=True)
+
+run('preflight',[sys.executable,'-B','-c',"""
+import importlib,json,subprocess,sys
+from pathlib import Path
+root=Path.cwd().resolve()
+packages={}
+for name in ('torch','numpy','typing_extensions'):
+ m=importlib.import_module(name);p=Path(m.__file__).resolve();assert p.is_relative_to(root)
+ packages[name]={'version':getattr(m,'__version__',None),'path':str(p)}
+import torch
+assert torch.__version__.split('+')[0]=='2.13.0' and torch.cuda.is_available()
+print(json.dumps({'executable':sys.executable,'base_prefix':sys.base_prefix,'packages':packages,'pytorch_cuda':torch.version.cuda,'gpu':torch.cuda.get_device_name(0)},indent=2))
+print(subprocess.check_output(['nvidia-smi','--query-gpu=index,name,memory.total,driver_version,compute_cap','--format=csv'],text=True))
+print(subprocess.check_output(['nvidia-smi','--query-compute-apps=pid,process_name,used_gpu_memory','--format=csv'],text=True))
+"""])
+# Unmodified repository procedure: fresh release build and all six cases at
+# its three declared seeds, with native import blocking and pointer inspection.
+capture.main()
+assert hashes()==initial
+clean()
+run('public-timings',[sys.executable,'-B','scripts/benchmark_cuda_matmul.py','--build-record',str(OUT/'build-record.json'),'--output',str(OUT/'public-timings.json')])
+run('python-focused',[sys.executable,'-B','-m','unittest','-v','tests.test_cuda_matmul','tests.test_rsqrt','tests.test_rsqrt_reference','tests.test_nn_functional_linear_modes_reference'])
+run('python-two-device',[sys.executable,'-B','-m','unittest','-v','tests.test_cuda_matmul.CudaMatmulDeviceTests'],mask='0,1')
+run('rust-matmul',['cargo','test','--locked','--release','--test','cuda_matmul'])
+run('rust-bounds',['cargo','test','--locked','--release','--lib','matmul_checked_offsets_products_and_empty_inputs'])
+run('rust-rsqrt-storage',['cargo','test','--locked','--release','--lib','rsqrt'])
+run('rust-rsqrt-autograd',['cargo','test','--locked','--release','--test','autograd','rsqrt'])
+run('rust-rsqrt-grad-mode',['cargo','test','--locked','--release','--test','autograd','reciprocal_square_root'])
+run('evaluator-tests',[sys.executable,'-B','-m','unittest','-v','tests.test_cuda_math_evaluator'])
+# Literal independent reproductions of the task's reported counterexamples;
+# generated rectangles/aliasing/classifications use the committed tests above.
+run('numerical-probes',[sys.executable,'-B','-c',"""
+import json,sys
+from pathlib import Path
+sys.path.insert(0,str(Path('scripts').resolve()))
+from evaluate_cuda_math import source_provenance,sha256,runtime_provenance
+import torch
+import torch_rs as native
+import torch_rs.torch_rs as extension
+import numpy as np
+torch.backends.cuda.matmul.allow_tf32=False
+results=[]
+for k in (4096,8192,16384,32768,65536,65539,131072,262144,1000000):
+ for value,weight in ((.1,1.),(-.1,1.),(.1,.1),(-.1,.1)):
+  observed=[]
+  for module in (native,torch):
+   a=module.full((1,k),value,dtype=module.float32).to('cuda:0')
+   b=module.full((k,1),weight,dtype=module.float32).to('cuda:0')
+   observed.append((a@b).cpu().item())
+  np.testing.assert_allclose(*observed,rtol=1e-5,atol=1e-4)
+  results.append(dict(k=k,left=value,right=weight,native=observed[0],pytorch=observed[1]))
+for k in (1031,2048):
+ for repeat in range(2):
+  observed=[]
+  for module in (native,torch):
+   a=module.tensor([2.**127,2.**127,-2.**127,-2.**127]+[0.]*(k-4),dtype=module.float32).reshape(1,k).to('cuda:0')
+   b=module.ones((k,1),dtype=module.float32).to('cuda:0')
+   observed.append((a@b).cpu().item())
+  assert observed==[0.,0.],observed
+  results.append(dict(k=k,repeat=repeat,probe='intermediate overflow cancellation',native=observed[0],pytorch=observed[1]))
+print(json.dumps(dict(measurement_kind='clean-code',source=source_provenance(),extension=extension.__file__,extension_sha256=sha256(extension.__file__),runtime=runtime_provenance(),tf32=False,rtol=1e-5,atol=1e-4,results=results),indent=2))
+"""])
+clean()
+assert hashes()==initial
+capture.write('completion.json',dict(commit=COMMIT,finished_at=capture.stamp(),git_status=git('status','--porcelain'),source=capture.source_provenance(),code_tests_harness_unchanged=True,extension_sha256=capture.sha256(ROOT/'python/torch_rs/torch_rs.abi3.so'),all_commands_passed=True,commands=len(commands)))
+print('Clean-commit capture complete',flush=True)

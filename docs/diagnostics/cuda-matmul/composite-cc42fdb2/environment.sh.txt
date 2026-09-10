@@ -1,0 +1,8 @@
+source target/local/env.sh
+export CARGO_TARGET_DIR="$PWD/target/postcommit-cc42fdb2-build"
+export TMPDIR="$PWD/target/postcommit-cc42fdb2-state/tmp"
+export CUDA_CACHE_PATH="$PWD/target/postcommit-cc42fdb2-state/cuda"
+export XDG_CACHE_HOME="$PWD/target/postcommit-cc42fdb2-state/cache"
+export TRITON_CACHE_DIR="$PWD/target/postcommit-cc42fdb2-state/triton"
+export TORCHINDUCTOR_CACHE_DIR="$PWD/target/postcommit-cc42fdb2-state/inductor"
+export MPLCONFIGDIR="$PWD/target/postcommit-cc42fdb2-state/matplotlib"

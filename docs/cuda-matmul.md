@@ -54,12 +54,34 @@ classification and subnormal bits, including the K=1031/2048 intermediate
 overflow cancellation probes. A separate two-device test checks guard restoration and
 mixed-device rejection. Hardware-only tests skip clearly without CUDA.
 
+## Clean composite capture
+
+The repaired combined implementation was measured from clean commit
+**`cc42fdb265af856d8110404e91ff6cf8dd70a5e7`** using a fresh release extension.
+The [capture index](diagnostics/cuda-matmul/composite-cc42fdb2/README.md) links
+all raw reports, command/build receipts, source/native/runtime identities,
+verification, and reproduction commands.
+
+All six unchanged CUDA math cases passed at all three required seeds (18 trials).
+All 22 public matmul timing cells validated, with **91.62% capped geometric parity**
+for this diagnostic. The report retains generated square/rectangular shapes,
+offsets, raw samples and dispersion, including slower native cells. Forty
+explicit numerical reproductions passed, including the reported wide-K decimals
+and both overflow cancellation widths. Fresh checks also passed 43 focused
+Python tests, eight Rust tests, 19 evaluator tests, and the separate two-GPU test.
+One expected two-device mask skip occurred in the single-GPU Python run.
+
+Capture and verification completed before artifact publication. These are scoped
+measurements; independent review, all ten baseline gates, and exact-head CI remain
+required. No implementation, tests, dependencies, harnesses, evaluators, corpora,
+or Burner-managed progress artifacts changed in this evidence step.
+
 ## Historical source PR capture
 
 These records belong to PR #1952, before the composite repair. They are kept
 unchanged with their original source/build identities and paths. They do not
-qualify the combined implementation or establish its performance. A fresh
-clean-commit capture is still required after Burner commits the repair.
+qualify the combined implementation or establish its performance. The clean
+composite capture above supplies the new measured evidence separately.
 
 The source [correctness report](diagnostics/cuda-matmul/postcommit-a267ab89/evaluation.json)
 measures clean implementation commit **`a267ab89a31573e68d0045f1cbcf55d8ea243307`**.

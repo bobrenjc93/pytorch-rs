@@ -1,0 +1,27 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "--release",
+    "--lib",
+    "matmul_checked_offsets_products_and_empty_inputs"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805",
+  "started_at": "2026-09-10T14:00:48.635566+00:00",
+  "ended_at": "2026-09-10T14:01:23.809589+00:00",
+  "wall_seconds": 35.1740331184119,
+  "exit_status": 0,
+  "log": "rust-bounds.log",
+  "log_sha256": "5fee4668c8372536b49159604ca42153f03f83608b76937e42e74c8defc52fc2",
+  "commit": "cc42fdb265af856d8110404e91ff6cf8dd70a5e7",
+  "measurement_kind": "clean-code",
+  "git_status": "",
+  "cuda_visible_devices": "0",
+  "source_after": {
+    "commit": "cc42fdb265af856d8110404e91ff6cf8dd70a5e7",
+    "source_sha256": "03c2563f6ef1532b2279e778012f434f67fd002ed0c30da03183dfcc0699331e",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "extension_sha256": "1faf970c2684071aa7475a227ff972085a260f3081cd931fa361dbb09c95cada"
+}

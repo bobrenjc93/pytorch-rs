@@ -1,0 +1,30 @@
+{
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805/.venv/bin/python",
+    "-B",
+    "-m",
+    "unittest",
+    "-v",
+    "tests.test_cuda_matmul",
+    "tests.test_rsqrt",
+    "tests.test_rsqrt_reference",
+    "tests.test_nn_functional_linear_modes_reference"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_b2679805",
+  "started_at": "2026-09-10T14:00:13.569203+00:00",
+  "ended_at": "2026-09-10T14:00:28.512393+00:00",
+  "wall_seconds": 14.943196790292859,
+  "exit_status": 0,
+  "log": "python-focused.log",
+  "log_sha256": "f346a8a48c37b8a33d57805c06516cf4794a924f6f05f9912fdb5855dc82bdaf",
+  "commit": "cc42fdb265af856d8110404e91ff6cf8dd70a5e7",
+  "measurement_kind": "clean-code",
+  "git_status": "",
+  "cuda_visible_devices": "0",
+  "source_after": {
+    "commit": "cc42fdb265af856d8110404e91ff6cf8dd70a5e7",
+    "source_sha256": "03c2563f6ef1532b2279e778012f434f67fd002ed0c30da03183dfcc0699331e",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "extension_sha256": "1faf970c2684071aa7475a227ff972085a260f3081cd931fa361dbb09c95cada"
+}
