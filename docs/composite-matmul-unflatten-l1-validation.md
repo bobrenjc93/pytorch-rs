@@ -1,10 +1,10 @@
-# Compiled CUDA matmul, unflatten and L1 integration
+# Matmul, unflatten and L1 integration history
 
-The combined implementation preserves captured native CUDA rank-2 contiguous
-float32 matmul, public `torch.unflatten`, and matching-shape finite CPU float32
-unreduced L1 backward. The detailed contracts remain in
-[supported surface](supported-surface.md) and
-[compiled matmul](compile-cuda-matmul.md).
+This record preserves integration repairs, development checks and managed
+handoff notes. The durable contracts live in [supported surface](supported-surface.md)
+and [compiled matmul](compile-cuda-matmul.md); the
+[diagnostic index](diagnostics/composite-matmul-unflatten-l1/README.md) identifies
+current evidence and earlier captures.
 
 The root-reported unflatten defect persisted in the imported source: the public
 binding looked up `Tensor.unflatten` after dispatch. A fresh wheel built in this
@@ -41,8 +41,7 @@ competing overflow/type errors, and dimension hooks skipped after sizes errors.
 
 Both new regressions failed against the source-matched pre-repair wheel.
 With a fresh local release wheel, all 76 focused unflatten/L1 tests passed,
-including real H100
-CUDA rejection, aliases, gradients and nested-mode restoration. Rustfmt and the
+including real H100 CUDA rejection, aliases, gradients and nested-mode restoration. Rustfmt and the
 isolated wheel verifier passed; installed Python/native sources, interpreter,
 reference imports and CUDA libraries resolved locally and matched the build.
 Build/provenance records, actual command receipts and the failing pre-repair log
@@ -66,55 +65,7 @@ Rustfmt and isolated wheel verification passed; 59 package sources and 1,192
 loaded module files matched local sources/imports. Build/provenance records,
 command receipts and pre-repair failures remain under
 `target/review-unflatten-sizes/`. These development checks do not qualify final
-clean-commit evidence; the current committed capture below supplies the refresh.
-
-## Current committed validation
-
-Burner committed native-size validation as `cbcbd841e053170d46dcf05a0957c8bfc6c36538`.
-The [current capture](diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md)
-uses a fresh release build and matching installed wheel. All 78 focused
-unflatten/L1 tests, CUDA compiler/eager regressions, independent compiled-program
-proof, separate GPUs 0,1 checks and focused Rust tests passed. The unchanged
-math workload passed all 18 trials across six cases, the compiler corpus passed
-38/38 cases, and all four fixed scoring shapes passed. The separate matmul
-diagnostic passed all 12 correctness cells with 79.42% capped geometric
-parity, retaining all 6 slower cells and every raw sample.
-Source/native/runtime/compiler identities, manifests and actual command receipts
-are published. Build, measurements and integrity verification completed with a
-clean committed tree; only evidence and documentation were published afterward.
-
-## Refreshed committed validation
-
-Burner committed the review repair as `06a249663e969fde8c65af384277a6d15ea7f39d`.
-The [refreshed capture](diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md)
-built and installed a matching release wheel from an empty build target. All
-76 focused CPU-surface tests, CUDA compiler/eager regressions, independent
-compiled-program proof, separate GPUs 0,1 checks and focused Rust tests passed.
-The six fixed math cases passed all 18 trials, the compiler corpus passed
-38/38 cases, and all four fixed scoring shapes passed. The separate matmul
-diagnostic passed all 12 correctness cells with 80.85% capped geometric
-parity, retaining all six slower composed cells and every raw sample.
-Source/native/runtime/compiler identities, manifests and executed command
-receipts are published. The tree stayed clean through build, measurements and
-integrity verification; only evidence and documentation were published afterward.
-This capture predates the native-size validation repair. Its raw records
-remain unchanged and are superseded for the current candidate by the capture above.
-
-## Clean committed validation before the review repair
-
-Burner committed the integrated implementation as
-`208e9bff072bc9354ca0aec3e4a5330c1bde53ca`. The
-[post-commit capture](diagnostics/composite-matmul-unflatten-l1/postcommit-208e9bf/README.md)
-built a fresh release wheel from an absent target and verified the installed
-Python/native sources and local runtime identities. The 74 CPU-surface tests,
-compiled/eager matmul checks, independent isolated-program proof, GPUs 0,1
-restoration, focused Rust checks, 18 fixed math trials, 38-case corpus and all
-four fixed scoring shapes passed. The separate 12-cell diagnostic retained all
-raw samples and slower composed results, with 77.46% capped geometric parity.
-Its clean source, build, runtime, compiler and command receipts are published;
-the failed scoring import attempt is retained alongside the isolated retry.
-These results measured the pre-repair composite. They remain unchanged and
-are superseded for the current candidate by the refreshed capture above.
+clean-commit evidence; the diagnostic index links the committed captures.
 
 ## Development validation (preserved)
 

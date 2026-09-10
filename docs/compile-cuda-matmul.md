@@ -48,6 +48,8 @@ rejections. General default-backend/Inductor capture and fusion are not added.
 ## Reproduction and delivery
 
 Use the worktree-local locked environment in [CONTRIBUTING](../CONTRIBUTING.md).
+For measurements, start from a clean checkout with an empty build target and
+new output paths.
 Set local `TMPDIR`, `XDG_CACHE_HOME`, `UV_CACHE_DIR`, `UV_PYTHON_INSTALL_DIR`,
 `CARGO_HOME`, `CARGO_TARGET_DIR`, `CUDA_CACHE_PATH`, `TRITON_CACHE_DIR` and
 `TORCHINDUCTOR_CACHE_DIR` before setup. Install a release wheel (not a copied
@@ -76,7 +78,7 @@ and existing compatibility checks. The installed-interpreter test uses `-I`,
 blocks PyTorch imports and Python-body execution, and checks resolved imports.
 Permanent numerical tests include generated rectangles/squares, offsets, overlap,
 aliases, changed data, empty/singleton/zero-inner cases, K through one million,
-and source-PR overflow counterexamples; two-GPU checks run separately.
+and overflow counterexamples; two-GPU checks run separately.
 
 The separate diagnostic compares public native capture (`backend="eager"`)
 with stock PyTorch 2.13 `torch.compile` (`backend="inductor"`, default mode), both
@@ -97,83 +99,9 @@ of calls whose outputs passed validation. Attempts cannot overwrite earlier repo
 The diagnostic records source/binary hashes, command, local imports/libraries,
 Python/PyTorch/CUDA/GPU/driver and compiler identities, including the selected
 local Triton/PTX assembler path, version and hash. Native matmul uses cuBLAS,
-not nvcc; pointwise kernels use driver-JIT PTX. It changes no evaluator, weight,
-threshold, fixed workload or Burner-managed progress artifact. Existing bounded
-100-point scores do not establish universal coverage.
+not nvcc; pointwise kernels use driver-JIT PTX. This unfused eager-backend graph
+diagnostic is separate from the fixed four-shape CUDA scoring workload and does
+not establish general Inductor parity.
 
-Burner must commit implementation/tests/harness first, then capture fresh
-clean-commit evidence with exact source/binary/runtime identities and command
-receipts. Independent review, all ten non-regressing gates and exact-head CI
-remain required before merge. Development validation cannot satisfy those
-merge-coupled requirements and this implementation agent does not commit.
-
-The [development validation index](diagnostics/compile-cuda-matmul/development/README.md) retains H100 results, raw timings, independent review and unsuccessful attempts. It is explicitly uncommitted evidence, not merge qualification.
-
-## Source implementation capture
-
-The [source PR post-commit capture](diagnostics/compile-cuda-matmul/postcommit-d8374/README.md)
-measured **`d8374ec16f6c13fb09b18723c491d06fdaeaafaa`** with a fresh installed
-release wheel on H100. All 12 timing cells passed with **79.48% capped geometric
-parity**, retaining slower composed cells, raw samples, both execution orders,
-first-call costs and verified source/binary/runtime identities. The unchanged
-six-case math workload passed all 18 trials, and the frozen compiler corpus
-passed 38/38 cases. Compiled numerical/guard/lifetime/isolated-program checks,
-separate GPUs 0,1 checks and focused Rust tests passed. All measurements completed
-with clean tracked status before artifact publication. Development records
-remain unchanged; independent review, ten merge gates and exact-head CI remain
-separate requirements.
-
-These reports retain their original source-worktree identities and measure the
-matmul source PR only. They are stale for the combined implementation and do not
-supply composite performance credit. All raw records, failed attempts and
-sampling results remain unchanged. The combined-commit capture below measured
-the integration before its latest review repair. See
-[integration validation](composite-matmul-unflatten-l1-validation.md).
-
-## Previous composite capture
-
-The unflatten conversion-order review repair makes this capture stale for the
-current candidate. Raw records remain unchanged; the refreshed capture below
-measures the committed repair.
-
-The [combined capture](diagnostics/composite-matmul-unflatten-l1/postcommit-208e9bf/README.md)
-measures **`208e9bff072bc9354ca0aec3e4a5330c1bde53ca`** from an absent native
-build target and a newly installed matching wheel. All 18 fixed math trials,
-38 compiler cases, four fixed scoring shapes, focused CPU/GPU regressions and
-separate device-restoration checks passed. The separate matmul diagnostic passed
-all 12 correctness cells with **77.46% capped geometric parity**, retaining the
-slower composed cells, raw calls, dispersion, both orders and first-call/cache
-disclosures. Exact source/native/runtime/compiler identities, executed command
-receipts and the failed premeasurement scoring launch are published with the
-capture. All measurement and verification completed while the committed tree
-was clean; only evidence and documentation were published afterward.
-Independent exact-head review, ten gates and exact-head CI remain required.
-
-## Refreshed clean composite capture
-
-This capture predates the native-size validation review repair. Raw records
-remain unchanged; the current capture below measures the committed repair.
-
-The [recorded capture](diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md)
-measures `06a249663e969fde8c65af384277a6d15ea7f39d` with a fresh installed release
-wheel. It includes the conversion-order repair and passes all 76 focused
-unflatten/L1 tests, CUDA compiler checks, independent compiled-program proof,
-separate GPUs 0,1 checks, 18 fixed math trials, 38 compiler cases and four
-fixed scoring shapes. The separate matmul diagnostic passed all 12 correctness
-cells with **80.85% capped geometric parity**, preserving slower composed
-results and raw samples. All captures and integrity verification ran from the
-clean committed tree. Independent review, ten gates and exact-head CI remain
-required.
-
-## Current clean composite capture
-
-The [current capture](diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md)
-measures `cbcbd841e053170d46dcf05a0957c8bfc6c36538` with a fresh installed release
-wheel, including native-size validation and conversion-order repairs. All 78
-focused unflatten/L1 tests, CUDA compiler checks, independent compiled-program
-proof, separate GPUs 0,1 checks, 18 fixed math trials, 38 compiler cases and four
-fixed scoring shapes passed. The separate matmul diagnostic passed all 12
-correctness cells with **79.42% capped geometric parity**, retaining all
-slower results and raw samples. Source/native/runtime/compiler identities and
-executed command receipts confirm clean committed measurements. Independent
-review, ten gates and exact-head CI remain required.
+[Current measured evidence](diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md)
+contains results, source/native/runtime identities, command receipts and raw samples.
