@@ -356,6 +356,9 @@ credit. Synthetic accounting tests are not hardware evidence.
 The required build command, Rust/Cargo versions, and `nvcc` selection must be
 nonblank strings. Numeric validation overflow in a candidate or reference row
 invalidates that trial without aborting the report or removing any case slots.
+Receipt and worker-result JSON parsing rejects non-finite constants and
+overflowing exponents, including nested values. Rejected receipts retain a
+serializable error and zero-credit accounting for all six slots.
 
 For this bounded capability, `p(cuda_nvidia, compilation) = passed / 6`.
 Five verified cases represent `10 * (5/6)` points within CUDA and approximately
@@ -397,6 +400,12 @@ this eager-backend comparison does not invoke `nvcc` or Inductor. Native
 pointwise kernels use driver-JIT embedded PTX; native matmul uses cuBLAS.
 Portable unit tests run without CUDA, and hardware tests skip clearly when the
 reference GPU or local extension is unavailable.
+
+**Clean-capture refresh pending:** the review fix for non-finite JSON evidence
+changes the evaluator hash. The measured JSON and receipt below remain
+unmodified and do not validate this correction. Burner must commit the fix
+before this current-candidate evidence can be regenerated from a clean checkout.
+Working-tree regression tests do not replace that required capture.
 
 The [H100 evidence](evaluation-data/cuda-inference-compilation-v1-h100.json)
 was regenerated from clean implementation commit

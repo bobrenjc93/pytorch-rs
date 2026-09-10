@@ -316,6 +316,14 @@ def account(case_set, seeds, trials, build_record, source):
             "fraction": passed / len(case_set["cases"]), "cases": rows}
 
 
+def finite_json_float(token):
+    """Reject non-finite constants and exponents before retaining JSON evidence."""
+    value = float(token)
+    if not math.isfinite(value):
+        raise ValueError(f"non-finite JSON number: {token}")
+    return value
+
+
 def launch(role, case, seed, python, timeout, env):
     try:
         completed = subprocess.run(
@@ -324,7 +332,8 @@ def launch(role, case, seed, python, timeout, env):
             text=True, cwd=ROOT, env=env, timeout=timeout)
         if completed.returncode:
             raise RuntimeError(f"worker exit {completed.returncode}: {completed.stderr[-4000:]}")
-        result = json.loads(completed.stdout)
+        result = json.loads(completed.stdout, parse_float=finite_json_float,
+                            parse_constant=finite_json_float)
         if not isinstance(result, dict):
             raise ValueError("worker result must be an object")
         result["stderr"] = completed.stderr[-4000:]
@@ -364,7 +373,8 @@ def main():
     build_record, build_error = None, None
     try:
         if args.build_record:
-            build_record = json.loads(args.build_record.read_text())
+            build_record = json.loads(args.build_record.read_text(), parse_float=finite_json_float,
+                                      parse_constant=finite_json_float)
     except (OSError, ValueError) as error:
         build_error = str(error)  # An invalid receipt must still emit all six slots.
     try:

@@ -207,12 +207,14 @@ class AccountingTests(unittest.TestCase):
             argv = [str(ROOT / "scripts/evaluate_cuda_compilation.py"),
                     "--seed", "1927", "--seed", "83719", "--output", str(output)]
             original = copy.deepcopy(self.trials)
-            for scenario in ("valid", "missing", "malformed", "malformed_fields", "changed",
+            for scenario in ("valid", "missing", "malformed", "malformed_fields", "nonfinite_receipt", "changed",
                              "oversized_candidate", "oversized_reference", "reference_failed"):
                 self.trials = copy.deepcopy(original)
                 build = dict(self.build, **{k: True for k in ("build_command", "rustc", "cargo", "nvcc")}) \
                     if scenario == "malformed_fields" else self.build
                 receipt.write_text("not json" if scenario == "malformed" else json.dumps(build))
+                if scenario == "nonfinite_receipt":
+                    receipt.write_text('{"nvcc":1e400}')
                 options = [] if scenario == "missing" else ["--build-record", str(receipt)]
                 after = dict(self.source, source_sha256="changed") if scenario == "changed" else self.source
                 if scenario == "reference_failed":
@@ -232,9 +234,44 @@ class AccountingTests(unittest.TestCase):
                     expected = 6 if scenario == "valid" else 5 if scenario.startswith("oversized_") else 0
                     self.assertEqual(report["accounting"]["passed"], expected)
                     self.assertEqual(len(report["trials"]), 12)
+                    if scenario == "nonfinite_receipt":
+                        self.assertIsNone(report["build_record"])
+                        self.assertIn("non-finite", report["build_record_error"])
 
 
 class IsolationTests(unittest.TestCase):
+    def test_cli_nonfinite_receipts_emit_all_six_slots(self):
+        work = ROOT / "target/cuda-compilation-tests"
+        work.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=work) as temp:
+            receipt, output = Path(temp) / "build.json", Path(temp) / "result.json"
+            # Missing worker interpreters keep this CLI regression hardware-independent.
+            missing_python = str(Path(temp) / "missing-python")
+            command = [sys.executable, "-I", "-B", str(ROOT / "scripts/evaluate_cuda_compilation.py"),
+                       "--seed", "17", "--seed", "18", "--build-record", str(receipt),
+                       "--reference-python", missing_python, "--candidate-python", missing_python,
+                       "--output", str(output)]
+            for token in ("1e400", "-1e400", "NaN", "Infinity", "-Infinity", "1.25"):
+                for template in ('{"nvcc":TOKEN}', '{"extra":{"samples":[TOKEN]}}'):
+                    with self.subTest(token=token, template=template):
+                        receipt.write_text(template.replace("TOKEN", token))
+                        output.unlink(missing_ok=True)
+                        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True,
+                                                env=dict(os.environ, CUDA_VISIBLE_DEVICES="0", TMPDIR=temp,
+                                                         XDG_CACHE_HOME=temp, CUDA_CACHE_PATH=temp), timeout=30)
+                        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                        report = json.loads(output.read_text())
+                        self.assertEqual((report["accounting"]["denominator"], report["accounting"]["passed"]), (6, 0))
+                        self.assertEqual(len(report["accounting"]["cases"]), 6)
+                        self.assertEqual(len(report["trials"]), 12)
+                        if token == "1.25":
+                            self.assertIsNone(report["build_record_error"])
+                            self.assertEqual(report["build_record"], json.loads(receipt.read_text()))
+                        else:
+                            self.assertIsNone(report["build_record"])
+                            self.assertIn("non-finite", report["build_record_error"])
+                        json.dumps(report, allow_nan=False)
+
     def test_cli_rejects_bad_seeds_and_output_escape(self):
         for options in (("--seed", "17"), ("--seed", "17", "--seed", "-17"),
                         ("--seed", "17", "--seed", "17"),
@@ -269,7 +306,9 @@ class IsolationTests(unittest.TestCase):
         for error in (FileNotFoundError("missing"), subprocess.TimeoutExpired("worker", 1)):
             with patch.object(e.subprocess, "run", side_effect=error):
                 self.assertEqual(e.launch("candidate", case, 1, sys.executable, 1, os.environ)["status"], "failed")
-        for output, code in (("bad", 0), ("[]", 0), ('{"status":"passed"}', 1)):
+        for output, code in (("bad", 0), ("[]", 0), ('{"status":"passed"}', 1),
+                             ('{"status":"passed","value":1e400}', 0),
+                             ('{"status":"passed","value":NaN}', 0)):
             with patch.object(e.subprocess, "run", return_value=subprocess.CompletedProcess([], code, output, "crash")):
                 self.assertEqual(e.launch("candidate", case, 1, sys.executable, 1, os.environ)["status"], "failed")
 
