@@ -1348,7 +1348,38 @@ class FunctionalL1LossTests(unittest.TestCase):
                         with self.subTest(case=case, fallback_layout=True):
                             self.assertFalse(tensor.is_contiguous())
 
-    def test_requires_grad_operands_need_no_grad(self):
+    def test_nonfinite_operands_reject_active_autograd_but_allow_no_grad(self):
+        for value in (float("nan"), float("inf"), -float("inf")):
+            for nonfinite_side in (0, 1):
+                for flags in ((True, False), (False, True), (True, True)):
+                    with self.subTest(value=value, side=nonfinite_side, flags=flags):
+                        operands = tuple(
+                            torch.tensor(
+                                [[1.0, value if side == nonfinite_side else 2.0]],
+                                requires_grad=flag,
+                            ).transpose(0, 1)
+                            for side, flag in enumerate(flags)
+                        )
+                        with self.assertRaisesRegex(
+                            RuntimeError,
+                            r"^l1_loss\(\): autograd recording is not supported$",
+                        ):
+                            functional.l1_loss(*operands, reduction="none")
+                        with torch.no_grad():
+                            actual = functional.l1_loss(*operands, reduction="none")
+                            expected = (operands[0] - operands[1]).abs()
+                        self.assert_matches_composition(actual, expected, case=value)
+
+    def test_matching_shape_is_required_even_for_same_element_count(self):
+        input = torch.tensor([1.0], requires_grad=True)
+        target = torch.tensor([[2.0]], requires_grad=True)
+        with self.assertWarns(UserWarning):
+            with self.assertRaisesRegex(RuntimeError, "autograd recording is not supported"):
+                functional.l1_loss(input, target, reduction="none")
+        self.assertIsNone(input.grad)
+        self.assertIsNone(target.grad)
+
+    def test_requires_grad_operands_and_no_grad(self):
         for input_requires_grad, target_requires_grad in (
             (True, False),
             (False, True),
@@ -1382,11 +1413,14 @@ class FunctionalL1LossTests(unittest.TestCase):
                     ),
                 ):
                     with self.subTest(form=form):
-                        with self.assertRaisesRegex(
-                            RuntimeError,
-                            r"^l1_loss\(\): autograd recording is not supported$",
-                        ):
-                            call()
+                        if form == "none":
+                            self.assertTrue(call().requires_grad)
+                        else:
+                            with self.assertRaisesRegex(
+                                RuntimeError,
+                                r"^l1_loss\(\): autograd recording is not supported$",
+                            ):
+                                call()
 
                         with torch.no_grad():
                             expected = (input - target).abs()
@@ -1467,7 +1501,7 @@ class FunctionalL1LossTests(unittest.TestCase):
                     self.assertIsNone(input.grad)
                     self.assertIsNone(target.grad)
 
-    def test_channels_last_requires_grad_operands_need_no_grad(self):
+    def test_channels_last_requires_grad_operands_and_no_grad(self):
         for input_requires_grad, target_requires_grad in (
             (True, False),
             (False, True),
@@ -1494,11 +1528,9 @@ class FunctionalL1LossTests(unittest.TestCase):
                 self.assertEqual(input.stride(), target.stride())
                 self.assertTrue(input.is_contiguous(memory_format=torch.channels_last))
                 self.assertTrue(target.is_contiguous(memory_format=torch.channels_last))
-                with self.assertRaisesRegex(
-                    RuntimeError,
-                    r"^l1_loss\(\): autograd recording is not supported$",
-                ):
-                    functional.l1_loss(input, target, reduction="none")
+                self.assertTrue(
+                    functional.l1_loss(input, target, reduction="none").requires_grad
+                )
 
                 with torch.no_grad():
                     actual = functional.l1_loss(input, target, reduction="none")

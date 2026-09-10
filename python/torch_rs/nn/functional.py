@@ -27,9 +27,10 @@ Measures the element-wise absolute error between ``input`` and ``target``.
 The current native implementation requires exact ``torch_rs.Tensor`` operands
 with CPU ``float32`` storage, broadcastable shapes, ``reduction='none'``,
 ``reduction='mean'``, or ``reduction='sum'``, ``size_average=None``,
-``reduce=None``, and ``weight=None``. It fuses same-shape row-major contiguous
-operands, same-shape operands with identical strides and non-overlapping dense
-storage, non-empty same-shape rank-4 channels-last-contiguous operands, and
+``reduce=None``, and ``weight=None``. With autograd recording inactive, it
+fuses same-shape row-major contiguous operands, same-shape operands with
+identical strides and non-overlapping dense storage, non-empty same-shape
+rank-4 channels-last-contiguous operands, and
 rank-0 scalar broadcasts over row-major contiguous tensors into one native
 absolute-difference pass, otherwise preserving the established subtraction and
 absolute-value behavior. For ``reduction='mean'``, supported layouts compose the
@@ -42,10 +43,26 @@ absolute-difference result with the supported full-tensor sum. The operation
 returns a fresh, independent tensor with PyTorch-compatible values, shape,
 strides, scalar metadata, and size-mismatch warning.
 
+For active autograd recording, only ``reduction='none'`` with matching shapes
+and finite values in both operands is supported, through native subtraction
+and absolute value. Either operand or both may require gradients, including
+shared operands and supported views (scalar, empty, transposed, offset, and
+channels-last). First-order backward multiplies the upstream gradient by
+``sign(input - target)`` for input and its negative for target; equal elements,
+including signed zeros, have zero gradient. Finiteness applies to logical view
+elements, not unused storage; finite operands whose difference overflows are
+also supported. Nonuniform weighting may be applied to the unreduced output
+before summing. Backward uses the existing scalar-loss API; explicit backward
+gradients, graph retention, higher-order differentiation, and the ``weight``
+argument remain unsupported.
+Existing leaf-gradient layout handling may produce different singleton strides
+from PyTorch after channels-last copies; logical gradient values are preserved.
+
 Unbroadcastable shapes, legacy ``size_average``/``reduce`` behavior, weights,
 unsupported dtypes or devices, Tensor subclasses, active ``TorchFunctionMode``
-contexts, active autograd recording, and module loss wrappers are not supported.
-Gradient-requiring operands may be used inside ``torch.no_grad()``.
+contexts, and module loss wrappers are not supported. Active autograd recording
+with broadcasting, nonfinite operands, or reduced losses remains unsupported.
+Gradient-requiring operands may use the inference paths inside ``torch.no_grad()``.
 """
 
 
