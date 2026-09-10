@@ -75,6 +75,18 @@ class FunctionalTanhshrinkReferenceTests(unittest.TestCase):
             a[exact_mask].view(np.uint32), b[exact_mask].view(np.uint32)
         )
 
+    def test_owned_nonleaf_composition_inherits_tanh_backward(self):
+        for shape in ((), (2,), (1, 2), (1, 1, 2), (2, 0, 1)):
+            with self.subTest(shape=shape):
+                actual_leaf = torch.full(shape, 0.5, requires_grad=True)
+                expected_leaf = reference.full(shape, 0.5, requires_grad=True)
+                actual = torch.nn.functional.tanhshrink(actual_leaf + actual_leaf)
+                expected = reference.nn.functional.tanhshrink(expected_leaf + expected_leaf)
+                self.assert_tensor_matches(actual, expected)
+                (actual * -2.5).sum().backward()
+                (expected * -2.5).sum().backward()
+                self.assert_tensor_matches(actual_leaf.grad, expected_leaf.grad)
+
     def test_signature_metadata_and_function_identity(self):
         actual = torch.nn.functional.tanhshrink
         expected = reference.nn.functional.tanhshrink

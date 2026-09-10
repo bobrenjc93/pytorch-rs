@@ -43,6 +43,82 @@ class TensorTanhReferenceTests(unittest.TestCase):
             raise AssertionError("Tensor.tanh differentials require pinned PyTorch 2.13.0")
 
     @staticmethod
+    def composed_tanh(module, source, parent, form):
+        source = {"negation": lambda: -source,
+                  "addition": lambda: source + source,
+                  "tanh": source.tanh}[parent]()
+        if form == "method":
+            return source.tanh()
+        if form == "top level":
+            return module.tanh(source)
+        if form == "top level keyword":
+            return module.tanh(input=source, out=None)
+        return module.nn.functional.tanh(input=source)
+
+    def test_nonleaf_weighted_compositions_accumulation_and_graph_release(self):
+        data = AUTOGRAD_INPUT_BITS.view(np.float32)
+        cases = [((), np.asarray(value), np.asarray(-2.5, dtype=np.float32))
+                 for value in (*data, -100.0, 100.0)]
+        for shape in ((8,), (2, 4), (2, 1, 4)):
+            cases.append((shape, data.reshape(shape), AUTOGRAD_WEIGHTS.reshape(shape)))
+        for shape in ((0,), (0, 2), (2, 0), (0, 1, 2), (2, 0, 1), (2, 1, 0)):
+            cases.append((shape, np.zeros(shape, np.float32), np.zeros(shape, np.float32)))
+        for shape, data, weights in cases:
+            for parent in ("negation", "addition", "tanh"):
+                for form in ("method", "top level", "top level keyword", "functional"):
+                    with self.subTest(shape=shape, data=data.tolist(), parent=parent, form=form):
+                        actual_leaf = torch.tensor(data.tolist(), dtype=torch.float32,
+                                                   requires_grad=True)
+                        expected_leaf = reference_torch.tensor(
+                            data.tolist(), dtype=reference_torch.float32, requires_grad=True)
+                        # Nested empty lists cannot encode every trailing dimension.
+                        if data.size == 0:
+                            actual_leaf = torch.zeros(shape, requires_grad=True)
+                            expected_leaf = reference_torch.zeros(shape, requires_grad=True)
+                        actual_weights = torch.tensor(weights.tolist()).reshape(shape)
+                        expected_weights = reference_torch.tensor(weights.tolist()).reshape(shape)
+                        for _ in range(2):
+                            actual = self.composed_tanh(torch, actual_leaf, parent, form)
+                            expected = self.composed_tanh(
+                                reference_torch, expected_leaf, parent, form)
+                            self.assert_tensor_matches(actual, expected, case="nonleaf forward")
+                            self.assertEqual(type(expected.grad_fn).__name__, "TanhBackward0")
+                            self.assertEqual(
+                                torch._C._nn_functional_dropout_tensor_autograd_suffix(actual),
+                                ", grad_fn=<TanhBackward0>")
+                            # Reuse a single result, then rebuild the graph for a second pass.
+                            actual_loss = ((actual + actual) * actual_weights).sum()
+                            expected_loss = ((expected + expected) * expected_weights).sum()
+                            actual_sibling = actual.sum()
+                            expected_sibling = expected.sum()
+                            with self.assertRaisesRegex(NotImplementedError, "create_graph=True"):
+                                actual_loss.backward(create_graph=True)
+                            actual_loss.backward()
+                            expected_loss.backward()
+                            self.assert_tensor_matches(
+                                actual_leaf.grad, expected_leaf.grad, case="nonleaf weighted gradient")
+                            before = self.tensor_values(actual_leaf.grad).copy()
+                            actual_error = self.error(actual_loss.backward)
+                            self.assertEqual(actual_error[0], "RuntimeError")
+                            self.assertEqual(actual_error, self.error(expected_loss.backward))
+                            self.assertEqual(self.error(actual_sibling.backward),
+                                             self.error(expected_sibling.backward))
+                            np.testing.assert_array_equal(self.tensor_values(actual_leaf.grad), before)
+
+    def test_cuda_compositions_keep_device_rejection(self):
+        if not reference_torch.cuda.is_available():
+            self.skipTest("requires a real NVIDIA GPU to test native CUDA rejection")
+        source = -torch.tensor([-1.0, 0.5, 2.0]).to("cuda:0")
+        expected = -reference_torch.tensor([-1.0, 0.5, 2.0], device="cuda:0")
+        expected.tanh()
+        reference_torch.cuda.synchronize()
+        for call in (lambda: source.tanh(), lambda: torch.tanh(source),
+                     lambda: torch.nn.functional.tanh(source)):
+            with self.assertRaisesRegex(NotImplementedError, "only 'cpu' is implemented"):
+                call()
+        self.assertEqual(source.cpu().tolist(), [1.0, -0.5, -2.0])
+
+    @staticmethod
     def tensor_values(tensor):
         if type(tensor) is torch.Tensor:
             return np.asarray(tensor, dtype=np.float32)
@@ -1655,13 +1731,6 @@ print(json.dumps({
             actual_rank_four_view_base.grad.tolist(),
             [[[[[1.0, 1.0]]]], [[[[0.0, 0.0]]]]],
         )
-
-        actual_nonleaf_base = torch.tensor([[[0.5, -0.5]]], requires_grad=True)
-        actual_nonleaf = actual_nonleaf_base.sin()
-        with self.assertRaisesRegex(RuntimeError, message):
-            actual_nonleaf.tanh()
-        actual_nonleaf.sum().backward()
-        self.assertIsNotNone(actual_nonleaf_base.grad)
 
         actual_rank_four_nonleaf_base = torch.tensor(
             [[[[0.5, -0.5]]]], requires_grad=True
