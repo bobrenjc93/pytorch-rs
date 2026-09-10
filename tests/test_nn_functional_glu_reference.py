@@ -162,6 +162,34 @@ class FunctionalGluReferenceTests(unittest.TestCase):
                     self.assert_gradient_matches(actual.grad, expected.grad)
                     np.testing.assert_array_equal(values(actual).view(np.uint32), before)
 
+    def test_large_finite_inputs_and_upstream_do_not_overflow_backward(self):
+        # In each case first * upstream overflows float32, while GLU's
+        # output, weighted loss, and both input derivatives are representable.
+        cases = [(1e20, -20., 1e20), (-1e20, -20., 1e20),
+                 (1e20, -20., -1e20), (1e30, -40., 1e25),
+                 (1e30, -80., 1e30)]
+        for first, gate, upstream in cases:
+            for dim in (0, -1):
+                for strided in (False, True):
+                    with self.subTest(first=first, gate=gate, upstream=upstream,
+                                      dim=dim, strided=strided):
+                        outputs, losses, gradients = [], [], []
+                        for module in (torch, reference):
+                            data = [[0., first], [0., gate]] if strided else [first, gate]
+                            leaf = module.tensor(data, requires_grad=True)
+                            source = leaf.transpose(0, 1)[1] if strided else leaf
+                            output = module.nn.functional.glu(source, dim)
+                            loss = (output * upstream).sum()
+                            loss.backward()
+                            outputs.append(output)
+                            losses.append(loss)
+                            gradients.append(leaf.grad)
+                        for tensor in (*outputs, *losses, *gradients):
+                            self.assertTrue(np.isfinite(values(tensor)).all())
+                        self.assert_matches(*outputs)
+                        self.assert_matches(*losses)
+                        self.assert_gradient_matches(*gradients)
+
     def test_repeated_use_accumulation_and_graph_lifetime(self):
         actual = torch.tensor([-3., 2., -1., 0.5, -0.75, 1.25], requires_grad=True)
         expected = reference.tensor(actual.tolist(), requires_grad=True)

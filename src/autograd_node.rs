@@ -12,6 +12,8 @@ pub(crate) enum AutogradNode {
     Cos,
     Exp,
     Floor,
+    #[cfg(any(feature = "python-bindings", test))]
+    Glu,
     Log,
     Mean,
     MeanDimension,
@@ -60,6 +62,8 @@ impl AutogradNode {
             Self::Cos => "CosBackward0",
             Self::Exp => "ExpBackward0",
             Self::Floor => "FloorBackward0",
+            #[cfg(any(feature = "python-bindings", test))]
+            Self::Glu => "GluBackward0",
             Self::Log => "LogBackward0",
             Self::Mean => "MeanBackward0",
             Self::MeanDimension => "MeanBackward1",

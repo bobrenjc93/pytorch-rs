@@ -11,6 +11,7 @@ from torch_rs.overrides import _dispatch_unary_torch_function
 
 from ..torch_rs import (
     _nn_functional_dropout,
+    _nn_functional_glu_vector,
     _nn_functional_l1_loss,
     _nn_functional_linear,
     _nn_functional_mse_loss,
@@ -335,7 +336,9 @@ def _glu_impl(input, dim):
     if recording:
         # Sigmoid records finite owned vectors, but chunk returns views. Clone
         # the gate differentiably so both halves still backpropagate to input.
-        second = second.clone()
+        # Combine the multiplication/sigmoid VJP to apply the sigmoid factors
+        # before multiplying the first half by a potentially large upstream.
+        return _nn_functional_glu_vector(first, second.clone())
     return first * second.sigmoid()
 
 

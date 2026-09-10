@@ -141,6 +141,12 @@ enum GradFn {
         output_elements: usize,
     },
     #[cfg(any(feature = "python-bindings", test))]
+    GluVector {
+        left: SavedTensor,
+        right: SavedTensor,
+        gate: SavedTensor,
+    },
+    #[cfg(any(feature = "python-bindings", test))]
     SquaredDifference {
         left: SavedTensor,
         right: SavedTensor,
@@ -238,7 +244,7 @@ impl GradFn {
                 }
             }
             #[cfg(any(feature = "python-bindings", test))]
-            Self::SquaredDifference { left, right, .. } => {
+            Self::SquaredDifference { left, right, .. } | Self::GluVector { left, right, .. } => {
                 left.take_parent(pending);
                 right.take_parent(pending);
             }
@@ -267,6 +273,12 @@ impl GradFn {
             #[cfg(any(feature = "python-bindings", test))]
             Self::SquaredDifference { left, right, .. } => {
                 if left.storage.is_none() || right.storage.is_none() {
+                    return Err(TensorError::BackwardGraphFreed);
+                }
+            }
+            #[cfg(any(feature = "python-bindings", test))]
+            Self::GluVector { left, gate, .. } => {
+                if left.storage.is_none() || gate.storage.is_none() {
                     return Err(TensorError::BackwardGraphFreed);
                 }
             }
@@ -309,6 +321,11 @@ impl GradFn {
             Self::SquaredDifference { left, right, .. } => {
                 left.storage = None;
                 right.storage = None;
+            }
+            #[cfg(any(feature = "python-bindings", test))]
+            Self::GluVector { left, gate, .. } => {
+                left.storage = None;
+                gate.storage = None;
             }
             Self::MultiplyScalar { scalar, .. } => *scalar = None,
             Self::SavedInputUnary(node) => node.input.storage = None,
@@ -1447,6 +1464,8 @@ impl Tensor {
             | GradFn::Transform { node, .. } => *node,
             #[cfg(any(feature = "python-bindings", test))]
             GradFn::SquaredDifference { .. } => AutogradNode::SquaredDifference,
+            #[cfg(any(feature = "python-bindings", test))]
+            GradFn::GluVector { .. } => AutogradNode::Glu,
             GradFn::SavedInputUnary(node) => node.identity,
             GradFn::SavedOutputUnary(node) => node.identity,
             GradFn::ZeroVjp(node) => node.identity,
@@ -4940,6 +4959,31 @@ impl Tensor {
         Ok(output)
     }
 
+    /// Composes GLU for matching vector halves, with a combined multiplication
+    /// and sigmoid VJP that scales by the sigmoid derivative before upstream.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn glu_vector_gate(&self, second: &Self) -> Result<Self, TensorError> {
+        if self.shape.len() != 1 || self.shape != second.shape {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "glu" });
+        }
+        // The caller materializes the gate half with differentiable clone.
+        // Use sigmoid itself so its owned-storage/finite-input checks remain.
+        let gate = second.sigmoid()?;
+        let mut output = self.mul(&gate)?;
+        if self.records_grad() || second.records_grad() {
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::GluVector {
+                        left: SavedTensor::try_from_tensor(self, true)?,
+                        right: SavedTensor::try_from_tensor(second, false)?,
+                        gate: SavedTensor::try_from_tensor(&gate.detach()?, true)?,
+                    })),
+                },
+            }));
+        }
+        Ok(output)
+    }
+
     /// Squares every element through the shared-operand multiplication kernel.
     ///
     /// # Errors
@@ -6205,7 +6249,8 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                             }
                         }
                         #[cfg(any(feature = "python-bindings", test))]
-                        GradFn::SquaredDifference { left, right, .. } => {
+                        GradFn::SquaredDifference { left, right, .. }
+                        | GradFn::GluVector { left, right, .. } => {
                             push_saved_parent(&mut stack, right);
                             push_saved_parent(&mut stack, left);
                         }
@@ -6323,6 +6368,10 @@ fn apply_grad_fn(
             upstream,
             gradients,
         )?,
+        #[cfg(any(feature = "python-bindings", test))]
+        GradFn::GluVector { left, right, gate } => {
+            apply_glu_vector_grad_fn(left, right, gate, upstream, gradients)?;
+        }
         GradFn::Transform { input, mapping, .. } => {
             if let Some(meta) = &input.autograd {
                 let gradient = transform_backward(input, mapping, upstream)?;
@@ -7006,6 +7055,39 @@ fn apply_concat_grad_fn(
         axis_start = axis_start
             .checked_add(input_axis)
             .ok_or(TensorError::IndexCalculationOverflow)?;
+    }
+    Ok(())
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn apply_glu_vector_grad_fn(
+    left: &SavedTensor,
+    right: &SavedTensor,
+    gate: &SavedTensor,
+    upstream: &[f32],
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    debug_assert_eq!(left.elements, upstream.len());
+    debug_assert_eq!(right.elements, upstream.len());
+    if let Some(meta) = &left.autograd {
+        let mut gradient = try_result_vector(left.elements, left.elements)?;
+        gradient.extend(
+            upstream
+                .iter()
+                .enumerate()
+                .map(|(index, &value)| gate.value_at_linear_index(index) * value),
+        );
+        add_gradient(gradients, meta, left.output_nr, gradient);
+    }
+    if let Some(meta) = &right.autograd {
+        let mut gradient = try_result_vector(right.elements, right.elements)?;
+        gradient.extend(upstream.iter().enumerate().map(|(index, &value)| {
+            let sigmoid = gate.value_at_linear_index(index);
+            // Match GLU's chain-rule order in PyTorch. Multiplying left by
+            // upstream first can overflow even when the final VJP is finite.
+            (1.0 - sigmoid) * sigmoid * left.value_at_linear_index(index) * value
+        }));
+        add_gradient(gradients, meta, right.output_nr, gradient);
     }
     Ok(())
 }
@@ -9756,6 +9838,30 @@ mod tests {
         materialize_stack_small_rank_fast_path, requires_grad_flag, rsqrt_value, sqrt_value,
         squared_difference_value, try_result_vector, validate_view_bounds,
     };
+
+    #[test]
+    fn glu_vector_backward_scales_before_large_upstream_and_frees_saved_values() {
+        let leaf = Tensor::from_vec(vec![1e20, -20.0], [2])
+            .unwrap()
+            .with_requires_grad(true);
+        let halves = leaf.chunk_dimension(0, 2).unwrap();
+        let gate_input = halves[1].try_clone().unwrap();
+        let output = halves[0].glu_vector_gate(&gate_input).unwrap();
+        let loss = output.mul_scalar(1e20).unwrap().sum();
+        assert!(loss.item().unwrap().is_finite());
+        loss.backward().unwrap();
+        let gradient = leaf.grad().unwrap().unwrap().try_to_vec().unwrap();
+        assert!((gradient[0] / 2.061_153_7e11 - 1.0).abs() < 2e-6);
+        assert!((gradient[1] / 2.061_153_7e31 - 1.0).abs() < 2e-6);
+        assert!(matches!(
+            loss.backward(),
+            Err(TensorError::BackwardGraphFreed)
+        ));
+        assert_eq!(
+            leaf.grad().unwrap().unwrap().try_to_vec().unwrap(),
+            gradient
+        );
+    }
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
         Tensor {

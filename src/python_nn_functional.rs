@@ -776,6 +776,21 @@ fn _nn_functional_softsign(py: Python<'_>, input: &Bound<'_, PyAny>) -> PyResult
     PyTensor::new(output).into_py_any(py)
 }
 
+#[pyfunction]
+fn _nn_functional_glu_vector(
+    py: Python<'_>,
+    first: &Bound<'_, PyTensor>,
+    second: &Bound<'_, PyTensor>,
+) -> PyResult<Py<PyAny>> {
+    let first = first.try_borrow()?;
+    let second = second.try_borrow()?;
+    let output = first
+        .inner()
+        .glu_vector_gate(second.inner())
+        .map_err(|error| tensor_error(&error))?;
+    PyTensor::new(output).into_py_any(py)
+}
+
 pub(crate) fn add_nn_functional_bridges(module: &Bound<'_, PyModule>) -> PyResult<()> {
     for function in [
         wrap_pyfunction!(_nn_functional_dropout, module)?,
@@ -784,6 +799,7 @@ pub(crate) fn add_nn_functional_bridges(module: &Bound<'_, PyModule>) -> PyResul
         wrap_pyfunction!(_nn_functional_l1_loss, module)?,
         wrap_pyfunction!(_nn_functional_mse_loss, module)?,
         wrap_pyfunction!(_nn_functional_softsign, module)?,
+        wrap_pyfunction!(_nn_functional_glu_vector, module)?,
     ] {
         let name = function.getattr("__name__")?;
         module.add_function(function.clone())?;
