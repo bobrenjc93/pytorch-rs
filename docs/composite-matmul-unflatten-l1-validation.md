@@ -49,6 +49,26 @@ Build/provenance records, actual command receipts and the failing pre-repair log
 remain under `target/review-unflatten-order/`. These are development checks of
 the uncommitted repair, not final clean-commit evidence.
 
+## Review repair: native sizes validation
+
+The first size was converted during schema validation and again during native
+execution. Validation now recognizes native Python/NumPy integer types without
+calling their conversion hooks. Stateful NumPy sizes convert once, after
+override dispatch; an accepting mode can intercept even when conversion would
+raise. Ordinary indexable objects retain PyTorch's first-element validation
+probe, and sizes still convert before dim during execution.
+
+New reference regressions failed against the source-matched pre-repair wheel.
+With a fresh local release wheel, all 78 focused unflatten/L1 tests passed,
+including signed/unsigned NumPy sizes, accepting/forwarding modes, conversion
+errors, ordinary indexable objects, aliases, gradients and real H100 rejection.
+Rustfmt and isolated wheel verification passed; 59 package sources and 1,192
+loaded module files matched local sources/imports. Build/provenance records,
+command receipts and pre-repair failures remain under
+`target/review-unflatten-sizes/`. These development checks do not qualify final
+clean-commit evidence; the prior capture below needs refresh after Burner
+commits this repair.
+
 ## Refreshed committed validation
 
 Burner committed the review repair as `06a249663e969fde8c65af384277a6d15ea7f39d`.
@@ -63,6 +83,9 @@ parity, retaining all six slower composed cells and every raw sample.
 Source/native/runtime/compiler identities, manifests and executed command
 receipts are published. The tree stayed clean through build, measurements and
 integrity verification; only evidence and documentation were published afterward.
+This capture predates the native-size validation repair and is now stale for
+the current candidate. Its raw records remain unchanged pending a fresh
+clean-commit capture.
 
 ## Clean committed validation before the review repair
 
@@ -135,8 +158,10 @@ logs also remain available. No failed attempt was overwritten.
 
 ## Remaining managed handoff
 
-The committed conversion-order repair and its clean-commit evidence refresh
-are complete. Independent exact-head review, all ten non-regressing
-current-definition gates, exact-head CI, confirmed source PR delivery,
-continued dispatch pause and managed merge remain Burner-owned requirements.
-Development checks and prior captures do not replace those requirements.
+Burner must commit the native-size validation repair before final evidence is
+regenerated with the existing clean-build and capture procedure. Prior captures
+retain their measured identities and supply no current-candidate performance
+credit after this source change. Independent exact-head review, all ten
+non-regressing current-definition gates, exact-head CI, confirmed source PR
+delivery, continued dispatch pause and managed merge remain Burner-owned
+requirements. Development checks do not replace those requirements.

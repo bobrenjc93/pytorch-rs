@@ -180,6 +180,88 @@ class TopLevelUnflattenReferenceTests(method_tests.UnflattenReferenceTests):
 
                     self.assert_matches(contract(torch), contract(reference_torch))
 
+    def test_numpy_sizes_are_converted_once_during_execution(self):
+        for base in (np.int32, np.int64, np.uint64):
+            for position in (0, 1):
+                for container in (list, tuple):
+                    for keyword in (False, True):
+                        with self.subTest(base=base, position=position,
+                                          container=container, keyword=keyword):
+                            def contract(module):
+                                events = []
+
+                                class Size(base):
+                                    def __index__(self):
+                                        events.append('index')
+                                        return position + 1 + len(events)
+
+                                values = [2, 3]
+                                values[position] = Size(values[position])
+                                sizes = container(values)
+                                source = module.tensor([0., 1., 2., 3., 4., 5.])
+                                if keyword:
+                                    result = module.unflatten(input=source, dim=0, sizes=sizes)
+                                else:
+                                    result = module.unflatten(source, 0, sizes)
+                                self.assertEqual(events, ['index'])
+                                self.assertEqual(tuple(result.shape), (2, 3))
+                                self.assertEqual(result.data_ptr(), source.data_ptr())
+                                return result
+
+                            self.assert_matches(contract(torch), contract(reference_torch))
+
+    def test_size_conversion_and_errors_respect_mode_interception(self):
+        # Unlike native integers, ordinary indexable objects are probed during
+        # first-element schema validation, including before a mode intercepts.
+        for native in (False, True):
+            for position in (0, 1):
+                for keyword in (False, True):
+                    for action in ('direct', 'accept', 'forward'):
+                        for fail in (False, True):
+                            with self.subTest(native=native, position=position, keyword=keyword,
+                                              action=action, fail=fail):
+                                def contract(module):
+                                    events, marker = [], object()
+                                    source = module.ones(6)
+
+                                    class Size(np.int64 if native else object):
+                                        def __index__(self):
+                                            events.append('index')
+                                            if fail:
+                                                raise RuntimeError('size conversion failed')
+                                            return position + 1 + events.count('index')
+
+                                    class Mode(module.overrides.TorchFunctionMode):
+                                        def __torch_function__(self, func, types, args=(), kwargs=None):
+                                            events.append('mode')
+                                            if action == 'accept':
+                                                return marker
+                                            return func(*args, **(kwargs or {}))
+
+                                    sizes = [2, 3]
+                                    sizes[position] = Size(2) if native else Size()
+
+                                    def call():
+                                        if keyword:
+                                            return module.unflatten(input=source, dim=0, sizes=sizes)
+                                        return module.unflatten(source, 0, sizes)
+
+                                    try:
+                                        if action == 'direct':
+                                            result = call()
+                                        else:
+                                            with Mode():
+                                                result = call()
+                                    except Exception as error:
+                                        outcome = (type(error).__name__,
+                                                   str(error).split('\nException raised from ', 1)[0].rstrip('"\n'))
+                                    else:
+                                        outcome = 'accepted' if result is marker else tuple(result.shape)
+                                    self.assertEqual(module.overrides._get_current_function_mode_stack(), [])
+                                    return outcome, events
+
+                                self.assertEqual(contract(torch), contract(reference_torch))
+
     def test_sizes_conversion_errors_precede_dimension_conversion(self):
         for keyword in (False, True):
             for sizes in ((2, 3.0), (2, 2**100), (2, object())):

@@ -258,7 +258,8 @@ fn validate_sizes<'py>(
     overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
 ) -> PyResult<()> {
     // As with reshape, the schema checks the first ordinary element;
-    // remaining conversion errors occur only after override dispatch.
+    // native integer types need no conversion probe, while other indexable
+    // objects do. Unpack native values only after override dispatch.
     for index in 0..sizes.len() {
         let size = sizes.get_item(index)?;
         if let Some(probed) = probe_torch_function_override(&size) {
@@ -267,6 +268,7 @@ fn validate_sizes<'py>(
             })?;
             insert_ordered_torch_function_override(overrides, &probed)?;
         } else if index == 0
+            && !is_dimension_swap_integer(&size)?
             && (size.is_instance_of::<PyBool>() || python_number_index(&size).is_err())
         {
             if argument.position.is_none() {

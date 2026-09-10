@@ -151,7 +151,11 @@ Independent exact-head review, ten gates and exact-head CI remain required.
 
 ## Refreshed clean composite capture
 
-The [current capture](diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md)
+The native-size validation review repair makes this capture stale for the
+current candidate. Raw records remain unchanged; a fresh clean-commit capture
+is required after Burner commits the repair.
+
+The [recorded capture](diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md)
 measures `06a249663e969fde8c65af384277a6d15ea7f39d` with a fresh installed release
 wheel. It includes the conversion-order repair and passes all 76 focused
 unflatten/L1 tests, CUDA compiler checks, independent compiled-program proof,

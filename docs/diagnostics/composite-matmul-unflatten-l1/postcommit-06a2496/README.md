@@ -1,5 +1,10 @@
 # Clean composite capture: CUDA matmul, unflatten and L1 gradients
 
+**Refresh required:** the subsequent native-size validation repair changes the
+implementation measured here. These raw records remain unchanged and are stale
+for the current candidate. Burner must commit the repair before a fresh
+clean-commit capture; see [review validation](../../../composite-matmul-unflatten-l1-validation.md#review-repair-native-sizes-validation).
+
 Measured code commit: **`06a249663e969fde8c65af384277a6d15ea7f39d`**, against
 main `046b7a21e4e2fb7b59b56ea8a9679a9d9c5b0981`, on 2026-09-10 UTC.
 The native build, checks, workloads and integrity verification all completed
