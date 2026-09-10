@@ -1,4 +1,5 @@
 import inspect
+import itertools
 import unittest
 
 import numpy as np
@@ -735,6 +736,233 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
                     self.assertFalse(expected.is_set_to(expected_input))
                     self.assertFalse(actual.is_set_to(actual_weight))
                     self.assertFalse(expected.is_set_to(expected_weight))
+
+    @staticmethod
+    def make_rank_three_bias_operands(
+        module, shape, output_width, bias_width, layout
+    ):
+        sources = []
+
+        def tensor(shape):
+            values = (np.arange(np.prod(shape), dtype=np.float32) % 17 - 8) / 4
+            source = module.tensor(
+                values.tolist(), dtype=module.float32
+            ).reshape(shape)
+            sources.append(source)
+            return source
+
+        input = tensor((2, *shape))[1] if "offset" in layout else tensor(shape)
+        weight_shape = (output_width, shape[-1])
+        if "strided" in layout:
+            weight_shape = weight_shape[::-1]
+        weight = (
+            tensor((2, *weight_shape))[1]
+            if "offset" in layout
+            else tensor(weight_shape)
+        )
+        if "strided" in layout:
+            weight = weight.transpose(0, 1)
+            bias = tensor((bias_width, 2)).transpose(0, 1)[1]
+        else:
+            bias = (
+                tensor((2, bias_width))[1]
+                if "offset" in layout
+                else tensor((bias_width,))
+            )
+        return (input, weight, bias), sources
+
+    def test_contiguous_rank_three_bias_shapes_layouts_calls_and_sources_match(
+        self,
+    ):
+        shapes = (
+            ((2, 3, 4), 5),
+            ((3, 2, 5), 2),
+            ((1, 1, 3), 1),
+            ((0, 3, 4), 5),
+            ((2, 0, 4), 5),
+            ((2, 3, 0), 5),
+            ((2, 3, 4), 0),
+            ((0, 0, 0), 0),
+        )
+        for (shape, output_width), layout, singleton in itertools.product(
+            shapes,
+            ("contiguous", "strided", "offset", "offset-strided"),
+            (False, True),
+        ):
+            bias_width = 1 if singleton else output_width
+            actual_operands, actual_sources = (
+                self.make_rank_three_bias_operands(
+                    torch, shape, output_width, bias_width, layout
+                )
+            )
+            expected_operands, expected_sources = (
+                self.make_rank_three_bias_operands(
+                    reference_torch, shape, output_width, bias_width, layout
+                )
+            )
+            snapshots = [
+                np.asarray(source).copy() for source in actual_sources
+            ]
+            expected_snapshots = [
+                source.numpy().copy() for source in expected_sources
+            ]
+            for actual_operand, expected_operand in zip(
+                actual_operands, expected_operands, strict=True
+            ):
+                self.assert_matches(
+                    actual_operand, expected_operand, case=(shape, layout)
+                )
+            self.assertTrue(actual_operands[0].is_contiguous())
+            for form in ("positional", "bias keyword", "keywords"):
+                with self.subTest(
+                    shape=shape, layout=layout, singleton=singleton, form=form
+                ):
+                    actual = self.call_with_bias(
+                        functional, *actual_operands, form
+                    )
+                    expected = self.call_with_bias(
+                        reference_functional, *expected_operands, form
+                    )
+                    self.assert_matches(actual, expected, case="rank-3 bias")
+                    repeat = self.call_with_bias(
+                        functional, *actual_operands, form
+                    )
+                    self.assertFalse(actual.is_set_to(repeat))
+                    # Mutating the result must not change any backing source or
+                    # another result, including when operands are offset views.
+                    repeat_values = np.asarray(repeat).copy()
+                    np.asarray(actual)[...] = 99.0
+                    np.testing.assert_array_equal(
+                        np.asarray(repeat), repeat_values
+                    )
+                    for source, snapshot in zip(
+                        actual_sources, snapshots, strict=True
+                    ):
+                        np.testing.assert_array_equal(
+                            np.asarray(source), snapshot
+                        )
+                    for source, snapshot in zip(
+                        expected_sources, expected_snapshots, strict=True
+                    ):
+                        np.testing.assert_array_equal(source.numpy(), snapshot)
+
+    def test_rank_three_bias_contiguous_degenerate_strides_match(self):
+        # Singleton and empty axes can have noncanonical strides while the
+        # tensor is still contiguous according to PyTorch's layout rules.
+        for shape in ((2, 1, 4), (2, 0, 4)):
+            actual_input = torch.ones(shape).transpose(0, 1)
+            expected_input = reference_torch.ones(shape).transpose(0, 1)
+            self.assertTrue(actual_input.is_contiguous())
+            self.assertTrue(expected_input.is_contiguous())
+            actual = functional.linear(
+                actual_input, torch.ones((3, 4)), torch.ones((3,))
+            )
+            expected = reference_functional.linear(
+                expected_input,
+                reference_torch.ones((3, 4)),
+                reference_torch.ones((3,)),
+            )
+            self.assert_matches(actual, expected, case=shape)
+
+            with self.subTest(shape=shape, inner_dimension_error=True):
+                with self.assertRaises(RuntimeError) as actual_raised:
+                    functional.linear(
+                        actual_input, torch.ones((3, 5)), torch.ones((3,))
+                    )
+                with self.assertRaises(RuntimeError) as expected_raised:
+                    reference_functional.linear(
+                        expected_input,
+                        reference_torch.ones((3, 5)),
+                        reference_torch.ones((3,)),
+                    )
+                self.assertEqual(
+                    str(actual_raised.exception),
+                    str(expected_raised.exception),
+                )
+
+    def test_rank_three_bias_autograd_restriction_and_no_grad_match(self):
+        for flags, bias_width in itertools.product(
+            itertools.product((False, True), repeat=3), (1, 5)
+        ):
+            if not any(flags):
+                continue
+            actual_operands, _ = self.make_rank_three_bias_operands(
+                torch, (2, 3, 4), 5, bias_width, "offset-strided"
+            )
+            expected_operands, _ = self.make_rank_three_bias_operands(
+                reference_torch, (2, 3, 4), 5, bias_width, "offset-strided"
+            )
+            for actual, expected, flag in zip(
+                actual_operands, expected_operands, flags, strict=True
+            ):
+                actual.requires_grad_(flag)
+                expected.requires_grad_(flag)
+            with self.subTest(flags=flags, bias_width=bias_width):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"^linear\(\): autograd recording is not supported$",
+                ):
+                    functional.linear(*actual_operands)
+                with torch.no_grad():
+                    actual = functional.linear(*actual_operands)
+                with reference_torch.no_grad():
+                    expected = reference_functional.linear(*expected_operands)
+                self.assert_matches(
+                    actual, expected, case="rank-3 bias no_grad"
+                )
+                self.assertFalse(actual.requires_grad)
+                self.assertTrue(actual.is_leaf)
+                for operand in (*actual_operands, *expected_operands):
+                    self.assertIsNone(operand.grad)
+                # Leaving no_grad must restore the recording restriction.
+                with self.assertRaisesRegex(
+                    RuntimeError, "autograd recording is not supported"
+                ):
+                    functional.linear(*actual_operands)
+
+    def test_rank_three_bias_dimension_errors_match(self):
+        for shape, output_width in (
+            ((2, 3, 4), 5),
+            ((0, 3, 4), 5),
+            ((2, 0, 4), 5),
+            ((2, 3, 0), 5),
+            ((2, 3, 4), 0),
+            ((0, 0, 0), 0),
+        ):
+            for inner_width, bias_width in itertools.product(
+                (shape[-1], shape[-1] + 1), (0, 1, 2, 5)
+            ):
+                if inner_width == shape[-1] and bias_width in (
+                    1,
+                    output_width,
+                ):
+                    continue
+                with self.subTest(
+                    shape=shape,
+                    output_width=output_width,
+                    inner_width=inner_width,
+                    bias_width=bias_width,
+                ):
+                    with self.assertRaises(RuntimeError) as actual_raised:
+                        functional.linear(
+                            torch.zeros(shape),
+                            torch.zeros((output_width, inner_width)),
+                            torch.zeros((bias_width,)),
+                        )
+                    with self.assertRaises(RuntimeError) as expected_raised:
+                        reference_functional.linear(
+                            reference_torch.zeros(shape),
+                            reference_torch.zeros((output_width, inner_width)),
+                            reference_torch.zeros((bias_width,)),
+                        )
+                    self.assertIs(
+                        type(actual_raised.exception),
+                        type(expected_raised.exception),
+                    )
+                    self.assertEqual(
+                        str(actual_raised.exception),
+                        str(expected_raised.exception),
+                    )
 
     def test_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, weight_requires_grad in (

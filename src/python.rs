@@ -2484,6 +2484,14 @@ pub(crate) fn column_stack_variable_function(
     atleast_stack_variable_function(AtleastStackOperation::ColumnStack, py, args, kwargs)
 }
 
+pub(crate) fn dstack_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    atleast_stack_variable_function(AtleastStackOperation::Dstack, py, args, kwargs)
+}
+
 pub(crate) fn vstack_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -3322,6 +3330,7 @@ impl CatAlias {
 enum AtleastStackOperation {
     Hstack,
     ColumnStack,
+    Dstack,
     Vstack,
     RowStack,
 }
@@ -3331,6 +3340,7 @@ impl AtleastStackOperation {
         match self {
             Self::Hstack => "hstack",
             Self::ColumnStack => "column_stack",
+            Self::Dstack => "dstack",
             Self::Vstack => "vstack",
             Self::RowStack => "row_stack",
         }
@@ -3340,6 +3350,7 @@ impl AtleastStackOperation {
         match self {
             Self::Hstack => "torch.hstack",
             Self::ColumnStack => "torch.column_stack",
+            Self::Dstack => "torch.dstack",
             Self::Vstack => "torch.vstack",
             Self::RowStack => "torch.row_stack",
         }
@@ -5683,14 +5694,32 @@ fn apply_top_level_atleast_stack(
 
     let horizontal = matches!(alias, AtleastStackOperation::Hstack);
     let columns = matches!(alias, AtleastStackOperation::ColumnStack);
-    let minimum_rank = if horizontal { 1 } else { 2 };
+    let depth = matches!(alias, AtleastStackOperation::Dstack);
+    let minimum_rank = if depth {
+        3
+    } else if horizontal {
+        1
+    } else {
+        2
+    };
     // hstack chooses the axis from the first operand after atleast_1d, even
     // when that operand is a neutral empty vector preceding a matrix.
-    let dimension =
-        usize::from(columns || (horizontal && borrowed_tensors[0].inner.shape().len() == 2));
+    let dimension = if depth {
+        2
+    } else {
+        usize::from(columns || (horizontal && borrowed_tensors[0].inner.shape().len() == 2))
+    };
     let mut normalized_views = try_size_vector(borrowed_tensors.len())?;
     for tensor in &borrowed_tensors {
         let view = match tensor.inner.shape().len() {
+            0 if depth => Some(tensor.inner.reshape([1, 1, 1])),
+            1 if depth => Some(
+                tensor
+                    .inner
+                    .unsqueeze_front()
+                    .and_then(|tensor| tensor.unsqueeze_back()),
+            ),
+            2 if depth => Some(tensor.inner.unsqueeze_back()),
             0 if horizontal => Some(tensor.inner.reshape([1])),
             0 => Some(tensor.inner.reshape([1, 1])),
             1 if columns => Some(tensor.inner.unsqueeze_back()),
@@ -9565,7 +9594,7 @@ fn _backward_leaf_roots(roots: &Bound<'_, PyAny>) -> PyResult<()> {
     CoreTensor::backward_leaf_roots(&native_roots).map_err(|error| tensor_error(&error))
 }
 
-// CUDA tracing supports addition and negation. Keep other unary execution
+// CUDA tracing supports addition, negation and scalar multiplication. Keep other unary execution
 // guarded even for alias/identity operations supported by public eager APIs.
 fn require_compile_cpu_tensor(tensor: &CoreTensor) -> PyResult<()> {
     if !tensor.device().is_cpu() {
@@ -9680,7 +9709,15 @@ fn compile_trace_binary(
 
     let left = left.cast::<PyTensor>()?.try_borrow()?;
     let right = right.cast::<PyTensor>()?.try_borrow()?;
-    // CoreTensor::add validates device, dtype, shape, layout and autograd before
+    // Eager CUDA add also supports a trailing vector; compilation remains
+    // same-shape only, including callers of this private entrypoint.
+    if (left.inner.is_cuda() || right.inner.is_cuda()) && left.inner.shape() != right.inner.shape()
+    {
+        return Err(PyNotImplementedError::new_err(
+            "torch.compile trace CUDA addition requires the same shape; broadcasting is unsupported",
+        ));
+    }
+    // CoreTensor::add validates device, dtype, layout and autograd before
     // allocating or launching CUDA work. No other CUDA target is admitted.
     let output = match target {
         "add" => left.inner.add(&right.inner),
@@ -9691,6 +9728,52 @@ fn compile_trace_binary(
         }
     };
     output
+        .map(PyTensor::new)
+        .map_err(|error| tensor_error(&error))
+}
+
+// Restrict compiler constants before using the public multiplication conversion
+// contract. In particular parse_top_level_mul_scalar assumes a numeric operand.
+#[pyfunction(name = "_compile_trace_mul_scalar_value", signature = (scalar, /))]
+fn compile_trace_mul_scalar_value(scalar: &Bound<'_, PyAny>) -> PyResult<f32> {
+    if !(scalar.is_exact_instance_of::<PyBool>()
+        || scalar.is_exact_instance_of::<PyInt>()
+        || scalar.is_exact_instance_of::<PyFloat>())
+    {
+        return Err(PyNotImplementedError::new_err(
+            "torch.compile scalar multiplication requires an exact bool, int or float constant",
+        ));
+    }
+    parse_top_level_mul_scalar(scalar)
+}
+
+#[pyfunction(name = "_compile_trace_scalar", signature = (input, scalar, target, /))]
+fn compile_trace_scalar(
+    input: &Bound<'_, PyAny>,
+    scalar: &Bound<'_, PyAny>,
+    target: &str,
+) -> PyResult<PyTensor> {
+    if !input.is_exact_instance_of::<PyTensor>() {
+        return Err(PyTypeError::new_err(
+            "_compile_trace_scalar(): expected exact native Tensor",
+        ));
+    }
+    if target != "mul_scalar" {
+        return Err(PyNotImplementedError::new_err(format!(
+            "_compile_trace_scalar(): unsupported target {target:?}"
+        )));
+    }
+    let tensor = input.cast::<PyTensor>()?.try_borrow()?;
+    if !tensor.inner.is_cuda() {
+        return Err(PyNotImplementedError::new_err(
+            "torch.compile scalar multiplication only supports CUDA",
+        ));
+    }
+    let scalar = compile_trace_mul_scalar_value(scalar)?;
+    // Reuse kernel, layout, device restoration, completion and autograd checks.
+    tensor
+        .inner
+        .mul_scalar(scalar)
         .map(PyTensor::new)
         .map_err(|error| tensor_error(&error))
 }
@@ -25808,6 +25891,8 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
     module.add_function(wrap_pyfunction!(compile_trace_grad_enabled, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_unary, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_binary, module)?)?;
+    module.add_function(wrap_pyfunction!(compile_trace_scalar, module)?)?;
+    module.add_function(wrap_pyfunction!(compile_trace_mul_scalar_value, module)?)?;
     let exports = module.getattr("__all__")?;
     for name in [
         "_MAX_BACKWARD_LEAF_ROOTS",
@@ -25816,6 +25901,8 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
         "_compile_trace_grad_enabled",
         "_compile_trace_unary",
         "_compile_trace_binary",
+        "_compile_trace_scalar",
+        "_compile_trace_mul_scalar_value",
     ] {
         exports.call_method1("remove", (name,))?;
     }

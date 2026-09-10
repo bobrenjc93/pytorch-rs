@@ -1,0 +1,5 @@
+Using Python 3.12.13 environment at: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/venv312
+Resolved 1 package in 2ms
+Prepared 1 package in 43ms
+Installed 1 package in 27ms
+ + torch-rs==0.1.0 (from file:///data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/wheels-managed312/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl)

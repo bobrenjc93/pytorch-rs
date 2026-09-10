@@ -1,0 +1,644 @@
+{
+  "schema": "mul_neg_add_v1",
+  "purpose": "non-scoring correctness only; no timing or parity claim",
+  "reference_backend": "eager",
+  "grammar_seed": 791406,
+  "source_attribution": "Working tree on base_commit; source_sha256 identifies the measured source.",
+  "input_seeds": [
+    19092675,
+    19092676
+  ],
+  "cases": [
+    {
+      "program": "scale_left",
+      "shape": [
+        19
+      ],
+      "kind": "ordinal1",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5056fe0e6613f1e5018a1f1b5df5afc4a31df385abe04d95c2a82490b07f6f47"
+        },
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "c574505a99ee0e508bfe2544d80f2ed7e8726bbc84deb7e49346d8c95460a615"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5056fe0e6613f1e5018a1f1b5df5afc4a31df385abe04d95c2a82490b07f6f47"
+        },
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "c574505a99ee0e508bfe2544d80f2ed7e8726bbc84deb7e49346d8c95460a615"
+        }
+      ],
+      "native_outcome": "pass",
+      "expectation_met": true
+    },
+    {
+      "program": "scale_left",
+      "shape": [
+        19
+      ],
+      "kind": "ordinal1",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5056fe0e6613f1e5018a1f1b5df5afc4a31df385abe04d95c2a82490b07f6f47"
+        },
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "c574505a99ee0e508bfe2544d80f2ed7e8726bbc84deb7e49346d8c95460a615"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "5056fe0e6613f1e5018a1f1b5df5afc4a31df385abe04d95c2a82490b07f6f47"
+        },
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "c574505a99ee0e508bfe2544d80f2ed7e8726bbc84deb7e49346d8c95460a615"
+        }
+      ],
+      "native_outcome": "pass",
+      "expectation_met": true
+    },
+    {
+      "program": "scale_method",
+      "shape": [
+        19
+      ],
+      "kind": "ordinal1",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "0fe99a721799b0502420d1aef79d08bf0d60931725b3f1af1a1b163290e5a2e6"
+        },
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "7ada529a394baf71fe9da8ac7efd8310d5251d72af6515c2155e55f7924f2f3d"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "0fe99a721799b0502420d1aef79d08bf0d60931725b3f1af1a1b163290e5a2e6"
+        },
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "7ada529a394baf71fe9da8ac7efd8310d5251d72af6515c2155e55f7924f2f3d"
+        }
+      ],
+      "native_outcome": "pass",
+      "expectation_met": true
+    },
+    {
+      "program": "scale_method",
+      "shape": [
+        19
+      ],
+      "kind": "ordinal1",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "0fe99a721799b0502420d1aef79d08bf0d60931725b3f1af1a1b163290e5a2e6"
+        },
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "7ada529a394baf71fe9da8ac7efd8310d5251d72af6515c2155e55f7924f2f3d"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "0fe99a721799b0502420d1aef79d08bf0d60931725b3f1af1a1b163290e5a2e6"
+        },
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "7ada529a394baf71fe9da8ac7efd8310d5251d72af6515c2155e55f7924f2f3d"
+        }
+      ],
+      "native_outcome": "pass",
+      "expectation_met": true
+    },
+    {
+      "program": "composite",
+      "shape": [
+        19
+      ],
+      "kind": "ordinal1",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "acb86933b8a8c2f833bd9ce55fe5b7f47bc619c39f5e7ecbb9ff6502e40d212c"
+        },
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "387915d491837dbe5b4a8225dddb1e28f9121d528277b448cbe2d716fb34ffb9"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "acb86933b8a8c2f833bd9ce55fe5b7f47bc619c39f5e7ecbb9ff6502e40d212c"
+        },
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "387915d491837dbe5b4a8225dddb1e28f9121d528277b448cbe2d716fb34ffb9"
+        }
+      ],
+      "native_outcome": "pass",
+      "expectation_met": true
+    },
+    {
+      "program": "composite",
+      "shape": [
+        19
+      ],
+      "kind": "ordinal1",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": true,
+      "reference_eligible": true,
+      "reference_outputs": [
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "acb86933b8a8c2f833bd9ce55fe5b7f47bc619c39f5e7ecbb9ff6502e40d212c"
+        },
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "387915d491837dbe5b4a8225dddb1e28f9121d528277b448cbe2d716fb34ffb9"
+        }
+      ],
+      "native_outputs": [
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "acb86933b8a8c2f833bd9ce55fe5b7f47bc619c39f5e7ecbb9ff6502e40d212c"
+        },
+        {
+          "shape": [
+            19
+          ],
+          "stride": [
+            1
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:1",
+          "storage_offset": 0,
+          "requires_grad": false,
+          "sha256": "387915d491837dbe5b4a8225dddb1e28f9121d528277b448cbe2d716fb34ffb9"
+        }
+      ],
+      "native_outcome": "pass",
+      "expectation_met": true
+    },
+    {
+      "program": "composite",
+      "shape": [
+        19
+      ],
+      "kind": "mixed_ordinals",
+      "backend": "eager",
+      "fullgraph": true,
+      "expected_supported": false,
+      "reference_eligible": false,
+      "reference_error": "RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cuda:1!",
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace CUDA inputs and captures require matching devices",
+      "expectation_met": true
+    },
+    {
+      "program": "composite",
+      "shape": [
+        19
+      ],
+      "kind": "mixed_ordinals",
+      "backend": "eager",
+      "fullgraph": false,
+      "expected_supported": false,
+      "reference_eligible": false,
+      "reference_error": "RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cuda:1!",
+      "native_outcome": "unsupported",
+      "rejection_phase": "compiled_execution",
+      "native_error": "CompileTraceUnsupportedError: torch.compile trace CUDA inputs and captures require matching devices",
+      "expectation_met": true
+    }
+  ],
+  "base_commit": "f88b7e8bb622d8aad58819b7985fb39d279a51c1",
+  "worktree_status": "M  README.md\nM  docs/README.md\nMM docs/compile-cuda-add.md\nAM docs/compile-cuda-mul-scalar-validation.md\nM  docs/cuda-mul-scalar-validation.md\nM  docs/supported-surface.md\nMM docs/troubleshooting.md\nMM python/torch_rs/__init__.py\nM  python/torch_rs/_compile_bytecode.py\nMM python/torch_rs/_compile_trace.py\nAM scripts/diagnose_compile_cuda_mul_scalar.py\nM  src/python.rs\nAM tests/test_compile_cuda_mul_scalar.py\nM  tests/test_cuda_mul_scalar.py\nM  tests/test_readme_quickstart.py\n?? docs/diagnostics/compile-cuda-mul-scalar/\n?? tests/test_compile_cuda_mul_scalar_diagnostic.py",
+  "source_sha256": {
+    "python/torch_rs/__future__.py": "ca4f65fca5ac7d5233501c7d706afe39db5699bfa923c6617113809b76bf150c",
+    "python/torch_rs/__init__.py": "7e47a8707aaa60b39d32aa57b3876fe4171c65f4d38d44b2f0d8d44816905540",
+    "python/torch_rs/_compile_bytecode.py": "4e7327b3f78db6c30f526389e15194cf8c7bbcd910b07141acfeb724d7acb078",
+    "python/torch_rs/_compile_trace.py": "44ccd9373f983f10910ba6ec5614a86786a21bf3ec2d549bb3d8166313a0aa30",
+    "python/torch_rs/_compiler_state.py": "55a6f59b0fbfc74ac5744b786cfd11b75f7544d149cb47a27a0f17eb838fd142",
+    "python/torch_rs/_cuda_benchmark_tensor.py": "e2517a665f5ea89c02ffd0f8a2438454b3d5593d2cc7a5e6bd22706cd55959a2",
+    "python/torch_rs/_cuda_buffer.py": "6e0f4a06def868e14e73d696152ab498ece7a12ac06e5ee8a4bf5f9550b4b445",
+    "python/torch_rs/_cuda_driver_probe.py": "a94edd381fc3c202ec2b9b0bc89cf19b355dd880edf905af12bfce8840136583",
+    "python/torch_rs/_cuda_pointwise_kernel.py": "267d861e29ebf4c65006d1159c53db28780a5a64ddd815a4e56765f38105e724",
+    "python/torch_rs/_cuda_pointwise_reduce_workload.py": "9d9e5d2fb7dcd391f8b7a28a4b3362e555b5447382e1e154384b3796503c1e29",
+    "python/torch_rs/_cuda_public_storage.py": "e4b8290b0cf3181353f362c7f501361f43cd1b99b8024957155a442c6d5ca907",
+    "python/torch_rs/_cuda_runtime_ownership.py": "47f0ecb8f4878e3651a7d2b843225db22374f63fa4a28f7ba3c032eb3e0a410c",
+    "python/torch_rs/_cuda_runtime_roundtrip.py": "14390cabf4f11e5cb590a54bad805f931daaa7baf7dfc66dc1089c93c6be575a",
+    "python/torch_rs/_diagnostics.py": "7f35539a85e29d574fb80f23aff496225567b90001f9e86876ee6d354a25d3fc",
+    "python/torch_rs/_jit_internal.py": "4ad554a103a7de8147c7322c82be857fe87f0d4c1db4535db026c8c52661deb2",
+    "python/torch_rs/_serialization_state.py": "84652b68bddc84e6fe2a44d869e7364d4b9dce40b922bc05c8284b0232bf981f",
+    "python/torch_rs/_tensor.py": "c93dddf028482b9d85f12ae5c7c90558c839b6c1575074c9f494899ddb879638",
+    "python/torch_rs/accelerator/__init__.py": "a6b9a277d58eb8524a7d42fbcda33f720168c6308ad76ed94580661f43077956",
+    "python/torch_rs/accelerator/memory.py": "3ad699e17cc7862fb1142c830f496b325bce2b8e427a3f6ecd527d295104d46e",
+    "python/torch_rs/autograd/__init__.py": "adb9a0f12d5512ded9f48ef1789da7aa225d5d5c7978cc11682cf9f3156b7a76",
+    "python/torch_rs/autograd/grad_mode.py": "522895fd51a6bd3689f9cc1c8524edaa64f5fb8090b976dd2bda0e890e072766",
+    "python/torch_rs/backends/__init__.py": "6e6e56da55af5465656d9e2e7ae5234c81dde272a23243b45512d8b73b6f6344",
+    "python/torch_rs/backends/cpu/__init__.py": "de8879b9c17f3a032cd74d3ba000731f56b77f841b9b66a2471db1ddea5ce4be",
+    "python/torch_rs/backends/cuda/__init__.py": "ff7d0c77c54298084875a87ad82050eefa6aca8a221efb48999556a49801048d",
+    "python/torch_rs/backends/cudnn/__init__.py": "6bbb1d07ae3ff26d8ec1c23555198638c275020523a790dff934ac6706d25051",
+    "python/torch_rs/backends/cusparselt/__init__.py": "623800a56564fe11a704e515ff0b7b72926f6d1041f5f3c04a85a6c75cf4dad4",
+    "python/torch_rs/backends/kleidiai/__init__.py": "04864e8c3e2a9351fe0cc46c6c582ab4ed6ba0c4ca3ca857870a9efd83ae0497",
+    "python/torch_rs/backends/mha/__init__.py": "f0603eecffe4820b6afd72127c38d5e308a38f2a85a847220525ed1d112c024e",
+    "python/torch_rs/backends/mkl/__init__.py": "16aa692e7594ac6bb021b39d68fdb4ec863fedcd4550236eb451dee66723e99a",
+    "python/torch_rs/backends/nnpack/__init__.py": "75436dead2da811151375f0291dbe97b48ea15df670eb060e52f5cf2dcbf8db5",
+    "python/torch_rs/backends/openmp/__init__.py": "c89dba97ab3e06b2887cbbb17537c50ac57c6a439de2346a78e4d1ef560bd89d",
+    "python/torch_rs/compiler/__init__.py": "2a7fff42d0019bf24789d8a8af772705d0f49855a622c26fd056444cfd8202a5",
+    "python/torch_rs/cpu/__init__.py": "ca19a185b788d9084eaf2c850e397c8fcc3dffb4e30779e33f8cb2ba3534f7b8",
+    "python/torch_rs/cuda/__init__.py": "51f3f2ca8c86ff1ca1cfa5d6b98a12688b31321270e17fb55f716250234fdf1b",
+    "python/torch_rs/distributed/__init__.py": "1944f8e71045ecaaed940048a1e214bf26430233a59245bda8f3d696a01dea2f",
+    "python/torch_rs/distributed/distributed_c10d.py": "66889ecf136199d6c2fed3b26a835a079fb27fa872c70aa10be06ed2be49f131",
+    "python/torch_rs/functional.py": "f6934341671e81bedb09b29ff14bfbc2e49398afcc4c3401438982cbc07422cb",
+    "python/torch_rs/jit/__init__.py": "e5f700fffd3ed01a4bc95dcf749b521fe70ad40b66e21b4794797e56e359f8bf",
+    "python/torch_rs/jit/_fuser.py": "644b04bf07e4949cb90b66b3af2c7e91bba6c49e0bea1803636377703ce8d03c",
+    "python/torch_rs/jit/_script.py": "a71598c6526c942700f95c24404fe614600e167599d26c876079f185b95abbeb",
+    "python/torch_rs/jit/_trace.py": "cf66e88b73cc41061d837b439d6258877a2746430ba4e24376d212a650154f39",
+    "python/torch_rs/nn/__init__.py": "df1c83df2bf532e6304c639b01a3190ad94e1acbc722cc01d7ae827c00766084",
+    "python/torch_rs/nn/functional.py": "72874eab61aac6845455d8cda28ad2861c200548c5ac0086878feb7ea05915b5",
+    "python/torch_rs/nn/init.py": "c1e277f31798a549aeca426dd24dd3e4682c900fcef4c261619c3514b2675d7c",
+    "python/torch_rs/nn/modules/__init__.py": "cccd7a03364b69fbdcc026147cf3fd4118805ca9cae854941c528460b2bae625",
+    "python/torch_rs/nn/modules/utils.py": "afd28c539f74a08b25247ec7cde641b268fd4ff8de6c02fc5c0dc83b72e4aa76",
+    "python/torch_rs/overrides.py": "446bb5c74c6f53f06cc93ea46e1769f33fb513756be8e9d09e0febe7a34bab86",
+    "python/torch_rs/serialization.py": "43599cdd6909e6ef1972b989054d5277da68a8a85214a67b9e062157beb70640",
+    "python/torch_rs/utils/__init__.py": "cbdf80ebc6035e22799dce5580858e62bf4e95856073f1722eebd2a2a6ddc956",
+    "python/torch_rs/utils/data/__init__.py": "2cc659f4c91c80059b0f04974553ea05a3627cbbe3d124f3c956e3ae9bd28a4c",
+    "python/torch_rs/utils/data/_utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "python/torch_rs/utils/data/_utils/collate.py": "c7108b0cc15de7c0cad670c09d3dde74edcfdb144736b8c775506e2346694e73",
+    "python/torch_rs/utils/data/_utils/worker.py": "363b368348181f24b09eef7ebd3319b6c285b88b91820630ec3cdf497eecdc4b",
+    "python/torch_rs/utils/data/datapipes/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "python/torch_rs/utils/data/datapipes/datapipe.py": "327126a0b7419ec46c2b08c736033e2562cf8cc4a986e3fae257872d8773ff41",
+    "python/torch_rs/utils/data/dataset.py": "381ba612f1bdc9e3f6799b2b0d3aa1305d10ad2b328846c270b67e3aab49d3f8",
+    "python/torch_rs/utils/data/distributed.py": "f7b619594c314a65a3d39776c03671774270d823208a1ebf20e7f62178fc9442",
+    "python/torch_rs/utils/data/sampler.py": "bd7b2d49050fbc26eb3492144299d90bce7a2ad934224c41d4401b80d231c985",
+    "python/torch_rs/version.py": "652ad0e48ce8d0d8ee18cf0a15e520ff4369fca9a5e069adb30113ebe048e8af",
+    "src/python.rs": "a03420efa7d0fe651c88c9856cba983d4d9433934abe0d6d35251100f592e313",
+    "src/cuda/add.ptx": "4575664439d826d19ba9ebe23fbcca53280c07d39371b5e19aea5a306a48e33e",
+    "src/cuda/neg.ptx": "b8d9fe7411b363a283e90d772d7d83c46c0cd4b8e89c4276465ce34c5f0fc441",
+    "src/cuda/pointwise.rs": "9c3576e7857642b979d2e7f55934613c5641f98858ba2a7ec81b0945f8b532ea",
+    "scripts/diagnose_compile_cuda_add.py": "5d4f0ae7b73a5439229b01b2108a6f6d7bb710c7ecf66f9746f5606d619ee02b",
+    "scripts/diagnose_compile_cuda_neg_add.py": "d2843aae45eeea228574480379000676665e1455a70797cfa36f88d6a76a5592",
+    "src/autograd_node.rs": "2200f129ef14ef20bbe78f6ff7ab67c569e7366a7247a75a478ed2639b4aee7b",
+    "src/cuda/pool.rs": "43772223dc7badc012ef59ac10d182e797f82b7b2f7eb145999250dbfb7b7251",
+    "src/cuda/replay.rs": "2fd5b0e1a8b0475820f6692ebcc1358495fe33eeb9ce29f35aabb4cd882cc1d7",
+    "src/cuda.rs": "0876657aaad81b8877eff76164086d8d23da68f41ad6dacccb424ffa28aae976",
+    "src/device.rs": "a89c7233ba43b7ba74fbc3b7092457d2794138b1cb2d6611f0da2ea5a2152e8a",
+    "src/dtype.rs": "1abff5823e10a782ba0b578be8ecdd81e4ab10a0c13218cfbce1f4f28003b486",
+    "src/grad_mode.rs": "946e43fdb01a562db33313936c50c32410f1c713d811cd7f2bd283beaab9adcd",
+    "src/lib.rs": "89d24c41090f1fa104b68d8a6cdd923224bd7a085085c93a8bc95a3e27519af0",
+    "src/memory_format.rs": "b2167daaaf976c9f6e7dc3d7e22a8cafb96a2c4f59a9e7767e0e53cadbb51381",
+    "src/parallel.rs": "fc184eb9513b347af39e8d5a1572871ed3536e726cef32319f60ec48e2ee4188",
+    "src/python_argument_schema.rs": "829e1fde9b0c9377c3b6506959d1929b1776be43e8dc1d01050f063540116c0d",
+    "src/python_cpython_compat.rs": "7f1b4e3c49349df3f0f9415ec6855eb72f14b5c708a480806c018ed422866f23",
+    "src/python_device.rs": "3863f6f1fe4a7714319b863d9f72d1f4bde9b986ed93a78c0045893ce8270b92",
+    "src/python_dtype.rs": "a90dd3cc8f33c60866bb261825a6b4fb367a7cb9b0fd1852ac30b982a8c96e68",
+    "src/python_finfo.rs": "b5e48a20f77b7c035cdaf11e40c8c03dd04a86aa7ac26ed69541894924d5eead",
+    "src/python_grad_mode.rs": "e60dc435d439d62cbc3a7946af1c8388519e60aef73c6656c8afbae1a869e576",
+    "src/python_layout.rs": "ef80f52f4647c91b7b3ce30c4514678708b97ab7ec999b3a6590d89986bddc99",
+    "src/python_memory_format.rs": "0ddf4a186f9094d1c9ea79cae55e8765eb9be9b10e9bac6f2879cf9a69f1a673",
+    "src/python_nn_functional.rs": "b29f084681bc63d5d3bf18467557fe54b25e34cf727825cf590102f0775df127",
+    "src/python_no_argument_builtins.rs": "4ce916213c04fea14d09e7175d45481ec46ef15b8fbb41b67d2ac9d622af986f",
+    "src/python_scalar_conversions.rs": "42d17c89ec5ad87d5bfb52b1d0b00e705116f1f2c956956e2f5d8ed12c2fb664",
+    "src/python_size.rs": "6ff9e53975e434557b07f7a5040dbba383b38588aab02a16464e262e981f4978",
+    "src/python_tensor_alternate_layout.rs": "67acc6905a16424697cc7ca1e6ffc70b8a4224c2307b8742ece520dd0ec177de",
+    "src/python_tensor_data.rs": "557579e3f220915a3e7f307a267ccb7b5a9ad5f7bcf2a072260d5f0c71a26adc",
+    "src/python_tensor_devices.rs": "82a130420918893d46d67a38e18d457bff9193112e674dbea596160c4098e92d",
+    "src/python_tensor_dtype.rs": "b7f85f2afc5b0244376b8f7a5372564e8d7722902924717e749ab52e4b49c4d0",
+    "src/python_tensor_errors.rs": "2ddabcb28cccd4f8e9f118a344657ed78f67611846cfbcc2d6b5a09e0b4d1cf4",
+    "src/python_tensor_lazy_bits.rs": "53fb4c68168efb6681ae21685e4fb64460287f3ae6d6713846654de46267a599",
+    "src/python_tensor_leaf_grad.rs": "56b8b5365ce112837a7c3aa7a55f22a37bca076f22967de188fbe99166e9e7f4",
+    "src/python_tensor_name.rs": "854f602362282b0bdb73df2713b093a67a56e9df483d2d45fe4781883a66bbc3",
+    "src/python_tensor_queries.rs": "1718d0468fc88db5ec1c1c773f0e9e390211003e617c355b19213de1130944cc",
+    "src/python_tensor_shape.rs": "9b39185fb94aa6d991f716c77a3734e703dcdae932197a1e5172dd821fc2e4dc",
+    "src/python_tensor_storage.rs": "791412d1a37926bbcfcac608f4996b18258583956051a32915d57a09a63091ea",
+    "src/python_torch_function_mode.rs": "78dabc65fb389032da85bf1b1779f7044fe1dcdf1998029d0703d6349d448180",
+    "src/python_torch_function_probe.rs": "e65cb22d3e1f22c38c993859b982c189ddbd7b718d5d312a98f6c848425cd5d3",
+    "src/python_variable_functions.rs": "18b5f61e9ae24be03d4716e3e772fd0ca1aba6c664a758795cfbef2797771edb",
+    "src/reduction.rs": "3225267167622e29e75a7b414dc1ef0fa0917979ec93782b3da497a4e9727c7c",
+    "src/storage.rs": "651d45b93f410bdf6d1d948e0ac7b5067d44b91e06261ede2f44917677041b19",
+    "src/tensor.rs": "4094111e7e60af4f79a521d657b967c6842c88188e07b6ae06685be18ff7a8ab",
+    "src/tensor_error.rs": "f62330ea92fa2344105be5d6fec5112b16892990749395eef87179c3d0571ae7",
+    "src/cuda/mul_scalar.ptx": "d08abbbd502338c63dc01446270295120a826a9fe68fe0cc32f2a98b81196fe1",
+    "Cargo.toml": "7f8c40fb9a40c873dbb55470f8a43162e62976d85c95da0972d861bfc15e486d",
+    "Cargo.lock": "5adbfbc4753473099a887c270512ec919d8e0c53cd442750709e7a4e93d905b4",
+    "pyproject.toml": "451bb2a5f20316268a5b2a095002e77b5402844bdcd8e38322486e255fb071c9",
+    "uv.lock": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced",
+    "scripts/diagnose_compile_cuda_mul_scalar.py": "43a757e504f0a0ab74315e29fcc2ce828433829544b6f9afb5ae85f4ab8bdf43",
+    "tests/test_compile_cuda_mul_scalar.py": "3d4cb05ba62c01c830ad9be171eb09199a3d8961fce12958eff6a229e455b72f"
+  },
+  "native_extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/.venv/lib64/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+  "native_extension_sha256": "8836dea002699a0d738a347428d8fdeac794a797cfb601b70574db35b0261628",
+  "environment": {
+    "python": "3.12.13",
+    "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/.venv/bin/python",
+    "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/.venv/lib64/python3.12/site-packages/torch_rs",
+    "torch": "2.13.0+cu130",
+    "torch_cuda": "13.0",
+    "cuda_visible_devices": "0,1",
+    "gpus": "0, NVIDIA H100, 580.82.07, 9.0\n1, NVIDIA H100, 580.82.07, 9.0\n2, NVIDIA H100, 580.82.07, 9.0\n3, NVIDIA H100, 580.82.07, 9.0\n4, NVIDIA H100, 580.82.07, 9.0\n5, NVIDIA H100, 580.82.07, 9.0\n6, NVIDIA H100, 580.82.07, 9.0\n7, NVIDIA H100, 580.82.07, 9.0",
+    "native_runtime_library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/.venv/lib64/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "native_runtime_version": 13000,
+    "native_kernel_compiler": "NVIDIA driver JIT of embedded PTX 6.0/sm_50; nvcc unused",
+    "rust": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+    "caches": {
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/cache/cuda",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/cache/inductor",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6748045e/target/cache/triton"
+    },
+    "nvcc_available": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0",
+    "python_full": "3.12.13 (main, Jul 20 2026, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-14)]",
+    "python_build": [
+      "main",
+      "Jul 20 2026 00:00:00"
+    ],
+    "python_compiler": "GCC 11.5.0 20240719 (Red Hat 11.5.0-14)",
+    "packages": {
+      "cuda-toolkit": "13.0.3.0",
+      "typing_extensions": "4.16.0",
+      "MarkupSafe": "3.0.3",
+      "nvidia-cusolver": "12.0.4.66",
+      "nvidia-nvjitlink": "13.3.33",
+      "nvidia-curand": "10.4.0.35",
+      "nvidia-cufft": "12.0.0.61",
+      "nvidia-cublas": "13.1.1.3",
+      "nvidia-cufile": "1.15.1.6",
+      "filelock": "3.32.2",
+      "nvidia-cuda-runtime": "13.0.96",
+      "Jinja2": "3.1.6",
+      "cuda-pathfinder": "1.6.0",
+      "fsspec": "2026.7.0",
+      "nvidia-nvtx": "13.0.85",
+      "cuda-bindings": "13.3.1",
+      "maturin": "1.14.1",
+      "mpmath": "1.3.0",
+      "nvidia-cusparse": "12.6.3.3",
+      "nvidia-nvshmem-cu13": "3.4.5",
+      "nvidia-cuda-cupti": "13.0.85",
+      "nvidia-cusparselt-cu13": "0.8.1",
+      "setuptools": "84.0.0",
+      "nvidia-cuda-nvrtc": "13.0.88",
+      "networkx": "3.6.1",
+      "nvidia-nccl-cu13": "2.29.7",
+      "numpy": "2.5.1",
+      "sympy": "1.14.0",
+      "triton": "3.7.1",
+      "nvidia-cudnn-cu13": "9.20.0.48",
+      "torch": "2.13.0",
+      "torch-rs": "0.1.0"
+    }
+  },
+  "generated_programs": {},
+  "summary": {
+    "cases": 8,
+    "reference_eligible": 6,
+    "native_pass": 6,
+    "native_unsupported": 2,
+    "expectation_failures": 0
+  }
+}

@@ -1,0 +1,8 @@
+test_ownership_restoration_and_cache_separation (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarDeviceTests.test_ownership_restoration_and_cache_separation) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0a4944db/.venv/lib64/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ok
+
+----------------------------------------------------------------------
+Ran 1 test in 14.798s
+
+OK

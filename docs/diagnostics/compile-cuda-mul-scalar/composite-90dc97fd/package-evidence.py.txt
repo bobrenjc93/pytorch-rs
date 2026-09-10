@@ -1,0 +1,16 @@
+import datetime,hashlib,json,pathlib,shutil
+root=pathlib.Path(__file__).resolve().parents[2]
+run=root/'target/integration'
+destination=root/'docs/diagnostics/compile-cuda-mul-scalar/composite-90dc97fd'
+destination.mkdir(parents=True,exist_ok=True)
+for name in ('results.json','provenance-312.json','provenance-314.json','mul-diagnostic-312.json','mul-diagnostic-314.json','mul-diagnostic-two-device.json','neg-add-diagnostic-312.json','unchanged-contracts.json'):
+ shutil.copyfile(run/name,destination/name)
+shutil.copytree(run/'logs',destination/'logs',dirs_exist_ok=True)
+for p in (run/'checkout/target/composite-evidence').glob('*.json'):
+ shutil.copyfile(p,destination/p.name)
+for name in ('run.py','env.sh','provenance.py','check-evidence.py','finalize-record.py','gpu-checks.sh','performance-checks.sh','performance-cache.py','package-evidence.py'):
+ shutil.copyfile(run/name,destination/(name+'.txt'))
+sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+manifest={'measured_code_commit':'90dc97fd476342eceb5c45261e60404b36819d61','recorded_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'note':'Measured reports and raw logs copied without editing; reproduction and audit drivers archived as inert text. Superseded setup attempts are identified in results.json. No source historical record was modified.','sha256':{str(p.relative_to(destination)):sha(p) for p in sorted(destination.rglob('*')) if p.is_file() and p.name!='manifest.json'}}
+(destination/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+print('Packaged',len(manifest['sha256']),'files; all raw reports copied byte-for-byte.')

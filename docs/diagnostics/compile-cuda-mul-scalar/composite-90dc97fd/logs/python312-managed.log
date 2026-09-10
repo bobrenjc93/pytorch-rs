@@ -1,0 +1,5 @@
+Downloading cpython-3.12.13-linux-x86_64-gnu (download) (32.6MiB)
+ Downloaded cpython-3.12.13-linux-x86_64-gnu (download)
+Installed Python 3.12.13 in 831ms
+ + cpython-3.12.13-linux-x86_64-gnu (python3.12)
+warning: `/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/bin` is not on your PATH. To use installed Python executables, run `export PATH="/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a0158ced/target/integration/bin:$PATH"` or `uv python update-shell`.

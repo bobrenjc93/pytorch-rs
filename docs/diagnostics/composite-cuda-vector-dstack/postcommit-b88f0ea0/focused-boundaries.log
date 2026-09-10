@@ -1,0 +1,26 @@
+test_concrete_out_and_higher_input_ranks_are_rejected (tests.test_top_level_dstack.TopLevelDstackTests.test_concrete_out_and_higher_input_ranks_are_rejected) ... ok
+test_empty_dimensions_keep_normalized_shape (tests.test_top_level_dstack.TopLevelDstackTests.test_empty_dimensions_keep_normalized_shape) ... ok
+test_mixed_ranks_and_depth_order (tests.test_top_level_dstack.TopLevelDstackTests.test_mixed_ranks_and_depth_order) ... ok
+test_mode_intercepts_unsupported_native_calls_after_binding (tests.test_top_level_dstack.TopLevelDstackTests.test_mode_intercepts_unsupported_native_calls_after_binding) ... ok
+test_public_export (tests.test_top_level_dstack.TopLevelDstackTests.test_public_export) ... ok
+test_single_input_storage_is_independent (tests.test_top_level_dstack.TopLevelDstackTests.test_single_input_storage_is_independent) ... ok
+test_argument_errors_and_precedence (tests.test_top_level_dstack_reference.TopLevelDstackReferenceTests.test_argument_errors_and_precedence) ... ok
+test_gradients_through_views_repeated_inputs_and_empties (tests.test_top_level_dstack_reference.TopLevelDstackReferenceTests.test_gradients_through_views_repeated_inputs_and_empties) ... ok
+test_public_callable_metadata (tests.test_top_level_dstack_reference.TopLevelDstackReferenceTests.test_public_callable_metadata) ... ok
+test_real_cuda_inputs_are_explicitly_rejected (tests.test_top_level_dstack_reference.TopLevelDstackReferenceTests.test_real_cuda_inputs_are_explicitly_rejected) ... ok
+test_scalar_vector_matrix_empty_shape_combinations (tests.test_top_level_dstack_reference.TopLevelDstackReferenceTests.test_scalar_vector_matrix_empty_shape_combinations) ... ok
+test_sequence_out_and_mode_override_dispatch (tests.test_top_level_dstack_reference.TopLevelDstackReferenceTests.test_sequence_out_and_mode_override_dispatch) ... ok
+test_strided_offset_views_special_values_and_single_inputs (tests.test_top_level_dstack_reference.TopLevelDstackReferenceTests.test_strided_offset_views_special_values_and_single_inputs) ... ok
+test_same_device_guard_and_mixed_device_rejection (tests.test_cuda_add_trailing_vector.CudaAddTrailingVectorDeviceTests.test_same_device_guard_and_mixed_device_rejection) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_compiler_still_rejects_broadcast_before_execution (tests.test_cuda_add_trailing_vector.CudaAddTrailingVectorTests.test_compiler_still_rejects_broadcast_before_execution) ... ok
+test_completion_before_independent_stream_read (tests.test_cuda_add_trailing_vector.CudaAddTrailingVectorTests.test_completion_before_independent_stream_read) ... ok
+test_generated_rectangles_and_empty_dimensions (tests.test_cuda_add_trailing_vector.CudaAddTrailingVectorTests.test_generated_rectangles_and_empty_dimensions) ... ok
+test_ieee_edges (tests.test_cuda_add_trailing_vector.CudaAddTrailingVectorTests.test_ieee_edges) ... ok
+test_lifetimes_reuse_and_fresh_thread_context (tests.test_cuda_add_trailing_vector.CudaAddTrailingVectorTests.test_lifetimes_reuse_and_fresh_thread_context) ... ok
+test_offset_views_and_overlapping_inputs (tests.test_cuda_add_trailing_vector.CudaAddTrailingVectorTests.test_offset_views_and_overlapping_inputs) ... ok
+test_unsupported_shapes_layouts_and_devices (tests.test_cuda_add_trailing_vector.CudaAddTrailingVectorTests.test_unsupported_shapes_layouts_and_devices) ... ok
+
+----------------------------------------------------------------------
+Ran 21 tests in 2.956s
+
+OK (skipped=1)

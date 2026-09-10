@@ -22,11 +22,11 @@ use crate::python::{
     cat_variable_function, ceil_variable_function, chunk_variable_function,
     column_stack_variable_function, concat_variable_function, concatenate_variable_function,
     conj_variable_function, cos_variable_function, detach_variable_function, div_variable_function,
-    divide_variable_function, empty_like_variable_function, exp_variable_function,
-    fix_variable_function, floor_variable_function, full_like_variable_function,
-    get_device_variable_function, hstack_variable_function, imag_variable_function,
-    is_conj_variable_function, is_inference_variable_function, log_variable_function,
-    matmul_variable_function, mean_variable_function, mm_variable_function,
+    divide_variable_function, dstack_variable_function, empty_like_variable_function,
+    exp_variable_function, fix_variable_function, floor_variable_function,
+    full_like_variable_function, get_device_variable_function, hstack_variable_function,
+    imag_variable_function, is_conj_variable_function, is_inference_variable_function,
+    log_variable_function, matmul_variable_function, mean_variable_function, mm_variable_function,
     moveaxis_variable_function, movedim_variable_function, mul_variable_function,
     multiply_variable_function, narrow_variable_function, neg_variable_function,
     negative_variable_function, ones_like_variable_function, permute_variable_function,
@@ -63,6 +63,7 @@ const VARIABLE_FUNCTION_NAMES: &[&str] = &[
     "stack",
     "hstack",
     "column_stack",
+    "dstack",
     "vstack",
     "row_stack",
     "abs",
@@ -1213,6 +1214,20 @@ __torch_function__ dispatch. Concrete out tensors, higher ranks, and other
 dtype/device metadata are unsupported.
 ";
 
+const DSTACK_DOC: &std::ffi::CStr = c"
+dstack(tensors, *, out=None) -> Tensor
+
+Stacks tensors in sequence along dimension 2 (depth).
+
+Scalars become (1, 1, 1) views, vectors become (1, n, 1) views, and matrices
+become (m, n, 1) views using atleast_3d rules. The first two normalized
+dimensions must match. The native implementation supports non-empty tuple/list
+inputs of exact native CPU float32 scalar, rank-1, or rank-2 tensors, including
+empty and strided views, fresh output storage, first-order autograd, and
+__torch_function__ dispatch. Concrete out tensors, input ranks above two,
+and other dtype/device metadata are unsupported.
+";
+
 const VSTACK_DOC: &std::ffi::CStr = c"
 vstack(tensors, *, out=None) -> Tensor
 
@@ -1532,6 +1547,7 @@ variable_function_callback!(concatenate_callback, concatenate_variable_function)
 variable_function_callback!(stack_callback, stack_variable_function);
 variable_function_callback!(hstack_callback, hstack_variable_function);
 variable_function_callback!(column_stack_callback, column_stack_variable_function);
+variable_function_callback!(dstack_callback, dstack_variable_function);
 variable_function_callback!(vstack_callback, vstack_variable_function);
 variable_function_callback!(row_stack_callback, row_stack_variable_function);
 variable_function_callback!(abs_callback, abs_variable_function);
@@ -1638,6 +1654,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"stack", stack_callback, STACK_DOC),
         variable_function_method!(c"hstack", hstack_callback, HSTACK_DOC),
         variable_function_method!(c"column_stack", column_stack_callback, COLUMN_STACK_DOC),
+        variable_function_method!(c"dstack", dstack_callback, DSTACK_DOC),
         variable_function_method!(c"vstack", vstack_callback, VSTACK_DOC),
         variable_function_method!(c"row_stack", row_stack_callback, ROW_STACK_DOC),
         variable_function_method!(c"abs", abs_callback, ABS_DOC),

@@ -1,0 +1,6 @@
+import datetime,hashlib,json,os,pathlib,subprocess,sys
+root=pathlib.Path.cwd()
+paths={name:root/'target'/name for name in ('torch_rs_private_cuda_pointwise','torch_rs_private_cuda_pointwise_reduce')}
+paths.update({key:pathlib.Path(os.environ[key]) for key in ('CUDA_CACHE_PATH','TORCHINDUCTOR_CACHE_DIR','TRITON_CACHE_DIR')})
+record={'recorded_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source_commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'worktree_status':subprocess.check_output(['git','status','--porcelain'],text=True).strip(),'policy':'One run with new driver/Inductor/Triton caches, retaining any private native libraries from correctness tests, then exactly one reused-cache run. No timing selection or retries.','paths':{name:{'path':str(path),'exists':path.exists(),'files':{str(p.relative_to(path)):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(path.rglob('*')) if p.is_file()}} for name,path in paths.items()},'gpu_processes':subprocess.check_output(['nvidia-smi','--query-compute-apps=gpu_uuid,pid,process_name,used_gpu_memory','--format=csv'],text=True)}
+(root/'target/composite-evidence'/sys.argv[1]).write_text(json.dumps(record,indent=2)+'\n')

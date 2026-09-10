@@ -331,6 +331,10 @@ _COMPILE_TENSOR_METHOD_GUARD_NAMES = (
     "__add__",
     "__getattribute__",
     "__neg__",
+    "__mul__",
+    "__rmul__",
+    "mul",
+    "multiply",
     "__radd__",
     "abs",
     "absolute",
@@ -964,11 +968,13 @@ def compile(
     changes while keeping stride, dtype, device, and ``requires_grad``
     specialized, matching the covered PyTorch eager-backend guards. The same
     no-break subset is also supported with ``fullgraph=False`` and default
-    ``dynamic=None``. Under those eager/fullgraph options, addition graphs also
+    ``dynamic=None``. Under those eager/fullgraph options, mul/neg/add graphs also
     accept exact contiguous native CUDA ``float32`` inputs and global captures
     on a single device, including scalar, empty, and offset views. CUDA guards
-    include the device ordinal and storage offset; broadcasts, gradients and
-    unary operations are rejected. This is native graph capture without fusion.
+    include the device ordinal and storage offset. Scalar multiplication accepts
+    exact bool/int/float constants, with type/value guards on captured globals;
+    scalar arguments, broadcasts, gradients and unary operations other than
+    negation are rejected. This is native graph capture without fusion.
     A private benchmark-only H100 CUDA pointwise-reduce
     workload is supported for ``backend="inductor"``, ``fullgraph=True``, and
     ``dynamic=False`` when called with the exact CUDA benchmark tensor inputs.

@@ -1,0 +1,16 @@
+{
+  "baseline": "f88b7e8bb622d8aad58819b7985fb39d279a51c1",
+  "identical_files_sha256": {
+    "scripts/evaluate_torch_compile_coverage.py": "7dd5607216116c29a53405abe61be8a9ab6253e89ddee32b5f1a1de4cb19a9c3",
+    "scripts/benchmark_compile_cuda.py": "a1401b964e58a01a6bacc8bb941b7de37021c2a7861c3ef901a2fc8a5c784959",
+    "scripts/diagnose_compile_cuda_add.py": "5d4f0ae7b73a5439229b01b2108a6f6d7bb710c7ecf66f9746f5606d619ee02b",
+    "scripts/diagnose_compile_cuda_neg_add.py": "d2843aae45eeea228574480379000676665e1455a70797cfa36f88d6a76a5592",
+    ".burner/evaluations.json": "23d5fc6cd9497245b36a59d39361f3355d57c62c03e8745b004785e35b53d445",
+    "docs/hardware-heterogeneity-matrix-v1.json": "a077f00f5eb50e2dceb2bd41a8453977955a8114fed203b7235f3a8befb24698",
+    "src/tensor.rs": "4094111e7e60af4f79a521d657b967c6842c88188e07b6ae06685be18ff7a8ab",
+    "Cargo.toml": "7f8c40fb9a40c873dbb55470f8a43162e62976d85c95da0972d861bfc15e486d",
+    "Cargo.lock": "5adbfbc4753473099a887c270512ec919d8e0c53cd442750709e7a4e93d905b4"
+  },
+  "feature_area_weights_unchanged": true,
+  "release_nan_failures": "Both failing test names and all four assertion values exactly match the preserved baseline-rust-release.log."
+}
