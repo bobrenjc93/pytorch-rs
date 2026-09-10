@@ -1,0 +1,2 @@
+usage: capture_depth_concat_build.py [-h] --output OUTPUT [--allow-dirty]
+capture_depth_concat_build.py: error: clean committed candidate required; --allow-dirty records a precommit diagnostic

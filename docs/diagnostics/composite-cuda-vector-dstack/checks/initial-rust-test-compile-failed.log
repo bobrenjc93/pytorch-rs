@@ -1,0 +1,38 @@
+   Compiling crossbeam-utils v0.8.23
+   Compiling crossbeam-epoch v0.9.21
+   Compiling crossbeam-deque v0.8.8
+   Compiling rayon-core v1.13.0
+   Compiling cfg-if v1.0.4
+   Compiling either v1.18.0
+   Compiling libloading v0.8.9
+   Compiling rayon v1.12.0
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_7fa6605d)
+error[E0599]: no function or associated item named `to_vec` found for struct `tensor::Tensor` in the current scope
+     --> src/tensor.rs:14128:65
+      |
+  396 | pub struct Tensor {
+      | ----------------- function or associated item `to_vec` not found for this struct
+...
+14128 |                         let logical = inputs.iter().map(Tensor::to_vec).collect::<Vec<_>>();
+      |                                                                 ^^^^^^ function or associated item not found in `tensor::Tensor`
+      |
+help: there is a method `into_vec` with a similar name
+     --> src/tensor.rs:3226:5
+      |
+ 3226 |     pub fn into_vec(self) -> Vec<f32> {
+      |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0282]: type annotations needed
+     --> src/tensor.rs:14135:47
+      |
+14135 | ...                   .map(|value| value.to_bits()),
+      |                             ^^^^^  ----- type must be known at this point
+      |
+help: consider giving this closure parameter an explicit type
+      |
+14135 |                                         .map(|value: /* Type */| value.to_bits()),
+      |                                                    ++++++++++++
+
+Some errors have detailed explanations: E0282, E0599.
+For more information about an error, try `rustc --explain E0282`.
+error: could not compile `pytorch-rs` (lib test) due to 2 previous errors

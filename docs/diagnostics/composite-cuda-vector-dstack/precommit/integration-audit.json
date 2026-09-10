@@ -1,0 +1,13 @@
+{
+  "source": {
+    "commit": "444faba3f8f793c68a069d65355c46fe3f650417",
+    "source_sha256": "5cf0651daeb2577d3a0816620cf54e92a7620bbace9f6782ff7818456bd8b967",
+    "production_diff_sha256": "80c11a8cdd3163236f1840f7e44d842d93c9fb69edec7ab06a45d227b647e4c8"
+  },
+  "artifact_hashes_verified": 39,
+  "all_benchmark_harness_hashes_match": true,
+  "installed_and_source_extension_match_build": true,
+  "preserved_locks_evaluators_managed_artifacts": true,
+  "feature_weights_unchanged": true,
+  "git_head": "444faba3f8f793c68a069d65355c46fe3f650417"
+}
