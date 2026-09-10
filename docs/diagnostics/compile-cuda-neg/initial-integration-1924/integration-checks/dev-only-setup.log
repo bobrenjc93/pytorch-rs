@@ -1,0 +1,12 @@
+Using CPython 3.12.14 interpreter at: target/uv-python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12
+Creating virtual environment at: target/dev-only-venv
+Activate with: source target/dev-only-venv/bin/activate
+Using Python 3.12.14 environment at: target/dev-only-venv
+Resolved 3 packages in 211ms
+Downloading numpy (15.9MiB)
+ Downloaded numpy
+Prepared 1 package in 262ms
+Installed 3 packages in 292ms
+ + numpy==2.5.3
+ + torch-rs==0.1.0 (from file:///data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/integration-wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl)
+ + typing-extensions==4.16.0

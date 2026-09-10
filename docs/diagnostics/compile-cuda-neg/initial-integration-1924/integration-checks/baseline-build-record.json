@@ -1,0 +1,10 @@
+{
+  "python": "3.12.14+meta (3.12:2abcf90, Aug 12 2026, 13:57:39) [Clang 21.1.0 (ssh://git.vip.facebook.com/data/gitrepos/osmeta/external/llvm-pro",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/bin/python",
+  "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+  "native": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+  "native_sha256": "7506fbc0feb359c0955a2a88223cbab0f622d7e338083fc8ba92da51b7a99cca",
+  "source_manifest_sha256": "310248249d48ca4af9f27489f161110bd4a9c40faf1513d57b820d22e257b28d",
+  "source_revision": "e4cddf0ecb45c23c683953fa2f8c45904b170a80",
+  "source_files_unchanged": true
+}

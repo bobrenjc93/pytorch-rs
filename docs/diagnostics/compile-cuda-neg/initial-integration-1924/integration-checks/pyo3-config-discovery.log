@@ -1,0 +1,46 @@
+   Compiling pyo3-ffi v0.29.2
+error: failed to run custom build command for `pyo3-ffi v0.29.2`
+
+Caused by:
+  process didn't exit successfully: `/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/native-integrated/debug/build/pyo3-ffi-574b69fdb7f3ece2/build-script-build` (exit status: 101)
+  --- stdout
+  cargo:rustc-check-cfg=cfg(Py_LIMITED_API)
+  cargo:rustc-check-cfg=cfg(Py_GIL_DISABLED)
+  cargo:rustc-check-cfg=cfg(PyPy)
+  cargo:rustc-check-cfg=cfg(GraalPy)
+  cargo:rustc-check-cfg=cfg(RustPython)
+  cargo:rustc-check-cfg=cfg(py_sys_config, values("Py_DEBUG", "Py_REF_DEBUG", "Py_TRACE_REFS", "COUNT_ALLOCS"))
+  cargo:rustc-check-cfg=cfg(Py_3_8)
+  cargo:rustc-check-cfg=cfg(Py_3_9)
+  cargo:rustc-check-cfg=cfg(Py_3_10)
+  cargo:rustc-check-cfg=cfg(Py_3_11)
+  cargo:rustc-check-cfg=cfg(Py_3_12)
+  cargo:rustc-check-cfg=cfg(Py_3_13)
+  cargo:rustc-check-cfg=cfg(Py_3_14)
+  cargo:rustc-check-cfg=cfg(Py_3_15)
+  cargo:rustc-check-cfg=cfg(Py_3_16)
+  cargo:rerun-if-env-changed=PYO3_CONFIG_FILE
+  cargo:rerun-if-env-changed=PYO3_CROSS
+  cargo:rerun-if-env-changed=PYO3_CROSS_LIB_DIR
+  cargo:rerun-if-env-changed=PYO3_CROSS_PYTHON_VERSION
+  cargo:rerun-if-env-changed=PYO3_CROSS_PYTHON_IMPLEMENTATION
+  cargo:rerun-if-env-changed=PYO3_BUILD_EXTENSION_MODULE
+  cargo:rerun-if-env-changed=PYO3_NO_PYTHON
+  cargo:rerun-if-env-changed=PYO3_ENVIRONMENT_SIGNATURE
+  cargo:rerun-if-env-changed=PYO3_PYTHON
+  cargo:rerun-if-env-changed=PYO3_PRINT_CONFIG
+
+  -- PYO3_PRINT_CONFIG=1 is set, printing configuration and halting compile --
+  implementation=CPython
+  version=3.12
+  shared=false
+  target_abi=CPython-abi3-3.10
+  lib_name=python3.12
+  lib_dir=/usr/local/fbcode/platform010/lib
+  executable=/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv/bin/python
+  pointer_width=64
+  build_flags=
+  python_framework_prefix=
+  suppress_build_script_link_lines=false
+
+  note: unset the PYO3_PRINT_CONFIG environment variable and retry to compile with the above config

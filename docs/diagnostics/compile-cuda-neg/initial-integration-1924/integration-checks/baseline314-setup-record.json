@@ -1,0 +1,78 @@
+[
+  {
+    "name": "baseline314-venv",
+    "command": [
+      "uv",
+      "--no-config",
+      "venv",
+      "--python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/uv-python/cpython-3.14.7-linux-x86_64-gnu/bin/python3.14",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source",
+    "started": "2026-09-09T21:37:56.390228+00:00",
+    "finished": "2026-09-09T21:37:56.400820+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "baseline314-dependencies",
+    "command": [
+      "uv",
+      "--no-config",
+      "sync",
+      "--locked",
+      "--python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/bin/python",
+      "--no-install-project",
+      "--group",
+      "dev",
+      "--group",
+      "reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source",
+    "started": "2026-09-09T21:37:56.400960+00:00",
+    "finished": "2026-09-09T21:37:57.858631+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "baseline314-install",
+    "command": [
+      "uv",
+      "--no-config",
+      "pip",
+      "install",
+      "--python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/bin/python",
+      "--force-reinstall",
+      "--no-deps",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source",
+    "started": "2026-09-09T21:37:57.859780+00:00",
+    "finished": "2026-09-09T21:37:57.963207+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "baseline314-provenance",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/bin/python",
+      ".github/scripts/verify_native_extension.py"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source",
+    "started": "2026-09-09T21:37:57.963967+00:00",
+    "finished": "2026-09-09T21:37:58.093580+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "baseline314-environment",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source/.venv/bin/python",
+      "-c",
+      "import sys,torch,torch_rs,torch_rs.torch_rs as n,hashlib,json; print(json.dumps({\"python\":sys.version,\"executable\":sys.executable,\"torch\":torch.__version__,\"package\":torch_rs.__file__,\"native\":n.__file__,\"native_sha256\":hashlib.sha256(open(n.__file__,\"rb\").read()).hexdigest()}))"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/baseline-e4cddf0/source",
+    "started": "2026-09-09T21:37:58.094019+00:00",
+    "finished": "2026-09-09T21:38:01.264291+00:00",
+    "exit_code": 0
+  }
+]

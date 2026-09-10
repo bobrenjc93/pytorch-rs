@@ -1,0 +1,12 @@
+{
+  "command": [
+    "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/.venv/bin/python",
+    ".github/scripts/verify_native_extension.py"
+  ],
+  "cwd": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate",
+  "started_epoch": 1788992352.2461221,
+  "seconds": 0.1643216609954834,
+  "exit_code": 0,
+  "log": "/tmp/pytorch-rs-1924-paired.9gl9RC/candidate/target/paired/reports/provenance.log",
+  "log_sha256": "3bfd40123fb5f2e2b95314cd9957a6059b92031dc74c469d2587eda5ccbaf851"
+}

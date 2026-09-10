@@ -1,0 +1,5 @@
+verified native-extension provenance for torch-rs 0.1.0
+interpreter: /tmp/pytorch-rs-1924-paired.9gl9RC/candidate/.venv/bin/python
+virtualenv: /tmp/pytorch-rs-1924-paired.9gl9RC/candidate/.venv
+torch_rs: /tmp/pytorch-rs-1924-paired.9gl9RC/candidate/.venv/lib/python3.12/site-packages/torch_rs/__init__.py
+torch_rs.torch_rs: /tmp/pytorch-rs-1924-paired.9gl9RC/candidate/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so

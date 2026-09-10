@@ -1,0 +1,71 @@
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.29s
+     Running unittests src/lib.rs (target/native-integrated/debug/deps/pytorch_rs-a84bc75b3d7dfab2)
+
+running 8 tests
+test cuda::tests::cuda_allocation_checks_byte_overflow_before_loading_runtime ... ok
+test cuda::tests::packed_copy_regions_validate_bounds_and_output_length ... ok
+test cuda::pool::tests::pool_budgets_unused_memory_independently_of_large_live_allocations ... ok
+test tensor::cuda_upload_tests::sparse_upload_allocates_only_logical_payload ... ok
+test cuda::tests::standalone_native_cuda_roundtrip ... ok
+skipping two-device CUDA addition guard check: requires CUDA_VISIBLE_DEVICES=0,1
+test cuda::tests::addition_checks_storage_bounds_and_restores_device ... ok
+test cuda::tests::negation_bounds_and_bitwise_values_without_python ... ok
+test cuda::replay::tests::repeated_live_arguments_use_bounded_graph_cache ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 153 filtered out; finished in 0.46s
+
+     Running tests/autograd.rs (target/native-integrated/debug/deps/autograd-f38585ca82bec9e6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 85 filtered out; finished in 0.00s
+
+     Running tests/cuda_add.rs (target/native-integrated/debug/deps/cuda_add-3043d5dd2af577ad)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/cuda_native_boundaries.rs (target/native-integrated/debug/deps/cuda_native_boundaries-5c3fea720f3372b3)
+
+running 2 tests
+
+thread 'standalone_cuda_operations_reject_before_cpu_storage_access' (3458535) panicked at src/tensor.rs:5274:24:
+sum(): unsupported device: UnsupportedDevice { operation: "sum", device: Cuda(0) }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'standalone_cuda_operations_reject_before_cpu_storage_access' (3458535) panicked at src/tensor.rs:686:31:
+equal(): unsupported device: UnsupportedDevice { operation: "equal", device: Cuda(0) }
+
+thread 'standalone_cuda_operations_reject_before_cpu_storage_access' (3458535) panicked at src/tensor.rs:1505:14:
+with_requires_grad(): unsupported device: UnsupportedDevice { operation: "with_requires_grad", device: Cuda(0) }
+
+thread 'standalone_cuda_operations_reject_before_cpu_storage_access' (3458535) panicked at src/tensor.rs:5274:24:
+sum(): unsupported device: UnsupportedDevice { operation: "sum", device: Cuda(0) }
+
+thread 'standalone_cuda_operations_reject_before_cpu_storage_access' (3458535) panicked at src/tensor.rs:686:31:
+equal(): unsupported device: UnsupportedDevice { operation: "equal", device: Cuda(0) }
+
+thread 'standalone_cuda_operations_reject_before_cpu_storage_access' (3458535) panicked at src/tensor.rs:1505:14:
+with_requires_grad(): unsupported device: UnsupportedDevice { operation: "with_requires_grad", device: Cuda(0) }
+
+thread 'standalone_cuda_operations_reject_before_cpu_storage_access' (3458535) panicked at src/tensor.rs:5274:24:
+sum(): unsupported device: UnsupportedDevice { operation: "sum", device: Cuda(0) }
+
+thread 'standalone_cuda_operations_reject_before_cpu_storage_access' (3458535) panicked at src/tensor.rs:686:31:
+equal(): unsupported device: UnsupportedDevice { operation: "equal", device: Cuda(0) }
+
+thread 'standalone_cuda_operations_reject_before_cpu_storage_access' (3458535) panicked at src/tensor.rs:1505:14:
+with_requires_grad(): unsupported device: UnsupportedDevice { operation: "with_requires_grad", device: Cuda(0) }
+test standalone_cuda_operations_reject_before_cpu_storage_access ... ok
+test native_nonzero_cpu_cuda_roundtrips_preserve_layout_and_lifetimes ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.45s
+
+     Running tests/tensor_baseline.rs (target/native-integrated/debug/deps/tensor_baseline-1f3bc301430510b8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 102 filtered out; finished in 0.00s
+

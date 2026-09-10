@@ -5,6 +5,11 @@ The shared marker-free eager graph path accepts unary minus, `Tensor.neg()` and
 with same-shape addition. This is unfused bounded capture, not a general
 Inductor compiler or a performance-parity claim. See the [owning guide](compile-cuda-add.md).
 
+The [PR #1924 historical validation guide](diagnostics/compile-cuda-neg/pr1924-history.md)
+preserves the initial integration author logs and the separate fixed paired
+timing experiment, with original attribution, raw reports and executable hash/
+accounting checks. These historical bundles grant no current-candidate score credit.
+
 ## Integrated clean-commit evidence
 
 The current capture measures clean implementation commit

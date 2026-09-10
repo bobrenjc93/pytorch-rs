@@ -1,0 +1,10 @@
+test_documented_command_on_real_cuda (tests.test_compile_cuda_neg_add_diagnostic.DiagnosticAccountingTests.test_documented_command_on_real_cuda) ... ok
+test_documented_commands_preserve_raw_results_and_exit_status (tests.test_compile_cuda_neg_add_diagnostic.DiagnosticAccountingTests.test_documented_commands_preserve_raw_results_and_exit_status) ... ok
+test_empty_matrix_and_provenance_errors_cannot_succeed (tests.test_compile_cuda_neg_add_diagnostic.DiagnosticAccountingTests.test_empty_matrix_and_provenance_errors_cannot_succeed) ... ok
+test_versioned_matrix_retains_addition_and_unsupported_guards (tests.test_compile_cuda_neg_add_diagnostic.DiagnosticAccountingTests.test_versioned_matrix_retains_addition_and_unsupported_guards) ... ok
+test_troubleshooting_supported_boundary_and_report_navigation (tests.test_compile_cuda_neg_add_diagnostic.DiagnosticDocumentationTests.test_troubleshooting_supported_boundary_and_report_navigation) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 15.292s
+
+OK

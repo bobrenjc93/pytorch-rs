@@ -1,0 +1,137 @@
+[
+  {
+    "name": "diagnostic-tests",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_compile_cuda_neg_add_diagnostic"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "started": "2026-09-09T21:17:05.518366+00:00",
+    "finished": "2026-09-09T21:17:24.146419+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "diagnostic-single",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv/bin/python",
+      "scripts/diagnose_compile_cuda_neg_add.py",
+      "--case-set",
+      "neg_add_v1",
+      "--output",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/integration-checks/diagnostic-single.json"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "started": "2026-09-09T21:17:24.147085+00:00",
+    "finished": "2026-09-09T21:17:38.497559+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "two-device",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_compile_cuda_neg.CompileCudaNegDeviceTests",
+      "tests.test_compile_cuda_boundary.CompileCudaDeviceTests",
+      "tests.test_cuda_neg.CudaNegDeviceTests",
+      "tests.test_cuda_add.CudaAddDeviceTests"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d",
+    "CUDA_VISIBLE_DEVICES": "0,1",
+    "started": "2026-09-09T21:17:38.497925+00:00",
+    "finished": "2026-09-09T21:17:50.255555+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "diagnostic-multi",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv/bin/python",
+      "scripts/diagnose_compile_cuda_neg_add.py",
+      "--case-set",
+      "neg_add_v1",
+      "--output",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/integration-checks/diagnostic-multi.json"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d",
+    "CUDA_VISIBLE_DEVICES": "0,1",
+    "started": "2026-09-09T21:17:50.256303+00:00",
+    "finished": "2026-09-09T21:18:01.927064+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "cuda-math",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv/bin/python",
+      "scripts/evaluate_cuda_math.py",
+      "--seed",
+      "9173",
+      "--seed",
+      "260909",
+      "--seed",
+      "903217",
+      "--build-record",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/integration-checks/build-record.json",
+      "--output",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/integration-checks/cuda-math.json"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "started": "2026-09-09T21:18:01.927489+00:00",
+    "finished": "2026-09-09T21:19:12.991055+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "cuda-performance-fresh",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv/bin/python",
+      "scripts/benchmark_compile_cuda.py",
+      "--include-unprepared-comparison",
+      "--output",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/integration-checks/cuda-performance-fresh.json"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "started": "2026-09-09T21:19:12.991941+00:00",
+    "finished": "2026-09-09T21:19:33.855143+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "cuda-performance-warm",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv/bin/python",
+      "scripts/benchmark_compile_cuda.py",
+      "--include-unprepared-comparison",
+      "--output",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/target/integration-checks/cuda-performance-warm.json"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "started": "2026-09-09T21:19:33.856045+00:00",
+    "finished": "2026-09-09T21:19:49.841405+00:00",
+    "exit_code": 0
+  },
+  {
+    "name": "python-full",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d/.venv/bin/python",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_*.py"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "started": "2026-09-09T21:19:49.842266+00:00",
+    "finished": "2026-09-09T21:28:20.439390+00:00",
+    "exit_code": 0
+  }
+]

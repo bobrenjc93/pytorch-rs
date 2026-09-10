@@ -1,0 +1,11 @@
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_61b1dc8d)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.59s
+     Running tests/cuda_add.rs (target/native-integrated/debug/deps/cuda_add-3043d5dd2af577ad)
+
+running 3 tests
+test ieee_edges_and_rejections ... ok
+test cross_thread_output_ownership_and_reuse ... ok
+test shapes_offsets_aliases_and_completion ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+
