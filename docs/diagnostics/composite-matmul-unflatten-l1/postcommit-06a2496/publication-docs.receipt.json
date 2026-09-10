@@ -1,0 +1,25 @@
+{
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/.venv/bin/python",
+    "-B",
+    "-m",
+    "unittest",
+    "tests.test_readme_quickstart",
+    "-v"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914",
+  "started_at": "2026-09-10T16:12:36.832259+00:00",
+  "ended_at": "2026-09-10T16:12:37.202725+00:00",
+  "wall_seconds": 0.37047118972986937,
+  "exit_status": 0,
+  "log": "publication-docs.log",
+  "log_sha256": "ef303240a7a46d7628cfc8a54107fc5558fe849d5c4a69befc098d45549d0cf4",
+  "measurement_kind": "post-publication evidence/documentation verification; not a clean-commit workload",
+  "source": {
+    "commit": "06a249663e969fde8c65af384277a6d15ea7f39d",
+    "source_sha256": "70160c594f56eab5c449494f2e772f62a77a104b5fc3ffdfa29164339c8e6c79",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "git_status": " M docs/README.md\n M docs/compile-cuda-matmul.md\n M docs/composite-matmul-unflatten-l1-validation.md\n M docs/diagnostics/composite-matmul-unflatten-l1/postcommit-208e9bf/README.md\n?? docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/\n",
+  "checker_sha256": "dfe5521756f41ae63265bfba869b54d9ac0c3702496a724108d9f9649f919a58"
+}

@@ -49,6 +49,21 @@ Build/provenance records, actual command receipts and the failing pre-repair log
 remain under `target/review-unflatten-order/`. These are development checks of
 the uncommitted repair, not final clean-commit evidence.
 
+## Refreshed committed validation
+
+Burner committed the review repair as `06a249663e969fde8c65af384277a6d15ea7f39d`.
+The [refreshed capture](diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md)
+built and installed a matching release wheel from an empty build target. All
+76 focused CPU-surface tests, CUDA compiler/eager regressions, independent
+compiled-program proof, separate GPUs 0,1 checks and focused Rust tests passed.
+The six fixed math cases passed all 18 trials, the compiler corpus passed
+38/38 cases, and all four fixed scoring shapes passed. The separate matmul
+diagnostic passed all 12 correctness cells with 80.85% capped geometric
+parity, retaining all six slower composed cells and every raw sample.
+Source/native/runtime/compiler identities, manifests and executed command
+receipts are published. The tree stayed clean through build, measurements and
+integrity verification; only evidence and documentation were published afterward.
+
 ## Clean committed validation before the review repair
 
 Burner committed the integrated implementation as
@@ -62,8 +77,8 @@ four fixed scoring shapes passed. The separate 12-cell diagnostic retained all
 raw samples and slower composed results, with 77.46% capped geometric parity.
 Its clean source, build, runtime, compiler and command receipts are published;
 the failed scoring import attempt is retained alongside the isolated retry.
-These results measured the pre-repair composite. They are now stale for the
-current candidate and remain unchanged pending the required clean-commit refresh.
+These results measured the pre-repair composite. They remain unchanged and
+are superseded for the current candidate by the refreshed capture above.
 
 ## Development validation (preserved)
 
@@ -120,10 +135,8 @@ logs also remain available. No failed attempt was overwritten.
 
 ## Remaining managed handoff
 
-Burner must commit the conversion-order repair before final evidence is
-regenerated with the existing clean-build and capture procedure. The prior raw
-records retain their measured identities; they do not supply current-candidate
-performance credit after this source change. Independent exact-head review,
-all ten non-regressing current-definition gates, exact-head CI, confirmed source
-PR delivery, continued dispatch pause and managed merge remain Burner-owned
-requirements. Development checks do not replace these requirements.
+The committed conversion-order repair and its clean-commit evidence refresh
+are complete. Independent exact-head review, all ten non-regressing
+current-definition gates, exact-head CI, confirmed source PR delivery,
+continued dispatch pause and managed merge remain Burner-owned requirements.
+Development checks and prior captures do not replace those requirements.

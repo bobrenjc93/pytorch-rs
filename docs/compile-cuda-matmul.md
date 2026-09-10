@@ -130,11 +130,11 @@ sampling results remain unchanged. The combined-commit capture below measured
 the integration before its latest review repair. See
 [integration validation](composite-matmul-unflatten-l1-validation.md).
 
-## Clean composite capture
+## Previous composite capture
 
 The unflatten conversion-order review repair makes this capture stale for the
-current candidate. Raw records remain unchanged; a fresh clean-commit capture
-is required after Burner commits the repair.
+current candidate. Raw records remain unchanged; the refreshed capture below
+measures the committed repair.
 
 The [combined capture](diagnostics/composite-matmul-unflatten-l1/postcommit-208e9bf/README.md)
 measures **`208e9bff072bc9354ca0aec3e4a5330c1bde53ca`** from an absent native
@@ -148,3 +148,16 @@ receipts and the failed premeasurement scoring launch are published with the
 capture. All measurement and verification completed while the committed tree
 was clean; only evidence and documentation were published afterward.
 Independent exact-head review, ten gates and exact-head CI remain required.
+
+## Refreshed clean composite capture
+
+The [current capture](diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md)
+measures `06a249663e969fde8c65af384277a6d15ea7f39d` with a fresh installed release
+wheel. It includes the conversion-order repair and passes all 76 focused
+unflatten/L1 tests, CUDA compiler checks, independent compiled-program proof,
+separate GPUs 0,1 checks, 18 fixed math trials, 38 compiler cases and four
+fixed scoring shapes. The separate matmul diagnostic passed all 12 correctness
+cells with **80.85% capped geometric parity**, preserving slower composed
+results and raw samples. All captures and integrity verification ran from the
+clean committed tree. Independent review, ten gates and exact-head CI remain
+required.

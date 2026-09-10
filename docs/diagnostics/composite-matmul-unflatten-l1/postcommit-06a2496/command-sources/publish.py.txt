@@ -1,0 +1,103 @@
+"""Publish byte-identical capture outputs and accompanying documentation."""
+import hashlib,json,pathlib,shutil,subprocess
+ROOT=pathlib.Path.cwd(); OUT=ROOT/'target/postcommit-06a2496'
+PUB=ROOT/'docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496'
+OLD=ROOT/'docs/diagnostics/composite-matmul-unflatten-l1/postcommit-208e9bf'
+assert not subprocess.check_output(['git','status','--porcelain'],text=True)
+assert not PUB.exists()
+def read(p): return json.loads(p.read_text())
+def sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()
+build=read(OUT/'native/build-record.json'); verified=read(OUT/'verification.json')
+assert read(OUT/'evidence-validation.receipt.json')['exit_status']==0
+fixed=read(OUT/'fixed-scoring.json')['aggregates']; timing=read(OUT/'compiled-timings.json')
+parity=f"{100*timing['capped_geometric_parity']:.2f}"
+slow=[c for c in timing['cases'] if c['capped_parity']<1]
+assert len(slow)==6 and all(c['program']=='composed' for c in slow)
+PUB.mkdir(parents=True); (PUB/'command-sources').mkdir()
+catalog={}
+def copy(original,rel):
+ shutil.copyfile(original,PUB/rel);catalog[rel]={'source_path':str(original),'sha256':sha(original)}
+for p in sorted(OUT.iterdir()):
+ if p.suffix in ('.json','.log'):copy(p,p.name)
+for name in ('build-record.json','commands.json','build.log','install.log'):copy(OUT/'native'/name,name)
+for p in sorted(OUT.iterdir()):
+ if p.suffix in ('.py','.sh'):copy(p,'command-sources/'+p.name+'.txt')
+(PUB/'artifact-hashes.json').write_text(json.dumps(catalog,indent=2)+'\n')
+text=(OLD/'README.md').read_text()
+text='# Clean composite capture: CUDA matmul, unflatten and L1 gradients\n\n'+text[text.index('Measured code commit:'):]
+text=text.replace('208e9bff072bc9354ca0aec3e4a5330c1bde53ca',build['commit'])
+text=text.replace('f640082cbbc767c127e4b771844c4c62d90201e38bca4282335c9f9eba9922a2',build['extension_sha256'])
+text=text.replace('ef7e3bb482ae14d04edca738591cb9830c937569a232d3d28ca51c260c316274',build['source_sha256'])
+text=text.replace('74 passed','76 passed').replace('77.46%',parity+'%')
+text=text.replace('1.2574x',f"{fixed['common_success_geomean_speed_ratio']:.4f}x")
+text=text.replace('fixed-scoring-attempt2','fixed-scoring')
+text='\n'.join(line for line in text.splitlines() if not line.startswith('| Publication checks'))+'\n'
+text=text.replace('including replaced public/private Tensor methods, nested-mode restoration, aliases and weighted gradients','including sizes-before-dim conversion, replaced Tensor methods, nested-mode restoration, aliases and weighted gradients')
+text=text.replace('against the same freshly built wheel and local PyTorch 2.13 reference.','against the same freshly built wheel and local PyTorch 2.13 reference.\nThe conversion-order regressions include competing errors and dimension hooks\nthat replace or clear sizes, through both positional and keyword calls.')
+text=text.replace('uv download cache were reused, as disclosed in the build record. CUDA/JIT\n  caches were local.','uv download cache were reused, as disclosed in the build record. CUDA/JIT\n  caches were local; the CUDA driver cache was shared with preceding checks.')
+start=text.index('## Attempts and reproduction\n'); end=text.index('[Artifact hashes]',start)
+text=text[:start]+'''## Attempts and reproduction
+
+Every command in this capture completed successfully on its first attempt.
+The [previous capture](../postcommit-208e9bf/README.md) and its failed attempts
+remain unchanged apart from its documentation pointer to this replacement.
+Its measurements predate the conversion-order repair and provide no performance
+credit for this candidate. This fresh capture supplies the required replacement.
+
+'''+text[end:]
+(PUB/'README.md').write_text(text)
+# Update pointers/status only; never rewrite raw evidence or managed artifacts.
+p=OLD/'README.md';text=p.read_text();start=text.index('**Refresh required:**');end=text.index('Measured code commit:',start)
+text=text[:start]+'''**Superseded for the current candidate:** these raw records predate the
+unflatten conversion-order repair and remain unchanged. The
+[refreshed clean capture](../postcommit-06a2496/README.md) measures the committed
+repair and supplies current-candidate evidence.
+
+'''+text[end:];p.write_text(text)
+p=ROOT/'docs/composite-matmul-unflatten-l1-validation.md';text=p.read_text()
+heading='## Clean committed validation before the review repair'
+section=f'''## Refreshed committed validation
+
+Burner committed the review repair as `{build['commit']}`.
+The [refreshed capture](diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md)
+built and installed a matching release wheel from an empty build target. All
+76 focused CPU-surface tests, CUDA compiler/eager regressions, independent
+compiled-program proof, separate GPUs 0,1 checks and focused Rust tests passed.
+The six fixed math cases passed all 18 trials, the compiler corpus passed
+38/38 cases, and all four fixed scoring shapes passed. The separate matmul
+diagnostic passed all 12 correctness cells with {parity}% capped geometric
+parity, retaining all six slower composed cells and every raw sample.
+Source/native/runtime/compiler identities, manifests and executed command
+receipts are published. The tree stayed clean through build, measurements and
+integrity verification; only evidence and documentation were published afterward.
+
+'''
+text=text.replace(heading,section+heading)
+text=text.replace('These results measured the pre-repair composite. They are now stale for the\ncurrent candidate and remain unchanged pending the required clean-commit refresh.','These results measured the pre-repair composite. They remain unchanged and\nare superseded for the current candidate by the refreshed capture above.')
+start=text.index('## Remaining managed handoff\n')
+text=text[:start]+'''## Remaining managed handoff
+
+The committed conversion-order repair and its clean-commit evidence refresh
+are complete. Independent exact-head review, all ten non-regressing
+current-definition gates, exact-head CI, confirmed source PR delivery,
+continued dispatch pause and managed merge remain Burner-owned requirements.
+Development checks and prior captures do not replace those requirements.
+''';p.write_text(text)
+p=ROOT/'docs/compile-cuda-matmul.md';text=p.read_text().replace('## Clean composite capture','## Previous composite capture')
+text=text.replace('The unflatten conversion-order review repair makes this capture stale for the\ncurrent candidate. Raw records remain unchanged; a fresh clean-commit capture\nis required after Burner commits the repair.','The unflatten conversion-order review repair makes this capture stale for the\ncurrent candidate. Raw records remain unchanged; the refreshed capture below\nmeasures the committed repair.')
+text+=f'''
+## Refreshed clean composite capture
+
+The [current capture](diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md)
+measures `{build['commit']}` with a fresh installed release
+wheel. It includes the conversion-order repair and passes all 76 focused
+unflatten/L1 tests, CUDA compiler checks, independent compiled-program proof,
+separate GPUs 0,1 checks, 18 fixed math trials, 38 compiler cases and four
+fixed scoring shapes. The separate matmul diagnostic passed all 12 correctness
+cells with **{parity}% capped geometric parity**, preserving slower composed
+results and raw samples. All captures and integrity verification ran from the
+clean committed tree. Independent review, ten gates and exact-head CI remain
+required.
+''';p.write_text(text)
+p=ROOT/'docs/README.md';p.write_text(p.read_text().replace('review repairs, recorded evidence and required clean-commit refresh.','review repairs, refreshed clean-commit evidence and remaining merge gates.'))
+print(json.dumps({'published_raw_copies':len(catalog),'measured_commit':build['commit'],'diagnostic_parity_percent':parity,'fixed_scoring':fixed['torch_rs_cuda_compile_score_percent']},indent=2))

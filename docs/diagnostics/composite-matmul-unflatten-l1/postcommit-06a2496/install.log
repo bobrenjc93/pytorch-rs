@@ -1,0 +1,6 @@
+Resolved 1 package in 1ms
+Prepared 1 package in 43ms
+Uninstalled 1 package in 3ms
+Installed 1 package in 17ms
+ - torch-rs==0.1.0 (from file:///data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/review-unflatten-order/native/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl)
+ + torch-rs==0.1.0 (from file:///data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/target/postcommit-06a2496/native/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl)
