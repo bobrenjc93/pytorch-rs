@@ -228,6 +228,46 @@ class TensorTanhTests(unittest.TestCase):
                         leaf.sum().backward()
                         np.testing.assert_array_equal(np.asarray(leaf.grad), np.ones((1, *shape)))
 
+    def test_tracked_views_remain_rejected_after_disabling_base_gradients(self):
+        calls = {
+            "method": lambda x: x.tanh(),
+            "top level": lambda x: torch.tanh(input=x, out=None),
+            "functional": torch.nn.functional.tanh,
+            "tanhshrink": torch.nn.functional.tanhshrink,
+        }
+        message = r"^tanh\(\): autograd recording is not supported$"
+        for shape in ((), (2,), (1, 2), (1, 1, 2), (0,), (2, 0), (1, 0, 2)):
+            for name, call in calls.items():
+                with self.subTest(shape=shape, entry_point=name):
+                    base = torch.ones((1, *shape), requires_grad=True)
+                    view = base[0]
+                    before = np.asarray(view).copy()
+                    metadata = (view.shape, view.stride(), view.data_ptr())
+                    with self.assertRaisesRegex(RuntimeError, message):
+                        call(view)
+
+                    base.requires_grad_(False)
+                    self.assertFalse(base.requires_grad)
+                    self.assertTrue(view.requires_grad)
+                    self.assertFalse(view.is_leaf)
+                    with self.assertRaisesRegex(RuntimeError, message):
+                        call(view)
+                    self.assertIsNone(base.grad)
+                    self.assertEqual(metadata, (view.shape, view.stride(), view.data_ptr()))
+                    np.testing.assert_array_equal(np.asarray(view), before)
+
+                    detached = call(view.detach())
+                    with torch.no_grad():
+                        untracked = call(view)
+                    self.assertFalse(detached.requires_grad)
+                    self.assertFalse(untracked.requires_grad)
+                    np.testing.assert_array_equal(np.asarray(untracked), np.asarray(detached))
+                    self.assertTrue(call(view.clone()).requires_grad)
+                    # Rejection must preserve the original view's backward edge.
+                    base.requires_grad_(True)
+                    view.sum().backward()
+                    np.testing.assert_array_equal(np.asarray(base.grad), np.ones((1, *shape)))
+
     def test_values_layouts_offsets_empty_tensors_and_fresh_storage(self):
         expected_special_bits = np.asarray(
             (

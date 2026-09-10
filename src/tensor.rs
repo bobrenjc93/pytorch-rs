@@ -1845,7 +1845,11 @@ impl Tensor {
         };
         match &metadata.kind {
             AutogradKind::Leaf { .. } => self.shape.len() <= 4,
-            AutogradKind::NonLeaf { .. } => self.shape.len() <= 3,
+            // A recorded view keeps its graph even if its base's inherited
+            // requires-grad flag is later cleared. Its view marker persists.
+            AutogradKind::NonLeaf { .. } => {
+                self.shape.len() <= 3 && self.view_requires_grad.is_none()
+            }
         }
     }
 

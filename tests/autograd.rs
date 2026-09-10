@@ -3107,6 +3107,50 @@ fn tanh_rejects_nonfinite_and_rank_five_owned_leaves_before_graph_mutation() {
 }
 
 #[test]
+fn tanh_rejects_tracked_views_after_disabling_base_gradients() {
+    let unsupported = TensorError::AutogradRecordingUnsupported { operation: "tanh" };
+    for shape in [
+        &[][..],
+        &[2],
+        &[1, 2],
+        &[1, 1, 2],
+        &[0],
+        &[2, 0],
+        &[1, 0, 2],
+    ] {
+        let mut base_shape = vec![1];
+        base_shape.extend_from_slice(shape);
+        let mut base = Tensor::ones(base_shape).unwrap().with_requires_grad(true);
+        let view = base.index([0]).unwrap();
+        assert!(view.shares_storage_with(&base));
+        assert_eq!(view.tanh(), Err(unsupported.clone()));
+
+        base.requires_grad_(false).unwrap();
+        assert!(!base.requires_grad());
+        assert!(view.requires_grad());
+        assert!(!view.is_leaf());
+        assert_eq!(view.tanh(), Err(unsupported.clone()), "{shape:?}");
+        assert!(base.grad().unwrap().is_none());
+        assert!(view.shares_storage_with(&base));
+        assert_eq!(view.shape(), shape);
+        assert_eq!(values(&view), vec![1.0; view.numel()]);
+
+        assert!(!view.detach().unwrap().tanh().unwrap().requires_grad());
+        {
+            let _guard = no_grad();
+            assert!(!view.tanh().unwrap().requires_grad());
+        }
+        assert!(view.try_clone().unwrap().tanh().unwrap().requires_grad());
+        base.requires_grad_(true).unwrap();
+        view.sum().backward().unwrap();
+        assert_eq!(
+            values(&base.grad().unwrap().unwrap()),
+            vec![1.0; base.numel()]
+        );
+    }
+}
+
+#[test]
 fn tanh_rejects_tracked_views_before_graph_or_layout_mutation() {
     let unsupported = TensorError::AutogradRecordingUnsupported { operation: "tanh" };
 
