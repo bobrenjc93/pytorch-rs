@@ -1,0 +1,51 @@
+import hashlib, json, pathlib, subprocess, time
+root=pathlib.Path.cwd(); out=root/'target/post-commit-e8a4488'
+commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+assert commit=='e8a4488aa0751348a8e91f744b2d76e934576ba9'
+assert subprocess.check_output(['git','status','--porcelain'],text=True)==''
+sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+reports={}
+for name in ('mul-diagnostic-312','mul-diagnostic-314','mul-diagnostic-two-device','neg-add-diagnostic-312'):
+    report=json.loads((out/(name+'.json')).read_text())
+    previous=json.loads((root/'docs/diagnostics/compile-cuda-mul-scalar/recovery'/('final-'+name+'.json')).read_text())
+    assert report['base_commit']==commit and report['worktree_status']==''
+    assert report['summary']==previous['summary']
+    assert len(report['cases'])==len(previous['cases'])
+    for actual, prior in zip(report['cases'],previous['cases'],strict=True):
+        for key in ('program','shape','kind','backend','fullgraph','expected_supported','reference_eligible','native_outcome','native_outputs','reference_outputs','expectation_met'):
+            assert actual.get(key)==prior.get(key),(name,key)
+        if actual['expected_supported']:
+            assert len(actual['native_outputs'])==len(actual['reference_outputs'])==2
+            assert actual['native_outputs']==actual['reference_outputs']
+        assert actual['expectation_met']
+    for p,digest in report['source_sha256'].items(): assert sha(root/p)==digest,p
+    for p in (report['native_extension'], report['environment']['executable'], report['environment']['package'], report['environment']['native_runtime_library']):
+        pathlib.Path(p).absolute().relative_to(root)
+        assert pathlib.Path(p).exists(),p
+    assert sha(pathlib.Path(report['native_extension']))==report['native_extension_sha256']
+    if name.startswith('mul-'):
+        assert report['grammar_seed']==791406 and report['input_seeds']==[19092675,19092676]
+        assert report['generated_programs']==previous['generated_programs']
+        for program in report['generated_programs'].values():
+            assert hashlib.sha256(program['source'].encode()).hexdigest()==program['sha256']
+    reports[name]={'summary':report['summary'],'replaces_current_candidate_claim':'../recovery/final-'+name+'.json','sha256':sha(out/(name+'.json'))}
+for version in ('312','314'):
+    report=json.loads((out/f'build-provenance-{version}.json').read_text())
+    assert report['measured_code_commit']==commit and report['worktree_status']==''
+    for p,digest in report['source_sha256'].items(): assert sha(root/p)==digest,p
+    assert sha(pathlib.Path(report['wheel']))==report['wheel_sha256']
+    assert sha(pathlib.Path(report['native_extension']))==report['native_extension_sha256']
+    for p in (report['source_root'],report['wheel'],report['native_extension'],report['python']['executable'],report['build']['environment']['CARGO_TARGET_DIR']):
+        pathlib.Path(p).absolute().relative_to(root)
+    assert report['source_sha256']==json.loads((root/f'docs/diagnostics/compile-cuda-mul-scalar/recovery/final-provenance-{version}.json').read_text())['source_sha256']
+# Inspect all changed files, and ensure preserved evidence still matches e8a4488.
+for entry in json.loads((out/'candidate-inventory.json').read_text())['changed_files']:
+    assert sha(root/entry['path'])==entry['sha256'],entry['path']
+receipts=[json.loads(p.read_text()) for p in sorted(out.glob('*.receipt.json')) if p.stem!='audit.receipt']
+assert all(p.get('exit_code')==0 for p in receipts),receipts
+text=(out/'frozen-compile-corpus.log').read_text()
+parsed=json.JSONDecoder().raw_decode(text[text.index('{\n'):])[0]
+assert '38/38' in parsed['summary']
+record={'measured_code_commit':commit,'measured_worktree_status':'','recorded_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'reports':reports,'checks':{'complete_case_outcomes_unchanged':True,'complete_output_hashes_match':True,'grammar_and_input_seeds_unchanged':True,'source_native_wheel_hashes_verified':True,'all_recorded_worktree_paths_current':True,'implementation_and_all_prior_evidence_unchanged':True,'fixed_compile_corpus':'38/38 eligible cases; not universal Python coverage'},'commands':receipts,'cache_policy':'Fresh environments, build targets and CUDA/compiler caches. Existing worktree-local dependency downloads and managed interpreter reused.','supersedes':{'../recovery/final-provenance-312.json':'build-provenance-312.json','../recovery/final-provenance-314.json':'build-provenance-314.json','../recovery/final-frozen-compile-corpus.log':'frozen-compile-corpus.log','../recovery/evidence-integrity.json':'results.json'},'scope':'Non-scoring eager-backend correctness diagnostics and provenance refresh. No timing/performance claims. Author suites and historical baseline failures are preserved without unrelated reruns.'}
+(out/'results.json').write_text(json.dumps(record,indent=2)+'\n')
+print('Verified clean-commit provenance, every case/output, all local paths, unchanged source and retained evidence.')

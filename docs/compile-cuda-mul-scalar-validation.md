@@ -56,17 +56,58 @@ neg/add diagnostic, private four-workload CUDA benchmark and all scoring weights
 denominators and historical evidence are unchanged. No speed improvement is
 claimed for this unfused execution path.
 
-## Checkpoint recovery and pinned validation
+## Post-commit evidence
 
-Recovery starts at main `f88b7e8bb622d8aad58819b7985fb39d279a51c1`, which
-contains PR #1925, and applies checkpoint
+Current candidate evidence measures clean implementation commit
+`e8a4488aa0751348a8e91f744b2d76e934576ba9`. The
+[post-commit record](diagnostics/compile-cuda-mul-scalar/post-commit-e8a4488/results.json)
+indexes fresh reports, exact commands, timestamps, exit statuses, and the
+pre-commit reports they supersede. All measurements completed with empty git
+status before these reports and this documentation were added. This step
+changes no implementation, dependencies, tests, harnesses, or scoring inputs.
+
+Release wheels were rebuilt from that commit in separate fresh worktree-local
+Cargo targets and Python 3.12.13/3.14.7 environments, using the locked dev and
+reference groups. Existing worktree-local dependency downloads and the managed
+interpreter were reused; build targets and CUDA/compiler caches were new.
+[Python 3.12 build provenance](diagnostics/compile-cuda-mul-scalar/post-commit-e8a4488/build-provenance-312.json)
+and [Python 3.14 build provenance](diagnostics/compile-cuda-mul-scalar/post-commit-e8a4488/build-provenance-314.json)
+record the actual interpreter builds, packages, toolchains, wheel/native hashes,
+runtime libraries, source hashes, and current-worktree import paths. Installed
+Python files match the committed source and wheel contents; each installed
+extension matches its wheel. The native hash remains
+`8836dea002699a0d738a347428d8fdeac794a797cfb601b70574db35b0261628`.
+
+| Refreshed diagnostic | Cases | Reference eligible | Native pass | Native unsupported | Expectation failures |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `mul_neg_add_v1`, GPU 0, Python 3.12 and 3.14 (each) | 104 | 102 | 84 | 20 | 0 |
+| `mul_neg_add_v1`, GPUs 0,1, Python 3.12 | 8 | 6 | 6 | 2 | 0 |
+| `neg_add_v1`, GPU 0, Python 3.12 | 168 | 164 | 128 | 40 | 0 |
+
+Every case, reference eligibility decision, full output hash, generated source,
+and unsupported outcome matches the earlier report. Six focused scalar-guard
+and diagnostic-accounting checks passed on each interpreter; all five original
+two-device checks passed together. The unchanged evaluator again passed its
+38 reference-eligible cases. Reference tracing remains stock PyTorch 2.13's
+eager backend; these results do not establish universal Python coverage or
+Inductor CUDA performance parity. No timing workload was rerun or relabeled.
+
+The author test suites and baseline failures below retain their original
+measurement identities and raw files. They were not rerun merely to repeat
+author validation. This refresh supplies committed-code evidence for the final
+diagnostics and does not replace independent review or other merge gates.
+
+## Pre-commit recovery record
+
+Recovery started at main `f88b7e8bb622d8aad58819b7985fb39d279a51c1`, which
+contains PR #1925, and applied checkpoint
 `9a1512de97392beadde70875f58f35f76f4cbe7e` without committing. The original
-worktree was not modified. Final evidence measures this **uncommitted recovery
-candidate**, identified by the source hashes in
+worktree was not modified. The author's pre-commit evidence measured the
+**uncommitted recovery candidate**, identified by the source hashes in
 [Python 3.12 provenance](diagnostics/compile-cuda-mul-scalar/recovery/final-provenance-312.json)
 and [Python 3.14 provenance](diagnostics/compile-cuda-mul-scalar/recovery/final-provenance-314.json).
-The recorded base commit alone does not identify the tested implementation;
-Burner performs subsequent review and exact-head evaluation.
+Its recorded base commit alone does not identify the tested implementation.
+The refreshed diagnostics above now provide the clean-commit evidence.
 
 The recovery fixes dynamic scalar-node preflight: invalid declared dtype,
 device, gradient, layout, offset, or missing metadata now rejects before any
@@ -90,7 +131,7 @@ H100 tests use driver 580.82.07 and worktree-local `libcudart.so.13` reporting
 runtime 13000. Kernels use driver JIT of embedded PTX 6.0/sm_50; available
 nvcc 12.6.85 is not used by these builds.
 
-| Final check | Result |
+| Author check | Result |
 | --- | --- |
 | Combined Python 3.12 compiler, CUDA, multiplication, buffer and documentation set | 249 checks, OK; 11 hardware-specific skips under GPU mask `0` |
 | Python 3.14 compiler/CUDA and documentation set | 167 checks, OK; five two-device skips under mask `0` |

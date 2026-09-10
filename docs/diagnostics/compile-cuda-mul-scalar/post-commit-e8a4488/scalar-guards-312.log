@@ -1,0 +1,11 @@
+test_tensor_capture_and_stride_changes (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_tensor_capture_and_stride_changes) ... ok
+test_dynamic_scalar_node_metadata_rejects_before_execution (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_dynamic_scalar_node_metadata_rejects_before_execution) ... ok
+test_malformed_late_nodes_and_execution_failure (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_malformed_late_nodes_and_execution_failure) ... ok
+test_guarded_globals_helper_rebinding_and_limit (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_guarded_globals_helper_rebinding_and_limit) ... ok
+test_failed_reference_wrong_data_and_unsupported_results_are_retained (tests.test_compile_cuda_mul_scalar_diagnostic.ScalarDiagnosticAccountingTests.test_failed_reference_wrong_data_and_unsupported_results_are_retained) ... ok
+test_setup_failure_is_written_and_returns_nonzero (tests.test_compile_cuda_mul_scalar_diagnostic.ScalarDiagnosticAccountingTests.test_setup_failure_is_written_and_returns_nonzero) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.763s
+
+OK
