@@ -53,6 +53,12 @@ def _format_implementation(input, format_spec):
 # Defining the method in a Python class gives it PyTorch's function metadata.
 # The module binding is replaced with the native class immediately afterward.
 class Tensor:
+    def unflatten(self, dim, sizes):
+        """Split an integer dimension into list/tuple sizes, with optional -1 inference."""
+        if not sizes:
+            raise RuntimeError("unflatten: sizes must be non-empty")
+        return Tensor._unflatten(self, dim, sizes)
+
     def __format__(self, format_spec):
         return _dispatch_unary_torch_function(
             Tensor.__format__,
@@ -142,9 +148,11 @@ class Tensor:
 _format = Tensor.__format__
 _backward = Tensor.backward
 _is_shared = Tensor.is_shared
+_unflatten = Tensor.unflatten
 Tensor = _NativeTensor
 Tensor.__format__ = _format
 Tensor.backward = _backward
 Tensor.is_shared = _is_shared
+Tensor.unflatten = _unflatten
 
-del _format, _backward, _is_shared, _NativeTensor
+del _format, _backward, _is_shared, _unflatten, _NativeTensor

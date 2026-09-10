@@ -2569,6 +2569,47 @@ fn stride_aware_consumers_handle_transposed_and_indexed_views() {
 }
 
 #[test]
+fn unflatten_reuses_native_views_and_checks_the_selected_dimension() {
+    let base = Tensor::from_vec((0_u16..72).map(f32::from).collect(), [3, 4, 6]).unwrap();
+    let source = base.transpose(0, 1).unwrap().index_integer(1).unwrap();
+    let result = source.unflatten(-1, [2, -1]).unwrap();
+    assert_eq!(result.shape(), [3, 2, 3]);
+    assert_eq!(result.stride(), [24, 3, 1]);
+    assert_eq!(result.storage_offset(), 6);
+    assert!(result.shares_storage_with(&base));
+    assert_eq!(
+        result.logical_values().collect::<Vec<_>>(),
+        source.logical_values().collect::<Vec<_>>()
+    );
+
+    let empty = Tensor::zeros([0, 6]).unwrap();
+    let result = empty.unflatten(1, [2, -1]).unwrap();
+    assert_eq!(result.shape(), [0, 2, 3]);
+    assert!(result.shares_storage_with(&empty));
+    assert_eq!(empty.unflatten(0, [2, -1]).unwrap().shape(), [2, 0, 6]);
+    assert!(matches!(
+        empty.unflatten(1, [2, 4]),
+        Err(TensorError::UnflattenSizeMismatch { .. })
+    ));
+    assert!(matches!(
+        empty.unflatten(0, [0, -1]),
+        Err(TensorError::ReshapeAmbiguousZeroElements { .. })
+    ));
+    assert_eq!(
+        empty.unflatten(1, []),
+        Err(TensorError::UnflattenEmptySizes)
+    );
+    assert!(matches!(
+        empty.unflatten(2, [6]),
+        Err(TensorError::DimensionOutOfRange { .. })
+    ));
+    assert!(matches!(
+        Tensor::zeros([]).unwrap().unflatten(0, [1]),
+        Err(TensorError::UnflattenScalar { .. })
+    ));
+}
+
+#[test]
 fn flatten_collapses_compatible_ranges_as_shared_storage_views() {
     let source = Tensor::from_vec((0_u8..120).map(f32::from).collect(), [2, 3, 4, 5]).unwrap();
     let view = source.transpose(0, 1).unwrap().index_integer(1).unwrap();

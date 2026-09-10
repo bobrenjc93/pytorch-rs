@@ -1,16 +1,19 @@
 //! Python shape descriptors for native tensors.
 
 use pyo3::IntoPyObjectExt;
+use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError, PyTypeError};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyTuple};
+use pyo3::types::{PyBool, PyDict, PyList, PyTuple};
 
 use crate::{
+    DType, Device, TensorError,
     python::{
         PyTensor, PyTensorBase, bind_size_dimension, dispatch_tensorbase_getset_mode,
         dispatch_tensorbase_method_mode, dispatch_tensorbase_no_argument_mode,
         extract_dimension_swap_dimension, normalize_dimension,
     },
     python_size::construct_size,
+    python_tensor_errors::tensor_error,
 };
 
 #[pymethods]
@@ -89,6 +92,68 @@ impl PyTensorBase {
 
 #[pymethods]
 impl PyTensor {
+    // The Python-owned public method supplies CPython argument binding and the
+    // empty-sizes check before entering this native implementation.
+    fn _unflatten(
+        slf: &Bound<'_, Self>,
+        dim: &Bound<'_, PyAny>,
+        sizes: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
+        let tensor = slf.try_borrow()?;
+        if !slf.as_any().is_exact_instance_of::<Self>()
+            || tensor.inner().dtype() != DType::Float32
+            || tensor.inner().device() != Device::Cpu
+        {
+            return Err(PyNotImplementedError::new_err(
+                "unflatten(): only exact native CPU float32 Tensor inputs are supported",
+            ));
+        }
+        if dim.is_instance_of::<PyBool>() || !dim.hasattr("__index__")? {
+            return Err(PyTypeError::new_err(format!(
+                "unflatten(): argument 'dim' (position 1) must be int, not {}",
+                dim.get_type().name()?
+            )));
+        }
+        let dim = extract_dimension_swap_dimension(dim)?;
+        if !sizes.is_instance_of::<PyTuple>() && !sizes.is_instance_of::<PyList>() {
+            return Err(PyTypeError::new_err(format!(
+                "unflatten(): argument 'sizes' (position 2) must be tuple of ints, not {}",
+                sizes.get_type().name()?
+            )));
+        }
+        let mut parsed = Vec::new();
+        for (index, size) in sizes.try_iter()?.enumerate() {
+            let size = size?;
+            if size.is_instance_of::<PyBool>() || !size.hasattr("__index__")? {
+                return Err(PyTypeError::new_err(format!(
+                    "unflatten(): argument 'sizes' (position 2) must be tuple of ints, but found element of type {} at pos {index}",
+                    size.get_type().name()?
+                )));
+            }
+            let size = extract_dimension_swap_dimension(&size).map_err(|error| {
+                PyTypeError::new_err(format!(
+                    "unflatten(): argument 'sizes' failed to unpack the object at pos {} with error \"{}\"",
+                    index + 1,
+                    error.value(slf.py())
+                ))
+            })?;
+            parsed.push(size);
+        }
+        tensor
+            .inner()
+            .unflatten(dim, parsed)
+            .map(Self::new)
+            .map_err(|error| match error {
+                TensorError::UnflattenScalar { .. }
+                | TensorError::ReshapeMultipleInferredDimensions
+                | TensorError::ReshapeInvalidDimension { .. }
+                | TensorError::ReshapeAmbiguousZeroElements { .. } => {
+                    PyRuntimeError::new_err(format!("unflatten got an unexpected error:\n{error}"))
+                }
+                _ => tensor_error(&error),
+            })
+    }
+
     /// Alias for [`Tensor.dim()`](https://pytorch.org/docs/stable/generated/torch.Tensor.dim.html).
     #[getter]
     fn ndim(&self) -> usize {
