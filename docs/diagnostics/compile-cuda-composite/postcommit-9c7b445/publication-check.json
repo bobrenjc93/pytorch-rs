@@ -1,0 +1,21 @@
+{
+  "at": "2026-09-10T22:18:18.706981+00:00",
+  "measured_commit": "9c7b445c46373909392a2bce2e97c1b956240462",
+  "publication_commit": "pending Burner evidence-only delivery",
+  "tracked_documentation_changes": [
+    "docs/compile-cuda-matmul.md",
+    "docs/hardware-heterogeneity-evaluator.md"
+  ],
+  "copied_capture_files_match_original_bytes": true,
+  "historical_files_unchanged": 102,
+  "recorded_worktrees": [
+    "composite_0cfe917e"
+  ],
+  "supporting_documentation_links_exist": true,
+  "implementation_dependencies_tests_harnesses_unchanged": true,
+  "postpublication_documentation_smoke": "12 tests passed",
+  "git_diff_check": "passed",
+  "git_status_after_publication": " M docs/compile-cuda-matmul.md\n M docs/hardware-heterogeneity-evaluator.md\n?? docs/diagnostics/compile-cuda-composite/\n",
+  "path_inventory_parser_note": "An initial textual path scan included the closing parenthesis in a Cargo log location. Excluding that punctuation finds only the current composite worktree; no captured paths were modified.",
+  "note": "The working tree became dirty only when copying evidence and adding documentation links after all clean captures and final artifact audit."
+}

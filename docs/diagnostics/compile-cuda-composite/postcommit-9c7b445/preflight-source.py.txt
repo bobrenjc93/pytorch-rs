@@ -1,0 +1,87 @@
+import datetime
+import importlib
+import importlib.metadata
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+
+root = Path.cwd().resolve()
+work = root/'target/composite-postcommit-9c7b445'
+reports = work/'reports'
+sys.path.insert(0,str(root/'scripts'))
+from evaluate_cuda_math import sha256, source_provenance, runtime_provenance
+from diagnose_compile_cuda_matmul import cuda_identity
+assert not subprocess.check_output(['git','status','--porcelain'])
+assert Path(sys.executable).resolve().is_relative_to(root)
+assert Path(sys.base_prefix).resolve().is_relative_to(root)
+assert Path(sys.prefix).resolve() == root/'.venv'
+import torch_rs
+import torch
+import numpy
+import triton
+native = importlib.import_module('torch_rs.torch_rs')
+extension = Path(native.__file__).resolve()
+assert extension.is_relative_to(root/'.venv')
+manifest = {}
+for path in sorted((root/'python/torch_rs').rglob('*.py')):
+    installed = Path(torch_rs.__file__).parent/path.relative_to(root/'python/torch_rs')
+    assert sha256(path) == sha256(installed)
+    manifest[str(path.relative_to(root))] = sha256(path)
+local_extension = root/'python/torch_rs/torch_rs.abi3.so'
+shutil.copyfile(extension,local_extension)
+assert sha256(extension)==sha256(local_extension)
+assert torch.__version__.split('+')[0]=='2.13.0'
+assert torch.cuda.is_available() and torch.cuda.device_count()==1
+assert torch_rs.ones((2,)).to('cuda:0').cpu().tolist()==[1.0,1.0]
+identities={}
+def identity(name,path,local=True):
+    path=Path(path).resolve(strict=True)
+    if local:
+        assert path.is_relative_to(root),path
+    identities[name]={'path':str(path),'sha256':sha256(path),'worktree_local':local}
+for name,path in [('interpreter',sys.executable),('candidate_package',torch_rs.__file__),
+                  ('installed_extension',extension),('worker_extension',local_extension),
+                  ('reference_package',torch.__file__),('reference_extension',torch._C.__file__),
+                  ('numpy',numpy.__file__),('triton',triton.__file__),
+                  ('cudart',os.environ['TORCH_RS_CUDART']),('cublas',os.environ['TORCH_RS_CUBLAS'])]:
+    identity(name,path)
+for name in ('libtorch_cpu.so','libtorch_cuda.so'):
+    identity(name,Path(torch.__file__).parent/'lib'/name)
+from triton.backends.nvidia.compiler import get_ptxas
+ptxas=Path(get_ptxas(90).path).resolve()
+identity('reference_ptxas',ptxas)
+for path in sorted({line.split()[-1] for line in Path('/proc/self/maps').read_text().splitlines()
+                    if '/libcuda.so' in line or '/libnvidia-ptxjitcompiler.so' in line}):
+    identity('system_'+Path(path).name,path,local=False)
+wheel=next((work/'wheels').glob('*.whl'))
+identity('wheel',wheel)
+record={**source_provenance(),'extension_sha256':sha256(extension),
+        'build_command':'.venv/bin/maturin build --release --locked --out target/composite-postcommit-9c7b445/wheels',
+        'rustc':subprocess.check_output([os.environ['RUSTC'],'-Vv'],text=True),
+        'cargo':subprocess.check_output([os.environ['COMPOSITE_CARGO'],'-V'],text=True),
+        'nvcc':'unused; native cuBLAS and driver-JIT embedded PTX',
+        'wheel':str(wheel),'wheel_sha256':sha256(wheel),
+        'build_receipt':str(reports/'build.receipt.json'),
+        'build_receipt_sha256':sha256(reports/'build.receipt.json'),
+        'build_log_sha256':sha256(reports/'build.log'),
+        'installed_extension':str(extension),'worker_extension':str(local_extension),
+        'profile':{'release':True,'lto':'thin','codegen-units':1,'features':['extension-module']}}
+(reports/'build-record.json').write_text(json.dumps(record,indent=2)+'\n')
+preflight={'at':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+           'source':source_provenance(),'git_status':'','identities':identities,
+           'sys_executable':sys.executable,'realpath_sys_executable':str(Path(sys.executable).resolve()),
+           'sys_base_prefix':sys.base_prefix,'sys_prefix':sys.prefix,'python_version':sys.version,
+           'torch_version':torch.__version__,'torch_cuda':torch.version.cuda,
+           'torch_build':torch.__config__.show(),'numpy_version':numpy.__version__,
+           'triton_version':triton.__version__,'ptxas_version':subprocess.check_output([str(ptxas),'--version'],text=True),
+           'installed_source_manifest':manifest,'runtime':runtime_provenance(),
+           'driver_identity':cuda_identity('libcuda.so.1',driver=True),
+           'native_runtime_identity':cuda_identity(os.environ['TORCH_RS_CUDART']),
+           'reference_gpu_uuid':str(torch.cuda.get_device_properties(0).uuid),
+           'note':'Preflight of the fresh wheel; reference dependencies and interpreter unchanged. System driver and Rust toolchain are external; all Python/native/reference/CUDA runtime/PTX assembler artifacts are local.'}
+(reports/'environment-preflight.json').write_text(json.dumps(preflight,indent=2)+'\n')
+assert not subprocess.check_output(['git','status','--porcelain'])
+print('Verified local interpreter/base prefix, locked reference dependencies, installed source manifest, fresh native wheel, worker extension, and runtime identities.')

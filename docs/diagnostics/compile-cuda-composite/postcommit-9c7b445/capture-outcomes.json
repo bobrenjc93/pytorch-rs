@@ -1,0 +1,32 @@
+[
+  {
+    "name": "hardware",
+    "exit_code": 0,
+    "expected_exit_code": 0
+  },
+  {
+    "name": "default",
+    "exit_code": 0,
+    "expected_exit_code": 0
+  },
+  {
+    "name": "explicit",
+    "exit_code": 0,
+    "expected_exit_code": 0
+  },
+  {
+    "name": "reject-mismatch",
+    "exit_code": 1,
+    "expected_exit_code": 1
+  },
+  {
+    "name": "reject-multiple",
+    "exit_code": 1,
+    "expected_exit_code": 1
+  },
+  {
+    "name": "reject-absent",
+    "exit_code": 1,
+    "expected_exit_code": 1
+  }
+]

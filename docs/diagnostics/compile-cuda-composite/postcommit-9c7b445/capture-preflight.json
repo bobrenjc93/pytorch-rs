@@ -1,0 +1,16 @@
+{
+  "at": "2026-09-10T22:09:59.530310+00:00",
+  "git_status": "",
+  "cache_initial_files": {
+    "CUDA_CACHE_PATH": 0,
+    "TRITON_CACHE_DIR": 0,
+    "TORCHINDUCTOR_CACHE_DIR": 0
+  },
+  "environment": {
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/target/composite-postcommit-9c7b445/cuda",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/target/composite-postcommit-9c7b445/triton",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/target/composite-postcommit-9c7b445/inductor",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/target/composite-postcommit-9c7b445/tmp",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/target/composite-postcommit-9c7b445/cache"
+  }
+}

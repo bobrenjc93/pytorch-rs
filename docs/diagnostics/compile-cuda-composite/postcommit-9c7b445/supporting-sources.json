@@ -1,0 +1,30 @@
+{
+  "receipt-source.py.txt": {
+    "execution_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/target/composite-postcommit-9c7b445/run_receipt.py",
+    "sha256": "e67b2705b084b8af5c4a85fbd31611fe6a7fc5b826c960c9acf2ccb9dd3b016f"
+  },
+  "preflight-source.py.txt": {
+    "execution_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/target/composite-postcommit-9c7b445/prepare.py",
+    "sha256": "8d53ff8003058bb4f9e0d26160b667ff21f51df96041f65e2ee4caf59c81d330"
+  },
+  "capture-source.py.txt": {
+    "execution_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/target/composite-postcommit-9c7b445/capture.py",
+    "sha256": "d22b29200e266313a281d96b2df811d069659f4608a5d3fb84aaf195f1148bca"
+  },
+  "audit-source.py.txt": {
+    "execution_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/target/composite-postcommit-9c7b445/audit.py",
+    "sha256": "9903bbaf5584d0da3e227fa80611d039ddf2a1e32cc859cc3e2b73b85ce4bce6"
+  },
+  "environment.sh.txt": {
+    "execution_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/target/composite-postcommit-9c7b445/env.sh",
+    "sha256": "309bd673676cc15642ca1c4c921983e3d570b4e9f6155890da5f979fad1279d2"
+  },
+  "bootstrap-environment.sh.txt": {
+    "execution_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/target/composite-integration/env.sh",
+    "sha256": "e1ec659aec05b4a6c1837132f693d3415e8cd904ff597b353d652115b30cbb32"
+  },
+  "audit-v2-source.py.txt": {
+    "execution_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/target/composite-postcommit-9c7b445/audit-v2.py",
+    "sha256": "72b2d2630fc44382f3853402d293984f7284d5083f30ef95a272b0c9ffc4ab1a"
+  }
+}

@@ -1,0 +1,27 @@
+export COMPOSITE_ROOT="$(pwd -P)"
+export COMPOSITE_SETUP="$COMPOSITE_ROOT/target/composite-integration"
+export TMPDIR="$COMPOSITE_SETUP/tmp"
+export XDG_CACHE_HOME="$COMPOSITE_SETUP/cache"
+export UV_CACHE_DIR="$COMPOSITE_SETUP/uv-cache"
+export UV_PYTHON_INSTALL_DIR="$COMPOSITE_SETUP/python"
+export UV_PYTHON_BIN_DIR="$COMPOSITE_SETUP/python-bin"
+export UV_TOOL_BIN_DIR="$COMPOSITE_SETUP/tool-bin"
+export UV_TOOL_DIR="$COMPOSITE_SETUP/tools"
+export UV_LINK_MODE=copy
+export UV_NO_CONFIG=1
+export CARGO_HOME="$COMPOSITE_SETUP/cargo-home"
+export CARGO_TARGET_DIR="$COMPOSITE_SETUP/build-development"
+export CUDA_CACHE_PATH="$COMPOSITE_SETUP/cuda-cache"
+export TRITON_CACHE_DIR="$COMPOSITE_SETUP/triton-cache"
+export TORCHINDUCTOR_CACHE_DIR="$COMPOSITE_SETUP/inductor-cache"
+export PYTHONPYCACHEPREFIX="$COMPOSITE_SETUP/pycache"
+export PYTHONDONTWRITEBYTECODE=1
+export PYO3_PYTHON="$COMPOSITE_ROOT/.venv/bin/python"
+export RUSTC="$(rustup which --toolchain 1.92.0 rustc)"
+export RUSTDOC="$(rustup which --toolchain 1.92.0 rustdoc)"
+export COMPOSITE_CARGO="$(rustup which --toolchain 1.92.0 cargo)"
+export PATH="$(dirname "$COMPOSITE_CARGO"):$COMPOSITE_ROOT/.venv/bin:$PATH"
+export CUDA_VISIBLE_DEVICES=0
+export TORCH_RS_CUDART="$COMPOSITE_ROOT/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13"
+export TORCH_RS_CUBLAS="$COMPOSITE_ROOT/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcublas.so.13"
+mkdir -p "$TMPDIR" "$XDG_CACHE_HOME" "$UV_CACHE_DIR" "$UV_PYTHON_INSTALL_DIR" "$UV_PYTHON_BIN_DIR" "$UV_TOOL_BIN_DIR" "$UV_TOOL_DIR" "$CARGO_HOME" "$CUDA_CACHE_PATH" "$TRITON_CACHE_DIR" "$TORCHINDUCTOR_CACHE_DIR"

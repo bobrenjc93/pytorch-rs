@@ -1,0 +1,190 @@
+{
+  "at": "2026-09-10T22:07:12.005988+00:00",
+  "source": {
+    "commit": "9c7b445c46373909392a2bce2e97c1b956240462",
+    "source_sha256": "2fe1d2ab1404f3bc26ff3c6e1dc20216603f6577b09ab38cce4703b4205c67cc",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "git_status": "",
+  "interpreter": {
+    "invoked": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/bin/python",
+    "realpath": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/target/composite-integration/python/cpython-3.12.12-linux-x86_64-gnu/bin/python3.12",
+    "base_prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/target/composite-integration/python/cpython-3.12.12-linux-x86_64-gnu",
+    "sha256": "3008abbb48c1e2b0fa3072ae72334b9b352e1346ea3a20d34126a455f0c7bc66",
+    "version": "3.12.12 (main, Feb 12 2026, 00:42:14) [Clang 21.1.4 ]"
+  },
+  "packages": {
+    "cuda-toolkit": {
+      "version": "13.0.3.0",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "typing-extensions": {
+      "version": "4.16.0",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "nvidia-cufile": {
+      "version": "1.15.1.6",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "markupsafe": {
+      "version": "3.0.3",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "filelock": {
+      "version": "3.32.2",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "jinja2": {
+      "version": "3.1.6",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "maturin": {
+      "version": "1.14.1",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "cuda-pathfinder": {
+      "version": "1.6.0",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "nvidia-nvtx": {
+      "version": "13.0.85",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "fsspec": {
+      "version": "2026.7.0",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "nvidia-cusparse": {
+      "version": "12.6.3.3",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "mpmath": {
+      "version": "1.3.0",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "nvidia-nvjitlink": {
+      "version": "13.3.33",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "cuda-bindings": {
+      "version": "13.3.1",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "nvidia-cusparselt-cu13": {
+      "version": "0.8.1",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "nvidia-cuda-cupti": {
+      "version": "13.0.85",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "nvidia-cuda-runtime": {
+      "version": "13.0.96",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "nvidia-curand": {
+      "version": "10.4.0.35",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "nvidia-nccl-cu13": {
+      "version": "2.29.7",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "nvidia-cuda-nvrtc": {
+      "version": "13.0.88",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "setuptools": {
+      "version": "84.0.0",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "networkx": {
+      "version": "3.6.1",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "numpy": {
+      "version": "2.5.1",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "sympy": {
+      "version": "1.14.0",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "nvidia-cufft": {
+      "version": "12.0.0.61",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "nvidia-cusolver": {
+      "version": "12.0.4.66",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "nvidia-cublas": {
+      "version": "13.1.1.3",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "nvidia-cudnn-cu13": {
+      "version": "9.20.0.48",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "nvidia-nvshmem-cu13": {
+      "version": "3.4.5",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "triton": {
+      "version": "3.7.1",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "torch": {
+      "version": "2.13.0",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    },
+    "torch-rs": {
+      "version": "0.1.0",
+      "location": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages"
+    }
+  },
+  "dependency_setup": "Reused verified worktree-local interpreter and uv.lock-matching dependencies; no dependencies installed or changed. Local Cargo registry reused; native target absent before fresh build.",
+  "lock_sha256": {
+    "uv.lock": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced",
+    "Cargo.lock": "5adbfbc4753473099a887c270512ec919d8e0c53cd442750709e7a4e93d905b4"
+  },
+  "cargo_target_initially_absent": true,
+  "hardware_seeds": [
+    6132505239447970515,
+    8782175947437908558
+  ],
+  "routing_seed": 798431,
+  "source_publication_heldout_seeds_preserved": [
+    481723,
+    926051
+  ],
+  "routing_scope": "One full report per selection path; both original six-report historical publications retained unchanged. No cross-GPU performance comparison.",
+  "devices": [
+    {
+      "index": 0,
+      "uuid": "GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1",
+      "mask": "0"
+    },
+    {
+      "index": 2,
+      "uuid": "GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e",
+      "mask": "GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e"
+    }
+  ],
+  "gpu_inventory": "index, uuid, pci.bus_id, name, driver_version, compute_cap, memory.used [MiB], utilization.gpu [%]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 00000000:06:00.0, NVIDIA H100, 580.82.07, 9.0, 116 MiB, 0 %\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 00000000:26:00.0, NVIDIA H100, 580.82.07, 9.0, 130 MiB, 0 %\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 00000000:46:00.0, NVIDIA H100, 580.82.07, 9.0, 4 MiB, 0 %\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 00000000:66:00.0, NVIDIA H100, 580.82.07, 9.0, 4 MiB, 0 %\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 00000000:86:00.0, NVIDIA H100, 580.82.07, 9.0, 102 MiB, 0 %\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 00000000:A6:00.0, NVIDIA H100, 580.82.07, 9.0, 108 MiB, 0 %\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 00000000:C6:00.0, NVIDIA H100, 580.82.07, 9.0, 60 MiB, 0 %\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 00000000:EC:00.0, NVIDIA H100, 580.82.07, 9.0, 114 MiB, 0 %\n",
+  "cache_initial_files": {
+    "CUDA_CACHE_PATH": 0,
+    "TRITON_CACHE_DIR": 0,
+    "TORCHINDUCTOR_CACHE_DIR": 0
+  },
+  "cache_policy": "Fresh measurement caches; retained across orders/reports. Focused checks use separate caches. Evaluator workers allocate their own local temporary caches.",
+  "external_toolchain": {
+    "rustc_path": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustc",
+    "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)\nbinary: rustc\ncommit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234\ncommit-date: 2025-12-08\nhost: x86_64-unknown-linux-gnu\nrelease: 1.92.0\nLLVM version: 21.1.3\n",
+    "cargo_path": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/cargo",
+    "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)\n",
+    "nvcc_installed": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0\n",
+    "native_nvcc_use": "unused; cuBLAS and driver-JIT PTX"
+  },
+  "system_driver": "NVIDIA 580.82.07; system libcuda.so.1 is external to local dependencies"
+}

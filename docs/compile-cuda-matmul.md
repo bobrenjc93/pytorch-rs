@@ -187,3 +187,14 @@ records implementation `4e75e9ae`: all six full reports passed on GPU0 and
 UUID-selected GPU2, with retained mismatch/multi-device/absent-mask rejections,
 fresh wheel provenance and unchanged-work checks. Independent review and merge
 gates remain separate; no cross-GPU speedup is claimed.
+
+### Combined clean capture
+
+[Combined evidence from implementation `9c7b445c`](diagnostics/compile-cuda-composite/postcommit-9c7b445/README.md)
+records a fresh locked release wheel, verified worktree-local interpreter and
+runtime identities, full GPU0 and UUID-selected GPU2 reports at seed `798431`,
+and mismatch/multiple/absent-mask zero-work rejections. Both reports passed all
+12 cells with clean source before and after capture. The same publication
+includes the six-case hardware compilation accounting and all raw receipts.
+These routing results are not a cross-GPU performance comparison; independent
+review, current gates, exact-head CI and managed delivery remain separate.

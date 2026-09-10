@@ -469,3 +469,23 @@ with thin LTO and one codegen unit. Installed `nvcc` was 12.6.85 and was unused.
 Native cuBLAS 13 and driver-JIT PTX paths are recorded separately in the worker
 observations. No inference performance was measured. All 16 focused accounting
 and isolation tests passed; their output is preserved in the capture receipt.
+
+### Combined clean capture
+
+The [combined publication](diagnostics/compile-cuda-composite/postcommit-9c7b445/README.md)
+measures clean implementation `9c7b445c46373909392a2bce2e97c1b956240462`, including
+the provenance correction above. It uses a fresh locked release wheel built in
+an empty local Cargo target and a verified worktree-local CPython 3.12.12
+interpreter, venv and locked dependencies. Resolved executable/base-prefix,
+interpreter, source, native extension and reference/runtime hashes are retained.
+
+At evaluator-selected seeds `6132505239447970515` and `8782175947437908558`, all
+12 reference trials passed both executions. The candidate earned **5/6** slots;
+row sum failed initial lowering with `KW_NAMES` at both seeds and remains zero.
+The [raw report](diagnostics/compile-cuda-composite/postcommit-9c7b445/hardware.json)
+and [command receipt](diagnostics/compile-cuda-composite/postcommit-9c7b445/hardware.receipt.json)
+retain failed observations, initial/changed outputs for supported cases, native
+execution evidence, actual environment and clean statuses. Original source
+captures remain unchanged. This is bounded accounting of existing capability,
+not a new compiler feature or an automatic overall-score increase. Evidence-only
+publication, independent review and managed merge gates remain Burner-owned.
