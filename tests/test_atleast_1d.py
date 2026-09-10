@@ -267,7 +267,7 @@ class Atleast1dTests(unittest.TestCase):
                     torch.atleast_1d(sequence)
         self.assertEqual(Override.calls, [])
 
-    def test_variadic_overrides_and_modes_are_explicitly_unsupported(self):
+    def test_variadic_foreign_inputs_remain_unsupported_under_modes(self):
         source = torch.tensor(2.0)
 
         class Override:
@@ -279,7 +279,11 @@ class Atleast1dTests(unittest.TestCase):
                 return object()
 
         value = Override()
-        for args in ((source, value), (value, source)):
+        unsupported_args = (
+            (source, value), (value, source), (source, None),
+            (source, [source]), (source, source, value),
+        )
+        for args in unsupported_args:
             with self.subTest(args=args), self.assertRaisesRegex(
                 TypeError, f"^{re.escape(UNSUPPORTED)}$"
             ):
@@ -295,11 +299,64 @@ class Atleast1dTests(unittest.TestCase):
                 return object()
 
         mode = RecordingMode()
-        with mode, self.assertRaisesRegex(
-            TypeError, f"^{re.escape(UNSUPPORTED)}$"
-        ):
-            torch.atleast_1d(source, source)
+        for args in unsupported_args:
+            with self.subTest(mode_args=args), mode, self.assertRaisesRegex(
+                TypeError, f"^{re.escape(UNSUPPORTED)}$"
+            ):
+                torch.atleast_1d(*args)
+
         self.assertEqual(mode.calls, [])
+        self.assertEqual(Override.calls, [])
+
+    def test_variadic_modes_intercept_and_delegate_original_arguments(self):
+        scalar = torch.tensor(2.0, requires_grad=True)
+        vector = torch.tensor([3.0, 4.0], requires_grad=True)
+        empty = torch.zeros((0,))
+        sources = (scalar, vector, empty, vector)
+        marker = object()
+        calls = []
+
+        class Mode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label, delegate):
+                self.label = label
+                self.delegate = delegate
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                calls.append((self.label, func, types, args, kwargs))
+                return func(*args, **kwargs) if self.delegate else marker
+
+        for delegate in (False, True):
+            calls.clear()
+            lower = Mode("lower", delegate)
+            upper = Mode("upper", delegate)
+            with lower, upper:
+                result = torch.atleast_1d(*sources)
+                self.assertEqual(
+                    torch.overrides._get_current_function_mode_stack(),
+                    [lower, upper],
+                )
+            self.assertEqual(
+                [call[0] for call in calls],
+                ["upper", "lower"] if delegate else ["upper"],
+            )
+            for _, func, types, args, kwargs in calls:
+                self.assertIs(func, torch.atleast_1d)
+                self.assertEqual(types, (torch.Tensor,))
+                self.assertEqual(len(args), len(sources))
+                for argument, source in zip(args, sources, strict=True):
+                    self.assertIs(argument, source)
+                self.assertEqual(kwargs, {})
+            if delegate:
+                self.assertIs(type(result), tuple)
+                self.assertTrue(result[0].is_set_to(scalar.reshape((1,))))
+                for item, source in zip(result[1:], sources[1:], strict=True):
+                    self.assertIs(item, source)
+                (result[0].sum() + result[1].sum()).backward()
+                self.assertEqual(scalar.grad.item(), 1.0)
+                np.testing.assert_array_equal(np.asarray(vector.grad), [1.0, 1.0])
+            else:
+                self.assertIs(result, marker)
+            self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
 
     def test_outer_sequence_overrides_and_modes_precede_the_fast_path(self):
         source = torch.tensor(2.0)
