@@ -1,0 +1,23 @@
+{
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_691bd0c0/.venv/bin/python",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_691bd0c0/target/composite-postcommit-3c320cb/finalize-publication.py"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_691bd0c0",
+  "started_at": "2026-09-10T18:28:03.274902+00:00",
+  "ended_at": "2026-09-10T18:28:03.295525+00:00",
+  "wall_seconds": 0.0206240052357316,
+  "exit_status": 0,
+  "previous_copy_index_sha256": "aeefa84442dac97f6005003901158740c851f874b7d27f34ba6831f9e0a36ddb",
+  "repairs": [
+    {
+      "path": "publication.log",
+      "initial_published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "completed_original_sha256": "bd6e71660e3ece6d942d90560925ff3463f3fc585d16810b959e7da30203992a",
+      "reason": "Publisher stdout was copied before publisher exited; recopying the actual completed original."
+    }
+  ],
+  "measured_reports_and_receipts_unchanged": true,
+  "code_commit": "3c320cb2e36ae1f165437e095ecf69cbcd1f59f4",
+  "git_status": " M docs/compile-cuda-matmul.md\n M docs/composite-native-graph-cpu-gradients.md\n?? docs/diagnostics/compile-cuda-graph/postcommit-3c320cb/\n"
+}

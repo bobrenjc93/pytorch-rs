@@ -1,0 +1,105 @@
+"""Post-capture evidence audit; does not execute workloads or alter reports."""
+import datetime,hashlib,io,json,math,pathlib,statistics,subprocess,sys,tarfile,zipfile
+R=pathlib.Path.cwd();O=R/'target/composite-postcommit-3c320cb';COMMIT='3c320cb2e36ae1f165437e095ecf69cbcd1f59f4';PUB='42c933e2d38d26b5ffa18cdf936fced3829bc4ba';H=R/'docs/diagnostics/compile-cuda-graph/postcommit-786c1b2'
+sys.path.insert(0,str(R/'scripts'))
+from diagnose_compile_cuda_matmul import cells,aggregate
+from evaluate_cuda_math import source_provenance,corpus,account
+
+def sha(p):
+ with open(p,'rb') as f:return hashlib.file_digest(f,'sha256').hexdigest()
+def read(p):return json.loads(pathlib.Path(p).read_text())
+def git(*args):return subprocess.check_output(['git',*args])
+def source_manifest(commit,*paths):
+ with tarfile.open(fileobj=io.BytesIO(git('archive','--format=tar',commit,*paths))) as tar:
+  return {m.name:hashlib.sha256(tar.extractfile(m).read()).hexdigest() for m in tar.getmembers() if m.isfile()}
+def local(p):
+ p=pathlib.Path(p).resolve();assert p.is_relative_to(R),p;return p
+assert git('rev-parse','HEAD').decode().strip()==COMMIT and not git('status','--porcelain')
+source=source_provenance();manifest=read(O/'source-manifest.json');assert manifest=={p:sha(R/p) for p in manifest}
+committed=source_manifest(COMMIT,'src','python','tests','scripts','.github','Cargo.toml','Cargo.lock','pyproject.toml','uv.lock','rust-toolchain.toml','AGENTS.md');assert manifest==committed
+code=source_manifest(COMMIT,'src','python','Cargo.toml','Cargo.lock','pyproject.toml','rust-toolchain.toml')
+assert source['source_sha256']==hashlib.sha256(json.dumps(code,sort_keys=True).encode()).hexdigest()
+build=read(O/'build-capture/build-record.json')
+assert build['clean_checkout'] and not build['git_status_before_build'] and build['measurement_kind']=='clean-code'
+assert all(build[k]==v for k,v in source.items())
+assert not pathlib.Path(build['environment']['CARGO_TARGET_DIR']).is_relative_to(R/'target/integration')
+for prefix in ('extension','wheel','interpreter'):
+ assert sha(local(build[prefix+'_path']))==build[prefix+'_sha256']
+assert sha(local(build['source_extension_path']))==build['extension_sha256']
+assert sha(build['rustc_path'])==build['rustc_sha256']
+with zipfile.ZipFile(build['wheel_path']) as z:
+ extensions=[n for n in z.namelist() if n.endswith('.so')];assert len(extensions)==1
+ assert hashlib.sha256(z.read(extensions[0])).hexdigest()==build['extension_sha256']
+ for p,h in code.items():
+  if p.startswith('python/') and p.endswith('.py'):assert hashlib.sha256(z.read(p.removeprefix('python/'))).hexdigest()==h,p
+for c in build['commands']:
+ assert c['exit_status']==0 and sha(c['log'])==c['log_sha256']
+commands=read(O/'commands.json')
+for c in commands:
+ assert c['source_before']==c['source_after']==source and not c['status_before'] and not c['status_after']
+ assert c['source_manifest_sha256']==sha(O/'source-manifest.json') and sha(c['log'])==c['log_sha256']
+historical={}
+for p in git('ls-tree','-r','--name-only',PUB,str(H.relative_to(R))).decode().splitlines():
+ blob=git('show',PUB+':'+p);assert (R/p).read_bytes()==blob,p
+ historical[p]=hashlib.sha256(blob).hexdigest()
+(O/'historical-preservation.json').write_text(json.dumps(dict(publication_commit=PUB,file_count=len(historical),checked_in_bytes_unchanged=True,old_runtime_binaries_rehashed=False,sha256=historical),indent=2)+'\n')
+import numpy as np
+raw=0;first=0;reports=[];libraries={}
+for name,seed in read(O/'inspection.json')['sequence']:
+ p=read(O/(name+'.json'));historical_report=read(H/(name+'.json'))
+ assert p['source']==p['source_after']==source
+ assert p['build_record']['record']==build and p['build_record']['sha256']==sha(O/'build-capture/build-record.json')
+ assert not p['git_status'] and p['measurement_kind']=='clean-commit'
+ assert p['harness_sha256']==sha(R/'scripts/diagnose_compile_cuda_matmul.py')
+ assert p['seed']==seed and p['policy']==historical_report['policy'] and len(p['cases'])==12
+ rng=np.random.default_rng(seed);count=0;observations=0
+ for expected,c,hist in zip(cells(seed),p['cases'],historical_report['cases']):
+  for k in ('shape_mkn','offset','program'):
+   assert (list(expected[k]) if k=='shape_mkn' else expected[k])==c[k]==hist[k]
+  m,k,n=c['shape_mkn'];offset=c['offset']
+  vals=[rng.normal(size=offset+size).astype(np.float32) for size in (m*k,k*n)];rng.normal(size=n).astype(np.float32)
+  if 'input_hashes' in c:assert [hashlib.sha256(v.tobytes()).hexdigest() for v in vals]==c['input_hashes']==hist['input_hashes']
+  if c['status']!='passed':assert c['capped_parity']==0
+  collected={'native':[],'pytorch':[]}
+  for i,order in enumerate(c['orders']):
+   assert order['order']==p['policy']['orders'][i]
+   observations+=len(order.get('first_call_ms',{}))
+   for key,sample in order.get('samples',{}).items():
+    calls=sample['calls_us'];blocks=sample['samples_us'];count+=len(calls)
+    for j,b in enumerate(blocks):assert math.isclose(sum(calls[5*j:5*j+5])/5,b,rel_tol=1e-12)
+    if c['status']=='passed':
+     assert len(calls)==sample['checked_calls']==155 and len(blocks)==31
+     assert statistics.median(blocks)==sample['median_us']
+    collected[key]+=blocks
+  if c['status']=='passed':
+   assert len(c['orders'])==2
+   for key,values in collected.items():assert statistics.median(values)==c['timings'][key]['median_us']
+   assert math.isclose(c['capped_parity'],min(1.,statistics.median(collected['pytorch'])/statistics.median(collected['native'])),rel_tol=1e-12)
+ assert math.isclose(aggregate(p['cases']),p['capped_geometric_parity'],rel_tol=1e-12)
+ if p['status']=='passed':assert count==7440 and observations==48 and all(c['status']=='passed' for c in p['cases'])
+ for lib in p['loaded_cuda_libraries']:
+  path=local(lib['path']);assert sha(path)==lib['sha256'];libraries[str(path)]=lib['sha256']
+ pt=p['reference_triton_compiler'];assert sha(local(pt['ptxas_path']))==pt['ptxas_sha256'];libraries[pt['ptxas_path']]=pt['ptxas_sha256']
+ for path in p['imports'].values():assert local(path).is_relative_to(R/'.venv')
+ expected_py={path:h for path,h in code.items() if path.startswith('python/') and path.endswith('.py')};assert p['installed_source_manifest']==expected_py
+ installed=pathlib.Path(p['imports']['torch_rs']).parent
+ for path,h in expected_py.items():assert sha(installed/pathlib.Path(path).relative_to('python/torch_rs'))==h
+ reports.append(dict(name=name,seed=seed,status=p['status'],passed_cells=sum(c['status']=='passed' for c in p['cases']),raw_calls=count,first_calls=observations,capped_parity=p['capped_geometric_parity'],sha256=sha(O/(name+'.json'))))
+ raw+=count;first+=observations
+math_report=read(O/'fixed-math.json');assert account(corpus(),math_report['seeds'],math_report['trials'],build,source)==math_report['accounting']
+scoring=read(O/'fixed-scoring.json');scoring_artifacts={}
+def inspect(v):
+ if isinstance(v,dict):
+  if v.get('source_path') and v.get('library_path') and v.get('source_checksum'):
+   s=local(v['source_path']);lib=local(v['library_path']);assert hashlib.blake2b(s.read_bytes(),digest_size=16).hexdigest()==v['source_checksum']
+   scoring_artifacts[str(lib)]=dict(sha256=sha(lib),source_path=str(s),source_sha256=sha(s),reused=v.get('reused'))
+  for item in v.values():inspect(item)
+ elif isinstance(v,list):
+  for item in v:inspect(item)
+inspect(scoring)
+import torch
+reference_files=[pathlib.Path(torch.__file__),pathlib.Path(torch._C.__file__),pathlib.Path(np.__file__)]
+reference_files += [pathlib.Path(torch.__file__).parent/'lib'/n for n in ('libtorch_cuda.so','libtorch_cpu.so','libc10_cuda.so')]
+reference={str(local(p)):sha(p) for p in reference_files if p.is_file()}
+result=dict(commit=COMMIT,source=source,source_manifest_sha256=sha(O/'source-manifest.json'),build_sha256=sha(O/'build-capture/build-record.json'),source_and_receipt_checks='passed',reports=reports,verified_individual_calls=raw,verified_first_calls=first,failed_commands=[c['command'] for c in commands if c['exit_status']],historical_files_unchanged=len(historical),historical_runtime_binaries_rehashed=False,current_runtime_libraries=libraries,reference_binaries=reference,fixed_math=math_report['accounting'],fixed_scoring=scoring['aggregates'],fixed_scoring_artifacts=scoring_artifacts,interpretation='current clean-code diagnostics; no repeatable native acceleration claim or new paired-baseline performance conclusion')
+print(json.dumps(result,indent=2))

@@ -1,0 +1,28 @@
+{
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_691bd0c0/.venv/bin/python",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_691bd0c0/target/composite-postcommit-3c320cb/verify.py"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_691bd0c0",
+  "started_at": "2026-09-10T18:26:20.965366+00:00",
+  "ended_at": "2026-09-10T18:26:29.042867+00:00",
+  "wall_seconds": 8.077503963373601,
+  "exit_status": 0,
+  "source_before": {
+    "commit": "3c320cb2e36ae1f165437e095ecf69cbcd1f59f4",
+    "source_sha256": "5349cb16843b1f26de92c30516af7502f0a7ce52054377955ad4fbe9499c3aed",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "source_after": {
+    "commit": "3c320cb2e36ae1f165437e095ecf69cbcd1f59f4",
+    "source_sha256": "5349cb16843b1f26de92c30516af7502f0a7ce52054377955ad4fbe9499c3aed",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "status_before": "",
+  "status_after": "",
+  "stdout": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_691bd0c0/target/composite-postcommit-3c320cb/verification.json",
+  "stdout_sha256": "ebc423b0133b33257e8604d1831b0d5e475d30e47e2b3dc43d3b7c57f70fbca2",
+  "stderr": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_691bd0c0/target/composite-postcommit-3c320cb/verification.stderr.log",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "audit_script_sha256": "b99cefddfbdb56ffa783e7ea0568eda326ffdccd66f49d01020e66ac4f09676d"
+}

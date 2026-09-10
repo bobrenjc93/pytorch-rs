@@ -121,5 +121,9 @@ default 12 cells unchanged, and declare held-out seeds before measurement.
 records the unchanged primary/repeat and held-out comparisons, fresh wheel,
 regressions, provenance and unfiltered timings from implementation `786c1b2`.
 Those clean runs do not establish a repeatable native latency gain.
+[Combined clean-code evidence](diagnostics/compile-cuda-graph/postcommit-3c320cb/README.md)
+records implementation `3c320cb2`, including the CPU division/L1 integration.
+GPU contention is disclosed; its unfiltered diagnostic timings establish no
+isolated performance non-regression or acceleration claim.
 Independent review, all ten non-regressing gates and exact-head CI remain
 required for managed merge.

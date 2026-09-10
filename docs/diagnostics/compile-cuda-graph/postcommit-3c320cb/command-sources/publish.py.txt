@@ -1,0 +1,186 @@
+"""Publish exact captured bytes and concise evidence-only documentation."""
+import datetime,hashlib,json,pathlib,shutil,subprocess
+R=pathlib.Path.cwd();O=R/'target/composite-postcommit-3c320cb';D=R/'docs/diagnostics/compile-cuda-graph/postcommit-3c320cb';COMMIT='3c320cb2e36ae1f165437e095ecf69cbcd1f59f4'
+def sha(p):
+ with open(p,'rb') as f:return hashlib.file_digest(f,'sha256').hexdigest()
+def read(p):return json.loads(pathlib.Path(p).read_text())
+assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==COMMIT
+assert not subprocess.check_output(['git','status','--porcelain'],text=True)
+assert not D.exists()
+audit=read(O/'verification.json');completed=read(O/'capture-complete.json')
+assert audit['source_and_receipt_checks']=='passed' and completed['source_test_harness_unchanged']
+assert not completed['status'] and completed['commit']==COMMIT
+assert read(O/'verification.receipt.json')['exit_status']==0
+D.mkdir(parents=True);index={}
+def copy(src,relative):
+ dest=D/relative;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(src,dest)
+ assert sha(src)==sha(dest);index[relative]=dict(source=str(src),sha256=sha(src))
+for p in sorted(O.iterdir()):
+ if p.is_file() and (p.suffix in ('.json','.log') or p.name in ('implementation.diff.txt','launch-command.txt')):copy(p,p.name)
+for name in ('build-record.json','commands.json','build.log','install.log'):copy(O/'build-capture'/name,'build/'+name)
+for name in ('capture.py','verify.py','record-verification.py','publish.py','env.sh'):copy(O/name,'command-sources/'+name+'.txt')
+(D/'artifact-hashes.json').write_text(json.dumps(index,indent=2)+'\n')
+build=read(O/'build-capture/build-record.json')
+rows='\n'.join(f"| {p['name']} | {p['seed']} | {p['passed_cells']}/12 | {p['capped_parity']*100:.4f}% | {p['raw_calls']:,} |" for p in audit['reports'])
+competitors=[]
+for p in sorted(O.glob('*gpu-*.log')):
+ lines=p.read_text().strip().splitlines()
+ if len(lines)>1:competitors.append(p.name)
+content=f'''# Clean composite evidence: `3c320cb2`
+
+Measured code commit: `{COMMIT}` (base `fbb0aa0`). This is a new empty-target,
+clean-commit build and complete diagnostic sequence for PRs #1959/#1960/#1961.
+No implementation, test, dependency, workload, evaluator or managed progress
+artifact changed during this evidence step. Source, test and harness hashes
+match the committed tree at capture start/end; production identity and clean
+status are checked before and after every recorded command.
+
+The path remains native `backend="eager"` capture through one execution bridge,
+reusing native kernels/cuBLAS. It is not general Inductor, training or hardware
+parity. These reports do not establish repeatable native acceleration.
+
+## Complete declared sequence
+
+[Initial inspection/declaration](inspection.json) predates all measurements.
+The committed diagnostic kept all 12 cells, both orders, 10 warmups per order,
+31 five-call samples per order, synchronization, first-call observations,
+untimed correctness/body/forwarding checks and zero-credit failure accounting.
+No slow cell was removed and no favorable-only rerun was performed.
+
+| Run | Seed | Passed cells | Capped diagnostic parity | Raw calls |
+| --- | --- | --- | --- | --- |
+{rows}
+
+[Primary](primary.json), [held-out 481723](held-481723.json),
+[held-out 926051](held-926051.json), and [primary repeat](primary-repeat.json)
+retain all raw samples and failures. [Verification](verification.json) checks
+all {audit['verified_individual_calls']:,} individual calls, {audit['verified_first_calls']}
+first-call observations, block/pooled medians, caps, input hashes, and the
+unchanged per-seed cells/policies against the historical source reports.
+The table is diagnostic output, not a Burner score or evidence of a gain.
+
+**Timing limitation:** an unrelated workload occupied GPU 0 during this
+capture window. The before/after GPU inventories retain the observed processes
+({len(competitors)} nonempty snapshots). No claim of isolated performance
+non-regression, CPU-binding-induced CUDA improvement, or repeatable acceleration
+is made. These results are retained without replacement. Burner admission
+state was not modified; this evidence step cannot guarantee external GPU
+exclusivity. Controlled performance gates remain the coordinator's responsibility.
+
+## Focused verification
+
+- [Installed wheel](wheel-verifier.log): isolated `-I` verification passed;
+  the audit also checked every wheel Python source and both native copies.
+- [Clippy](clippy.log) and [Python-binding Clippy](clippy-bindings.log): exact
+  all-targets `-D warnings` commands passed. The source PR #1960 job
+  `34511502296 / 102986492020` remains a historical failure; these are new runs.
+- [Combined CPU differentials](focused-cpu.log): 67 tests passed, including
+  division/L1 weighting, either/both/shared operands, views, IEEE cases,
+  accumulation and graph release.
+- [H100 CUDA regressions](cuda-regressions.log): 33 tests, 30 passed and three
+  two-device skips. [Separate GPUs 0,1](two-gpu.log): all seven tests passed,
+  covering restoration and mixed-device rejection as well as graph guards.
+- [Fixed compiler corpus](frozen-compiler.log): 38/38 eligible cases.
+- [Fixed CUDA math](fixed-math.json): {audit['fixed_math']['passed']}/6 cases,
+  all 18 prescribed-seed trials passed.
+- [Fixed four-shape workload](fixed-scoring.json):
+  {audit['fixed_scoring']['common_success_shape_count']}/4 eligible shapes,
+  capped aggregate {audit['fixed_scoring']['torch_rs_cuda_compile_score_percent']:.4f}%.
+  This unchanged private workload is separate from the graph diagnostic;
+  its measured output supplies no acceleration claim for the CPU changes.
+
+Unrelated full Rust/Python suites already run by the author were not repeated.
+
+## Build, provenance and cache state
+
+[Build receipt](build/build-record.json): clean status, absent target,
+locked/offline release wheel, then installation into this worktree's `.venv`.
+The measured implementation source SHA-256 is `{build['source_sha256']}`;
+native extension SHA-256 is `{build['extension_sha256']}`.
+[Source/test/harness manifest](source-manifest.json) and
+[implementation diff](implementation.diff.txt) bind the complete included code.
+
+Worktree-local CPython 3.12.14, NumPy {build['dependencies']['numpy']} and
+PyTorch 2.13.0+cu130 were reused. H100, driver 580.82.07; GPU 0 except the
+separate two-GPU test. Native runtime reports CUDA 13.0 from local nvidia/cu13
+packages. Rust 1.92.0, release, thin LTO, one codegen unit, extension-module/abi3.
+Native matmul uses cuBLAS and pointwise kernels use driver-JIT PTX. nvcc
+12.6.85 is recorded; the separate scoring lane uses nvcc-built private kernels.
+The verification includes actual current interpreter, wheel, extension,
+CUDA library, PyTorch native-library and reference Triton/PTX assembler hashes.
+
+[Launch/setup record](launch-command.txt), [environment](environment.json),
+and [orchestration source](command-sources/capture.py.txt) describe the new
+build/temporary/CUDA/Triton/Inductor directories and reused local package/Cargo
+caches. Correctness checks warmed CUDA before timing. Diagnostic compiler
+caches start empty and are reused across the declared sequence; each report
+records its initial counts. Scoring uses separate initially empty compiler
+caches and existing local private-kernel binaries, whose source checksums,
+actual hashes and reuse flags are preserved in verification.json.
+
+[Commands](commands.json) and individual receipts record actual argv,
+timestamps, exit status, clean status, source identities and log hashes.
+[Capture completion](capture-complete.json) records unchanged sources.
+[Artifact hashes](artifact-hashes.json) bind published bytes to local originals;
+recorded paths retain their actual current-composite identities. No provenance
+was rewritten to the publication location.
+
+## Historical evidence and remaining gates
+
+All {audit['historical_files_unchanged']} checked-in files in
+[the historical source publication](../postcommit-786c1b2/README.md), including
+the original `fbb0aa0` baseline captures, remain byte-for-byte unchanged:
+[historical preservation audit](historical-preservation.json).
+Only published blobs/current copies were checked; deleted historical runtime
+binaries were not claimed to have been freshly rehashed.
+
+Historical source primary/repeat parity was 81.4367% / 80.0108%; composed native
+ratios versus actual main were 1.0609x / 0.9826x, and held-outs 1.0054x / 1.0036x.
+Those verified pairs do not establish repeatable native acceleration. No fresh
+baseline was needed or manufactured for this evidence-only, no-gain claim.
+The earlier dirty composite runs are not substituted for this clean capture.
+
+This publication does not approve the branch. Independent exact-head review,
+all ten current-definition non-regressing evaluation gates and exact-head CI
+remain required before Burner's managed merge/cleanup. Source associations
+remain intact. No branch, commit, push, PR, admission setting or external tool
+was changed by this evidence step.
+'''
+(D/'README.md').write_text(content)
+canonical=f'''# Native CUDA graph / CPU division and mean L1 integration
+
+The combined implementation is committed as `{COMMIT}`. It retains the
+single native CUDA execution bridge from PR #1959, first-order CPU scalar
+division from #1960 and default/explicit mean L1 backward from #1961, with
+unsupported forms and eager semantics unchanged. The integration commit fixes
+the exact float32 Clippy assertion and adds combined division/L1 differentials.
+
+[Clean committed evidence](diagnostics/compile-cuda-graph/postcommit-3c320cb/README.md)
+now supplies the previously deferred empty-target build, installed source-matched
+wheel verification, actual command receipts, source/test/harness/runtime hashes,
+all four declared diagnostic runs and complete raw data. Both Clippy modes,
+67 focused CPU tests, H100 CUDA regressions, seven separate two-GPU checks,
+the 38-case compiler corpus and fixed CUDA math passed. All four fixed scoring
+shapes were eligible. See the linked reports for exact results and accounting.
+
+An unrelated workload occupied GPU 0 during timing. Every case and raw call
+is retained, but these measurements establish neither isolated performance
+non-regression nor repeatable acceleration. Native capture remains
+`backend="eager"`; no broad Inductor, training or hardware parity is claimed.
+
+[Historical source evidence](diagnostics/compile-cuda-graph/postcommit-786c1b2/README.md)
+and original `fbb0aa0` baseline captures remain byte-identical. The earlier
+precommit checks and setup limitations are recorded in this document at commit
+`3c320cb2`; they are not the clean-commit evidence. In particular, the earlier
+uv-created home-directory symlink remains untouched by this evidence step.
+
+Independent exact-head review, all ten current-definition non-regressing gates,
+and exact-head CI remain Burner-owned merge prerequisites. This publication
+does not grant approval or change source associations, admission settings or
+managed progress artifacts. Controlled performance validation still requires
+appropriate GPU scheduling.
+'''
+(R/'docs/composite-native-graph-cpu-gradients.md').write_text(canonical)
+p=R/'docs/compile-cuda-matmul.md';s=p.read_text();anchor='Those clean runs do not establish a repeatable native latency gain.\n';assert anchor in s
+s=s.replace(anchor,anchor+'[Combined clean-code evidence](diagnostics/compile-cuda-graph/postcommit-3c320cb/README.md)\nrecords implementation `3c320cb2`, including the CPU division/L1 integration.\nGPU contention is disclosed; its unfiltered diagnostic timings establish no\nisolated performance non-regression or acceleration claim.\n');p.write_text(s)
+print(json.dumps(dict(publication=str(D),measured_commit=COMMIT,copied_artifacts=len(index),published_at=datetime.datetime.now(datetime.timezone.utc).isoformat()),indent=2))

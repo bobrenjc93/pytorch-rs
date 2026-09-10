@@ -1,0 +1,13 @@
+{
+  "commit": "3c320cb2e36ae1f165437e095ecf69cbcd1f59f4",
+  "source": {
+    "commit": "3c320cb2e36ae1f165437e095ecf69cbcd1f59f4",
+    "source_sha256": "5349cb16843b1f26de92c30516af7502f0a7ce52054377955ad4fbe9499c3aed",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "status": "",
+  "ended_at": "2026-09-10T18:25:37.692714+00:00",
+  "command_count": 25,
+  "failed_commands": [],
+  "source_test_harness_unchanged": true
+}
