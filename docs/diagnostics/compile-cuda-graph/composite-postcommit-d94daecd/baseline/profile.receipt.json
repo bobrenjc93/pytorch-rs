@@ -1,0 +1,69 @@
+{
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/.venv/bin/python",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/profile_graph.py",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/target/clean-d94daecd"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline",
+  "started_at": "2026-09-10T19:49:28.251237+00:00",
+  "commit": "b7936239ceb7d7713a15ecd8a2c82c4bddd6d214",
+  "status_before": "",
+  "inventory_before": {
+    "at": "2026-09-10T19:49:28.359637+00:00",
+    "gpu": {
+      "stdout": "index, name, uuid, memory.used [MiB], utilization.gpu [%]\n0, NVIDIA H100, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 116 MiB, 0 %\n1, NVIDIA H100, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 130 MiB, 0 %\n2, NVIDIA H100, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 4 MiB, 0 %\n3, NVIDIA H100, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 4 MiB, 0 %\n4, NVIDIA H100, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 102 MiB, 0 %\n5, NVIDIA H100, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 108 MiB, 0 %\n6, NVIDIA H100, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 60 MiB, 0 %\n7, NVIDIA H100, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 114 MiB, 0 %\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "processes": {
+      "stdout": "gpu_uuid, pid, process_name, used_gpu_memory [MiB]\n",
+      "stderr": "",
+      "returncode": 0
+    }
+  },
+  "environment": {
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/target/local/uv-cache",
+    "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/target/local/uv-python-bin",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/target/clean-d94daecd/diagnostic-cuda",
+    "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/target/local/uv-python",
+    "UV_TOOL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/target/local/uv-tools",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/target/clean-d94daecd/unused-rust",
+    "OPENBLAS_NUM_THREADS": "1",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/target/clean-d94daecd/diagnostic-inductor",
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/target/local/cargo",
+    "RUSTUP_TOOLCHAIN": "1.92.0",
+    "VIRTUAL_ENV": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/.venv",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/target/clean-d94daecd/tmp",
+    "UV_TOOL_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/target/local/uv-tool-bin",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/target/clean-d94daecd/diagnostic-triton",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/target/clean-d94daecd/cache",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "TORCH_RS_CUBLAS": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcublas.so.13",
+    "OMP_NUM_THREADS": "1",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/.venv/bin/python",
+    "CUDA_HOME": "/usr/local/cuda-12.6",
+    "CARGO_HTTP_PROXY": "http://fwdproxy:8080",
+    "MKL_NUM_THREADS": "1",
+    "UV_PROJECT_ENVIRONMENT": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/.venv"
+  },
+  "ended_at": "2026-09-10T19:49:33.644337+00:00",
+  "wall_seconds": 5.011067947372794,
+  "exit_status": 0,
+  "status_after": "",
+  "inventory_after": {
+    "at": "2026-09-10T19:49:33.742888+00:00",
+    "gpu": {
+      "stdout": "index, name, uuid, memory.used [MiB], utilization.gpu [%]\n0, NVIDIA H100, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 116 MiB, 0 %\n1, NVIDIA H100, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 130 MiB, 0 %\n2, NVIDIA H100, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 4 MiB, 0 %\n3, NVIDIA H100, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 4 MiB, 0 %\n4, NVIDIA H100, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 102 MiB, 0 %\n5, NVIDIA H100, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 108 MiB, 0 %\n6, NVIDIA H100, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 60 MiB, 0 %\n7, NVIDIA H100, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 114 MiB, 0 %\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "processes": {
+      "stdout": "gpu_uuid, pid, process_name, used_gpu_memory [MiB]\n",
+      "stderr": "",
+      "returncode": 0
+    }
+  },
+  "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/target/clean-d94daecd/profile.log",
+  "log_sha256": "f9b5163cff71a21994da61996c19e90e08e052555a6d6d6a1cc7014d1d96215e"
+}

@@ -1,0 +1,7 @@
+{
+  "observed_at": "2026-09-10T19:49:11.936396+00:00",
+  "paused_burner_processes": [
+    "2370127 2743602    10:25:47 /data/users/bobren/fbsource/xplat/third-party/node/bin/node-linux-x64 --stack-trace-limit=48 dist/cli.js --no-open --port 4321 --paused --yolo --yolo-batch-size 2 /data/users/bobren/a/pytorch-rs-burner"
+  ],
+  "scope": "Read-only process observation; user reports other workers finished. This does not reserve GPU0 or guarantee exclusivity."
+}

@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/check_publication.py", line 31, in <module>
+    assert not foreign,foreign
+           ^^^^^^^^^^^
+AssertionError: [('/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/docs/diagnostics/compile-cuda-graph/composite-postcommit-d94daecd/candidate/build-capture/build.log', 'composite_a1e4c544)')]

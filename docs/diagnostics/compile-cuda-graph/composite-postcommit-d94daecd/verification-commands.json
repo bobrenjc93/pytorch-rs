@@ -1,0 +1,84 @@
+[
+  {
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/.venv/bin/python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/reference_identities.py"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline",
+    "started_at": "2026-09-10T19:59:56.994094+00:00",
+    "status_before": "",
+    "kind": "read-only post-capture verification",
+    "ended_at": "2026-09-10T20:00:00.930295+00:00",
+    "wall_seconds": 3.9362032702192664,
+    "exit_status": 0,
+    "status_after": "",
+    "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/baseline/target/clean-d94daecd/reference-identities.json",
+    "log_sha256": "eae9ba64ff74f38f1511f889c123eed99f76455dbef9491f78212c73d49de1d3"
+  },
+  {
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/.venv/bin/python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/reference_identities.py"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544",
+    "started_at": "2026-09-10T20:00:01.064519+00:00",
+    "status_before": "",
+    "kind": "read-only post-capture verification",
+    "ended_at": "2026-09-10T20:00:05.162533+00:00",
+    "wall_seconds": 4.098012312315404,
+    "exit_status": 0,
+    "status_after": "",
+    "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/clean-d94daecd/reference-identities.json",
+    "log_sha256": "3cf038c03194e340f814ec3c0f84f179ca38da8af51c910062fa08a54e0a83b4"
+  },
+  {
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/.venv/bin/python",
+      "-m",
+      "unittest",
+      "tests.test_tanh.TensorTanhTests.test_tracked_views_remain_rejected_after_disabling_base_gradients"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544",
+    "started_at": "2026-09-10T20:00:05.254923+00:00",
+    "status_before": "",
+    "kind": "read-only post-capture verification",
+    "ended_at": "2026-09-10T20:00:05.539907+00:00",
+    "wall_seconds": 0.2849859166890383,
+    "exit_status": 0,
+    "status_after": "",
+    "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/clean-d94daecd/view-regression.log",
+    "log_sha256": "5b35f451190e297f20f300265ca651d86621a323117aa69c5414d5d651de02ed"
+  },
+  {
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/.venv/bin/python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/compare.py"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544",
+    "started_at": "2026-09-10T20:00:05.634528+00:00",
+    "status_before": "",
+    "kind": "read-only post-capture verification",
+    "ended_at": "2026-09-10T20:00:05.729182+00:00",
+    "wall_seconds": 0.09466177131980658,
+    "exit_status": 0,
+    "status_after": "",
+    "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/comparison.log",
+    "log_sha256": "6937794032b07290bb58b881aa6068790867a6fbe84e3ff3b6fee15168e5df65"
+  },
+  {
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/.venv/bin/python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/verify.py"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544",
+    "started_at": "2026-09-10T20:00:05.819430+00:00",
+    "status_before": "",
+    "kind": "read-only post-capture verification",
+    "ended_at": "2026-09-10T20:00:12.819527+00:00",
+    "wall_seconds": 7.0000971974805,
+    "exit_status": 0,
+    "status_after": "",
+    "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_a1e4c544/target/composite-postcommit-d94daecd/verification.log",
+    "log_sha256": "c7ff4d8da132854787c3c15d4f511e60488e3df9d6b93cabe2d99e7325d67582"
+  }
+]

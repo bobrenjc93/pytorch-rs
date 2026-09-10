@@ -1,0 +1,9 @@
+{
+  "status": "COMPLETE",
+  "candidate_commit": "d94daecdd9c086ac23afe690a52df11cbaca4f8a",
+  "baseline_commit": "b7936239ceb7d7713a15ecd8a2c82c4bddd6d214",
+  "ended_at": "2026-09-10T19:59:38.428043+00:00",
+  "commands": 20,
+  "all_reports_retained": true,
+  "clean_status": ""
+}

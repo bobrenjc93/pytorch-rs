@@ -1,0 +1,37 @@
+"""Check the copied publication and preserve the completed publication log."""
+import datetime,hashlib,json,pathlib,re,shutil,subprocess
+ROOT=pathlib.Path.cwd();OUT=ROOT/'target/composite-postcommit-d94daecd';PUB=ROOT/'docs/diagnostics/compile-cuda-graph/composite-postcommit-d94daecd'
+def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
+# The publisher's stdout log finishes after its initial copy loop.
+shutil.copyfile(OUT/'publication.log',PUB/'publication.log')
+readme=PUB/'README.md';text=readme.read_text().replace('Every build/measurement/check command has timestamped before/after GPU and process inventories in','The 20 capture commands have timestamped before/after GPU and process\ninventories in').replace('installed PyTorch and NumPy native-library bytes on both sides.','installed PyTorch and NumPy native-library bytes on both sides. Additional\nread-only identity/accounting commands have their own\n[verification receipts](verification-commands.json).')
+readme.write_text(text)
+shutil.copyfile(pathlib.Path(__file__),PUB/'command-sources/check_publication_retry.py.txt')
+links=re.findall(r'\]\(([^)]+)\)',text)
+for link in links:assert (PUB/link).exists(),link
+reports=[]
+for side,source in [('baseline',OUT/'baseline/target/clean-d94daecd'),('candidate',ROOT/'target/clean-d94daecd')]:
+ for name in ['primary','held-481723','held-926051','primary-repeat']:
+  path=PUB/side/(name+'.json');assert sha(path)==sha(source/path.name)
+  d=json.loads(path.read_text());assert d['measurement_kind']=='clean-commit' and d['status']=='passed'
+  reports.append(dict(path=str(path.relative_to(PUB)),sha256=sha(path),commit=d['source']['commit'],passed_cells=sum(c['status']=='passed' for c in d['cases'])))
+ prior=json.loads((source/'source-manifest.json').read_text());root=OUT/'baseline' if side=='baseline' else ROOT
+ assert all(sha(root/p)==h for p,h in prior.items())
+for path,digest in json.loads((OUT/'historical-publication-manifest.json').read_text()).items():assert sha(ROOT/path)==digest
+assert not subprocess.check_output(['git','diff','HEAD','--name-only'],text=True)
+new=subprocess.check_output(['git','ls-files','--others','--exclude-standard','-z'],text=True).split('\0')
+assert all(p.startswith(str(PUB.relative_to(ROOT))+'/') for p in new if p)
+# No new report may retain a different Burner worktree's absolute path.
+foreign=[]
+for path in PUB.rglob('*'):
+ if path.is_file() and path.suffix not in ['.prof']:
+  content=path.read_text()
+  for match in re.finditer(r'/data/users/bobren/a/pytorch-rs-burner/\.burner/worktrees/([A-Za-z0-9_-]+)',content):
+   if match.group(1)!=ROOT.name:foreign.append((str(path),match.group(1)))
+assert not foreign,foreign
+result=dict(checked_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),measured_commit='d94daecdd9c086ac23afe690a52df11cbaca4f8a',publication_commit=None,publication_commit_note='Pending Burner evidence-only delivery.',reports=reports,profiles=24,all_new_paths_inside_publication=True,historical_files_unchanged=255,foreign_worktree_paths=[],source_files_unchanged=True,readme_links_checked=len(links))
+(PUB/'publication-check.json').write_text(json.dumps(result,indent=2)+'\n')
+hashes={str(p.relative_to(PUB)):sha(p) for p in sorted(PUB.rglob('*')) if p.is_file() and p.name!='artifact-hashes.json'}
+(PUB/'artifact-hashes.json').write_text(json.dumps(hashes,indent=2)+'\n')
+assert all(sha(PUB/p)==h for p,h in hashes.items())
+print(len(hashes),'publication files hashed; 8 reports and 24 profiles preserved; all prior files unchanged')
