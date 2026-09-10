@@ -1,13 +1,39 @@
 {
+  "audited_at": "2026-09-10T06:53:42.772105+00:00",
   "source": {
-    "commit": "444faba3f8f793c68a069d65355c46fe3f650417",
+    "commit": "b88f0ea0e66b8d5c94e8fd0e59846fcfd41a969a",
     "source_sha256": "5cf0651daeb2577d3a0816620cf54e92a7620bbace9f6782ff7818456bd8b967",
-    "production_diff_sha256": "80c11a8cdd3163236f1840f7e44d842d93c9fb69edec7ab06a45d227b647e4c8"
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
-  "artifact_hashes_verified": 39,
+  "git_head": "b88f0ea0e66b8d5c94e8fd0e59846fcfd41a969a",
+  "clean_checkout_for_all_measurements": true,
+  "artifact_only_changes": true,
+  "current_artifact_hashes_verified": 19,
+  "historical_artifacts_preserved": 51,
+  "precommit_indexes_archived_verbatim": true,
+  "all_other_tracked_files_unchanged": true,
+  "harness_hashes": {
+    "scripts/benchmark_depth_concat.py": "104e357d6e5b7f7f59e04ec4cf7e44324c7608fc44682a5a26d24b0532df205a",
+    "scripts/capture_depth_concat_build.py": "de3ad50facaad0fcdb5bf83111abd3548c3fa9aa05a97b2f2ff267a330204ece",
+    "scripts/benchmark_top_level_stack.py": "18b2bf4dc94ad0b1793876c8863f126032933f80691ddd44c503fef693df6f9e",
+    "scripts/evaluate_cuda_math.py": "29a97d07bad0d82c261e28aa880de68cdf46df0731d5ff0aa9802ec5bb8e605b"
+  },
   "all_benchmark_harness_hashes_match": true,
+  "workloads": 21,
+  "captures": 2,
+  "samples_per_pass": 21,
+  "passes_per_workload": 4,
+  "all_sample_medians_and_mads_verified": true,
   "installed_and_source_extension_match_build": true,
+  "extension_sha256": "5a2ee9083b4343da4c49544215f0966b8a99aca73c8bec32f23cc24cda9cb038",
+  "cuda_denominator": 6,
+  "cuda_passed": 4,
+  "cuda_reference_executions_passed": 18,
+  "unsupported_zero_credit_cases": [
+    "cuda_f32_sum_axis",
+    "cuda_f32_matmul"
+  ],
   "preserved_locks_evaluators_managed_artifacts": true,
   "feature_weights_unchanged": true,
-  "git_head": "444faba3f8f793c68a069d65355c46fe3f650417"
+  "review_or_merge_approval": false
 }

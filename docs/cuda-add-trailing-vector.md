@@ -22,8 +22,8 @@ change adds no compiler, reduction, matrix multiplication, or performance claim.
 
 The records below measure the original source PR, not the integrated composite.
 Their original source/build identities and paths remain pinned and unchanged.
-See [combined validation](composite-cuda-vector-dstack.md) for integration checks
-and the remaining clean-commit delivery gate.
+See [combined validation](composite-cuda-vector-dstack.md) for fresh clean-commit
+measurements and the remaining independent review and delivery gates.
 
 `tests/test_cuda_add_trailing_vector.py` compares against real PyTorch CUDA for
 generated rectangles, grid-stride loop tails, both operand orders, public call
