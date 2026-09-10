@@ -368,7 +368,19 @@ def _layout_is_non_overlapping_and_dense(shape, stride):
     return True
 
 
-def _elementwise_output_stride(shape, operand_layouts):
+def _signed_int64(value):
+    return (value + (1 << 63)) % (1 << 64) - (1 << 63)
+
+
+def _elementwise_output_stride(shape, operand_layouts, *, cuda=False):
+    # The shared native float32 planner compares signed 64-bit byte strides.
+    # Empty CUDA views can wrap even though they allocate no elements. Keep
+    # CPU tracing's existing arithmetic separate from this native CUDA path.
+    if cuda:
+        operand_layouts = tuple(
+            (input_shape, tuple(_signed_int64(s * 4) for s in input_stride))
+            for input_shape, input_stride in operand_layouts
+        )
     rank = len(shape)
     permutation = list(range(rank - 1, -1, -1))
 
@@ -394,11 +406,26 @@ def _elementwise_output_stride(shape, operand_layouts):
         return _contiguous_stride(shape)
 
     stride = [0] * rank
-    next_stride = 1
+    next_stride = 4 if cuda else 1
     for position, axis in enumerate(permutation):
         stride[axis] = next_stride
         if position + 1 < rank:
             next_stride *= shape[axis]
+            if cuda:
+                next_stride = _signed_int64(next_stride)
+    if cuda:
+        # Match elementwise_output_strides in src/tensor.rs, including the
+        # recovery of negative wrapped strides in TensorIterator outputs.
+        # Byte strides remain multiples of four, so division is exact.
+        for axis in range(rank - 1, -1, -1):
+            value = stride[axis] // 4
+            if value >= 0:
+                stride[axis] = value
+            else:
+                stride[axis] = (
+                    1 if axis + 1 == rank
+                    else stride[axis + 1] * max(shape[axis + 1], 1)
+                )
     return tuple(stride)
 
 
@@ -495,6 +522,7 @@ def _binary_output_stride(left_metadata, right_metadata, output_shape):
             (left_metadata.shape, left_metadata.stride),
             (right_metadata.shape, right_metadata.stride),
         ),
+        cuda=left_metadata.device.type == "cuda",
     )
 
 
@@ -551,10 +579,15 @@ def _binary_output_metadata(left_metadata, right_metadata, *, grad_enabled=None)
     if left_metadata.device.type == "cuda":
         _validate_cuda_metadata(left_metadata)
         _validate_cuda_metadata(right_metadata)
-        if left_metadata.shape != right_metadata.shape:
+        left_shape, right_shape = left_metadata.shape, right_metadata.shape
+        if not (
+            left_shape == right_shape
+            or (len(left_shape) == 2 and right_shape == (left_shape[1],))
+            or (len(right_shape) == 2 and left_shape == (right_shape[1],))
+        ):
             raise CompileTraceUnsupportedError(
-                "torch.compile trace CUDA addition requires the same shape; "
-                "broadcasting is unsupported"
+                "torch.compile trace CUDA addition requires the same shape "
+                "or shapes (M, N) and (N,); broader broadcasting is unsupported"
             )
     if grad_enabled is None:
         grad_enabled = _grad_enabled()
@@ -591,7 +624,8 @@ def _scalar_output_metadata(input_metadata):
     return CompileTraceTensorMetadata(
         shape=input_metadata.shape,
         stride=_elementwise_output_stride(
-            input_metadata.shape, ((input_metadata.shape, input_metadata.stride),)
+            input_metadata.shape, ((input_metadata.shape, input_metadata.stride),),
+            cuda=True,
         ),
         dtype=input_metadata.dtype,
         device=input_metadata.device,
@@ -962,11 +996,29 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled):
         )
 
     left_name, right_name = operation.inputs
-    return _binary_output_metadata(
+    expected = _binary_output_metadata(
         metadata_values[left_name],
         metadata_values[right_name],
         grad_enabled=grad_enabled,
     )
+    if expected.device.type == "cuda":
+        # Dynamic execution derives concrete output sizes/strides from current
+        # inputs, but even a private/modified graph must declare a valid CUDA
+        # result before any earlier operation executes. CPU metadata remains
+        # governed by its existing offset and autograd contracts.
+        declared = operation.metadata
+        if not _builtins.isinstance(declared, CompileTraceTensorMetadata):
+            raise CompileTraceUnsupportedError("torch.compile addition output metadata is malformed")
+        if (
+            declared.device != expected.device
+            or declared.storage_offset != 0
+            or len(declared.shape) != len(expected.shape)
+        ):
+            raise CompileTraceUnsupportedError(
+                "torch.compile addition output requires matching CUDA device, rank and zero storage offset"
+            )
+        _validate_cuda_metadata(declared)
+    return expected
 
 
 def execute_compile_trace_graph(graph, *inputs):
