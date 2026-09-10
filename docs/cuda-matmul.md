@@ -41,60 +41,113 @@ values include NaNs, infinities, subnormals, signed zeros, and exact binary
 fraction products. A separate two-device test checks guard restoration and
 mixed-device rejection. Hardware-only tests skip clearly without CUDA.
 
-Final checks on this source:
+## Clean-commit capture
+
+The current [correctness report](diagnostics/cuda-matmul/postcommit-a267ab89/evaluation.json)
+measures clean implementation commit **`a267ab89a31573e68d0045f1cbcf55d8ea243307`**.
+The unchanged six-case evaluator passed **6/6 cases at all three seeds**, including
+`cuda_f32_matmul`. The existing repository capture procedure selects seeds
+`8503945240872567646`, `8613321571747136749`, and `4480763905421893394`.
+The fixed `atol=1e-6`, `rtol=1e-5`, denominator, device-pointer inspections,
+input-preservation checks, and candidate PyTorch-import blocking are unchanged.
+This is correctness evidence for that cell, not an overall heterogeneity score
+or a performance measurement.
+
+The [build receipt](diagnostics/cuda-matmul/postcommit-a267ab89/build-record.json),
+[build log](diagnostics/cuda-matmul/postcommit-a267ab89/build.log), and
+[run receipt](diagnostics/cuda-matmul/postcommit-a267ab89/run-record.json) record
+an initially absent Cargo target, a fresh release extension, empty tracked
+checkout status, and unchanged source across build and measurement. The
+[verification record](diagnostics/cuda-matmul/postcommit-a267ab89/evidence-checks.json)
+checks source/binary binding, log/report hashes, unchanged tooling and matrix,
+all worker paths, runtime versions, and recomputed six-case accounting.
+The production fingerprint is
+`707ec5d124910b4c4247e84024fbf7179e78bb5144467548eb64dea2a80e9502`;
+the extension SHA-256 is
+`78943559de1dc2fdf37d4ef20065e7f523b2900f90fdeb72e12108a85bde4fd9`.
+
+All captures and focused checks completed while the tracked checkout was clean.
+Reports were first written under `target/cuda-matmul-postcommit/` and copied
+byte-for-byte into the evidence directory afterward. This subsequent change
+contains only evidence and documentation. Implementation, tests, dependencies,
+benchmark harnesses, evaluators, and Burner-managed artifacts were not changed.
+
+Host: NVIDIA H100, compute capability 9.0, driver 580.82.07. Both workers used
+worktree-local CPython 3.12.12; the reference used worktree-local PyTorch
+2.13.0+cu130. Both loaded the explicitly selected worktree-local CUDA runtime
+reporting version 13000. Rust/Cargo 1.92.0 built release
+`extension-module`/`abi3-py310` with thin LTO and one codegen unit. Available nvcc
+was 12.6.85 and was unused. The Cargo registry was reused; the native build
+target was empty and the evaluator created a new temporary CUDA JIT cache.
+The local Python environment was installed from the unchanged lockfile.
+Existing toolchain executables were read-only; every generated artifact and
+cache stayed inside this worktree.
+
+Focused clean-commit checks are bound to the same source and extension by the
+[checks receipt](diagnostics/cuda-matmul/postcommit-a267ab89/checks-record.json):
 
 | Check | Result |
 | --- | --- |
+| [Python matmul differentials](diagnostics/cuda-matmul/postcommit-a267ab89/python-matmul.log), GPU 0 | 6 passed; two-device test skipped |
+| [Rust matmul integration](diagnostics/cuda-matmul/postcommit-a267ab89/rust-matmul.log), GPU 0 | 2 passed |
+| [Rust storage bounds](diagnostics/cuda-matmul/postcommit-a267ab89/rust-bounds.log), GPU 0 | 1 passed |
+| [Two-device Python test](diagnostics/cuda-matmul/postcommit-a267ab89/python-two-device.log), GPUs 0,1 | 1 passed |
+| [Existing CUDA math evaluator tests](diagnostics/cuda-matmul/postcommit-a267ab89/evaluator-tests.log) | 19 passed |
+
+## Original author validation
+
+The original [development report](diagnostics/cuda-matmul/evaluation.json),
+[build receipt](diagnostics/cuda-matmul/build-record.json), and
+[build log](diagnostics/cuda-matmul/build.log) remain unchanged as superseded
+records. They measured base `96205cb01e85` plus the uncommitted implementation,
+with the same production fingerprint above, using the original paths recorded
+there. They do not supply the required clean-commit capture; the new capture
+above does. Their original three-seed 6/6 result is preserved without rewriting
+its source, executable, import, or runtime identities.
+
+The author's broader checks below were also preserved unchanged. They were not
+rerun for this evidence step and are not presented as post-commit measurements.
+
+| Original author check | Recorded result |
+| --- | --- |
 | [Rust default](diagnostics/cuda-matmul/rust-default.log) / [Python bindings](diagnostics/cuda-matmul/rust-bindings.log), all targets on GPU 0 | 377 / 388 passed |
-| [New Python matmul differentials](diagnostics/cuda-matmul/python-matmul-final.log), GPU 0 | 6 passed; two-device test skipped |
-| [Two-device Python test](diagnostics/cuda-matmul/python-two-device.log), GPUs 0,1 | Passed; Rust matmul integration tests also passed on both devices |
-| [Existing focused Python regression suite](diagnostics/cuda-matmul/python-regression.log) | 95 passed; 11 device-specific skips |
-| Rustfmt and Clippy with warnings denied, default and Python-bindings configurations | Passed |
-| Python matmul tests with no visible GPU | All 7 hardware cases skipped clearly |
+| [Python matmul differentials](diagnostics/cuda-matmul/python-matmul-final.log), GPU 0 | 6 passed; two-device test skipped |
+| [Two-device Python test](diagnostics/cuda-matmul/python-two-device.log), GPUs 0,1 | Passed |
+| [Focused Python regression suite](diagnostics/cuda-matmul/python-regression.log) | 95 passed; 11 device-specific skips |
 
-The regression suite covers CPU matmul, eager CUDA add/multiply/negate/copy,
-CUDA views/storage, generated row sums, and existing CUDA compiler boundaries.
+The original regression suite covered CPU matmul, eager CUDA
+add/multiply/negate/copy, CUDA views/storage, generated row sums, and existing
+CUDA compiler boundaries. The author also reported passing Rustfmt/Clippy and
+clear hardware skips with no visible GPU; this step does not recapture those
+checks or claim new full-suite validation.
 
-The [raw correctness report](diagnostics/cuda-matmul/evaluation.json) is from the
-unchanged six-case `scripts/evaluate_cuda_math.py`. **All six cases passed at
-all three automatically selected seeds**, including `cuda_f32_matmul`:
-`8382850184713162372`, `7206935938653639621`, and `5395145091457407776`.
-The fixed evaluator’s `atol=1e-6`, `rtol=1e-5`, denominator, pointer inspections,
-input-preservation checks, and candidate PyTorch-import blocking were unchanged.
-This is implementation validation, not an overall heterogeneity score or final
-merge evaluation.
+## Reproduction
 
-The [build receipt](diagnostics/cuda-matmul/build-record.json) and
-[build log](diagnostics/cuda-matmul/build.log) record an initially absent Cargo
-target and a fresh release extension built from base `96205cb01e85` plus this
-uncommitted implementation. Source fingerprints were checked before and after
-build/evaluation; the local extension hash matches every candidate worker.
-The receipt binds the production source, binary, compiler, command, profile,
-and actual paths. The report retains all reference/candidate outputs and runtime
-provenance. These are new correctness records; existing benchmark evidence and
-Burner-managed progress artifacts were not edited.
-
-Host: NVIDIA H100, compute capability 9.0, driver 580.82.07. Both workers used
-CPython 3.12.12, the reference used PyTorch 2.13.0+cu130, and the explicitly
-selected CUDA runtime reported version 13000. Rust/Cargo 1.92.0 built release
-`extension-module`/`abi3-py310` with thin LTO and one codegen unit. Available nvcc
-was 12.6.85 and was unused. Existing external Python/runtime/toolchain files were
-read-only; build outputs, caches, test artifacts, and edits stayed in this worktree.
-
-For reproduction, follow the existing
+Follow the existing
 [build-receipt procedure](hardware-heterogeneity-evaluator.md#reproduce-and-bind-a-native-build)
-with a new worktree-local Cargo target, temporary/cache directories, and a fresh
-source-matched extension. Set `TORCH_RS_CUDART` to the desired CUDA runtime and
-`PYO3_PYTHON` to an interpreter with the stable reference installed. Then run:
+and [local environment setup](cuda-neg-validation.md#reproduce-from-this-checkout).
+Use a clean checkout, a worktree-local Python executable and reference packages,
+local CUDA runtime, local cache/temporary directories, and an absent
+`CARGO_TARGET_DIR`. Run the unchanged repository capture helper with a new output
+directory; it records the fresh build and all six cases at its predeclared seeds:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 cargo test --locked --all-targets
-CUDA_VISIBLE_DEVICES=0 cargo test --locked --all-targets --features python-bindings
-CUDA_VISIBLE_DEVICES=0 PYTHONPATH=python "$PYO3_PYTHON" -B -m unittest -v tests.test_cuda_matmul
-CUDA_VISIBLE_DEVICES=0,1 PYTHONPATH=python "$PYO3_PYTHON" -B -m unittest -v \
-  tests.test_cuda_matmul.CudaMatmulDeviceTests
-CUDA_VISIBLE_DEVICES=0,1 cargo test --locked --test cuda_matmul
-CUDA_VISIBLE_DEVICES=0 "$PYO3_PYTHON" -B scripts/evaluate_cuda_math.py \
-  --build-record target/cuda-matmul/build-record.json \
-  --output target/cuda-matmul/evaluation.json
+CUDA_VISIBLE_DEVICES=0 PYTHONPATH=python .venv/bin/python -B - <<'PYTHON'
+import importlib.util
+from pathlib import Path
+spec = importlib.util.spec_from_file_location(
+    "capture", "docs/diagnostics/composite-cuda-neg/reproduce.py")
+capture = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(capture)
+capture.OUT = Path("target/cuda-matmul-recapture").resolve()
+capture.OUT.mkdir(parents=True, exist_ok=False)
+capture.main()
+PYTHON
 ```
+
+With that extension, run the focused commands recorded verbatim in the checks
+receipt: `cargo test --locked --test cuda_matmul`, the named storage-bounds unit
+test, `tests.test_cuda_matmul` on GPU 0, its device test on GPUs 0,1, and
+`tests.test_cuda_math_evaluator`. Publish artifacts only after measurement, so
+documentation writes do not dirty the measured checkout. Independent review and
+normal merge gates remain separate from this evidence step.

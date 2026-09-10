@@ -1,0 +1,6 @@
+test_device_guard_and_mixed_device_rejection (tests.test_cuda_matmul.CudaMatmulDeviceTests.test_device_guard_and_mixed_device_rejection) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.903s
+
+OK
