@@ -1,10 +1,15 @@
 # CUDA copies, matrix zeros, and functional GLU integration
 
-This report records integration validation in `composite_433d72e4`, based on
-merge HEAD `cef8b64`. Documentation and test repairs were uncommitted during
-these checks. These are precommit regression results, not the required final
-clean-commit evaluator capture or a performance claim. Burner must commit the
-integrated implementation before that capture can be produced.
+The [final clean-commit transfer capture](diagnostics/composite-cuda-copies-zeros-glu/postcommit-dc236672/README.md)
+measured `dc2366727f7839e8710af48fd63b08268d40f987`: all six fixed cases passed
+at all three evaluator-selected seeds using a fresh local release build and
+environment. The deferred capture is complete; independent review and delivery
+gates remain required.
+
+The integration findings and regression records below describe earlier validation
+in `composite_433d72e4`, based on merge HEAD `cef8b64`. Documentation and test
+repairs were uncommitted during those checks. They remain precommit regression
+records, separate from the final clean-commit capture and any performance claim.
 
 ## Integration findings
 
@@ -138,27 +143,18 @@ The audit verifies the Python 3.14 snapshot's production sources, tests, and
 scripts match this composite and the frozen evaluator hashes remain unchanged.
 Raw regression logs and build receipts were copied without rewriting them.
 
-## Final clean-commit capture still required
+## Final clean-commit transfer capture
 
-After Burner commits the integrated implementation, use a clean checkout rooted
-inside this composite worktree, a fresh release target, and a worktree-local
-Python environment. Follow the existing [transfer evaluator guide](hardware-heterogeneity-evaluator.md)
-for building and recording `source_provenance`, the extension hash, build command,
-and toolchain. Run the unchanged evaluator with no seed overrides:
+The [postcommit evidence bundle](diagnostics/composite-cuda-copies-zeros-glu/postcommit-dc236672/README.md)
+preserves the full six-case report, build/run receipts, raw logs, actual CUDA
+provenance, source/extension/evaluator hashes, and clean status before and after
+measurement at `dc2366727f7839e8710af48fd63b08268d40f987`.
 
-```sh
-CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/evaluate_cuda_transfers.py \
-  --build-record <fresh-local-build-receipt.json> \
-  --output <fresh-local-transfers.json>
-```
+All six cases passed at all three evaluator-selected seeds (18/18 trials).
+The new release build also passed 19 focused CUDA/GLU checks and three two-GPU
+device-restoration checks, with no skips. Earlier broad regressions were not
+repeated or attributed to that capture, and historical leaf records are unchanged.
 
-Preserve the raw report/log, setup/build/run receipts, actual loaded CUDA
-provenance, source/extension/evaluator hashes, and clean status before and after.
-Require all six fixed cases to pass at all three evaluator-selected seeds;
-check accounting, not just process exit status. Do not promote a precommit
-capture or either historical leaf result into this evidence. An ensuing
-artifact-only commit can retain the measured code identity only if intervening
-changes contain reports/evidence and no implementation or harness changes.
 Independent review, complete current evaluation gates, no-regression checks,
 and required remote CI remain Burner delivery gates. No branch, commit, push,
 PR, frozen evaluator, or Burner-managed progress artifact was changed here.

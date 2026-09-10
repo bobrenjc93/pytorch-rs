@@ -1,0 +1,4 @@
+PASS: all 6 fixed cases at all 3 seeds; all 18 trials independently revalidated.
+Seeds: [4004991550803647476, 4769562916386723985, 4106961968642668418]
+Source: {'commit': 'dc2366727f7839e8710af48fd63b08268d40f987', 'source_sha256': 'd27159403a544fc5a4148be3fd8d493f3fc39481e198c68656125de91ba4a454', 'production_diff_sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'}
+Clean build/run receipts, fresh local imports/runtime, and extension/evaluator hashes verified.
