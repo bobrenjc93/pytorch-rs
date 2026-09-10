@@ -703,9 +703,24 @@ fn _nn_functional_l1_loss(
         warn_loss_broadcast(py, "l1_loss", input_shape, target_shape)?;
     }
     if is_grad_enabled() && (input.inner().requires_grad() || target.inner().requires_grad()) {
-        return Err(PyRuntimeError::new_err(
-            "l1_loss(): autograd recording is not supported",
-        ));
+        if reduction != L1LossReduction::None
+            || input_shape != target_shape
+            || !input.inner().logical_values().all(f32::is_finite)
+            || !target.inner().logical_values().all(f32::is_finite)
+        {
+            return Err(PyRuntimeError::new_err(
+                "l1_loss(): autograd recording is not supported",
+            ));
+        }
+        // Keep the fused inference kernels unchanged. Subtraction records both
+        // operand edges (including shared operands); abs supplies the zero
+        // subgradient at equal elements. Check logical values, not view padding.
+        let output = input
+            .inner()
+            .sub(target.inner())
+            .and_then(|difference| difference.abs())
+            .map_err(|error| tensor_error(&error))?;
+        return PyTensor::new(output).into_py_any(py);
     }
 
     let output = match reduction {
