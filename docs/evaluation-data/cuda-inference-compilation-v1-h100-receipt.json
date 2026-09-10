@@ -1,19 +1,19 @@
 {
   "kind": "clean_commit_cuda_inference_compilation_capture",
-  "measured_commit": "372ebc1661f485729bfffd8b891a1480bda95377",
+  "measured_commit": "717e18f2524442d85fedcac99feea37e40c5286a",
   "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_7616a521",
   "command": [
     "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_7616a521/.venv/bin/python",
     "-B",
     "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_7616a521/scripts/evaluate_cuda_compilation.py",
     "--build-record",
-    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_7616a521/target/cuda-compilation-postcommit-372ebc1/build-record.json",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_7616a521/target/cuda-compilation-postcommit-717e18f/build-record.json",
     "--output",
-    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_7616a521/target/cuda-compilation-postcommit-372ebc1/evidence.json"
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_7616a521/target/cuda-compilation-postcommit-717e18f/evidence.json"
   ],
-  "started_at": "2026-09-10T21:24:13.442295+00:00",
-  "finished_at": "2026-09-10T21:25:03.558096+00:00",
-  "seconds": 50.054783378727734,
+  "started_at": "2026-09-10T21:31:19.947773+00:00",
+  "finished_at": "2026-09-10T21:32:10.675834+00:00",
+  "seconds": 50.66935951728374,
   "exit_code": 0,
   "stdout_stderr": "",
   "git_status_before_capture": "",
@@ -22,29 +22,29 @@
     "CUDA_VISIBLE_DEVICES": "0",
     "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_7616a521/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
     "TORCH_RS_CUBLAS": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_7616a521/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcublas.so.13",
-    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_7616a521/target/cuda-compilation-postcommit-372ebc1/tmp",
-    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_7616a521/target/cuda-compilation-postcommit-372ebc1/cache",
-    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_7616a521/target/cuda-compilation-postcommit-372ebc1/cache",
-    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_7616a521/target/cuda-compilation-postcommit-372ebc1/cache",
-    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_7616a521/target/cuda-compilation-postcommit-372ebc1/cache",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_7616a521/target/cuda-compilation-postcommit-717e18f/tmp",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_7616a521/target/cuda-compilation-postcommit-717e18f/cache",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_7616a521/target/cuda-compilation-postcommit-717e18f/cache",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_7616a521/target/cuda-compilation-postcommit-717e18f/cache",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_7616a521/target/cuda-compilation-postcommit-717e18f/cache",
     "PYTHONDONTWRITEBYTECODE": "1"
   },
   "artifact": "docs/evaluation-data/cuda-inference-compilation-v1-h100.json",
-  "artifact_sha256": "02b38854eb5b9950016746d521c6c2e111d7f92ce47ddc1f5b8ab3e4b6cef323",
+  "artifact_sha256": "1a23c51ed91954c856ee5cbbc28c18af38085d8b4be0850126c8b0c01304cafe",
   "source": {
-    "commit": "372ebc1661f485729bfffd8b891a1480bda95377",
+    "commit": "717e18f2524442d85fedcac99feea37e40c5286a",
     "source_sha256": "2fe1d2ab1404f3bc26ff3c6e1dc20216603f6577b09ab38cce4703b4205c67cc",
     "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
   "file_sha256": {
-    "scripts/evaluate_cuda_compilation.py": "2c049a78edd882e3a8eea10be8db3727dce3c6372161724f93668208cee2d019",
+    "scripts/evaluate_cuda_compilation.py": "e56dca5688aef7014c96678943d915df7ea99f61fb77ec7c29b2c8bd437ab43e",
     "scripts/evaluate_cuda_math.py": "29a97d07bad0d82c261e28aa880de68cdf46df0731d5ff0aa9802ec5bb8e605b",
     "docs/hardware-heterogeneity-matrix-v1.json": "9691ee4f03715ab0eb737195bad264a13d12069f4e15e5db9eedbd812c8b7ffc",
     "python/torch_rs/torch_rs.abi3.so": "5bb4e2f0fff6710a5e20e37d515b911cce04fb7c9ed1f44afa8ccf4694c954b0"
   },
   "seeds": [
-    6521260218851170669,
-    4271397935971695806
+    4307606660655661021,
+    1612280869191940488
   ],
   "accounting": {
     "denominator": 6,
@@ -56,13 +56,13 @@
         "credit": 1,
         "trials": [
           {
-            "seed": 6521260218851170669,
+            "seed": 4307606660655661021,
             "credit": 1,
             "reference_eligible": true,
             "reason": "passed"
           },
           {
-            "seed": 4271397935971695806,
+            "seed": 1612280869191940488,
             "credit": 1,
             "reference_eligible": true,
             "reason": "passed"
@@ -74,13 +74,13 @@
         "credit": 1,
         "trials": [
           {
-            "seed": 6521260218851170669,
+            "seed": 4307606660655661021,
             "credit": 1,
             "reference_eligible": true,
             "reason": "passed"
           },
           {
-            "seed": 4271397935971695806,
+            "seed": 1612280869191940488,
             "credit": 1,
             "reference_eligible": true,
             "reason": "passed"
@@ -92,13 +92,13 @@
         "credit": 1,
         "trials": [
           {
-            "seed": 6521260218851170669,
+            "seed": 4307606660655661021,
             "credit": 1,
             "reference_eligible": true,
             "reason": "passed"
           },
           {
-            "seed": 4271397935971695806,
+            "seed": 1612280869191940488,
             "credit": 1,
             "reference_eligible": true,
             "reason": "passed"
@@ -110,13 +110,13 @@
         "credit": 1,
         "trials": [
           {
-            "seed": 6521260218851170669,
+            "seed": 4307606660655661021,
             "credit": 1,
             "reference_eligible": true,
             "reason": "passed"
           },
           {
-            "seed": 4271397935971695806,
+            "seed": 1612280869191940488,
             "credit": 1,
             "reference_eligible": true,
             "reason": "passed"
@@ -128,13 +128,13 @@
         "credit": 0,
         "trials": [
           {
-            "seed": 6521260218851170669,
+            "seed": 4307606660655661021,
             "credit": 0,
             "reference_eligible": true,
             "reason": "candidate_missing_failed_unsupported_or_invalid"
           },
           {
-            "seed": 4271397935971695806,
+            "seed": 1612280869191940488,
             "credit": 0,
             "reference_eligible": true,
             "reason": "candidate_missing_failed_unsupported_or_invalid"
@@ -146,13 +146,13 @@
         "credit": 1,
         "trials": [
           {
-            "seed": 6521260218851170669,
+            "seed": 4307606660655661021,
             "credit": 1,
             "reference_eligible": true,
             "reason": "passed"
           },
           {
-            "seed": 4271397935971695806,
+            "seed": 1612280869191940488,
             "credit": 1,
             "reference_eligible": true,
             "reason": "passed"
@@ -172,7 +172,7 @@
       "-v"
     ],
     "exit_code": 0,
-    "stdout_stderr": "test_bad_metadata_forwarding_mutation_and_compilation_proof (tests.test_cuda_compilation_evaluator.AccountingTests.test_bad_metadata_forwarding_mutation_and_compilation_proof) ... ok\ntest_both_executions_require_correct_finite_outputs (tests.test_cuda_compilation_evaluator.AccountingTests.test_both_executions_require_correct_finite_outputs) ... ok\ntest_cli_missing_malformed_receipts_and_changed_source_keep_six_slots (tests.test_cuda_compilation_evaluator.AccountingTests.test_cli_missing_malformed_receipts_and_changed_source_keep_six_slots) ... ok\ntest_full_partial_and_absent_credit (tests.test_cuda_compilation_evaluator.AccountingTests.test_full_partial_and_absent_credit) ... ok\ntest_manifest_configuration_and_weights (tests.test_cuda_compilation_evaluator.AccountingTests.test_manifest_configuration_and_weights) ... ok\ntest_missing_malformed_duplicate_unknown_trials (tests.test_cuda_compilation_evaluator.AccountingTests.test_missing_malformed_duplicate_unknown_trials) ... ok\ntest_missing_stale_or_malformed_build_zero (tests.test_cuda_compilation_evaluator.AccountingTests.test_missing_stale_or_malformed_build_zero) ... ok\ntest_seeds_cannot_reduce_denominator (tests.test_cuda_compilation_evaluator.AccountingTests.test_seeds_cannot_reduce_denominator) ... ok\ntest_cli_rejects_bad_seeds_and_output_escape (tests.test_cuda_compilation_evaluator.IsolationTests.test_cli_rejects_bad_seeds_and_output_escape) ... ok\ntest_crash_timeout_invalid_json_and_missing_python (tests.test_cuda_compilation_evaluator.IsolationTests.test_crash_timeout_invalid_json_and_missing_python) ... ok\ntest_original_body_blocked_and_attempt_retained (tests.test_cuda_compilation_evaluator.IsolationTests.test_original_body_blocked_and_attempt_retained) ... ok\ntest_python_executor_cannot_impersonate_native (tests.test_cuda_compilation_evaluator.IsolationTests.test_python_executor_cannot_impersonate_native) ... ok\ntest_worker_blocks_swallowed_torch_import (tests.test_cuda_compilation_evaluator.IsolationTests.test_worker_blocks_swallowed_torch_import) ... ok\n\n----------------------------------------------------------------------\nRan 13 tests in 0.949s\n\nOK\n",
+    "stdout_stderr": "test_bad_metadata_forwarding_mutation_and_compilation_proof (tests.test_cuda_compilation_evaluator.AccountingTests.test_bad_metadata_forwarding_mutation_and_compilation_proof) ... ok\ntest_both_executions_require_correct_finite_outputs (tests.test_cuda_compilation_evaluator.AccountingTests.test_both_executions_require_correct_finite_outputs) ... ok\ntest_cli_missing_malformed_receipts_and_changed_source_keep_six_slots (tests.test_cuda_compilation_evaluator.AccountingTests.test_cli_missing_malformed_receipts_and_changed_source_keep_six_slots) ... ok\ntest_full_partial_and_absent_credit (tests.test_cuda_compilation_evaluator.AccountingTests.test_full_partial_and_absent_credit) ... ok\ntest_manifest_configuration_and_weights (tests.test_cuda_compilation_evaluator.AccountingTests.test_manifest_configuration_and_weights) ... ok\ntest_missing_malformed_duplicate_unknown_trials (tests.test_cuda_compilation_evaluator.AccountingTests.test_missing_malformed_duplicate_unknown_trials) ... ok\ntest_missing_stale_or_malformed_build_zero (tests.test_cuda_compilation_evaluator.AccountingTests.test_missing_stale_or_malformed_build_zero) ... ok\ntest_oversized_json_numbers_zero_only_the_affected_case (tests.test_cuda_compilation_evaluator.AccountingTests.test_oversized_json_numbers_zero_only_the_affected_case) ... ok\ntest_required_build_metadata_must_be_nonempty_strings (tests.test_cuda_compilation_evaluator.AccountingTests.test_required_build_metadata_must_be_nonempty_strings) ... ok\ntest_seeds_cannot_reduce_denominator (tests.test_cuda_compilation_evaluator.AccountingTests.test_seeds_cannot_reduce_denominator) ... ok\ntest_cli_rejects_bad_seeds_and_output_escape (tests.test_cuda_compilation_evaluator.IsolationTests.test_cli_rejects_bad_seeds_and_output_escape) ... ok\ntest_crash_timeout_invalid_json_and_missing_python (tests.test_cuda_compilation_evaluator.IsolationTests.test_crash_timeout_invalid_json_and_missing_python) ... ok\ntest_original_body_blocked_and_attempt_retained (tests.test_cuda_compilation_evaluator.IsolationTests.test_original_body_blocked_and_attempt_retained) ... ok\ntest_python_executor_cannot_impersonate_native (tests.test_cuda_compilation_evaluator.IsolationTests.test_python_executor_cannot_impersonate_native) ... ok\ntest_worker_blocks_swallowed_torch_import (tests.test_cuda_compilation_evaluator.IsolationTests.test_worker_blocks_swallowed_torch_import) ... ok\n\n----------------------------------------------------------------------\nRan 15 tests in 1.361s\n\nOK\n",
     "git_status_after_checks": ""
   }
 }

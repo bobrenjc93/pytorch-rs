@@ -398,18 +398,12 @@ pointwise kernels use driver-JIT embedded PTX; native matmul uses cuBLAS.
 Portable unit tests run without CUDA, and hardware tests skip clearly when the
 reference GPU or local extension is unavailable.
 
-**Clean-capture refresh pending:** the review fixes to build-metadata validation
-and numeric-overflow handling change the evaluator hash. The measured JSON and
-receipt below remain unmodified and do not validate these corrections. Burner
-must commit the corrections before this current-candidate evidence can be
-regenerated from a clean checkout. GPU regression tests on the corrected working
-tree do not replace that required capture.
-
 The [H100 evidence](evaluation-data/cuda-inference-compilation-v1-h100.json)
 was regenerated from clean implementation commit
-`372ebc1661f485729bfffd8b891a1480bda95377`. Its production sources match
+`717e18f2524442d85fedcac99feea37e40c5286a`. Its production sources match
 main `46db0021e8db4b563327ac4b8290eb7eab4318f4`. The committed evaluator and matrix
-were used without changes. A fresh empty Cargo target directory was built with
+were used without changes, including the reviewed build-metadata and numeric
+overflow checks. A fresh empty Cargo target directory was built with
 locked, offline Rust 1.92.0, reusing only the worktree-local dependency environment
 and Cargo registry. No dependencies were installed or changed.
 
@@ -421,13 +415,13 @@ Build, import, executable, and runtime dependency paths belong to this worktree;
 the installed compiler and system NVIDIA driver paths are recorded separately.
 Evidence and documentation were updated only after the clean capture finished.
 
-That run selected seeds `6521260218851170669` and `4271397935971695806`:
+That run selected seeds `4307606660655661021` and `1612280869191940488`:
 all 12 reference trials passed, and the candidate earned **5/6** slots. Row sum
 failed bytecode lowering (`KW_NAMES`) at both seeds and earned zero. The device
 was NVIDIA H100, compute capability 9.0, driver 580.82.07. Both processes mapped
 CUDA runtime 13.0 from the local PyTorch dependency environment; PyTorch was
-2.13.0+cu130. The fresh release build took 45.89 seconds wall time
+2.13.0+cu130. The fresh release build took 46.66 seconds wall time
 with thin LTO and one codegen unit. Installed `nvcc` was 12.6.85 and was unused.
 Native cuBLAS 13 and driver-JIT PTX paths are recorded separately in the worker
-observations. No inference performance was measured. All 13 focused accounting
+observations. No inference performance was measured. All 15 focused accounting
 and isolation tests passed; their output is preserved in the capture receipt.
