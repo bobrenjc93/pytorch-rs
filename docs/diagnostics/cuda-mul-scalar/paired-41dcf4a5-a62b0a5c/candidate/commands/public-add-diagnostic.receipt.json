@@ -1,0 +1,27 @@
+{
+  "executable": "taskset",
+  "args": [
+    "-c",
+    "0",
+    "/tmp/pytorch-rs-scalar-public-add.kOJPLt/candidate/.venv/bin/python",
+    "-B",
+    "scripts/diagnose_cuda_add.py",
+    "--build-record",
+    "/tmp/pytorch-rs-scalar-public-add.kOJPLt/candidate/target/cuda-add-diagnostic/paired/build-record.json",
+    "--output",
+    "/tmp/pytorch-rs-scalar-public-add.kOJPLt/candidate/target/root-paired/reports/public-add.json",
+    "--seed",
+    "937514",
+    "--samples",
+    "9",
+    "--warmups",
+    "5"
+  ],
+  "cwd": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/candidate",
+  "startedAt": "2026-09-10T00:00:56.156Z",
+  "completedAt": "2026-09-10T00:07:41.358Z",
+  "seconds": 405.20225071699997,
+  "exitCode": 0,
+  "log": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/candidate/target/root-paired/reports/public-add-diagnostic.log",
+  "logSha256": "c5a7227bd1fa7ae0cd596d7ee79ff09b860a2c8495d357c5eb0e23559ff6ce9b"
+}

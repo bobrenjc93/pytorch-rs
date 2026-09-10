@@ -1,0 +1,22 @@
+{
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/.venv/bin/python",
+    "scripts/diagnose_cuda_add.py",
+    "--build-record",
+    "target/validation/cuda-add-build-record.json",
+    "--output",
+    "target/validation/cuda-add-regression.json"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67",
+  "start_epoch": 1788995236.6076324,
+  "end_epoch": 1788995627.2383626,
+  "exit_status": 0,
+  "environment": {
+    "PYTHONPATH": "",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/cuda-cache",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/tmp",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/xdg-cache"
+  }
+}

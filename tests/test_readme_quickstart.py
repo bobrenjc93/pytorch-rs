@@ -463,7 +463,7 @@ SUPPORTED_SURFACE_DETAIL_SNIPPETS = (
     '`x + y`, `x.add(y)`, and `torch.add(x, y)`',
     "both inputs have identical shapes, are contiguous",
     "numeric default-equivalent `alpha=1`",
-    "CUDA broadcasting, noncontiguous operands, Python scalar arithmetic",
+    "CUDA broadcasting, noncontiguous operands, Python scalar addition",
     "`torch.cuda.device_count()`",
     "`torch.cuda.is_available()`",
     "`torch.cuda.is_initialized()`",

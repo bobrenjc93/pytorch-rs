@@ -1,0 +1,30 @@
+{
+  "cache_policy": "Fresh native Cargo target built by reproduce.py; existing worktree-local dependency, standard JIT and Python caches. Performance cache conditions recorded separately before those runs.",
+  "environment": {
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/cargo-home",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/post-commit-e87d5db6/native-build",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/cuda-cache",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "PYTHONHASHSEED": null,
+    "PYTHONPATH": "",
+    "RUSTC": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustc",
+    "RUSTDOC": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustdoc",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/tmp",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/inductor-cache",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/triton-cache",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/xdg-cache"
+  },
+  "measured_at": "2026-09-09T23:19:29.378854+00:00",
+  "path_existence_before_checks": {
+    "CARGO_TARGET_DIR": true,
+    "CUDA_CACHE_PATH": true,
+    "TORCHINDUCTOR_CACHE_DIR": true,
+    "TRITON_CACHE_DIR": true
+  },
+  "source": {
+    "commit": "e87d5db6d54c6f095867dba0720c3b8af73c4be6",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source_sha256": "7fa54535257b6e105d2330485dab6d09fc86b2a9ed263adc9c0ee383f4fcc930"
+  }
+}

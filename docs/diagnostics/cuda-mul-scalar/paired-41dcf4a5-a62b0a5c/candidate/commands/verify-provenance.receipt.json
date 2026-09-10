@@ -1,0 +1,14 @@
+{
+  "executable": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/candidate/.venv/bin/python",
+  "args": [
+    "-B",
+    ".github/scripts/verify_native_extension.py"
+  ],
+  "cwd": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/candidate",
+  "startedAt": "2026-09-09T23:53:51.581Z",
+  "completedAt": "2026-09-09T23:53:51.913Z",
+  "seconds": 0.33207800199999477,
+  "exitCode": 0,
+  "log": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/candidate/target/root-paired/reports/verify-provenance.log",
+  "logSha256": "988400ce14caadfd76641bed9af2e8fe48641037b38c6e96ae0e7b508d22cdcc"
+}

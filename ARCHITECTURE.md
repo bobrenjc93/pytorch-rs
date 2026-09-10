@@ -5,7 +5,7 @@ tensor core. The native implementation is intentionally small today: tensors
 carry strided CPU `float32` storage and optional native CUDA `float32` storage,
 Python-facing metadata objects, selected CPU operators, and limited eager
 reverse-mode autograd. Native CUDA storage and transfers, same-shape contiguous
-addition, and contiguous negation execute without Python.
+addition, contiguous negation, and contiguous scalar multiplication execute without Python.
 
 ## Source Map
 
@@ -13,7 +13,7 @@ addition, and contiguous negation execute without Python.
 | --- | --- | --- |
 | Crate entry | [src/lib.rs](src/lib.rs) | Declares the Rust modules and re-exports `Tensor`, `TensorError`, `DType`, `Device`, and `MemoryFormat`. Python-only modules are gated behind `python-bindings`. |
 | Storage | [src/storage.rs](src/storage.rs) | Owns `Storage`, native CPU/CUDA payload dispatch, the CPU `f32` payload, inline scalar storage, owned vectors, and mutex-backed leaf-gradient buffers. |
-| CUDA backend | [src/cuda.rs](src/cuda.rs), [src/cuda/pointwise.rs](src/cuda/pointwise.rs), [src/cuda/pool.rs](src/cuda/pool.rs), [src/cuda/add.ptx](src/cuda/add.ptx), [src/cuda/neg.ptx](src/cuda/neg.ptx) | Loads the optional CUDA runtime, owns device allocations, restores the calling thread's device, and performs synchronous host-to-device and device-to-host transfers from/to Rust buffers. A front cache retains at most 32 buffers / 64 MiB across devices; optional private pools budget another 256 MiB of unused backing per device, as detailed below. The optional driver loads embedded contiguous float32 addition and negation kernels. Python only discovers optional wheel library paths. |
+| CUDA backend | [src/cuda.rs](src/cuda.rs), [src/cuda/pointwise.rs](src/cuda/pointwise.rs), [src/cuda/pool.rs](src/cuda/pool.rs), [src/cuda/add.ptx](src/cuda/add.ptx), [src/cuda/neg.ptx](src/cuda/neg.ptx), [src/cuda/mul_scalar.ptx](src/cuda/mul_scalar.ptx) | Loads the optional CUDA runtime, owns device allocations, restores the calling thread's device, and performs synchronous host-to-device and device-to-host transfers from/to Rust buffers. A front cache retains at most 32 buffers / 64 MiB across devices; optional private pools budget another 256 MiB of unused backing per device, as detailed below. The optional driver loads embedded contiguous float32 addition, negation and scalar multiplication kernels. Python only discovers optional wheel library paths. |
 | Dimension reduction kernels | [src/reduction.rs](src/reduction.rs) | Uses layout-aware slices and four-level float32 accumulation for rank-2 single-axis sums and means. [src/parallel.rs](src/parallel.rs) manages an explicit worker budget; large reductions split independent outputs without changing their accumulation order. |
 | Tensor layout | [src/tensor.rs](src/tensor.rs) | `Tensor` stores shared storage plus shape, strides, storage offset, element count, output number, view grad state, and optional autograd metadata. It also implements contiguity, view, stride, indexing, and materialization helpers. Integer-size and list/tuple-section split and chunk reuse `partition_dimension` slice views and one shared multi-output backward node per call; explicit sections use `SplitWithSizes` metadata. |
 | Metadata types | [src/dtype.rs](src/dtype.rs), [src/device.rs](src/device.rs), [src/memory_format.rs](src/memory_format.rs) | Define the currently compiled native dtype/device/memory-format enums and query behavior. |
@@ -143,7 +143,16 @@ executor preflights the whole graph before launching any operation, including
 on dynamic cache hits. This is not a general Inductor compiler or a performance
 parity claim. Noncontiguous CUDA negation and CUDA autograd remain unsupported;
 see [capture scope](docs/compile-cuda-add.md) and [kernel validation](docs/cuda-neg-validation.md).
-Other CUDA materialization and
+Eager scalar multiplication routes `BinaryOperation::Multiply.apply_scalar` to
+`Tensor::mul_scalar`, shared scalar output-stride planning, and the native
+[src/cuda/mul_scalar.ptx](src/cuda/mul_scalar.ptx) 64-bit grid-stride kernel.
+It multiplies contiguous device float32 storage directly, with round-to-nearest
+and no flush-to-zero. The shared unary storage helper owns allocation, bounds,
+device guards, completion, and failure cleanup for both multiplication and negation.
+Results are fresh, offset zero, and preserve the reference scalar operation
+stride ordering, including singleton dimensions. No compiler capture, tensor-tensor
+CUDA multiplication, out variants, or autograd support is added. See
+[validation](docs/cuda-mul-scalar-validation.md). Other CUDA materialization and
 arithmetic reject at the operation boundary.
 Direct public CUDA factory allocation remains rank-1 float32 zeros without
 autograd. Transfers do not add dtype conversions, autograd (even under

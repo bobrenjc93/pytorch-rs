@@ -1,0 +1,14 @@
+{
+  "executable": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustc",
+  "args": [
+    "--version",
+    "--verbose"
+  ],
+  "cwd": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/baseline",
+  "startedAt": "2026-09-09T23:45:31.179Z",
+  "completedAt": "2026-09-09T23:45:31.198Z",
+  "seconds": 0.018529889000000365,
+  "exitCode": 0,
+  "log": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/baseline/target/root-paired/reports/rustc-version.log",
+  "logSha256": "d8985b81dbb3b7dca25deb1e399174dbcfe80698b16f237f07c83ea19f84d7d9"
+}

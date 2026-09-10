@@ -1,0 +1,14 @@
+{
+  "executable": "cargo",
+  "args": [
+    "fetch",
+    "--locked"
+  ],
+  "cwd": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/baseline",
+  "startedAt": "2026-09-09T23:51:53.854Z",
+  "completedAt": "2026-09-09T23:51:54.451Z",
+  "seconds": 0.5964588500000028,
+  "exitCode": 0,
+  "log": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/baseline/target/root-paired/reports/prime-cargo-download-cache.log",
+  "logSha256": "40fb1f6fefc1ce278c4ec5ffa4c9e7b4145aeb71d56fae373fd602d878b5afea"
+}

@@ -1,0 +1,15 @@
+test_allocation_failure_restores_device_and_recovers (tests.test_cuda_mul_scalar.CudaMulScalarDeviceTests.test_allocation_failure_restores_device_and_recovers) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_ownership_restoration_and_mixed_device_rejection (tests.test_cuda_mul_scalar.CudaMulScalarDeviceTests.test_ownership_restoration_and_mixed_device_rejection) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_compiler_rejection_does_not_execute_or_cache (tests.test_cuda_mul_scalar.CudaMulScalarTests.test_compiler_rejection_does_not_execute_or_cache) ... ok
+test_completion_fresh_storage_and_lifetimes (tests.test_cuda_mul_scalar.CudaMulScalarTests.test_completion_fresh_storage_and_lifetimes) ... ok
+test_generated_large_allocation_beyond_front_cache (tests.test_cuda_mul_scalar.CudaMulScalarTests.test_generated_large_allocation_beyond_front_cache) ... ok
+test_generated_shapes_and_all_public_forms (tests.test_cuda_mul_scalar.CudaMulScalarTests.test_generated_shapes_and_all_public_forms) ... ok
+test_ieee_values_offsets_and_empty_views (tests.test_cuda_mul_scalar.CudaMulScalarTests.test_ieee_values_offsets_and_empty_views) ... ok
+test_no_pytorch_forwarding (tests.test_cuda_mul_scalar.CudaMulScalarTests.test_no_pytorch_forwarding) ... ok
+test_scalar_conversion_contracts (tests.test_cuda_mul_scalar.CudaMulScalarTests.test_scalar_conversion_contracts) ... ok
+test_unsupported_boundaries_and_overrides (tests.test_cuda_mul_scalar.CudaMulScalarTests.test_unsupported_boundaries_and_overrides) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 13.090s
+
+OK (skipped=2)

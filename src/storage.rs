@@ -232,6 +232,24 @@ impl Storage {
         }
     }
 
+    pub(crate) fn cuda_mul_scalar_float32(
+        &self,
+        offset: usize,
+        elements: usize,
+        scalar: f32,
+    ) -> Result<Self, TensorError> {
+        match &self.payload {
+            StoragePayload::CudaFloat32(input) => Ok(Self {
+                payload: StoragePayload::CudaFloat32(input.mul_scalar(offset, elements, scalar)?),
+            }),
+            StoragePayload::CpuFloat32(_) => {
+                Err(TensorError::UnsupportedCudaScalarMultiplication {
+                    reason: "input must be CUDA",
+                })
+            }
+        }
+    }
+
     pub(crate) fn len(&self) -> usize {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.len(),

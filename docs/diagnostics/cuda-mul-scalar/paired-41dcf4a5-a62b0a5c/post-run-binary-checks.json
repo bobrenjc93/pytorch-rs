@@ -1,0 +1,20 @@
+{
+  "checkedAt": "2026-09-10T00:08:09.025Z",
+  "purpose": "Post-run verification, not a fabricated earlier capture timestamp",
+  "binaries": {
+    "baseline": {
+      "python": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/baseline/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+      "pythonSha256": "f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526",
+      "native": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/baseline/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+      "nativeSha256": "6c8942c3fcfff37ed1bb89a149650e13119c6ff7e5457cf972a75adb2a6e8369",
+      "measuredCodeCommit": "41dcf4a5a015337a61f4507940cbeb20fd4ff006"
+    },
+    "candidate": {
+      "python": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/candidate/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+      "pythonSha256": "f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526",
+      "native": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/candidate/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+      "nativeSha256": "7ebce397406cdc11e734870cb3498f86e6ae151db811e2e41c165ded469d2177",
+      "measuredCodeCommit": "a62b0a5c2709898ebcb1b906b37ffcb7c1a2c1d9"
+    }
+  }
+}

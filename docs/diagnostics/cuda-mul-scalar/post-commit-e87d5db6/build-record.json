@@ -1,0 +1,56 @@
+{
+  "commit": "e87d5db6d54c6f095867dba0720c3b8af73c4be6",
+  "source_sha256": "7fa54535257b6e105d2330485dab6d09fc86b2a9ed263adc9c0ee383f4fcc930",
+  "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "command": [
+    "cargo",
+    "build",
+    "--locked",
+    "--release",
+    "--features",
+    "extension-module"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67",
+  "started_at": "2026-09-09T23:18:01.378825+00:00",
+  "ended_at": "2026-09-09T23:18:41.906938+00:00",
+  "wall_seconds": 40.52811784110963,
+  "exit_status": 0,
+  "log": "build.log",
+  "log_sha256": "06616b91fd4b55aa0c04ff0eef74bdb89793a0fa58025f8f325f08add4e103f1",
+  "build_command": "cargo build --locked --release --features extension-module",
+  "source_unchanged_during_build": true,
+  "git_status_before_build": "",
+  "clean_checkout": true,
+  "measurement_kind": "clean-code",
+  "extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/python/torch_rs/torch_rs.abi3.so",
+  "extension_sha256": "ea676a228ab2e97df4cb91bce6116c64b944d8a84d9f71489310a98ca97eac08",
+  "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+  "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)",
+  "nvcc": "unused; embedded PTX JIT-compiled by NVIDIA driver",
+  "available_nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0\n",
+  "python_executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+  "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+  "environment": {
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/cargo-home",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/post-commit-e87d5db6/native-build",
+    "RUSTC": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustc",
+    "RUSTDOC": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustdoc",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/.venv/bin/python",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/tmp",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/cuda-cache",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/xdg-cache",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "PATH": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin:/home/bobren/.cache/dotslash/obj/cas/a8/1a50e227dda8b1985278602c10213580/extract/tar.zst/linux_x86_64/codex-path:/home/bobren/.local/bin:/data/users/bobren/depot_tools:/home/bobren/.codex/tmp/arg0/codex-arg0GA8aJ6:/home/bobren/.cache/dotslash/obj/cas/a8/1a50e227dda8b1985278602c10213580/extract/tar.zst/linux_x86_64/codex-path:/home/bobren/.cache/dotslash/obj/cas/bb/b1dfffa15633565c1690f3bd8f330077/extract/tar.zst/linux_x86_64/codex-path:/data/users/bobren/depot_tools:/home/bobren/.codex/tmp/arg0/codex-arg0sPfTy1:/home/bobren/.cache/dotslash/obj/cas/bb/b1dfffa15633565c1690f3bd8f330077/extract/tar.zst/linux_x86_64/codex-path:/usr/local/cuda-12.6/bin:/home/bobren/.config/emacs/bin:/data/users/bobren/fbsource/fbcode/common/rust/cargo_from_buck/bin:/data/users/bobren/fbsource/fbcode/third-party-buck/platform007/build/rust/bin:/data/users/bobren/fbsource/xplat/third-party/node/bin:/data/users/bobren/depot_tools:/home/bobren/local/a/pytorch-env/bin:/usr/local/cuda-12.6/bin:/home/bobren/.config/emacs/bin:/data/users/bobren/fbsource/fbcode/common/rust/cargo_from_buck/bin:/data/users/bobren/fbsource/fbcode/third-party-buck/platform007/build/rust/bin:/data/users/bobren/fbsource/xplat/third-party/node/bin:/home/bobren/miniconda3/bin:/home/bobren/.cargo/bin:/data/users/bobren/depot_tools:/usr/share/Modules/bin:/usr/condabin:/usr/lib64/ccache:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/local/sbin:/usr/sbin:/sbin:/var/www/scripts/bin:/home/bobren/.yarn/bin:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/local/sbin:/usr/sbin:/sbin:/var/www/scripts/bin:/home/bobren/.yarn/bin:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db"
+  },
+  "cache_state": "empty Cargo build target; previously fetched Cargo registry; local Python environment; evaluator allocates a new temporary CUDA JIT cache",
+  "profile": {
+    "name": "release",
+    "lto": "thin",
+    "codegen_units": 1,
+    "features": [
+      "extension-module"
+    ],
+    "pyo3_abi": "abi3-py310"
+  }
+}

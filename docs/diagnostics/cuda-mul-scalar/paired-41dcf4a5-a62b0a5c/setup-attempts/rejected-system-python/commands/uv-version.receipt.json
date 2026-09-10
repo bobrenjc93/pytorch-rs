@@ -1,0 +1,13 @@
+{
+  "executable": "uv",
+  "args": [
+    "--version"
+  ],
+  "cwd": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/baseline",
+  "startedAt": "2026-09-09T23:42:55.509Z",
+  "completedAt": "2026-09-09T23:42:55.866Z",
+  "seconds": 0.3563547530000005,
+  "exitCode": 0,
+  "log": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/baseline/target/root-paired/reports/uv-version.log",
+  "logSha256": "16465a7fce13b5eb3fa7cce2b1dcbe7271d07628cea619adc693020702c784d6"
+}

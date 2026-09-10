@@ -1,0 +1,110 @@
+{
+  "comparedRows": 152,
+  "allOutputsAndMetadataIdentical": true,
+  "grouped": [
+    {
+      "cache": "clean",
+      "callsPerSample": 1,
+      "chained": false,
+      "rows": 19,
+      "candidateToBaselineNativeLatency": 1.0161427212416265,
+      "candidateToBaselineReferenceLatency": 1.070504087300498,
+      "relativeNativeLatencyChangeVsReference": 0.9492189084527878,
+      "nativeLatencyRatioRange": [
+        0.9272451686244789,
+        1.3828604432892933
+      ]
+    },
+    {
+      "cache": "clean",
+      "callsPerSample": 32,
+      "chained": false,
+      "rows": 19,
+      "candidateToBaselineNativeLatency": 1.0145166329826028,
+      "candidateToBaselineReferenceLatency": 1.0379653483484523,
+      "relativeNativeLatencyChangeVsReference": 0.9774089612883899,
+      "nativeLatencyRatioRange": [
+        0.9626713311098488,
+        1.131066162851004
+      ]
+    },
+    {
+      "cache": "clean",
+      "callsPerSample": 64,
+      "chained": false,
+      "rows": 19,
+      "candidateToBaselineNativeLatency": 0.9965957853439706,
+      "candidateToBaselineReferenceLatency": 1.0167203223297716,
+      "relativeNativeLatencyChangeVsReference": 0.9802064180838971,
+      "nativeLatencyRatioRange": [
+        0.9507672960732217,
+        1.0296034437149797
+      ]
+    },
+    {
+      "cache": "clean",
+      "callsPerSample": 32,
+      "chained": true,
+      "rows": 19,
+      "candidateToBaselineNativeLatency": 1.0069973543012525,
+      "candidateToBaselineReferenceLatency": 1.0213009590062396,
+      "relativeNativeLatencyChangeVsReference": 0.985994721165341,
+      "nativeLatencyRatioRange": [
+        0.9924884982008079,
+        1.1219601220094466
+      ]
+    },
+    {
+      "cache": "saturated",
+      "callsPerSample": 1,
+      "chained": false,
+      "rows": 19,
+      "candidateToBaselineNativeLatency": 1.0006205896087597,
+      "candidateToBaselineReferenceLatency": 0.9888878359276418,
+      "relativeNativeLatencyChangeVsReference": 1.0118645950074934,
+      "nativeLatencyRatioRange": [
+        0.9775548200248242,
+        1.0407062324456362
+      ]
+    },
+    {
+      "cache": "saturated",
+      "callsPerSample": 32,
+      "chained": false,
+      "rows": 19,
+      "candidateToBaselineNativeLatency": 1.0023271023665978,
+      "candidateToBaselineReferenceLatency": 1.0087866162575418,
+      "relativeNativeLatencyChangeVsReference": 0.9935967490182336,
+      "nativeLatencyRatioRange": [
+        0.9442792631877845,
+        1.027724296484045
+      ]
+    },
+    {
+      "cache": "saturated",
+      "callsPerSample": 64,
+      "chained": false,
+      "rows": 19,
+      "candidateToBaselineNativeLatency": 1.0022036827080494,
+      "candidateToBaselineReferenceLatency": 1.0181568000756418,
+      "relativeNativeLatencyChangeVsReference": 0.9843313747289149,
+      "nativeLatencyRatioRange": [
+        0.9904614736250614,
+        1.021153512618867
+      ]
+    },
+    {
+      "cache": "saturated",
+      "callsPerSample": 32,
+      "chained": true,
+      "rows": 19,
+      "candidateToBaselineNativeLatency": 1.0014162330950112,
+      "candidateToBaselineReferenceLatency": 1.0099184888493682,
+      "relativeNativeLatencyChangeVsReference": 0.9915812455676062,
+      "nativeLatencyRatioRange": [
+        0.9674640585646945,
+        1.025747013493439
+      ]
+    }
+  ]
+}

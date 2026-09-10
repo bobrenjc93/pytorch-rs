@@ -29,12 +29,13 @@ struct Driver {
 struct Module {
     context: usize,
     _handle: usize,
-    functions: [usize; 3],
+    functions: [usize; 4],
 }
 
 enum Kernel {
     Add,
     AddVector,
+    MultiplyScalar,
     #[cfg(any(feature = "python-bindings", test))]
     Negate,
 }
@@ -126,21 +127,29 @@ impl Driver {
             .try_reserve(1)
             .map_err(|_| TensorError::AllocationFailed { elements: 1 })?;
         let mut module = std::ptr::null_mut();
-        let mut functions = [0; 3];
+        let mut functions = [0; 4];
         // SAFETY: static NUL-terminated PTX and entry names; writable handles.
         unsafe {
             self.check(
                 (self.load)(
                     &raw mut module,
-                    concat!(include_str!("add.ptx"), "\n", include_str!("neg.ptx"), "\0")
-                        .as_ptr()
-                        .cast(),
+                    concat!(
+                        include_str!("add.ptx"),
+                        "\n",
+                        include_str!("mul_scalar.ptx"),
+                        "\n",
+                        include_str!("neg.ptx"),
+                        "\0"
+                    )
+                    .as_ptr()
+                    .cast(),
                 ),
                 "cuModuleLoadData",
             )?;
-            for (slot, name) in functions
-                .iter_mut()
-                .zip([c"add_f32", c"add_f32x4", c"neg_f32"])
+            for (slot, name) in
+                functions
+                    .iter_mut()
+                    .zip([c"add_f32", c"add_f32x4", c"mul_scalar_f32", c"neg_f32"])
             {
                 let mut function = std::ptr::null_mut();
                 if let Err(error) = self.check(
@@ -256,6 +265,48 @@ pub(super) unsafe fn launch_negate(
         (&raw mut input).cast(),
         (&raw mut output).cast(),
         (&raw mut count).cast(),
+    ];
+    let blocks = u32::try_from(elements.div_ceil(256).min(4096)).expect("bounded grid");
+    // SAFETY: parameters survive the launch argument copy; the cached function
+    // belongs to this context. CU_STREAM_LEGACY matches runtime copies/zero-fill.
+    driver.check(
+        unsafe {
+            (driver.launch)(
+                function as *mut c_void,
+                blocks,
+                1,
+                1,
+                256,
+                1,
+                1,
+                0,
+                std::ptr::without_provenance_mut(1),
+                arguments.as_mut_ptr(),
+                std::ptr::null_mut(),
+            )
+        },
+        "cuLaunchKernel",
+    )
+}
+
+/// # Safety
+/// Input and output refer to `elements` live contiguous floats on the guarded
+/// device, without aliasing. Caller must synchronize the legacy stream before
+/// releasing either allocation, including on launch errors.
+pub(super) unsafe fn launch_mul_scalar(
+    mut input: u64,
+    mut output: u64,
+    elements: usize,
+    mut scalar: f32,
+) -> Result<(), TensorError> {
+    let driver = driver()?;
+    let function = driver.function(Kernel::MultiplyScalar)?;
+    let mut count = elements as u64;
+    let mut arguments = [
+        (&raw mut input).cast(),
+        (&raw mut output).cast(),
+        (&raw mut count).cast(),
+        (&raw mut scalar).cast(),
     ];
     let blocks = u32::try_from(elements.div_ceil(256).min(4096)).expect("bounded grid");
     // SAFETY: parameters survive the launch argument copy; the cached function

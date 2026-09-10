@@ -1,0 +1,16 @@
+{
+  "fresh_paths": {
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/installed-performance-cuda-cache",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/installed-performance-triton-cache",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/installed-performance-inductor-cache"
+  },
+  "private_cache": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/torch_rs_private_cuda_pointwise",
+  "private_cache_absent_before_run": true,
+  "policy": "fresh run followed by one reused-cache run; no selection or retries",
+  "pointwise_reduce_cache": {
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/torch_rs_private_cuda_pointwise_reduce",
+    "reused_in_both_runs": true,
+    "evidence": "workload_results[0].torch_rs_cuda_pointwise_reduce_workload.build in both raw reports",
+    "scope": "new CUDA/Triton/Inductor caches and rebuilt pointwise library only; not a fully cold private-kernel build"
+  }
+}

@@ -1,0 +1,4 @@
+
+error: No interpreter found for Python 3.12.14 in managed installations
+
+hint: uv embeds available Python downloads and may require an update to install new versions. Consider retrying on a newer version of uv.

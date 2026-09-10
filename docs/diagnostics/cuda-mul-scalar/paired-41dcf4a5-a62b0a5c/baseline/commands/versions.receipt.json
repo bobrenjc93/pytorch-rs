@@ -1,0 +1,15 @@
+{
+  "executable": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/baseline/.venv/bin/python",
+  "args": [
+    "-B",
+    "-c",
+    "import sys,json,torch,numpy;print(json.dumps(dict(python=sys.version,torch=torch.__version__,torch_cuda=torch.version.cuda,numpy=numpy.__version__)))"
+  ],
+  "cwd": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/baseline",
+  "startedAt": "2026-09-09T23:52:43.926Z",
+  "completedAt": "2026-09-09T23:52:47.304Z",
+  "seconds": 3.377567066999996,
+  "exitCode": 0,
+  "log": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/baseline/target/root-paired/reports/versions.log",
+  "logSha256": "60051dcb5d8ce9c5ee17932000bdf54a668abab55d3a7babf40c9cd59989f09c"
+}

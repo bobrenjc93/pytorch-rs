@@ -216,6 +216,15 @@ fn _nn_functional_dropout(
     }
 
     if metadata.supports_probability_one && !inplace && probability.to_bits() == 1.0_f64.to_bits() {
+        // Eager CUDA scalar multiplication does not expand the NN surface.
+        // Preserve the former shared scalar path's CPU-only dropout boundary.
+        let device = tensor.try_borrow()?.inner().device();
+        if device != Device::Cpu {
+            return Err(tensor_error(&TensorError::UnsupportedDevice {
+                operation: "scalar operation",
+                device,
+            }));
+        }
         let output = tensor
             .try_borrow()?
             .inner()

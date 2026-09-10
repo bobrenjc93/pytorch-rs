@@ -1,0 +1,21 @@
+{
+  "purpose": "Matched public CUDA-add diagnostic for the scalar-multiplication candidate; not a new evaluator or score override",
+  "baseline": "41dcf4a5a015337a61f4507940cbeb20fd4ff006",
+  "candidate_agent": "agent_e5ce9d67",
+  "candidate_selection": "Exact final published head after the paused Burner worker completes review and evaluation",
+  "order": ["baseline", "candidate"],
+  "python": "3.12.14",
+  "setup_tool": "task-local uv 0.12.12, whose catalog contains the required managed interpreter",
+  "python_binary_sha256": "f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526",
+  "cpu": 0,
+  "gpu": 0,
+  "seed": 937514,
+  "samples_per_order": 9,
+  "warmups_per_order": 5,
+  "cache_conditions": ["clean", "saturated"],
+  "expected_rows_per_variant": 152,
+  "build": "Repository build_cuda_add_diagnostic.py, clean HEAD export, fresh per-export Cargo target, separately primed worktree-local dependency caches",
+  "measurement": "Unmodified scripts/diagnose_cuda_add.py with its full shape/form/batch/chain matrix and bitwise output checks",
+  "analysis": "Retain all raw rows and compare per-row native latency and same-run PyTorch-normalized ratios for both cache regimes and every batch/chain group. Historical measurements from a different Python build are not the baseline.",
+  "retry_policy": "No automatic retries or run selection. If results remain inconclusive, retain this complete pair and keep the merge hold while planning any explicitly separate follow-up."
+}

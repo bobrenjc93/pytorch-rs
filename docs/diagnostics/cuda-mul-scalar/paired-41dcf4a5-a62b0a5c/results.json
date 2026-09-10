@@ -1,0 +1,78 @@
+[
+  {
+    "variant": "baseline",
+    "source": {
+      "commit": "41dcf4a5a015337a61f4507940cbeb20fd4ff006",
+      "tree": "a7c4e2d0a0c5f2f474e583557f9f0c17140a1bcb",
+      "diagnosticSha256": "8d11bcf49b4273a21b795ec61c75478d9510028cbc3a398215811bbaf50dcc17",
+      "builderSha256": "57d46fd41da3065dd566c16f73a729a65299c9a7d7d43bbd1f6592ebd2046567",
+      "lockSha256": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced"
+    },
+    "versions": {
+      "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+      "torch": "2.13.0+cu130",
+      "torch_cuda": "13.0",
+      "numpy": "2.5.1"
+    },
+    "report": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/baseline/target/root-paired/reports/public-add.json",
+    "reportSha256": "995cd1a4778257be14c6fd81e7dd62f7edd7017ba9f39c0bd3c90af40be52e34",
+    "cases": [
+      {
+        "cache": "clean",
+        "rows": 76,
+        "cappedParity": {
+          "1": 97.44837896793224,
+          "32": 70.14317885763505,
+          "64": 68.65179224989946
+        }
+      },
+      {
+        "cache": "saturated",
+        "rows": 76,
+        "cappedParity": {
+          "1": 97.77851266522005,
+          "32": 72.64697700796951,
+          "64": 70.05584374328888
+        }
+      }
+    ]
+  },
+  {
+    "variant": "candidate",
+    "source": {
+      "commit": "a62b0a5c2709898ebcb1b906b37ffcb7c1a2c1d9",
+      "tree": "c0e9e3e8465726b1aa4d4c446f57e8602f0dcf55",
+      "diagnosticSha256": "8d11bcf49b4273a21b795ec61c75478d9510028cbc3a398215811bbaf50dcc17",
+      "builderSha256": "57d46fd41da3065dd566c16f73a729a65299c9a7d7d43bbd1f6592ebd2046567",
+      "lockSha256": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced"
+    },
+    "versions": {
+      "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+      "torch": "2.13.0+cu130",
+      "torch_cuda": "13.0",
+      "numpy": "2.5.1"
+    },
+    "report": "/tmp/pytorch-rs-scalar-public-add.kOJPLt/candidate/target/root-paired/reports/public-add.json",
+    "reportSha256": "6a368d8140933831fc301c9ccd7ee423f3b1ae50911ae0e63617e40c2a9b001c",
+    "cases": [
+      {
+        "cache": "clean",
+        "rows": 76,
+        "cappedParity": {
+          "1": 96.79855324012829,
+          "32": 71.19078353682072,
+          "64": 67.59650006806281
+        }
+      },
+      {
+        "cache": "saturated",
+        "rows": 76,
+        "cappedParity": {
+          "1": 95.97059721158465,
+          "32": 70.14578538720887,
+          "64": 68.10982205518376
+        }
+      }
+    ]
+  }
+]

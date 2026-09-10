@@ -45,6 +45,8 @@ closures, mutations, top-level `torch.neg`/`negative` calls, unsupported bytecod
 and unsupported compiler options retain their existing rejection behavior. Float64 CUDA tensors and CUDA tensors requiring
 gradients cannot currently be constructed by the native substrate; the
 compiler metadata boundary also explicitly rejects those properties.
+Eager [CUDA scalar multiplication](cuda-mul-scalar-validation.md) does not change
+this grammar: scalar multiplication still rejects before execution or cache insertion.
 
 ## Metadata and cache contract
 

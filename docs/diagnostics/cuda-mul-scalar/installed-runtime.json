@@ -1,0 +1,17 @@
+{
+  "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/.venv/bin/python",
+  "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+  "extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+  "extension_sha256": "d2633dd2db5dd11b25b6a70bb10860eac30f55b75f0ba661b2b99f6321c7d9fc",
+  "wheel": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/validation/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+  "wheel_sha256": "46df1c09ac87215e4bbb0fe2bcf098662d9c9005b59c9513c059c71d85060537",
+  "installed_binary_matches_wheel": true,
+  "all_python_sources_match_checkout": true,
+  "source_extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/python/torch_rs/torch_rs.abi3.so",
+  "source_extension_sha256": "ea676a228ab2e97df4cb91bce6116c64b944d8a84d9f71489310a98ca97eac08",
+  "reference": "2.13.0+cu130",
+  "reference_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/.venv/lib/python3.12/site-packages/torch/__init__.py",
+  "reference_cuda": "13.0",
+  "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13"
+}
