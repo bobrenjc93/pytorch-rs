@@ -23,13 +23,14 @@ source-PR timings are presented as combined-checkout performance measurements.
 
 ## Combined validation
 
-The implementation under test is merged commit
+The initial combined validation used merged commit
 `d501bfada1a0c7ffb23f29fc8f950c77e695a671`. The integration adds documentation,
 the historical payload, and its two audit tests on top of that commit; production
 and benchmark code remain identical. The independent combined review found no
 correctness defects and separately verified the archive and retained bytes.
 
-On 2026-09-09, both interpreters used this worktree's canonical `.venv`, locked
+On 2026-09-09, the GCC focused and managed 3.14 runs used this worktree's
+canonical `.venv`, locked
 NumPy 2.5.1 and PyTorch 2.13.0+cu130, and fresh release wheels built with
 Rust/Cargo 1.92.0 and Maturin 1.14.1 (`--release --locked`, `extension-module`,
 ABI3 Python 3.10, thin LTO, one codegen unit). CPython 3.12.13 is the host
@@ -50,8 +51,9 @@ only GPU 0 (NVIDIA H100, driver 580.82.07). PyTorch loads the environment's
 | --- | --- |
 | Canonical GCC 3.12 focused buffer/creation/API, stack validator, docs, and evidence audit | 183 passed, 17.253 s |
 | Canonical Clang 3.14 same focused checks | 183 passed, 20.146 s |
-| Clean exact-HEAD GCC 3.12 full suite | 5,375 tests, 14 skips, no failures; 436.355 s |
+| Clean exact-HEAD Meta CPython 3.12.14+meta (Clang 21.1.0) full suite | 5,375 tests, 14 skips, no failures; 436.355 s |
 | Canonical Clang 3.14 full suite including the new evidence audits | 5,377 tests, 14 skips, no failures; 569.139 s |
+| Canonical GCC 3.12.13 full suite on clean `ac020b6` (review rerun) | 5,377 tests, 14 skips, no failures; 536.736 s |
 | Clang 3.14 portable path and evidence checks with site packages disabled | 11 passed |
 | Rust formatting and clippy, with and without Python bindings | Passed |
 | Rust all-target tests, without / with Python bindings | 357 / 368 passed |
@@ -76,14 +78,55 @@ The portable command adds `-S` and selects
 with `--features python-bindings` for the bindings variant; clippy adds
 `-- -D warnings`. The full compile gate is
 `bash scripts/evaluate_torch_compile_coverage.sh` with its default full subset.
-The clean gate is `bash scripts/test-python-exact-head.sh`: it exports and
+The original clean gate was `bash scripts/test-python-exact-head.sh`: it exports and
 verifies the merged HEAD under this worktree's `target/`, builds a fresh wheel,
 and runs the full suite in that export's canonical `.venv`. It tests the merged
 implementation and original source tests; the two new evidence audits and
 integration documentation are additionally exercised by the working-checkout
 focused runs and the canonical 3.14 full suite (`scripts/test-python.sh`).
+The exact-HEAD wrapper requests `uv venv --python 3.12`. Its setup log selected
+`/usr/local/fbcode/platform010/bin/python3.12`, CPython 3.12.14+meta, rather than
+the host GCC build. A read-only probe of that executable confirmed Clang 21.1.0
+and boolean values `[0, 1, 0, 1, 0, 1]` for bytes `[0, 1, 2, 3, 254, 255]`.
+The 5,375-test result was initially mislabeled GCC; its corrected row preserves
+the actual run, separately from the verified 183-test GCC focused result.
+A minor-version request alone does not identify the interpreter's compiler build.
+
 Local validation logs are in `target/integration-logs/`; they are separate from
 the checked-in historical bundle. Canonical `.venv` is restored to host GCC
-CPython 3.12.13 after the 3.14 run. Both full suites passed without suppressing
+CPython 3.12.13 after the 3.14 run. All reported full suites passed without suppressing
 or changing the original boolean differential cases. The 3.14 diagnostics from
 hostile keyword equality and non-leaf gradient probes did not fail tests.
+
+### Verified GCC full-suite rerun
+
+On 2026-09-10 UTC, the full GCC suite was run from clean commit
+`ac020b6ed31fa8092d2e820097c9ecb911ada449` using the existing
+`scripts/test-python.sh`. Canonical `.venv` had been created with
+`uv venv --python /usr/bin/python3.12 .venv`. Before the rerun, assertions checked
+the exact interpreter and the build-dependent boolean behavior:
+
+```python
+import os, platform, sys
+from pathlib import Path
+
+assert sys.version_info[:3] == (3, 12, 13)
+assert platform.python_compiler().startswith("GCC 11.5.0")
+assert os.path.samefile(sys._base_executable, "/usr/bin/python3.12")
+assert Path(sys.prefix) == Path.cwd() / ".venv"
+assert [int(x) for x in memoryview(bytes([0, 1, 2, 3, 254, 255])).cast("?")] == [0, 1, 1, 1, 1, 1]
+```
+
+`bash scripts/test-python.sh` then rebuilt the release wheel in a fresh
+`target/review-gcc-312/cargo-target`, installed it into canonical `.venv`, verified
+native-extension provenance, and ran the unchanged full suite with GPU 0 visible.
+The tracked checkout was clean at both start and finish; the native SHA256
+matched the value recorded above. No implementation, test, dependency, or
+benchmark-harness changes were needed.
+
+The retained [validation receipt](diagnostics/boolean-buffer/combined-gcc-312-ac020b6/validation.json)
+records timestamps, command, interpreter/build identity, boolean conversion,
+commit/tree, clean status, package paths, CUDA environment, source/native hashes,
+and the checksum of the [raw test log](diagnostics/boolean-buffer/combined-gcc-312-ac020b6/test-python.log).
+These files were copied unchanged from the completed run. They establish the
+GCC full-suite result; the original source-PR measurements remain unchanged.
