@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan/profile.py", line 1, in <module>
+    import cProfile, json, pathlib, pstats, sys
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/cProfile.py", line 12, in <module>
+    import profile as _pyprofile
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan/profile.py", line 14, in <module>
+    profile=cProfile.Profile()
+            ^^^^^^^^^^^^^^^^
+AttributeError: partially initialized module 'cProfile' has no attribute 'Profile' (most likely due to a circular import)

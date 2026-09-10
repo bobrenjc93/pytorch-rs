@@ -829,6 +829,7 @@ def _materialize_graph_output(
     dynamic=False,
     metadata_values=None,
     memo=None,
+    metadata_only=False,
 ):
     if _builtins.isinstance(output_spec, _builtins.str):
         try:
@@ -852,7 +853,7 @@ def _materialize_graph_output(
                 )
             expected_metadata = metadata_values[output_spec]
         _require_matching_metadata(
-            _metadata_from_native_tensor(output),
+            output if metadata_only else _metadata_from_native_tensor(output),
             expected_metadata,
             value_name=output_spec,
             check_requires_grad=False,
@@ -890,6 +891,7 @@ def _materialize_graph_output(
                 dynamic=dynamic,
                 metadata_values=metadata_values,
                 memo=memo,
+                metadata_only=metadata_only,
             )
             for index, (child_output, child_metadata) in enumerate(
                 zip(output_spec.elements, metadata_spec.elements)
@@ -906,6 +908,7 @@ def _materialize_graph_output(
             dynamic=dynamic,
             metadata_values=metadata_values,
             memo=memo,
+            metadata_only=metadata_only,
         )
         for index, (child_output, child_metadata) in enumerate(
             zip(output_spec.elements, metadata_spec.elements)
@@ -1004,11 +1007,25 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled):
             raise CompileTraceUnsupportedError(
                 f"torch.compile trace CUDA unary operation {operation.target!r} is unsupported"
             )
-        return _unary_output_metadata(
+        expected = _unary_output_metadata(
             metadata_values[input_name],
             operation.target,
             grad_enabled=grad_enabled,
         )
+        if expected.device.type == "cuda":
+            declared = operation.metadata
+            if not _builtins.isinstance(declared, CompileTraceTensorMetadata):
+                raise CompileTraceUnsupportedError("torch.compile unary output metadata is malformed")
+            if (
+                declared.device != expected.device
+                or declared.storage_offset != 0
+                or len(declared.shape) != len(expected.shape)
+            ):
+                raise CompileTraceUnsupportedError(
+                    "torch.compile unary output requires matching CUDA device, rank and zero storage offset"
+                )
+            _validate_cuda_metadata(declared)
+        return expected
 
     if operation.target not in _SUPPORTED_BINARY_TARGETS:
         _unsupported_operation(f"Tensor.{operation.target}")
@@ -1126,6 +1143,33 @@ def execute_compile_trace_graph(graph, *inputs):
                 check_requires_grad=False,
             )
         metadata_values[operation.name] = expected_metadata
+
+    if len(graph.operations) > 1 and all(
+        metadata.device.type == "cuda" for metadata in metadata_values.values()
+    ):
+        # Validate the output tree too before the native bridge can launch.
+        # Reuse the materializer's structural/metadata checks without tensors.
+        _materialize_graph_output(
+            graph.output, graph.output_metadata, metadata_values,
+            value_name="output", dynamic=graph.dynamic,
+            metadata_values=metadata_values, metadata_only=True,
+        )
+        indices = {name: index for index, name in enumerate(metadata_values)}
+        nodes = [
+            (operation.target, tuple(indices[name] for name in operation.inputs),
+             operation.scalar, metadata_values[operation.name].shape,
+             metadata_values[operation.name].stride)
+            for operation in graph.operations
+        ]
+        # All frontend guards above remain live on every call. Native planning
+        # independently checks every node, then validates intermediate results
+        # without round trips through Python metadata objects between kernels.
+        outputs = _native._compile_trace_cuda_graph(tuple(values.values()), nodes)
+        values.update((operation.name, output) for operation, output in zip(graph.operations, outputs))
+        return _materialize_graph_output(
+            graph.output, graph.output_metadata, values, value_name="output",
+            dynamic=graph.dynamic, metadata_values=metadata_values,
+        )
 
     for operation in graph.operations:
         output = _execute_operation(operation, values)

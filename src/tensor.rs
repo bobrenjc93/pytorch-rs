@@ -1,4 +1,8 @@
 use std::collections::{HashMap, HashSet};
+
+#[cfg(feature = "python-bindings")]
+#[path = "tensor_cuda_graph.rs"]
+pub(crate) mod cuda_graph;
 use std::fmt::Formatter;
 use std::iter::FusedIterator;
 use std::sync::{

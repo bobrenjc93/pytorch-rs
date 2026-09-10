@@ -1,0 +1,15 @@
+{
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/.venv/bin/python",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f/target/graph-plan-postcommit-786c1b2/verify.py"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_88f0e71f",
+  "started_at": "2026-09-10T17:40:10.027942+00:00",
+  "ended_at": "2026-09-10T17:40:19.017384+00:00",
+  "wall_seconds": 8.989450286142528,
+  "exit_status": 0,
+  "status_before": "",
+  "status_after": "",
+  "output_sha256": "2b57bfa04e13478d576b4c9436f7f5831c3ab12d08a1fbded371f2b19192aca5",
+  "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

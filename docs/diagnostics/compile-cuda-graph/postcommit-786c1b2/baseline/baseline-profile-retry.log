@@ -1,0 +1,88 @@
+matmul
+         97875 function calls (96474 primitive calls) in 0.036 seconds
+
+   Ordered by: cumulative time
+   List reduced from 165 to 35 due to restriction <35>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+      200    0.000    0.000    0.034    0.000 __init__.py:435(compiled_model)
+      200    0.001    0.000    0.033    0.000 __init__.py:780(compiled_model)
+      200    0.000    0.000    0.021    0.000 __init__.py:770(_execute_native_eager_compile_graph)
+      200    0.001    0.000    0.021    0.000 _compile_trace.py:1049(execute_compile_trace_graph)
+     1200    0.002    0.000    0.014    0.000 _compile_trace.py:702(_metadata_from_native_tensor)
+      600    0.000    0.000    0.005    0.000 __init__.py:813(<genexpr>)
+     2600    0.002    0.000    0.004    0.000 _compile_trace.py:94(_parse_device_metadata)
+     1200    0.000    0.000    0.004    0.000 _compile_trace.py:239(_normalize_device)
+      200    0.000    0.000    0.004    0.000 _compile_trace.py:918(_execute_operation)
+      200    0.004    0.000    0.004    0.000 {built-in method torch_rs.torch_rs._compile_trace_binary}
+     2400    0.001    0.000    0.004    0.000 _compile_trace.py:252(_normalize_shape)
+      200    0.000    0.000    0.003    0.000 _compile_trace.py:823(_materialize_graph_output)
+     1200    0.001    0.000    0.003    0.000 _compile_trace.py:719(_require_matching_metadata)
+      200    0.000    0.000    0.003    0.000 _compile_trace.py:971(_expected_operation_metadata)
+     2200    0.001    0.000    0.003    0.000 _compile_trace.py:689(_validate_cuda_metadata)
+     7200    0.001    0.000    0.002    0.000 _compile_trace.py:253(<genexpr>)
+      200    0.001    0.000    0.002    0.000 _compile_bytecode.py:633(prepare_compile_cache_request)
+      200    0.000    0.000    0.002    0.000 __init__.py:650(__init__)
+      200    0.000    0.000    0.002    0.000 _compile_trace.py:592(_binary_output_metadata)
+      202    0.000    0.000    0.002    0.000 _utils.py:557(_get_device_index)
+      200    0.001    0.000    0.002    0.000 _compile_trace.py:571(_matmul_output_metadata)
+      200    0.001    0.000    0.002    0.000 __init__.py:747(_ensure_compile_tensor_method_guards)
+     1200    0.000    0.000    0.002    0.000 _compile_trace.py:90(_cuda_device_metadata)
+     2200    0.001    0.000    0.002    0.000 _compile_trace.py:301(_layout_is_contiguous)
+      200    0.000    0.000    0.002    0.000 _utils.py:869(_get_device_index)
+      200    0.000    0.000    0.002    0.000 _utils.py:843(_get_current_device_index)
+      200    0.000    0.000    0.001    0.000 _utils.py:827(_get_device_attr)
+     1200    0.001    0.000    0.001    0.000 <string>:2(__init__)
+        2    0.000    0.000    0.001    0.001 library.py:438(impl)
+      200    0.000    0.000    0.001    0.000 {method 'get' of 'dict' objects}
+     4800    0.001    0.000    0.001    0.000 _compile_trace.py:256(_normalize_dimension)
+      200    0.000    0.000    0.001    0.000 _utils.py:810(_get_available_device_type)
+     8400    0.001    0.000    0.001    0.000 {method 'get' of 'mappingproxy' objects}
+     1400    0.000    0.000    0.001    0.000 _compile_trace.py:131(__post_init__)
+      200    0.000    0.000    0.001    0.000 __init__.py:169(is_available)
+
+
+composed
+         292001 function calls (290601 primitive calls) in 0.107 seconds
+
+   Ordered by: cumulative time
+   List reduced from 143 to 35 due to restriction <35>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+      200    0.000    0.000    0.110    0.001 __init__.py:435(compiled_model)
+      200    0.001    0.000    0.109    0.001 __init__.py:780(compiled_model)
+      200    0.000    0.000    0.065    0.000 __init__.py:770(_execute_native_eager_compile_graph)
+      200    0.003    0.000    0.064    0.000 _compile_trace.py:1049(execute_compile_trace_graph)
+      200    0.001    0.000    0.033    0.000 _compile_bytecode.py:633(prepare_compile_cache_request)
+      200    0.000    0.000    0.030    0.000 _compile_bytecode.py:559(_global_cache_dependencies)
+     2400    0.005    0.000    0.030    0.000 _compile_trace.py:702(_metadata_from_native_tensor)
+      200    0.001    0.000    0.016    0.000 _compile_bytecode.py:910(_lowerable_bytecode_instructions)
+     1000    0.001    0.000    0.016    0.000 _compile_trace.py:971(_expected_operation_metadata)
+     2600    0.005    0.000    0.013    0.000 dis.py:434(_get_instructions_bytes)
+     1000    0.001    0.000    0.012    0.000 _compile_trace.py:918(_execute_operation)
+     3800    0.005    0.000    0.010    0.000 _compile_trace.py:719(_require_matching_metadata)
+      200    0.001    0.000    0.010    0.000 _compile_bytecode.py:485(_global_load_dependencies_from_instructions)
+     5800    0.004    0.000    0.009    0.000 _compile_trace.py:94(_parse_device_metadata)
+     2400    0.004    0.000    0.009    0.000 _compile_bytecode.py:315(_instruction_form)
+     2400    0.001    0.000    0.009    0.000 _compile_trace.py:239(_normalize_device)
+     4800    0.003    0.000    0.008    0.000 _compile_trace.py:252(_normalize_shape)
+      400    0.001    0.000    0.006    0.000 _compile_trace.py:592(_binary_output_metadata)
+      400    0.006    0.000    0.006    0.000 {built-in method torch_rs.torch_rs._compile_trace_binary}
+     5200    0.002    0.000    0.006    0.000 _compile_trace.py:689(_validate_cuda_metadata)
+      600    0.001    0.000    0.005    0.000 _compile_trace.py:376(_elementwise_output_stride)
+      600    0.000    0.000    0.005    0.000 __init__.py:813(<genexpr>)
+      400    0.001    0.000    0.005    0.000 _compile_trace.py:642(_scalar_output_metadata)
+    36800    0.004    0.000    0.005    0.000 _compile_bytecode.py:130(matches)
+    13600    0.002    0.000    0.004    0.000 _compile_trace.py:253(<genexpr>)
+     5400    0.003    0.000    0.004    0.000 _compile_trace.py:301(_layout_is_contiguous)
+      200    0.000    0.000    0.004    0.000 __init__.py:1209(synchronize)
+     2400    0.001    0.000    0.004    0.000 _compile_trace.py:90(_cuda_device_metadata)
+      400    0.004    0.000    0.004    0.000 {built-in method torch_rs.torch_rs._compile_trace_scalar}
+      200    0.000    0.000    0.004    0.000 _compile_trace.py:823(_materialize_graph_output)
+     5200    0.003    0.000    0.003    0.000 dis.py:623(_unpack_opargs)
+      200    0.000    0.000    0.003    0.000 _compile_bytecode.py:498(_global_cache_dependencies_for_loads)
+      200    0.000    0.000    0.003    0.000 _compile_bytecode.py:431(_resolve_live_global_dependency)
+      200    0.001    0.000    0.003    0.000 dis.py:647(findlabels)
+     2600    0.001    0.000    0.003    0.000 {method 'get' of 'dict' objects}
+
+

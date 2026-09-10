@@ -1,0 +1,63 @@
+"""Evidence orchestration only: invoke unchanged committed tools, record receipts."""
+import datetime, hashlib, json, os, pathlib, subprocess, sys, time
+ROOT = pathlib.Path.cwd().resolve()
+OUT = ROOT / 'target/graph-plan-postcommit-786c1b2'
+COMMIT = '786c1b2e18ca83ecbe6e09606d33309d00187b2f'
+sys.path.insert(0, str(ROOT/'scripts'))
+from evaluate_cuda_math import source_provenance, sha256
+
+def git(*args):
+    return subprocess.check_output(['git', *args], text=True)
+def stamp():
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+def save(name, value):
+    (OUT/name).write_text(json.dumps(value,indent=2)+'\n')
+assert git('rev-parse','HEAD').strip() == COMMIT
+assert not git('status','--porcelain')
+initial = source_provenance()
+paths = git('ls-files','-z','--','src','python','tests','scripts','Cargo.toml','Cargo.lock','pyproject.toml','uv.lock','rust-toolchain.toml').split('\0')
+manifest = {p:sha256(ROOT/p) for p in paths if p}
+save('source-manifest.json',manifest)
+save('inspection.json',dict(commit=COMMIT,base=git('rev-parse','main').strip(),status=git('status','--porcelain'),diff_names=git('diff','main...HEAD','--name-status'),source=initial,started_at=stamp(),held_out_seeds=[481723,926051],primary_seed=798431,build_target_absent=not (OUT/'build-capture').exists()))
+(OUT/'candidate.diff.txt').write_text(git('diff','main...HEAD'))
+# Reuse the local locked packages, Python and Cargo download cache. All build,
+# temporary and JIT caches for this capture are new worktree-local directories.
+env = dict(os.environ)
+for key, name in [('TMPDIR','tmp'),('XDG_CACHE_HOME','cache'),('CUDA_CACHE_PATH','cuda'),('TRITON_CACHE_DIR','triton'),('TORCHINDUCTOR_CACHE_DIR','inductor'),('CARGO_TARGET_DIR','rust-tests')]:
+    path=OUT/name
+    assert not path.exists(), path
+    path.mkdir()
+    env[key]=str(path)
+save('environment.json', {k:v for k,v in env.items() if k.startswith(('CUDA','TORCH','TRITON','CARGO','UV_','OMP_','MKL_','OPENBLAS_','PYO3_')) or k in ('TMPDIR','XDG_CACHE_HOME','VIRTUAL_ENV')})
+commands=[]
+def run(name, command, overrides=None):
+    child_env=env | (overrides or {})
+    before=source_provenance(); status=git('status','--porcelain')
+    assert before == initial and not status
+    tick=time.perf_counter(); started=stamp()
+    log=OUT/(name+'.log')
+    with log.open('x') as stream:
+        result=subprocess.run(command,cwd=ROOT,env=child_env,stdout=stream,stderr=subprocess.STDOUT)
+    record=dict(command=command,cwd=str(ROOT),started_at=started,ended_at=stamp(),wall_seconds=time.perf_counter()-tick,exit_status=result.returncode,log=str(log),log_sha256=sha256(log),source_before=before,source_after=source_provenance(),status_before=status,status_after=git('status','--porcelain'),environment={k:v for k,v in child_env.items() if k.startswith(('CUDA','TORCH','TRITON','CARGO','UV_','OMP_','MKL_','OPENBLAS_','PYO3_')) or k in ('TMPDIR','XDG_CACHE_HOME','VIRTUAL_ENV')})
+    save(name+'.receipt.json',record);commands.append(record);save('commands.json',commands)
+    print(name,result.returncode,flush=True)
+    result.check_returncode()
+    assert record['source_after']==before and not record['status_after']
+py=str(ROOT/'.venv/bin/python')
+run('preflight',[py,'-c',"import torch,sys,subprocess; print(sys.executable, sys.base_prefix, torch.__version__, torch.version.cuda, torch.cuda.is_available()); print(subprocess.check_output(['nvidia-smi','--query-gpu=index,name,uuid,memory.total,memory.used,driver_version,compute_cap','--format=csv'],text=True)); print(subprocess.check_output(['nvcc','--version'],text=True))"])
+run('fresh-build',[py,'scripts/capture_depth_concat_build.py','--output',str(OUT/'build-capture')])
+run('wheel-verifier',[py,'-I','.github/scripts/verify_native_extension.py'])
+run('cuda-regressions',[py,'-m','unittest','tests.test_compile_cuda_graph','tests.test_compile_cuda_matmul','tests.test_cuda_matmul','tests.test_compile_cuda_matmul_diagnostic'])
+run('two-gpu',[py,'-m','unittest','tests.test_compile_cuda_graph.CudaGraphDeviceTests','tests.test_compile_cuda_matmul.CompileCudaMatmulDeviceTests','tests.test_cuda_matmul.CudaMatmulDeviceTests'],{'CUDA_VISIBLE_DEVICES':'0,1'})
+for name,seed in [('primary',798431),('held-481723',481723),('held-926051',926051),('primary-repeat',798431)]:
+    run(name,[py,'scripts/diagnose_compile_cuda_matmul.py','--build-record',str(OUT/'build-capture/build-record.json'),'--output',str(OUT/(name+'.json')),'--seed',str(seed)])
+run('fixed-math',[py,'scripts/evaluate_cuda_math.py','--build-record',str(OUT/'build-capture/build-record.json'),'--output',str(OUT/'fixed-math.json'),'--seed','8503945240872567646','--seed','8613321571747136749','--seed','4480763905421893394'])
+run('frozen-compiler',[py,'scripts/evaluate_torch_compile_coverage.py','--subset','full'])
+scoring_env={}
+for key,name in [('TRITON_CACHE_DIR','scoring-triton'),('TORCHINDUCTOR_CACHE_DIR','scoring-inductor')]:
+    path=OUT/name;path.mkdir();scoring_env[key]=str(path)
+run('fixed-scoring',[py,'scripts/benchmark_compile_cuda.py','--output',str(OUT/'fixed-scoring.json')],scoring_env)
+run('rust-bridge',['cargo','test','--locked','--offline','--features','python-bindings','--lib','compiled_matmul_bridge'])
+run('rust-matmul',['cargo','test','--locked','--offline','--test','cuda_matmul'])
+assert manifest == {p:sha256(ROOT/p) for p in manifest}
+save('capture-complete.json',dict(commit=COMMIT,source=source_provenance(),status=git('status','--porcelain'),ended_at=stamp(),command_count=len(commands),source_and_harness_unchanged=True))
