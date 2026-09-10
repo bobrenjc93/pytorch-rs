@@ -162,6 +162,35 @@ class AccountingTests(unittest.TestCase):
             self.build = invalid
             self.assertZero()
 
+    def test_required_build_metadata_must_be_nonempty_strings(self):
+        original = self.build.copy()
+        for key in ("build_command", "rustc", "cargo", "nvcc"):
+            for invalid in (True, False, 1, 1.5, [], ["metadata"], {}, {"value": "metadata"},
+                            None, "", " \t\n"):
+                with self.subTest(key=key, invalid=invalid):
+                    self.build = dict(original, **{key: invalid})
+                    self.assertZero()
+
+    def test_oversized_json_numbers_zero_only_the_affected_case(self):
+        original = copy.deepcopy(self.trials)
+        for role in ("candidate", "reference"):
+            for phase in (0, 1):
+                for value in (10**400, -(10**400)):
+                    with self.subTest(role=role, phase=phase, negative=value < 0):
+                        # Roundtrip through JSON to exercise actual worker result types.
+                        self.trials = json.loads(json.dumps(original))
+                        trial = self.trials[0]
+                        trial[role]["executions"][phase]["output"]["values"][0] = value
+                        self.assertFalse(e.valid_execution(trial[role], self.corpus["cases"][0],
+                                                           trial["seed"], role))
+                        score = self.score()
+                        self.assertEqual((score["denominator"], score["passed"]), (6, 5))
+                        self.assertEqual([c["credit"] for c in score["cases"]], [0, 1, 1, 1, 1, 1])
+                        verdict = score["cases"][0]["trials"][0]
+                        self.assertEqual(verdict["reference_eligible"], role == "candidate")
+                        self.assertEqual(score["cases"][0]["trials"][1]["credit"], 1)
+                        json.dumps(score, allow_nan=False)
+
     def test_seeds_cannot_reduce_denominator(self):
         for seeds in ([], [1927], [1927, 1927], [-1927, 1927]):
             self.seeds = seeds
@@ -177,22 +206,31 @@ class AccountingTests(unittest.TestCase):
                 return copy.deepcopy(trial[role])
             argv = [str(ROOT / "scripts/evaluate_cuda_compilation.py"),
                     "--seed", "1927", "--seed", "83719", "--output", str(output)]
-            for scenario in ("valid", "missing", "malformed", "changed", "reference_failed"):
-                receipt.write_text("not json" if scenario == "malformed" else json.dumps(self.build))
+            original = copy.deepcopy(self.trials)
+            for scenario in ("valid", "missing", "malformed", "malformed_fields", "changed",
+                             "oversized_candidate", "oversized_reference", "reference_failed"):
+                self.trials = copy.deepcopy(original)
+                build = dict(self.build, **{k: True for k in ("build_command", "rustc", "cargo", "nvcc")}) \
+                    if scenario == "malformed_fields" else self.build
+                receipt.write_text("not json" if scenario == "malformed" else json.dumps(build))
                 options = [] if scenario == "missing" else ["--build-record", str(receipt)]
                 after = dict(self.source, source_sha256="changed") if scenario == "changed" else self.source
                 if scenario == "reference_failed":
                     for trial in self.trials:
                         trial["reference"]["status"] = "skipped"
+                if scenario.startswith("oversized_"):
+                    role = scenario.removeprefix("oversized_")
+                    self.trials[0][role]["executions"][1]["output"]["values"][0] = 10**400
                 with self.subTest(scenario=scenario), patch.object(sys, "argv", argv + options), \
                         patch.dict(os.environ, CUDA_VISIBLE_DEVICES="0"), \
                         patch.object(e, "launch", side_effect=launch), \
                         patch.object(e.common, "source_provenance", side_effect=[self.source, after]), \
                         patch.object(e.subprocess, "check_output", return_value="fixture inventory"):
-                    self.assertEqual(e.main(), 2 if scenario == "reference_failed" else 0)
+                    self.assertEqual(e.main(), 2 if scenario in ("reference_failed", "oversized_reference") else 0)
                     report = json.loads(output.read_text())
                     self.assertEqual(report["accounting"]["denominator"], 6)
-                    self.assertEqual(report["accounting"]["passed"], 6 if scenario == "valid" else 0)
+                    expected = 6 if scenario == "valid" else 5 if scenario.startswith("oversized_") else 0
+                    self.assertEqual(report["accounting"]["passed"], expected)
                     self.assertEqual(len(report["trials"]), 12)
 
 

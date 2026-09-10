@@ -241,7 +241,13 @@ def valid_execution(row, case, seed, role):
             return False
         observed = {**row, "seed": data_seed, **{key: execution.get(key)
                     for key in ("inputs", "inputs_after", "output")}}
-        if not common.valid_execution(observed, case, data_seed, role):
+        try:
+            valid = common.valid_execution(observed, case, data_seed, role)
+        except OverflowError:
+            # JSON integers are unbounded; the shared validator's isfinite()
+            # conversion can overflow. Reject this row without losing other slots.
+            return False
+        if not valid:
             return False
         for tensor in execution["inputs"] + [execution["output"]]:
             shape = tensor["shape"]
@@ -289,7 +295,8 @@ def account(case_set, seeds, trials, build_record, source):
                 elif (not isinstance(build_record, dict)
                       or any(not source.get(k) or build_record.get(k) != source[k]
                              for k in ("commit", "source_sha256", "production_diff_sha256"))
-                      or any(not build_record.get(k) for k in ("build_command", "rustc", "cargo", "nvcc"))
+                      or any(not isinstance(build_record.get(k), str) or not build_record[k].strip()
+                             for k in ("build_command", "rustc", "cargo", "nvcc"))
                       or build_record.get("extension_sha256") != cand["extension"]["sha256"]
                       or ref["pid"] == cand["pid"]):
                     verdict["reason"] = "unbound_candidate_build_or_process"

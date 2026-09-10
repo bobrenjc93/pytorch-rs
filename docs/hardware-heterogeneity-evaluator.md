@@ -353,6 +353,10 @@ produce all six slots with zero credit. Changes to production source, native
 extension, evaluator, shared helper, or matrix during a run invalidate candidate
 credit. Synthetic accounting tests are not hardware evidence.
 
+The required build command, Rust/Cargo versions, and `nvcc` selection must be
+nonblank strings. Numeric validation overflow in a candidate or reference row
+invalidates that trial without aborting the report or removing any case slots.
+
 For this bounded capability, `p(cuda_nvidia, compilation) = passed / 6`.
 Five verified cases represent `10 * (5/6)` points within CUDA and approximately
 `10 * (5/6) / 7 = 1.190476` points of the seven-backend feature-depth formula.
@@ -393,6 +397,13 @@ this eager-backend comparison does not invoke `nvcc` or Inductor. Native
 pointwise kernels use driver-JIT embedded PTX; native matmul uses cuBLAS.
 Portable unit tests run without CUDA, and hardware tests skip clearly when the
 reference GPU or local extension is unavailable.
+
+**Clean-capture refresh pending:** the review fixes to build-metadata validation
+and numeric-overflow handling change the evaluator hash. The measured JSON and
+receipt below remain unmodified and do not validate these corrections. Burner
+must commit the corrections before this current-candidate evidence can be
+regenerated from a clean checkout. GPU regression tests on the corrected working
+tree do not replace that required capture.
 
 The [H100 evidence](evaluation-data/cuda-inference-compilation-v1-h100.json)
 was regenerated from clean implementation commit
