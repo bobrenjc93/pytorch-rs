@@ -1,11 +1,6 @@
 # Clean composite capture: CUDA matmul, unflatten and L1 gradients
 
-**Superseded for the current candidate:** these raw records predate the
-native-size validation repair and remain unchanged. The
-[refreshed clean capture](../postcommit-cbcbd84/README.md) measures the committed
-repair and supplies current-candidate evidence.
-
-Measured code commit: **`06a249663e969fde8c65af384277a6d15ea7f39d`**, against
+Measured code commit: **`cbcbd841e053170d46dcf05a0957c8bfc6c36538`**, against
 main `046b7a21e4e2fb7b59b56ea8a9679a9d9c5b0981`, on 2026-09-10 UTC.
 The native build, checks, workloads and integrity verification all completed
 with empty tracked/untracked Git status. These files were copied for publication
@@ -25,15 +20,15 @@ measures the combined committed implementation.
 | --- | --- | --- |
 | Fresh release wheel | Passed; absent build target, locked offline build and matching installed/source extension | [Build record](build-record.json), [commands](commands.json), [build](build.log), [install](install.log), [receipt](fresh-build.receipt.json) |
 | Local interpreter, imports and native identity | Passed; 59 installed package sources matched; 1,192 loaded module files resolved locally | [Provenance](provenance.json), [receipt](provenance.receipt.json), [isolated wheel verifier](wheel-verifier.log) |
-| Unflatten and L1 public/reference regressions | 76 passed, including sizes-before-dim conversion, replaced Tensor methods, nested-mode restoration, aliases and weighted gradients | [Log](focused-surfaces.log), [receipt](focused-surfaces.receipt.json) |
+| Unflatten and L1 public/reference regressions | 78 passed, including stateful NumPy sizes, mode interception, sizes-before-dim conversion, replaced Tensor methods, nested-mode restoration, aliases and weighted gradients | [Log](focused-surfaces.log), [receipt](focused-surfaces.receipt.json) |
 | Compiled/eager CUDA matmul regressions | 25 run, 23 passed; two device-mask skips covered separately | [Log](compiled-regressions.log), [receipt](compiled-regressions.receipt.json) |
 | Independent compiled-program proof | Passed: installed wheel under `-I`, PyTorch imports and original-body execution blocked, changed data checked | [Log](compiled-proof.log), [receipt](compiled-proof.receipt.json) |
 | Separate GPUs 0,1 restoration | Both compiled and eager tests passed, including mixed-device rejection | [Log](two-gpu.log), [receipt](two-gpu.receipt.json) |
 | Native Rust bridge and matmul | One bridge and two matmul tests passed on GPU 0 | [Bridge](rust-bridge.log), [matmul](rust-matmul.log) |
 | Fixed CUDA math | All six existing cases passed at all three prescribed seeds: 18/18 trials | [Raw report](fixed-math.json), [receipt](fixed-math.receipt.json) |
 | Fixed compiler corpus | 38/38 reference-eligible cases passed | [Report/log](frozen-compiler.log), [receipt](frozen-compiler.receipt.json) |
-| Fixed four-shape CUDA scoring workload | 4/4 eligible; existing capped score 100%, common-success speed ratio 1.3543x | [Raw report](fixed-scoring.json), [receipt](fixed-scoring.receipt.json), [same-process imports/libraries](scoring-provenance.json) |
-| Separate compiled matmul timing diagnostic | 12/12 correctness passes; **80.85% capped geometric parity**, retaining all six slower composed cells | [Raw report](compiled-timings.json), [receipt](compiled-timings.receipt.json) |
+| Fixed four-shape CUDA scoring workload | 4/4 eligible; existing capped score 100%, common-success speed ratio 1.2328x | [Raw report](fixed-scoring.json), [receipt](fixed-scoring.receipt.json), [same-process imports/libraries](scoring-provenance.json) |
+| Separate compiled matmul timing diagnostic | 12/12 correctness passes; **79.42% capped geometric parity**, retaining all 6 slower cells | [Raw report](compiled-timings.json), [receipt](compiled-timings.receipt.json) |
 | Integrity checks | Passed: accounting recomputed with committed tools; all source, native, library and receipt hashes verified | [Verification](verification.json), [log](evidence-validation.log), [receipt](evidence-validation.receipt.json) |
 | Publication checks (after measurement) | 12 documentation tests passed; links, copied hashes and evidence-only diff verified | [Publication check](publication-check.json), [log](publication-docs.log), [receipt](publication-docs.receipt.json) |
 
@@ -46,6 +41,9 @@ and completion/lifetimes. Unflatten and L1 checks verify the integration repair
 against the same freshly built wheel and local PyTorch 2.13 reference.
 The conversion-order regressions include competing errors and dimension hooks
 that replace or clear sizes, through both positional and keyword calls.
+Native-size regressions cover signed/unsigned NumPy subclasses converted once,
+accepting/forwarding modes, conversion errors and ordinary indexable objects
+that retain the reference first-element schema probe.
 
 The two performance reports measure different workloads. The fixed scoring
 workload remains the existing private pointwise/reduction lane, with four equal
@@ -61,8 +59,8 @@ compiler, backend or training coverage.
 
 ## Identities and setup
 
-- Native extension SHA-256: `419d2322f31bc6ec63742c9b19fcf3fdfbc2e8905a13de9f3d62343578e77e23`.
-- Production source SHA-256: `70160c594f56eab5c449494f2e772f62a77a104b5fc3ffdfa29164339c8e6c79`;
+- Native extension SHA-256: `c291f529ce329ae721ec43418dfa9d6d44fa587f90215ede627270b25ae09577`.
+- Production source SHA-256: `aad2016883226a6274343006a7beae88ed0c195d4177912fa9b4aff9b7df8853`;
   production diff SHA-256 is the empty-diff hash.
 - Worktree-local CPython 3.12.12, NumPy 2.5.1 and PyTorch 2.13.0+cu130;
   the matching release wheel was installed before tests, including isolated
@@ -87,9 +85,9 @@ compiler, backend or training coverage.
 ## Attempts and reproduction
 
 Every command in this capture completed successfully on its first attempt.
-The [previous capture](../postcommit-208e9bf/README.md) and its failed attempts
+The [previous capture](../postcommit-06a2496/README.md) and its failed attempts
 remain unchanged apart from its documentation pointer to this replacement.
-Its measurements predate the conversion-order repair and provide no performance
+Its measurements predate the native-size validation repair and provide no performance
 credit for this candidate. This fresh capture supplies the required replacement.
 
 [Artifact hashes](artifact-hashes.json) bind each published raw file to its

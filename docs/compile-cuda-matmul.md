@@ -151,9 +151,8 @@ Independent exact-head review, ten gates and exact-head CI remain required.
 
 ## Refreshed clean composite capture
 
-The native-size validation review repair makes this capture stale for the
-current candidate. Raw records remain unchanged; a fresh clean-commit capture
-is required after Burner commits the repair.
+This capture predates the native-size validation review repair. Raw records
+remain unchanged; the current capture below measures the committed repair.
 
 The [recorded capture](diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md)
 measures `06a249663e969fde8c65af384277a6d15ea7f39d` with a fresh installed release
@@ -165,3 +164,16 @@ cells with **80.85% capped geometric parity**, preserving slower composed
 results and raw samples. All captures and integrity verification ran from the
 clean committed tree. Independent review, ten gates and exact-head CI remain
 required.
+
+## Current clean composite capture
+
+The [current capture](diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md)
+measures `cbcbd841e053170d46dcf05a0957c8bfc6c36538` with a fresh installed release
+wheel, including native-size validation and conversion-order repairs. All 78
+focused unflatten/L1 tests, CUDA compiler checks, independent compiled-program
+proof, separate GPUs 0,1 checks, 18 fixed math trials, 38 compiler cases and four
+fixed scoring shapes passed. The separate matmul diagnostic passed all 12
+correctness cells with **79.42% capped geometric parity**, retaining all
+slower results and raw samples. Source/native/runtime/compiler identities and
+executed command receipts confirm clean committed measurements. Independent
+review, ten gates and exact-head CI remain required.

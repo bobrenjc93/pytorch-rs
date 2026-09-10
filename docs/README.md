@@ -19,7 +19,7 @@ artifacts are generated at merge time and are not source documentation.
 
 ## Contributor Guides
 
-- [Matmul, unflatten and L1 integration](composite-matmul-unflatten-l1-validation.md): review repairs, recorded evidence and required clean-commit refresh.
+- [Matmul, unflatten and L1 integration](composite-matmul-unflatten-l1-validation.md): review repairs, current clean-commit evidence and remaining merge gates.
 - [Compiled CUDA matmul](compile-cuda-matmul.md): exact capture scope, native cuBLAS execution, H100 regressions and separate `torch.compile` timing reproduction.
 
 - [Repository README](../README.md): Install commands, first-success example, scope summary, and validation entry points.

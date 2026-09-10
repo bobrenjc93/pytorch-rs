@@ -1,0 +1,5 @@
+import json,os,pathlib,subprocess,sys
+out=pathlib.Path.cwd()/'target/postcommit-cbcbd84'
+for label,command in json.loads((out/'check-commands.json').read_text()).items():
+ env={**os.environ,'CUDA_VISIBLE_DEVICES':'0,1' if label=='two-gpu' else '0'}
+ subprocess.run([sys.executable,'-I','-B',str(out/'record.py'),label,*command],env=env,check=True)

@@ -1,0 +1,54 @@
+"""Evidence-only publication checks; deliberately after clean measurement."""
+import importlib.util, json, os, pathlib, re, subprocess, sys
+ROOT = pathlib.Path.cwd().resolve()
+OUT = ROOT / "target/postcommit-cbcbd84"
+PUB = ROOT / "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84"
+sys.path.insert(0, str(ROOT / "scripts"))
+from evaluate_cuda_math import sha256, source_provenance
+spec = importlib.util.spec_from_file_location("capture", ROOT / "docs/diagnostics/composite-cuda-neg/reproduce.py")
+capture = importlib.util.module_from_spec(spec); spec.loader.exec_module(capture)
+capture.OUT = OUT
+os.environ["GIT_OPTIONAL_LOCKS"] = "0"
+assert subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip() == "cbcbd841e053170d46dcf05a0957c8bfc6c36538"
+manifest = json.loads((OUT / "source-manifest.json").read_text())
+changed = sorted(p for p,h in manifest.items() if not (ROOT/p).is_file() or sha256(ROOT/p) != h)
+allowed = sorted(["docs/README.md", "docs/compile-cuda-matmul.md", "docs/composite-matmul-unflatten-l1-validation.md", "docs/diagnostics/composite-matmul-unflatten-l1/postcommit-06a2496/README.md"])
+assert changed == allowed, changed
+untracked = subprocess.check_output(["git", "ls-files", "--others", "--exclude-standard", "-z"], text=True).split("\0")
+assert all(p.startswith(str(PUB.relative_to(ROOT)) + "/") for p in untracked if p)
+source = source_provenance()
+assert source == json.loads((OUT / "verification.json").read_text())["source"]
+artifacts = json.loads((PUB / "artifact-hashes.json").read_text())
+for rel, item in artifacts.items():
+    original = pathlib.Path(item["source_path"])
+    assert original.resolve().is_relative_to(ROOT), original
+    assert sha256(PUB/rel) == sha256(original) == item["sha256"], rel
+for p in PUB.rglob("*"):
+    if not p.is_file(): continue
+    text = p.read_text()
+    for worktree in re.findall(r"/data/users/bobren/a/pytorch-rs-burner/\.burner/worktrees/([^/\s\\\"']+)", text):
+        assert worktree.rstrip(")") == ROOT.name, (str(p),worktree)
+links = []
+for p in [ROOT/x for x in allowed] + [PUB/"README.md"]:
+    for target in re.findall(r"\[[^\]]*\]\(([^)]+)\)", p.read_text()):
+        if "://" in target or target.startswith("#"): continue
+        path = target.split("#",1)[0]
+        if not path: continue
+        resolved = (p.parent/path).resolve()
+        assert resolved.is_relative_to(ROOT) and resolved.exists(), (str(p),target)
+        links.append({"document":str(p.relative_to(ROOT)), "target":target})
+results = []
+for label, command in [
+    ("publication-docs", [sys.executable,"-B","-m","unittest","tests.test_readme_quickstart","-v"]),
+    ("publication-diff", ["git","diff","--check"]),
+]:
+    assert not (OUT/(label+".log")).exists()
+    receipt = capture.capture(command,label)
+    receipt.update(measurement_kind="post-publication evidence/documentation verification; not a clean-commit workload", source=source, git_status=subprocess.check_output(["git","status","--porcelain"],text=True), checker_sha256=sha256(__file__))
+    (OUT/(label+".receipt.json")).write_text(json.dumps(receipt,indent=2)+"\n")
+    results.append(receipt)
+    assert receipt["exit_status"] == 0, receipt
+assert sorted(p for p,h in manifest.items() if sha256(ROOT/p) != h) == allowed
+report = {"checked_at":capture.stamp(),"commit":source["commit"],"measurement_kind":"post-publication evidence/documentation verification; not a clean-commit workload", "source":source,"implementation_tests_dependencies_harnesses_evaluators_and_managed_artifacts_unchanged":True,"changed_tracked_documents":changed,"copied_raw_artifact_count":len(artifacts),"copies_match_original_hashes":True,"local_links_checked":links,"no_stale_worktree_paths_in_new_evidence":True,"commands":results}
+(OUT/"publication-check.json").write_text(json.dumps(report,indent=2)+"\n")
+print(json.dumps({k:v for k,v in report.items() if k not in ("local_links_checked","commands")},indent=2))

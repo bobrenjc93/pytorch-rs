@@ -1,0 +1,6 @@
+test_isolated_installed_wheel_no_body_no_pytorch (tests.test_compile_cuda_matmul.CompileCudaMatmulTests.test_isolated_installed_wheel_no_body_no_pytorch) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 3.387s
+
+OK

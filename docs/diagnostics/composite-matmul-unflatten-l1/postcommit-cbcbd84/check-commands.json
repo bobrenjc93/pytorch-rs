@@ -1,0 +1,94 @@
+{
+  "provenance": [
+    ".venv/bin/python",
+    "-I",
+    "-B",
+    "target/postcommit-cbcbd84/provenance.py"
+  ],
+  "wheel-verifier": [
+    ".venv/bin/python",
+    "-I",
+    "-B",
+    ".github/scripts/verify_native_extension.py"
+  ],
+  "focused-surfaces": [
+    ".venv/bin/python",
+    "-B",
+    "-m",
+    "unittest",
+    "-v",
+    "tests.test_top_level_unflatten",
+    "tests.test_top_level_unflatten_reference",
+    "tests.test_unflatten",
+    "tests.test_unflatten_reference",
+    "tests.test_nn_functional_l1_loss",
+    "tests.test_nn_functional_l1_loss_reference"
+  ],
+  "compiled-regressions": [
+    ".venv/bin/python",
+    "-B",
+    "-m",
+    "unittest",
+    "-v",
+    "tests.test_compile_cuda_matmul",
+    "tests.test_compile_cuda_matmul_diagnostic",
+    "tests.test_cuda_matmul"
+  ],
+  "compiled-proof": [
+    ".venv/bin/python",
+    "-B",
+    "-m",
+    "unittest",
+    "-v",
+    "tests.test_compile_cuda_matmul.CompileCudaMatmulTests.test_isolated_installed_wheel_no_body_no_pytorch"
+  ],
+  "two-gpu": [
+    ".venv/bin/python",
+    "-B",
+    "-m",
+    "unittest",
+    "-v",
+    "tests.test_compile_cuda_matmul.CompileCudaMatmulDeviceTests",
+    "tests.test_cuda_matmul.CudaMatmulDeviceTests"
+  ],
+  "rust-bridge": [
+    "cargo",
+    "test",
+    "--locked",
+    "--offline",
+    "--features",
+    "python-bindings",
+    "--lib",
+    "compiled_matmul_bridge"
+  ],
+  "rust-matmul": [
+    "cargo",
+    "test",
+    "--locked",
+    "--offline",
+    "--test",
+    "cuda_matmul"
+  ],
+  "frozen-compiler": [
+    ".venv/bin/python",
+    "-B",
+    "scripts/evaluate_torch_compile_coverage.py",
+    "--subset",
+    "full"
+  ],
+  "fixed-math": [
+    ".venv/bin/python",
+    "-B",
+    "scripts/evaluate_cuda_math.py",
+    "--seed",
+    "8503945240872567646",
+    "--seed",
+    "8613321571747136749",
+    "--seed",
+    "4480763905421893394",
+    "--build-record",
+    "target/postcommit-cbcbd84/native/build-record.json",
+    "--output",
+    "target/postcommit-cbcbd84/fixed-math.json"
+  ]
+}

@@ -1,0 +1,165 @@
+{
+  "verified_at": "2026-09-10T16:28:57.799116+00:00",
+  "commit": "cbcbd841e053170d46dcf05a0957c8bfc6c36538",
+  "source": {
+    "commit": "cbcbd841e053170d46dcf05a0957c8bfc6c36538",
+    "source_sha256": "aad2016883226a6274343006a7beae88ed0c195d4177912fa9b4aff9b7df8853",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "git_status": "",
+  "all_tracked_files_unchanged_during_capture": true,
+  "receipts": {
+    "compiled-proof.receipt.json": {
+      "exit_status": 0,
+      "log_sha256": "9c7f19dd21b6d3a737c4d3b1605c8b481775de388fea7a55968ac85d6781e66b"
+    },
+    "compiled-regressions.receipt.json": {
+      "exit_status": 0,
+      "log_sha256": "d4fca37eb22a7cc1b4b7a8ee1e6ee6d637a236536afb251b6c735e31c71dd99d"
+    },
+    "compiled-timings.receipt.json": {
+      "exit_status": 0,
+      "log_sha256": "0bf39814186abb8f07bd65c0f6545b7605ba056b65c43191bcc4b62d83d8b240"
+    },
+    "fixed-math.receipt.json": {
+      "exit_status": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "fixed-scoring.receipt.json": {
+      "exit_status": 0,
+      "log_sha256": "9b07199a30029c619762a2300ee1a9a70ec86b66baebeb9127280a1f7c902a10"
+    },
+    "focused-surfaces.receipt.json": {
+      "exit_status": 0,
+      "log_sha256": "0f62c9eb79215da652b583d5f86a93de1e81afe6ff2c9f5378891f04f3df051c"
+    },
+    "fresh-build.receipt.json": {
+      "exit_status": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "frozen-compiler.receipt.json": {
+      "exit_status": 0,
+      "log_sha256": "8a2a714f2fb0098593103caf06642170c1bc0e47cddbaa8f32683ba67f30a40a"
+    },
+    "inspection.receipt.json": {
+      "exit_status": 0,
+      "log_sha256": "b326b78b9463d287cf15d65f4ff10c9d7a01f73188aa70483e50eca9360cf1d5"
+    },
+    "provenance.receipt.json": {
+      "exit_status": 0,
+      "log_sha256": "94af993f524178866eb07d819a55230f6c7222b3268dac923a0e15aab433be53"
+    },
+    "rust-bridge.receipt.json": {
+      "exit_status": 0,
+      "log_sha256": "8781358ec1457105300bf54fe65d9015a3a742c12750e9e591de86da89328796"
+    },
+    "rust-matmul.receipt.json": {
+      "exit_status": 0,
+      "log_sha256": "91436a9f4209cfae56e530d2937ca32d61754e14e31e6a70f71b7e9583fd010f"
+    },
+    "scoring-cache-preparation.receipt.json": {
+      "exit_status": 0,
+      "log_sha256": "f392675b0555260ca872f0b3d50738316d0bf2e41292954b2ee1f94f38478b06"
+    },
+    "two-gpu.receipt.json": {
+      "exit_status": 0,
+      "log_sha256": "3818c1040e003ffdc25854ea2eb2e8e4a9374a70fe763f4179a2e8cc147f9130"
+    },
+    "wheel-verifier.receipt.json": {
+      "exit_status": 0,
+      "log_sha256": "be82c1a64434fc610fb91a4cc854632a8e9f4a4a474344b02d7150d86069991e"
+    }
+  },
+  "fixed_math_trials": 18,
+  "fixed_math_cases_passed": 6,
+  "fixed_scoring": {
+    "common_success_geomean_speed_ratio": 1.2328346128149865,
+    "common_success_shape_count": 4,
+    "common_success_weight": 1.0,
+    "coverage_adjusted_capped_speed_ratio": 1.0,
+    "coverage_adjusted_overall_percent": 100.0,
+    "denominator_weight": 1.0,
+    "full_matrix_weight": 1.0,
+    "per_workload": [
+      {
+        "candidate_status": "ok",
+        "capped_steady_speed_ratio": 1.0,
+        "eligible_cuda_compile_evidence": true,
+        "name": "square_256x256",
+        "pytorch_cold_first_call_us": 2046577.522,
+        "pytorch_steady_median_us": 42.197,
+        "shape": [
+          256,
+          256
+        ],
+        "steady_speed_ratio": 1.1924435527170996,
+        "torch_rs_cold_first_call_us": 176.076,
+        "torch_rs_steady_median_us": 35.387,
+        "weight": 0.25,
+        "weighted_score_contribution_percent": 25.0
+      },
+      {
+        "candidate_status": "ok",
+        "capped_steady_speed_ratio": 1.0,
+        "eligible_cuda_compile_evidence": true,
+        "name": "square_1024x1024",
+        "pytorch_cold_first_call_us": 807381.685,
+        "pytorch_steady_median_us": 45.922666666666665,
+        "shape": [
+          1024,
+          1024
+        ],
+        "steady_speed_ratio": 1.3299738384160174,
+        "torch_rs_cold_first_call_us": 149.456,
+        "torch_rs_steady_median_us": 34.529,
+        "weight": 0.25,
+        "weighted_score_contribution_percent": 25.0
+      },
+      {
+        "candidate_status": "ok",
+        "capped_steady_speed_ratio": 1.0,
+        "eligible_cuda_compile_evidence": true,
+        "name": "tall_4096x256",
+        "pytorch_cold_first_call_us": 788450.879,
+        "pytorch_steady_median_us": 48.102666666666664,
+        "shape": [
+          4096,
+          256
+        ],
+        "steady_speed_ratio": 1.2620623912263977,
+        "torch_rs_cold_first_call_us": 157.428,
+        "torch_rs_steady_median_us": 38.114333333333335,
+        "weight": 0.25,
+        "weighted_score_contribution_percent": 25.0
+      },
+      {
+        "candidate_status": "ok",
+        "capped_steady_speed_ratio": 1.0,
+        "eligible_cuda_compile_evidence": true,
+        "name": "wide_256x4096",
+        "pytorch_cold_first_call_us": 259399.353,
+        "pytorch_steady_median_us": 40.94533333333334,
+        "shape": [
+          256,
+          4096
+        ],
+        "steady_speed_ratio": 1.1541374223675436,
+        "torch_rs_cold_first_call_us": 148.214,
+        "torch_rs_steady_median_us": 35.477,
+        "weight": 0.25,
+        "weighted_score_contribution_percent": 25.0
+      }
+    ],
+    "torch_rs_cuda_compile_score_percent": 100.0,
+    "workload_count": 4,
+    "zero_credit_cell_count": 0,
+    "zero_credit_unsupported_cell_count": 0,
+    "zero_credit_weight": 0
+  },
+  "compiled_timing_cells": 12,
+  "compiled_timing_parity": 0.7942034438821786,
+  "native_sha256": "c291f529ce329ae721ec43418dfa9d6d44fa587f90215ede627270b25ae09577",
+  "failed_attempts_retained": [],
+  "failure_scope": "No failed measurement attempts in this capture. Prior capture attempts remain preserved at their original paths.",
+  "scope": "Evidence integrity only; independent review, ten gates and exact-head CI remain external requirements."
+}

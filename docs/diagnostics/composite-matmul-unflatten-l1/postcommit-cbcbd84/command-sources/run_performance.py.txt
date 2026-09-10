@@ -1,0 +1,13 @@
+import os,pathlib,subprocess,sys
+root=pathlib.Path.cwd();out=root/'target/postcommit-cbcbd84'
+def run(label,command,env=None):
+ subprocess.run([sys.executable,'-I','-B',str(out/'record.py'),label,*command],env=env,check=True)
+run('scoring-cache-preparation',[sys.executable,'-I','-B',str(out/'prepare_scoring.py')])
+for name,command in [
+ ('scoring',[sys.executable,'-I','-B',str(out/'run_scoring.py'),'--output',str(out/'fixed-scoring.json')]),
+ ('matmul',[sys.executable,'-B','scripts/diagnose_compile_cuda_matmul.py','--build-record',str(out/'native/build-record.json'),'--output',str(out/'compiled-timings.json')]),
+]:
+ env=dict(os.environ)
+ for key,suffix in [('TRITON_CACHE_DIR','triton'),('TORCHINDUCTOR_CACHE_DIR','inductor')]:
+  path=out/'cache'/(name+'-'+suffix);path.mkdir(exist_ok=False);env[key]=str(path)
+ run('fixed-scoring' if name=='scoring' else 'compiled-timings',command,env)

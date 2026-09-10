@@ -1,0 +1,21 @@
+{
+  "commit": "cbcbd841e053170d46dcf05a0957c8bfc6c36538",
+  "native": {
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+    "sha256": "c291f529ce329ae721ec43418dfa9d6d44fa587f90215ede627270b25ae09577"
+  },
+  "checked_module_files": 1192,
+  "checked_package_sources": 59,
+  "runtime": {
+    "cuda_runtimes": [
+      {
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+        "version": 13000,
+        "status": 0
+      }
+    ],
+    "nvcc": "unused (no CUDA compilation by evaluator)",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_8c539914/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13"
+  },
+  "cublas_version": 130101
+}

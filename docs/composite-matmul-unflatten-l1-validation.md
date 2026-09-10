@@ -66,8 +66,22 @@ Rustfmt and isolated wheel verification passed; 59 package sources and 1,192
 loaded module files matched local sources/imports. Build/provenance records,
 command receipts and pre-repair failures remain under
 `target/review-unflatten-sizes/`. These development checks do not qualify final
-clean-commit evidence; the prior capture below needs refresh after Burner
-commits this repair.
+clean-commit evidence; the current committed capture below supplies the refresh.
+
+## Current committed validation
+
+Burner committed native-size validation as `cbcbd841e053170d46dcf05a0957c8bfc6c36538`.
+The [current capture](diagnostics/composite-matmul-unflatten-l1/postcommit-cbcbd84/README.md)
+uses a fresh release build and matching installed wheel. All 78 focused
+unflatten/L1 tests, CUDA compiler/eager regressions, independent compiled-program
+proof, separate GPUs 0,1 checks and focused Rust tests passed. The unchanged
+math workload passed all 18 trials across six cases, the compiler corpus passed
+38/38 cases, and all four fixed scoring shapes passed. The separate matmul
+diagnostic passed all 12 correctness cells with 79.42% capped geometric
+parity, retaining all 6 slower cells and every raw sample.
+Source/native/runtime/compiler identities, manifests and actual command receipts
+are published. Build, measurements and integrity verification completed with a
+clean committed tree; only evidence and documentation were published afterward.
 
 ## Refreshed committed validation
 
@@ -83,9 +97,8 @@ parity, retaining all six slower composed cells and every raw sample.
 Source/native/runtime/compiler identities, manifests and executed command
 receipts are published. The tree stayed clean through build, measurements and
 integrity verification; only evidence and documentation were published afterward.
-This capture predates the native-size validation repair and is now stale for
-the current candidate. Its raw records remain unchanged pending a fresh
-clean-commit capture.
+This capture predates the native-size validation repair. Its raw records
+remain unchanged and are superseded for the current candidate by the capture above.
 
 ## Clean committed validation before the review repair
 
@@ -158,10 +171,8 @@ logs also remain available. No failed attempt was overwritten.
 
 ## Remaining managed handoff
 
-Burner must commit the native-size validation repair before final evidence is
-regenerated with the existing clean-build and capture procedure. Prior captures
-retain their measured identities and supply no current-candidate performance
-credit after this source change. Independent exact-head review, all ten
-non-regressing current-definition gates, exact-head CI, confirmed source PR
-delivery, continued dispatch pause and managed merge remain Burner-owned
-requirements. Development checks do not replace those requirements.
+The committed native-size validation repair and its clean-commit evidence
+refresh are complete. Independent exact-head review, all ten non-regressing
+current-definition gates, exact-head CI, confirmed source PR delivery,
+continued dispatch pause and managed merge remain Burner-owned requirements.
+Development checks and prior captures do not replace those requirements.
