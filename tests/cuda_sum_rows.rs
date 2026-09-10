@@ -74,6 +74,38 @@ fn generated_rectangles_offsets_empty_axes_and_storage() {
 }
 
 #[test]
+fn wide_same_sign_decimal_rows_do_not_accumulate_float32_drift() {
+    if cuda::device_count() == 0 {
+        eprintln!("skipping native CUDA wide row sums: no CUDA runtime/device");
+        return;
+    }
+    for columns in [65_539, 1_000_000, 1_000_003] {
+        for value in [0.1_f32, -0.1, 0.01, 1.1] {
+            // The first matrix is padding; the second is a contiguous offset view.
+            let cpu = Tensor::from_vec(vec![value; 4 * columns], [2, 2, columns]).unwrap();
+            let base = cpu.try_copy_cpu_to_cuda(Device::Cuda(0)).unwrap();
+            let input = base.select_dimension(0, 1).unwrap();
+            // Independent higher-precision oracle: do not use the CPU f32 sum,
+            // which can suffer the same serial-accumulation error as the old kernel.
+            let expected = f64::from(value) * f64::from(u32::try_from(columns).unwrap());
+            for keepdim in [false, true] {
+                let output = input.sum_rank_two_dimension(1, keepdim).unwrap();
+                for actual in output.try_copy_cuda_to_cpu().unwrap().try_to_vec().unwrap() {
+                    assert!(
+                        (f64::from(actual) - expected).abs() <= 1e-4 + 1e-5 * expected.abs(),
+                        "columns={columns}, value={value}, actual={actual}, expected={expected}"
+                    );
+                }
+                assert_eq!(output.device(), Device::Cuda(0));
+                assert_eq!(output.storage_offset(), 0);
+                assert_ne!(output.data_ptr(), input.data_ptr());
+            }
+            assert_eq!(base.try_copy_cuda_to_cpu().unwrap(), cpu);
+        }
+    }
+}
+
+#[test]
 fn cancellation_nonfinite_values_and_output_lifetime() {
     if cuda::device_count() == 0 {
         eprintln!("skipping native CUDA row sum numerics: no CUDA runtime/device");

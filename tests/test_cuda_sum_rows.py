@@ -48,6 +48,25 @@ class CudaSumRowsTests(Comparison, unittest.TestCase):
                                 self.assertNotEqual(result.data_ptr(), other.data_ptr())
             self.compare(x, tx)
 
+    def test_wide_same_sign_decimal_rows(self):
+        for width in (65539, 1_000_000, 1_000_003):
+            for value in (0.1, -0.1, 0.01, 1.1):
+                # Include an offset view and non-power-of-two column tails.
+                base = native.full((2, 2, width), value).to("cuda:0")
+                reference = torch.full((2, 2, width), value, device="cuda:0")
+                for x, tx in ((base.select(0, 0), reference.select(0, 0)),
+                              (base.select(0, 1), reference.select(0, 1))):
+                    for keepdim in (False, True):
+                        with self.subTest(width=width, value=value, keepdim=keepdim,
+                                          offset=x.storage_offset()):
+                            result = x.sum(1, keepdim=keepdim)
+                            expected = tx.sum(1, keepdim=keepdim)
+                            # Use the existing reduction tolerances, unchanged.
+                            self.compare_sum(result, expected)
+                            self.compare_sum(native.sum(x, dim=-1, keepdim=keepdim), expected)
+                            self.assertNotEqual(result.data_ptr(), x.data_ptr())
+                self.compare(base, reference)
+
     def test_offset_singleton_and_empty_views(self):
         values = np.arange(420, dtype=np.float32) / 16 - 5
         base, reference = upload(native, values, (420,)), upload(torch, values, (420,))
