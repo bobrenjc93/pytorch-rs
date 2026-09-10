@@ -3,15 +3,50 @@
 use super::{
     ParsedCallArgument, ProbedTorchFunctionOverride, PyTensor, call_torch_function_handler,
     dimension_swap_argument_type_error, extract_dimension_swap_dimension,
-    insert_ordered_torch_function_override, is_not_implemented, movedim_dimension_unpack_error,
-    normalize_dimension, parse_tensor_argument, position_suffix, probe_torch_function_override,
-    python_number_index, python_type_name, resolve_torch_function_override,
-    torch_function_dispatch_error_for_overrides, torch_function_mode_stack, try_push_size,
-    try_size_vector, validate_torch_function_mode_handler, variable_function,
+    insert_ordered_torch_function_override, is_dimension_swap_integer, is_not_implemented,
+    movedim_dimension_unpack_error, normalize_dimension, parse_tensor_argument, position_suffix,
+    probe_torch_function_override, python_number_index, python_type_name,
+    resolve_torch_function_override, torch_function_dispatch_error_for_overrides,
+    torch_function_mode_stack, try_push_size, try_size_vector,
+    validate_torch_function_mode_handler, variable_function,
 };
 use pyo3::exceptions::{PyMemoryError, PyNotImplementedError, PyTypeError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyList, PyTuple};
+
+// Generated schemas read the stored list/tuple contents, bypassing subclass
+// __len__, __getitem__, and __iter__ hooks in both validation and conversion.
+enum NativeSizes<'py> {
+    List(Bound<'py, PyList>),
+    Tuple(Bound<'py, PyTuple>),
+}
+
+impl<'py> NativeSizes<'py> {
+    fn from_value(value: &Bound<'py, PyAny>) -> Option<Self> {
+        if let Ok(sizes) = value.cast::<PyList>() {
+            Some(Self::List(sizes.clone()))
+        } else {
+            value
+                .cast::<PyTuple>()
+                .ok()
+                .map(|sizes| Self::Tuple(sizes.clone()))
+        }
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            Self::List(sizes) => sizes.len(),
+            Self::Tuple(sizes) => sizes.len(),
+        }
+    }
+
+    fn get_item(&self, index: usize) -> PyResult<Bound<'py, PyAny>> {
+        match self {
+            Self::List(sizes) => sizes.get_item(index),
+            Self::Tuple(sizes) => sizes.get_item(index),
+        }
+    }
+}
 
 pub(crate) fn unflatten_variable_function(
     py: Python<'_>,
@@ -57,9 +92,11 @@ pub(crate) fn unflatten_variable_function(
         ));
     }
     let dim = extract_dimension_swap_dimension(&dim.value)?;
-    let mut parsed = try_size_vector(sizes.value.len()?)?;
-    for (index, size) in sizes.value.try_iter()?.enumerate() {
-        let size = size?;
+    let sizes =
+        NativeSizes::from_value(&sizes.value).expect("native sizes were validated before dispatch");
+    let mut parsed = try_size_vector(sizes.len())?;
+    for index in 0..sizes.len() {
+        let size = sizes.get_item(index)?;
         let indexed = python_number_index(&size).map_err(|_| {
             movedim_dimension_unpack_error("unflatten", "sizes", index + 1, &size)
                 .unwrap_or_else(|error| error)
@@ -181,6 +218,16 @@ fn validate_argument<'py>(
     if index == 0 && value.is_exact_instance_of::<PyTensor>() {
         return Ok(());
     }
+    // Native schema types take precedence over their own override handlers.
+    // Non-schema objects and individual sizes elements can still dispatch.
+    if index == 1 && is_dimension_swap_integer(value)? {
+        return Ok(());
+    }
+    if index == 2
+        && let Some(sizes) = NativeSizes::from_value(value)
+    {
+        return validate_sizes(argument, &sizes, overrides);
+    }
     if let Some(probed) = probe_torch_function_override(value) {
         overrides.try_reserve(1).map_err(|_| {
             PyMemoryError::new_err("unable to allocate unflatten dispatch operands")
@@ -190,40 +237,44 @@ fn validate_argument<'py>(
     if index == 0 {
         parse_tensor_argument("unflatten", "input", argument)?;
     } else if index == 1 {
-        if value.is_instance_of::<PyBool>() || !value.hasattr("__index__")? {
-            return Err(dimension_swap_argument_type_error(
-                "unflatten",
-                "dim",
-                argument.position,
-                "int",
-                &python_type_name(value)?,
-            ));
-        }
+        return Err(dimension_swap_argument_type_error(
+            "unflatten",
+            "dim",
+            argument.position,
+            "int",
+            &python_type_name(value)?,
+        ));
     } else {
-        if !value.is_instance_of::<PyTuple>() && !value.is_instance_of::<PyList>() {
-            return Err(sizes_type_error(argument)?);
-        }
-        // As with reshape, the schema checks the first ordinary element;
-        // remaining conversion errors occur only after override dispatch.
-        for (index, size) in value.try_iter()?.enumerate() {
-            let size = size?;
-            if let Some(probed) = probe_torch_function_override(&size) {
-                overrides.try_reserve(1).map_err(|_| {
-                    PyMemoryError::new_err("unable to allocate unflatten dispatch operands")
-                })?;
-                insert_ordered_torch_function_override(overrides, &probed)?;
-            } else if index == 0
-                && (size.is_instance_of::<PyBool>() || python_number_index(&size).is_err())
-            {
-                if argument.position.is_none() {
-                    return Err(sizes_type_error(argument)?);
-                }
-                return Err(PyTypeError::new_err(format!(
-                    "unflatten(): argument 'sizes'{} must be tuple of ints, but found element of type {} at pos 0",
-                    position_suffix(argument.position),
-                    python_type_name(&size)?
-                )));
+        return Err(sizes_type_error(argument)?);
+    }
+    Ok(())
+}
+
+fn validate_sizes<'py>(
+    argument: &ParsedCallArgument<'py>,
+    sizes: &NativeSizes<'py>,
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
+) -> PyResult<()> {
+    // As with reshape, the schema checks the first ordinary element;
+    // remaining conversion errors occur only after override dispatch.
+    for index in 0..sizes.len() {
+        let size = sizes.get_item(index)?;
+        if let Some(probed) = probe_torch_function_override(&size) {
+            overrides.try_reserve(1).map_err(|_| {
+                PyMemoryError::new_err("unable to allocate unflatten dispatch operands")
+            })?;
+            insert_ordered_torch_function_override(overrides, &probed)?;
+        } else if index == 0
+            && (size.is_instance_of::<PyBool>() || python_number_index(&size).is_err())
+        {
+            if argument.position.is_none() {
+                return Err(sizes_type_error(argument)?);
             }
+            return Err(PyTypeError::new_err(format!(
+                "unflatten(): argument 'sizes'{} must be tuple of ints, but found element of type {} at pos 0",
+                position_suffix(argument.position),
+                python_type_name(&size)?
+            )));
         }
     }
     Ok(())

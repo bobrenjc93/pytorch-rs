@@ -41,6 +41,125 @@ class TopLevelUnflattenReferenceTests(method_tests.UnflattenReferenceTests):
             return str(error).split('\nException raised from ', 1)[0].rstrip('"\n')
         self.assertEqual(diagnostic(actual.exception), diagnostic(expected.exception))
 
+    def test_sizes_subclasses_use_stored_contents_without_python_hooks(self):
+        actual = torch.tensor(np.arange(12, dtype=np.float32).reshape(2, 6).tolist())
+        expected = reference_torch.tensor(actual.tolist())
+        for base in (list, tuple):
+            events = []
+
+            class Sizes(base):
+                def __iter__(self):
+                    events.append('iter')
+                    return iter((3, 2))
+
+                def __len__(self):
+                    events.append('len')
+                    return 17
+
+                def __getitem__(self, key):
+                    events.append('getitem')
+                    return 99
+
+            for values in ((2, 3), (2, -1)):
+                for keyword in (False, True):
+                    with self.subTest(base=base, values=values, keyword=keyword):
+                        sizes = Sizes(values)
+                        def call(module, source):
+                            if keyword:
+                                return module.unflatten(input=source, dim=1, sizes=sizes)
+                            return module.unflatten(source, 1, sizes)
+                        self.assert_matches(call(torch, actual), call(reference_torch, expected))
+            for values in ((True, 6), (2, 4), (), (2, 3.0)):
+                with self.subTest(base=base, invalid_values=values):
+                    sizes = Sizes(values)
+                    self.assert_call_error_matches(
+                        lambda: torch.unflatten(actual, 1, sizes),
+                        lambda: reference_torch.unflatten(expected, 1, sizes),
+                    )
+            self.assertEqual(events, [])
+
+    def test_native_dim_and_sizes_types_precede_their_own_overrides(self):
+        def unexpected_override(*args, **kwargs):
+            raise AssertionError('native schema arguments must not dispatch their own handlers')
+
+        for integer_base in (int, np.int64):
+            class Dim(integer_base):
+                __torch_function__ = classmethod(unexpected_override)
+
+            for sizes_base in (list, tuple):
+                class Sizes(sizes_base):
+                    __torch_function__ = classmethod(unexpected_override)
+
+                for keyword in (False, True):
+                    with self.subTest(integer_base=integer_base, sizes_base=sizes_base,
+                                      keyword=keyword):
+                        def call(module):
+                            source = module.ones((2, 6))
+                            if keyword:
+                                return module.unflatten(input=source, dim=Dim(1), sizes=Sizes((2, 3)))
+                            return module.unflatten(source, Dim(1), Sizes((2, 3)))
+                        self.assert_matches(call(torch), call(reference_torch))
+
+    def test_sizes_subclasses_still_dispatch_stored_element_overrides(self):
+        def contract(module, base, position):
+            events = []
+            marker = object()
+            source = module.ones((2, 6))
+
+            class Element:
+                @classmethod
+                def __torch_function__(cls, func, types, args=(), kwargs=None):
+                    events.append((func is module.unflatten, types == (Element,),
+                                   args[0] is source, args[2] is sizes))
+                    return marker
+
+            class Sizes(base):
+                @classmethod
+                def __torch_function__(cls, *args, **kwargs):
+                    raise AssertionError('container override must be ignored')
+
+                def __iter__(self):
+                    raise AssertionError('must read stored elements')
+
+            values = [2, 3]
+            values[position] = Element()
+            sizes = Sizes(values)
+            self.assertIs(module.unflatten(source, 1, sizes), marker)
+            return events
+
+        for base in (list, tuple):
+            for position in (0, 1):
+                with self.subTest(base=base, position=position):
+                    self.assertEqual(contract(torch, base, position),
+                                     contract(reference_torch, base, position))
+
+    def test_arbitrary_indexable_dimensions_fail_before_operand_dispatch(self):
+        events = []
+
+        class Indexable:
+            def __index__(self):
+                events.append('index')
+                return 1
+
+        class Override:
+            @classmethod
+            def __torch_function__(cls, *args, **kwargs):
+                raise AssertionError('invalid dimension must be rejected before dispatch')
+
+        for overridden in (False, True):
+            actual = Override() if overridden else torch.ones((2, 6))
+            expected = Override() if overridden else reference_torch.ones((2, 6))
+            for keyword in (False, True):
+                with self.subTest(overridden=overridden, keyword=keyword):
+                    def call(module, source):
+                        if keyword:
+                            return module.unflatten(input=source, dim=Indexable(), sizes=(2, 3))
+                        return module.unflatten(source, Indexable(), (2, 3))
+                    self.assert_call_error_matches(
+                        lambda: call(torch, actual), lambda: call(reference_torch, expected),
+                    )
+        self.assertEqual(events, [])
+
     def test_binding_dimension_product_and_ambiguous_inference_errors(self):
         actual, expected = torch.zeros((2, 6)), reference_torch.zeros((2, 6))
         calls = (

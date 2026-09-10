@@ -838,6 +838,12 @@ accepts positional/keyword calls and PyTorch 2.13 legacy input aliases
 `__torch_function__` operand and mode dispatch. Schema validation precedes
 dispatch; shape inference and view construction follow it. Overrides receive
 `torch.unflatten` itself, including when forwarding through nested modes.
+The top-level dimension schema accepts Python and NumPy integer types,
+excluding bool, and rejects ordinary objects that only implement `__index__`.
+Accepted integer dimensions and list/tuple sizes take precedence over their
+own override handlers. Size sequences use their stored contents without
+calling subclass iteration, length, or item-access hooks; overrides on sizes
+elements still dispatch.
 Named dimensions, other native dtypes/devices, native tensor-subclass
 execution, and higher-order gradients remain unsupported. The Tensor method
 retains its existing override-mode boundary. Focused coverage lives in
