@@ -1,0 +1,11 @@
+test_current_device_restored_and_cross_device_rejected (test_cuda_same_device_copy.CopyDeviceGuardTests.test_current_device_restored_and_cross_device_rejected) ... ok
+test_argument_forms_and_relaxed_contiguous_strides (test_cuda_same_device_copy.SameDeviceCopyTests.test_argument_forms_and_relaxed_contiguous_strides) ... skipped 'requires CUDA reference with CUDA_VISIBLE_DEVICES=0'
+test_generated_lengths_offsets_and_exact_values (test_cuda_same_device_copy.SameDeviceCopyTests.test_generated_lengths_offsets_and_exact_values) ... skipped 'requires CUDA reference with CUDA_VISIBLE_DEVICES=0'
+test_independence_source_mutation_and_allocation_reuse (test_cuda_same_device_copy.SameDeviceCopyTests.test_independence_source_mutation_and_allocation_reuse) ... skipped 'requires CUDA reference with CUDA_VISIBLE_DEVICES=0'
+test_no_pytorch_forwarding (test_cuda_same_device_copy.SameDeviceCopyTests.test_no_pytorch_forwarding) ... skipped 'requires CUDA reference with CUDA_VISIBLE_DEVICES=0'
+test_rejections_preserve_source (test_cuda_same_device_copy.SameDeviceCopyTests.test_rejections_preserve_source) ... skipped 'requires CUDA reference with CUDA_VISIBLE_DEVICES=0'
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.496s
+
+OK (skipped=5)
