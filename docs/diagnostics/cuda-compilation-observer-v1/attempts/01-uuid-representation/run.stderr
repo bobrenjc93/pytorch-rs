@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/scripts/cuda_compilation_campaign.py", line 400, in <module>
+    main()
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/scripts/cuda_compilation_campaign.py", line 394, in main
+    run(args, manifest, evaluator)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/scripts/cuda_compilation_campaign.py", line 368, in run
+    build_and_run(root, evidence, role, manifest, evaluator)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/scripts/cuda_compilation_campaign.py", line 207, in build_and_run
+    require(identity['gpu_uuid'] == manifest['device']['uuid'], 'reference GPU UUID differs')
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/scripts/cuda_compilation_campaign.py", line 33, in require
+    raise ValueError(message)
+ValueError: reference GPU UUID differs

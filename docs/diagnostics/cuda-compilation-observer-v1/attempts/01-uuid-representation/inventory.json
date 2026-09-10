@@ -1,0 +1,31 @@
+{
+  "mode": "failed-development-attempt",
+  "files": {
+    "run.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "run.stderr": "20a14cc1edd6fd2bdf9389b50bd5c72aa426ac0686723d2f19142d64a4c0e903",
+    "controller.py": "e71cad4251509e6e40c7b510e2ff63ea0716556fc062b188151e465a91cbd4d7",
+    "selection.json": "da7d32e99d6c55ed2e07b6b78c09f44b18218bd43c46b2a241c450b7673fc707",
+    "baseline/git-init.stdout": "1c36e80624315e0eacac75711edcaaa4ec301f7136e9c66a557ecbd712c18dd9",
+    "baseline/git-init.stderr": "3e70934f1909b0f5a846d62237fcc1509d733b9fb0321187024723dfc67176d3",
+    "baseline/git-init.command.json": "40e40c23f3d8e7be1a5e992971e27a4f635ed48061fc87cd29b2c75668ab09c5",
+    "baseline/git-fetch.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline/git-fetch.stderr": "41d1e7171cd84418ebc6b66200905ede8d06b689f5dbf796994158528d311cba",
+    "baseline/git-fetch.command.json": "fd0b0b372b18c594b477382543a45f565ca0a883f1cd24841fd8daebea0ba721",
+    "baseline/git-sparse.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline/git-sparse.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline/git-sparse.command.json": "32a954779ae30f3b3a2f73ad2b6b0a97c4102aa0e7615470538f25bb35c66cff",
+    "baseline/git-checkout.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline/git-checkout.stderr": "ca820f3117590025ace9f1971995e357d1f6aad8295d8a08aa77c5f9e6702cac",
+    "baseline/git-checkout.command.json": "3584fbc295064b6dc0138c83b20cb4a57dbe5d9912d09ffc9b6be57165470680",
+    "baseline/venv.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline/venv.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline/venv.command.json": "b31c71127110a82080da634cdf2a2875e7dbe35cf164b19a7940bf17034e61b5",
+    "baseline/dependencies.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline/dependencies.stderr": "080ae646f5f5b8cb170e2283f8ddcfa2c4166edeec56f46438a59103f91ba015",
+    "baseline/dependencies.command.json": "0b7155268cfe4863f30e25cb69a26f2426adc69297586f2188f63fd586db8638",
+    "baseline/gpu-before.csv": "27b6d35131d9ca86423457e2b2b4eda1b2ff9ce22b7b43e88feeba65ac1b3c5e",
+    "baseline/runtime.stdout": "d6eb7db4f42f53ec557957173dea0d8ba7f99abfb24c304119b6a084f73b13f1",
+    "baseline/runtime.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline/runtime.command.json": "058ced6b47eed5d0e8349bda4ef05396001a00ca75104525ad12152dbce3723d"
+  }
+}

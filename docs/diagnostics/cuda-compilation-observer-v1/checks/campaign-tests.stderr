@@ -1,0 +1,14 @@
+test_gpu0_is_pinned_not_any_idle_gpu (test_cuda_observer_campaign.CampaignTests.test_gpu0_is_pinned_not_any_idle_gpu) ... ok
+test_inherited_dependency_and_build_overrides_cannot_escape (test_cuda_observer_campaign.CampaignTests.test_inherited_dependency_and_build_overrides_cannot_escape) ... ok
+test_missing_reduction_retains_zero_slot (test_cuda_observer_campaign.CampaignTests.test_missing_reduction_retains_zero_slot) ... ok
+test_pins_reject_every_changed_observer_input (test_cuda_observer_campaign.CampaignTests.test_pins_reject_every_changed_observer_input) ... ok
+test_production_digest_rejects_byte_changes (test_cuda_observer_campaign.CampaignTests.test_production_digest_rejects_byte_changes) ... ok
+test_published_evidence_and_tamper_rejection (test_cuda_observer_campaign.CampaignTests.test_published_evidence_and_tamper_rejection) ... ok
+test_retained_failed_attempts_integrity (test_cuda_observer_campaign.CampaignTests.test_retained_failed_attempts_integrity) ... ok
+test_scope_excludes_implementation_and_other_evaluators (test_cuda_observer_campaign.CampaignTests.test_scope_excludes_implementation_and_other_evaluators) ... ok
+test_seed_selection_and_case_set_are_preserved (test_cuda_observer_campaign.CampaignTests.test_seed_selection_and_case_set_are_preserved) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.181s
+
+OK

@@ -1,0 +1,41 @@
+test_bad_metadata_forwarding_mutation_and_compilation_proof (test_cuda_compilation_evaluator.AccountingTests.test_bad_metadata_forwarding_mutation_and_compilation_proof) ... ok
+test_both_executions_require_correct_finite_outputs (test_cuda_compilation_evaluator.AccountingTests.test_both_executions_require_correct_finite_outputs) ... ok
+test_cli_missing_malformed_receipts_and_changed_source_keep_six_slots (test_cuda_compilation_evaluator.AccountingTests.test_cli_missing_malformed_receipts_and_changed_source_keep_six_slots) ... ok
+test_full_partial_and_absent_credit (test_cuda_compilation_evaluator.AccountingTests.test_full_partial_and_absent_credit) ... ok
+test_manifest_configuration_and_weights (test_cuda_compilation_evaluator.AccountingTests.test_manifest_configuration_and_weights) ... ok
+test_missing_malformed_duplicate_unknown_trials (test_cuda_compilation_evaluator.AccountingTests.test_missing_malformed_duplicate_unknown_trials) ... ok
+test_missing_stale_or_malformed_build_zero (test_cuda_compilation_evaluator.AccountingTests.test_missing_stale_or_malformed_build_zero) ... ok
+test_oversized_json_numbers_zero_only_the_affected_case (test_cuda_compilation_evaluator.AccountingTests.test_oversized_json_numbers_zero_only_the_affected_case) ... ok
+test_required_build_metadata_must_be_nonempty_strings (test_cuda_compilation_evaluator.AccountingTests.test_required_build_metadata_must_be_nonempty_strings) ... ok
+test_seeds_cannot_reduce_denominator (test_cuda_compilation_evaluator.AccountingTests.test_seeds_cannot_reduce_denominator) ... ok
+test_cli_nonfinite_receipts_emit_all_six_slots (test_cuda_compilation_evaluator.IsolationTests.test_cli_nonfinite_receipts_emit_all_six_slots) ... ok
+test_cli_rejects_bad_seeds_and_output_escape (test_cuda_compilation_evaluator.IsolationTests.test_cli_rejects_bad_seeds_and_output_escape) ... ERROR
+test_crash_timeout_invalid_json_and_missing_python (test_cuda_compilation_evaluator.IsolationTests.test_crash_timeout_invalid_json_and_missing_python) ... ok
+test_original_body_blocked_and_attempt_retained (test_cuda_compilation_evaluator.IsolationTests.test_original_body_blocked_and_attempt_retained) ... ok
+test_python_executor_cannot_impersonate_native (test_cuda_compilation_evaluator.IsolationTests.test_python_executor_cannot_impersonate_native) ... ok
+test_reduction_observation_rejects_counterfeit_and_old_unary_hooks (test_cuda_compilation_evaluator.IsolationTests.test_reduction_observation_rejects_counterfeit_and_old_unary_hooks) ... ok
+test_worker_blocks_swallowed_torch_import (test_cuda_compilation_evaluator.IsolationTests.test_worker_blocks_swallowed_torch_import) ... ok
+
+======================================================================
+ERROR: test_cli_rejects_bad_seeds_and_output_escape (test_cuda_compilation_evaluator.IsolationTests.test_cli_rejects_bad_seeds_and_output_escape)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/tests/test_cuda_compilation_evaluator.py", line 280, in test_cli_rejects_bad_seeds_and_output_escape
+    result = subprocess.run([sys.executable, "-I", "-B", str(ROOT / "scripts/evaluate_cuda_compilation.py"), *options],
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/subprocess.py", line 550, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/subprocess.py", line 1209, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/subprocess.py", line 2116, in _communicate
+    self._check_timeout(endtime, orig_timeout, stdout, stderr)
+  File "/usr/lib64/python3.12/subprocess.py", line 1253, in _check_timeout
+    raise TimeoutExpired(
+subprocess.TimeoutExpired: Command '['/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-development-v2/baseline-checkout/.venv/bin/python', '-I', '-B', '/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/scripts/evaluate_cuda_compilation.py', '--seed', '17', '--seed', '18', '--output', '../escape.json']' timed out after 10 seconds
+
+----------------------------------------------------------------------
+Ran 17 tests in 17.260s
+
+FAILED (errors=1)
