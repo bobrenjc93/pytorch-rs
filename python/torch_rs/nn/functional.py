@@ -1,5 +1,7 @@
 """Functional interface."""
 
+import functools as _functools
+import inspect as _inspect
 import math
 import operator as _operator
 import warnings
@@ -7,7 +9,7 @@ import warnings
 import torch_rs as torch
 from torch_rs import Tensor
 from torch_rs._diagnostics import _format_single_element_tensor
-from torch_rs.overrides import _dispatch_unary_torch_function
+from torch_rs.overrides import _dispatch_unary_torch_function, _get_current_function_mode
 
 from ..torch_rs import (
     _nn_functional_dropout,
@@ -36,9 +38,10 @@ contiguous inputs and strided or offset weights and biases are supported.
 The operation returns a fresh, independent row-major tensor with the
 corresponding final dimension replaced by ``out_features``.
 
-Tensor subclasses, active ``TorchFunctionMode`` contexts, and active autograd
-recording are not supported. Gradient-requiring input, weight, or supported
-bias operands may be used inside ``torch.no_grad()``.
+Active ``TorchFunctionMode`` contexts receive the public callable and original
+positional and keyword arguments before native execution. Tensor subclasses
+and active autograd recording are not supported. Gradient-requiring input,
+weight, or supported bias operands may be used inside ``torch.no_grad()``.
 """
 
 
@@ -395,6 +398,23 @@ def softsign(input):
     )
 
 
+def _linear_mode_wrapper(implementation):
+    signature = _inspect.signature(implementation)
+
+    @_functools.wraps(implementation)
+    def wrapper(*args, **kwargs):
+        if _get_current_function_mode() is None:
+            return implementation(*args, **kwargs)
+        # Bind separately so defaults do not replace the caller's argument form
+        # in the mode hook. Ordinary calls retain the direct native fast path.
+        bound = signature.bind(*args, **kwargs)
+        bound.apply_defaults()
+        return _nn_functional_linear(*bound.args, (wrapper, args, kwargs))
+
+    return wrapper
+
+
+@_linear_mode_wrapper
 def linear(input: Tensor, weight: Tensor, bias: Tensor | None = None) -> Tensor:
     return _nn_functional_linear(input, weight, bias)
 

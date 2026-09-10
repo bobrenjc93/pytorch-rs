@@ -6,12 +6,12 @@ use std::fmt::Write as _;
 use pyo3::exceptions::{
     PyMemoryError, PyNotImplementedError, PyRuntimeError, PyTypeError, PyUserWarning,
 };
-use pyo3::types::{PyAny, PyModule, PyString};
+use pyo3::types::{PyAny, PyDict, PyModule, PyString, PyTuple};
 use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
     DType, Device, Tensor, TensorError, is_grad_enabled,
-    python::PyTensor,
+    python::{PyTensor, dispatch_exact_tensor_function_mode},
     python_argument_schema::{ArgumentSchema, parse_float_like_argument},
     python_tensor_errors::tensor_error,
     python_torch_function_mode,
@@ -497,13 +497,15 @@ fn resolve_linear_output(
 }
 
 #[pyfunction]
+#[pyo3(signature = (input, weight, bias, mode_call=None))]
 fn _nn_functional_linear(
     py: Python<'_>,
     input: &Bound<'_, PyAny>,
     weight: &Bound<'_, PyAny>,
     bias: &Bound<'_, PyAny>,
+    mode_call: Option<(Py<PyAny>, Bound<'_, PyTuple>, Bound<'_, PyDict>)>,
 ) -> PyResult<Py<PyAny>> {
-    if !python_torch_function_mode::is_empty() {
+    if mode_call.is_none() && !python_torch_function_mode::is_empty() {
         return Err(PyTypeError::new_err(
             "linear() does not support an active TorchFunctionMode",
         ));
@@ -514,6 +516,12 @@ fn _nn_functional_linear(
     let bias = (!bias.is_none())
         .then(|| exact_linear_bias(bias))
         .transpose()?;
+    if let Some((function, args, kwargs)) = mode_call
+        && let Some(result) =
+            dispatch_exact_tensor_function_mode(py, &function, "torch.nn.linear", &args, &kwargs)?
+    {
+        return Ok(result);
+    }
     let input = input.try_borrow()?;
     let weight = weight.try_borrow()?;
     let bias = bias.as_ref().map(Bound::try_borrow).transpose()?;

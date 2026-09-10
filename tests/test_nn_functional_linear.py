@@ -237,7 +237,7 @@ class FunctionalLinearTests(unittest.TestCase):
         self.assertEqual(linear.__name__, "linear")
         self.assertEqual(linear.__qualname__, "linear")
         self.assertEqual(linear.__module__, "torch_rs.nn.functional")
-        self.assertEqual(linear.__defaults__, (None,))
+        self.assertEqual(linear.__wrapped__.__defaults__, (None,))
         self.assertIsNone(linear.__kwdefaults__)
         self.assertFalse(hasattr(linear, "__text_signature__"))
         self.assertTrue(linear.__doc__.startswith("\nlinear(input, weight, bias=None)"))
@@ -253,7 +253,7 @@ class FunctionalLinearTests(unittest.TestCase):
             "PyTorch-compatible singleton shape ``(1,)``",
             "fresh, independent row-major tensor",
             "Tensor subclasses",
-            "active ``TorchFunctionMode`` contexts",
+            "Active ``TorchFunctionMode`` contexts receive the public callable",
             "active autograd recording",
             "inside ``torch.no_grad()``",
         ):
@@ -910,22 +910,32 @@ class FunctionalLinearTests(unittest.TestCase):
                     functional.linear(vector, plain_matrix, bias)
         self.assertEqual(Override.calls, 0)
 
+    def test_mode_intercepts_before_autograd_validation(self):
+        input = torch.ones((3,), requires_grad=True)
+        weight = torch.ones((2, 3))
+        bias = torch.ones((2,))
+        sentinel = object()
+        calls = []
+
         class RecordingMode(torch.overrides.TorchFunctionMode):
-            def __init__(self):
-                self.calls = 0
-
             def __torch_function__(self, func, types, args=(), kwargs=None):
-                self.calls += 1
-                return object()
+                calls.append((func, types, args, kwargs))
+                return sentinel
 
-        mode = RecordingMode()
-        with self.assertRaisesRegex(
-            TypeError,
-            r"^linear\(\) does not support an active TorchFunctionMode$",
-        ):
-            with mode:
-                functional.linear(vector, plain_matrix, bias=torch.ones((2,)))
-        self.assertEqual(mode.calls, 0)
+        with RecordingMode():
+            result = functional.linear(input, weight, bias=bias)
+        self.assertIs(result, sentinel)
+        self.assertEqual(len(calls), 1)
+        func, types, args, kwargs = calls[0]
+        self.assertIs(func, functional.linear)
+        self.assertEqual(types, ())
+        self.assertEqual(len(args), 2)
+        self.assertIs(args[0], input)
+        self.assertIs(args[1], weight)
+        self.assertEqual(tuple(kwargs), ("bias",))
+        self.assertIs(kwargs["bias"], bias)
+        with self.assertRaisesRegex(RuntimeError, "autograd recording is not supported"):
+            functional.linear(input, weight, bias=bias)
 
 
 if __name__ == "__main__":
