@@ -1,0 +1,32 @@
+{
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_ab372605/.venv/bin/python",
+    "-B",
+    "scripts/diagnose_compile_cuda_matmul.py",
+    "--build-record",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_ab372605/target/selection-postcommit-4e75e9/reports/build-record.json",
+    "--output",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_ab372605/target/selection-postcommit-4e75e9/reports/reject-absent.json"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_ab372605",
+  "cuda_visible_devices": "",
+  "started_at": "2026-09-10T21:04:11.730360+00:00",
+  "ended_at": "2026-09-10T21:04:12.327098+00:00",
+  "wall_seconds": 0.5967407384887338,
+  "exit_status": 1,
+  "expected_exit_status": 1,
+  "source_before": {
+    "commit": "4e75e9ae177b37d022799394732db49ad95358a6",
+    "source_sha256": "2fe1d2ab1404f3bc26ff3c6e1dc20216603f6577b09ab38cce4703b4205c67cc",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "source_after": {
+    "commit": "4e75e9ae177b37d022799394732db49ad95358a6",
+    "source_sha256": "2fe1d2ab1404f3bc26ff3c6e1dc20216603f6577b09ab38cce4703b4205c67cc",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "git_status_before": "",
+  "git_status_after": "",
+  "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "report_sha256": "dbece6d5ae1a5f892855b0e73e4596939d25c12a7658fb242ed0d32a9aada810"
+}

@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/target/composite-postcommit-9c7b445/audit.py", line 105, in <module>
+    assert expected[key]==case[key]
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

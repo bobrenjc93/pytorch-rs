@@ -1,0 +1,29 @@
+{
+  "declared_at": "2026-09-10T20:49:14.058923+00:00",
+  "primary_seed": 798431,
+  "held_out_seeds": [
+    481723,
+    926051
+  ],
+  "default": {
+    "index": 0,
+    "uuid": "GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1",
+    "mask": "0"
+  },
+  "explicit": {
+    "index": 2,
+    "uuid": "GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e",
+    "mask": "GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e"
+  },
+  "purpose": "routing and unchanged work; no cross-GPU performance comparison",
+  "access": "idle snapshot is not exclusive access; no other jobs controlled",
+  "measurement_kind": "development-uncommitted; Burner owns commit/clean validation",
+  "base_commit": "46db0021e8db4b563327ac4b8290eb7eab4318f4",
+  "implementation_files": {
+    "scripts/diagnose_compile_cuda_matmul.py": "2bd01a0aa73f924c2ee7f10882bba8c180c42cfa2a4d97504b0eff1fc8fef1d6",
+    "tests/test_compile_cuda_matmul_diagnostic.py": "3e8c26443c4aaf77ead7427a1c07e1c9884d5d56217c65d7bac10ecd09fb9a39",
+    "AGENTS.md": "be70491d48aca4f9b1ead5be7dab197146df8424a67667c57f0ac664664da2d7",
+    "CONTRIBUTING.md": "7de214f04b44ed7a206d09fa6f00f14ac15ff898873dfd06536fdc3a34d9cbe1",
+    "docs/compile-cuda-matmul.md": "5772cc9493e0f78ebbb86f6a46fc0b966b6730bd916e574c044f87634376f720"
+  }
+}

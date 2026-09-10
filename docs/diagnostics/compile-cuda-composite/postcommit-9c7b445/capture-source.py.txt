@@ -1,0 +1,50 @@
+import datetime
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+root=Path.cwd().resolve()
+work=root/'target/composite-postcommit-9c7b445'
+reports=work/'reports'
+plan=json.loads((reports/'plan.json').read_text())
+assert not subprocess.check_output(['git','status','--porcelain'])
+python=str(root/'.venv/bin/python')
+runner=str(work/'run_receipt.py')
+build=str(reports/'build-record.json')
+before={'at':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        'git_status':'','cache_initial_files':{k:len([p for p in Path(os.environ[k]).rglob('*') if p.is_file()])
+                for k in ('CUDA_CACHE_PATH','TRITON_CACHE_DIR','TORCHINDUCTOR_CACHE_DIR')},
+        'environment':{k:os.environ[k] for k in ('CUDA_CACHE_PATH','TRITON_CACHE_DIR','TORCHINDUCTOR_CACHE_DIR','TMPDIR','XDG_CACHE_HOME')}}
+(reports/'capture-preflight.json').write_text(json.dumps(before,indent=2)+'\n')
+assert all(v==0 for v in before['cache_initial_files'].values())
+hardware=[python,'-B','scripts/evaluate_cuda_compilation.py']
+for seed in plan['hardware_seeds']:
+    hardware += ['--seed',str(seed)]
+hardware += ['--build-record',build,'--output',str(reports/'hardware.json')]
+jobs=[('hardware','0',hardware,0)]
+for label,device in zip(('default','explicit'),plan['devices']):
+    cmd=[python,'-B','scripts/diagnose_compile_cuda_matmul.py','--seed',str(plan['routing_seed']),
+         '--build-record',build,'--output',str(reports/(label+'.json'))]
+    if label=='explicit':
+        cmd += ['--gpu-uuid',device['uuid']]
+    jobs.append((label,device['mask'],cmd,0))
+for kind,mask in [('mismatch','0'),('multiple','0,2'),('absent',None)]:
+    cmd=[python,'-B','scripts/diagnose_compile_cuda_matmul.py','--seed',str(plan['routing_seed']),
+         '--build-record',build,'--output',str(reports/('reject-'+kind+'.json'))]
+    if kind=='mismatch':
+        cmd += ['--gpu-uuid',plan['devices'][1]['uuid']]
+    jobs.append(('reject-'+kind,mask,cmd,1))
+outcomes=[]
+for name,mask,cmd,expected in jobs:
+    env=dict(os.environ)
+    if mask is None:
+        env.pop('CUDA_VISIBLE_DEVICES',None)
+    else:
+        env['CUDA_VISIBLE_DEVICES']=mask
+    result=subprocess.run([python,'-B',runner,str(reports/name),*cmd],env=env)
+    outcomes.append({'name':name,'exit_code':result.returncode,'expected_exit_code':expected})
+(reports/'capture-outcomes.json').write_text(json.dumps(outcomes,indent=2)+'\n')
+assert all(r['exit_code']==r['expected_exit_code'] for r in outcomes),outcomes
+assert not subprocess.check_output(['git','status','--porcelain'])

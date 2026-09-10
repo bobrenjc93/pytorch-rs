@@ -1,0 +1,35 @@
+{
+  "commit": "46db0021e8db4b563327ac4b8290eb7eab4318f4",
+  "source_sha256": "2fe1d2ab1404f3bc26ff3c6e1dc20216603f6577b09ab38cce4703b4205c67cc",
+  "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_ab372605/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+  "extension_sha256": "91b2cb1a939feaad2dace768e4e301aad2f9cacb4a54acd988d69c9a21b9c440",
+  "wheel_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_ab372605/target/selection/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+  "wheel_sha256": "7ddfdd87f15d9173ba58151bceaf82d87897cc499d14e19122e8ca56384ab887",
+  "measurement_kind": "development-uncommitted",
+  "build_command": [
+    ".venv/bin/maturin",
+    "build",
+    "--release",
+    "--locked",
+    "--out",
+    "target/selection/wheels"
+  ],
+  "build_log_sha256": "9bd3c4b47ca9f6b599b49c1b2dabeefcffe7fc2af09429414cf69a2f4765787a",
+  "git_status": " M AGENTS.md\n M CONTRIBUTING.md\n M docs/compile-cuda-matmul.md\n M scripts/diagnose_compile_cuda_matmul.py\n M tests/test_compile_cuda_matmul_diagnostic.py\n",
+  "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+  "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)",
+  "profile": {
+    "name": "release",
+    "lto": "thin",
+    "codegen_units": 1,
+    "features": [
+      "extension-module"
+    ],
+    "pyo3_abi": "abi3-py310"
+  },
+  "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_ab372605/.venv/bin/python",
+  "base_prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_ab372605/target/selection/python/cpython-3.12.14-linux-x86_64-gnu",
+  "recorded_at": "2026-09-10T20:48:21.118895+00:00"
+}

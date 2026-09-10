@@ -1,0 +1,15 @@
+........s.......s./data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_ab372605/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+................F.....
+======================================================================
+FAIL: test_readme_links_contributing_guide (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_links_contributing_guide)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_ab372605/tests/test_readme_quickstart.py", line 1033, in test_readme_links_contributing_guide
+    self.assertLess(len(contributing.splitlines()), 120)
+AssertionError: 126 not less than 120
+
+----------------------------------------------------------------------
+Ran 40 tests in 22.826s
+
+FAILED (failures=1, skipped=2)

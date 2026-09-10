@@ -1,0 +1,60 @@
+{
+  "at": "2026-09-10T22:15:24.278038+00:00",
+  "measured_commit": "9c7b445c46373909392a2bce2e97c1b956240462",
+  "git_status_at_audit": "",
+  "all_build_check_capture_receipts_clean": true,
+  "build_and_runtime_hashes_verified": true,
+  "historical_files_unchanged": 102,
+  "focused_tests": {
+    "run": 51,
+    "skipped": 1,
+    "failures": 0
+  },
+  "hardware": {
+    "seeds": [
+      6132505239447970515,
+      8782175947437908558
+    ],
+    "passed": 5,
+    "denominator": 6,
+    "reference_trials_passed": 12,
+    "reference_executions": 24,
+    "candidate_executions": 20,
+    "candidate_failures_retained": [
+      {
+        "case_id": "cuda_f32_compile_sum_rows",
+        "seed": 6132505239447970515,
+        "error": "CompileTraceUnsupportedError: torch.compile trace bytecode lowering does not support keyword arguments in 'row_sum': KW_NAMES"
+      },
+      {
+        "case_id": "cuda_f32_compile_sum_rows",
+        "seed": 8782175947437908558,
+        "error": "CompileTraceUnsupportedError: torch.compile trace bytecode lowering does not support keyword arguments in 'row_sum': KW_NAMES"
+      }
+    ],
+    "proof": "recomputed fixed accounting; isolated processes; original-body/import blockers; native returns in initial and changed calls; materialized CUDA storage; input preservation"
+  },
+  "routing": {
+    "full_reports": 2,
+    "passed_cells": [
+      12,
+      12
+    ],
+    "validated_timed_calls": 14880,
+    "before_after_uuid_pci_binding": true,
+    "same_inputs_policy_wheel": true,
+    "zero_work_rejections": [
+      "mismatch",
+      "multiple",
+      "absent"
+    ]
+  },
+  "scope": "bounded existing capability and routing only; no speedup, broader Python compilation, new accelerator family, or overall-score claim",
+  "remaining_managed_steps": [
+    "evidence-only publication",
+    "independent complete-diff review",
+    "all current-definition no-regression gates",
+    "exact-head CI",
+    "managed source-PR disposition"
+  ]
+}

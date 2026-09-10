@@ -60,6 +60,7 @@ Use the worktree-local locked environment in [CONTRIBUTING](../CONTRIBUTING.md).
 For measurements, start from a clean checkout with an empty build target and
 new output paths.
 Set local `TMPDIR`, `XDG_CACHE_HOME`, `UV_CACHE_DIR`, `UV_PYTHON_INSTALL_DIR`,
+`UV_PYTHON_BIN_DIR`, `UV_TOOL_BIN_DIR`,
 `CARGO_HOME`, `CARGO_TARGET_DIR`, `CUDA_CACHE_PATH`, `TRITON_CACHE_DIR` and
 `TORCHINDUCTOR_CACHE_DIR` before setup. Install a release wheel (not a copied
 editable installation); verify `sys.executable`, `sys.base_prefix`, NumPy,
@@ -127,3 +128,73 @@ GPU contention is disclosed; its unfiltered diagnostic timings establish no
 isolated performance non-regression or acceleration claim.
 Independent review, all ten non-regressing gates and exact-head CI remain
 required for managed merge.
+
+## Explicit diagnostic GPU selection
+
+Ordinary single-GPU validation remains `CUDA_VISIBLE_DEVICES=0`. Without an
+option, this diagnostic requires that mask and independently verifies physical
+GPU0. For paired investigations when GPU0 is shared, inspect the physical
+inventory and declare one idle device and all seeds **before** measuring:
+
+```bash
+nvidia-smi --query-gpu=index,uuid,name,utilization.gpu,memory.used --format=csv
+export CUDA_VISIBLE_DEVICES=GPU-<full-uuid-from-inventory>
+.venv/bin/python -B scripts/diagnose_compile_cuda_matmul.py \
+  --gpu-uuid "$CUDA_VISIBLE_DEVICES" --seed 798431 \
+  --build-record target/capture/build-record.json --output target/uuid-primary.json
+```
+
+Use primary seed `798431` and held-out seeds `481723` and `926051`, retaining
+every full 12-cell report, failed attempt and identity rejection at new paths.
+Use the same declared physical UUID for both builds in a paired investigation.
+Do not compare different GPUs' timings as a library speedup. Empty/idle
+utilization and memory snapshots are observations, not exclusive reservations;
+never interrupt another user's jobs or silently switch devices after results.
+
+`--gpu-uuid` requires a canonical full physical GPU UUID (no prefix or MIG UUID).
+The launch-time mask must name only that UUID or its physical inventory index;
+prefer the UUID because CUDA ordinal ordering can differ from `nvidia-smi`.
+No mask is set or rewritten by the script. Missing, ambiguous, multi-device and
+mismatched selections fail closed. Driver UUID/PCI identity, the explicitly
+loaded native CUDA runtime and PyTorch runtime must independently agree that
+exactly one visible device maps logical `cuda:0` to the selected physical index
+and UUID. Identities are checked before and after the unchanged workloads.
+Reports retain the declaration, before/after physical inventories (including
+utilization and memory), observed identities, and any rejection. Only selected
+environment settings are recorded; no process arguments or environment secrets
+from unrelated jobs are collected.
+
+This option is diagnostic-only. It changes no production operations, scoring
+corpora, seeds, programs, sample/first-call policy or failure accounting.
+Source, installed-wheel and runtime checks still apply. `--allow-dirty` produces
+development evidence only; Burner must commit before clean validation and own
+managed review, all current gates, exact-head CI and evidence-only publication.
+
+### Historical GPU-selection publications (PR1966)
+
+These two source publications retain their original source/build identities and
+paths. Neither qualifies the combined candidate; its fresh combined capture
+must follow the implementation and provenance-documentation commit.
+
+[GPU selection development evidence](diagnostics/compile-cuda-matmul/gpu-selection-development-46db0021/README.md)
+retains all six primary/held-out reports on GPU0 and explicitly selected GPU2,
+identity/multi-device rejection reports, golden tests and independent review.
+It proves routing and unchanged work; it is not clean-commit qualification or
+a library speedup claim.
+
+[Clean GPU selection evidence](diagnostics/compile-cuda-matmul/postcommit-4e75e9/README.md)
+records implementation `4e75e9ae`: all six full reports passed on GPU0 and
+UUID-selected GPU2, with retained mismatch/multi-device/absent-mask rejections,
+fresh wheel provenance and unchanged-work checks. Independent review and merge
+gates remain separate; no cross-GPU speedup is claimed.
+
+### Combined clean capture
+
+[Combined evidence from implementation `9c7b445c`](diagnostics/compile-cuda-composite/postcommit-9c7b445/README.md)
+records a fresh locked release wheel, verified worktree-local interpreter and
+runtime identities, full GPU0 and UUID-selected GPU2 reports at seed `798431`,
+and mismatch/multiple/absent-mask zero-work rejections. Both reports passed all
+12 cells with clean source before and after capture. The same publication
+includes the six-case hardware compilation accounting and all raw receipts.
+These routing results are not a cross-GPU performance comparison; independent
+review, current gates, exact-head CI and managed delivery remain separate.

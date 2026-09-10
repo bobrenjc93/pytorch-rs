@@ -1,0 +1,12 @@
+{"shape_mkn": [1, 65539, 1], "offset": 0, "status": "passed", "capped_parity": 1.0}
+{"shape_mkn": [1, 65539, 1], "offset": 3, "status": "passed", "capped_parity": 0.6282898320648705}
+{"shape_mkn": [64, 64, 64], "offset": 0, "status": "passed", "capped_parity": 1.0}
+{"shape_mkn": [64, 64, 64], "offset": 3, "status": "passed", "capped_parity": 0.6419850457856794}
+{"shape_mkn": [512, 512, 512], "offset": 0, "status": "passed", "capped_parity": 1.0}
+{"shape_mkn": [512, 512, 512], "offset": 3, "status": "passed", "capped_parity": 1.0}
+{"shape_mkn": [127, 1025, 65], "offset": 0, "status": "passed", "capped_parity": 0.9785893876910042}
+{"shape_mkn": [127, 1025, 65], "offset": 3, "status": "passed", "capped_parity": 0.6218257447351622}
+{"shape_mkn": [257, 257, 257], "offset": 0, "status": "passed", "capped_parity": 1.0}
+{"shape_mkn": [257, 257, 257], "offset": 3, "status": "passed", "capped_parity": 0.6971429140674957}
+{"shape_mkn": [401, 734, 267], "offset": 0, "status": "passed", "capped_parity": 1.0}
+{"shape_mkn": [401, 734, 267], "offset": 3, "status": "passed", "capped_parity": 0.7462916431328955}

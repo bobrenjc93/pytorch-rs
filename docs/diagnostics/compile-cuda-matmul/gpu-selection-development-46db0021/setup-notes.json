@@ -1,0 +1,23 @@
+{
+  "failures_before_measurement": [
+    {
+      "stage": "interpreter setup",
+      "error": "Initial command requested cpython-3.12.13, while uv installed cpython-3.12.14",
+      "evidence": "setup.log",
+      "resolution": "Used the worktree-local cpython-3.12 alias; no global shortcuts changed"
+    },
+    {
+      "stage": "preliminary GPU2 metadata API probe",
+      "error": "AttributeError: libcudart.so.13: undefined symbol: cudaDeviceGetUuid",
+      "evidence": "Error observed in tool output before diagnostic measurements; this is a summary, not an original raw log",
+      "resolution": "Query native runtime PCI identity and resolve UUID through the complete physical inventory; query driver UUID directly",
+      "measurements_performed": false
+    },
+    {
+      "stage": "focused tests",
+      "error": "CONTRIBUTING.md exceeded the existing strict fewer-than-120-lines check",
+      "evidence": ["focused-tests.log", "docs-tests-final.log"],
+      "resolution": "Shortened guidance without changing tests; docs-tests-passed.log and portable-tests-seed-final.log pass"
+    }
+  ]
+}

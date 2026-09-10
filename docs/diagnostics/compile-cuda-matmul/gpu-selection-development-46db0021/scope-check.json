@@ -1,0 +1,19 @@
+{
+  "base": "46db0021e8db4b563327ac4b8290eb7eab4318f4",
+  "tracked_changes": [
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "docs/compile-cuda-matmul.md",
+    "scripts/diagnose_compile_cuda_matmul.py",
+    "tests/test_compile_cuda_matmul_diagnostic.py"
+  ],
+  "frozen_file_sha256": {
+    "scripts/evaluate_cuda_math.py": "29a97d07bad0d82c261e28aa880de68cdf46df0731d5ff0aa9802ec5bb8e605b",
+    "scripts/benchmark_compile_cuda.py": "a1401b964e58a01a6bacc8bb941b7de37021c2a7861c3ef901a2fc8a5c784959",
+    "scripts/evaluate_torch_compile_coverage.py": "7dd5607216116c29a53405abe61be8a9ab6253e89ddee32b5f1a1de4cb19a9c3",
+    "tests/test_compile_corpus.py": "3821efb12c45c38fcb70c42fc625fb188ff5ab5511ed438c775728cae3e500c8",
+    "docs/hardware-heterogeneity-matrix-v1.json": "a077f00f5eb50e2dceb2bd41a8453977955a8114fed203b7235f3a8befb24698",
+    "BENCHMARKING.md": "363efb6022619a0038a8e1e26b0d394283b5ff1746bd8364e80b2f0e90e98ade"
+  },
+  "production_and_historical_files_unchanged": true
+}

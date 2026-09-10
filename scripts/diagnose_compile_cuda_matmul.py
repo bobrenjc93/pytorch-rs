@@ -7,6 +7,8 @@ cell has equal weight, including failures (zero); no result-dependent selection.
 from __future__ import annotations
 
 import argparse
+import csv
+import ctypes
 import hashlib
 import importlib
 import json
@@ -18,10 +20,163 @@ import subprocess
 import sys
 import time
 import traceback
+import uuid
 
 # Read-only reuse of provenance and timing summaries; scoring files stay fixed.
 from benchmark_cuda_matmul import ROOT, local, sha256, source_provenance, stamp, summary
 from evaluate_cuda_math import runtime_provenance
+
+
+def environment_provenance():
+    # Explicit keys avoid collecting tokens/provider metadata from arbitrary
+    # TORCH*, CUDA* or CARGO* variables while disclosing execution controls.
+    return {key: os.environ.get(key) for key in (
+        'CUDA_VISIBLE_DEVICES', 'CUDA_DEVICE_ORDER', 'CUDA_CACHE_PATH',
+        'CUDA_CACHE_DISABLE', 'CUDA_CACHE_MAXSIZE', 'CUDA_MODULE_LOADING',
+        'CUDA_LAUNCH_BLOCKING', 'CUDA_FORCE_PTX_JIT', 'CUDA_DISABLE_PTX_JIT',
+        'CUDA_DEVICE_MAX_CONNECTIONS', 'NVIDIA_TF32_OVERRIDE',
+        'TORCH_RS_CUDART', 'TORCH_RS_CUBLAS', 'TRITON_CACHE_DIR',
+        'TRITON_ALWAYS_COMPILE', 'TRITON_PTXAS_PATH', 'TORCHINDUCTOR_CACHE_DIR',
+        'TORCHINDUCTOR_MAX_AUTOTUNE', 'TORCHINDUCTOR_MAX_AUTOTUNE_GEMM',
+        'TORCHINDUCTOR_MAX_AUTOTUNE_GEMM_BACKENDS', 'TORCHINDUCTOR_FX_GRAPH_CACHE',
+        'TORCHINDUCTOR_FX_GRAPH_REMOTE_CACHE', 'TORCHINDUCTOR_AUTOTUNE_LOCAL_CACHE',
+        'TORCHINDUCTOR_AUTOTUNE_REMOTE_CACHE', 'TORCHINDUCTOR_FORCE_DISABLE_CACHES',
+        'TORCHINDUCTOR_COMPILE_THREADS', 'TORCHINDUCTOR_CUDAGRAPHS',
+        'TORCH_COMPILE_DISABLE', 'TORCHDYNAMO_DISABLE', 'TORCH_COMPILE_DEBUG',
+        'CARGO_HOME', 'CARGO_TARGET_DIR', 'PYO3_PYTHON', 'TMPDIR', 'XDG_CACHE_HOME',
+        'OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'OPENBLAS_NUM_THREADS')}
+
+
+def gpu_inventory():
+    fields = ('index', 'uuid', 'pci.bus_id', 'name', 'driver_version',
+              'compute_cap', 'memory.total', 'memory.used', 'utilization.gpu')
+    raw = subprocess.check_output(
+        ['nvidia-smi', '--query-gpu=' + ','.join(fields), '--format=csv,noheader,nounits'],
+        text=True)
+    rows = list(csv.reader(raw.splitlines(), skipinitialspace=True))
+    if not rows or any(len(row) != len(fields) for row in rows):
+        raise RuntimeError('absent or malformed physical GPU inventory')
+    return {'at': stamp(), 'devices': [dict(zip(fields, row)) for row in rows]}
+
+
+def full_gpu_uuid(value):
+    if not isinstance(value, str) or not value.startswith('GPU-'):
+        raise RuntimeError('a full GPU UUID is required (no prefixes or MIG devices)')
+    try:
+        canonical = 'GPU-' + str(uuid.UUID(value[4:]))
+    except ValueError as error:
+        raise RuntimeError('invalid full GPU UUID') from error
+    if canonical != value:
+        raise RuntimeError('use the canonical full GPU UUID from nvidia-smi')
+    return value
+
+
+def select_gpu(selection, inventory):
+    mask = selection['cuda_visible_devices']
+    declared = selection['declared_uuid']
+    if not mask or ',' in mask:
+        raise RuntimeError('CUDA_VISIBLE_DEVICES must declare exactly one device')
+    devices = inventory['devices']
+    if (len({d['index'] for d in devices}) != len(devices)
+            or len({d['uuid'] for d in devices}) != len(devices)
+            or len({pci_identity(d['pci.bus_id']) for d in devices}) != len(devices)):
+        raise RuntimeError('ambiguous physical GPU inventory')
+    for device in devices:
+        full_gpu_uuid(device['uuid'])
+    if declared is None:
+        if mask != '0':
+            raise RuntimeError('default requires CUDA_VISIBLE_DEVICES=0; declare --gpu-uuid for another GPU')
+        matches = [d for d in devices if d['index'] == '0']
+    else:
+        full_gpu_uuid(declared)
+        matches = [d for d in devices if d['uuid'] == declared]
+    if len(matches) != 1:
+        raise RuntimeError('selected physical GPU is absent or ambiguous')
+    selected = matches[0]
+    selection['physical'] = selected
+    if mask not in (selected['index'], selected['uuid']):
+        raise RuntimeError('mask does not match declared physical GPU; prefer its full UUID')
+    return selected
+
+
+def cuda_identity(library, driver=False):
+    """Query the actual driver/native runtime independently of PyTorch."""
+    lib = ctypes.CDLL(library)
+    def call(name, types, *values):
+        function = getattr(lib, name)
+        function.argtypes, function.restype = types, ctypes.c_int
+        status = function(*values)
+        if status:
+            raise RuntimeError(f'{name} failed with CUDA status {status}')
+    integer = ctypes.POINTER(ctypes.c_int)
+    count, device, version = ctypes.c_int(), ctypes.c_int(), ctypes.c_int()
+    identity = (ctypes.c_ubyte * 16)()
+    bus = ctypes.create_string_buffer(64)
+    if driver:
+        call('cuInit', [ctypes.c_uint], 0)
+        call('cuDeviceGetCount', [integer], ctypes.byref(count))
+        call('cuDeviceGet', [integer, ctypes.c_int], ctypes.byref(device), 0)
+        call('cuDriverGetVersion', [integer], ctypes.byref(version))
+        prefix = 'cuDevice'
+        call('cuDeviceGetUuid_v2', [ctypes.c_void_p, ctypes.c_int], identity, device.value)
+    else:
+        call('cudaGetDeviceCount', [integer], ctypes.byref(count))
+        call('cudaGetDevice', [integer], ctypes.byref(device))
+        call('cudaRuntimeGetVersion', [integer], ctypes.byref(version))
+        prefix = 'cudaDevice'
+    call(prefix + 'GetPCIBusId', [ctypes.c_void_p, ctypes.c_int, ctypes.c_int],
+         bus, len(bus), device.value)
+    result = {'library': library, 'visible_count': count.value,
+              'logical_index': device.value, 'pci.bus_id': bus.value.decode(), 'version': version.value}
+    if driver:
+        result['uuid'] = 'GPU-' + str(uuid.UUID(bytes=bytes(identity)))
+    return result
+
+
+def pci_identity(value):
+    # NVML prints an eight-digit domain; CUDA uses four digits.
+    return tuple(int(part, 16) for part in value.replace('.', ':').split(':'))
+
+
+def bind_gpu_identity(observed, selected):
+    if observed['visible_count'] != 1 or observed['logical_index'] != 0:
+        raise RuntimeError('identity requires exactly one visible device at logical cuda:0')
+    if observed['uuid'] != selected['uuid']:
+        raise RuntimeError('logical cuda:0 UUID does not match selected physical GPU')
+    if 'pci.bus_id' in observed:
+        if pci_identity(observed['pci.bus_id']) != pci_identity(selected['pci.bus_id']):
+            raise RuntimeError('logical cuda:0 PCI identity does not match physical GPU')
+    observed['physical_index'] = int(selected['index'])
+
+
+def verify_gpu(selection, inventory, torch, native, observations):
+    selected = select_gpu(selection, inventory)
+    if os.environ.get('CUDA_VISIBLE_DEVICES') != selection['cuda_visible_devices']:
+        raise RuntimeError('device mask changed during capture')
+    observations['driver'] = cuda_identity('libcuda.so.1', driver=True)
+    runtime = str(local(os.environ['TORCH_RS_CUDART']))
+    observations['native_runtime'] = cuda_identity(runtime)
+    observations['native_runtime']['sha256'] = sha256(runtime)
+    # libcudart exposes PCI identity, not a standalone UUID getter. Resolve its
+    # observed bus against the complete independent physical inventory, never
+    # infer identity from a CUDA ordinal or copy the requested UUID unchecked.
+    matches = [d for d in inventory['devices'] if pci_identity(d['pci.bus_id']) ==
+               pci_identity(observations['native_runtime']['pci.bus_id'])]
+    if len(matches) != 1:
+        raise RuntimeError('native runtime PCI identity absent or ambiguous in inventory')
+    observations['native_runtime']['uuid'] = matches[0]['uuid']
+    observations['native_runtime']['uuid_source'] = 'physical inventory matched by runtime PCI bus ID'
+    observations['native_visible_count'] = native.cuda.device_count()
+    count = torch.cuda.device_count()
+    observations['reference_runtime'] = {'visible_count': count}
+    if count != 1 or observations['native_visible_count'] != 1:
+        raise RuntimeError('native and reference must each see exactly one CUDA device')
+    observations['reference_runtime'].update(
+        logical_index=torch.cuda.current_device(),
+        uuid='GPU-' + str(torch.cuda.get_device_properties(0).uuid).removeprefix('GPU-'),
+        version=torch.version.cuda)
+    for key in ('driver', 'native_runtime', 'reference_runtime'):
+        bind_gpu_identity(observations[key], selected)
 
 
 def cells(seed):
@@ -79,6 +234,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--seed', type=int, default=798431)
     parser.add_argument('--allow-dirty', action='store_true')
+    parser.add_argument('--gpu-uuid', help='explicit physical GPU UUID; mask exactly this device before launch (default: physical GPU0)')
     args = parser.parse_args()
     output = local(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -88,6 +244,11 @@ def main():
     report = {'diagnostic': 'compiled_cuda_matmul_v1', 'started_at': stamp(),
               'command': [sys.executable, *sys.argv], 'cwd': str(Path.cwd()),
               'seed': args.seed, 'cases': cells(args.seed), 'status': 'setup',
+              'gpu_selection': {'declared_uuid': args.gpu_uuid,
+                                'cuda_visible_devices': os.environ.get('CUDA_VISIBLE_DEVICES'),
+                                'cuda_device_order': os.environ.get('CUDA_DEVICE_ORDER'),
+                                'logical_device': 'cuda:0'},
+              'gpu_inventories': {}, 'gpu_identity_before': {}, 'gpu_identity_after': {},
               'harness_sha256': sha256(__file__),
               'policy': {'native_backend': 'eager', 'reference_backend': 'inductor',
                          'fullgraph': True, 'dynamic': False, 'mode': 'default',
@@ -101,6 +262,8 @@ def main():
     def save():
         output.write_text(json.dumps(report, indent=2) + '\n')
     try:
+        report['gpu_inventories']['before'] = gpu_inventory()
+        select_gpu(report['gpu_selection'], report['gpu_inventories']['before'])
         assert Path.cwd().resolve() == ROOT
         before = source_provenance()
         report['source'] = before
@@ -117,9 +280,7 @@ def main():
         for key in ('TMPDIR','XDG_CACHE_HOME','CUDA_CACHE_PATH','TRITON_CACHE_DIR','TORCHINDUCTOR_CACHE_DIR',
                     'TORCH_RS_CUDART','TORCH_RS_CUBLAS','CARGO_HOME','CARGO_TARGET_DIR'):
             local(os.environ[key])
-        report['environment'] = {key: value for key,value in os.environ.items()
-                                 if key.startswith(('TORCH','TRITON','CUDA','CARGO','OMP_','MKL_','OPENBLAS_','PYO3_')) or key in ('TMPDIR','XDG_CACHE_HOME')}
-        assert os.environ['CUDA_VISIBLE_DEVICES'] == '0'
+        report['environment'] = environment_provenance()
         local(sys.executable); local(sys.base_prefix)
         import numpy as np
         import torch
@@ -140,6 +301,8 @@ def main():
         report['executable'] = str(local(sys.executable)); report['python'] = sys.version
         assert torch.__version__.split('+')[0] == '2.13.0' and torch.cuda.is_available()
         report['pytorch'] = torch.__version__; report['pytorch_cuda'] = torch.version.cuda
+        verify_gpu(report['gpu_selection'], report['gpu_inventories']['before'],
+                   torch, native, report['gpu_identity_before'])
         report['gpu'] = subprocess.check_output(['nvidia-smi','--query-gpu=index,name,uuid,driver_version,compute_cap,memory.used','--format=csv'],text=True)
         report['nvcc'] = subprocess.check_output(['nvcc','--version'],text=True)
         report['native_cuda_compiler'] = 'nvcc unused; cuBLAS SGEMM and driver-JIT embedded PTX'
@@ -245,12 +408,19 @@ def main():
                             if any(name in line for name in ('/libcudart.so','/libcublas.so','/libcublasLt.so'))})
         report['loaded_cuda_libraries'] = [{'path':str(local(p)),'sha256':sha256(p)} for p in libraries]
         report['runtime'] = runtime_provenance()
+        verify_gpu(report['gpu_selection'], report['gpu_inventories']['before'],
+                   torch, native, report['gpu_identity_after'])
         report['source_after'] = source_provenance()
         assert report['source_after'] == before, 'source changed during capture'
         report['status'] = 'passed' if all(c['status']=='passed' for c in report['cases']) else 'failed'
     except BaseException:
         report['status'] = 'failed'; report['error'] = traceback.format_exc()
     finally:
+        try:
+            report['gpu_inventories']['after'] = gpu_inventory()
+        except Exception:
+            report['gpu_inventories']['after_error'] = traceback.format_exc()
+            report['status'] = 'failed'
         report['capped_geometric_parity'] = aggregate(report['cases'])
         report['ended_at'] = stamp(); save()
     return 0 if report['status']=='passed' else 1

@@ -294,3 +294,198 @@ requires reviewing the commit-bound native execution path under the evidence
 rules above: copying a CPU-computed answer into GPU storage is not native CUDA
 math. Synthetic accounting fixtures in `tests/test_cuda_math_evaluator.py` are
 unit tests of zero-credit rules and do not constitute hardware evidence.
+
+## Fixed CUDA float32 inference compilation denominator
+
+`cuda_float32_inference_compilation_v1` adds six equally weighted cases to the
+existing CUDA `compilation` capability (weight 10). Both frameworks use exactly
+`compile(program, backend="eager", fullgraph=True, dynamic=False)` on ordinary
+public, contiguous float32 CUDA tensors without gradients.
+
+| Case ID | Program body | Input shapes | Output shape |
+| --- | --- | --- | --- |
+| `cuda_f32_compile_add_same_shape` | `a + b` | `(7, 13)`, `(7, 13)` | `(7, 13)` |
+| `cuda_f32_compile_add_trailing_vector` | `a + b` | `(7, 13)`, `(13,)` | `(7, 13)` |
+| `cuda_f32_compile_neg` | `-a` | `(7, 13)` | `(7, 13)` |
+| `cuda_f32_compile_mul_scalar` | `a * -1.75` | `(7, 13)` | `(7, 13)` |
+| `cuda_f32_compile_sum_rows` | `a.sum(dim=1, keepdim=False)` | `(7, 13)` | `(7,)` |
+| `cuda_f32_compile_matmul` | `a @ b` | `(7, 13)`, `(13, 5)` | `(7, 5)` |
+
+The [separate runner](../scripts/evaluate_cuda_compilation.py) defines these
+programs independently of production code, historical diagnostics, the 38-case
+compiler corpus, and the four-shape performance corpus. It reuses the CUDA math
+evaluator's source/build hashing, PyTorch import blocker, deterministic float32
+input generation, CUDA driver observation, runtime provenance, and execution
+validation helpers. Each framework/case/seed gets its own isolated `-I -B`
+process. Candidate workers load only the checkout's Python package and local
+native extension; reference workers require NVIDIA PyTorch 2.13.0.
+
+At least two distinct nonnegative evaluator-selected seeds are required. The
+runner defaults to two randomly selected seeds and records them. For each seed,
+one compiled wrapper executes the initial data and then changed data generated
+with `seed XOR 0x9E3779B97F4A7C15`. Both outputs must match the reference with
+`atol=1e-6`, `rtol=1e-5`; reference TF32 is disabled. Every execution validates
+CUDA storage with driver pointer queries and synchronized host readback, checks
+public `.cpu().tolist()` agreement, and re-materializes all inputs to require
+unchanged contents. Shapes, strides, storage offsets, dtype, device, and
+`requires_grad=False` must match the fixed metadata.
+
+An evaluator-owned profiler blocks execution of the candidate's original Python
+program body during wrapper creation and both calls, retaining even swallowed
+body/import attempts. It observes the actual bytecode lowerer returning the
+expected operation, graph executor entry, and successful native extension
+executor return. Changed-input execution must use the existing graph: lowering
+is blocked on that call, while graph and native execution must happen again.
+Missing evidence, eager-body execution, copied constant outputs, forwarding,
+mutation, malformed metadata, and unbound native builds cannot earn credit.
+These observations are deliberately tied to the current native compiler hooks;
+a future compiler architecture needs independently reviewed observer changes.
+They are not a sandbox against hostile native code or proof that arbitrary
+programs run on CUDA. Published evidence still requires native-path review.
+
+Accounting iterates the six manifest slots, never the successful results.
+Every seed and both executions must pass to earn one case. Missing, unsupported,
+failed, skipped, duplicated, malformed, stale, or unbound results retain zero
+slots. An unavailable or failed reference is recorded separately, also retains
+its slot, and makes the runner exit 2. A complete reference run exits 0 even
+when candidates are unsupported. Missing or malformed build receipts still
+produce all six slots with zero credit. Changes to production source, native
+extension, evaluator, shared helper, or matrix during a run invalidate candidate
+credit. Synthetic accounting tests are not hardware evidence.
+
+The required build command, Rust/Cargo versions, and `nvcc` selection must be
+nonblank strings. Numeric validation overflow in a candidate or reference row
+invalidates that trial without aborting the report or removing any case slots.
+Receipt and worker-result JSON parsing rejects non-finite constants and
+overflowing exponents, including nested values. Rejected receipts retain a
+serializable error and zero-credit accounting for all six slots.
+
+For this bounded capability, `p(cuda_nvidia, compilation) = passed / 6`.
+Five verified cases represent `10 * (5/6)` points within CUDA and approximately
+`10 * (5/6) / 7 = 1.190476` points of the seven-backend feature-depth formula.
+This is a bounded accounting contribution, **not an automatic score increase**:
+reconcile it with existing calibration without double-counting prior compilation
+evidence. This evaluator-only change adds no production behavior. It establishes
+no performance, dynamic-shape, backward, general compiler, other-capability, or
+backend-breadth credit. Existing backend/capability weights, transfer/math sets,
+compiler/performance corpora, historical diagnostics, and Burner-managed
+progress artifacts are unchanged.
+
+### Run and reproduce compilation accounting
+
+Use the [fresh native build and receipt procedure](#reproduce-and-bind-a-native-build)
+above. The receipt must include `commit`, `source_sha256`,
+`production_diff_sha256`, `extension_sha256`, `build_command`, `rustc`, `cargo`,
+and `nvcc` (explicitly `unused` when appropriate). Keep dependencies, build
+outputs, compiler caches, and temporary files inside the worktree. Burner jobs
+must reserve the shared `gpu` resource; the runner requires physical GPU 0.
+
+For combined validation, install Python itself under the worktree before
+creating the venv: set `UV_PYTHON_INSTALL_DIR`, `UV_PYTHON_BIN_DIR`,
+`UV_CACHE_DIR`, and `TMPDIR` to local directories, run
+`uv python install 3.12.12`, and give `uv venv --python` the resulting local
+interpreter path. Install the locked `dev` and `reference` dependency groups.
+A `.venv/bin/python` invocation alone does not prove isolation. Before building
+or measuring, retain this check's output alongside package/runtime identities:
+
+```bash
+.venv/bin/python -B - <<'PY'
+import hashlib, json, sys
+from pathlib import Path
+root = Path.cwd().resolve()
+executable = Path(sys.executable).resolve(strict=True)
+base = Path(sys.base_prefix).resolve(strict=True)
+assert executable.is_relative_to(root), executable
+assert base.is_relative_to(root), base
+print(json.dumps({"executable": str(executable), "base_prefix": str(base),
+                  "interpreter_sha256": hashlib.sha256(executable.read_bytes()).hexdigest()}, indent=2))
+PY
+```
+
+Run the contributor environment and documentation preflights before measurement.
+Burner must commit the combined implementation and provenance correction before
+the final fresh locked release-wheel build in an empty local Cargo target.
+Retain clean Git statuses, actual build/capture commands and environments,
+timestamps, hashes, both executions for each seed, and all failures in new
+combined artifacts. Record the installed Rust toolchain and system NVIDIA driver
+separately from local dependencies. If implementation or evaluator code changes,
+repeat the build and capture from the new clean commit. The historical source
+capture below is preserved independently of that required combined evidence.
+
+```bash
+mkdir -p target/cuda-compilation
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python -B scripts/evaluate_cuda_compilation.py \
+  --seed 1927 --seed 83719 \
+  --build-record target/cuda-math/build-record.json \
+  --output target/cuda-compilation/evidence.json
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python -B -m unittest \
+  tests.test_cuda_compilation_evaluator -v
+```
+
+Set `TORCH_RS_CUDART` and `TORCH_RS_CUBLAS` to the selected local runtime
+libraries when they are not on the library search path. The JSON records mapped
+CUDA runtime paths/versions and cuBLAS/driver libraries, GPU model/UUID/compute
+capability, driver and memory pressure, interpreter/package versions, source
+and evaluator hashes, build configuration, raw values, failures, and accounting.
+It records an installed `nvcc` version separately from actual compiler use:
+this eager-backend comparison does not invoke `nvcc` or Inductor. Native
+pointwise kernels use driver-JIT embedded PTX; native matmul uses cuBLAS.
+Portable unit tests run without CUDA, and hardware tests skip clearly when the
+reference GPU or local extension is unavailable.
+
+### Historical source capture (PR1967)
+
+The [H100 source evidence](evaluation-data/cuda-inference-compilation-v1-h100.json)
+was regenerated from clean implementation commit
+`387f541c8b01d53e5644d5ee3b1399e95978915f`. Its production sources match
+main `46db0021e8db4b563327ac4b8290eb7eab4318f4`. The committed evaluator and matrix
+were used without changes, including the reviewed build-metadata, numeric
+overflow, and non-finite JSON checks. A fresh empty Cargo target directory was
+built with locked, offline Rust 1.92.0, reusing only the worktree-local dependency environment
+and Cargo registry. No dependencies were installed or changed.
+
+The [capture receipt](evaluation-data/cuda-inference-compilation-v1-h100-receipt.json)
+records the actual command, timestamps, environment, artifact hash, and clean
+Git status before and after measurement. The artifact embeds the fresh build
+receipt, full build log, source/evaluator/extension hashes, and every trial.
+Build, candidate import, and runtime dependency paths belonged to the original
+`agent_7616a521` worktree. The command invoked that worktree's `.venv/bin/python`,
+but its interpreter symlink resolved to
+`/home/bobren/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/bin/python3.12`.
+The executable was therefore shared, not worktree-local; the invocation path
+does not establish interpreter isolation. The installed Rust compiler and system
+NVIDIA driver were also external and are recorded separately. Preserve the
+original capture and receipt unchanged as source-history evidence: they do not
+qualify the combined candidate or its environment.
+Evidence and documentation were updated only after the clean capture finished.
+
+That run selected seeds `4903053239806875220` and `5105064065959191971`:
+all 12 reference trials passed, and the candidate earned **5/6** slots. Row sum
+failed bytecode lowering (`KW_NAMES`) at both seeds and earned zero. The device
+was NVIDIA H100, compute capability 9.0, driver 580.82.07. Both processes mapped
+CUDA runtime 13.0 from the local PyTorch dependency environment; PyTorch was
+2.13.0+cu130. The fresh release build took 46.72 seconds wall time
+with thin LTO and one codegen unit. Installed `nvcc` was 12.6.85 and was unused.
+Native cuBLAS 13 and driver-JIT PTX paths are recorded separately in the worker
+observations. No inference performance was measured. All 16 focused accounting
+and isolation tests passed; their output is preserved in the capture receipt.
+
+### Combined clean capture
+
+The [combined publication](diagnostics/compile-cuda-composite/postcommit-9c7b445/README.md)
+measures clean implementation `9c7b445c46373909392a2bce2e97c1b956240462`, including
+the provenance correction above. It uses a fresh locked release wheel built in
+an empty local Cargo target and a verified worktree-local CPython 3.12.12
+interpreter, venv and locked dependencies. Resolved executable/base-prefix,
+interpreter, source, native extension and reference/runtime hashes are retained.
+
+At evaluator-selected seeds `6132505239447970515` and `8782175947437908558`, all
+12 reference trials passed both executions. The candidate earned **5/6** slots;
+row sum failed initial lowering with `KW_NAMES` at both seeds and remains zero.
+The [raw report](diagnostics/compile-cuda-composite/postcommit-9c7b445/hardware.json)
+and [command receipt](diagnostics/compile-cuda-composite/postcommit-9c7b445/hardware.receipt.json)
+retain failed observations, initial/changed outputs for supported cases, native
+execution evidence, actual environment and clean statuses. Original source
+captures remain unchanged. This is bounded accounting of existing capability,
+not a new compiler feature or an automatic overall-score increase. Evidence-only
+publication, independent review and managed merge gates remain Burner-owned.

@@ -1,0 +1,164 @@
+{
+  "SHA256.json": {
+    "sha256": "9da37ef8a0e050ee7da4eea1ea7d544cd2e5caf2ea567f7bd653429a9e5b0611",
+    "measurement_kind": null,
+    "commit": null,
+    "status": null
+  },
+  "build-record.json": {
+    "sha256": "b6e64dba9f5c84dc3975606f9d29500a777fcd858ab2312b924196b381547e66",
+    "measurement_kind": "development-uncommitted",
+    "commit": "46db0021e8db4b563327ac4b8290eb7eab4318f4",
+    "status": null
+  },
+  "default-481723.json": {
+    "sha256": "334e2a98e9a329878fc2bd7c3500a492cbcc4c392ed37f92ad75d0c4a66c3e31",
+    "measurement_kind": "development-uncommitted",
+    "commit": "46db0021e8db4b563327ac4b8290eb7eab4318f4",
+    "status": "passed"
+  },
+  "default-481723.receipt.json": {
+    "sha256": "db48ba0a79416866980bad4c77b2fd5b6f2ef60e9e848519200eb24290862061",
+    "measurement_kind": null,
+    "commit": null,
+    "status": null
+  },
+  "default-798431.json": {
+    "sha256": "e792aace589aa6859a434a0f80713bd1938fe3844a2c5f51f03c335e2fd84296",
+    "measurement_kind": "development-uncommitted",
+    "commit": "46db0021e8db4b563327ac4b8290eb7eab4318f4",
+    "status": "passed"
+  },
+  "default-798431.receipt.json": {
+    "sha256": "4a4a6c543b937e4d3415b86d29c8f07aafa3a3f4e1b24f9886fa4a8420738a79",
+    "measurement_kind": null,
+    "commit": null,
+    "status": null
+  },
+  "default-926051.json": {
+    "sha256": "2d461b9fe41d9e1a8742b91705d75025b702ea172509362fe089e8e650368a4b",
+    "measurement_kind": "development-uncommitted",
+    "commit": "46db0021e8db4b563327ac4b8290eb7eab4318f4",
+    "status": "passed"
+  },
+  "default-926051.receipt.json": {
+    "sha256": "d1d8c2de1f4c9007460987b2bd513d5125881124dbcd6646756c53aaf43625f8",
+    "measurement_kind": null,
+    "commit": null,
+    "status": null
+  },
+  "explicit-481723.json": {
+    "sha256": "88450ad32551553918fbfd46b857690a15e35fcdc67a577b5c9bcd4e3ce7d6e5",
+    "measurement_kind": "development-uncommitted",
+    "commit": "46db0021e8db4b563327ac4b8290eb7eab4318f4",
+    "status": "passed"
+  },
+  "explicit-481723.receipt.json": {
+    "sha256": "f4adc0462fe5b426f8360bf4a244c6b22c0b5a54bf98be9eee54c730b1820af4",
+    "measurement_kind": null,
+    "commit": null,
+    "status": null
+  },
+  "explicit-798431.json": {
+    "sha256": "ce95ca6aee5e736f19dfbf4dd8aebb259c71d34c77a9332ba9aa7a4f5164277f",
+    "measurement_kind": "development-uncommitted",
+    "commit": "46db0021e8db4b563327ac4b8290eb7eab4318f4",
+    "status": "passed"
+  },
+  "explicit-798431.receipt.json": {
+    "sha256": "d90e39b1974ac24d793def0091730d7642eb8091be02eb14d17cd29ebe9fba68",
+    "measurement_kind": null,
+    "commit": null,
+    "status": null
+  },
+  "explicit-926051.json": {
+    "sha256": "8ed45729f36683ca9e44a27497e50552cc675295b7d2d9cfb48b15d2ce3db4ca",
+    "measurement_kind": "development-uncommitted",
+    "commit": "46db0021e8db4b563327ac4b8290eb7eab4318f4",
+    "status": "passed"
+  },
+  "explicit-926051.receipt.json": {
+    "sha256": "60374226b563ad2eb965e9fc59b8f1686daebc0f352c865fd27ea45ab10e9b16",
+    "measurement_kind": null,
+    "commit": null,
+    "status": null
+  },
+  "plan.json": {
+    "sha256": "593fad37463b5cbfeec18d1dcde0c3760b2899374d0ff4e36a4aed53cc639fe9",
+    "measurement_kind": "development-uncommitted; Burner owns commit/clean validation",
+    "commit": null,
+    "status": null
+  },
+  "preflight.json": {
+    "sha256": "8d9851602c441d70a0a55fd9df895b5c5b44a3d6b870c4b857001e6eb37be3b4",
+    "measurement_kind": null,
+    "commit": null,
+    "status": null
+  },
+  "reject-absent.json": {
+    "sha256": "454782ef826b23bc41fbdafa4f25d348c756814a373ad9f6d08413992d4af333",
+    "measurement_kind": null,
+    "commit": null,
+    "status": "failed"
+  },
+  "reject-absent.receipt.json": {
+    "sha256": "379bcaac32e4a4f7e96983159f217beb6a11a56e33e223edfba241c0ea6dbb75",
+    "measurement_kind": null,
+    "commit": null,
+    "status": null
+  },
+  "reject-clean-dirty.json": {
+    "sha256": "9203547c9d66881b3896d5274dfb80dfea4123d72d57ffc30eb20533d99acb29",
+    "measurement_kind": "development-uncommitted",
+    "commit": "46db0021e8db4b563327ac4b8290eb7eab4318f4",
+    "status": "failed"
+  },
+  "reject-clean-dirty.receipt.json": {
+    "sha256": "af1c8a9e8db07a5ecf51877ca70c8cfad546e93ab8d495ccb1c3da4095efa1c8",
+    "measurement_kind": null,
+    "commit": null,
+    "status": null
+  },
+  "reject-mismatch.json": {
+    "sha256": "ca3e4c3c8eb050698c82c039e055bbb9669988b767fb01d4b484b92ad54f7b18",
+    "measurement_kind": null,
+    "commit": null,
+    "status": "failed"
+  },
+  "reject-mismatch.receipt.json": {
+    "sha256": "4a2152faadad834d44e5a11e1364e9b41a399c4c2f44a3c55e455dc6417bdd1a",
+    "measurement_kind": null,
+    "commit": null,
+    "status": null
+  },
+  "reject-multiple.json": {
+    "sha256": "2072725ddb0660dc056b3c153e1ab88555a90c6426be1d9696e169822a4f7b86",
+    "measurement_kind": null,
+    "commit": null,
+    "status": "failed"
+  },
+  "reject-multiple.receipt.json": {
+    "sha256": "8639e4cbb0ae0aadbd9e2fedc0c7fc91bf5f2b562a4aa7fac7cb0ab5cfbb57b8",
+    "measurement_kind": null,
+    "commit": null,
+    "status": null
+  },
+  "scope-check.json": {
+    "sha256": "785feccee84b9ed9ab74ec3528c696618c3e3127a4d274523d26eb3edd529c73",
+    "measurement_kind": null,
+    "commit": null,
+    "status": null
+  },
+  "setup-notes.json": {
+    "sha256": "75f7f627265f8847de098a3c17d65e854ccacfe27f16d0c715ac9030c9d783ec",
+    "measurement_kind": null,
+    "commit": null,
+    "status": null
+  },
+  "validation-summary.json": {
+    "sha256": "295932e2ce0b3a7bdd2588b20b11a77798b164ab9c7c6cabba39c4af34249380",
+    "measurement_kind": null,
+    "commit": null,
+    "status": null
+  }
+}

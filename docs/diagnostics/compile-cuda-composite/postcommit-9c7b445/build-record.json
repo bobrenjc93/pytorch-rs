@@ -1,0 +1,25 @@
+{
+  "commit": "9c7b445c46373909392a2bce2e97c1b956240462",
+  "source_sha256": "2fe1d2ab1404f3bc26ff3c6e1dc20216603f6577b09ab38cce4703b4205c67cc",
+  "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "extension_sha256": "baf4a5cecd38c33e970df5ccf20d6da3fee814fb650b5dd7f21d34af53d0c697",
+  "build_command": ".venv/bin/maturin build --release --locked --out target/composite-postcommit-9c7b445/wheels",
+  "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)\nbinary: rustc\ncommit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234\ncommit-date: 2025-12-08\nhost: x86_64-unknown-linux-gnu\nrelease: 1.92.0\nLLVM version: 21.1.3\n",
+  "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)\n",
+  "nvcc": "unused; native cuBLAS and driver-JIT embedded PTX",
+  "wheel": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/target/composite-postcommit-9c7b445/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+  "wheel_sha256": "62d06ad06a5077d2f66375a1a2a7347466d486acb7d37f631c14bf31fbe4dfd5",
+  "build_receipt": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/target/composite-postcommit-9c7b445/reports/build.receipt.json",
+  "build_receipt_sha256": "1db8327b06147f417b5a321f16dffe2698cad475340d59295ca5c7b5ddc16536",
+  "build_log_sha256": "dd66157c698403c4b79eb9e0a65e53465c7eece1228a85255bbc6a524e7a5e37",
+  "installed_extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+  "worker_extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_0cfe917e/python/torch_rs/torch_rs.abi3.so",
+  "profile": {
+    "release": true,
+    "lto": "thin",
+    "codegen-units": 1,
+    "features": [
+      "extension-module"
+    ]
+  }
+}

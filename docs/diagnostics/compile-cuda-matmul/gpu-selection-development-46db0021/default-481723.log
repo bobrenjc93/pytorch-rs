@@ -1,0 +1,14 @@
+{"shape_mkn": [1, 65539, 1], "offset": 0, "status": "passed", "capped_parity": 0.9998657694012842}
+{"shape_mkn": [1, 65539, 1], "offset": 3, "status": "passed", "capped_parity": 0.6208332634353844}
+{"shape_mkn": [64, 64, 64], "offset": 0, "status": "passed", "capped_parity": 1.0}
+{"shape_mkn": [64, 64, 64], "offset": 3, "status": "passed", "capped_parity": 0.6449814390695544}
+{"shape_mkn": [512, 512, 512], "offset": 0, "status": "passed", "capped_parity": 1.0}
+{"shape_mkn": [512, 512, 512], "offset": 3, "status": "passed", "capped_parity": 1.0}
+{"shape_mkn": [127, 1025, 65], "offset": 0, "status": "passed", "capped_parity": 0.9874112045385474}
+{"shape_mkn": [127, 1025, 65], "offset": 3, "status": "passed", "capped_parity": 0.6269362728592864}
+/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_ab372605/.venv/lib/python3.12/site-packages/torch/_inductor/compile_fx.py:321: UserWarning: TensorFloat32 tensor cores for float32 matrix multiplication available but not enabled. Consider setting `torch.set_float32_matmul_precision('high')` for better performance.
+  warnings.warn(
+{"shape_mkn": [257, 257, 257], "offset": 0, "status": "passed", "capped_parity": 1.0}
+{"shape_mkn": [257, 257, 257], "offset": 3, "status": "passed", "capped_parity": 0.7683307314830844}
+{"shape_mkn": [401, 734, 267], "offset": 0, "status": "passed", "capped_parity": 1.0}
+{"shape_mkn": [401, 734, 267], "offset": 3, "status": "passed", "capped_parity": 0.8274176908533998}

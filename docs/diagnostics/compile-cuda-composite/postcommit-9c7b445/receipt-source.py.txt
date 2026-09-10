@@ -1,0 +1,55 @@
+import datetime
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+root = Path.cwd().resolve()
+sys.path.insert(0, str(root/'scripts'))
+from evaluate_cuda_math import source_provenance, sha256
+from diagnose_compile_cuda_matmul import environment_provenance, gpu_inventory
+
+destination = Path(sys.argv[1]).resolve()
+command = sys.argv[2:]
+assert destination.is_relative_to(root)
+assert not destination.with_suffix('.receipt.json').exists()
+stamp = lambda: datetime.datetime.now(datetime.timezone.utc).isoformat()
+status = lambda: subprocess.check_output(['git', 'status', '--porcelain'], text=True)
+assert status() == '', 'clean committed source required'
+environment = environment_provenance()
+environment.update({k:os.environ.get(k) for k in (
+    'UV_CACHE_DIR','UV_PYTHON_INSTALL_DIR','UV_PYTHON_BIN_DIR','UV_TOOL_BIN_DIR',
+    'UV_TOOL_DIR','UV_LINK_MODE','UV_NO_CONFIG','PYTHONPYCACHEPREFIX',
+    'PYTHONDONTWRITEBYTECODE','RUSTC','RUSTDOC')})
+tracked = ['scripts/evaluate_cuda_compilation.py','scripts/evaluate_cuda_math.py',
+           'scripts/diagnose_compile_cuda_matmul.py','scripts/benchmark_cuda_matmul.py',
+           'docs/hardware-heterogeneity-matrix-v1.json','tests/test_cuda_compilation_evaluator.py']
+hashes = lambda: {p:sha256(root/p) for p in tracked}
+receipt = dict(command=command, cwd=str(root), started_at=stamp(),
+               source_before=source_provenance(), git_status_before=status(),
+               environment=environment, file_sha256_before=hashes())
+capture = any('evaluate_cuda_compilation.py' in c or 'diagnose_compile_cuda_matmul.py' in c for c in command)
+if capture:
+    receipt['gpu_inventory_before'] = gpu_inventory()
+start = time.monotonic()
+with destination.with_suffix('.log').open('xb') as output:
+    completed = subprocess.run(command, stdout=output, stderr=subprocess.STDOUT)
+receipt.update(ended_at=stamp(), wall_seconds=time.monotonic()-start,
+               exit_code=completed.returncode, git_status_after=status(),
+               source_after=source_provenance(), file_sha256_after=hashes(),
+               log_sha256=sha256(destination.with_suffix('.log')))
+if capture:
+    receipt['gpu_inventory_after'] = gpu_inventory()
+if '--output' in command:
+    report = Path(command[command.index('--output')+1])
+    if report.is_file():
+        receipt['report_sha256'] = sha256(report)
+destination.with_suffix('.receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
+assert receipt['git_status_after'] == ''
+assert receipt['source_before'] == receipt['source_after']
+assert receipt['file_sha256_before'] == receipt['file_sha256_after']
+print(json.dumps(dict(command=command,exit_code=completed.returncode,wall_seconds=receipt['wall_seconds'])),flush=True)
+sys.exit(completed.returncode)

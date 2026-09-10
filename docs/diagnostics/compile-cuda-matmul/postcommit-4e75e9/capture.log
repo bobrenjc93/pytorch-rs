@@ -1,0 +1,11 @@
+Fresh locked wheel, import provenance, and diagnostic goldens passed.
+default-798431 0 passed 12
+default-481723 0 passed 12
+default-926051 0 passed 12
+explicit-798431 0 passed 12
+explicit-481723 0 passed 12
+explicit-926051 0 passed 12
+reject-mismatch 1 failed 0
+reject-multiple 1 failed 0
+reject-absent 1 failed 0
+Capture ended with unchanged clean implementation.

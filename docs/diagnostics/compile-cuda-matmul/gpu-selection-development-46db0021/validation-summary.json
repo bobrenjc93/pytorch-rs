@@ -1,0 +1,83 @@
+{
+  "base_commit": "46db0021e8db4b563327ac4b8290eb7eab4318f4",
+  "measured_harness_sha256": "2bd01a0aa73f924c2ee7f10882bba8c180c42cfa2a4d97504b0eff1fc8fef1d6",
+  "implementation_commit": null,
+  "evidence_publication_commit": null,
+  "capture_kind": "development-uncommitted",
+  "clean_validation": "pending Burner commit; no clean or exact-head claim",
+  "reports": {
+    "default-798431": {
+      "status": "passed",
+      "cells": 12,
+      "checked_timed_calls": 7440,
+      "uuid": "GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1",
+      "physical_index": 0
+    },
+    "default-481723": {
+      "status": "passed",
+      "cells": 12,
+      "checked_timed_calls": 7440,
+      "uuid": "GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1",
+      "physical_index": 0
+    },
+    "default-926051": {
+      "status": "passed",
+      "cells": 12,
+      "checked_timed_calls": 7440,
+      "uuid": "GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1",
+      "physical_index": 0
+    },
+    "explicit-798431": {
+      "status": "passed",
+      "cells": 12,
+      "checked_timed_calls": 7440,
+      "uuid": "GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e",
+      "physical_index": 2
+    },
+    "explicit-481723": {
+      "status": "passed",
+      "cells": 12,
+      "checked_timed_calls": 7440,
+      "uuid": "GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e",
+      "physical_index": 2
+    },
+    "explicit-926051": {
+      "status": "passed",
+      "cells": 12,
+      "checked_timed_calls": 7440,
+      "uuid": "GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e",
+      "physical_index": 2
+    }
+  },
+  "rejections": {
+    "reject-mismatch": {
+      "status": "failed",
+      "cells": 12,
+      "aggregate": 0,
+      "error": "RuntimeError: mask does not match declared physical GPU; prefer its full UUID"
+    },
+    "reject-multiple": {
+      "status": "failed",
+      "cells": 12,
+      "aggregate": 0,
+      "error": "RuntimeError: CUDA_VISIBLE_DEVICES must declare exactly one device"
+    },
+    "reject-absent": {
+      "status": "failed",
+      "cells": 12,
+      "aggregate": 0,
+      "error": "RuntimeError: CUDA_VISIBLE_DEVICES must declare exactly one device"
+    },
+    "reject-clean-dirty": {
+      "status": "failed",
+      "cells": 12,
+      "aggregate": 0,
+      "error": "RuntimeError: Burner must commit implementation before clean evidence; use --allow-dirty only for development"
+    }
+  },
+  "checked_timed_calls_total": 44640,
+  "identical_inputs_policies_and_wheel_across_paths": true,
+  "measurement_code_unchanged_during_capture": true,
+  "test_and_guidance_edits_during_capture": "Contributor guide shortened to pass existing limit; more identity/seed regressions added. No measured code changes.",
+  "performance_claim": null
+}

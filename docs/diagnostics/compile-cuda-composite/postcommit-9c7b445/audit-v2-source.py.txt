@@ -1,0 +1,158 @@
+import datetime
+import hashlib
+import json
+import math
+from pathlib import Path
+import statistics
+import subprocess
+import sys
+
+root=Path.cwd().resolve()
+work=root/'target/composite-postcommit-9c7b445'
+reports=work/'reports'
+sys.path.insert(0,str(root/'scripts'))
+import evaluate_cuda_compilation as evaluator
+import diagnose_compile_cuda_matmul as diagnostic
+from evaluate_cuda_math import source_provenance,sha256
+commit='9c7b445c46373909392a2bce2e97c1b956240462'
+assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==commit
+assert not subprocess.check_output(['git','status','--porcelain'])
+plan=json.loads((reports/'plan.json').read_text())
+preflight=json.loads((reports/'environment-preflight.json').read_text())
+build=json.loads((reports/'build-record.json').read_text())
+source=source_provenance()
+assert source['commit']==commit and source==plan['source']==preflight['source']
+for key in source:
+    assert source[key]==build[key]
+for name,identity in preflight['identities'].items():
+    path=Path(identity['path']).resolve(strict=True)
+    assert sha256(path)==identity['sha256'],name
+    if identity['worktree_local']:
+        assert path.is_relative_to(root),path
+assert Path(preflight['sys_executable']).resolve()==Path(preflight['realpath_sys_executable'])
+assert Path(preflight['sys_base_prefix']).resolve().is_relative_to(root)
+for relative,digest in preflight['installed_source_manifest'].items():
+    assert sha256(root/relative)==digest
+assert sha256(build['wheel'])==build['wheel_sha256']
+assert sha256(build['installed_extension'])==sha256(build['worker_extension'])==build['extension_sha256']
+assert plan['cargo_target_initially_absent']
+assert plan['cache_initial_files']=={k:0 for k in plan['cache_initial_files']}
+receipts={}
+for path in reports.glob('*.receipt.json'):
+    r=json.loads(path.read_text())
+    assert r['git_status_before']==r['git_status_after']==''
+    assert r['source_before']==r['source_after']==source
+    assert r['file_sha256_before']==r['file_sha256_after']
+    for p,h in r['file_sha256_after'].items():
+        assert sha256(root/p)==h
+    log=Path(str(path).replace('.receipt.json','.log'))
+    assert sha256(log)==r['log_sha256']
+    if 'report_sha256' in r:
+        assert sha256(r['command'][r['command'].index('--output')+1])==r['report_sha256']
+    receipts[path.name]=r['exit_code']
+hardware=json.loads((reports/'hardware.json').read_text())
+assert hardware['source']==source and hardware['source_unchanged_during_run']
+assert hardware['seeds']==plan['hardware_seeds'] and len(set(hardware['seeds']))==2
+assert len(hardware['trials'])==12
+assert evaluator.account(evaluator.corpus(),hardware['seeds'],hardware['trials'],build,source)==hardware['accounting']
+assert hardware['accounting']['denominator']==6
+assert next(c for c in hardware['accounting']['cases'] if c['case_id']=='cuda_f32_compile_sum_rows')['credit']==0
+reference_executions=candidate_executions=0
+candidate_failures=[]
+for trial in hardware['trials']:
+    case=next(c for c in evaluator.corpus()['cases'] if c['id']==trial['case_id'])
+    ref,cand=trial['reference'],trial['candidate']
+    assert evaluator.valid_execution(ref,case,trial['seed'],'reference')
+    assert len(ref['executions'])==2
+    reference_executions+=2
+    assert ref['pid']!=cand['pid']
+    for row in (ref,cand):
+        for key in ('executable','package'):
+            assert Path(row[key]).resolve().is_relative_to(root)
+        for runtime in row['cuda_runtimes']:
+            assert Path(runtime['path']).resolve().is_relative_to(root)
+            assert runtime['version']==13000 and runtime['status']==0
+    assert cand['extension']['sha256']==build['extension_sha256']
+    assert cand['blocked_imports']==cand['loaded_torch_modules']==[]
+    assert cand['original_body_attempts']==0
+    if cand['status']=='passed':
+        assert evaluator.valid_execution(cand,case,trial['seed'],'candidate')
+        assert [phase['native_returns'] for phase in cand['compile_evidence']]==[1,1]
+        candidate_executions+=2
+    else:
+        candidate_failures.append({'case_id':trial['case_id'],'seed':trial['seed'],'error':cand.get('error')})
+diagnostics=[]
+timed_calls=0
+for label,selected in zip(('default','explicit'),plan['devices']):
+    r=json.loads((reports/(label+'.json')).read_text())
+    assert r['measurement_kind']=='clean-commit' and r['git_status']==''
+    assert r['source']==r['source_after']==source
+    assert r['harness_sha256']==sha256(root/'scripts/diagnose_compile_cuda_matmul.py')
+    assert r['seed']==plan['routing_seed'] and len(r['cases'])==12
+    assert r['gpu_selection']['cuda_visible_devices']==selected['mask']
+    assert r['gpu_selection']['declared_uuid']==(None if label=='default' else selected['uuid'])
+    for moment in ('before','after'):
+        inventory=r['gpu_inventories'][moment]['devices']
+        physical=next(d for d in inventory if d['uuid']==selected['uuid'])
+        assert int(physical['index'])==selected['index']
+        observed=r['gpu_identity_'+moment]
+        assert observed['native_visible_count']==1
+        for role in ('driver','native_runtime','reference_runtime'):
+            diagnostic.bind_gpu_identity(observed[role],physical)
+        assert diagnostic.pci_identity(observed['driver']['pci.bus_id'])==diagnostic.pci_identity(observed['native_runtime']['pci.bus_id'])
+    for expected,case in zip(json.loads(json.dumps(diagnostic.cells(r['seed']))),r['cases']):
+        for key in ('shape_mkn','offset','program'):
+            assert expected[key]==case[key]
+        if case['status']=='passed':
+            assert len(case['orders'])==2
+            for entry,order in zip(case['orders'],r['policy']['orders']):
+                assert entry['order']==order
+                for samples in entry['samples'].values():
+                    assert len(samples['samples_us'])==31
+                    assert len(samples['calls_us'])==samples['checked_calls']==155
+                    assert all(math.isfinite(v) and v>=0 for v in samples['calls_us'])
+                    timed_calls+=155
+            ratio=min(1.0,case['timings']['pytorch']['median_us']/case['timings']['native']['median_us'])
+            assert math.isclose(case['capped_parity'],ratio,rel_tol=1e-12)
+        else:
+            assert case['capped_parity']==0
+    assert math.isclose(r['capped_geometric_parity'],diagnostic.aggregate(r['cases']),rel_tol=1e-12)
+    for path in r['imports'].values():
+        assert Path(path).resolve().is_relative_to(root)
+    for identity in r['loaded_cuda_libraries']:
+        assert Path(identity['path']).resolve().is_relative_to(root)
+        assert sha256(identity['path'])==identity['sha256']
+    diagnostics.append(r)
+assert diagnostics[0]['policy']==diagnostics[1]['policy']
+assert diagnostics[0]['build_record']==diagnostics[1]['build_record']
+assert [c['input_hashes'] for c in diagnostics[0]['cases']]==[c['input_hashes'] for c in diagnostics[1]['cases']]
+for kind in ('mismatch','multiple','absent'):
+    name='reject-'+kind
+    r=json.loads((reports/(name+'.json')).read_text())
+    assert receipts[name+'.receipt.json']==1
+    assert r['status']=='failed' and len(r['cases'])==12 and r['capped_geometric_parity']==0
+    assert 'imports' not in r and r['gpu_identity_before']=={}
+    assert all(c['status']=='pending' and not c['orders'] for c in r['cases'])
+    assert 'before' in r['gpu_inventories'] and 'after' in r['gpu_inventories']
+scope=json.loads((reports/'scope-audit.json').read_text())
+for p,h in scope['historical_artifacts_sha256'].items():
+    assert sha256(root/p)==h
+assert not subprocess.check_output(['git','diff',scope['base'],'--',*scope['unchanged_production_and_frozen_corpora']])
+for filename in ('hardware.receipt.json','default.receipt.json','explicit.receipt.json'):
+    r=json.loads((reports/filename).read_text())
+    assert datetime.datetime.fromisoformat(plan['at']) < datetime.datetime.fromisoformat(r['started_at'])
+summary={'at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'measured_commit':commit,
+         'git_status_at_audit':'','all_build_check_capture_receipts_clean':True,
+         'build_and_runtime_hashes_verified':True,'historical_files_unchanged':len(scope['historical_artifacts_sha256']),
+         'focused_tests':{'run':51,'skipped':1,'failures':0},
+         'hardware':{'seeds':hardware['seeds'],'passed':hardware['accounting']['passed'],'denominator':6,
+                     'reference_trials_passed':12,'reference_executions':reference_executions,
+                     'candidate_executions':candidate_executions,'candidate_failures_retained':candidate_failures,
+                     'proof':'recomputed fixed accounting; isolated processes; original-body/import blockers; native returns in initial and changed calls; materialized CUDA storage; input preservation'},
+         'routing':{'full_reports':2,'passed_cells':[sum(c['status']=='passed' for c in r['cases']) for r in diagnostics],
+                    'validated_timed_calls':timed_calls,'before_after_uuid_pci_binding':True,
+                    'same_inputs_policy_wheel':True,'zero_work_rejections':['mismatch','multiple','absent']},
+         'scope':'bounded existing capability and routing only; no speedup, broader Python compilation, new accelerator family, or overall-score claim',
+         'remaining_managed_steps':['evidence-only publication','independent complete-diff review','all current-definition no-regression gates','exact-head CI','managed source-PR disposition']}
+(reports/'validation-summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+print(json.dumps(summary,indent=2))
