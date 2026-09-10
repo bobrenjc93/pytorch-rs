@@ -412,18 +412,43 @@ impl CudaFloat32Storage {
         // after that closure returns, including on partial/final launch errors.
         let mut scratch = None;
         self.unary_output(offset, elements, rows, |input, output| {
-            let config = pointwise::RowSumConfig::current(rows, columns)?;
-            if config.ctas > 1 {
-                let count = rows
-                    .checked_mul(config.ctas)
-                    .ok_or(TensorError::IndexCalculationOverflow)?;
-                scratch = Some(Self::allocate(count, self.device_index)?.0);
+            let mut launches = Vec::new();
+            let mut scratch_elements = 0;
+            pointwise::RowSumSlice::for_each(rows, columns, |slice| {
+                let config = pointwise::RowSumConfig::current(slice.rows, slice.columns)?;
+                if config.ctas > 1 {
+                    let count = slice
+                        .rows
+                        .checked_mul(config.ctas)
+                        .ok_or(TensorError::IndexCalculationOverflow)?;
+                    scratch_elements = scratch_elements.max(count);
+                }
+                launches
+                    .try_reserve(1)
+                    .map_err(|_| TensorError::AllocationFailed { elements })?;
+                launches.push((slice, config));
+                Ok(())
+            })?;
+            if scratch_elements != 0 {
+                scratch = Some(Self::allocate(scratch_elements, self.device_index)?.0);
             }
             let partials = scratch.as_ref().map_or(0, |buffer| buffer.data_ptr as u64);
-            // SAFETY: checked bounds, fresh output/scratch, guarded device and
-            // completion are shared with pointwise operations. Zero-width rows
-            // do not dereference input; zero rows do not launch at all.
-            unsafe { pointwise::launch_sum_rows(input, output, partials, rows, columns, &config) }
+            for (slice, config) in launches {
+                // SAFETY: each slice partitions the checked input/output ranges.
+                // Legacy-stream ordering permits scratch reuse and accumulation
+                // into output written by earlier column slices. Both allocations
+                // survive every launch and completion, including launch failure.
+                unsafe {
+                    pointwise::launch_sum_rows(
+                        input + (slice.input_offset * 4) as u64,
+                        output + (slice.output_offset * 4) as u64,
+                        partials,
+                        slice,
+                        &config,
+                    )?;
+                }
+            }
+            Ok(())
         })
     }
 

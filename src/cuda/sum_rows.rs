@@ -3,6 +3,67 @@
 //! Device occupancy inputs are queried on the guarded device, never assumed.
 use super::{Driver, Kernel, TensorError, c_int, c_void, driver};
 
+/// One contiguous sub-iterator in `TensorIterator`'s lower-half-first order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct RowSumSlice {
+    pub(crate) input_offset: usize,
+    pub(crate) output_offset: usize,
+    pub(crate) rows: usize,
+    pub(crate) columns: usize,
+    pub(crate) accumulate: bool,
+}
+
+impl RowSumSlice {
+    /// The caller has checked the original matrix's element count and bounds.
+    pub(crate) fn for_each(
+        rows: usize,
+        columns: usize,
+        mut visit: impl FnMut(Self) -> Result<(), TensorError>,
+    ) -> Result<(), TensorError> {
+        Self {
+            input_offset: 0,
+            output_offset: 0,
+            rows,
+            columns,
+            accumulate: false,
+        }
+        .visit(&mut visit)
+    }
+
+    fn visit(
+        self,
+        visit: &mut impl FnMut(Self) -> Result<(), TensorError>,
+    ) -> Result<(), TensorError> {
+        // TensorIterator checks numel <= INT32_MAX and, for each operand,
+        // 1 + sum((size - 1) * byte_stride) <= INT32_MAX. For a nonempty
+        // contiguous f32 region the input byte span is the strongest bound.
+        // Empty reductions only write zeros and need no ordering split.
+        const MAX_ELEMENTS: usize = (i32::MAX as usize) / 4 + 1;
+        if self.rows * self.columns <= MAX_ELEMENTS {
+            return visit(self);
+        }
+        let (mut lower, mut upper) = (self, self);
+        // The largest extent decides TensorIterator's split dimension. For
+        // contiguous rows, (rows - 1) * columns exceeds columns - 1 whenever
+        // rows > 1. Thus column splits only occur in single-row regions and
+        // every child remains contiguous (no new strided-input support).
+        if self.rows > 1 {
+            lower.rows = self.rows / 2;
+            upper.rows -= lower.rows;
+            upper.input_offset += lower.rows * self.columns;
+            upper.output_offset += lower.rows;
+        } else {
+            lower.columns = self.columns / 2;
+            upper.columns -= lower.columns;
+            upper.input_offset += lower.columns;
+            upper.accumulate = true;
+        }
+        // Recursion is bounded by the bit width of the checked element count.
+        lower.visit(visit)?;
+        upper.visit(visit)
+    }
+}
+
 pub(crate) struct RowSumConfig {
     width: u32,
     height: u32,
@@ -83,20 +144,21 @@ impl RowSumConfig {
 /// Live contiguous input/output and optional `rows * config.ctas` scratch
 /// floats on the guarded device. Retain all three until stream completion,
 /// including after either launch fails. Input may be null only for zero width.
+/// For an accumulating slice, output must contain the preceding slices' sums.
 pub(crate) unsafe fn launch_sum_rows(
     mut input: u64,
     mut output: u64,
     mut scratch: u64,
-    rows: usize,
-    columns: usize,
+    slice: RowSumSlice,
     config: &RowSumConfig,
 ) -> Result<(), TensorError> {
     let driver = driver()?;
-    let mut rows = rows as u64;
-    let mut columns = columns as u64;
+    let mut rows = slice.rows as u64;
+    let mut columns = slice.columns as u64;
     let mut ctas = config.ctas as u64;
     let mut reduce_y = u32::from(config.reduce_y);
     let mut vectorize = u32::from(config.vectorize);
+    let mut accumulate = u32::from(slice.accumulate);
     let mut arguments = [
         (&raw mut input).cast(),
         (&raw mut output).cast(),
@@ -106,6 +168,7 @@ pub(crate) unsafe fn launch_sum_rows(
         (&raw mut ctas).cast(),
         (&raw mut reduce_y).cast(),
         (&raw mut vectorize).cast(),
+        (&raw mut accumulate).cast(),
     ];
     let row_step = if config.reduce_y {
         1
@@ -171,7 +234,81 @@ unsafe fn launch(
 
 #[cfg(test)]
 mod tests {
-    use super::RowSumConfig;
+    use super::{RowSumConfig, RowSumSlice};
+
+    fn slices(rows: usize, columns: usize) -> Vec<RowSumSlice> {
+        let mut result = Vec::new();
+        RowSumSlice::for_each(rows, columns, |slice| {
+            result.push(slice);
+            Ok(())
+        })
+        .unwrap();
+        result
+    }
+
+    #[test]
+    fn indexing_split_preserves_byte_boundary_offsets_and_accumulation_order() {
+        const LIMIT: usize = 1 << 29;
+        assert_eq!(slices(1, LIMIT).len(), 1);
+        let split = slices(1, LIMIT + 4);
+        assert_eq!(
+            split,
+            vec![
+                RowSumSlice {
+                    input_offset: 0,
+                    output_offset: 0,
+                    rows: 1,
+                    columns: LIMIT / 2 + 2,
+                    accumulate: false
+                },
+                RowSumSlice {
+                    input_offset: LIMIT / 2 + 2,
+                    output_offset: 0,
+                    rows: 1,
+                    columns: LIMIT / 2 + 2,
+                    accumulate: true
+                },
+            ]
+        );
+        let nested = slices(1, 2 * LIMIT + 3);
+        assert_eq!(
+            nested.iter().map(|s| s.columns).collect::<Vec<_>>(),
+            [LIMIT / 2, LIMIT / 2 + 1, LIMIT / 2 + 1, LIMIT / 2 + 1]
+        );
+        assert_eq!(
+            nested.iter().map(|s| s.accumulate).collect::<Vec<_>>(),
+            [false, true, true, true]
+        );
+        let mut end = 0;
+        for slice in nested {
+            assert_eq!(slice.input_offset, end);
+            end += slice.columns;
+        }
+        assert_eq!(end, 2 * LIMIT + 3);
+    }
+
+    #[test]
+    fn indexing_split_partitions_rows_before_columns_and_resets_each_output() {
+        const LIMIT: usize = 1 << 29;
+        let rows = slices(5, LIMIT / 2);
+        assert_eq!(rows.iter().map(|s| s.rows).collect::<Vec<_>>(), [2, 1, 2]);
+        assert_eq!(
+            rows.iter().map(|s| s.output_offset).collect::<Vec<_>>(),
+            [0, 2, 3]
+        );
+        assert!(rows.iter().all(|s| !s.accumulate));
+        for (row, pair) in slices(3, LIMIT + 5).chunks_exact(2).enumerate() {
+            assert_eq!(pair[0].output_offset, row);
+            assert_eq!(pair[1].output_offset, row);
+            assert_eq!(pair[0].input_offset, row * (LIMIT + 5));
+            assert_eq!(pair[1].input_offset, row * (LIMIT + 5) + LIMIT / 2 + 2);
+            assert!(!pair[0].accumulate);
+            assert!(pair[1].accumulate);
+            assert_eq!(pair[0].columns + pair[1].columns, LIMIT + 5);
+        }
+        assert_eq!(slices(0, usize::MAX).len(), 1);
+        assert_eq!(slices(usize::MAX, 0).len(), 1);
+    }
 
     #[test]
     fn geometry_uses_device_capacity_and_row_count() {

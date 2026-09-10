@@ -1,0 +1,8 @@
+test_nested_odd_column_splits_accumulate_in_order (tests.test_cuda_sum_rows_indexing.CudaSumRowsIndexingTests.test_nested_odd_column_splits_accumulate_in_order) ... ok
+test_reviewer_sparse_cancellation_below_at_and_above_byte_boundary (tests.test_cuda_sum_rows_indexing.CudaSumRowsIndexingTests.test_reviewer_sparse_cancellation_below_at_and_above_byte_boundary) ... ok
+test_row_partitions_reconfigure_geometry_and_keep_output_offsets (tests.test_cuda_sum_rows_indexing.CudaSumRowsIndexingTests.test_row_partitions_reconfigure_geometry_and_keep_output_offsets) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 2.669s
+
+OK

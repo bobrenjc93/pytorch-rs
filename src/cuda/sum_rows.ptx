@@ -5,10 +5,10 @@
 .visible .entry sum_rows_f32(
     .param .u64 input, .param .u64 output, .param .u64 scratch,
     .param .u64 rows, .param .u64 columns, .param .u64 ctas,
-    .param .u32 reduce_y, .param .u32 vectorize
+    .param .u32 reduce_y, .param .u32 vectorize, .param .u32 accumulate
 ) {
     .reg .pred p, valid, tail;
-    .reg .b32 x, y, bx, by, ry, vec, t, delta, sh, addr, peer;
+    .reg .b32 x, y, bx, by, ry, vec, acc, t, delta, sh, addr, peer;
     .reg .b64 a, b, tmp, nr, nc, np, row, base, rowstep, gridstep;
     .reg .b64 part, partstep, idx, step, end, ptr, off, q, head;
     .reg .f32 v0, v1, v2, v3, f0, f1, f2, f3, other;
@@ -21,6 +21,7 @@
     ld.param.u64 np, [ctas];
     ld.param.u32 ry, [reduce_y];
     ld.param.u32 vec, [vectorize];
+    ld.param.u32 acc, [accumulate];
     mov.u32 x, %tid.x;
     mov.u32 y, %tid.y;
     mov.u32 bx, %ntid.x;
@@ -223,6 +224,9 @@ store:
     @p bra store_partial;
     shl.b64 off, row, 2;
     add.u64 off, b, off;
+    setp.ne.u32 p, acc, 0;
+    @p ld.global.f32 other, [off];
+    @p add.rn.f32 v0, other, v0;
     st.global.f32 [off], v0;
     bra next_partial;
 store_partial:
@@ -247,10 +251,10 @@ finish:
 .visible .entry sum_rows_finalize_f32(
     .param .u64 input, .param .u64 output, .param .u64 scratch,
     .param .u64 rows, .param .u64 columns, .param .u64 ctas,
-    .param .u32 reduce_y, .param .u32 vectorize
+    .param .u32 reduce_y, .param .u32 vectorize, .param .u32 accumulate
 ) {
     .reg .pred p, valid, tail;
-    .reg .b32 x, y, bx, by, ry, vec, t, delta, sh, addr, peer;
+    .reg .b32 x, y, bx, by, ry, vec, acc, t, delta, sh, addr, peer;
     .reg .b64 a, b, tmp, nr, nc, np, row, base, rowstep, gridstep;
     .reg .b64 part, partstep, idx, step, end, ptr, off, q, head;
     .reg .f32 v0, v1, v2, v3, f0, f1, f2, f3, other;
@@ -263,6 +267,7 @@ finish:
     ld.param.u64 np, [ctas];
     ld.param.u32 ry, [reduce_y];
     ld.param.u32 vec, [vectorize];
+    ld.param.u32 acc, [accumulate];
     mov.u32 x, %tid.x;
     mov.u32 y, %tid.y;
     mov.u32 bx, %ntid.x;
@@ -354,6 +359,10 @@ fx_end:
     and.pred p, p, valid;
     shl.b64 off, base, 2;
     add.u64 off, b, off;
+    setp.ne.u32 valid, acc, 0;
+    and.pred valid, p, valid;
+    @valid ld.global.f32 other, [off];
+    @valid add.rn.f32 v0, other, v0;
     @p st.global.f32 [off], v0;
     bar.sync 0;
     add.u64 base, base, gridstep;

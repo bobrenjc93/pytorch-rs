@@ -29,9 +29,14 @@ They do not establish combined-candidate correctness or performance.
 
 ## Qualification boundary
 
-Burner committed the implementation as
-`02535d5fb191285b0e2ca62677a1ec5d29edbb01`. The clean capture below now fulfills
-the deferred post-commit measurement step. The earlier `--allow-dirty` capture
+Burner committed the earlier implementation as
+`02535d5fb191285b0e2ca62677a1ec5d29edbb01`. Its clean capture below predates the
+review-requested indexing-boundary repair and is now stale for the current
+implementation. Its raw measurements and provenance remain unchanged. Burner
+must commit the indexing repair and then refresh the clean build, full six-case
+CUDA evaluator capture, and numerical reproductions before qualification.
+The new dirty-source checks are development diagnostics, not a substitute for
+that required capture. The earlier `--allow-dirty` capture
 remains explicitly labeled `precommit-diagnostic`, with `clean_checkout=false`;
 its raw files and original provenance have not been rewritten.
 
@@ -43,14 +48,55 @@ No evaluator, corpus, weight, benchmark validator, dependency lock, or
 Burner-managed progress artifact was changed. No branch, commit, push, or PR was
 created.
 
-## Clean post-commit capture
+## Review repair: 32-bit indexing boundary
+
+The review finding was reproduced on the source-verified H100 extension:
+the sparse `(1, 536870916)` input returned native `0` versus PyTorch `-1`,
+whereas width `536870912` returned `0` in both implementations. Both keepdim
+forms showed the difference. The reference's TensorIterator.cpp at PyTorch
+commit `cf30153c4c131c8164ee7798e5022d810682e2cb` confirms recursive splitting
+by the largest byte extent, lower halves first, with accumulation for later
+pieces of a reduced dimension.
+
+Native Rust now partitions the contiguous input in the same order and computes
+geometry separately for every piece. The existing PTX kernels accumulate later
+column pieces into previously written output. One scratch buffer is sized for
+the largest piece, reused in stream order, and retained until synchronization
+even on failure. Public support boundaries and tolerances are unchanged.
+
+Rust tests check the real byte threshold, row/output offsets, odd recursive
+splits, and accumulation flags. New H100 tests use sparse device fixtures to
+exercise the actual boundary without large host tensors, including varying
+row counts, offset alignments, nested splits, overflow/nonfinite values, fresh
+outputs, source preservation, and two-device restoration.
+
+The [indexing-repair diagnostics](diagnostics/composite-row-sum-glu-unflatten/indexing-repair-precommit/README.md)
+retain the failing before case, fresh dirty-source build receipts, successful
+checks, actual command logs, and provenance. Formatting and both Clippy modes
+passed. Full Rust targets reported 374 passes, or 385 with Python bindings;
+the guarded two-device section passed separately. Focused Python 3.12 and
+3.14 each ran 53 tests with 51 passes and two device-mask skips, and each
+interpreter separately passed both two-device checks. All four new hardware
+tests skipped explicitly with no GPU; no memory skips occurred on H100.
+
+The unchanged six-case CUDA math evaluator again passed five cases at both
+original seeds, retaining unsupported matmul as zero. Separate-process numerical
+reproduction passed 46 row-sum comparisons, including the review boundary, plus
+GLU's finite overflow gradient. Candidate workers imported no PyTorch. The final
+audit verifies source, wheel, both interpreter installations, the refreshed
+3.14 snapshot, evaluator and actual runtime hashes. An initial Clippy diagnostic
+was corrected; its raw log remains. No tolerance or supported domain changed.
+These are explicitly precommit diagnostics; fresh clean evidence remains required.
+
+## Earlier clean capture at 02535d5 (stale after indexing repair)
 
 The [clean evidence bundle](diagnostics/composite-row-sum-glu-unflatten/postcommit-02535d5/README.md)
 measures `02535d5fb191285b0e2ca62677a1ec5d29edbb01` from this composite's real
 `.venv`, with empty git status before and after every capture. The existing
 repository build tool ran without `--allow-dirty`, built a fresh release wheel
 in an empty Cargo target, and verified unchanged source. Evidence publication
-followed measurement; this step changes only reports and documentation.
+followed measurement; that post-commit step changed only reports and documentation.
+The subsequent indexing repair requires a new clean capture, as stated above.
 
 The unchanged six-case CUDA math evaluator passed five cases at both selected
 seeds `7763153567161607008` and `2618969910755569448`, including
@@ -151,8 +197,8 @@ correction receipts are retained.
 
 Both interpreters used the same native extension bytes, SHA-256
 `e805ae81c1cfe51b141c8694ee5bd75e7dffdcb9e83c8796f88f79711213cf69`.
-The final audits confirm the measured production fingerprint still matches the
-combined tree. All 172 local links checked in the six canonical/navigation
+Those audits confirmed the measured production fingerprint matched the
+combined tree at that capture. All 172 local links checked in the six canonical/navigation
 contracts resolved.
 
 - [Raw logs, command receipts, and checksums](diagnostics/composite-row-sum-glu-unflatten/precommit/README.md).

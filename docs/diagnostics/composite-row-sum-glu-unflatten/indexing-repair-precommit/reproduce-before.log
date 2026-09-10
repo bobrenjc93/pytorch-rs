@@ -1,0 +1,6 @@
+verified extension /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so e805ae81c1cfe51b141c8694ee5bd75e7dffdcb9e83c8796f88f79711213cf69
+reference 2.13.0+cu130 cf30153c4c131c8164ee7798e5022d810682e2cb NVIDIA H100
+{'width': 536870912, 'keepdim': False, 'native': [0.0], 'reference': [0.0]}
+{'width': 536870912, 'keepdim': True, 'native': [[0.0]], 'reference': [[0.0]]}
+{'width': 536870916, 'keepdim': False, 'native': [0.0], 'reference': [-1.0]}
+{'width': 536870916, 'keepdim': True, 'native': [[0.0]], 'reference': [[-1.0]]}

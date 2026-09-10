@@ -217,6 +217,12 @@ See [optional runtime setup](docs/troubleshooting.md#optional-native-cuda-runtim
 
 ## Native CUDA row reduction
 
+Before selecting launch geometry, Rust mirrors TensorIterator's signed 32-bit
+byte-offset splits: recursively halve contiguous regions, rows before columns,
+and visit lower halves first. Later pieces of a split row accumulate into its
+existing output in float32. Each piece selects its own geometry; stream ordering
+allows one scratch allocation to be reused until final synchronization.
+
 Contiguous rank-2 float32 `sum(dim=1/-1)` uses four float32 accumulators,
 aligned vector loads with scalar heads/tails, descending shuffle-down, and
 geometry-dependent shared-memory x/y reductions. Rust selects block geometry

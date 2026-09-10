@@ -13,6 +13,16 @@ device's multiprocessor and thread capacity. A second legacy-stream kernel
 reduces those partials in a fixed order. Indexing is 64-bit and bounded grids
 stride across rows and partials.
 
+Large inputs also follow TensorIterator's signed 32-bit byte-offset partitioning.
+A contiguous nonempty float32 region fits when `1 + 4 * (numel - 1)` is at most
+`INT32_MAX`. Larger regions are recursively halved, processing the lower half
+first: rows split before columns, and columns split only within one row. Each
+piece gets its own device-dependent reduction geometry. Later column pieces add
+their float32 partial to the preceding output on device, in launch order. This
+preserves PyTorch's reduction ordering across the indexing boundary without
+restricting matrix sizes. Scratch is reused only through ordered stream launches
+and remains live through final synchronization, including failure paths.
+
 This follows the contiguous float32 reduction ordering in PyTorch 2.13's
 `ATen/native/cuda/Reduce.cuh`, including float32 intermediate overflow. It does
 not widen to float64 or flush subnormals. Finite comparisons use the existing
@@ -44,6 +54,8 @@ Existing CPU sum bindings, override dispatch, and CPU autograd are unchanged.
 The [combined integration report](composite-row-sum-glu-unflatten-validation.md)
 records the repaired kernel's clean post-commit capture, earlier full-suite checks,
 and the remaining independent review and CI gates.
+That capture predates the indexing-boundary repair and must be refreshed after
+Burner commits this repair; it is not current-implementation evidence.
 
 [Python differentials](../tests/test_cuda_sum_rows.py) cover generated rectangular
 shapes, same-sign decimal rows through width 1,000,003, irregular widths,
@@ -52,6 +64,12 @@ nonfinite values, signed zeros/subnormals, metadata, source preservation, fresh
 storage, thread/lifetime reuse, stream completion, and unsupported boundaries.
 A subprocess blocks all PyTorch imports. A separate two-GPU test checks device
 guard restoration on success, rejection, and destruction.
+
+[Indexing-boundary differentials](../tests/test_cuda_sum_rows_indexing.py) use
+sparse device fixtures around 536,870,912 columns, multiple row partitions,
+all four offset alignments, nested odd column splits, and nonfinite values.
+They require enough GPU memory for the actual boundary; no reduced limit is
+substituted in production or tests. A two-GPU case exercises split launches.
 
 [Rust integration tests](../tests/cuda_sum_rows.rs) exercise the public native API
 without Python. Internal CUDA storage tests check overflowing products and bounds,
@@ -64,9 +82,10 @@ The artifacts below belong to the original row-sum source, before the composite
 float32-tree repair. They are retained under their original identities and paths,
 not as proof of the combined candidate. Their float64 kernel failed the later
 cancellation and overflow regressions; passing the six-case corpus did not make
-that source merge-qualified. The repaired composite now has a separate
+that source merge-qualified. The earlier composite has a separate
 [clean capture at 02535d5](diagnostics/composite-row-sum-glu-unflatten/postcommit-02535d5/README.md);
-these historical measurements remain pinned to their original source.
+that capture predates the indexing repair, and these historical measurements
+remain pinned to their original source.
 
 The source capture measures implementation commit
 `f1040cdf723cf9b172f27d50d3580bbb21f3c430`, including the wide-row accuracy fix.

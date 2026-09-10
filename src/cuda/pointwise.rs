@@ -4,7 +4,7 @@ use super::{CStr, Library, Mutex, OnceLock, Status, TensorError, c_char, c_int, 
 
 #[path = "sum_rows.rs"]
 mod sum_rows;
-pub(super) use sum_rows::{RowSumConfig, launch_sum_rows};
+pub(super) use sum_rows::{RowSumConfig, RowSumSlice, launch_sum_rows};
 
 struct Driver {
     _library: Library,

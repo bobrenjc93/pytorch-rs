@@ -1,0 +1,12 @@
+{
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/.venv/bin/python",
+    "-I",
+    "-B",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/composite_17c2e82f/target/indexing-repair/reproduce.py",
+    "candidate"
+  ],
+  "started_at": "2026-09-10T12:26:12.510311+00:00",
+  "ended_at": "2026-09-10T12:26:13.211232+00:00",
+  "exit_status": 0
+}

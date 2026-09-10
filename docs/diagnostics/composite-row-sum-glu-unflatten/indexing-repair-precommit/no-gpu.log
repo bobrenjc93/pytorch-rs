@@ -1,0 +1,9 @@
+test_split_launches_restore_device_on_success_rejection_and_destruction (tests.test_cuda_sum_rows_indexing.CudaSumRowsIndexingDeviceTests.test_split_launches_restore_device_on_success_rejection_and_destruction) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_nested_odd_column_splits_accumulate_in_order (tests.test_cuda_sum_rows_indexing.CudaSumRowsIndexingTests.test_nested_odd_column_splits_accumulate_in_order) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_reviewer_sparse_cancellation_below_at_and_above_byte_boundary (tests.test_cuda_sum_rows_indexing.CudaSumRowsIndexingTests.test_reviewer_sparse_cancellation_below_at_and_above_byte_boundary) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_row_partitions_reconfigure_geometry_and_keep_output_offsets (tests.test_cuda_sum_rows_indexing.CudaSumRowsIndexingTests.test_row_partitions_reconfigure_geometry_and_keep_output_offsets) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.000s
+
+OK (skipped=4)
