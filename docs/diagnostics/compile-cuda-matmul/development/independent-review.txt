@@ -1,0 +1,13 @@
+Independent read-only review by /root/review_matmul, 2026-09-10.
+Scope: compiler trace/bytecode/native bridge, tests, separate diagnostic and scope documentation.
+
+Finding 1: Tensor.matmul and Tensor.__matmul__ descriptors were missing from existing every-call method guards.
+Resolution: both added to _COMPILE_TENSOR_METHOD_GUARD_NAMES, with before/after-capture rebinding rejection tests.
+
+Finding 2: diagnostic changed inputs initially lost offset 3 and therefore legitimately recompiled.
+Resolution: changed data now uses padded bases with the same slices/offsets and shape guards.
+
+Finding 3: diagnostic checked changed output aliasing against original inputs, not changed inputs; native-only first-call profiling distorted cold costs.
+Resolution: changed input bases checked bitwise and output pointers checked against actual changed arguments; profiling moved to untimed graph-reuse proofs.
+
+Final reviewer verdict: all fixes verified; no further material issues found in implementation, diagnostic or scope docs. git diff --check passed. Reviewer performed no builds/tests; implementation-agent test results are separate. This development review does not waive Burner's final combined-commit review, ten gates or exact-head CI.

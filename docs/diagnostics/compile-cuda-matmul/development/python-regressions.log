@@ -1,0 +1,21 @@
+s./data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+.....................ss.......s............s.....................................................................W0910 07:54:10.462000 4070887 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2] torch._dynamo hit config.recompile_limit (2)
+W0910 07:54:10.462000 4070887 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2]    function: 'cpu_float32_recompile_limit_reset' (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/tests/test_compile_corpus.py:278)
+W0910 07:54:10.462000 4070887 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2]    last reason: 0/1: tensor 'x' rank mismatch. expected 1, actual 2
+W0910 07:54:10.462000 4070887 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2] To log all recompilation reasons, use TORCH_LOGS="recompiles".
+W0910 07:54:10.462000 4070887 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2] To diagnose recompilation issues, see https://docs.pytorch.org/docs/main/user_guide/torch_compiler/compile/programming_model.recompilation.html
+...................................................s............F.........
+======================================================================
+FAIL: test_docs_readme_indexes_contracts_guides_and_timing_evidence (tests.test_readme_quickstart.ReadmeQuickstartTests.test_docs_readme_indexes_contracts_guides_and_timing_evidence)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/tests/test_readme_quickstart.py", line 987, in test_docs_readme_indexes_contracts_guides_and_timing_evidence
+    self.assertEqual(set(links.values()), expected_targets)
+AssertionError: Items in the first set but not the second:
+'compile-cuda-matmul.md'
+
+----------------------------------------------------------------------
+Ran 189 tests in 112.190s
+
+FAILED (failures=1, skipped=6)

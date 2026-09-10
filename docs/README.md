@@ -19,6 +19,8 @@ artifacts are generated at merge time and are not source documentation.
 
 ## Contributor Guides
 
+- [Compiled CUDA matmul](compile-cuda-matmul.md): exact capture scope, native cuBLAS execution, H100 regressions and separate `torch.compile` timing reproduction.
+
 - [Repository README](../README.md): Install commands, first-success example, scope summary, and validation entry points.
 - [Contributing guide](../CONTRIBUTING.md): Locked setup, environment expectations, test selection, draft workflow, and documentation ownership.
 - [Setup troubleshooting](troubleshooting.md): Short fixes for common environment, import, reference dependency, and stale wheel failures.

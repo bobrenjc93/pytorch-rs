@@ -205,8 +205,9 @@ _SUPPORTED_UNARY_TARGETS = (
 _SUPPORTED_BINARY_METHODS = (
     "Tensor.__add__",
     "Tensor.add",
+    "Tensor.matmul (CUDA)",
 )
-_SUPPORTED_BINARY_TARGETS = frozenset(("add",))
+_SUPPORTED_BINARY_TARGETS = frozenset(("add", "matmul"))
 _SUPPORTED_SCALAR_TARGETS = frozenset(("mul_scalar",))
 _SUPPORTED_OPERATION_TARGETS = (
     _SUPPORTED_UNARY_TARGETS | _SUPPORTED_BINARY_TARGETS | _SUPPORTED_SCALAR_TARGETS
@@ -567,7 +568,30 @@ def _unary_output_metadata(input_metadata, target, *, grad_enabled=None):
     )
 
 
-def _binary_output_metadata(left_metadata, right_metadata, *, grad_enabled=None):
+def _matmul_output_metadata(left, right):
+    if left.device.type != "cuda" or left.device != right.device:
+        raise CompileTraceUnsupportedError("torch.compile matmul requires the same CUDA device")
+    for metadata in (left, right):
+        _validate_cuda_metadata(metadata)
+        if len(metadata.shape) != 2:
+            raise CompileTraceUnsupportedError("torch.compile matmul requires rank-2 inputs")
+    if left.shape[1] != right.shape[0]:
+        raise RuntimeError("torch.compile matmul inner dimension mismatch")
+    shape = (left.shape[0], right.shape[1])
+    # Native storage uses checked usize element/byte counts and i64 BLAS
+    # dimensions. Reject impossible output metadata before any node launches.
+    import sys
+    if any(d > sys.maxsize for d in (*left.shape, *right.shape)) or shape[0] * shape[1] > sys.maxsize // 4:
+        raise OverflowError("torch.compile matmul dimensions exceed native storage limits")
+    return CompileTraceTensorMetadata(
+        shape=shape, stride=_contiguous_stride(shape), dtype=float32,
+        device=left.device, requires_grad=False, storage_offset=0,
+    )
+
+
+def _binary_output_metadata(left_metadata, right_metadata, *, grad_enabled=None, target="add"):
+    if target == "matmul":
+        return _matmul_output_metadata(left_metadata, right_metadata)
     if left_metadata.dtype is not right_metadata.dtype:
         raise CompileTraceUnsupportedError(
             "torch.compile trace Tensor.add only supports matching dtypes"
@@ -999,6 +1023,7 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled):
     expected = _binary_output_metadata(
         metadata_values[left_name],
         metadata_values[right_name],
+        target=operation.target,
         grad_enabled=grad_enabled,
     )
     if expected.device.type == "cuda":
@@ -1008,14 +1033,14 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled):
         # governed by its existing offset and autograd contracts.
         declared = operation.metadata
         if not _builtins.isinstance(declared, CompileTraceTensorMetadata):
-            raise CompileTraceUnsupportedError("torch.compile addition output metadata is malformed")
+            raise CompileTraceUnsupportedError("torch.compile binary output metadata is malformed")
         if (
             declared.device != expected.device
             or declared.storage_offset != 0
             or len(declared.shape) != len(expected.shape)
         ):
             raise CompileTraceUnsupportedError(
-                "torch.compile addition output requires matching CUDA device, rank and zero storage offset"
+                "torch.compile binary output requires matching CUDA device, rank and zero storage offset"
             )
         _validate_cuda_metadata(declared)
     return expected
@@ -1219,6 +1244,12 @@ class CompileTraceTensorProxy:
             )
         return self._recorder.record_binary("add", self, other, "Tensor.add")
 
+    def matmul(self, other):
+        return self._recorder.record_binary("matmul", self, other, "Tensor.matmul")
+
+    def __matmul__(self, other):
+        return self.matmul(other)
+
     def __iadd__(self, other):
         _unsupported_operation("Tensor.__iadd__")
 
@@ -1417,7 +1448,7 @@ class CompileTraceRecorder:
             role="right operand",
         )
         name = self._next_operation_name(target)
-        metadata = _binary_output_metadata(left.metadata, right.metadata)
+        metadata = _binary_output_metadata(left.metadata, right.metadata, target=target)
         operation = CompileTraceOperation(
             name=name,
             op="call_method",

@@ -26,7 +26,7 @@ the source of truth.
 | neural-network functional API and modules | 15% | Functional activations including CPU `glu` with vector backward, `l1_loss`/`mse_loss`, `linear`, dropout paths, module future flags | Modules/parameters, active-autograd L1/softsign and higher-rank GLU, loss weights and legacy reductions |
 | optimizers, initialization, data utilities | 5% | `torch.nn.init.calculate_gain`, dataset and sampler helpers, `default_collate` for tensor leaves and exact str/bytes-led metadata, container-preserving `default_convert`, `DataChunk` | Optimizers, `DataLoader`, worker multiprocessing, random samplers, NumPy/object conversion or collation, numeric scalar collation, mutating initializers |
 | serialization, state dictionaries, model interchange | 5% | Serialization option state, mmap flags, state-dict prefix removal | `torch.save`, `torch.load`, module state-dict production/loading, model interchange |
-| compilation, parallelism, distributed execution | 5% | Eager JIT helpers, compiler registry/defaults/disable, narrow eager `torch.compile`, backend/distributed probes | General CUDA compilation/runtime management, TorchScript and `torch.export` graph capture, process groups/collectives |
+| compilation, parallelism, distributed execution | 5% | Eager JIT helpers, compiler registry/defaults/disable, narrow eager `torch.compile` including [captured CUDA rank-2 float32 matmul](docs/compile-cuda-matmul.md), backend/distributed probes | General CUDA compilation/runtime management, TorchScript and `torch.export` graph capture, process groups/collectives |
 | ergonomics, diagnostics, documentation, ecosystem integration | 5% | Rank-0 `Tensor.__format__`, deterministic default-policy state, native warning policy | Deterministic enforcement, warning-only enforcement, nondefault deterministic modes |
 
 Full-tensor `Tensor.mean(dim=None, keepdim=False, dtype=None)` and
@@ -232,3 +232,12 @@ Other CUDA unary operations, closures, broader broadcasting, gradients, mixed de
 remain unsupported. This is bounded graph capture under explicit
 `backend="eager"` and the existing fullgraph options, with no new fusion or
 CUDA performance claim. See [scope and differential diagnostics](docs/compile-cuda-add.md).
+
+[Compiled CUDA rank-2 matmul](docs/compile-cuda-matmul.md) captures `@`, positional
+`Tensor.matmul`/`Tensor.__matmul__`, and positional top-level `torch.matmul`
+including native aliases. Same-device contiguous float32 products, independent
+offsets, overlapping inputs, singleton/empty/zero-inner shapes and fresh outputs
+use native cuBLAS. Products compose with scalar multiplication, negation and
+supported addition under the same fullgraph and guard policies. CPU matmul
+capture, CUDA gradients, other ranks/layouts/dtypes, `torch.mm`, keyword/out
+forms and three positional inputs remain rejected.

@@ -1,0 +1,14 @@
+📦 Including license file `LICENSE`
+🍹 Building a mixed python/rust project
+🐍 Found CPython 3.12 at /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/.venv/bin/python
+🔗 Found pyo3 bindings with abi3-py3.10 support
+📡 Using build options features from pyproject.toml
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd)
+    Finished `release` profile [optimized] target(s) in 39.64s
+📦 Built wheel for abi3 Python ≥ 3.10 to target/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl
+Resolved 2 packages in 88ms
+Prepared 2 packages in 42ms
+Uninstalled 2 packages in 3ms
+Installed 2 packages in 26ms
+ ~ torch-rs==0.1.0 (from file:///data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e34966cd/target/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl)
+ ~ typing-extensions==4.16.0

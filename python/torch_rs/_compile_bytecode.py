@@ -148,6 +148,8 @@ _METHOD_TARGETS = {
     "multiply": _MethodTarget("scalar", "mul_scalar", 1, "Tensor.multiply"),
     "__mul__": _MethodTarget("scalar", "mul_scalar", 1, "Tensor.__mul__"),
     "__rmul__": _MethodTarget("scalar", "mul_scalar", 1, "Tensor.__rmul__"),
+    "matmul": _MethodTarget("binary", "matmul", 1, "Tensor.matmul"),
+    "__matmul__": _MethodTarget("binary", "matmul", 1, "Tensor.__matmul__"),
     "add": _MethodTarget("binary", "add", 1, "Tensor.add"),
     "__add__": _MethodTarget("binary", "add", 1, "Tensor.__add__"),
     "__radd__": _MethodTarget(
@@ -292,7 +294,7 @@ _OPCODE_FORMS = (
     _OpcodeForm("load_const", frozenset(("LOAD_CONST", "LOAD_SMALL_INT"))),
     _OpcodeForm("build_tuple", frozenset(("BUILD_TUPLE",))),
     _OpcodeForm("build_list", frozenset(("BUILD_LIST",))),
-    _OpcodeForm("binary", frozenset(("BINARY_ADD", "BINARY_MULTIPLY", "BINARY_OP", "INPLACE_ADD"))),
+    _OpcodeForm("binary", frozenset(("BINARY_ADD", "BINARY_MATRIX_MULTIPLY", "BINARY_MULTIPLY", "BINARY_OP", "INPLACE_ADD"))),
     _OpcodeForm("unary_neg", frozenset(("UNARY_NEGATIVE",))),
     _OpcodeForm("return", frozenset(("RETURN_VALUE", "RETURN_CONST"))),
 )
@@ -401,6 +403,8 @@ def _builtin_target(value):
     owner = _trace._native._VariableFunctionsClass
     if value is owner.mul or value is owner.multiply:
         return _BytecodeBuiltin("mul_scalar")
+    if value is owner.matmul:
+        return _BytecodeBuiltin("matmul")
     return None
 
 
@@ -417,7 +421,7 @@ def _global_value_dependency(name, value):
     if builtin is not None:
         return _GlobalValueCacheDependency(name, value, builtin)
     if _builtins.type(value) is _types.ModuleType and value is _sys.modules[__package__]:
-        bindings = tuple((attr, vars(value).get(attr)) for attr in ("mul", "multiply"))
+        bindings = tuple((attr, vars(value).get(attr)) for attr in ("mul", "multiply", "matmul"))
         if all(_builtin_target(fn) is not None for _, fn in bindings):
             lowered = tuple((attr, _builtin_target(fn)) for attr, fn in bindings)
             return _GlobalValueCacheDependency(name, (value, bindings), _BytecodeModule(lowered))
@@ -1145,8 +1149,12 @@ def _handle_call(recorder, locals, stack, program, instruction, state, active):
     callable_value = _pop(stack, program, instruction)
     if _builtins.isinstance(callable_value, _BytecodeBuiltin):
         if len(args) != 2:
-            _unsupported_bytecode(program, instruction, "scalar multiply argument count")
-        stack.append(_record_scalar_multiply(recorder, *args, program, instruction))
+            _unsupported_bytecode(program, instruction, "native binary argument count")
+        if callable_value.target == "matmul":
+            left, right = (_require_tensor(arg, program, instruction, "matmul operand") for arg in args)
+            stack.append(recorder.record_binary("matmul", left, right, "torch.matmul"))
+        else:
+            stack.append(_record_scalar_multiply(recorder, *args, program, instruction))
         return
     if _builtins.isinstance(callable_value, _BytecodeMethod):
         stack.append(
@@ -1175,7 +1183,7 @@ def _handle_call(recorder, locals, stack, program, instruction, state, active):
     _unsupported_bytecode(program, instruction, "function calls")
 
 
-def _record_binary_add(recorder, stack, program, instruction):
+def _record_binary_add(recorder, stack, program, instruction, target="add"):
     right = _require_tensor(
         _pop(stack, program, instruction),
         program,
@@ -1188,7 +1196,7 @@ def _record_binary_add(recorder, stack, program, instruction):
         instruction,
         "left operand",
     )
-    stack.append(recorder.record_binary("add", left, right, "Tensor.__add__"))
+    stack.append(recorder.record_binary(target, left, right, f"Tensor.{target}"))
 
 
 def _record_scalar_multiply(recorder, left, right, program, instruction):
@@ -1201,6 +1209,8 @@ def _record_scalar_multiply(recorder, left, right, program, instruction):
 
 
 def _binary_operator_symbol(instruction):
+    if instruction.opname == "BINARY_MATRIX_MULTIPLY":
+        return "@"
     if instruction.opname == "BINARY_MULTIPLY":
         return "*"
     if instruction.opname == "BINARY_ADD":
@@ -1218,8 +1228,8 @@ def _handle_binary(recorder, locals, stack, program, instruction, state, active)
         left = _pop(stack, program, instruction)
         stack.append(_record_scalar_multiply(recorder, left, right, program, instruction))
         return
-    if symbol == "+":
-        _record_binary_add(recorder, stack, program, instruction)
+    if symbol in ("+", "@"):
+        _record_binary_add(recorder, stack, program, instruction, "matmul" if symbol == "@" else "add")
         return
     if symbol == "+=":
         _unsupported_bytecode(program, instruction, "mutation")

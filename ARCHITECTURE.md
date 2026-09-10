@@ -154,6 +154,17 @@ executor preflights the whole graph before launching any operation, including
 on dynamic cache hits. This is not a general Inductor compiler or a performance
 parity claim. Noncontiguous CUDA negation and CUDA autograd remain unsupported;
 see [capture scope](docs/compile-cuda-add.md) and [kernel validation](docs/cuda-neg-validation.md).
+The compiler's `matmul` binary node plans rank-2 `(M,K)@(K,N)` output
+metadata and validates inner dimensions and output size before any node runs.
+`_compile_trace_binary` calls native `Tensor::matmul`, which independently checks
+CUDA storage/layout/dtype/gradients and submits cuBLAS SGEMM. Cache hits execute
+recorded nodes on current inputs; they never call the original Python program.
+Matmul result strides are canonical, including singleton/empty cases. Existing
+method/callable, capture, offset, and device guards apply. Supported pointwise
+nodes can precede/follow matmul without fusion; a third tensor must be a guarded
+global capture because graphs still accept at most two positional inputs.
+See [scope and reproduction](docs/compile-cuda-matmul.md).
+
 Eager scalar multiplication routes `BinaryOperation::Multiply.apply_scalar` to
 `Tensor::mul_scalar`, shared scalar output-stride planning, and the native
 [src/cuda/mul_scalar.ptx](src/cuda/mul_scalar.ptx) 64-bit grid-stride kernel.

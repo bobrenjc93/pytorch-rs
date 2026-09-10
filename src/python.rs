@@ -9756,12 +9756,14 @@ fn compile_trace_binary(
 
     let left = left.cast::<PyTensor>()?.try_borrow()?;
     let right = right.cast::<PyTensor>()?.try_borrow()?;
-    // CoreTensor::add independently validates CUDA equal shapes or (M, N) and
-    // (N,) in either order, device, dtype, layout and autograd before allocating
-    // or launching work. Direct bridge calls share that kernel boundary without
-    // trusting Python graph metadata. No other CUDA target is admitted.
+    // Core operations independently check dimensions, storage, devices, dtype,
+    // layout and autograd. The bridge never trusts Python graph metadata.
+    // CPU matmul is deliberately outside the compiler's supported surface.
     let output = match target {
         "add" => left.inner.add(&right.inner),
+        "matmul" if left.inner.is_cuda() && right.inner.is_cuda() => {
+            left.inner.matmul(&right.inner)
+        }
         _ => {
             return Err(PyNotImplementedError::new_err(format!(
                 "_compile_trace_binary(): unsupported target {target:?}"
@@ -26140,6 +26142,62 @@ mod tests {
         nested_list, pytorch_libcxx_keyword_order, pytorch_msvc_keyword_order, torch_rs,
         try_size_vector,
     };
+
+    #[test]
+    fn compiled_matmul_bridge_checks_scope_and_owns_fresh_storage() {
+        use crate::{Device, Tensor};
+        pyo3::Python::initialize();
+        pyo3::Python::attach(|py| {
+            let cpu = pyo3::Py::new(py, PyTensor::new(Tensor::ones([2, 3]).unwrap())).unwrap();
+            assert!(
+                super::compile_trace_binary(cpu.bind(py).as_any(), cpu.bind(py).as_any(), "matmul")
+                    .is_err()
+            );
+            if crate::cuda::device_count() == 0 {
+                eprintln!("skipping compiled matmul GPU bridge: no CUDA device");
+                return;
+            }
+            for (m, k, n) in [(2, 3, 4), (0, 3, 4), (2, 0, 4), (2, 3, 0)] {
+                let left = Tensor::ones([2, m, k])
+                    .unwrap()
+                    .try_copy_cpu_to_cuda(Device::Cuda(0))
+                    .unwrap()
+                    .select_dimension(0, 1)
+                    .unwrap();
+                let right = Tensor::ones([2, k, n])
+                    .unwrap()
+                    .try_copy_cpu_to_cuda(Device::Cuda(0))
+                    .unwrap()
+                    .select_dimension(0, 1)
+                    .unwrap();
+                let a = pyo3::Py::new(py, PyTensor::new(left)).unwrap();
+                let b = pyo3::Py::new(py, PyTensor::new(right)).unwrap();
+                let result =
+                    super::compile_trace_binary(a.bind(py).as_any(), b.bind(py).as_any(), "matmul")
+                        .unwrap();
+                let second =
+                    super::compile_trace_binary(a.bind(py).as_any(), b.bind(py).as_any(), "matmul")
+                        .unwrap();
+                assert_eq!(result.inner.device(), Device::Cuda(0));
+                assert_eq!(result.inner.shape(), &[m, n]);
+                assert!(!result.inner.shares_storage_with(&second.inner));
+                assert!(
+                    super::compile_trace_binary(
+                        cpu.bind(py).as_any(),
+                        b.bind(py).as_any(),
+                        "matmul"
+                    )
+                    .is_err()
+                );
+                drop(a);
+                drop(b);
+                assert_eq!(
+                    result.inner.try_copy_cuda_to_cpu().unwrap().into_vec(),
+                    vec![f32::from(u16::try_from(k).unwrap()); m * n]
+                );
+            }
+        });
+    }
 
     #[test]
     fn half_precision_buffer_values_convert_to_float32() {
