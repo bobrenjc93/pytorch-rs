@@ -1,0 +1,12 @@
+test_cancellation_nonfinite_and_subnormal_values (tests.test_cuda_sum_rows.CudaSumRowsTests.test_cancellation_nonfinite_and_subnormal_values) ... ok
+test_completion_fresh_storage_and_thread_lifetimes (tests.test_cuda_sum_rows.CudaSumRowsTests.test_completion_fresh_storage_and_thread_lifetimes) ... ok
+test_generated_rectangles_forms_and_preservation (tests.test_cuda_sum_rows.CudaSumRowsTests.test_generated_rectangles_forms_and_preservation) ... ok
+test_no_pytorch_forwarding (tests.test_cuda_sum_rows.CudaSumRowsTests.test_no_pytorch_forwarding) ... ok
+test_offset_singleton_and_empty_views (tests.test_cuda_sum_rows.CudaSumRowsTests.test_offset_singleton_and_empty_views) ... ok
+test_unsupported_boundaries_and_compiled_reductions (tests.test_cuda_sum_rows.CudaSumRowsTests.test_unsupported_boundaries_and_compiled_reductions) ... ok
+test_wide_same_sign_decimal_rows (tests.test_cuda_sum_rows.CudaSumRowsTests.test_wide_same_sign_decimal_rows) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 7.520s
+
+OK

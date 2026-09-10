@@ -1,4 +1,4 @@
-//! Optional driver ABI for native pointwise kernels. PTX is embedded at build
+//! Optional driver ABI for native kernels. PTX is embedded at build
 //! time and JIT-compiled by the installed NVIDIA driver, without nvcc or NVRTC.
 use super::{CStr, Library, Mutex, OnceLock, Status, TensorError, c_char, c_int, c_void};
 
@@ -29,7 +29,7 @@ struct Driver {
 struct Module {
     context: usize,
     _handle: usize,
-    functions: [usize; 5],
+    functions: [usize; 6],
 }
 
 enum Kernel {
@@ -37,6 +37,7 @@ enum Kernel {
     AddVector,
     MultiplyScalar,
     AddTrailingVector,
+    SumRows,
     #[cfg(any(feature = "python-bindings", test))]
     Negate,
 }
@@ -128,7 +129,7 @@ impl Driver {
             .try_reserve(1)
             .map_err(|_| TensorError::AllocationFailed { elements: 1 })?;
         let mut module = std::ptr::null_mut();
-        let mut functions = [0; 5];
+        let mut functions = [0; 6];
         // SAFETY: static NUL-terminated PTX and entry names; writable handles.
         unsafe {
             self.check(
@@ -140,6 +141,8 @@ impl Driver {
                         include_str!("mul_scalar.ptx"),
                         "\n",
                         include_str!("add_trailing_vector.ptx"),
+                        "\n",
+                        include_str!("sum_rows.ptx"),
                         "\n",
                         include_str!("neg.ptx"),
                         "\0"
@@ -154,6 +157,7 @@ impl Driver {
                 c"add_f32x4",
                 c"mul_scalar_f32",
                 c"add_trailing_vector_f32",
+                c"sum_rows_f32",
                 c"neg_f32",
             ]) {
                 let mut function = std::ptr::null_mut();
@@ -361,6 +365,50 @@ pub(super) unsafe fn launch_mul_scalar(
     let blocks = u32::try_from(elements.div_ceil(256).min(4096)).expect("bounded grid");
     // SAFETY: parameters survive the launch argument copy; the cached function
     // belongs to this context. CU_STREAM_LEGACY matches runtime copies/zero-fill.
+    driver.check(
+        unsafe {
+            (driver.launch)(
+                function as *mut c_void,
+                blocks,
+                1,
+                1,
+                256,
+                1,
+                1,
+                0,
+                std::ptr::without_provenance_mut(1),
+                arguments.as_mut_ptr(),
+                std::ptr::null_mut(),
+            )
+        },
+        "cuLaunchKernel",
+    )
+}
+
+/// # Safety
+/// Input contains `rows * columns` contiguous floats on the guarded device;
+/// output holds `rows` fresh floats. Rows is nonzero. For zero columns input
+/// may be null and is never read. Complete the legacy stream even on error.
+pub(super) unsafe fn launch_sum_rows(
+    mut input: u64,
+    mut output: u64,
+    rows: usize,
+    columns: usize,
+) -> Result<(), TensorError> {
+    let driver = driver()?;
+    let function = driver.function(Kernel::SumRows)?;
+    let mut row_count = rows as u64;
+    let mut columns = columns as u64;
+    let mut arguments = [
+        (&raw mut input).cast(),
+        (&raw mut output).cast(),
+        (&raw mut row_count).cast(),
+        (&raw mut columns).cast(),
+    ];
+    // Eight warps per block; each warp owns a row and strides over further rows.
+    let blocks = u32::try_from(rows.div_ceil(8).min(4096)).expect("bounded grid");
+    // SAFETY: arguments survive the launch copy, function is context-local,
+    // and the caller retains the allocations through legacy-stream completion.
     driver.check(
         unsafe {
             (driver.launch)(

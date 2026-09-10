@@ -1,0 +1,60 @@
+{
+  "checked_at": "2026-09-10T10:57:34.542547+00:00",
+  "measured_commit": "f1040cdf723cf9b172f27d50d3580bbb21f3c430",
+  "measurement_root": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5",
+  "source": {
+    "commit": "f1040cdf723cf9b172f27d50d3580bbb21f3c430",
+    "source_sha256": "d75bec6d9072e4ed020a9948276e9769147761992dd9b1dbb913e0e5fc9bb19b",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "clean_before_and_after_all_commands": true,
+  "source_unchanged_during_build_and_evaluation": true,
+  "evaluator_and_matrix_unchanged_from_candidate_capture": true,
+  "evaluator_accounting_recomputed_and_equal": true,
+  "seed_policy": "Preserved both evaluator-selected seeds from the candidate capture; no seed selection based on post-commit results.",
+  "candidate_and_reference_packages_executables_and_cuda_runtimes_inside_worktree": true,
+  "installed_source_and_wheel_extension_sha256": "36dfe5a572392d0602423ffe5cdbb141b88561ce74f8b0be95aa34ffe211da1a",
+  "wheel_python_sources_checked_against_checkout": 59,
+  "wide_row_reproduction_verified_against_reference_at_unchanged_tolerances": true,
+  "command_exit_statuses": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "artifact_sha256": {
+    "build-record.json": "37892dae9d34b7285912f8a9faba41b35409ba6f3b8fc614544967f2cd4f3ead",
+    "build.log": "75c5634bd1b7ffa59df9889b52a0910bce6b9842e8f4b855bb7fcec5271626de",
+    "install.log": "e4837620ea0f677323be30007941a3a290d24381429a39969db62cc21c41ea7b",
+    "cuda-math.json": "4f36270c4a93cc2f17f2495f5d32804d5778c8602251b8c285564a64d135b4d7",
+    "commands.json": "973efacfcecb5c45b27ccfb8ce22b0eace5709cb40b4a97b6869fc8a055bb41e",
+    "gpu-inventory.log": "ae77f0270383cc8ae72d8dd27f89b08671b97dd3c41fbd86e9e6ced58153c316",
+    "reference-preflight.log": "82842a9d328e1174165fbe0184305c47b46e13a75fc8cfc3e0b75476d45e20a4",
+    "build-capture.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evaluator.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "python-tests.log": "277afab98295eeadd8aa38cc79a4f4cde4d5c266ef2b6dce6d4b59a1671442c9",
+    "wide-row-check.log": "9f4609b115196289b2fa45b6f47301b1c493cc6105c30cdbf918e8a100743e36",
+    "two-device.log": "235e4a245bb9d187cb20c70ee1cf9e6f121cfc30ae92e0516dfd519a7d6b4e1f",
+    "no-gpu.log": "1c9d43a4498b34cdb1c422424b4f7f6c333afc121b1c3cff9a0da107304542f4",
+    "rust-tests.log": "32ade24df073b14991b9470468f3ac56482a9fce8fab764a59f0fea3f69dad57",
+    "rust-bounds.log": "cbd1c9d4fc59d116c42458144ea20e371d7d256705c17249412b3fcbe37cd19f",
+    "clippy.log": "5332b267bdc005c18f91a844bce8791de026a51169d5bafe7c2f3a6752e1e325",
+    "format.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "diff.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "scope": "Evidence refresh only; focused row-sum tests, the review reproduction, and unchanged six-case CUDA math evaluator. Not an independent review or merge approval.",
+  "installation_transaction_verified": {
+    "previous_wheel_removal_entries": 1,
+    "installed_wheel_matches_build_receipt": true,
+    "measured_extension_hashes_match_installed_wheel": true
+  }
+}

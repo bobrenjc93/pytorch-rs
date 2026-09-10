@@ -1,0 +1,79 @@
+// Appended to add.ptx's version/target directives. One warp per matrix row,
+// Float64 accumulation and shuffle tree avoid width-dependent float32 drift.
+// Inputs and outputs remain float32; all indexing is 64-bit.
+// No FTZ; zero columns write the additive identity without reading input.
+.visible .entry sum_rows_f32(
+    .param .u64 input, .param .u64 output,
+    .param .u64 rows, .param .u64 columns
+) {
+    .reg .pred done, leader;
+    .reg .b32 tid, block, blocks, warp, lane, low, high;
+    .reg .b64 a, b, nr, nc, row, step, col, lane64, offset, ptr;
+    .reg .f32 value, result;
+    .reg .f64 total, widened, other;
+    ld.param.u64 a, [input];
+    ld.param.u64 b, [output];
+    ld.param.u64 nr, [rows];
+    ld.param.u64 nc, [columns];
+    mov.u32 tid, %tid.x;
+    mov.u32 block, %ctaid.x;
+    mov.u32 blocks, %nctaid.x;
+    shr.u32 warp, tid, 5;
+    and.b32 lane, tid, 31;
+    cvt.u64.u32 lane64, warp;
+    mul.wide.u32 row, block, 8;
+    add.u64 row, row, lane64;
+    mul.wide.u32 step, blocks, 8;
+    cvt.u64.u32 lane64, lane;
+    setp.eq.u32 leader, lane, 0;
+row_loop:
+    setp.ge.u64 done, row, nr;
+    @done bra end;
+    mov.f64 total, 0d0000000000000000;
+    mov.u64 col, lane64;
+column_loop:
+    setp.ge.u64 done, col, nc;
+    @done bra reduce;
+    mad.lo.u64 offset, row, nc, col;
+    shl.b64 offset, offset, 2;
+    add.u64 ptr, a, offset;
+    ld.global.f32 value, [ptr];
+    cvt.f64.f32 widened, value;
+    add.rn.f64 total, total, widened;
+    add.u64 col, col, 32;
+    bra column_loop;
+reduce:
+    mov.b64 {low, high}, total;
+    shfl.sync.bfly.b32 low, low, 16, 31, 0xffffffff;
+    shfl.sync.bfly.b32 high, high, 16, 31, 0xffffffff;
+    mov.b64 other, {low, high};
+    add.rn.f64 total, total, other;
+    mov.b64 {low, high}, total;
+    shfl.sync.bfly.b32 low, low, 8, 31, 0xffffffff;
+    shfl.sync.bfly.b32 high, high, 8, 31, 0xffffffff;
+    mov.b64 other, {low, high};
+    add.rn.f64 total, total, other;
+    mov.b64 {low, high}, total;
+    shfl.sync.bfly.b32 low, low, 4, 31, 0xffffffff;
+    shfl.sync.bfly.b32 high, high, 4, 31, 0xffffffff;
+    mov.b64 other, {low, high};
+    add.rn.f64 total, total, other;
+    mov.b64 {low, high}, total;
+    shfl.sync.bfly.b32 low, low, 2, 31, 0xffffffff;
+    shfl.sync.bfly.b32 high, high, 2, 31, 0xffffffff;
+    mov.b64 other, {low, high};
+    add.rn.f64 total, total, other;
+    mov.b64 {low, high}, total;
+    shfl.sync.bfly.b32 low, low, 1, 31, 0xffffffff;
+    shfl.sync.bfly.b32 high, high, 1, 31, 0xffffffff;
+    mov.b64 other, {low, high};
+    add.rn.f64 total, total, other;
+    shl.b64 offset, row, 2;
+    add.u64 ptr, b, offset;
+    cvt.rn.f32.f64 result, total;
+    @leader st.global.f32 [ptr], result;
+    add.u64 row, row, step;
+    bra row_loop;
+end:
+    ret;
+}

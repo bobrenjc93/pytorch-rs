@@ -5417,17 +5417,18 @@ impl Tensor {
     /// The reduction materializes a fresh contiguous output. Empty reduction
     /// axes produce zero-filled outputs for each unreduced coordinate, matching
     /// `PyTorch`'s additive identity.
+    /// CUDA supports only contiguous float32 rows (dimension 1), without autograd.
     ///
     /// # Errors
     ///
     /// Returns an error when called for a non-rank-two tensor, an invalid
-    /// dimension, or when result allocation fails.
+    /// dimension, an unsupported CUDA layout/autograd/dimension, or when result
+    /// allocation or CUDA execution fails.
     pub fn sum_rank_two_dimension(
         &self,
         dimension: usize,
         keepdim: bool,
     ) -> Result<Self, TensorError> {
-        validate_cpu_storage_device("sum", self.device())?;
         let [rows, columns] = self.shape.as_slice() else {
             return Err(TensorError::DimensionOutOfRange {
                 dimension: dimension_for_error(dimension),
@@ -5440,6 +5441,42 @@ impl Tensor {
                 rank: self.shape.len(),
             });
         }
+
+        if self.is_cuda() {
+            let reason = if dimension != 1 {
+                Some("only matrix rows (dim=1) are supported")
+            } else if self.dtype() != DType::Float32 {
+                Some("only float32 is supported")
+            } else if self.requires_grad() {
+                Some("autograd is unsupported")
+            } else if !self.is_contiguous() {
+                Some("input must be contiguous")
+            } else {
+                None
+            };
+            if let Some(reason) = reason {
+                return Err(TensorError::UnsupportedCudaSum { reason });
+            }
+            let shape = reduced_rank_two_sum_shape(*rows, *columns, dimension, keepdim)?;
+            let elements = element_count(&shape)?;
+            validate_storage_capacity(elements)?;
+            let strides = contiguous_strides(&shape, elements)?;
+            let storage = self
+                .storage
+                .cuda_sum_rows_float32(self.offset, *rows, *columns)?;
+            return Ok(Self {
+                storage: Arc::new(storage),
+                shape,
+                strides,
+                offset: 0,
+                elements,
+                output_nr: 0,
+                leaf_requires_grad: requires_grad_flag(false),
+                view_requires_grad: None,
+                autograd: None,
+            });
+        }
+        validate_cpu_storage_device("sum", self.device())?;
 
         let shape = reduced_rank_two_sum_shape(*rows, *columns, dimension, keepdim)?;
         let elements = element_count(&shape)?;

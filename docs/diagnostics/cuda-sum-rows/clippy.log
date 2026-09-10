@@ -1,0 +1,24 @@
+   Compiling target-lexicon v0.13.5
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.47
+   Compiling libc v0.2.189
+   Compiling heck v0.5.0
+    Checking either v1.18.0
+    Checking cfg-if v1.0.4
+    Checking inventory v0.3.24
+    Checking once_cell v1.21.4
+    Checking crossbeam-utils v0.8.23
+    Checking libloading v0.8.9
+    Checking crossbeam-epoch v0.9.21
+    Checking crossbeam-deque v0.8.8
+   Compiling pyo3-build-config v0.29.2
+    Checking rayon-core v1.13.0
+   Compiling syn v2.0.119
+    Checking rayon v1.12.0
+   Compiling pyo3-ffi v0.29.2
+   Compiling pyo3 v0.29.2
+   Compiling pyo3-macros-backend v0.29.2
+   Compiling pyo3-macros v0.29.2
+    Checking pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_577c9ac5)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.99s

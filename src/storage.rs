@@ -267,6 +267,22 @@ impl Storage {
         }
     }
 
+    pub(crate) fn cuda_sum_rows_float32(
+        &self,
+        offset: usize,
+        rows: usize,
+        columns: usize,
+    ) -> Result<Self, TensorError> {
+        match &self.payload {
+            StoragePayload::CudaFloat32(input) => Ok(Self {
+                payload: StoragePayload::CudaFloat32(input.sum_rows(offset, rows, columns)?),
+            }),
+            StoragePayload::CpuFloat32(_) => Err(TensorError::UnsupportedCudaSum {
+                reason: "input must be CUDA",
+            }),
+        }
+    }
+
     pub(crate) fn len(&self) -> usize {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.len(),
