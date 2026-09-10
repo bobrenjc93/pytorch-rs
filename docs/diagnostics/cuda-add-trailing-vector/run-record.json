@@ -1,0 +1,31 @@
+{
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154/.venv/bin/python",
+    "scripts/evaluate_cuda_math.py",
+    "--build-record",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154/docs/diagnostics/cuda-add-trailing-vector/build-record.json",
+    "--output",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154/docs/diagnostics/cuda-add-trailing-vector/evaluation.json"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154",
+  "started_at": "2026-09-10T04:45:45.192374+00:00",
+  "ended_at": "2026-09-10T04:47:03.056914+00:00",
+  "wall_seconds": 77.86455262545496,
+  "exit_status": 0,
+  "log": "run.log",
+  "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "source_before": {
+    "commit": "f88b7e8bb622d8aad58819b7985fb39d279a51c1",
+    "source_sha256": "6cd0f5d735f488bbbf9eed39d29f9b9b38041ccecb606f16452e2d90b8c0dba3",
+    "production_diff_sha256": "34902dfd67b15554fdd01a5f40ce1896b860b5161df564f856c59a1de7483403"
+  },
+  "source_after": {
+    "commit": "f88b7e8bb622d8aad58819b7985fb39d279a51c1",
+    "source_sha256": "6cd0f5d735f488bbbf9eed39d29f9b9b38041ccecb606f16452e2d90b8c0dba3",
+    "production_diff_sha256": "34902dfd67b15554fdd01a5f40ce1896b860b5161df564f856c59a1de7483403"
+  },
+  "report_sha256": "3c8c0562de92b896cbfd9a7fa0f7662a5244e97ca7ba99454a21ca94153f57dd",
+  "build_record_sha256": "6fd6d8d152b6a5c946c1968008f576b9651b6a0ffc621f5bd66574b069b20c8c",
+  "evaluator_sha256": "29a97d07bad0d82c261e28aa880de68cdf46df0731d5ff0aa9802ec5bb8e605b",
+  "matrix_sha256": "a077f00f5eb50e2dceb2bd41a8453977955a8114fed203b7235f3a8befb24698"
+}

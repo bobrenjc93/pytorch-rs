@@ -9680,7 +9680,15 @@ fn compile_trace_binary(
 
     let left = left.cast::<PyTensor>()?.try_borrow()?;
     let right = right.cast::<PyTensor>()?.try_borrow()?;
-    // CoreTensor::add validates device, dtype, shape, layout and autograd before
+    // Eager CUDA add also supports a trailing vector; compilation remains
+    // same-shape only, including callers of this private entrypoint.
+    if (left.inner.is_cuda() || right.inner.is_cuda()) && left.inner.shape() != right.inner.shape()
+    {
+        return Err(PyNotImplementedError::new_err(
+            "torch.compile trace CUDA addition requires the same shape; broadcasting is unsupported",
+        ));
+    }
+    // CoreTensor::add validates device, dtype, layout and autograd before
     // allocating or launching CUDA work. No other CUDA target is admitted.
     let output = match target {
         "add" => left.inner.add(&right.inner),

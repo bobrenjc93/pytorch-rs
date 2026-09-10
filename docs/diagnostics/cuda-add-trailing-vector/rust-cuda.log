@@ -1,0 +1,17 @@
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c5fcb154)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.17s
+     Running unittests src/lib.rs (target/native-build/debug/deps/pytorch_rs-a84bc75b3d7dfab2)
+
+running 9 tests
+test cuda::pool::tests::pool_budgets_unused_memory_independently_of_large_live_allocations ... ok
+test cuda::replay::tests::repeated_live_arguments_use_bounded_graph_cache ... ok
+test cuda::tests::addition_checks_storage_bounds_and_restores_device ... ok
+test cuda::tests::cuda_allocation_checks_byte_overflow_before_loading_runtime ... ok
+test cuda::tests::negation_bounds_and_bitwise_values_without_python ... ok
+test cuda::tests::packed_copy_regions_validate_bounds_and_output_length ... ok
+test cuda::tests::scalar_multiplication_bounds_and_launch_failure_cleanup ... ok
+test cuda::tests::standalone_native_cuda_roundtrip ... ok
+test cuda::tests::trailing_vector_checks_independent_bounds ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 0.41s
+

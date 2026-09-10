@@ -200,6 +200,7 @@ impl Storage {
         other: &Self,
         right_offset: usize,
         elements: usize,
+        trailing_columns: Option<usize>,
     ) -> Result<Self, TensorError> {
         match (&self.payload, &other.payload) {
             (StoragePayload::CudaFloat32(left), StoragePayload::CudaFloat32(right)) => Ok(Self {
@@ -208,6 +209,7 @@ impl Storage {
                     right,
                     right_offset,
                     elements,
+                    trailing_columns,
                 )?),
             }),
             _ => Err(TensorError::UnsupportedCudaAddition {

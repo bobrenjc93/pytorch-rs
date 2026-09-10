@@ -29,6 +29,7 @@ artifacts are generated at merge time and are not source documentation.
 - [CUDA negation validation](cuda-neg-validation.md): Contiguous float32 eager scope, H100 checks, and retained evaluation evidence.
 - [Text collation diagnostics](text-collation-diagnostics.md): Public-call timings and identity checks for text-led metadata passthrough.
 - [CUDA-add diagnostics](cuda-add-diagnostics.md): Latency, sustained throughput, cache saturation, and release provenance.
+- [CUDA matrix/vector addition](cuda-add-trailing-vector.md): Bounded eager broadcast support, H100 differentials, and six-case math validation.
 - [Rank-2 mean diagnostics](rank2-mean-diagnostics.md): Both reduction axes and layouts at matched CPU worker budgets.
 
 ## Historical Validation Evidence
