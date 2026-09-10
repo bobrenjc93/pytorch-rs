@@ -1,0 +1,3313 @@
+{
+  "purpose": "Matched diagnostic only; does not alter Burner scores",
+  "limitation": "One fixed baseline-then-candidate series, with separate clean/saturated processes and 18 samples per implementation per row; not proof of universal parity or a causal explanation of historical timing changes.",
+  "interpretation": "Latency ratios above 1 mean the candidate is slower. Reference-normalized ratios account descriptively for the same-run PyTorch timing change; no statistical significance is inferred.",
+  "revisions": {
+    "baseline": "41dcf4a5a015337a61f4507940cbeb20fd4ff006",
+    "candidate": "8eafea8bd1c30adbbfc7f2769aa5ffbdbfd27535"
+  },
+  "versions": [
+    {
+      "variant": "baseline",
+      "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/.venv/bin/python",
+      "torch": "2.13.0+cu130",
+      "torch_cuda": "13.0",
+      "numpy": "2.5.1"
+    },
+    {
+      "variant": "candidate",
+      "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/.venv/bin/python",
+      "torch": "2.13.0+cu130",
+      "torch_cuda": "13.0",
+      "numpy": "2.5.1"
+    }
+  ],
+  "comparedRows": 152,
+  "allOutputsAndMetadataIdentical": true,
+  "grouped": [
+    {
+      "cache": "clean",
+      "callsPerSample": 1,
+      "chained": false,
+      "rows": 19,
+      "candidateToBaselineNativeLatency": 1.0161427212416265,
+      "candidateToBaselineReferenceLatency": 1.070504087300498,
+      "relativeNativeLatencyChangeVsReference": 0.9492189084527878,
+      "nativeLatencyRatioRange": [
+        0.9272451686244789,
+        1.3828604432892933
+      ]
+    },
+    {
+      "cache": "clean",
+      "callsPerSample": 32,
+      "chained": false,
+      "rows": 19,
+      "candidateToBaselineNativeLatency": 1.0145166329826028,
+      "candidateToBaselineReferenceLatency": 1.0379653483484523,
+      "relativeNativeLatencyChangeVsReference": 0.9774089612883899,
+      "nativeLatencyRatioRange": [
+        0.9626713311098488,
+        1.131066162851004
+      ]
+    },
+    {
+      "cache": "clean",
+      "callsPerSample": 64,
+      "chained": false,
+      "rows": 19,
+      "candidateToBaselineNativeLatency": 0.9965957853439706,
+      "candidateToBaselineReferenceLatency": 1.0167203223297716,
+      "relativeNativeLatencyChangeVsReference": 0.9802064180838971,
+      "nativeLatencyRatioRange": [
+        0.9507672960732217,
+        1.0296034437149797
+      ]
+    },
+    {
+      "cache": "clean",
+      "callsPerSample": 32,
+      "chained": true,
+      "rows": 19,
+      "candidateToBaselineNativeLatency": 1.0069973543012525,
+      "candidateToBaselineReferenceLatency": 1.0213009590062396,
+      "relativeNativeLatencyChangeVsReference": 0.985994721165341,
+      "nativeLatencyRatioRange": [
+        0.9924884982008079,
+        1.1219601220094466
+      ]
+    },
+    {
+      "cache": "saturated",
+      "callsPerSample": 1,
+      "chained": false,
+      "rows": 19,
+      "candidateToBaselineNativeLatency": 1.0006205896087597,
+      "candidateToBaselineReferenceLatency": 0.9888878359276418,
+      "relativeNativeLatencyChangeVsReference": 1.0118645950074934,
+      "nativeLatencyRatioRange": [
+        0.9775548200248242,
+        1.0407062324456362
+      ]
+    },
+    {
+      "cache": "saturated",
+      "callsPerSample": 32,
+      "chained": false,
+      "rows": 19,
+      "candidateToBaselineNativeLatency": 1.0023271023665978,
+      "candidateToBaselineReferenceLatency": 1.0087866162575418,
+      "relativeNativeLatencyChangeVsReference": 0.9935967490182336,
+      "nativeLatencyRatioRange": [
+        0.9442792631877845,
+        1.027724296484045
+      ]
+    },
+    {
+      "cache": "saturated",
+      "callsPerSample": 64,
+      "chained": false,
+      "rows": 19,
+      "candidateToBaselineNativeLatency": 1.0022036827080494,
+      "candidateToBaselineReferenceLatency": 1.0181568000756418,
+      "relativeNativeLatencyChangeVsReference": 0.9843313747289149,
+      "nativeLatencyRatioRange": [
+        0.9904614736250614,
+        1.021153512618867
+      ]
+    },
+    {
+      "cache": "saturated",
+      "callsPerSample": 32,
+      "chained": true,
+      "rows": 19,
+      "candidateToBaselineNativeLatency": 1.0014162330950112,
+      "candidateToBaselineReferenceLatency": 1.0099184888493682,
+      "relativeNativeLatencyChangeVsReference": 0.9915812455676062,
+      "nativeLatencyRatioRange": [
+        0.9674640585646945,
+        1.025747013493439
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "cache": "clean",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 13490.5,
+        "torch": 12869
+      },
+      "candidateMedianNs": {
+        "native": 16720.5,
+        "torch": 23335.5
+      },
+      "candidateToBaselineNativeLatency": 1.2394277454505023,
+      "candidateToBaselineReferenceLatency": 1.8133110575802316,
+      "relativeNativeLatencyChangeVsReference": 0.6835163444624076
+    },
+    {
+      "cache": "clean",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 7612.296875,
+        "torch": 4536.546875
+      },
+      "candidateMedianNs": {
+        "native": 8574.6875,
+        "torch": 4615.578125
+      },
+      "candidateToBaselineNativeLatency": 1.1264257872233865,
+      "candidateToBaselineReferenceLatency": 1.0174210147448328,
+      "relativeNativeLatencyChangeVsReference": 1.107138314324962
+    },
+    {
+      "cache": "clean",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 7646.953125,
+        "torch": 4389.453125
+      },
+      "candidateMedianNs": {
+        "native": 7795.6171875,
+        "torch": 4666.125
+      },
+      "candidateToBaselineNativeLatency": 1.0194409538112605,
+      "candidateToBaselineReferenceLatency": 1.0630310581115956,
+      "relativeNativeLatencyChangeVsReference": 0.9589945148190026
+    },
+    {
+      "cache": "clean",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 7671.140625,
+        "torch": 4493.828125
+      },
+      "candidateMedianNs": {
+        "native": 7619.34375,
+        "torch": 4968.90625
+      },
+      "candidateToBaselineNativeLatency": 0.9932478261666595,
+      "candidateToBaselineReferenceLatency": 1.1057179117191982,
+      "relativeNativeLatencyChangeVsReference": 0.8982832019265499
+    },
+    {
+      "cache": "clean",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 13370,
+        "torch": 12659.5
+      },
+      "candidateMedianNs": {
+        "native": 13325,
+        "torch": 12604
+      },
+      "candidateToBaselineNativeLatency": 0.9966342557965595,
+      "candidateToBaselineReferenceLatency": 0.9956159405979699,
+      "relativeNativeLatencyChangeVsReference": 1.0010227992110874
+    },
+    {
+      "cache": "clean",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 7784.421875,
+        "torch": 4469.71875
+      },
+      "candidateMedianNs": {
+        "native": 7721.359375,
+        "torch": 4558.78125
+      },
+      "candidateToBaselineNativeLatency": 0.9918988845912209,
+      "candidateToBaselineReferenceLatency": 1.0199257503618098,
+      "relativeNativeLatencyChangeVsReference": 0.9725206802939855
+    },
+    {
+      "cache": "clean",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 7770.0234375,
+        "torch": 4331.078125
+      },
+      "candidateMedianNs": {
+        "native": 7788.1796875,
+        "torch": 4410.109375
+      },
+      "candidateToBaselineNativeLatency": 1.002336704663254,
+      "candidateToBaselineReferenceLatency": 1.0182474773529975,
+      "relativeNativeLatencyChangeVsReference": 0.9843743558971494
+    },
+    {
+      "cache": "clean",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 7721.828125,
+        "torch": 4460.03125
+      },
+      "candidateMedianNs": {
+        "native": 7743.125,
+        "torch": 4543.265625
+      },
+      "candidateToBaselineNativeLatency": 1.0027580094577668,
+      "candidateToBaselineReferenceLatency": 1.0186622851577554,
+      "relativeNativeLatencyChangeVsReference": 0.9843870967525558
+    },
+    {
+      "cache": "clean",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 13356,
+        "torch": 11988
+      },
+      "candidateMedianNs": {
+        "native": 13245,
+        "torch": 12303.5
+      },
+      "candidateToBaselineNativeLatency": 0.9916891284815813,
+      "candidateToBaselineReferenceLatency": 1.026317984651318,
+      "relativeNativeLatencyChangeVsReference": 0.9662591353872635
+    },
+    {
+      "cache": "clean",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 7724.953125,
+        "torch": 4435.921875
+      },
+      "candidateMedianNs": {
+        "native": 7705.078125,
+        "torch": 4523.875
+      },
+      "candidateToBaselineNativeLatency": 0.9974271688541799,
+      "candidateToBaselineReferenceLatency": 1.0198274738551387,
+      "relativeNativeLatencyChangeVsReference": 0.9780352014676743
+    },
+    {
+      "cache": "clean",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 7799.2109375,
+        "torch": 4279.6015625
+      },
+      "candidateMedianNs": {
+        "native": 7873.3984375,
+        "torch": 4826.125
+      },
+      "candidateToBaselineNativeLatency": 1.0095121802185518,
+      "candidateToBaselineReferenceLatency": 1.127704280297706,
+      "relativeNativeLatencyChangeVsReference": 0.8951922927454419
+    },
+    {
+      "cache": "clean",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 7794.296875,
+        "torch": 4462.84375
+      },
+      "candidateMedianNs": {
+        "native": 7735.75,
+        "torch": 4596.171875
+      },
+      "candidateToBaselineNativeLatency": 0.9924884982008079,
+      "candidateToBaselineReferenceLatency": 1.0298751496733445,
+      "relativeNativeLatencyChangeVsReference": 0.9636978798018431
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 5328,
+        "torch": 6990.5
+      },
+      "candidateMedianNs": {
+        "native": 5348.5,
+        "torch": 6895
+      },
+      "candidateToBaselineNativeLatency": 1.0038475975975976,
+      "candidateToBaselineReferenceLatency": 0.9863386023889564,
+      "relativeNativeLatencyChangeVsReference": 1.0177515055846273
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 411.5625,
+        "torch": 1666.125
+      },
+      "candidateMedianNs": {
+        "native": 415.484375,
+        "torch": 1698.34375
+      },
+      "candidateToBaselineNativeLatency": 1.009529233105543,
+      "candidateToBaselineReferenceLatency": 1.0193375346987772,
+      "relativeNativeLatencyChangeVsReference": 0.9903777686395776
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 324.8671875,
+        "torch": 1562.28125
+      },
+      "candidateMedianNs": {
+        "native": 334.484375,
+        "torch": 1589.828125
+      },
+      "candidateToBaselineNativeLatency": 1.0296034437149797,
+      "candidateToBaselineReferenceLatency": 1.0176324685455964,
+      "relativeNativeLatencyChangeVsReference": 1.0117635546618242
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 409.0625,
+        "torch": 1664.6875
+      },
+      "candidateMedianNs": {
+        "native": 415,
+        "torch": 1689.125
+      },
+      "candidateToBaselineNativeLatency": 1.0145148968678381,
+      "candidateToBaselineReferenceLatency": 1.0146799324197484,
+      "relativeNativeLatencyChangeVsReference": 0.9998373521081503
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 5483,
+        "torch": 6705
+      },
+      "candidateMedianNs": {
+        "native": 5388.5,
+        "torch": 6925
+      },
+      "candidateToBaselineNativeLatency": 0.9827649097209556,
+      "candidateToBaselineReferenceLatency": 1.0328113348247576,
+      "relativeNativeLatencyChangeVsReference": 0.9515434974265715
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 493.703125,
+        "torch": 1625.265625
+      },
+      "candidateMedianNs": {
+        "native": 494.015625,
+        "torch": 1659.078125
+      },
+      "candidateToBaselineNativeLatency": 1.0006329714846347,
+      "candidateToBaselineReferenceLatency": 1.0208042916061797,
+      "relativeNativeLatencyChangeVsReference": 0.9802397773134295
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 413.125,
+        "torch": 1543.1171875
+      },
+      "candidateMedianNs": {
+        "native": 423.21875,
+        "torch": 1554.6171875
+      },
+      "candidateToBaselineNativeLatency": 1.0244326777609682,
+      "candidateToBaselineReferenceLatency": 1.0074524476126347,
+      "relativeNativeLatencyChangeVsReference": 1.0168546219611374
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 497.3125,
+        "torch": 1638.09375
+      },
+      "candidateMedianNs": {
+        "native": 494.65625,
+        "torch": 1653.90625
+      },
+      "candidateToBaselineNativeLatency": 0.9946587910016338,
+      "candidateToBaselineReferenceLatency": 1.0096529884202292,
+      "relativeNativeLatencyChangeVsReference": 0.9851491575912072
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 5483.5,
+        "torch": 6695.5
+      },
+      "candidateMedianNs": {
+        "native": 5513.5,
+        "torch": 6800
+      },
+      "candidateToBaselineNativeLatency": 1.005470958329534,
+      "candidateToBaselineReferenceLatency": 1.0156074975729967,
+      "relativeNativeLatencyChangeVsReference": 0.9900192355140287
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 521.25,
+        "torch": 1623.0625
+      },
+      "candidateMedianNs": {
+        "native": 526.421875,
+        "torch": 1647.484375
+      },
+      "candidateToBaselineNativeLatency": 1.00992206235012,
+      "candidateToBaselineReferenceLatency": 1.015046786553198,
+      "relativeNativeLatencyChangeVsReference": 0.9949512433604365
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 453.5,
+        "torch": 1531.9296875
+      },
+      "candidateMedianNs": {
+        "native": 453.4921875,
+        "torch": 1560.25
+      },
+      "candidateToBaselineNativeLatency": 0.9999827728776185,
+      "candidateToBaselineReferenceLatency": 1.0184866921315539,
+      "relativeNativeLatencyChangeVsReference": 0.9818319479312889
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 525.484375,
+        "torch": 1626.359375
+      },
+      "candidateMedianNs": {
+        "native": 532.53125,
+        "torch": 1647.96875
+      },
+      "candidateToBaselineNativeLatency": 1.013410246498766,
+      "candidateToBaselineReferenceLatency": 1.013286961868437,
+      "relativeNativeLatencyChangeVsReference": 1.0001216680318294
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 13956.5,
+        "torch": 13581
+      },
+      "candidateMedianNs": {
+        "native": 13535,
+        "torch": 13505.5
+      },
+      "candidateToBaselineNativeLatency": 0.9697990183785333,
+      "candidateToBaselineReferenceLatency": 0.9944407628304248,
+      "relativeNativeLatencyChangeVsReference": 0.9752205004330726
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 7860.171875,
+        "torch": 4551.421875
+      },
+      "candidateMedianNs": {
+        "native": 7806.015625,
+        "torch": 4632.9375
+      },
+      "candidateToBaselineNativeLatency": 0.9931100425205397,
+      "candidateToBaselineReferenceLatency": 1.0179099251264199,
+      "relativeNativeLatencyChangeVsReference": 0.975636466455713
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8047.171875,
+        "torch": 4444.84375
+      },
+      "candidateMedianNs": {
+        "native": 7717.6015625,
+        "torch": 4484.90625
+      },
+      "candidateToBaselineNativeLatency": 0.9590452002741646,
+      "candidateToBaselineReferenceLatency": 1.0090132527155764,
+      "relativeNativeLatencyChangeVsReference": 0.9504782991631361
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 7919.46875,
+        "torch": 4564.875
+      },
+      "candidateMedianNs": {
+        "native": 8885.328125,
+        "torch": 4663.765625
+      },
+      "candidateToBaselineNativeLatency": 1.1219601220094466,
+      "candidateToBaselineReferenceLatency": 1.0216633807059339,
+      "relativeNativeLatencyChangeVsReference": 1.0981700462183652
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 13851,
+        "torch": 13154.5
+      },
+      "candidateMedianNs": {
+        "native": 19154,
+        "torch": 24306
+      },
+      "candidateToBaselineNativeLatency": 1.3828604432892933,
+      "candidateToBaselineReferenceLatency": 1.8477327150404805,
+      "relativeNativeLatencyChangeVsReference": 0.7484093516518147
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8013.84375,
+        "torch": 4576.78125
+      },
+      "candidateMedianNs": {
+        "native": 9064.1875,
+        "torch": 7505.71875
+      },
+      "candidateToBaselineNativeLatency": 1.131066162851004,
+      "candidateToBaselineReferenceLatency": 1.6399557549314816,
+      "relativeNativeLatencyChangeVsReference": 0.6896930965666574
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8262.578125,
+        "torch": 4415.4375
+      },
+      "candidateMedianNs": {
+        "native": 7855.7890625,
+        "torch": 4462.453125
+      },
+      "candidateToBaselineNativeLatency": 0.9507672960732217,
+      "candidateToBaselineReferenceLatency": 1.0106480105312328,
+      "relativeNativeLatencyChangeVsReference": 0.9407501782677674
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 8014.453125,
+        "torch": 4536.21875
+      },
+      "candidateMedianNs": {
+        "native": 8001.46875,
+        "torch": 4622.28125
+      },
+      "candidateToBaselineNativeLatency": 0.9983798800994298,
+      "candidateToBaselineReferenceLatency": 1.0189722993407229,
+      "relativeNativeLatencyChangeVsReference": 0.9797909921058537
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 13936,
+        "torch": 12934.5
+      },
+      "candidateMedianNs": {
+        "native": 13721,
+        "torch": 13435.5
+      },
+      "candidateToBaselineNativeLatency": 0.9845723306544202,
+      "candidateToBaselineReferenceLatency": 1.0387336193900034,
+      "relativeNativeLatencyChangeVsReference": 0.9478583462356889
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8018.84375,
+        "torch": 4489.75
+      },
+      "candidateMedianNs": {
+        "native": 7993.328125,
+        "torch": 4580.53125
+      },
+      "candidateToBaselineNativeLatency": 0.9968180418779203,
+      "candidateToBaselineReferenceLatency": 1.0202196670193218,
+      "relativeNativeLatencyChangeVsReference": 0.9770621701405034
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8242.2265625,
+        "torch": 4321.6953125
+      },
+      "candidateMedianNs": {
+        "native": 8059.21875,
+        "torch": 4461.9765625
+      },
+      "candidateToBaselineNativeLatency": 0.9777963137615462,
+      "candidateToBaselineReferenceLatency": 1.0324597732732923,
+      "relativeNativeLatencyChangeVsReference": 0.9470551193113877
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 8008.046875,
+        "torch": 4477.234375
+      },
+      "candidateMedianNs": {
+        "native": 8041.234375,
+        "torch": 4654.21875
+      },
+      "candidateToBaselineNativeLatency": 1.0041442689482258,
+      "candidateToBaselineReferenceLatency": 1.0395298436883817,
+      "relativeNativeLatencyChangeVsReference": 0.9659600203351513
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 14937.5,
+        "torch": 16275
+      },
+      "candidateMedianNs": {
+        "native": 15037.5,
+        "torch": 16379.5
+      },
+      "candidateToBaselineNativeLatency": 1.0066945606694562,
+      "candidateToBaselineReferenceLatency": 1.00642089093702,
+      "relativeNativeLatencyChangeVsReference": 1.00027192373976
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 7874.859375,
+        "torch": 4873.46875
+      },
+      "candidateMedianNs": {
+        "native": 7891.9375,
+        "torch": 5000.0625
+      },
+      "candidateToBaselineNativeLatency": 1.0021686895202493,
+      "candidateToBaselineReferenceLatency": 1.0259761078800393,
+      "relativeNativeLatencyChangeVsReference": 0.9767953481792252
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 7758.2890625,
+        "torch": 4675.5859375
+      },
+      "candidateMedianNs": {
+        "native": 7974.5546875,
+        "torch": 4774.40625
+      },
+      "candidateToBaselineNativeLatency": 1.0278754275920614,
+      "candidateToBaselineReferenceLatency": 1.021135385772171,
+      "relativeNativeLatencyChangeVsReference": 1.006600536925663
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 7882.546875,
+        "torch": 4889.4375
+      },
+      "candidateMedianNs": {
+        "native": 7900.703125,
+        "torch": 4966.5625
+      },
+      "candidateToBaselineNativeLatency": 1.0023033481802162,
+      "candidateToBaselineReferenceLatency": 1.0157737981107233,
+      "relativeNativeLatencyChangeVsReference": 0.9867387306548354
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "method",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 15082,
+        "torch": 16645
+      },
+      "candidateMedianNs": {
+        "native": 14907.5,
+        "torch": 16760
+      },
+      "candidateToBaselineNativeLatency": 0.9884299164567033,
+      "candidateToBaselineReferenceLatency": 1.006908981676179,
+      "relativeNativeLatencyChangeVsReference": 0.9816477302757655
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "method",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8044.984375,
+        "torch": 4871.890625
+      },
+      "candidateMedianNs": {
+        "native": 8063.75,
+        "torch": 4946.53125
+      },
+      "candidateToBaselineNativeLatency": 1.0023325868796358,
+      "candidateToBaselineReferenceLatency": 1.0153206692730299,
+      "relativeNativeLatencyChangeVsReference": 0.9872079011228112
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "method",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8259.2109375,
+        "torch": 4613.2265625
+      },
+      "candidateMedianNs": {
+        "native": 7952.1796875,
+        "torch": 4725.8203125
+      },
+      "candidateToBaselineNativeLatency": 0.96282559528708,
+      "candidateToBaselineReferenceLatency": 1.0244067245505026,
+      "relativeNativeLatencyChangeVsReference": 0.9398860552282652
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "method",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 8047.640625,
+        "torch": 4875.65625
+      },
+      "candidateMedianNs": {
+        "native": 8129.5,
+        "torch": 4900.84375
+      },
+      "candidateToBaselineNativeLatency": 1.0101718477271096,
+      "candidateToBaselineReferenceLatency": 1.0051659712474603,
+      "relativeNativeLatencyChangeVsReference": 1.0049801491722175
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "function",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 15188,
+        "torch": 15724
+      },
+      "candidateMedianNs": {
+        "native": 14978,
+        "torch": 15924
+      },
+      "candidateToBaselineNativeLatency": 0.9861732947063471,
+      "candidateToBaselineReferenceLatency": 1.0127194098193844,
+      "relativeNativeLatencyChangeVsReference": 0.9737872950240267
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "function",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8114.15625,
+        "torch": 4838.265625
+      },
+      "candidateMedianNs": {
+        "native": 8685.46875,
+        "torch": 4923.53125
+      },
+      "candidateToBaselineNativeLatency": 1.070409354022484,
+      "candidateToBaselineReferenceLatency": 1.0176231797938957,
+      "relativeNativeLatencyChangeVsReference": 1.0518720242194948
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "function",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8328.296875,
+        "torch": 4996.625
+      },
+      "candidateMedianNs": {
+        "native": 8217.5859375,
+        "torch": 4682.15625
+      },
+      "candidateToBaselineNativeLatency": 0.9867066533336085,
+      "candidateToBaselineReferenceLatency": 0.9370637680434293,
+      "relativeNativeLatencyChangeVsReference": 1.0529770619494045
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "function",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 8070.1875,
+        "torch": 4870.328125
+      },
+      "candidateMedianNs": {
+        "native": 8031.515625,
+        "torch": 4883.625
+      },
+      "candidateToBaselineNativeLatency": 0.9952080574336098,
+      "candidateToBaselineReferenceLatency": 1.0027301805255677,
+      "relativeNativeLatencyChangeVsReference": 0.9924983577456348
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        1048603
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 23751,
+        "torch": 37556.5
+      },
+      "candidateMedianNs": {
+        "native": 22023,
+        "torch": 38342.5
+      },
+      "candidateToBaselineNativeLatency": 0.9272451686244789,
+      "candidateToBaselineReferenceLatency": 1.0209284677752186,
+      "relativeNativeLatencyChangeVsReference": 0.908237156561133
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        1048603
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 9260.265625,
+        "torch": 5708.484375
+      },
+      "candidateMedianNs": {
+        "native": 9092.8125,
+        "torch": 5519.140625
+      },
+      "candidateToBaselineNativeLatency": 0.9819170278930309,
+      "candidateToBaselineReferenceLatency": 0.9668311696132128,
+      "relativeNativeLatencyChangeVsReference": 1.0156034049728178
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        1048603
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 9302.9765625,
+        "torch": 5148.640625
+      },
+      "candidateMedianNs": {
+        "native": 9294.21875,
+        "torch": 5125.40625
+      },
+      "candidateToBaselineNativeLatency": 0.9990586010357908,
+      "candidateToBaselineReferenceLatency": 0.9954872797127883,
+      "relativeNativeLatencyChangeVsReference": 1.0035875107555698
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        1048603
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 9160.265625,
+        "torch": 5583.75
+      },
+      "candidateMedianNs": {
+        "native": 9210.96875,
+        "torch": 5945.859375
+      },
+      "candidateToBaselineNativeLatency": 1.0055351151457466,
+      "candidateToBaselineReferenceLatency": 1.0648505708529215,
+      "relativeNativeLatencyChangeVsReference": 0.9442969207785985
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        4194359
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 66275.5,
+        "torch": 126646.5
+      },
+      "candidateMedianNs": {
+        "native": 65164,
+        "torch": 122740.5
+      },
+      "candidateToBaselineNativeLatency": 0.9832290967250341,
+      "candidateToBaselineReferenceLatency": 0.9691582475630989,
+      "relativeNativeLatencyChangeVsReference": 1.0145186291271995
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        4194359
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 33388.78125,
+        "torch": 28112.515625
+      },
+      "candidateMedianNs": {
+        "native": 33233.21875,
+        "torch": 28186.0625
+      },
+      "candidateToBaselineNativeLatency": 0.9953408751629711,
+      "candidateToBaselineReferenceLatency": 1.0026161612849258,
+      "relativeNativeLatencyChangeVsReference": 0.9927436975356243
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        4194359
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 32894.1171875,
+        "torch": 26992.2265625
+      },
+      "candidateMedianNs": {
+        "native": 32799.2109375,
+        "torch": 26990.34375
+      },
+      "candidateToBaselineNativeLatency": 0.9971147956499631,
+      "candidateToBaselineReferenceLatency": 0.9999302461212067,
+      "relativeNativeLatencyChangeVsReference": 0.9971843531264656
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        4194359
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 25891.1875,
+        "torch": 17639.953125
+      },
+      "candidateMedianNs": {
+        "native": 25966.296875,
+        "torch": 17605.984375
+      },
+      "candidateToBaselineNativeLatency": 1.002900962924161,
+      "candidateToBaselineReferenceLatency": 0.9980743287831157,
+      "relativeNativeLatencyChangeVsReference": 1.0048359465841887
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        17000003
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 143662,
+        "torch": 210178
+      },
+      "candidateMedianNs": {
+        "native": 140943,
+        "torch": 208090
+      },
+      "candidateToBaselineNativeLatency": 0.981073631162033,
+      "candidateToBaselineReferenceLatency": 0.990065563474769,
+      "relativeNativeLatencyChangeVsReference": 0.990917841560737
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        17000003
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 107254.078125,
+        "torch": 99318.34375
+      },
+      "candidateMedianNs": {
+        "native": 107588.96875,
+        "torch": 99348.046875
+      },
+      "candidateToBaselineNativeLatency": 1.0031224045822267,
+      "candidateToBaselineReferenceLatency": 1.0002990698785188,
+      "relativeNativeLatencyChangeVsReference": 1.0028224905817924
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        17000003
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 106268.7578125,
+        "torch": 97642.8203125
+      },
+      "candidateMedianNs": {
+        "native": 106357.78125,
+        "torch": 97667.1484375
+      },
+      "candidateToBaselineNativeLatency": 1.0008377197525642,
+      "candidateToBaselineReferenceLatency": 1.0002491542636944,
+      "relativeNativeLatencyChangeVsReference": 1.0005884188817966
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        17000003
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 106959.5625,
+        "torch": 99346.015625
+      },
+      "candidateMedianNs": {
+        "native": 107377.390625,
+        "torch": 99312.0625
+      },
+      "candidateToBaselineNativeLatency": 1.0039064120611,
+      "candidateToBaselineReferenceLatency": 0.9996582336514817,
+      "relativeNativeLatencyChangeVsReference": 1.0042496307904163
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        33554467
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 236282,
+        "torch": 295666.5
+      },
+      "candidateMedianNs": {
+        "native": 233338,
+        "torch": 295286.5
+      },
+      "candidateToBaselineNativeLatency": 0.9875403120000678,
+      "candidateToBaselineReferenceLatency": 0.9987147681593959,
+      "relativeNativeLatencyChangeVsReference": 0.9888111635918608
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        33554467
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 206059.90625,
+        "torch": 187076.015625
+      },
+      "candidateMedianNs": {
+        "native": 209356.90625,
+        "torch": 187240.03125
+      },
+      "candidateToBaselineNativeLatency": 1.0160002013977427,
+      "candidateToBaselineReferenceLatency": 1.0008767325113914,
+      "relativeNativeLatencyChangeVsReference": 1.0151102212641148
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        33554467
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 203197.046875,
+        "torch": 185477.515625
+      },
+      "candidateMedianNs": {
+        "native": 204075.7265625,
+        "torch": 185470.7109375
+      },
+      "candidateToBaselineNativeLatency": 1.004324273905617,
+      "candidateToBaselineReferenceLatency": 0.9999633126016538,
+      "relativeNativeLatencyChangeVsReference": 1.0043611213021577
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        33554467
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 205716.875,
+        "torch": 187127.65625
+      },
+      "candidateMedianNs": {
+        "native": 205686.203125,
+        "torch": 187330.640625
+      },
+      "candidateToBaselineNativeLatency": 0.9998509024843003,
+      "candidateToBaselineReferenceLatency": 1.0010847374411018,
+      "relativeNativeLatencyChangeVsReference": 0.9987675019799469
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        67108867
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 663238,
+        "torch": 476926.5
+      },
+      "candidateMedianNs": {
+        "native": 654865,
+        "torch": 478017.5
+      },
+      "candidateToBaselineNativeLatency": 0.9873755725697261,
+      "candidateToBaselineReferenceLatency": 1.0022875642263536,
+      "relativeNativeLatencyChangeVsReference": 0.9851220426264216
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        67108867
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 414068.984375,
+        "torch": 367085.75
+      },
+      "candidateMedianNs": {
+        "native": 414175.25,
+        "torch": 366881.546875
+      },
+      "candidateToBaselineNativeLatency": 1.000256637490394,
+      "candidateToBaselineReferenceLatency": 0.9994437181911856,
+      "relativeNativeLatencyChangeVsReference": 1.000813371763124
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        67108867
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 399947.5625,
+        "torch": 365095.5546875
+      },
+      "candidateMedianNs": {
+        "native": 399908.515625,
+        "torch": 365078.9765625
+      },
+      "candidateToBaselineNativeLatency": 0.999902370013819,
+      "candidateToBaselineReferenceLatency": 0.9999545923668827,
+      "relativeNativeLatencyChangeVsReference": 0.9999477752755352
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        67108867
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 414370.84375,
+        "torch": 367037.546875
+      },
+      "candidateMedianNs": {
+        "native": 411824.1875,
+        "torch": 366864.328125
+      },
+      "candidateToBaselineNativeLatency": 0.9938541615839737,
+      "candidateToBaselineReferenceLatency": 0.9995280625879428,
+      "relativeNativeLatencyChangeVsReference": 0.994323420005559
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        29,
+        22,
+        83
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 15583,
+        "torch": 16515
+      },
+      "candidateMedianNs": {
+        "native": 15458.5,
+        "torch": 16710
+      },
+      "candidateToBaselineNativeLatency": 0.9920105242892896,
+      "candidateToBaselineReferenceLatency": 1.0118074477747503,
+      "relativeNativeLatencyChangeVsReference": 0.9804340998586246
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        29,
+        22,
+        83
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8015.09375,
+        "torch": 4643.28125
+      },
+      "candidateMedianNs": {
+        "native": 8028.09375,
+        "torch": 4770.328125
+      },
+      "candidateToBaselineNativeLatency": 1.001621939855663,
+      "candidateToBaselineReferenceLatency": 1.0273614429451157,
+      "relativeNativeLatencyChangeVsReference": 0.9749460102223947
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        29,
+        22,
+        83
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8205.140625,
+        "torch": 4432.5625
+      },
+      "candidateMedianNs": {
+        "native": 8263.1171875,
+        "torch": 4652.7421875
+      },
+      "candidateToBaselineNativeLatency": 1.0070658828592594,
+      "candidateToBaselineReferenceLatency": 1.0496732279578687,
+      "relativeNativeLatencyChangeVsReference": 0.9594089436943137
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        29,
+        22,
+        83
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 7976.28125,
+        "torch": 4621.203125
+      },
+      "candidateMedianNs": {
+        "native": 7959.375,
+        "torch": 4727.78125
+      },
+      "candidateToBaselineNativeLatency": 0.9978804345696812,
+      "candidateToBaselineReferenceLatency": 1.0230628522739953,
+      "relativeNativeLatencyChangeVsReference": 0.9753852682185261
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        85,
+        61,
+        23
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 15734,
+        "torch": 17050.5
+      },
+      "candidateMedianNs": {
+        "native": 15658.5,
+        "torch": 16700.5
+      },
+      "candidateToBaselineNativeLatency": 0.9952014745137918,
+      "candidateToBaselineReferenceLatency": 0.9794727427348172,
+      "relativeNativeLatencyChangeVsReference": 1.0160583659888869
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        85,
+        61,
+        23
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8334.328125,
+        "torch": 4793.5
+      },
+      "candidateMedianNs": {
+        "native": 8023.21875,
+        "torch": 4838.875
+      },
+      "candidateToBaselineNativeLatency": 0.9626713311098488,
+      "candidateToBaselineReferenceLatency": 1.009465943465109,
+      "relativeNativeLatencyChangeVsReference": 0.9536441891297173
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        85,
+        61,
+        23
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8175.328125,
+        "torch": 4692.25
+      },
+      "candidateMedianNs": {
+        "native": 8022.4453125,
+        "torch": 4677.5390625
+      },
+      "candidateToBaselineNativeLatency": 0.9812994891260098,
+      "candidateToBaselineReferenceLatency": 0.9968648436251265,
+      "relativeNativeLatencyChangeVsReference": 0.9843856922042583
+    },
+    {
+      "cache": "clean",
+      "shape": [
+        85,
+        61,
+        23
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 8089.265625,
+        "torch": 4793.65625
+      },
+      "candidateMedianNs": {
+        "native": 8029.484375,
+        "torch": 4930.578125
+      },
+      "candidateToBaselineNativeLatency": 0.9926098050464254,
+      "candidateToBaselineReferenceLatency": 1.0285631400874855,
+      "relativeNativeLatencyChangeVsReference": 0.9650450870347133
+    },
+    {
+      "cache": "saturated",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 13806,
+        "torch": 13134.5
+      },
+      "candidateMedianNs": {
+        "native": 13550,
+        "torch": 13064.5
+      },
+      "candidateToBaselineNativeLatency": 0.9814573373895408,
+      "candidateToBaselineReferenceLatency": 0.9946705241920134,
+      "relativeNativeLatencyChangeVsReference": 0.9867160165289849
+    },
+    {
+      "cache": "saturated",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 7693.5,
+        "torch": 4670.65625
+      },
+      "candidateMedianNs": {
+        "native": 7906.796875,
+        "torch": 4716.8125
+      },
+      "candidateToBaselineNativeLatency": 1.027724296484045,
+      "candidateToBaselineReferenceLatency": 1.009882176621326,
+      "relativeNativeLatencyChangeVsReference": 1.0176675262478756
+    },
+    {
+      "cache": "saturated",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 7770.109375,
+        "torch": 4539.59375
+      },
+      "candidateMedianNs": {
+        "native": 7872.375,
+        "torch": 4698.9765625
+      },
+      "candidateToBaselineNativeLatency": 1.0131614138314495,
+      "candidateToBaselineReferenceLatency": 1.0351094880461496,
+      "relativeNativeLatencyChangeVsReference": 0.9787963742307795
+    },
+    {
+      "cache": "saturated",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 7683.5,
+        "torch": 4664.40625
+      },
+      "candidateMedianNs": {
+        "native": 7728.875,
+        "torch": 4868
+      },
+      "candidateToBaselineNativeLatency": 1.0059055118110236,
+      "candidateToBaselineReferenceLatency": 1.0436483743241705,
+      "relativeNativeLatencyChangeVsReference": 0.9638356524652397
+    },
+    {
+      "cache": "saturated",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 13265,
+        "torch": 12714.5
+      },
+      "candidateMedianNs": {
+        "native": 13360.5,
+        "torch": 12439
+      },
+      "candidateToBaselineNativeLatency": 1.0071993969091595,
+      "candidateToBaselineReferenceLatency": 0.9783318258681033,
+      "relativeNativeLatencyChangeVsReference": 1.0295069323901849
+    },
+    {
+      "cache": "saturated",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 7783.484375,
+        "torch": 4592.875
+      },
+      "candidateMedianNs": {
+        "native": 7878.78125,
+        "torch": 4625.90625
+      },
+      "candidateToBaselineNativeLatency": 1.0122434722559586,
+      "candidateToBaselineReferenceLatency": 1.0071918460659173,
+      "relativeNativeLatencyChangeVsReference": 1.0050155550898996
+    },
+    {
+      "cache": "saturated",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 7882.8515625,
+        "torch": 4488.8984375
+      },
+      "candidateMedianNs": {
+        "native": 8049.6015625,
+        "torch": 4620.34375
+      },
+      "candidateToBaselineNativeLatency": 1.021153512618867,
+      "candidateToBaselineReferenceLatency": 1.0292823093082066,
+      "relativeNativeLatencyChangeVsReference": 0.9921024614764796
+    },
+    {
+      "cache": "saturated",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 7779.09375,
+        "torch": 4596.953125
+      },
+      "candidateMedianNs": {
+        "native": 7878.796875,
+        "torch": 4767.53125
+      },
+      "candidateToBaselineNativeLatency": 1.012816804656712,
+      "candidateToBaselineReferenceLatency": 1.0371067792865518,
+      "relativeNativeLatencyChangeVsReference": 0.9765790995537129
+    },
+    {
+      "cache": "saturated",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 13360,
+        "torch": 12569
+      },
+      "candidateMedianNs": {
+        "native": 13330.5,
+        "torch": 12579.5
+      },
+      "candidateToBaselineNativeLatency": 0.9977919161676647,
+      "candidateToBaselineReferenceLatency": 1.0008353886546264,
+      "relativeNativeLatencyChangeVsReference": 0.9969590678732365
+    },
+    {
+      "cache": "saturated",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 7802.40625,
+        "torch": 4547.34375
+      },
+      "candidateMedianNs": {
+        "native": 7883.640625,
+        "torch": 4533.421875
+      },
+      "candidateToBaselineNativeLatency": 1.0104114515954614,
+      "candidateToBaselineReferenceLatency": 0.9969384599525822,
+      "relativeNativeLatencyChangeVsReference": 1.01351436641688
+    },
+    {
+      "cache": "saturated",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8106.3203125,
+        "torch": 4505.1640625
+      },
+      "candidateMedianNs": {
+        "native": 8044.125,
+        "torch": 4430.5234375
+      },
+      "candidateToBaselineNativeLatency": 0.9923275530570764,
+      "candidateToBaselineReferenceLatency": 0.9834322071372956,
+      "relativeNativeLatencyChangeVsReference": 1.0090452050026657
+    },
+    {
+      "cache": "saturated",
+      "shape": [],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 7846.25,
+        "torch": 4570.5
+      },
+      "candidateMedianNs": {
+        "native": 7890.046875,
+        "torch": 4560.953125
+      },
+      "candidateToBaselineNativeLatency": 1.0055818862513939,
+      "candidateToBaselineReferenceLatency": 0.9979111968056011,
+      "relativeNativeLatencyChangeVsReference": 1.0076867455444405
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 5508,
+        "torch": 7005.5
+      },
+      "candidateMedianNs": {
+        "native": 5448,
+        "torch": 6986
+      },
+      "candidateToBaselineNativeLatency": 0.9891067538126361,
+      "candidateToBaselineReferenceLatency": 0.9972164727713939,
+      "relativeNativeLatencyChangeVsReference": 0.9918676444080192
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 437.234375,
+        "torch": 1664.390625
+      },
+      "candidateMedianNs": {
+        "native": 436.75,
+        "torch": 1645
+      },
+      "candidateToBaselineNativeLatency": 0.9988921845406139,
+      "candidateToBaselineReferenceLatency": 0.9883497150796556,
+      "relativeNativeLatencyChangeVsReference": 1.0106667400213785
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 354.1328125,
+        "torch": 1566.8984375
+      },
+      "candidateMedianNs": {
+        "native": 354.203125,
+        "torch": 1550.078125
+      },
+      "candidateToBaselineNativeLatency": 1.000198548390655,
+      "candidateToBaselineReferenceLatency": 0.9892652184101753,
+      "relativeNativeLatencyChangeVsReference": 1.0110519704696082
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 438.484375,
+        "torch": 1667.84375
+      },
+      "candidateMedianNs": {
+        "native": 437.6875,
+        "torch": 1644.359375
+      },
+      "candidateToBaselineNativeLatency": 0.9981826604425756,
+      "candidateToBaselineReferenceLatency": 0.9859193194806168,
+      "relativeNativeLatencyChangeVsReference": 1.012438483271044
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 5544,
+        "torch": 6966
+      },
+      "candidateMedianNs": {
+        "native": 5518,
+        "torch": 6875.5
+      },
+      "candidateToBaselineNativeLatency": 0.9953102453102453,
+      "candidateToBaselineReferenceLatency": 0.987008326155613,
+      "relativeNativeLatencyChangeVsReference": 1.0084111946521952
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 524.6875,
+        "torch": 1627
+      },
+      "candidateMedianNs": {
+        "native": 523.140625,
+        "torch": 1620.875
+      },
+      "candidateToBaselineNativeLatency": 0.9970518165574747,
+      "candidateToBaselineReferenceLatency": 0.9962354025814383,
+      "relativeNativeLatencyChangeVsReference": 1.0008194990600825
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 453.171875,
+        "torch": 1534.5078125
+      },
+      "candidateMedianNs": {
+        "native": 453.421875,
+        "torch": 1527
+      },
+      "candidateToBaselineNativeLatency": 1.0005516670689238,
+      "candidateToBaselineReferenceLatency": 0.9951073481419632,
+      "relativeNativeLatencyChangeVsReference": 1.0054710870511872
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 526.421875,
+        "torch": 1633.875
+      },
+      "candidateMedianNs": {
+        "native": 515.46875,
+        "torch": 1622.296875
+      },
+      "candidateToBaselineNativeLatency": 0.9791932563592651,
+      "candidateToBaselineReferenceLatency": 0.9929137020885931,
+      "relativeNativeLatencyChangeVsReference": 0.9861816332069272
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 5608.5,
+        "torch": 6880.5
+      },
+      "candidateMedianNs": {
+        "native": 5553,
+        "torch": 6815.5
+      },
+      "candidateToBaselineNativeLatency": 0.9901043059641615,
+      "candidateToBaselineReferenceLatency": 0.990553012135746,
+      "relativeNativeLatencyChangeVsReference": 0.9995470144797026
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 545.046875,
+        "torch": 1610.875
+      },
+      "candidateMedianNs": {
+        "native": 548.171875,
+        "torch": 1614.3125
+      },
+      "candidateToBaselineNativeLatency": 1.005733451824671,
+      "candidateToBaselineReferenceLatency": 1.0021339334212773,
+      "relativeNativeLatencyChangeVsReference": 1.0035918536268948
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 474.46875,
+        "torch": 1516.828125
+      },
+      "candidateMedianNs": {
+        "native": 473.9140625,
+        "torch": 1586.0703125
+      },
+      "candidateToBaselineNativeLatency": 0.9988309293288546,
+      "candidateToBaselineReferenceLatency": 1.0456493299133678,
+      "relativeNativeLatencyChangeVsReference": 0.9552255242315394
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        0
+      ],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 545.53125,
+        "torch": 1601.171875
+      },
+      "candidateMedianNs": {
+        "native": 547.234375,
+        "torch": 1610.703125
+      },
+      "candidateToBaselineNativeLatency": 1.003121956808157,
+      "candidateToBaselineReferenceLatency": 1.0059526713832643,
+      "relativeNativeLatencyChangeVsReference": 0.9971860360277043
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 14502,
+        "torch": 13810.5
+      },
+      "candidateMedianNs": {
+        "native": 14176.5,
+        "torch": 13971
+      },
+      "candidateToBaselineNativeLatency": 0.9775548200248242,
+      "candidateToBaselineReferenceLatency": 1.0116215922667535,
+      "relativeNativeLatencyChangeVsReference": 0.9663245896466134
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8015.40625,
+        "torch": 4688.96875
+      },
+      "candidateMedianNs": {
+        "native": 8042.15625,
+        "torch": 4805.53125
+      },
+      "candidateToBaselineNativeLatency": 1.003337323045853,
+      "candidateToBaselineReferenceLatency": 1.0248588775517005,
+      "relativeNativeLatencyChangeVsReference": 0.9790004702332671
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8179.5546875,
+        "torch": 4581.5390625
+      },
+      "candidateMedianNs": {
+        "native": 8267.734375,
+        "torch": 4783.015625
+      },
+      "candidateToBaselineNativeLatency": 1.0107804997788885,
+      "candidateToBaselineReferenceLatency": 1.0439757382293409,
+      "relativeNativeLatencyChangeVsReference": 0.9682030556507435
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 7913.234375,
+        "torch": 4681
+      },
+      "candidateMedianNs": {
+        "native": 8058.609375,
+        "torch": 5040.75
+      },
+      "candidateToBaselineNativeLatency": 1.0183711227433472,
+      "candidateToBaselineReferenceLatency": 1.07685323648793,
+      "relativeNativeLatencyChangeVsReference": 0.9456916580988163
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 13831,
+        "torch": 13550
+      },
+      "candidateMedianNs": {
+        "native": 13825.5,
+        "torch": 13546
+      },
+      "candidateToBaselineNativeLatency": 0.999602342563806,
+      "candidateToBaselineReferenceLatency": 0.9997047970479704,
+      "relativeNativeLatencyChangeVsReference": 0.9998975152620384
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8096.46875,
+        "torch": 4709.3125
+      },
+      "candidateMedianNs": {
+        "native": 8080.34375,
+        "torch": 4630.4375
+      },
+      "candidateToBaselineNativeLatency": 0.9980083910037941,
+      "candidateToBaselineReferenceLatency": 0.9832512707534273,
+      "relativeNativeLatencyChangeVsReference": 1.01500849344345
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8276.7421875,
+        "torch": 4517.453125
+      },
+      "candidateMedianNs": {
+        "native": 8262.5859375,
+        "torch": 4518.5546875
+      },
+      "candidateToBaselineNativeLatency": 0.9982896350183071,
+      "candidateToBaselineReferenceLatency": 1.0002438459170508,
+      "relativeNativeLatencyChangeVsReference": 0.9980462655114344
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "method",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 8164.84375,
+        "torch": 4658.9375
+      },
+      "candidateMedianNs": {
+        "native": 8091.9375,
+        "torch": 4648.75
+      },
+      "candidateToBaselineNativeLatency": 0.9910707109367525,
+      "candidateToBaselineReferenceLatency": 0.9978133426344526,
+      "relativeNativeLatencyChangeVsReference": 0.9932425921666891
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 13916,
+        "torch": 13240
+      },
+      "candidateMedianNs": {
+        "native": 13856,
+        "torch": 13185
+      },
+      "candidateToBaselineNativeLatency": 0.995688416211555,
+      "candidateToBaselineReferenceLatency": 0.995845921450151,
+      "relativeNativeLatencyChangeVsReference": 0.9998418377429646
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8207.265625,
+        "torch": 4615.71875
+      },
+      "candidateMedianNs": {
+        "native": 8054.046875,
+        "torch": 4641.40625
+      },
+      "candidateToBaselineNativeLatency": 0.9813313279963447,
+      "candidateToBaselineReferenceLatency": 1.0055652221011082,
+      "relativeNativeLatencyChangeVsReference": 0.9759002264874204
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8341.9921875,
+        "torch": 4440.859375
+      },
+      "candidateMedianNs": {
+        "native": 8262.421875,
+        "torch": 4455.9609375
+      },
+      "candidateToBaselineNativeLatency": 0.9904614736250614,
+      "candidateToBaselineReferenceLatency": 1.0034005946202698,
+      "relativeNativeLatencyChangeVsReference": 0.9871047305885791
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        3079
+      ],
+      "layout": "contiguous",
+      "form": "function",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 8133.234375,
+        "torch": 4662.21875
+      },
+      "candidateMedianNs": {
+        "native": 8129.15625,
+        "torch": 4630.75
+      },
+      "candidateToBaselineNativeLatency": 0.9994985850878052,
+      "candidateToBaselineReferenceLatency": 0.9932502630855748,
+      "relativeNativeLatencyChangeVsReference": 1.0062907831333663
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 14757,
+        "torch": 16575
+      },
+      "candidateMedianNs": {
+        "native": 14872,
+        "torch": 16540
+      },
+      "candidateToBaselineNativeLatency": 1.0077929118384497,
+      "candidateToBaselineReferenceLatency": 0.9978883861236802,
+      "relativeNativeLatencyChangeVsReference": 1.0099254845055805
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 7976.890625,
+        "torch": 5042.46875
+      },
+      "candidateMedianNs": {
+        "native": 7948.421875,
+        "torch": 5071.25
+      },
+      "candidateToBaselineNativeLatency": 0.9964310968598745,
+      "candidateToBaselineReferenceLatency": 1.0057077696316907,
+      "relativeNativeLatencyChangeVsReference": 0.990775975833205
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 7773.15625,
+        "torch": 4815.9609375
+      },
+      "candidateMedianNs": {
+        "native": 7756.734375,
+        "torch": 5262.8046875
+      },
+      "candidateToBaselineNativeLatency": 0.9978873607487306,
+      "candidateToBaselineReferenceLatency": 1.0927839232500005,
+      "relativeNativeLatencyChangeVsReference": 0.9131607260298612
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 7960.3125,
+        "torch": 4999.109375
+      },
+      "candidateMedianNs": {
+        "native": 7903.96875,
+        "torch": 5067.8125
+      },
+      "candidateToBaselineNativeLatency": 0.9929219173242256,
+      "candidateToBaselineReferenceLatency": 1.0137430729848755,
+      "relativeNativeLatencyChangeVsReference": 0.9794611117791968
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "method",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 14907.5,
+        "torch": 16765
+      },
+      "candidateMedianNs": {
+        "native": 15163,
+        "torch": 16740.5
+      },
+      "candidateToBaselineNativeLatency": 1.0171390239812175,
+      "candidateToBaselineReferenceLatency": 0.9985386221294363,
+      "relativeNativeLatencyChangeVsReference": 1.0186276238490553
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "method",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8109.296875,
+        "torch": 4990.515625
+      },
+      "candidateMedianNs": {
+        "native": 8213.828125,
+        "torch": 5216.796875
+      },
+      "candidateToBaselineNativeLatency": 1.0128902975943892,
+      "candidateToBaselineReferenceLatency": 1.0453422585967758,
+      "relativeNativeLatencyChangeVsReference": 0.9689556595119873
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "method",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8082.53125,
+        "torch": 4761.265625
+      },
+      "candidateMedianNs": {
+        "native": 8191.453125,
+        "torch": 4965.3984375
+      },
+      "candidateToBaselineNativeLatency": 1.0134762083351054,
+      "candidateToBaselineReferenceLatency": 1.0428736450720495,
+      "relativeNativeLatencyChangeVsReference": 0.9718111231635228
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "method",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 8078,
+        "torch": 4952.5
+      },
+      "candidateMedianNs": {
+        "native": 8285.984375,
+        "torch": 5097.703125
+      },
+      "candidateToBaselineNativeLatency": 1.025747013493439,
+      "candidateToBaselineReferenceLatency": 1.0293191569914184,
+      "relativeNativeLatencyChangeVsReference": 0.996529605541958
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "function",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 14977.5,
+        "torch": 16115
+      },
+      "candidateMedianNs": {
+        "native": 15583.5,
+        "torch": 17391
+      },
+      "candidateToBaselineNativeLatency": 1.0404606910365548,
+      "candidateToBaselineReferenceLatency": 1.0791808873720137,
+      "relativeNativeLatencyChangeVsReference": 0.9641207541863078
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "function",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8087.6875,
+        "torch": 4942
+      },
+      "candidateMedianNs": {
+        "native": 8252.46875,
+        "torch": 4924.921875
+      },
+      "candidateToBaselineNativeLatency": 1.02037433444356,
+      "candidateToBaselineReferenceLatency": 0.9965442887494941,
+      "relativeNativeLatencyChangeVsReference": 1.0239126810148789
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "function",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8178.6953125,
+        "torch": 4720.6484375
+      },
+      "candidateMedianNs": {
+        "native": 8299.4296875,
+        "torch": 4930.421875
+      },
+      "candidateToBaselineNativeLatency": 1.014762058052887,
+      "candidateToBaselineReferenceLatency": 1.0444374200445847,
+      "relativeNativeLatencyChangeVsReference": 0.9715872282798611
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        65557
+      ],
+      "layout": "offset_7",
+      "form": "function",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 8092.21875,
+        "torch": 4976.734375
+      },
+      "candidateMedianNs": {
+        "native": 8126.65625,
+        "torch": 5103.8125
+      },
+      "candidateToBaselineNativeLatency": 1.0042556313742754,
+      "candidateToBaselineReferenceLatency": 1.0255344399408497,
+      "relativeNativeLatencyChangeVsReference": 0.9792510053901247
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        1048603
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 20831,
+        "torch": 39299.5
+      },
+      "candidateMedianNs": {
+        "native": 20516,
+        "torch": 30410.5
+      },
+      "candidateToBaselineNativeLatency": 0.9848783063703135,
+      "candidateToBaselineReferenceLatency": 0.7738139162075853,
+      "relativeNativeLatencyChangeVsReference": 1.272758586711831
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        1048603
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 9183.578125,
+        "torch": 5754.953125
+      },
+      "candidateMedianNs": {
+        "native": 9289.84375,
+        "torch": 6240.828125
+      },
+      "candidateToBaselineNativeLatency": 1.0115712659655738,
+      "candidateToBaselineReferenceLatency": 1.0844272732456008,
+      "relativeNativeLatencyChangeVsReference": 0.9328161426058799
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        1048603
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 9236.546875,
+        "torch": 5265.703125
+      },
+      "candidateMedianNs": {
+        "native": 9163.4765625,
+        "torch": 5235.5703125
+      },
+      "candidateToBaselineNativeLatency": 0.9920890010640475,
+      "candidateToBaselineReferenceLatency": 0.9942775329742882,
+      "relativeNativeLatencyChangeVsReference": 0.9977988722085533
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        1048603
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 9566.34375,
+        "torch": 6279.03125
+      },
+      "candidateMedianNs": {
+        "native": 9255.09375,
+        "torch": 5856.96875
+      },
+      "candidateToBaselineNativeLatency": 0.9674640585646945,
+      "candidateToBaselineReferenceLatency": 0.9327822265576398,
+      "relativeNativeLatencyChangeVsReference": 1.0371810600798488
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        4194359
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 62840.5,
+        "torch": 126176
+      },
+      "candidateMedianNs": {
+        "native": 65398.5,
+        "torch": 129004.5
+      },
+      "candidateToBaselineNativeLatency": 1.0407062324456362,
+      "candidateToBaselineReferenceLatency": 1.0224170999239157,
+      "relativeNativeLatencyChangeVsReference": 1.017888132468717
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        4194359
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 33415.859375,
+        "torch": 28230.1875
+      },
+      "candidateMedianNs": {
+        "native": 33486.109375,
+        "torch": 28474
+      },
+      "candidateToBaselineNativeLatency": 1.0021022951770189,
+      "candidateToBaselineReferenceLatency": 1.0086365880495833,
+      "relativeNativeLatencyChangeVsReference": 0.9935216578994027
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        4194359
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 32928.46875,
+        "torch": 26924.625
+      },
+      "candidateMedianNs": {
+        "native": 32846.625,
+        "torch": 27052.078125
+      },
+      "candidateToBaselineNativeLatency": 0.9975144987572494,
+      "candidateToBaselineReferenceLatency": 1.0047337010264767,
+      "relativeNativeLatencyChangeVsReference": 0.9928148102707693
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        4194359
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 25835.3125,
+        "torch": 17033.890625
+      },
+      "candidateMedianNs": {
+        "native": 26045.953125,
+        "torch": 17369.703125
+      },
+      "candidateToBaselineNativeLatency": 1.0081532060043787,
+      "candidateToBaselineReferenceLatency": 1.0197143745602746,
+      "relativeNativeLatencyChangeVsReference": 0.9886623461977956
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        17000003
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 141549,
+        "torch": 207554
+      },
+      "candidateMedianNs": {
+        "native": 141699.5,
+        "torch": 207498.5
+      },
+      "candidateToBaselineNativeLatency": 1.0010632360525331,
+      "candidateToBaselineReferenceLatency": 0.9997325997089914,
+      "relativeNativeLatencyChangeVsReference": 1.001330992251257
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        17000003
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 106920.125,
+        "torch": 99226
+      },
+      "candidateMedianNs": {
+        "native": 107024.8125,
+        "torch": 99185.953125
+      },
+      "candidateToBaselineNativeLatency": 1.0009791187580448,
+      "candidateToBaselineReferenceLatency": 0.9995964074436136,
+      "relativeNativeLatencyChangeVsReference": 1.001383269591742
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        17000003
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 106363.4296875,
+        "torch": 97626.859375
+      },
+      "candidateMedianNs": {
+        "native": 106059.5390625,
+        "torch": 97560.5078125
+      },
+      "candidateToBaselineNativeLatency": 0.9971429031021956,
+      "candidateToBaselineReferenceLatency": 0.9993203554541775,
+      "relativeNativeLatencyChangeVsReference": 0.9978210667479176
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        17000003
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 106989.75,
+        "torch": 99137.890625
+      },
+      "candidateMedianNs": {
+        "native": 108339.3125,
+        "torch": 99116.296875
+      },
+      "candidateToBaselineNativeLatency": 1.01261394198977,
+      "candidateToBaselineReferenceLatency": 0.9997821846938253,
+      "relativeNativeLatencyChangeVsReference": 1.012834552858005
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        33554467
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 234700,
+        "torch": 292267
+      },
+      "candidateMedianNs": {
+        "native": 232421.5,
+        "torch": 296218
+      },
+      "candidateToBaselineNativeLatency": 0.9902918619514274,
+      "candidateToBaselineReferenceLatency": 1.0135184608594197,
+      "relativeNativeLatencyChangeVsReference": 0.9770832009430819
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        33554467
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 206507.765625,
+        "torch": 187061
+      },
+      "candidateMedianNs": {
+        "native": 208456.359375,
+        "torch": 187167.59375
+      },
+      "candidateToBaselineNativeLatency": 1.009435934499134,
+      "candidateToBaselineReferenceLatency": 1.0005698341717408,
+      "relativeNativeLatencyChangeVsReference": 1.0088610509977372
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        33554467
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 203353.6875,
+        "torch": 185446.21875
+      },
+      "candidateMedianNs": {
+        "native": 203585.140625,
+        "torch": 185539.3359375
+      },
+      "candidateToBaselineNativeLatency": 1.001138180122748,
+      "candidateToBaselineReferenceLatency": 1.0005021250264776,
+      "relativeNativeLatencyChangeVsReference": 1.000635735877376
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        33554467
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 207186.4375,
+        "torch": 187280.25
+      },
+      "candidateMedianNs": {
+        "native": 206263.1875,
+        "torch": 187218.75
+      },
+      "candidateToBaselineNativeLatency": 0.9955438685507588,
+      "candidateToBaselineReferenceLatency": 0.9996716151329358,
+      "relativeNativeLatencyChangeVsReference": 0.9958708974830419
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        67108867
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 669678,
+        "torch": 478629
+      },
+      "candidateMedianNs": {
+        "native": 669957.5,
+        "torch": 479129.5
+      },
+      "candidateToBaselineNativeLatency": 1.0004173647633638,
+      "candidateToBaselineReferenceLatency": 1.0010456950999627,
+      "relativeNativeLatencyChangeVsReference": 0.9993723260190075
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        67108867
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 414698.21875,
+        "torch": 366715.96875
+      },
+      "candidateMedianNs": {
+        "native": 414387.15625,
+        "torch": 366751.8125
+      },
+      "candidateToBaselineNativeLatency": 0.9992499063513279,
+      "candidateToBaselineReferenceLatency": 1.000097742539334,
+      "relativeNativeLatencyChangeVsReference": 0.9991522466735567
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        67108867
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 398842.296875,
+        "torch": 364833.4453125
+      },
+      "candidateMedianNs": {
+        "native": 399412.9375,
+        "torch": 364959.1875
+      },
+      "candidateToBaselineNativeLatency": 1.0014307425001587,
+      "candidateToBaselineReferenceLatency": 1.0003446564154563,
+      "relativeNativeLatencyChangeVsReference": 1.0010857118871352
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        67108867
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 412879.078125,
+        "torch": 366716.140625
+      },
+      "candidateMedianNs": {
+        "native": 413098.625,
+        "torch": 366658.703125
+      },
+      "candidateToBaselineNativeLatency": 1.0005317461858252,
+      "candidateToBaselineReferenceLatency": 0.9998433734061933,
+      "relativeNativeLatencyChangeVsReference": 1.0006884806140053
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        29,
+        22,
+        83
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 15333.5,
+        "torch": 16389.5
+      },
+      "candidateMedianNs": {
+        "native": 15338.5,
+        "torch": 16410
+      },
+      "candidateToBaselineNativeLatency": 1.0003260834121368,
+      "candidateToBaselineReferenceLatency": 1.0012508008175967,
+      "relativeNativeLatencyChangeVsReference": 0.9990764377869114
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        29,
+        22,
+        83
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 7993.34375,
+        "torch": 4844.671875
+      },
+      "candidateMedianNs": {
+        "native": 8112.90625,
+        "torch": 4867.21875
+      },
+      "candidateToBaselineNativeLatency": 1.0149577578219378,
+      "candidateToBaselineReferenceLatency": 1.0046539529573404,
+      "relativeNativeLatencyChangeVsReference": 1.010256073580626
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        29,
+        22,
+        83
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8058.90625,
+        "torch": 4559.7109375
+      },
+      "candidateMedianNs": {
+        "native": 7996.3828125,
+        "torch": 4707.515625
+      },
+      "candidateToBaselineNativeLatency": 0.9922416968803924,
+      "candidateToBaselineReferenceLatency": 1.0324153635013185,
+      "relativeNativeLatencyChangeVsReference": 0.9610876900507547
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        29,
+        22,
+        83
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 7942.78125,
+        "torch": 4758.140625
+      },
+      "candidateMedianNs": {
+        "native": 7970.484375,
+        "torch": 4828.5625
+      },
+      "candidateToBaselineNativeLatency": 1.0034878368329734,
+      "candidateToBaselineReferenceLatency": 1.0148002929190434,
+      "relativeNativeLatencyChangeVsReference": 0.9888525297390977
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        85,
+        61,
+        23
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 1,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 15564,
+        "torch": 17446
+      },
+      "candidateMedianNs": {
+        "native": 15524,
+        "torch": 17075.5
+      },
+      "candidateToBaselineNativeLatency": 0.9974299665895656,
+      "candidateToBaselineReferenceLatency": 0.9787630402384501,
+      "relativeNativeLatencyChangeVsReference": 1.0190719567287378
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        85,
+        61,
+        23
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8529.140625,
+        "torch": 4807.578125
+      },
+      "candidateMedianNs": {
+        "native": 8053.890625,
+        "torch": 4862.1875
+      },
+      "candidateToBaselineNativeLatency": 0.9442792631877845,
+      "candidateToBaselineReferenceLatency": 1.0113590197767197,
+      "relativeNativeLatencyChangeVsReference": 0.9336736457803634
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        85,
+        61,
+        23
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 64,
+      "chained": false,
+      "baselineMedianNs": {
+        "native": 8192.7734375,
+        "torch": 4579.34375
+      },
+      "candidateMedianNs": {
+        "native": 8267.65625,
+        "torch": 4645.6171875
+      },
+      "candidateToBaselineNativeLatency": 1.0091401053710636,
+      "candidateToBaselineReferenceLatency": 1.0144722565323907,
+      "relativeNativeLatencyChangeVsReference": 0.9947439162313289
+    },
+    {
+      "cache": "saturated",
+      "shape": [
+        85,
+        61,
+        23
+      ],
+      "layout": "contiguous",
+      "form": "operator",
+      "callsPerSample": 32,
+      "chained": true,
+      "baselineMedianNs": {
+        "native": 7956.09375,
+        "torch": 4811.1875
+      },
+      "candidateMedianNs": {
+        "native": 7988.015625,
+        "torch": 4952.96875
+      },
+      "candidateToBaselineNativeLatency": 1.004012254757556,
+      "candidateToBaselineReferenceLatency": 1.0294690759817613,
+      "relativeNativeLatencyChangeVsReference": 0.9752718932329967
+    }
+  ]
+}

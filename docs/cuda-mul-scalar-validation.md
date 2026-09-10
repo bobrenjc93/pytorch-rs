@@ -103,7 +103,59 @@ and 96.94 / 69.99 / 68.03 percent after saturation. All slow rows remain
 in the raw report. These measurements establish neither general performance
 non-regression nor scalar-multiplication performance parity.
 
-## Matched main/candidate public-add check
+## Current-worktree matched public-add recapture
+
+The [fresh matched capture](diagnostics/cuda-mul-scalar/paired-41dcf4a5-8eafea8b/) compares main
+`41dcf4a5a015337a61f4507940cbeb20fd4ff006` with clean candidate
+`8eafea8bd1c30adbbfc7f2769aa5ffbdbfd27535`. The prior external-checkout pair below
+is superseded for current-candidate evidence. All new build, source, interpreter,
+import, output and cache paths are rooted inside this worktree. Measurements
+finished before any tracked evidence or documentation edits.
+
+The candidate's implementation, tests, dependencies and existing benchmark/evaluator
+sources are byte-identical to `e87d5db6`; intervening changes contain documentation
+and evidence only. The earlier clean-commit math, compile, scalar differential
+and private performance records above therefore retain their measured identities.
+Their source hashes and all original evidence manifests were verified during this
+refresh; unrelated full suites and other measurements were not repeated.
+
+The [plan](diagnostics/cuda-mul-scalar/paired-41dcf4a5-8eafea8b/plan.json) records one baseline-then-candidate series with
+managed CPython 3.12.14, PyTorch 2.13.0+cu130, H100 GPU 0 and CPU 0. Each variant
+uses the unchanged repository builder to export its exact commit into a separate
+source directory and fresh Cargo target, then installs and measures that wheel.
+Both use the same local interpreter/dependency environment. The unchanged diagnostic
+retains seed 937514, five warmups, nine samples per implementation order, both
+saturation conditions, and the complete shape/form/batch/chain matrix. No timing
+run was retried or selected.
+
+All 152 matched rows pass bitwise output and metadata comparisons. The unchanged
+summary tool recomputes medians from all 18 samples per implementation per row.
+The [raw reports](diagnostics/cuda-mul-scalar/paired-41dcf4a5-8eafea8b/results.json), [command receipts](diagnostics/cuda-mul-scalar/paired-41dcf4a5-8eafea8b/commands.json),
+[summary](diagnostics/cuda-mul-scalar/paired-41dcf4a5-8eafea8b/summary.json) and [audit](diagnostics/cuda-mul-scalar/paired-41dcf4a5-8eafea8b/provenance-audit.json) retain
+measured commits, hashes, timestamps and setup provenance. Each group below has
+19 rows; values above 1 mean slower candidate latency.
+
+| Saturation prelude | Calls per sample | Native | PyTorch | Native / PyTorch change |
+| --- | --- | ---: | ---: | ---: |
+| None | 1 | 1.0161 | 1.0705 | 0.9492 |
+| None | 32 independent | 1.0145 | 1.0380 | 0.9774 |
+| None | 64 independent | 0.9966 | 1.0167 | 0.9802 |
+| None | 32 chained | 1.0070 | 1.0213 | 0.9860 |
+| Saturated | 1 | 1.0006 | 0.9889 | 1.0119 |
+| Saturated | 32 independent | 1.0023 | 1.0088 | 0.9936 |
+| Saturated | 64 independent | 1.0022 | 1.0182 | 0.9843 |
+| Saturated | 32 chained | 1.0014 | 1.0099 | 0.9916 |
+
+Individual native latency ratios range from 0.9272 to 1.3829; all slow
+rows are retained. This single fixed-order pair does not establish statistical
+non-regression or general parity, and measures neither scalar-multiplication nor
+compiler performance. It changes no evaluator denominator or score.
+
+## Original matched public-add comparison (superseded)
+
+The original pair below remains byte-for-byte intact, including its original
+external source/build paths and baseline measurements. The fresh worktree-local
+pair above supplies current-candidate comparison evidence.
 
 A separate [paired capture](diagnostics/cuda-mul-scalar/paired-41dcf4a5-a62b0a5c/)
 compares main `41dcf4a5a015337a61f4507940cbeb20fd4ff006` with published candidate

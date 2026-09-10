@@ -1,0 +1,34 @@
+{
+  "created_at": "2026-09-10T00:12:03.309310+00:00",
+  "baseline": "41dcf4a5a015337a61f4507940cbeb20fd4ff006",
+  "candidate": "8eafea8bd1c30adbbfc7f2769aa5ffbdbfd27535",
+  "order": [
+    "baseline",
+    "candidate"
+  ],
+  "setup": "Same worktree-local managed Python/dependency environment; separate clean source exports and initially absent Cargo targets; build, install and measure baseline, then build, install and measure candidate. Repository builder and workload are unchanged.",
+  "cpu": 0,
+  "gpu": 0,
+  "seed": 937514,
+  "samples_per_order": 9,
+  "warmups_per_order": 5,
+  "retry_policy": "One complete pair, no timing retries or selection",
+  "python_binary": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+  "python_sha256": "f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526",
+  "uv_binary": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/target/tools/uv",
+  "uv_sha256": "52146519e72d26b6aa553c4fc9f764bc31c1e30ffae2390f46593dd69a4d6701",
+  "initial_cache_state": {
+    "CUDA_CACHE_PATH": false,
+    "TORCHINDUCTOR_CACHE_DIR": false,
+    "TRITON_CACHE_DIR": false,
+    "XDG_CACHE_HOME": false,
+    "UV_CACHE_DIR": true
+  },
+  "versions": {
+    "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+    "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_e5ce9d67/.venv/bin/python",
+    "torch": "2.13.0+cu130",
+    "torch_cuda": "13.0",
+    "numpy": "2.5.1"
+  }
+}
