@@ -327,6 +327,7 @@ _COMPILE_H100_CUDA_SKIPPED_OPS = _builtins.frozenset(
     }
 )
 _COMPILE_TENSOR_METHOD_GUARD_NAMES = (
+    "reshape",
     "transpose",
     "t",
     "contiguous",
@@ -985,6 +986,8 @@ def compile(
     ``transpose(dim0, dim1)`` with exact constant integer axes create shared-storage
     rank-0/1/2 views; ``contiguous()`` packs supported strided views before
     arithmetic. Each transpose call returns a distinct view object.
+    ``reshape`` captures exact constant integer shapes with input/output rank <=2,
+    sharing view storage or packing logical values natively on CUDA.
     This is native graph capture without fusion.
     A private benchmark-only H100 CUDA pointwise-reduce
     workload is supported for ``backend="inductor"``, ``fullgraph=True``, and

@@ -4326,16 +4326,7 @@ impl Tensor {
     }
 
     fn reshape_view_strides(&self, resolved: &[usize]) -> Result<Option<Vec<usize>>, TensorError> {
-        if self.elements == 0 {
-            let strides = if resolved == self.shape {
-                try_clone_result_shape(&self.strides, self.elements)?
-            } else {
-                reshape_strides(resolved, self.elements)?
-            };
-            return Ok(Some(strides));
-        }
-
-        compute_reshape_view_strides(&self.shape, &self.strides, resolved, self.elements)
+        reshape_view_strides(&self.shape, &self.strides, resolved, self.elements)
     }
 
     fn finish_reshape_view(
@@ -9011,6 +9002,23 @@ fn accumulate_packed_matmul(
 
     accumulate_contiguous_matmul(left, right, output, rows, inner, columns);
     Ok(())
+}
+
+// Shared by eager reshape/view and the storage-free CUDA graph planner.
+fn reshape_view_strides(
+    shape: &[usize],
+    strides: &[usize],
+    resolved: &[usize],
+    elements: usize,
+) -> Result<Option<Vec<usize>>, TensorError> {
+    if elements == 0 {
+        return if resolved == shape {
+            try_clone_result_shape(strides, elements).map(Some)
+        } else {
+            reshape_strides(resolved, elements).map(Some)
+        };
+    }
+    compute_reshape_view_strides(shape, strides, resolved, elements)
 }
 
 fn compute_reshape_view_strides(

@@ -1,0 +1,52 @@
+    Checking pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a)
+error: implicit borrow as raw pointer
+   --> src/tensor_cuda_graph.rs:337:51
+    |
+337 |                 let gpu = if std::ptr::eq(source, &base) {
+    |                                                   ^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.92.0/index.html#borrow_as_ptr
+    = note: `-D clippy::borrow-as-ptr` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::borrow_as_ptr)]`
+help: use a raw pointer instead
+    |
+337 |                 let gpu = if std::ptr::eq(source, &raw const base) {
+    |                                                    +++++++++
+
+error: implicit borrow as raw pointer
+   --> src/tensor_cuda_graph.rs:339:48
+    |
+339 |                 } else if std::ptr::eq(source, &transposed) {
+    |                                                ^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.92.0/index.html#borrow_as_ptr
+help: use a raw pointer instead
+    |
+339 |                 } else if std::ptr::eq(source, &raw const transposed) {
+    |                                                 +++++++++
+
+error: implicit borrow as raw pointer
+   --> src/tensor_cuda_graph.rs:341:48
+    |
+341 |                 } else if std::ptr::eq(source, &column) {
+    |                                                ^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.92.0/index.html#borrow_as_ptr
+help: use a raw pointer instead
+    |
+341 |                 } else if std::ptr::eq(source, &raw const column) {
+    |                                                 +++++++++
+
+error: implicit borrow as raw pointer
+   --> src/tensor_cuda_graph.rs:343:48
+    |
+343 |                 } else if std::ptr::eq(source, &scalar) {
+    |                                                ^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.92.0/index.html#borrow_as_ptr
+help: use a raw pointer instead
+    |
+343 |                 } else if std::ptr::eq(source, &raw const scalar) {
+    |                                                 +++++++++
+
+error: could not compile `pytorch-rs` (lib test) due to 4 previous errors

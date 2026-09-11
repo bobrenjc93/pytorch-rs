@@ -140,6 +140,7 @@ class _OpcodeForm:
 
 
 _METHOD_TARGETS = {
+    "reshape": _MethodTarget("view", "reshape", 1, "Tensor.reshape"),
     "transpose": _MethodTarget("view", "transpose", 2, "Tensor.transpose"),
     "t": _MethodTarget("unary", "t", 0, "Tensor.t"),
     "contiguous": _MethodTarget("unary", "contiguous", 0, "Tensor.contiguous"),
@@ -970,7 +971,8 @@ def _require_output_value(value, program, instruction, role):
 def _store_local(locals, stack, program, instruction, name):
     value = _pop(stack, program, instruction)
     if _builtins.isinstance(value, _BytecodeConstant):
-        _trace._normalize_mul_scalar(value.value)
+        if type(value.value) not in (int, tuple):
+            _trace._normalize_mul_scalar(value.value)
         locals[name] = value
         return
     locals[name] = _require_output_value(
@@ -1080,6 +1082,15 @@ def _lower_function_body(
 
 
 def _record_method_call(recorder, method, args, program, instruction, names=()):
+    if method.name == "reshape":
+        if any(not isinstance(value, _BytecodeConstant) for value in args):
+            _unsupported_bytecode(program, instruction, "Tensor.reshape requires constant dimensions")
+        positional = len(args) - len(names)
+        shape = _trace._bind_reshape_shape(
+            tuple(value.value for value in args[:positional]),
+            dict(zip(names, (value.value for value in args[positional:]))),
+        )
+        return recorder.record_reshape(method.receiver, shape)
     if method.name == "transpose":
         positional = len(args) - len(names)
         if positional > 2:
@@ -1406,6 +1417,9 @@ def _handle_build_tuple(recorder, locals, stack, program, instruction, state, ac
     argument_count = instruction.arg or 0
     values = [_pop(stack, program, instruction) for _ in range(argument_count)]
     values.reverse()
+    if values and all(isinstance(value, _BytecodeConstant) for value in values):
+        stack.append(_BytecodeConstant(tuple(value.value for value in values)))
+        return
     output = tuple(values)
     _require_output_value(output, program, instruction, "tuple return value")
     stack.append(output)

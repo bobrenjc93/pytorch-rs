@@ -1,6 +1,6 @@
 //! One bridge for composed CUDA captures; eager Tensor methods stay unchanged.
 use super::{CoreTensor, DType, PyTensor, compile_trace_mul_scalar_value, tensor_error};
-use crate::tensor::cuda_graph::{Layout, Operation};
+use crate::tensor::cuda_graph::{Layout, Operation, Shape};
 use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyInt, PyList, PyTuple};
@@ -35,6 +35,52 @@ fn exact_indices(value: &Bound<'_, PyAny>) -> PyResult<Vec<usize>> {
         .collect()
 }
 
+fn exact_shape(payload: &Bound<'_, PyAny>) -> PyResult<Shape> {
+    if !payload.is_exact_instance_of::<PyTuple>() {
+        return Err(PyTypeError::new_err(
+            "reshape shape requires an exact tuple",
+        ));
+    }
+    let dimensions = payload.cast::<PyTuple>()?;
+    let requested = dimensions
+        .iter()
+        .map(|dim| {
+            if !dim.is_exact_instance_of::<PyInt>() {
+                return Err(PyTypeError::new_err(
+                    "reshape dimensions require exact integers",
+                ));
+            }
+            dim.extract::<i64>()
+                .map_err(|_| PyTypeError::new_err("reshape dimension overflow"))
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    Shape::new(&requested).map_err(|error| tensor_error(&error))
+}
+
+// Metadata only: use exactly the planner used again by the whole-graph bridge.
+#[pyfunction(name = "_compile_trace_cuda_reshape_metadata")]
+pub(super) fn reshape_metadata(
+    shape: &Bound<'_, PyAny>,
+    strides: &Bound<'_, PyAny>,
+    offset: &Bound<'_, PyAny>,
+    requested: &Bound<'_, PyAny>,
+) -> PyResult<(Vec<usize>, Vec<usize>, usize)> {
+    if !offset.is_exact_instance_of::<PyInt>() {
+        return Err(PyTypeError::new_err(
+            "reshape offset requires an exact integer",
+        ));
+    }
+    let input = Layout {
+        shape: exact_indices(shape)?,
+        strides: exact_indices(strides)?,
+        offset: offset.extract()?,
+    };
+    let output = Operation::Reshape(0, exact_shape(requested)?)
+        .layout(&[input])
+        .map_err(|error| tensor_error(&error))?;
+    Ok((output.shape, output.strides, output.offset))
+}
+
 fn parse_operation(
     target: &str,
     indices: &[usize],
@@ -54,6 +100,7 @@ fn parse_operation(
                 super::compile_trace_sum_options(&options.get_item(0)?, &options.get_item(1)?)?,
             )
         }
+        ("reshape", &[input]) => Operation::Reshape(input, exact_shape(payload)?),
         ("transpose", &[input]) => {
             if !payload.is_exact_instance_of::<PyTuple>() {
                 return Err(PyTypeError::new_err(
@@ -201,6 +248,78 @@ fn wrap_outputs<'py>(
 mod tests {
     use super::*;
     use crate::{Device, cuda, tensor::cuda_graph::EXECUTIONS};
+
+    #[test]
+    fn reshape_payloads_reject_before_early_or_late_execution() {
+        if cuda::device_count() == 0 {
+            eprintln!("skipping CUDA reshape bridge checks: no CUDA device");
+            return;
+        }
+        Python::initialize();
+        Python::attach(|py| {
+            let tensor = CoreTensor::from_vec(vec![1.; 6], [2, 3])
+                .unwrap()
+                .try_copy_cpu_to_cuda(Device::Cuda(0))
+                .unwrap()
+                .t()
+                .unwrap();
+            let inputs = PyTuple::new(py, [Py::new(py, PyTensor::new(tensor)).unwrap()]).unwrap();
+            let valid = (
+                "reshape".to_owned(),
+                PyTuple::new(py, [0]).unwrap().into_any(),
+                PyTuple::new(py, [-1]).unwrap().into_any(),
+                PyTuple::new(py, [6]).unwrap().into_any(),
+                PyTuple::new(py, [1]).unwrap().into_any(),
+            );
+            let mut bad = Vec::new();
+            for expr in [
+                c"None",
+                c"[6]",
+                c"(True, 6)",
+                c"(1, True)",
+                c"(6.0,)",
+                c"(-1, -1)",
+                c"(-2,)",
+                c"(7,)",
+                c"(1, 2, 3)",
+                c"()",
+                c"(9223372036854775808,)",
+                c"(9223372036854775807, 2)",
+            ] {
+                let mut node = valid.clone();
+                node.2 = py.eval(expr, None, None).unwrap();
+                bad.push(node);
+            }
+            for expr in [c"(True,)", c"(6.0,)", c"(7,)"] {
+                let mut node = valid.clone();
+                node.3 = py.eval(expr, None, None).unwrap();
+                bad.push(node);
+            }
+            for expr in [c"(True,)", c"(1.0,)", c"(2,)"] {
+                let mut node = valid.clone();
+                node.4 = py.eval(expr, None, None).unwrap();
+                bad.push(node);
+            }
+            for expr in [c"(False,)", c"(0.0,)", c"(99,)", c"()", c"(0, 0)"] {
+                let mut node = valid.clone();
+                node.1 = py.eval(expr, None, None).unwrap();
+                bad.push(node);
+            }
+            for invalid in bad {
+                for nodes in [
+                    vec![invalid.clone(), valid.clone()],
+                    vec![valid.clone(), invalid],
+                ] {
+                    EXECUTIONS.with(|count| count.set(0));
+                    assert!(execute(&inputs, nodes).is_err());
+                    EXECUTIONS.with(|count| assert_eq!(count.get(), 0));
+                }
+            }
+            let outputs = execute(&inputs, vec![valid.clone(), valid]).unwrap();
+            assert!(!outputs[0].is(&outputs[1]));
+            assert!(!outputs[0].bind(py).is(inputs.get_item(0).unwrap()));
+        });
+    }
 
     #[test]
     fn t_metadata_types_reject_before_any_native_operation() {

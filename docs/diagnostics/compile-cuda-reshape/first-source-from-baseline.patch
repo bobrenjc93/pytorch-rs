@@ -1,0 +1,478 @@
+diff --git a/python/torch_rs/__init__.py b/python/torch_rs/__init__.py
+index 90ba423..f142203 100644
+--- a/python/torch_rs/__init__.py
++++ b/python/torch_rs/__init__.py
+@@ -327,6 +327,7 @@ _COMPILE_H100_CUDA_SKIPPED_OPS = _builtins.frozenset(
+     }
+ )
+ _COMPILE_TENSOR_METHOD_GUARD_NAMES = (
++    "reshape",
+     "transpose",
+     "t",
+     "contiguous",
+diff --git a/python/torch_rs/_compile_bytecode.py b/python/torch_rs/_compile_bytecode.py
+index 05e3df2..c6f009c 100644
+--- a/python/torch_rs/_compile_bytecode.py
++++ b/python/torch_rs/_compile_bytecode.py
+@@ -140,6 +140,7 @@ class _OpcodeForm:
+ 
+ 
+ _METHOD_TARGETS = {
++    "reshape": _MethodTarget("view", "reshape", 1, "Tensor.reshape"),
+     "transpose": _MethodTarget("view", "transpose", 2, "Tensor.transpose"),
+     "t": _MethodTarget("unary", "t", 0, "Tensor.t"),
+     "contiguous": _MethodTarget("unary", "contiguous", 0, "Tensor.contiguous"),
+@@ -970,7 +971,8 @@ def _require_output_value(value, program, instruction, role):
+ def _store_local(locals, stack, program, instruction, name):
+     value = _pop(stack, program, instruction)
+     if _builtins.isinstance(value, _BytecodeConstant):
+-        _trace._normalize_mul_scalar(value.value)
++        if type(value.value) not in (int, tuple):
++            _trace._normalize_mul_scalar(value.value)
+         locals[name] = value
+         return
+     locals[name] = _require_output_value(
+@@ -1080,6 +1082,15 @@ def _lower_function_body(
+ 
+ 
+ def _record_method_call(recorder, method, args, program, instruction, names=()):
++    if method.name == "reshape":
++        if any(not isinstance(value, _BytecodeConstant) for value in args):
++            _unsupported_bytecode(program, instruction, "Tensor.reshape requires constant dimensions")
++        positional = len(args) - len(names)
++        shape = _trace._bind_reshape_shape(
++            tuple(value.value for value in args[:positional]),
++            dict(zip(names, (value.value for value in args[positional:]))),
++        )
++        return recorder.record_reshape(method.receiver, shape)
+     if method.name == "transpose":
+         positional = len(args) - len(names)
+         if positional > 2:
+@@ -1406,6 +1417,9 @@ def _handle_build_tuple(recorder, locals, stack, program, instruction, state, ac
+     argument_count = instruction.arg or 0
+     values = [_pop(stack, program, instruction) for _ in range(argument_count)]
+     values.reverse()
++    if values and all(isinstance(value, _BytecodeConstant) for value in values):
++        stack.append(_BytecodeConstant(tuple(value.value for value in values)))
++        return
+     output = tuple(values)
+     _require_output_value(output, program, instruction, "tuple return value")
+     stack.append(output)
+diff --git a/python/torch_rs/_compile_trace.py b/python/torch_rs/_compile_trace.py
+index 7b65cdc..4eed530 100644
+--- a/python/torch_rs/_compile_trace.py
++++ b/python/torch_rs/_compile_trace.py
+@@ -156,6 +156,7 @@ class CompileTraceOperation:
+     scalar: object = None
+     reduction: tuple[int, bool] | None = None
+     axes: tuple[int, int] | None = None
++    shape: tuple[int, ...] | None = None
+ 
+ 
+ @dataclass(frozen=True, slots=True)
+@@ -189,6 +190,7 @@ class CompileTraceGraph:
+ _SUPPORTED_UNARY_METHODS = (
+     "Tensor.t (CUDA, parameterless, rank <= 2)",
+     "Tensor.transpose (CUDA, constant integer axes, rank <= 2)",
++    "Tensor.reshape (CUDA, constant integer shape, rank <= 2)",
+     "Tensor.contiguous (CUDA, parameterless)",
+     "Tensor.neg",
+     "Tensor.negative",
+@@ -549,6 +551,68 @@ def _t_output_metadata(metadata):
+     )
+ 
+ 
++def _reshape_dimensions(shape):
++    if type(shape) is not tuple:
++        raise CompileTraceUnsupportedError("torch.compile reshape requires an exact flat tuple")
++    # PyTorch's schema checks the first dimension, then unpacks in order.
++    # Later booleans/index conversions can be reference-valid, but are outside
++    # this exact-integer capture contract. Never use bool/int equality here.
++    for index, dimension in enumerate(shape):
++        if type(dimension) is not int:
++            if ((type(dimension) is bool and index > 0)
++                    or (type(dimension) is not bool and hasattr(type(dimension), "__index__"))):
++                raise CompileTraceUnsupportedError("torch.compile reshape requires exact integer constants")
++            raise TypeError(f"reshape(): shape dimension {index} must be int, not {type(dimension).__name__}")
++        if not -(2**63) <= dimension < 2**63:
++            raise TypeError(f"reshape(): shape dimension {index} overflows signed int64")
++    if len(shape) > 2:
++        raise CompileTraceUnsupportedError("torch.compile reshape requires output rank 0, 1 or 2")
++    return shape
++
++
++def _bind_reshape_shape(args, kwargs):
++    if not args and "shape" not in kwargs:
++        raise TypeError('reshape() missing 1 required positional arguments: "shape"')
++    first = args[0] if args else kwargs["shape"]
++    if type(first) is int and args:
++        shape = args
++    elif type(first) is tuple:
++        if len(args) > 1:
++            raise TypeError("reshape() takes 1 positional argument")
++        shape = first
++    elif type(first) is list or (type(first) not in (bool, float, str, type(None))
++                               and hasattr(type(first), "__index__")):
++        raise CompileTraceUnsupportedError("torch.compile reshape requires exact integer constants or an exact tuple")
++    else:
++        raise TypeError("reshape(): argument 'shape' must be tuple of ints")
++    # Schema validation of the first ordinary dimension precedes keyword
++    # binding; remaining dimensions and overflow follow keyword binding.
++    if shape and type(shape[0]) is not int:
++        _reshape_dimensions((shape[0],))
++    if args and "shape" in kwargs:
++        raise TypeError("reshape() got multiple values for argument 'shape'")
++    for name in kwargs:
++        if name != "shape":
++            raise TypeError(f"reshape() got an unexpected keyword argument '{name}'")
++    return _reshape_dimensions(shape)
++
++
++def _reshape_output_metadata(metadata, shape):
++    shape = _reshape_dimensions(shape)
++    _validate_cuda_metadata(metadata, require_contiguous=False)
++    if metadata.device.type != "cuda" or len(metadata.shape) > 2:
++        raise CompileTraceUnsupportedError("torch.compile Tensor.reshape requires CUDA rank 0, 1 or 2")
++    # No tensor storage is allocated here. Both frontend and executor call the
++    # shared checked eager resolver/view-stride planner, including empty layouts.
++    resolved, stride, offset = _native._compile_trace_cuda_reshape_metadata(
++        metadata.shape, metadata.stride, metadata.storage_offset, shape,
++    )
++    return CompileTraceTensorMetadata(
++        shape=tuple(resolved), stride=tuple(stride), dtype=metadata.dtype,
++        device=metadata.device, requires_grad=False, storage_offset=offset,
++    )
++
++
+ def _transpose_axes(axes, rank):
+     if type(axes) is not tuple or len(axes) != 2:
+         raise CompileTraceUnsupportedError("torch.compile malformed transpose axes")
+@@ -1131,6 +1195,8 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled, de
+     # Validate the complete node before any graph operation can execute, even
+     # for graphs built manually or modified with dataclasses.replace().
+     _validate_metadata_types(operation.metadata)
++    if operation.target != "reshape" and operation.shape is not None:
++        raise CompileTraceUnsupportedError("torch.compile non-reshape node has a shape payload")
+     if operation.target != "transpose" and operation.axes is not None:
+         raise CompileTraceUnsupportedError("torch.compile non-transpose node has axes")
+     if operation.op == "call_reduction":
+@@ -1170,11 +1236,14 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled, de
+         return expected
+     if operation.scalar is not None:
+         raise CompileTraceUnsupportedError("torch.compile non-scalar operation has a scalar payload")
+-    if operation.target in ("contiguous", "t", "transpose"):
++    if operation.target in ("contiguous", "t", "transpose", "reshape"):
+         if len(operation.inputs) != 1:
+             raise CompileTraceUnsupportedError(f"torch.compile {operation.target} requires one input")
+         name = operation.inputs[0]
+-        if operation.target == "transpose":
++        if operation.target == "reshape":
++            def infer(metadata):
++                return _reshape_output_metadata(metadata, operation.shape)
++        elif operation.target == "transpose":
+             def infer(metadata):
+                 return _transpose_output_metadata(metadata, operation.axes)
+         else:
+@@ -1366,7 +1435,7 @@ def execute_compile_trace_graph(graph, *inputs):
+             )
+         metadata_values[operation.name] = expected_metadata
+ 
+-    if (len(graph.operations) > 1 or any(op.target in ("contiguous", "t", "transpose") for op in graph.operations)) and all(
++    if (len(graph.operations) > 1 or any(op.target in ("contiguous", "t", "transpose", "reshape") for op in graph.operations)) and all(
+         metadata.device.type == "cuda" for metadata in metadata_values.values()
+     ):
+         # Validate the output tree too before the native bridge can launch.
+@@ -1383,6 +1452,7 @@ def execute_compile_trace_graph(graph, *inputs):
+         indices = {name: index for index, name in enumerate(metadata_values)}
+         nodes = [
+             (operation.target, tuple(indices[name] for name in operation.inputs),
++             operation.shape if operation.target == "reshape" else
+              operation.axes if operation.target == "transpose" else (
+                  operation.reduction if operation.op == "call_reduction" else operation.scalar),
+              metadata_values[operation.name].shape,
+@@ -1455,6 +1525,9 @@ class CompileTraceTensorProxy:
+     def dim(self):
+         return len(self.metadata.shape)
+ 
++    def reshape(self, *args, **kwargs):
++        return self._recorder.record_reshape(self, _bind_reshape_shape(args, kwargs))
++
+     def transpose(self, dim0, dim1):
+         return self._recorder.record_transpose(self, dim0, dim1)
+ 
+@@ -1703,6 +1776,17 @@ class CompileTraceRecorder:
+         self._operations.append(operation)
+         return CompileTraceTensorProxy(self, name, metadata)
+ 
++    def record_reshape(self, input, shape):
++        self._ensure_open()
++        self._require_owned_proxy(input)
++        metadata = _reshape_output_metadata(input.metadata, shape)
++        name = self._next_operation_name("reshape")
++        self._operations.append(CompileTraceOperation(
++            name=name, op="call_method", target="reshape", inputs=(input.name,),
++            metadata=metadata, shape=shape,
++        ))
++        return CompileTraceTensorProxy(self, name, metadata)
++
+     def record_transpose(self, input, dim0, dim1):
+         self._ensure_open()
+         self._require_owned_proxy(input)
+diff --git a/src/python.rs b/src/python.rs
+index e9073c9..232e9e2 100644
+--- a/src/python.rs
++++ b/src/python.rs
+@@ -25977,6 +25977,10 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
+     module.add_function(wrap_pyfunction!(compile_trace_scalar, module)?)?;
+     module.add_function(wrap_pyfunction!(compile_trace_reduction, module)?)?;
+     module.add_function(wrap_pyfunction!(compile_cuda_graph::execute, module)?)?;
++    module.add_function(wrap_pyfunction!(
++        compile_cuda_graph::reshape_metadata,
++        module
++    )?)?;
+     module.add_function(wrap_pyfunction!(compile_trace_mul_scalar_value, module)?)?;
+     let exports = module.getattr("__all__")?;
+     for name in [
+@@ -25989,6 +25993,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
+         "_compile_trace_scalar",
+         "_compile_trace_reduction",
+         "_compile_trace_cuda_graph",
++        "_compile_trace_cuda_reshape_metadata",
+         "_compile_trace_mul_scalar_value",
+     ] {
+         exports.call_method1("remove", (name,))?;
+diff --git a/src/python_compile_cuda_graph.rs b/src/python_compile_cuda_graph.rs
+index 6d969b9..7810190 100644
+--- a/src/python_compile_cuda_graph.rs
++++ b/src/python_compile_cuda_graph.rs
+@@ -1,6 +1,6 @@
+ //! One bridge for composed CUDA captures; eager Tensor methods stay unchanged.
+ use super::{CoreTensor, DType, PyTensor, compile_trace_mul_scalar_value, tensor_error};
+-use crate::tensor::cuda_graph::{Layout, Operation};
++use crate::tensor::cuda_graph::{Layout, Operation, Shape};
+ use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError, PyTypeError, PyValueError};
+ use pyo3::prelude::*;
+ use pyo3::types::{PyInt, PyList, PyTuple};
+@@ -35,6 +35,52 @@ fn exact_indices(value: &Bound<'_, PyAny>) -> PyResult<Vec<usize>> {
+         .collect()
+ }
+ 
++fn exact_shape(payload: &Bound<'_, PyAny>) -> PyResult<Shape> {
++    if !payload.is_exact_instance_of::<PyTuple>() {
++        return Err(PyTypeError::new_err(
++            "reshape shape requires an exact tuple",
++        ));
++    }
++    let dimensions = payload.cast::<PyTuple>()?;
++    let requested = dimensions
++        .iter()
++        .map(|dim| {
++            if !dim.is_exact_instance_of::<PyInt>() {
++                return Err(PyTypeError::new_err(
++                    "reshape dimensions require exact integers",
++                ));
++            }
++            dim.extract::<i64>()
++                .map_err(|_| PyTypeError::new_err("reshape dimension overflow"))
++        })
++        .collect::<PyResult<Vec<_>>>()?;
++    Shape::new(&requested).map_err(|error| tensor_error(&error))
++}
++
++// Metadata only: use exactly the planner used again by the whole-graph bridge.
++#[pyfunction(name = "_compile_trace_cuda_reshape_metadata")]
++pub(super) fn reshape_metadata(
++    shape: &Bound<'_, PyAny>,
++    strides: &Bound<'_, PyAny>,
++    offset: &Bound<'_, PyAny>,
++    requested: &Bound<'_, PyAny>,
++) -> PyResult<(Vec<usize>, Vec<usize>, usize)> {
++    if !offset.is_exact_instance_of::<PyInt>() {
++        return Err(PyTypeError::new_err(
++            "reshape offset requires an exact integer",
++        ));
++    }
++    let input = Layout {
++        shape: exact_indices(shape)?,
++        strides: exact_indices(strides)?,
++        offset: offset.extract()?,
++    };
++    let output = Operation::Reshape(0, exact_shape(requested)?)
++        .layout(&[input])
++        .map_err(|error| tensor_error(&error))?;
++    Ok((output.shape, output.strides, output.offset))
++}
++
+ fn parse_operation(
+     target: &str,
+     indices: &[usize],
+@@ -54,6 +100,7 @@ fn parse_operation(
+                 super::compile_trace_sum_options(&options.get_item(0)?, &options.get_item(1)?)?,
+             )
+         }
++        ("reshape", &[input]) => Operation::Reshape(input, exact_shape(payload)?),
+         ("transpose", &[input]) => {
+             if !payload.is_exact_instance_of::<PyTuple>() {
+                 return Err(PyTypeError::new_err(
+diff --git a/src/tensor.rs b/src/tensor.rs
+index a348e97..2e48060 100644
+--- a/src/tensor.rs
++++ b/src/tensor.rs
+@@ -4326,16 +4326,7 @@ impl Tensor {
+     }
+ 
+     fn reshape_view_strides(&self, resolved: &[usize]) -> Result<Option<Vec<usize>>, TensorError> {
+-        if self.elements == 0 {
+-            let strides = if resolved == self.shape {
+-                try_clone_result_shape(&self.strides, self.elements)?
+-            } else {
+-                reshape_strides(resolved, self.elements)?
+-            };
+-            return Ok(Some(strides));
+-        }
+-
+-        compute_reshape_view_strides(&self.shape, &self.strides, resolved, self.elements)
++        reshape_view_strides(&self.shape, &self.strides, resolved, self.elements)
+     }
+ 
+     fn finish_reshape_view(
+@@ -9013,6 +9004,23 @@ fn accumulate_packed_matmul(
+     Ok(())
+ }
+ 
++// Shared by eager reshape/view and the storage-free CUDA graph planner.
++fn reshape_view_strides(
++    shape: &[usize],
++    strides: &[usize],
++    resolved: &[usize],
++    elements: usize,
++) -> Result<Option<Vec<usize>>, TensorError> {
++    if elements == 0 {
++        return if resolved == shape {
++            try_clone_result_shape(strides, elements).map(Some)
++        } else {
++            reshape_strides(resolved, elements).map(Some)
++        };
++    }
++    compute_reshape_view_strides(shape, strides, resolved, elements)
++}
++
+ fn compute_reshape_view_strides(
+     old_shape: &[usize],
+     old_strides: &[usize],
+diff --git a/src/tensor_cuda_graph.rs b/src/tensor_cuda_graph.rs
+index 31a1af6..f1b4f51 100644
+--- a/src/tensor_cuda_graph.rs
++++ b/src/tensor_cuda_graph.rs
+@@ -1,9 +1,9 @@
+ //! Metadata planning for the existing CUDA capture operations. No allocation
+ //! of tensor storage or kernel launch is allowed while constructing this plan.
+ use super::{
+-    ElementwiseLayout, MemoryFormat, Tensor, TensorError, element_count,
++    ElementwiseLayout, MemoryFormat, Tensor, TensorError, contiguous_strides, element_count,
+     elementwise_output_strides, layout_is_contiguous, normalize_transpose_dimension,
+-    validated_layout,
++    reshape_view_strides, validated_layout,
+ };
+ 
+ #[derive(Clone, Copy)]
+@@ -11,6 +11,7 @@ pub(crate) enum Operation {
+     Contiguous(usize),
+     T(usize),
+     Transpose(usize, i64, i64),
++    Reshape(usize, Shape),
+     Neg(usize),
+     MulScalar(usize, f32),
+     Add(usize, usize),
+@@ -18,6 +19,33 @@ pub(crate) enum Operation {
+     SumRows(usize, bool),
+ }
+ 
++/// Bounded requested dimensions, separate from scalar/reduction/axis payloads.
++#[derive(Clone, Copy)]
++pub(crate) struct Shape {
++    dimensions: [i64; 2],
++    rank: usize,
++}
++
++impl Shape {
++    pub(crate) fn new(requested: &[i64]) -> Result<Self, TensorError> {
++        if requested.len() > 2 {
++            return Err(TensorError::UnsupportedCudaContiguous {
++                reason: "compiled reshape requires output rank 0, 1 or 2",
++            });
++        }
++        let mut dimensions = [0; 2];
++        dimensions[..requested.len()].copy_from_slice(requested);
++        Ok(Self {
++            dimensions,
++            rank: requested.len(),
++        })
++    }
++
++    fn as_slice(&self) -> &[i64] {
++        &self.dimensions[..self.rank]
++    }
++}
++
+ #[derive(Clone)]
+ pub(crate) struct Layout {
+     pub(crate) shape: Vec<usize>,
+@@ -87,6 +115,41 @@ impl Layout {
+         Ok(output)
+     }
+ 
++    fn reshape(&self, requested: Shape) -> Result<Self, TensorError> {
++        if self.shape.len() > 2 || self.shape.len() != self.strides.len() {
++            return Err(TensorError::UnsupportedCudaContiguous {
++                reason: "compiled reshape requires input rank 0, 1 or 2",
++            });
++        }
++        let elements = element_count(&self.shape)?;
++        let shape = Tensor::resolve_reshape_shape(requested.as_slice(), elements)?;
++        if let Some(strides) = reshape_view_strides(&self.shape, &self.strides, &shape, elements)? {
++            return Ok(Self {
++                shape,
++                strides,
++                offset: self.offset,
++            });
++        }
++        if !(1..=2).contains(&self.shape.len()) || self.strides.contains(&0) {
++            return Err(TensorError::UnsupportedCudaContiguous {
++                reason: "reshape packing requires positive-stride rank-1 or rank-2 inputs",
++            });
++        }
++        // Validate both the pack allocation and the final output layout before
++        // execution. The actual copy uses eager reshape's native CUDA pack.
++        validated_layout(&self.shape)?;
++        elements
++            .checked_mul(4)
++            .filter(|&bytes| isize::try_from(bytes).is_ok())
++            .ok_or(TensorError::AllocationFailed { elements })?;
++        let strides = contiguous_strides(&shape, elements)?;
++        Ok(Self {
++            shape,
++            strides,
++            offset: 0,
++        })
++    }
++
+     pub(crate) fn matches(&self, tensor: &Tensor) -> bool {
+         self.shape == tensor.shape()
+             && self.strides == tensor.stride()
+@@ -106,6 +169,7 @@ impl Operation {
+         let get_contiguous = |index| get(index)?.require_contiguous();
+         let shape = match self {
+             Self::T(input) => return get(input)?.t(),
++            Self::Reshape(input, shape) => return get(input)?.reshape(shape),
+             Self::Transpose(input, dim0, dim1) => return get(input)?.transpose(dim0, dim1),
+             Self::Contiguous(input) => {
+                 let input = get(input)?;
+@@ -213,6 +277,7 @@ impl Operation {
+         };
+         match self {
+             Self::T(input) => get(input).t(),
++            Self::Reshape(input, shape) => get(input).reshape(shape.as_slice()),
+             Self::Transpose(input, dim0, dim1) => get(input).transpose(dim0, dim1),
+             Self::Contiguous(input) => get(input).try_contiguous(MemoryFormat::Contiguous),
+             Self::Neg(input) => get(input).negate(),

@@ -228,7 +228,7 @@ including unary `-`, `Tensor.neg()`/`negative()`, scalar/empty/offset inputs,
 self-addition, chains, and global captures. Negation allocates fresh contiguous
 CUDA storage with offset zero.
 CUDA metadata and caches guard the actual device ordinal and storage offset.
-Other CUDA unary operations except parameterless `contiguous()` and bounded `t()`/`transpose()`, closures, broader
+Other CUDA unary operations except parameterless `contiguous()` and bounded `t()`/`transpose()`/`reshape()`, closures, broader
 broadcasting, gradients and mixed devices remain unsupported. Arithmetic still
 requires contiguous operands. This is bounded graph capture under explicit
 `backend="eager"` and the existing fullgraph options, with no new fusion or
@@ -247,7 +247,15 @@ a distinct view object per call. It composes with packing and existing arithmeti
 `Tensor.transpose(dim0, dim1)` shares this path with exact constant integer axes,
 including negative/same axes and positional/keyword binding. Static/dynamic
 captures retain metadata and cache guards. Dynamic axis expressions, general
-permute/reshape, swapdims/swapaxes, properties and top-level transpose are excluded.
+permute, swapdims/swapaxes, properties and top-level transpose are excluded.
+
+[Compiled CUDA `Tensor.reshape`](docs/compile-cuda-reshape.md) captures exact
+constant integer shapes of rank 0/1/2, including scalar tuples and `-1` inference.
+It reuses native eager alias-or-pack planning and CUDA packing, preserving bits,
+view offsets/strides, copy independence and repeated output identity. Dynamic
+sizes may change view-versus-pack behavior under unchanged rank/stride/offset
+and device guards. Shape expressions, arbitrary containers, CPU/gradient capture,
+`view`/`reshape_as` and top-level reshape remain excluded; scoring corpora are unchanged.
 
 [Compiled CUDA rank-2 matmul](docs/compile-cuda-matmul.md) captures `@`, positional
 `Tensor.matmul`/`Tensor.__matmul__`, and positional top-level `torch.matmul`

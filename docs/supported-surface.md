@@ -1507,8 +1507,21 @@ accept `0`/`-1`; double transpose never collapses to the original Python object.
 Invalid bindings/types, out-of-range axes and signed-64-bit overflow raise
 `TypeError`, `IndexError` and `ValueError`, respectively. Index-like objects,
 integer subclasses, named axes and dynamic axis expressions remain unsupported.
-General permute/reshape, swapdims/swapaxes, `.T`/`.mT`, top-level
+General permute, swapdims/swapaxes, `.T`/`.mT`, top-level
 `torch.t`/`torch.transpose`, CPU capture and higher ranks remain excluded.
+
+[Compiled CUDA `Tensor.reshape`](compile-cuda-reshape.md) accepts exact integer
+constant variadic dimensions or one exact flat tuple (including `()` and a
+single `-1`), with input/output ranks 0/1/2. Native eager shape resolution and
+view-stride planning are shared with the whole-graph executor: compatible views
+share storage and preserve offsets; positive-stride rank-1/2 copies pack on-device
+with canonical strides and offset zero. Each call creates a distinct wrapper;
+repeated outputs retain identity. Static/dynamic guards and whole-graph metadata
+prevalidation remain live. Literal/local dimensions are frozen and global integers
+have type/value guards. Lists, conversions, symbolic/computed shapes, scalar call
+arguments, higher ranks, CPU/gradient capture, `view`/`reshape_as` and top-level
+`torch.reshape` are excluded. See the guide for public binding/error ordering
+and the distinction between invalid and deliberately unsupported dimensions.
 
 | Area | Supported behavior | Unsupported boundary |
 | --- | --- | --- |

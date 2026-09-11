@@ -191,6 +191,16 @@ the resulting layout normally. Frontend declarations and native shape/stride
 fields reject bool/float substitutions before equality or execution. See the
 [compiled transpose guide](docs/compile-cuda-t.md) for scope and non-scoring diagnostics.
 
+CUDA `Tensor.reshape` adds a separate requested-shape IR payload. The metadata-only
+bridge and whole-graph planner both call eager reshape's checked shape resolver
+and shared view-stride planner in `src/tensor.rs`; no Python stride algorithm is
+duplicated. The executor calls native `Tensor::reshape`, preserving view storage
+and offsets or reusing positive-stride rank-1/2 CUDA packing. Metadata allocation
+is separate from storage copying. Every reshape gets a fresh wrapper while repeated
+output references retain it. Dynamic replanning can switch alias/copy behavior
+without weakening input guards or cached/output metadata validation. See the
+[compiled reshape guide](docs/compile-cuda-reshape.md).
+
 Eager scalar multiplication routes `BinaryOperation::Multiply.apply_scalar` to
 `Tensor::mul_scalar`, shared scalar output-stride planning, and the native
 [src/cuda/mul_scalar.ptx](src/cuda/mul_scalar.ptx) 64-bit grid-stride kernel.

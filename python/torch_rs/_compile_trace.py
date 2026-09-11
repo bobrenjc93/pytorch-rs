@@ -156,6 +156,7 @@ class CompileTraceOperation:
     scalar: object = None
     reduction: tuple[int, bool] | None = None
     axes: tuple[int, int] | None = None
+    shape: tuple[int, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,6 +190,7 @@ class CompileTraceGraph:
 _SUPPORTED_UNARY_METHODS = (
     "Tensor.t (CUDA, parameterless, rank <= 2)",
     "Tensor.transpose (CUDA, constant integer axes, rank <= 2)",
+    "Tensor.reshape (CUDA, constant integer shape, rank <= 2)",
     "Tensor.contiguous (CUDA, parameterless)",
     "Tensor.neg",
     "Tensor.negative",
@@ -546,6 +548,68 @@ def _t_output_metadata(metadata):
         shape=metadata.shape[::-1], stride=metadata.stride[::-1],
         dtype=metadata.dtype, device=metadata.device, requires_grad=False,
         storage_offset=metadata.storage_offset,
+    )
+
+
+def _reshape_dimensions(shape):
+    if type(shape) is not tuple:
+        raise CompileTraceUnsupportedError("torch.compile reshape requires an exact flat tuple")
+    # PyTorch's schema checks the first dimension, then unpacks in order.
+    # Later booleans/index conversions can be reference-valid, but are outside
+    # this exact-integer capture contract. Never use bool/int equality here.
+    for index, dimension in enumerate(shape):
+        if type(dimension) is not int:
+            if ((type(dimension) is bool and index > 0)
+                    or (type(dimension) is not bool and hasattr(type(dimension), "__index__"))):
+                raise CompileTraceUnsupportedError("torch.compile reshape requires exact integer constants")
+            raise TypeError(f"reshape(): shape dimension {index} must be int, not {type(dimension).__name__}")
+        if not -(2**63) <= dimension < 2**63:
+            raise TypeError(f"reshape(): shape dimension {index} overflows signed int64")
+    if len(shape) > 2:
+        raise CompileTraceUnsupportedError("torch.compile reshape requires output rank 0, 1 or 2")
+    return shape
+
+
+def _bind_reshape_shape(args, kwargs):
+    if not args and "shape" not in kwargs:
+        raise TypeError('reshape() missing 1 required positional arguments: "shape"')
+    first = args[0] if args else kwargs["shape"]
+    if type(first) is int and args:
+        shape = args
+    elif type(first) is tuple:
+        if len(args) > 1:
+            raise TypeError("reshape() takes 1 positional argument")
+        shape = first
+    elif isinstance(first, (tuple, list)) or (type(first) not in (bool, int, _builtins.float, str, type(None))
+                               and hasattr(type(first), "__index__")):
+        raise CompileTraceUnsupportedError("torch.compile reshape requires exact integer constants or an exact tuple")
+    else:
+        raise TypeError("reshape(): argument 'shape' must be tuple of ints")
+    # Schema validation of the first ordinary dimension precedes keyword
+    # binding; remaining dimensions and overflow follow keyword binding.
+    if shape and type(shape[0]) is not int:
+        _reshape_dimensions((shape[0],))
+    if args and "shape" in kwargs:
+        raise TypeError("reshape() got multiple values for argument 'shape'")
+    for name in kwargs:
+        if name != "shape":
+            raise TypeError(f"reshape() got an unexpected keyword argument '{name}'")
+    return _reshape_dimensions(shape)
+
+
+def _reshape_output_metadata(metadata, shape):
+    shape = _reshape_dimensions(shape)
+    _validate_cuda_metadata(metadata, require_contiguous=False)
+    if metadata.device.type != "cuda" or len(metadata.shape) > 2:
+        raise CompileTraceUnsupportedError("torch.compile Tensor.reshape requires CUDA rank 0, 1 or 2")
+    # No tensor storage is allocated here. Both frontend and executor call the
+    # shared checked eager resolver/view-stride planner, including empty layouts.
+    resolved, stride, offset = _native._compile_trace_cuda_reshape_metadata(
+        metadata.shape, metadata.stride, metadata.storage_offset, shape,
+    )
+    return CompileTraceTensorMetadata(
+        shape=tuple(resolved), stride=tuple(stride), dtype=metadata.dtype,
+        device=metadata.device, requires_grad=False, storage_offset=offset,
     )
 
 
@@ -1131,6 +1195,8 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled, de
     # Validate the complete node before any graph operation can execute, even
     # for graphs built manually or modified with dataclasses.replace().
     _validate_metadata_types(operation.metadata)
+    if operation.target != "reshape" and operation.shape is not None:
+        raise CompileTraceUnsupportedError("torch.compile non-reshape node has a shape payload")
     if operation.target != "transpose" and operation.axes is not None:
         raise CompileTraceUnsupportedError("torch.compile non-transpose node has axes")
     if operation.op == "call_reduction":
@@ -1170,11 +1236,14 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled, de
         return expected
     if operation.scalar is not None:
         raise CompileTraceUnsupportedError("torch.compile non-scalar operation has a scalar payload")
-    if operation.target in ("contiguous", "t", "transpose"):
+    if operation.target in ("contiguous", "t", "transpose", "reshape"):
         if len(operation.inputs) != 1:
             raise CompileTraceUnsupportedError(f"torch.compile {operation.target} requires one input")
         name = operation.inputs[0]
-        if operation.target == "transpose":
+        if operation.target == "reshape":
+            def infer(metadata):
+                return _reshape_output_metadata(metadata, operation.shape)
+        elif operation.target == "transpose":
             def infer(metadata):
                 return _transpose_output_metadata(metadata, operation.axes)
         else:
@@ -1366,7 +1435,7 @@ def execute_compile_trace_graph(graph, *inputs):
             )
         metadata_values[operation.name] = expected_metadata
 
-    if (len(graph.operations) > 1 or any(op.target in ("contiguous", "t", "transpose") for op in graph.operations)) and all(
+    if (len(graph.operations) > 1 or any(op.target in ("contiguous", "t", "transpose", "reshape") for op in graph.operations)) and all(
         metadata.device.type == "cuda" for metadata in metadata_values.values()
     ):
         # Validate the output tree too before the native bridge can launch.
@@ -1383,6 +1452,7 @@ def execute_compile_trace_graph(graph, *inputs):
         indices = {name: index for index, name in enumerate(metadata_values)}
         nodes = [
             (operation.target, tuple(indices[name] for name in operation.inputs),
+             operation.shape if operation.target == "reshape" else
              operation.axes if operation.target == "transpose" else (
                  operation.reduction if operation.op == "call_reduction" else operation.scalar),
              metadata_values[operation.name].shape,
@@ -1454,6 +1524,9 @@ class CompileTraceTensorProxy:
 
     def dim(self):
         return len(self.metadata.shape)
+
+    def reshape(self, *args, **kwargs):
+        return self._recorder.record_reshape(self, _bind_reshape_shape(args, kwargs))
 
     def transpose(self, dim0, dim1):
         return self._recorder.record_transpose(self, dim0, dim1)
@@ -1701,6 +1774,17 @@ class CompileTraceRecorder:
             metadata=metadata,
         )
         self._operations.append(operation)
+        return CompileTraceTensorProxy(self, name, metadata)
+
+    def record_reshape(self, input, shape):
+        self._ensure_open()
+        self._require_owned_proxy(input)
+        metadata = _reshape_output_metadata(input.metadata, shape)
+        name = self._next_operation_name("reshape")
+        self._operations.append(CompileTraceOperation(
+            name=name, op="call_method", target="reshape", inputs=(input.name,),
+            metadata=metadata, shape=shape,
+        ))
         return CompileTraceTensorProxy(self, name, metadata)
 
     def record_transpose(self, input, dim0, dim1):

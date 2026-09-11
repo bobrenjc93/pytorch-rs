@@ -288,7 +288,7 @@ class CompileCudaTTests(unittest.TestCase):
     def test_strided_arithmetic_and_public_scope_remain_rejected(self):
         x = native.ones((3, 7)).to('cuda:0')
         expressions = ('-a', 'a * 2', 'a + a', 'a @ a', 'a.sum(1)',
-                       'x.t(0)', 'x.t(dim=0)', 'x.t(foo=True)', 'x.t().reshape(-1)',
+                       'x.t(0)', 'x.t(dim=0)', 'x.t(foo=True)', 'x.t().reshape(1, 3, 7)',
                        'x.swapdims(0, 1)', 'x.permute(1, 0)', 'x.T', 'x.mT', 'm.t(x)')
         for dynamic in (False, True):
             for expression in expressions:

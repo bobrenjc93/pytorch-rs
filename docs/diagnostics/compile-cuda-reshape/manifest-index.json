@@ -1,0 +1,25 @@
+{
+  "422c816aea12c6100f403acdfb188503b54ed2a0c2c4808069f7eaddf8f91fdd": {
+    "base": "measured-inputs.json",
+    "delta": "inputs-delta-422c816aea12.json"
+  },
+  "6e35d91d63504af40083cf0683424f9f8c6f44fa8feb4babf8c9f6a760f7d36d": {
+    "file": "measured-inputs.json"
+  },
+  "73930f80f1f22d44cc7580d5fc25972acd5852c7fbcdf494a84874477884a398": {
+    "base": "measured-inputs.json",
+    "delta": "inputs-delta-73930f80f1f2.json"
+  },
+  "95a79b77d3b49e194fd98de542c978805d6493297c753975da284acd9a13db3d": {
+    "base": "measured-inputs.json",
+    "delta": "inputs-delta-95a79b77d3b4.json"
+  },
+  "ba7639376f1b9b4b93729ccac9c8d052021db9379e9f7cec19f20fa82a06a210": {
+    "base": "measured-inputs.json",
+    "delta": "inputs-delta-ba7639376f1b.json"
+  },
+  "fb3ea619cca55f4fad6e0102cf639eb5e9ef6bd81b9858dacd8466c4d925ce45": {
+    "base": "measured-inputs.json",
+    "delta": "inputs-delta-fb3ea619cca5.json"
+  }
+}

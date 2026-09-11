@@ -1,0 +1,8 @@
+{
+  "remove": [],
+  "replace": {
+    "src/tensor_cuda_graph.rs": "173b089e57d15058208376635c74a8e9f2a43b9b39225bb7c0c2f0f9768165cf",
+    "tests/test_compile_cuda_contiguous.py": "8d0c2c617fc5b6c22f2556ba6d92af1d00b58097abb187c87f19e1e5810d5e9a",
+    "tests/test_compile_cuda_t.py": "1607002954d4832198a0d1e7b9075f11dd933105ae9d672ba5ab452a4d293343"
+  }
+}
