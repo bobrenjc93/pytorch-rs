@@ -1,0 +1,7 @@
+from pathlib import Path
+import re
+for name in ('compile-cuda-view', 'compile-cuda-reshape', 'compile-cuda-add'):
+    path = Path('docs') / (name + '.md')
+    for snippet in re.findall(r'```python\n(.*?)```', path.read_text(), re.S):
+        exec(compile(snippet, str(path), 'exec'), {'__name__': '__main__'})
+    print(name, 'passed')

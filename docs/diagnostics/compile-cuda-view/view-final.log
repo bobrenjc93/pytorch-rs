@@ -1,0 +1,32 @@
+test_bits_shared_mutation_and_lifetimes (tests.test_compile_cuda_view.CompileCudaViewTests.test_bits_shared_mutation_and_lifetimes) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_67fce754/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ok
+test_cached_graph_early_late_and_repeated_output_metadata (tests.test_compile_cuda_view.CompileCudaViewTests.test_cached_graph_early_late_and_repeated_output_metadata) ... ok
+test_composition_and_dynamic_compatibility_recovery (tests.test_compile_cuda_view.CompileCudaViewTests.test_composition_and_dynamic_compatibility_recovery) ... ok
+test_guards_methods_and_blocked_reference_import (tests.test_compile_cuda_view.CompileCudaViewTests.test_guards_methods_and_blocked_reference_import) ... ok
+test_large_valid_empty_singleton_scalar (tests.test_compile_cuda_view.CompileCudaViewTests.test_large_valid_empty_singleton_scalar) ... ok
+test_live_globals_locals_and_helpers (tests.test_compile_cuda_view.CompileCudaViewTests.test_live_globals_locals_and_helpers) ... ok
+test_local_nonnumeric_constants_preserve_public_binding_errors (tests.test_compile_cuda_view.CompileCudaViewTests.test_local_nonnumeric_constants_preserve_public_binding_errors) ... ok
+test_partial_shapes_validate_known_errors_before_unsupported_capture (tests.test_compile_cuda_view.CompileCudaViewTests.test_partial_shapes_validate_known_errors_before_unsupported_capture) ... ok
+test_public_binding_order_and_unsupported_forms (tests.test_compile_cuda_view.CompileCudaViewTests.test_public_binding_order_and_unsupported_forms) ... ok
+test_same_device_context_and_unused_actual_inputs (tests.test_compile_cuda_view.CompileCudaViewTests.test_same_device_context_and_unused_actual_inputs) ... ok
+test_seeded_layouts_shapes_policies_identity_and_cache (tests.test_compile_cuda_view.CompileCudaViewTests.test_seeded_layouts_shapes_policies_identity_and_cache) ... ok
+test_tensor_valued_invalid_binding_before_execution (tests.test_compile_cuda_view.CompileCudaViewTests.test_tensor_valued_invalid_binding_before_execution) ... ok
+test_context_restoration_and_unused_mixed_capture (tests.test_compile_cuda_view.ViewDeviceTests.test_context_restoration_and_unused_mixed_capture) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_alias_only_planner_and_binding_order_without_hardware (tests.test_compile_cuda_view.ViewMetadataTests.test_alias_only_planner_and_binding_order_without_hardware) ... ERROR
+test_exact_dimensions_and_no_index_conversion (tests.test_compile_cuda_view.ViewMetadataTests.test_exact_dimensions_and_no_index_conversion) ... ok
+test_shared_native_planner_without_hardware (tests.test_compile_cuda_view.ViewMetadataTests.test_shared_native_planner_without_hardware) ... ok
+
+======================================================================
+ERROR: test_alias_only_planner_and_binding_order_without_hardware (tests.test_compile_cuda_view.ViewMetadataTests.test_alias_only_planner_and_binding_order_without_hardware)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_67fce754/tests/test_compile_cuda_view.py", line 78, in test_alias_only_planner_and_binding_order_without_hardware
+    for dtype in (native.float32, native.float64):
+                                  ^^^^^^^^^^^^^^
+AttributeError: module 'torch_rs' has no attribute 'float64'. Did you mean: 'float'?
+
+----------------------------------------------------------------------
+Ran 16 tests in 21.354s
+
+FAILED (errors=1, skipped=1)

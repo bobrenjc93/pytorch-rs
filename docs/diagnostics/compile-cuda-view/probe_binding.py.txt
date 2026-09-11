@@ -1,0 +1,8 @@
+import torch, json
+x=torch.ones(1)
+forms=['()', '(1)', '(1,1)', '((1,))', '(())', '(size=(1,))', '(size=1)', '(shape=(1,))', '(dtype=torch.float32)', '(torch.float32)', '(size=torch.float32)', '(torch.float32, x)', '((1,), x)', '((1,),1)', '(1, size=(1,))', '(x,size=(1,))', '(x,foo=1)', '(size=x)', '(True,foo=1)', '((True,),foo=1)', '(2**63,foo=1)', '(size=(True,),foo=1)', '(size=(1,),foo=1)', '(1,x,1.)', '(x,1.)', '((x,1.),)', '(-2,x)', '(-1,-1,x)', '(2**63,x)', '([1],foo=1)', '(1,True)', '(size=(1,True))', '((1.,),foo=1)', '(size=(1.,),foo=1)', '(size=(2**63,),foo=1)', '(2**63,1.)', '(-2,1.)', '(1,dtype=torch.float32)', '((1,),dtype=torch.float32)']
+for form in forms:
+ try:
+  y=eval('x.view'+form); result={'shape':list(y.shape)}
+ except Exception as e: result={'error':type(e).__name__,'message':str(e)}
+ print(json.dumps({'form':form, **result}))

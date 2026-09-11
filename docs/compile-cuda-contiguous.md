@@ -33,7 +33,8 @@ method, noncontiguous rank >2, zero-stride packing, other dtypes and gradients
 remain unsupported. [Bounded `Tensor.t()` capture](compile-cuda-t.md) can now
 create rank-0/1/2 views inside a graph before packing.
 [Constant-shape rank-0/1/2 reshape](compile-cuda-reshape.md) shares the native
-alias-or-pack planner. Broader reshape/view grammar, new backends, training,
+alias-or-pack planner; [compiled view](compile-cuda-view.md) requires compatible
+strides and never packs. Broader reshape/view grammar, new backends, training,
 fusion and performance parity remain excluded. Graphlets below are
 non-scoring diagnostics; the frozen 38-case denominator and PR1970/PR1971
 campaigns remain unchanged.

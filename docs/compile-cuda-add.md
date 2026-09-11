@@ -53,7 +53,9 @@ executing any operation. Dynamic shapes do not enable broader broadcasting.
 CUDA graphs reject other unary operations (including `float` and `detach`), scalar
 number operands outside multiplication, broader broadcasts (including `(M,N)+(1,N)`,
 `(M,N)+(M,1)`, rank-three plus vector, or scalar expansion), noncontiguous layouts,
-gradients, mixed CPU/CUDA inputs, and mixed CUDA ordinals. Keyword method arguments, other operations,
+gradients, mixed CPU/CUDA inputs, and mixed CUDA ordinals. The bounded
+[view](compile-cuda-view.md), [reshape](compile-cuda-reshape.md), transpose and
+row-sum methods retain their documented keyword forms. Other keyword arguments and operations,
 closures, mutations, top-level `torch.neg`/`negative` calls, unsupported bytecode,
 and unsupported compiler options retain their existing rejection behavior.
 Float64 CUDA tensors and CUDA tensors requiring gradients cannot currently be constructed by the native substrate; the

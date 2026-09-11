@@ -1,0 +1,48 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.01s
+     Running tests/cuda_contiguous.rs (target/view/build/debug/deps/cuda_contiguous-19470d316c601991)
+
+running 1 test
+test cuda_contiguous_and_reshape_layout_contract ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+
+     Running tests/cuda_native_boundaries.rs (target/view/build/debug/deps/cuda_native_boundaries-5c3fea720f3372b3)
+
+running 6 tests
+test cuda_zeros_checks_rank_device_and_layout_before_runtime ... ok
+test fallible_cpu_apis_preserve_values_and_gradients ... ok
+test host_to_device_rejects_unsupported_inputs_without_runtime ... ok
+
+thread 'standalone_cuda_operations_reject_before_cpu_storage_access' (3999898) panicked at src/tensor.rs:5534:24:
+sum(): unsupported device: UnsupportedDevice { operation: "sum", device: Cuda(0) }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'standalone_cuda_operations_reject_before_cpu_storage_access' (3999898) panicked at src/tensor.rs:714:31:
+equal(): unsupported device: UnsupportedDevice { operation: "equal", device: Cuda(0) }
+
+thread 'standalone_cuda_operations_reject_before_cpu_storage_access' (3999898) panicked at src/tensor.rs:1536:14:
+with_requires_grad(): unsupported device: UnsupportedDevice { operation: "with_requires_grad", device: Cuda(0) }
+
+thread 'standalone_cuda_operations_reject_before_cpu_storage_access' (3999898) panicked at src/tensor.rs:5534:24:
+sum(): unsupported device: UnsupportedDevice { operation: "sum", device: Cuda(0) }
+
+thread 'standalone_cuda_operations_reject_before_cpu_storage_access' (3999898) panicked at src/tensor.rs:714:31:
+equal(): unsupported device: UnsupportedDevice { operation: "equal", device: Cuda(0) }
+
+thread 'standalone_cuda_operations_reject_before_cpu_storage_access' (3999898) panicked at src/tensor.rs:1536:14:
+with_requires_grad(): unsupported device: UnsupportedDevice { operation: "with_requires_grad", device: Cuda(0) }
+
+thread 'standalone_cuda_operations_reject_before_cpu_storage_access' (3999898) panicked at src/tensor.rs:5534:24:
+sum(): unsupported device: UnsupportedDevice { operation: "sum", device: Cuda(0) }
+
+thread 'standalone_cuda_operations_reject_before_cpu_storage_access' (3999898) panicked at src/tensor.rs:714:31:
+equal(): unsupported device: UnsupportedDevice { operation: "equal", device: Cuda(0) }
+
+thread 'standalone_cuda_operations_reject_before_cpu_storage_access' (3999898) panicked at src/tensor.rs:1536:14:
+with_requires_grad(): unsupported device: UnsupportedDevice { operation: "with_requires_grad", device: Cuda(0) }
+test standalone_cuda_operations_reject_before_cpu_storage_access ... ok
+test native_nonzero_cpu_cuda_roundtrips_preserve_layout_and_lifetimes ... ok
+test native_cuda_matrix_zeros_preserve_layout_values_and_independent_storage ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s
+

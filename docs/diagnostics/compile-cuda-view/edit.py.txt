@@ -1,0 +1,86 @@
+from pathlib import Path
+p=Path('src/tensor_cuda_graph.rs'); s=p.read_text().replace('    Reshape(usize, Shape),','    Reshape(usize, Shape),\n    View(usize, Shape),').replace('compiled reshape requires output rank','compiled shape operation requires output rank')
+s=s.replace('fn reshape(&self, requested: Shape)', 'fn reshape(&self, requested: Shape, alias_only: bool)').replace('compiled reshape requires input rank','compiled shape operation requires input rank')
+s=s.replace('        if !(1..=2).contains(&self.shape.len()) || self.strides.contains(&0) {','        if alias_only {\n            return Err(TensorError::ViewIncompatibleLayout);\n        }\n        if !(1..=2).contains(&self.shape.len()) || self.strides.contains(&0) {',1)
+s=s.replace('Self::Reshape(input, shape) => return get(input)?.reshape(shape),','Self::Reshape(input, shape) => return get(input)?.reshape(shape, false),\n            Self::View(input, shape) => return get(input)?.reshape(shape, true),').replace('Self::Reshape(input, shape) => get(input).reshape(shape.as_slice()),','Self::Reshape(input, shape) => get(input).reshape(shape.as_slice()),\n            Self::View(input, shape) => get(input).view(shape.as_slice()),')
+p.write_text(s)
+p=Path('src/python_compile_cuda_graph.rs');s=p.read_text().replace('reshape shape requires','shape payload requires').replace('reshape dimensions require','shape dimensions require').replace('reshape dimension overflow','shape dimension overflow')
+start=s.index('    if !offset.is_exact_instance_of::<PyInt>()',s.index('pub(super) fn reshape_metadata'))
+s=s[:start]+'''    shape_metadata(shape, strides, offset, requested, false)
+}
+
+#[pyfunction(name = "_compile_trace_cuda_view_metadata")]
+pub(super) fn view_metadata(
+    shape: &Bound<'_, PyAny>,
+    strides: &Bound<'_, PyAny>,
+    offset: &Bound<'_, PyAny>,
+    requested: &Bound<'_, PyAny>,
+) -> PyResult<(Vec<usize>, Vec<usize>, usize)> {
+    shape_metadata(shape, strides, offset, requested, true)
+}
+
+fn shape_metadata(
+    shape: &Bound<'_, PyAny>,
+    strides: &Bound<'_, PyAny>,
+    offset: &Bound<'_, PyAny>,
+    requested: &Bound<'_, PyAny>,
+    alias_only: bool,
+) -> PyResult<(Vec<usize>, Vec<usize>, usize)> {
+'''+s[start:]
+s=s.replace('reshape offset requires','shape offset requires').replace('    let output = Operation::Reshape(0, exact_shape(requested)?)\n        .layout(&[input])','    let requested = exact_shape(requested)?;\n    let operation = if alias_only {\n        Operation::View(0, requested)\n    } else {\n        Operation::Reshape(0, requested)\n    };\n    let output = operation\n        .layout(&[input])')
+s=s.replace('        ("reshape", &[input]) => Operation::Reshape(input, exact_shape(payload)?),','        ("reshape", &[input]) => Operation::Reshape(input, exact_shape(payload)?),\n        ("view", &[input]) => Operation::View(input, exact_shape(payload)?),').replace('// T and Transpose always wrap fresh view objects','// T, Transpose, Reshape and View always wrap fresh objects')
+p.write_text(s)
+p=Path('src/python.rs'); s=p.read_text().replace('    module.add_function(wrap_pyfunction!(compile_trace_mul_scalar_value, module)?)?;', '    module.add_function(wrap_pyfunction!(compile_cuda_graph::view_metadata, module)?)?;\n    module.add_function(wrap_pyfunction!(compile_trace_mul_scalar_value, module)?)?;').replace('        "_compile_trace_cuda_reshape_metadata",','        "_compile_trace_cuda_reshape_metadata",\n        "_compile_trace_cuda_view_metadata",');p.write_text(s)
+p=Path('python/torch_rs/_compile_trace.py');s=p.read_text().replace('    "Tensor.reshape (CUDA, constant integer shape, rank <= 2)",','    "Tensor.reshape (CUDA, constant integer shape, rank <= 2)",\n    "Tensor.view (CUDA, constant integer shape, alias-only, rank <= 2)",')
+s=s.replace('def _validate_reshape_dimension(dimension, index):','def _validate_reshape_dimension(dimension, index, method="reshape"):').replace('f"reshape(): shape dimension', 'f"{method}(): shape dimension')
+s=s.replace('def _reshape_dimensions(shape):','def _reshape_dimensions(shape, method="reshape"):').replace('"torch.compile reshape requires', 'f"torch.compile {method} requires') # binder strings below need method fix
+s=s.replace('_validate_reshape_dimension(dimension, index) and constant','_validate_reshape_dimension(dimension, index, method) and constant')
+# Undo binder-specific f-string change: reshape binder has no method variable.
+s=s.replace('f"torch.compile {method} requires exact integer constants or an exact tuple"','"torch.compile reshape requires exact integer constants or an exact tuple"')
+idx=s.index('def _reshape_output_metadata(')
+s=s[:idx]+'''def _bind_view_shape(args, kwargs):
+    # Unlike reshape(shape=...), view's overloaded parser rejects call
+    # structure before unpacking dimensions. Never invoke either dtype overload
+    # or user conversion methods while inspecting this bounded shape form.
+    if kwargs:
+        if not args and tuple(kwargs) == ("dtype",):
+            raise CompileTraceUnsupportedError("torch.compile view dtype overload is unsupported")
+        if args or tuple(kwargs) != ("size",):
+            raise TypeError("view() received an invalid combination of arguments")
+    elif not args:
+        raise TypeError("view() received an invalid combination of arguments")
+    first = args[0] if args else kwargs["size"]
+    if type(first) is tuple:
+        if len(args) > 1:
+            raise TypeError("view() received an invalid combination of arguments")
+        shape = first
+    elif isinstance(first, (tuple, list)):
+        if len(args) > 1:
+            raise TypeError("view() received an invalid combination of arguments")
+        raise CompileTraceUnsupportedError("torch.compile view requires an exact tuple")
+    elif first is _RESHAPE_UNKNOWN_DIMENSION:
+        shape = args if args else (first,)
+    elif type(first) is type(_native.float32):
+        if len(args) > 1 or not args:
+            raise TypeError("view() received an invalid combination of arguments")
+        raise CompileTraceUnsupportedError("torch.compile view dtype overload is unsupported")
+    elif not args:
+        raise TypeError("view(): argument 'size' must be tuple of ints")
+    else:
+        shape = args
+    return _reshape_dimensions(shape, "view")
+
+
+def _view_output_metadata(metadata, shape):
+    return _shape_output_metadata(metadata, shape, "view")
+
+
+'''+s[idx:]
+s=s.replace('def _reshape_output_metadata(metadata, shape):\n    shape = _reshape_dimensions(shape)', 'def _reshape_output_metadata(metadata, shape):\n    return _shape_output_metadata(metadata, shape, "reshape")\n\n\ndef _shape_output_metadata(metadata, shape, method):\n    shape = _reshape_dimensions(shape, method)')
+s=s.replace('"torch.compile Tensor.reshape requires CUDA rank 0, 1 or 2"','f"torch.compile Tensor.{method} requires CUDA rank 0, 1 or 2"').replace('    resolved, stride, offset = _native._compile_trace_cuda_reshape_metadata(', '    planner = (_native._compile_trace_cuda_view_metadata if method == "view"\n               else _native._compile_trace_cuda_reshape_metadata)\n    resolved, stride, offset = planner(')
+s=s.replace('operation.target != "reshape" and operation.shape', 'operation.target not in ("reshape", "view") and operation.shape').replace('non-reshape node has a shape payload','non-shape node has a shape payload')
+s=s.replace('("contiguous", "t", "transpose", "reshape")','("contiguous", "t", "transpose", "reshape", "view")').replace('("contiguous", "t", "transpose", "reshape", "relu")','("contiguous", "t", "transpose", "reshape", "view", "relu")').replace('if operation.target == "reshape":','if operation.target in ("reshape", "view"):').replace('return _reshape_output_metadata(metadata, operation.shape)','return _shape_output_metadata(metadata, operation.shape, operation.target)').replace('operation.shape if operation.target == "reshape" else','operation.shape if operation.target in ("reshape", "view") else')
+s=s.replace('    def reshape(self, *args, **kwargs):','    def view(self, *args, **kwargs):\n        return self._recorder.record_view(self, _bind_view_shape(args, kwargs))\n\n    def reshape(self, *args, **kwargs):')
+s=s.replace('    def record_reshape(self, input, shape):\n', '    def record_view(self, input, shape):\n        return self._record_shape(input, shape, "view")\n\n    def record_reshape(self, input, shape):\n        return self._record_shape(input, shape, "reshape")\n\n    def _record_shape(self, input, shape, method):\n').replace('metadata = _reshape_output_metadata(input.metadata, shape)','metadata = _shape_output_metadata(input.metadata, shape, method)').replace('name = self._next_operation_name("reshape")','name = self._next_operation_name(method)').replace('name=name, op="call_method", target="reshape", inputs=(input.name,),','name=name, op="call_method", target=method, inputs=(input.name,),')
+p.write_text(s)
+p=Path('python/torch_rs/_compile_bytecode.py');s=p.read_text().replace('    "reshape": _MethodTarget','    "view": _MethodTarget("view", "view", 1, "Tensor.view"),\n    "reshape": _MethodTarget').replace('if method.name == "reshape":','if method.name in ("reshape", "view"):').replace('        shape = _trace._bind_reshape_shape(positional_args, kwargs)\n        return recorder.record_reshape(method.receiver, shape)','        binder = _trace._bind_view_shape if method.name == "view" else _trace._bind_reshape_shape\n        shape = binder(positional_args, kwargs)\n        return recorder._record_shape(method.receiver, shape, method.name)').replace('reshape argument validation','shape argument validation').replace('reshape call validation','shape call validation');p.write_text(s)

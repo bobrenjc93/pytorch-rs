@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_67fce754/target/view/baseline_probe.py", line 2, in <module>
+    from tests.test_compile_cuda_mul_scalar import make_program
+ModuleNotFoundError: No module named 'tests'

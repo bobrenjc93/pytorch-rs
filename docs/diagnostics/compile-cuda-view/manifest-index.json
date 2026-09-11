@@ -1,0 +1,51 @@
+{
+  "1807a545ae797387a855a2034db59c37455a332e90a28988b454c3667c5b4881": {
+    "remove": [],
+    "replace": {
+      "python/torch_rs/_compile_bytecode.py": "9176dee3c2c57b2f69d33bf056ceb61de6d4d996494da8392abb391a91f9e224",
+      "tests/test_compile_cuda_view.py": "036b76e7fff0de5be2b8f764a1c47c4fc0c6f51f89b218b97df1647be25fb6ed"
+    }
+  },
+  "23f103cb5ed8285f5fb4ec529fcaa7bec3d155c1e9cc583cdba741797cba5d8c": {
+    "remove": [],
+    "replace": {
+      "python/torch_rs/_compile_bytecode.py": "9176dee3c2c57b2f69d33bf056ceb61de6d4d996494da8392abb391a91f9e224",
+      "tests/test_compile_cuda_view.py": "fdb3efaf40cdec9b105df86e5622fe2a7331283c684d341b090dfb8bf37eb6fd"
+    }
+  },
+  "58e213a3655ffe3f68214fcf6ab0347d9303489e5890f38b54b696ed7c7c2450": {
+    "remove": [],
+    "replace": {
+      "python/torch_rs/__init__.py": "6e71aebb37b61573185a76a54ea2a2a7a44a650dff830ebc299332ba855d9213",
+      "python/torch_rs/_compile_bytecode.py": "9176dee3c2c57b2f69d33bf056ceb61de6d4d996494da8392abb391a91f9e224",
+      "python/torch_rs/_compile_trace.py": "638132203a68c467203d61b2109077a599f34323aca5f6749b970b1bd2f4daef",
+      "tests/test_compile_cuda_reshape.py": "8d7bf41ac5e38a3116b689e651a41aa265ab9e8f09e76c78918f55fee1ee8178",
+      "tests/test_compile_cuda_view.py": "0f9b0e5dffae55fd22b304b01008663a0c7cf45052fd7730255936c2aac27ec7"
+    }
+  },
+  "65210f0efe2868de9ee9f0e390551457077e30068fccb9c85581005eb96593bd": {
+    "remove": [
+      "tests/test_compile_cuda_view.py"
+    ],
+    "replace": {
+      "python/torch_rs/__init__.py": "6e71aebb37b61573185a76a54ea2a2a7a44a650dff830ebc299332ba855d9213",
+      "python/torch_rs/_compile_bytecode.py": "495329fcda0a8d0413858098e57a534d5d7d7f5facb7b24c6a383d0e1afb383d",
+      "python/torch_rs/_compile_trace.py": "ece6b4440ef110e28a3b86249fe912621dbfc92cd2307128b5b9c165a9e63b64",
+      "src/python.rs": "f4f4b4ac95d95f734c561620fbe5fd5b6803e852f35ba21250a7616c462cdc59",
+      "src/python_compile_cuda_graph.rs": "734213531df48ac334915b3f33453dd4ae13e6b1a6c3f9c546d13579a3c2cd82",
+      "src/tensor_cuda_graph.rs": "97c4bfe9e016c32f7ecba651c2995b3f712159687dc89e09853cf9260d01ca74",
+      "tests/test_compile_cuda_reshape.py": "8d7bf41ac5e38a3116b689e651a41aa265ab9e8f09e76c78918f55fee1ee8178"
+    }
+  },
+  "865c3aaa1a280d78079b64c57d874efd3df6b85de4f1f607c6e94ef54bd13e4e": {
+    "remove": [],
+    "replace": {}
+  },
+  "97a72d9e8ac3212c62910c5190f3b95b08729bf740136050973f89392e5948a6": {
+    "remove": [],
+    "replace": {
+      "python/torch_rs/_compile_bytecode.py": "9176dee3c2c57b2f69d33bf056ceb61de6d4d996494da8392abb391a91f9e224",
+      "tests/test_compile_cuda_view.py": "223c03f12ada83f66f34e2787f16cf4a4ba4abc779433f1759f43039472b72fa"
+    }
+  }
+}

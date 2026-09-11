@@ -1,0 +1,32 @@
+{
+  "all_installed_python_matches_source": true,
+  "changed_files": [
+    "ARCHITECTURE.md",
+    "FEATURES.md",
+    "docs/README.md",
+    "docs/compile-cuda-add.md",
+    "docs/compile-cuda-contiguous.md",
+    "docs/compile-cuda-reshape.md",
+    "docs/compile-cuda-t.md",
+    "docs/supported-surface.md",
+    "docs/troubleshooting.md",
+    "python/torch_rs/__init__.py",
+    "python/torch_rs/_compile_bytecode.py",
+    "python/torch_rs/_compile_trace.py",
+    "src/python.rs",
+    "src/python_compile_cuda_graph.rs",
+    "src/tensor_cuda_graph.rs",
+    "tests/test_compile_cuda_reshape.py"
+  ],
+  "final_manifest_sha256": "865c3aaa1a280d78079b64c57d874efd3df6b85de4f1f607c6e94ef54bd13e4e",
+  "interpreter": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_67fce754/target/view/python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+  "measurement_kind": "development; pending Burner implementation commit and separate clean capture",
+  "native_sha256": "702916ca4b8eed68cd1f4ea27793b49caa9bf8ed3886f47d0bd1fd41782fc60a",
+  "python_source_files_checked": 59,
+  "source": {
+    "commit": "69ceb6f912fdba7dcdb536a3601b8150a603fbf6",
+    "production_diff_sha256": "f9b38b806e92f4ab7cc3d813afca97e80302d0a195df8d550cc05b108be43e8f",
+    "source_sha256": "fa2bc2ed12827fb87cebf1406c94bc1bcbcd12cef02f8973c943c03139c40875"
+  },
+  "wheel_sha256": "c1383c4a5a0ed893675c86ec36dc64c1201528fef693953f3e104b8cf9948396"
+}

@@ -63,8 +63,11 @@ again while rank/stride/device/offset guards remain exact. Both planners validat
 the whole graph before execution, including early/late nodes, cached declarations,
 output field types and repeated output/metadata pairs. Actual inputs and unused
 captures must share a CUDA device. CPU capture, higher ranks, new dtypes,
-gradients, `Tensor.view`/`reshape_as`, top-level `torch.reshape`, dtype-changing
+gradients, `reshape_as`, top-level `torch.reshape`, dtype-changing
 views, new backends and fusion are outside this increment.
+
+[Compiled `Tensor.view`](compile-cuda-view.md) accepts the same bounded shape
+surface with `size=` keyword binding, but always requires alias-compatible strides.
 
 ## Validation
 

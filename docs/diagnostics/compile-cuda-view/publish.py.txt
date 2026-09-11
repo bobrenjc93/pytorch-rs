@@ -1,0 +1,44 @@
+from pathlib import Path
+import difflib, hashlib, json, shutil, subprocess, sys
+ROOT=Path.cwd(); SRC=ROOT/'target/view'; OUT=ROOT/'docs/diagnostics/compile-cuda-view'
+def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+def put(name,obj): (OUT/name).write_text(json.dumps(obj,indent=2,sort_keys=True)+'\n')
+for p in (SRC/'evidence').iterdir():
+    if not p.name.startswith('inputs-'):
+        shutil.copyfile(p,OUT/p.name)
+# One canonical input mapping; earlier manifests are only small deltas.
+receipt=json.loads((OUT/'compiler-current-source.receipt.json').read_text())
+manifest_paths=list((SRC/'evidence').glob('inputs-*.json'))
+final=next(p for p in manifest_paths if sha(p)==receipt['measured_inputs_sha256'])
+shutil.copyfile(final,OUT/'measured-inputs.json')
+base=json.loads(final.read_text()); index={}
+for p in manifest_paths:
+    data=json.loads(p.read_text())
+    index[sha(p)]={'replace':{k:v for k,v in data.items() if base.get(k)!=v},'remove':sorted(set(base)-set(data))}
+put('manifest-index.json',index)
+for name in ('baseline','development','verified-build','final-build'):
+    (OUT/name).mkdir(exist_ok=True)
+    for file in ('build-record.json','build.log','install.log','commands.json'):
+        shutil.copyfile(SRC/name/file,OUT/name/file)
+for name in ('capture.py','baseline_probe.py','baseline_probe_first.py','baseline_probe_second.py','probe_binding.py','guide_examples.py','preflight.py','env.sh','setup.log','reference-binding.jsonl','edit.py','native_tests.py','validation_fix.py','partial_probe.py'):
+    shutil.copyfile(SRC/name,OUT/(name+'.txt' if name.endswith(('.py','.sh')) else name))
+for name in ('first','second'):
+    before=(SRC/f'test_compile_cuda_view.{name}.py').read_text()
+    after=(ROOT/'tests/test_compile_cuda_view.py').read_text()
+    (OUT/f'{name}-test.patch').write_text(''.join(difflib.unified_diff(after.splitlines(True),before.splitlines(True),fromfile='tests/test_compile_cuda_view.py',tofile='tests/test_compile_cuda_view.py')))
+shutil.copyfile(SRC/'first-source.patch',OUT/'first-source.patch')
+for source, snapshot, label in [('python/torch_rs/_compile_bytecode.py','bytecode-before-validation.py','validation-source'),('tests/test_compile_cuda_view.py','tests-before-validation.py','validation-test')]:
+    before=(SRC/snapshot).read_text(); after=(ROOT/source).read_text()
+    (OUT/(label+'.patch')).write_text(''.join(difflib.unified_diff(after.splitlines(True),before.splitlines(True),fromfile=source,tofile=source)))
+sys.path.insert(0,str(ROOT/'scripts'))
+from evaluate_cuda_math import source_provenance
+import torch_rs
+build=json.loads((OUT/'final-build/build-record.json').read_text())
+assert source_provenance()['source_sha256']==build['source_sha256']
+assert sha(torch_rs._C.__file__)==build['extension_sha256']
+installed=Path(torch_rs.__file__).parent
+python_matches={str(p.relative_to(ROOT)):sha(p)==sha(installed/p.relative_to(ROOT/'python/torch_rs')) for p in (ROOT/'python/torch_rs').rglob('*.py')}
+assert all(python_matches.values())
+assert Path(sys.executable).resolve().is_relative_to(ROOT)
+put('audit.json',{'source':source_provenance(),'native_sha256':sha(torch_rs._C.__file__),'wheel_sha256':build['wheel_sha256'],'all_installed_python_matches_source':all(python_matches.values()),'python_source_files_checked':len(python_matches),'interpreter':str(Path(sys.executable).resolve()),'final_manifest_sha256':sha(OUT/'measured-inputs.json'),'measurement_kind':'development; pending Burner implementation commit and separate clean capture','changed_files':subprocess.check_output(['git','diff','--name-only'],text=True).splitlines()})
+print('published', OUT)

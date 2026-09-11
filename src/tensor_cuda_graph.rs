@@ -12,6 +12,7 @@ pub(crate) enum Operation {
     T(usize),
     Transpose(usize, i64, i64),
     Reshape(usize, Shape),
+    View(usize, Shape),
     Neg(usize),
     Relu(usize),
     MulScalar(usize, f32),
@@ -31,7 +32,7 @@ impl Shape {
     pub(crate) fn new(requested: &[i64]) -> Result<Self, TensorError> {
         if requested.len() > 2 {
             return Err(TensorError::UnsupportedCudaContiguous {
-                reason: "compiled reshape requires output rank 0, 1 or 2",
+                reason: "compiled shape operation requires output rank 0, 1 or 2",
             });
         }
         let mut dimensions = [0; 2];
@@ -116,10 +117,10 @@ impl Layout {
         Ok(output)
     }
 
-    fn reshape(&self, requested: Shape) -> Result<Self, TensorError> {
+    fn reshape(&self, requested: Shape, alias_only: bool) -> Result<Self, TensorError> {
         if self.shape.len() > 2 || self.shape.len() != self.strides.len() {
             return Err(TensorError::UnsupportedCudaContiguous {
-                reason: "compiled reshape requires input rank 0, 1 or 2",
+                reason: "compiled shape operation requires input rank 0, 1 or 2",
             });
         }
         let elements = element_count(&self.shape)?;
@@ -130,6 +131,9 @@ impl Layout {
                 strides,
                 offset: self.offset,
             });
+        }
+        if alias_only {
+            return Err(TensorError::ViewIncompatibleLayout);
         }
         if !(1..=2).contains(&self.shape.len()) || self.strides.contains(&0) {
             return Err(TensorError::UnsupportedCudaContiguous {
@@ -170,7 +174,8 @@ impl Operation {
         let get_contiguous = |index| get(index)?.require_contiguous();
         let shape = match self {
             Self::T(input) => return get(input)?.t(),
-            Self::Reshape(input, shape) => return get(input)?.reshape(shape),
+            Self::Reshape(input, shape) => return get(input)?.reshape(shape, false),
+            Self::View(input, shape) => return get(input)?.reshape(shape, true),
             Self::Transpose(input, dim0, dim1) => return get(input)?.transpose(dim0, dim1),
             Self::Contiguous(input) => {
                 let input = get(input)?;
@@ -281,6 +286,7 @@ impl Operation {
         match self {
             Self::T(input) => get(input).t(),
             Self::Reshape(input, shape) => get(input).reshape(shape.as_slice()),
+            Self::View(input, shape) => get(input).view(shape.as_slice()),
             Self::Transpose(input, dim0, dim1) => get(input).transpose(dim0, dim1),
             Self::Contiguous(input) => get(input).try_contiguous(MemoryFormat::Contiguous),
             Self::Neg(input) => get(input).negate(),
@@ -385,6 +391,77 @@ mod tests {
         assert!(
             Operation::Reshape(0, Shape::new(&[0, -1]).unwrap())
                 .layout(&[Layout::from_tensor(&empty)])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn view_plans_only_aliases_including_offsets_empty_and_singleton_strides() {
+        use std::sync::Arc;
+        let base = Tensor::from_vec((0_u16..21).map(f32::from).collect(), [3, 7]).unwrap();
+        let column = base.select_dimension(1, 2).unwrap();
+        let scalar = column.select_dimension(0, 1).unwrap();
+        let transposed = base.t().unwrap();
+        let empty = Tensor::from_vec(vec![], [0, 7]).unwrap();
+        for tensor in [&base, &column, &scalar, &transposed, &empty] {
+            for requested in [
+                vec![],
+                vec![-1],
+                vec![1, -1],
+                vec![7, 3],
+                vec![0, 7],
+                vec![-2],
+                vec![-1, -1],
+                vec![0, -1],
+                vec![i64::MAX, 2],
+            ] {
+                let op = Operation::View(0, Shape::new(&requested).unwrap());
+                let planned = op.layout(&[Layout::from_tensor(tensor)]);
+                let eager = tensor.view(&requested);
+                assert_eq!(planned.is_ok(), eager.is_ok());
+                if let (Ok(plan), Ok(eager)) = (planned, eager) {
+                    assert!(plan.matches(&eager));
+                    let output = op.execute(&[tensor], &[]).unwrap();
+                    assert!(plan.matches(&output));
+                    assert!(Arc::ptr_eq(&tensor.storage, &output.storage));
+                    assert_eq!(output.try_to_vec().unwrap(), eager.try_to_vec().unwrap());
+                }
+            }
+        }
+        for (shape, strides, requested, expected) in [
+            (vec![1, 3], vec![37, 2], vec![3, 1], vec![2, 2]),
+            (vec![3, 1], vec![2, 37], vec![3], vec![2]),
+            (vec![0, 7], vec![17, 3], vec![0, 7], vec![17, 3]),
+            (vec![0, 7], vec![17, 3], vec![7, 0], vec![1, 1]),
+        ] {
+            let output = Operation::View(0, Shape::new(&requested).unwrap())
+                .layout(&[Layout {
+                    shape,
+                    strides,
+                    offset: 9,
+                }])
+                .unwrap();
+            assert_eq!(output.strides, expected);
+            assert_eq!(output.offset, 9);
+        }
+        let incompatible = Operation::View(0, Shape::new(&[-1]).unwrap())
+            .layout(&[Layout::from_tensor(&transposed)]);
+        assert!(matches!(
+            incompatible,
+            Err(TensorError::ViewIncompatibleLayout)
+        ));
+        assert!(
+            Operation::View(1, Shape::new(&[-1]).unwrap())
+                .layout(&[])
+                .is_err()
+        );
+        assert!(
+            Operation::View(0, Shape::new(&[-1]).unwrap())
+                .layout(&[Layout {
+                    shape: vec![1, 2, 3],
+                    strides: vec![6, 3, 1],
+                    offset: 0
+                }])
                 .is_err()
         );
     }

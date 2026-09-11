@@ -1,0 +1,8 @@
+import sys;sys.path.insert(0,str(__import__('pathlib').Path.cwd()))
+from tests.test_compile_cuda_mul_scalar import make_program
+import torch,torch_rs as n
+for expression in ('([1], foo=x)', '(1, [1], 1.)', '(2**63, n+1)'):
+ f=make_program('def program(x):\n    n = 1\n    return x.view'+expression+'\n')
+ for name,fn,arg in [('reference',f,torch.ones(1)),('native',n.compile(f,backend='eager',fullgraph=True),n.ones((1,)))]:
+  try: fn(arg)
+  except Exception as e: print(expression,name,type(e).__name__,str(e).splitlines()[0])
