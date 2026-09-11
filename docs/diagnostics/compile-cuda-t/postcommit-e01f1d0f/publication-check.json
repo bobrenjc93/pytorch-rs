@@ -1,0 +1,17 @@
+{
+  "measured_commit": "e01f1d0f69dffa8018e1b333bb5ab642ce9fdcb9",
+  "measurement_completed_before_documentation_edits": true,
+  "evidence_and_documentation_only": true,
+  "historical_inventory_unchanged": true,
+  "local_links_checked": 86,
+  "docs_smoke_command": [
+    ".venv/bin/python",
+    "-m",
+    "unittest",
+    "-v",
+    "tests.test_readme_quickstart"
+  ],
+  "docs_smoke_log_sha256": "a449a14760fa3e48110218324a5fc543eee4f6654e213cd8795a85e7cc75acfc",
+  "docs_smoke_scope": "publication check after evidence/docs edits; not a clean-source measurement",
+  "git_diff_check_passed": true
+}

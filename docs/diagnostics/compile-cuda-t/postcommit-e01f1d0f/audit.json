@@ -1,0 +1,37 @@
+{
+  "all_commands_clean_and_successful": true,
+  "all_measured_inputs_match_current_source": true,
+  "clean_before_publication": true,
+  "command_receipt_sha256": {
+    "compiled-t": "5c6007e11a53f3ab843ec3a094c065d81af32e6e782a67d611d8473c73859c42",
+    "compiler-regressions": "0b183a7958bbae72a1b0683829e340d9ce71e2295e87e0d13e310b22b344d556",
+    "cpu-layout": "258125baaa3f16650310cabb9bc64269a0a6bcec998b03a872b583c46d8242d4",
+    "cuda-packing": "79416dcfc5cfb992d656090e8b3bc9fe72198b5bcd251a05b87004cae2b0fe28",
+    "docs-example": "59548065d4e6aede66880ae5d3e3b2965c2c180dfc007058604c6bb2f75a8893",
+    "imports": "e70503f94b5cb5307b1061327a9418b263691a069326b79f785d27e49e446db1",
+    "no-device": "b6f1ace7384e6748347d8d8cf5373aa953734684851ebb7ec06a31dceaf901b6",
+    "preflight": "4129fae0c7dc4d9221ac88dcb8a253464645bd4ce531db77a105ecb5b3b95d33",
+    "release-capture": "62c0783d3f176d50155e0f131df3357640e78c48963c2a0a081bee8d361b27c2",
+    "rust-graph": "a5a735d32626d92acab68939e223881585af5ec0a605eac626ff2ae8bcb023db",
+    "rust-packing": "1399aa230e9b7016851786576ade9f9a7a594a951053cdeed7765660dc055d3d",
+    "setup": "898ff9ce3a6828500c871ce112c1ea22fad9a6b435675f7e52aa1a721b251a8d",
+    "two-device": "ffb1348e50608996b73a7ef357023e7291e4424dd63b59a81c5ce82679d3c179"
+  },
+  "historical_evidence_inventory_unchanged": true,
+  "independent_review_and_merge_gates": "not replaced by this capture",
+  "installed_python_files": 59,
+  "installed_python_matches_source": true,
+  "measured_commit": "e01f1d0f69dffa8018e1b333bb5ab642ce9fdcb9",
+  "measured_inputs_sha256": "87db4f30586486826b7e146789e8a2e9c2b0a563a5da1d0515ddb687969aa962",
+  "release_native_sha256": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+  "rust_test_binaries": {
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/target/t-postcommit-e01f1d0f/rust/debug/deps/cuda_contiguous-19470d316c601991": "97c91b71e361af41f2cb202b3d971d7578a9d275eb05eb40747ff316c4a153f9",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/target/t-postcommit-e01f1d0f/rust/debug/deps/pytorch_rs-545e4fdb10cc861f": "e6f0afba75e29523a668f9134dfa8393a530ea3bf03c5db776095c98cd3dba76"
+  },
+  "source": {
+    "commit": "e01f1d0f69dffa8018e1b333bb5ab642ce9fdcb9",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source_sha256": "7398e4f13c0878e303e0743da9f86f6685f06c907aa52cdd7b79c05f72deb546"
+  },
+  "wheel_and_installed_and_source_native_match": true
+}

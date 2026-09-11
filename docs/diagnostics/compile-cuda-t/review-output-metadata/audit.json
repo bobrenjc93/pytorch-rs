@@ -1,0 +1,28 @@
+{
+  "all_final_measured_inputs_match_current_source": true,
+  "clean_repair_capture": "pending Burner implementation commit; prior clean evidence predates this repair",
+  "command_receipt_sha256": {
+    "compiled-t": "52b4afbab7b5f3555e177d9984b3eb7dcd6e9bfe704875f94b303d4c71338ab7",
+    "compiler-regressions": "d117375c5cdbe8ca2275dcd6bf3050ed52b9ed86c557cb54022b38b04d8be58f",
+    "docs": "1376ff199297358236315c93738c84446edb02d289ef219a69bac563554bd61c",
+    "imports": "39caaf1b64dc1d5647b4dfb3d9b3fb526abcb6b5174fcee45402bad0f66f4b07",
+    "no-device": "f26abccc9bbf727893d4e151826ef3c8b5b56b1b5aae10642dbf54effe2d9c12",
+    "preflight": "a448490665082d7fcce4bf5204b2a8dde2028fba6b2143d5ee1011119d2052ce",
+    "release-build": "2d0cf04d512939b60099460ab477dc537b90c8ddfe8b83d9f6e00024b77e66ff",
+    "repeated-output-red": "001bff76f5679f8bf4d86b4699883ebfc63fe9549ce67f27faa756ad5a14585a"
+  },
+  "earlier_evidence_inventories_unchanged": true,
+  "failed_reproduction_preserved": true,
+  "final_measured_inputs_sha256": "212dd99427fa63b5b3616e435bc0e39fcad81220d125c3c443f5779463c302cf",
+  "installed_python_files": 59,
+  "installed_python_matches_source": true,
+  "measurement_kind": "precommit-diagnostic",
+  "red_measured_inputs_sha256": "a185efdaf9ecb6e3354a68076e2d21e38273673379886d9838cc546476b8edf5",
+  "release_native_sha256": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+  "source": {
+    "commit": "48d88b94c328336517c261653d131994c874452a",
+    "production_diff_sha256": "15e35d24dccc02064c47b53ac0ce704b04f8b75cdbe8a2f310841b6e5c838fee",
+    "source_sha256": "5e3122694aec89628b7ab9f39e00387f2a45e63ad38d907323ac4c246e82daf6"
+  },
+  "wheel_and_installed_and_source_native_match": true
+}

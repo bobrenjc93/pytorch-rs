@@ -1,0 +1,88 @@
+"""Audit and publish clean-commit receipts without changing measured inputs."""
+import hashlib, json, os, shutil, subprocess, sys, zipfile
+from pathlib import Path
+ROOT = Path.cwd().resolve()
+SRC = ROOT/'target/t-postcommit-e01f1d0f'
+OUT = ROOT/'docs/diagnostics/compile-cuda-t/postcommit-e01f1d0f'
+COMMIT = 'e01f1d0f69dffa8018e1b333bb5ab642ce9fdcb9'
+sys.path.insert(0, str(ROOT/'scripts'))
+from evaluate_cuda_math import source_provenance
+
+def sha(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+def write(p, value): p.write_text(json.dumps(value, indent=2, sort_keys=True)+'\n')
+def git(*args): return subprocess.check_output(['git', *args], text=True)
+
+assert git('rev-parse', 'HEAD').strip() == COMMIT
+assert git('status', '--porcelain') == ''
+release = json.loads((SRC/'release/build-record.json').read_text())
+source = source_provenance()
+assert all(source[k] == release[k] for k in source)
+assert release['commit'] == COMMIT and release['clean_checkout']
+assert release['git_status_before_build'] == '' and release['measurement_kind'] == 'clean-code'
+assert release['production_diff_sha256'] == hashlib.sha256(b'').hexdigest()
+assert '--allow-dirty' not in release['build_command']
+for key in ('extension_path', 'source_extension_path', 'wheel_path', 'interpreter_path'):
+    path = Path(release[key]).resolve()
+    assert path.is_relative_to(ROOT), (key, path)
+assert sha(release['extension_path']) == sha(release['source_extension_path']) == release['extension_sha256']
+assert sha(release['wheel_path']) == release['wheel_sha256']
+with zipfile.ZipFile(release['wheel_path']) as wheel:
+    member, = [p for p in wheel.namelist() if p.endswith('.so')]
+    assert hashlib.sha256(wheel.read(member)).hexdigest() == release['extension_sha256']
+installed_python = {}
+for path in (ROOT/'python/torch_rs').rglob('*.py'):
+    installed = ROOT/'.venv/lib/python3.12/site-packages'/path.relative_to(ROOT/'python')
+    assert path.read_bytes() == installed.read_bytes(), path
+    installed_python[str(path.relative_to(ROOT))] = sha(installed)
+manifest = json.loads((SRC/'measured-inputs.json').read_text())
+for path, digest in manifest.items(): assert sha(ROOT/path) == digest, path
+receipts = {}
+for name in ('setup', 'release-capture', 'imports', 'preflight', 'rust-graph', 'rust-packing',
+             'compiled-t', 'compiler-regressions', 'cpu-layout', 'cuda-packing',
+             'two-device', 'no-device', 'docs-example'):
+    path = SRC/(name+'.receipt.json')
+    record = json.loads(path.read_text())
+    assert record['exit_status'] == 0, name
+    assert record['source_before'] == record['source_after'] == source, name
+    assert record['git_status_before'] == record['git_status_after'] == '', name
+    assert record['inputs_unchanged'] and record['measured_inputs_sha256'] == sha(SRC/'measured-inputs.json'), name
+    assert record['cwd'] == str(ROOT), name
+    assert sha(SRC/(name+'.log')) == record['log_sha256'], name
+    for paths in (record['native_before'], record['native_after']):
+        assert all(Path(p).resolve().is_relative_to(ROOT) for p in paths), name
+    if name not in ('setup', 'release-capture', 'rust-graph', 'rust-packing'):
+        assert len(record['native_before']) == 2
+        assert record['native_before'] == record['native_after']
+        assert set(record['native_before'].values()) == {release['extension_sha256']}
+    receipts[name] = sha(path)
+for command in release['commands']:
+    assert command['exit_status'] == 0
+    assert sha(command['log']) == command['log_sha256']
+old = ROOT/'docs/diagnostics/compile-cuda-t'
+for p, digest in json.loads((old/'inventory.json').read_text()).items():
+    assert sha(old/p) == digest, p
+rust_binaries = {str(p.resolve()): sha(p) for p in (SRC/'rust/debug/deps').iterdir()
+                 if p.name.startswith(('pytorch_rs-', 'cuda_contiguous-')) and p.suffix == '' and p.is_file() and os.access(p, os.X_OK)}
+assert len(rust_binaries) == 2
+write(SRC/'audit.json', {'measured_commit': COMMIT, 'source': source,
+      'clean_before_publication': git('status', '--porcelain') == '',
+      'release_native_sha256': release['extension_sha256'],
+      'wheel_and_installed_and_source_native_match': True,
+      'installed_python_matches_source': True, 'installed_python_files': len(installed_python),
+      'measured_inputs_sha256': sha(SRC/'measured-inputs.json'),
+      'all_measured_inputs_match_current_source': True,
+      'all_commands_clean_and_successful': True, 'command_receipt_sha256': receipts,
+      'historical_evidence_inventory_unchanged': True,
+      'rust_test_binaries': rust_binaries,
+      'independent_review_and_merge_gates': 'not replaced by this capture'})
+OUT.mkdir(parents=True, exist_ok=False)
+for p in SRC.iterdir():
+    if p.is_file() and p.suffix in ('.log', '.json'):
+        shutil.copyfile(p, OUT/p.name)
+for name in ('environment.sh', 'setup.sh', 'capture.py', 'preflight.py', 'docs-example.py', 'publish.py'):
+    shutil.copyfile(SRC/name, OUT/(name+'.txt'))
+(OUT/'release').mkdir()
+for p in (SRC/'release').iterdir():
+    if p.is_file() and p.suffix in ('.log', '.json'):
+        shutil.copyfile(p, OUT/'release'/p.name)
+print('Clean capture audit passed and receipts published:', OUT)

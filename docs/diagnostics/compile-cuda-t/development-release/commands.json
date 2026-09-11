@@ -1,0 +1,19 @@
+[
+  {
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/bin/maturin",
+      "build",
+      "--release",
+      "--locked",
+      "--offline",
+      "--out",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/target/compile-t/development-release/wheels"
+    ],
+    "started_at": "2026-09-11T06:09:16.417504+00:00",
+    "ended_at": "2026-09-11T06:09:27.487870+00:00",
+    "wall_seconds": 11.07035659905523,
+    "exit_status": 1,
+    "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/target/compile-t/development-release/build.log",
+    "log_sha256": "0773aa94dbbdc10f81631991d788d40572abb8b8445738278d93fd9de4c4322e"
+  }
+]

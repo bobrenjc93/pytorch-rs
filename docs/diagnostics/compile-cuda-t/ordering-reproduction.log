@@ -1,0 +1,7 @@
+test_private_cuda_float_trace_rejects_cpu_tensor_before_execution (tests.test_compile_corpus.CompileCorpusTraceTests.test_private_cuda_float_trace_rejects_cpu_tensor_before_execution) ... ok
+test_invalid_cached_metadata_types_early_late_and_outputs (tests.test_compile_cuda_t.CompileCudaTTests.test_invalid_cached_metadata_types_early_late_and_outputs) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.287s
+
+OK

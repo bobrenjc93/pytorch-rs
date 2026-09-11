@@ -30,8 +30,9 @@ without Tensor-method redispatch, Python-body replay or reference-PyTorch import
 
 Arguments (including explicit default memory formats), CPU capture of this
 method, noncontiguous rank >2, zero-stride packing, other dtypes and gradients
-remain unsupported. This adds no compiled reshape or view-creation grammar,
-backend, training, fusion or performance-parity claim. Graphlets below are
+remain unsupported. [Bounded `Tensor.t()` capture](compile-cuda-t.md) can now
+create rank-0/1/2 views inside a graph before packing. General reshape/view
+grammar, new backends, training, fusion and performance parity remain excluded. Graphlets below are
 non-scoring diagnostics; the frozen 38-case denominator and PR1970/PR1971
 campaigns remain unchanged.
 

@@ -1,0 +1,18 @@
+export GIT_OPTIONAL_LOCKS=0
+export CARGO_HOME="$PWD/target/local-cargo"
+export CARGO_TARGET_DIR="$PWD/target/t-review-output-metadata/rust"
+export UV_CACHE_DIR="$PWD/target/uv-cache"
+export UV_PYTHON_INSTALL_DIR="$PWD/target/python"
+export TMPDIR="$PWD/target/t-review-output-metadata/tmp"
+export XDG_CACHE_HOME="$PWD/target/t-review-output-metadata/xdg"
+export CUDA_CACHE_PATH="$PWD/target/t-review-output-metadata/cuda"
+export TORCHINDUCTOR_CACHE_DIR="$PWD/target/t-review-output-metadata/inductor"
+export TRITON_CACHE_DIR="$PWD/target/t-review-output-metadata/triton"
+export PYTHONPYCACHEPREFIX="$PWD/target/t-review-output-metadata/pycache"
+export CUDA_VISIBLE_DEVICES=0
+export TORCH_RS_CUDART="$PWD/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13"
+export PYO3_PYTHON="$PWD/.venv/bin/python"
+export VIRTUAL_ENV="$PWD/.venv"
+
+export UV_PROJECT_ENVIRONMENT="$PWD/.venv"
+unset PYTHONPATH CONDA_PREFIX

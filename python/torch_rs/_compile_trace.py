@@ -186,6 +186,7 @@ class CompileTraceGraph:
 
 
 _SUPPORTED_UNARY_METHODS = (
+    "Tensor.t (CUDA, parameterless, rank <= 2)",
     "Tensor.contiguous (CUDA, parameterless)",
     "Tensor.neg",
     "Tensor.negative",
@@ -200,7 +201,7 @@ _SUPPORTED_VALUE_UNARY_TARGETS = frozenset(("neg", "abs", "relu", "square"))
 _SUPPORTED_ALIAS_UNARY_TARGETS = frozenset(("detach",))
 _SUPPORTED_IDENTITY_UNARY_TARGETS = frozenset(("float",))
 _SUPPORTED_UNARY_TARGETS = (
-    frozenset(("contiguous",))
+    frozenset(("contiguous", "t"))
     | _SUPPORTED_VALUE_UNARY_TARGETS
     | _SUPPORTED_ALIAS_UNARY_TARGETS
     | _SUPPORTED_IDENTITY_UNARY_TARGETS
@@ -535,6 +536,17 @@ def _grad_enabled():
     return _native._compile_trace_grad_enabled()
 
 
+def _t_output_metadata(metadata):
+    _validate_cuda_metadata(metadata, require_contiguous=False)
+    if metadata.device.type != "cuda" or len(metadata.shape) > 2:
+        raise CompileTraceUnsupportedError("torch.compile Tensor.t requires CUDA rank 0, 1 or 2")
+    return CompileTraceTensorMetadata(
+        shape=metadata.shape[::-1], stride=metadata.stride[::-1],
+        dtype=metadata.dtype, device=metadata.device, requires_grad=False,
+        storage_offset=metadata.storage_offset,
+    )
+
+
 def _contiguous_output_metadata(metadata):
     if metadata.device.type != "cuda":
         raise CompileTraceUnsupportedError("torch.compile contiguous only supports CUDA")
@@ -552,6 +564,8 @@ def _contiguous_output_metadata(metadata):
 
 
 def _unary_output_metadata(input_metadata, target, *, grad_enabled=None):
+    if target == "t":
+        return _t_output_metadata(input_metadata)
     if target == "contiguous":
         return _contiguous_output_metadata(input_metadata)
     if input_metadata.device.type == "cuda" and target == "neg":
@@ -724,7 +738,25 @@ def _require_native_tensor(value, value_name):
         )
 
 
+def _validate_metadata_types(metadata):
+    # Dataclass equality treats bool/int/float substitutions as equal. Check
+    # declarations before equality, including cached inputs and output leaves.
+    if (type(metadata) is not CompileTraceTensorMetadata
+            or type(metadata.shape) is not tuple or type(metadata.stride) is not tuple
+            or len(metadata.shape) != len(metadata.stride)
+            or any(type(n) is not int for n in (*metadata.shape, *metadata.stride))
+            or type(metadata.requires_grad) is not bool
+            or (metadata.storage_offset is not None and type(metadata.storage_offset) is not int)
+            or type(metadata.dtype) is not CompileTraceDType
+            or type(metadata.dtype.name) is not str
+            or type(metadata.device) is not CompileTraceDevice
+            or type(metadata.device.type) is not str
+            or (metadata.device.index is not None and type(metadata.device.index) is not int)):
+        raise CompileTraceUnsupportedError("torch.compile malformed metadata field types")
+
+
 def _validate_cuda_metadata(metadata, *, require_contiguous=True):
+    _validate_metadata_types(metadata)
     if metadata.device.type != "cuda":
         return
     if metadata.device.index is None:
@@ -773,6 +805,8 @@ def _require_matching_metadata(
     check_requires_grad=True,
     dynamic_shape=False,
 ):
+    _validate_metadata_types(actual)
+    _validate_metadata_types(expected)
     if actual == expected and check_requires_grad:
         return
 
@@ -878,6 +912,7 @@ def _materialize_graph_output(
     dynamic=False,
     metadata_values=None,
     memo=None,
+    metadata_memo=None,
     metadata_only=False,
 ):
     if _builtins.isinstance(output_spec, _builtins.str):
@@ -926,7 +961,30 @@ def _materialize_graph_output(
         )
 
     output_spec_id = _builtins.id(output_spec)
+    if metadata_memo is None:
+        metadata_memo = set()
+    metadata_pair = (output_spec_id, _builtins.id(metadata_spec))
+    if metadata_pair in metadata_memo and output_spec_id in memo:
+        return memo[output_spec_id]
+    metadata_memo.add(metadata_pair)
+
+    # Reuse output objects, but validate each distinct metadata declaration.
+    # Identity keys keep equal-valued malformed fields (such as True/1) apart.
     if output_spec_id in memo:
+        for index, (child_output, child_metadata) in enumerate(
+            zip(output_spec.elements, metadata_spec.elements)
+        ):
+            _materialize_graph_output(
+                child_output,
+                child_metadata,
+                values,
+                value_name=f"{value_name}[{index}]",
+                dynamic=dynamic,
+                metadata_values=metadata_values,
+                memo=memo,
+                metadata_memo=metadata_memo,
+                metadata_only=metadata_only,
+            )
         return memo[output_spec_id]
 
     if output_spec.kind == "list":
@@ -941,6 +999,7 @@ def _materialize_graph_output(
                 dynamic=dynamic,
                 metadata_values=metadata_values,
                 memo=memo,
+                metadata_memo=metadata_memo,
                 metadata_only=metadata_only,
             )
             for index, (child_output, child_metadata) in enumerate(
@@ -958,6 +1017,7 @@ def _materialize_graph_output(
             dynamic=dynamic,
             metadata_values=metadata_values,
             memo=memo,
+            metadata_memo=metadata_memo,
             metadata_only=metadata_only,
         )
         for index, (child_output, child_metadata) in enumerate(
@@ -1028,6 +1088,7 @@ def _execute_operation(operation, values):
 def _expected_operation_metadata(operation, metadata_values, *, grad_enabled, declared_values=None):
     # Validate the complete node before any graph operation can execute, even
     # for graphs built manually or modified with dataclasses.replace().
+    _validate_metadata_types(operation.metadata)
     if operation.op == "call_reduction":
         if (operation.target != "sum" or len(operation.inputs) != 1
                 or operation.scalar is not None or type(operation.reduction) is not tuple
@@ -1065,20 +1126,21 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled, de
         return expected
     if operation.scalar is not None:
         raise CompileTraceUnsupportedError("torch.compile non-scalar operation has a scalar payload")
-    if operation.target == "contiguous":
+    if operation.target in ("contiguous", "t"):
         if len(operation.inputs) != 1:
-            raise CompileTraceUnsupportedError("torch.compile contiguous requires one input")
+            raise CompileTraceUnsupportedError(f"torch.compile {operation.target} requires one input")
         name = operation.inputs[0]
-        expected = _contiguous_output_metadata(metadata_values[name])
+        infer = _t_output_metadata if operation.target == "t" else _contiguous_output_metadata
+        expected = infer(metadata_values[name])
         declared = operation.metadata
         if not _builtins.isinstance(declared, CompileTraceTensorMetadata):
-            raise CompileTraceUnsupportedError("torch.compile malformed contiguous output metadata")
-        _validate_cuda_metadata(declared)
+            raise CompileTraceUnsupportedError(f"torch.compile malformed {operation.target} output metadata")
+        _validate_cuda_metadata(declared, require_contiguous=operation.target == "contiguous")
         # Dynamic sizes may change whether this is an alias or a pack. Check
         # the stored declaration against its original input independently.
         declared_input = metadata_values[name] if declared_values is None else declared_values[name]
-        if declared != _contiguous_output_metadata(declared_input):
-            raise CompileTraceUnsupportedError("torch.compile malformed contiguous output metadata")
+        if declared != infer(declared_input):
+            raise CompileTraceUnsupportedError(f"torch.compile malformed {operation.target} output metadata")
         return expected
     if operation.target in _SUPPORTED_UNARY_TARGETS:
         if len(operation.inputs) != 1:
@@ -1249,7 +1311,7 @@ def execute_compile_trace_graph(graph, *inputs):
             )
         metadata_values[operation.name] = expected_metadata
 
-    if (len(graph.operations) > 1 or any(op.target == "contiguous" for op in graph.operations)) and all(
+    if (len(graph.operations) > 1 or any(op.target in ("contiguous", "t") for op in graph.operations)) and all(
         metadata.device.type == "cuda" for metadata in metadata_values.values()
     ):
         # Validate the output tree too before the native bridge can launch.
@@ -1336,6 +1398,9 @@ class CompileTraceTensorProxy:
 
     def dim(self):
         return len(self.metadata.shape)
+
+    def t(self):
+        return self._recorder.record_unary("t", self)
 
     def contiguous(self):
         return self._recorder.record_unary("contiguous", self)

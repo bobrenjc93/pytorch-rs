@@ -1,0 +1,18 @@
+test_callable_global_cache_and_no_redispatch (tests.test_compile_cuda_t.CompileCudaTTests.test_callable_global_cache_and_no_redispatch) ... ok
+test_dynamic_guards_and_alias_pack_transition (tests.test_compile_cuda_t.CompileCudaTTests.test_dynamic_guards_and_alias_pack_transition) ... ok
+test_invalid_cached_metadata_types_early_late_and_outputs (tests.test_compile_cuda_t.CompileCudaTTests.test_invalid_cached_metadata_types_early_late_and_outputs) ... ok
+test_packed_arithmetic_and_transposed_input_becomes_contiguous (tests.test_compile_cuda_t.CompileCudaTTests.test_packed_arithmetic_and_transposed_input_becomes_contiguous) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ok
+test_raw_bits_shared_mutation_and_lifetimes (tests.test_compile_cuda_t.CompileCudaTTests.test_raw_bits_shared_mutation_and_lifetimes) ... ok
+test_reference_import_blocked (tests.test_compile_cuda_t.CompileCudaTTests.test_reference_import_blocked) ... ok
+test_seeded_layouts_identity_and_cache (tests.test_compile_cuda_t.CompileCudaTTests.test_seeded_layouts_identity_and_cache) ... ok
+test_single_t_large_empty_extents (tests.test_compile_cuda_t.CompileCudaTTests.test_single_t_large_empty_extents) ... ok
+test_strided_arithmetic_and_public_scope_remain_rejected (tests.test_compile_cuda_t.CompileCudaTTests.test_strided_arithmetic_and_public_scope_remain_rejected) ... ok
+test_device_context_and_unused_capture (tests.test_compile_cuda_t.CompileTDeviceTests.test_device_context_and_unused_capture) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_bounded_metadata (tests.test_compile_cuda_t.TMetadataTests.test_bounded_metadata) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 33.566s
+
+OK (skipped=1)

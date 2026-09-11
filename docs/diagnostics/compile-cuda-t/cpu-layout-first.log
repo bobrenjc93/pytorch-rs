@@ -1,0 +1,67 @@
+test_offsets_strides_empties_lifetime_and_double_transpose (tests.test_tensor_t_method.TensorTMethodTests.test_offsets_strides_empties_lifetime_and_double_transpose) ... ok
+test_rank_guard_and_no_argument_binding_contract (tests.test_tensor_t_method.TensorTMethodTests.test_rank_guard_and_no_argument_binding_contract) ... ok
+test_scalar_vector_and_matrix_are_unwarned_alias_views (tests.test_tensor_t_method.TensorTMethodTests.test_scalar_vector_and_matrix_are_unwarned_alias_views) ... ok
+test_t_records_the_inverse_autograd_transform (tests.test_tensor_t_method.TensorTMethodTests.test_t_records_the_inverse_autograd_transform) ... ok
+test_no_argument_descriptor_and_bound_errors_match_pytorch_2_13 (tests.test_tensor_t_method_reference.TensorTMethodReferenceTests.test_no_argument_descriptor_and_bound_errors_match_pytorch_2_13) ... ok
+test_offset_empty_and_autograd_match_pytorch_2_13 (tests.test_tensor_t_method_reference.TensorTMethodReferenceTests.test_offset_empty_and_autograd_match_pytorch_2_13) ... ok
+test_seeded_views_rank_errors_and_warnings_match_pytorch_2_13 (tests.test_tensor_t_method_reference.TensorTMethodReferenceTests.test_seeded_views_rank_errors_and_warnings_match_pytorch_2_13) ... ok
+test_00_t_and_mt_warnings_are_once_only_and_point_to_the_caller (tests.test_tensor_t.TensorTransposePropertyTests.test_00_t_and_mt_warnings_are_once_only_and_point_to_the_caller) ... ok
+test_extreme_zero_sized_boundaries (tests.test_tensor_t.TensorTransposePropertyTests.test_extreme_zero_sized_boundaries) ... ok
+test_offset_singleton_empty_high_rank_and_lifetime_views (tests.test_tensor_t.TensorTransposePropertyTests.test_offset_singleton_empty_high_rank_and_lifetime_views) ... ok
+test_scalar_vector_errors_identity_and_read_only_descriptors (tests.test_tensor_t.TensorTransposePropertyTests.test_scalar_vector_errors_identity_and_read_only_descriptors) ... ok
+test_stride_aware_consumers_and_view_combinations (tests.test_tensor_t.TensorTransposePropertyTests.test_stride_aware_consumers_and_view_combinations) ... ok
+test_values_metadata_composition_and_transpose_equivalence (tests.test_tensor_t.TensorTransposePropertyTests.test_values_metadata_composition_and_transpose_equivalence) ... ok
+test_empty_offset_memory_format_and_overflow_metadata_match (tests.test_tensor_t_reference.TensorTransposePropertyReferenceTests.test_empty_offset_memory_format_and_overflow_metadata_match) ... ok
+test_seeded_t_and_mt_views_and_consumers_match_pytorch_2_13 (tests.test_tensor_t_reference.TensorTransposePropertyReferenceTests.test_seeded_t_and_mt_views_and_consumers_match_pytorch_2_13) ... ok
+test_warning_categories_messages_once_behavior_and_stack_match (tests.test_tensor_t_reference.TensorTransposePropertyReferenceTests.test_warning_categories_messages_once_behavior_and_stack_match) ... ok
+test_dimensions_accept_pytorch_integer_types_and_check_overflow (tests.test_transpose.TransposeTests.test_dimensions_accept_pytorch_integer_types_and_check_overflow) ... ok
+test_empty_and_extreme_shapes_preserve_swapped_strides (tests.test_transpose.TransposeTests.test_empty_and_extreme_shapes_preserve_swapped_strides) ... ok
+test_is_contiguous_accepts_keyword_only_memory_format (tests.test_transpose.TransposeTests.test_is_contiguous_accepts_keyword_only_memory_format) ... ok
+test_method_and_top_level_transpose_swap_only_metadata (tests.test_transpose.TransposeTests.test_method_and_top_level_transpose_swap_only_metadata) ... ok
+test_pointwise_outputs_canonicalize_singleton_channels_last_strides (tests.test_transpose.TransposeTests.test_pointwise_outputs_canonicalize_singleton_channels_last_strides) ... ok
+test_python_binding_reports_missing_duplicate_and_extra_arguments (tests.test_transpose.TransposeTests.test_python_binding_reports_missing_duplicate_and_extra_arguments) ... ok
+test_rank_two_matmul_uses_both_input_stride_tables (tests.test_transpose.TransposeTests.test_rank_two_matmul_uses_both_input_stride_tables) ... ok
+test_reflected_division_uses_unary_layout_and_checks_stride_overflow (tests.test_transpose.TransposeTests.test_reflected_division_uses_unary_layout_and_checks_stride_overflow) ... ok
+test_scalar_dimensions_and_dimension_errors_match_pytorch (tests.test_transpose.TransposeTests.test_scalar_dimensions_and_dimension_errors_match_pytorch) ... ok
+test_stride_aware_consumers_and_materialized_outputs (tests.test_transpose.TransposeTests.test_stride_aware_consumers_and_materialized_outputs) ... ok
+test_transpose_type_errors_preserve_argument_call_context (tests.test_transpose.TransposeTests.test_transpose_type_errors_preserve_argument_call_context) ... ok
+test_python_layout_queries_and_transpose_diagnostics_match_pytorch_2_13 (tests.test_transpose_reference.TransposeReferenceTests.test_python_layout_queries_and_transpose_diagnostics_match_pytorch_2_13) ... ok
+test_rank_two_matmul_shape_errors_match_pytorch_2_13 (tests.test_transpose_reference.TransposeReferenceTests.test_rank_two_matmul_shape_errors_match_pytorch_2_13) ... ok
+test_seeded_rank_two_transposed_matmul_matches_pytorch_2_13 (tests.test_transpose_reference.TransposeReferenceTests.test_seeded_rank_two_transposed_matmul_matches_pytorch_2_13) ... ok
+test_seeded_transposes_views_and_consumers_match_pytorch_2_13 (tests.test_transpose_reference.TransposeReferenceTests.test_seeded_transposes_views_and_consumers_match_pytorch_2_13) ... ok
+test_singleton_pointwise_and_reflected_division_layouts_match_pytorch_2_13 (tests.test_transpose_reference.TransposeReferenceTests.test_singleton_pointwise_and_reflected_division_layouts_match_pytorch_2_13) ... ok
+test_extreme_empty_rank_two_transposes_do_not_iterate_zero_elements (tests.test_transpose_backward.RankTwoTransposeBackwardTests.test_extreme_empty_rank_two_transposes_do_not_iterate_zero_elements) ... ok
+test_rank_three_permutation_keeps_the_generic_backward_behavior (tests.test_transpose_backward.RankTwoTransposeBackwardTests.test_rank_three_permutation_keeps_the_generic_backward_behavior) ... ok
+test_rank_two_fast_path_preserves_bits_accumulation_and_graph_freeing (tests.test_transpose_backward.RankTwoTransposeBackwardTests.test_rank_two_fast_path_preserves_bits_accumulation_and_graph_freeing) ... ok
+test_contiguous (unittest.loader._FailedTest.test_contiguous) ... ERROR
+test_argument_rank_preserve_and_overflow_errors_match_exactly (tests.test_contiguous_reference.ContiguousReferenceTests.test_argument_rank_preserve_and_overflow_errors_match_exactly) ... ok
+test_seeded_views_formats_identity_and_consumers_match_pytorch_2_13 (tests.test_contiguous_reference.ContiguousReferenceTests.test_seeded_views_formats_identity_and_consumers_match_pytorch_2_13) ... ok
+test_special_values_zero_sizes_and_canonical_channel_strides (tests.test_contiguous_reference.ContiguousReferenceTests.test_special_values_zero_sizes_and_canonical_channel_strides) ... ok
+test_benchmarking_indexes_historical_release_timing_reports (tests.test_readme_quickstart.ReadmeQuickstartTests.test_benchmarking_indexes_historical_release_timing_reports) ... ok
+test_detailed_support_contracts_live_in_focused_docs (tests.test_readme_quickstart.ReadmeQuickstartTests.test_detailed_support_contracts_live_in_focused_docs) ... ok
+test_docs_readme_indexes_contracts_guides_and_timing_evidence (tests.test_readme_quickstart.ReadmeQuickstartTests.test_docs_readme_indexes_contracts_guides_and_timing_evidence) ... ok
+test_entry_point_links_resolve (tests.test_readme_quickstart.ReadmeQuickstartTests.test_entry_point_links_resolve) ... ok
+test_first_success_example_is_short_and_runs (tests.test_readme_quickstart.ReadmeQuickstartTests.test_first_success_example_is_short_and_runs) ... ok
+test_readme_keeps_quickstart_scope_and_evaluation_route (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_keeps_quickstart_scope_and_evaluation_route) ... ok
+test_readme_links_contributing_guide (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_links_contributing_guide) ... ok
+test_readme_routes_benchmark_policy_to_focused_docs (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_routes_benchmark_policy_to_focused_docs) ... ok
+test_readme_routes_to_supported_surface_anchors (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_routes_to_supported_surface_anchors) ... ok
+test_readme_scope_is_scan_friendly_table (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_scope_is_scan_friendly_table) ... ok
+test_source_install_commands_are_locked (tests.test_readme_quickstart.ReadmeQuickstartTests.test_source_install_commands_are_locked) ... ok
+test_stale_wheel_recovery_uses_wheel_test_workflow (tests.test_readme_quickstart.ReadmeQuickstartTests.test_stale_wheel_recovery_uses_wheel_test_workflow) ... ok
+
+======================================================================
+ERROR: test_contiguous (unittest.loader._FailedTest.test_contiguous)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_contiguous
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/target/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/loader.py", line 137, in loadTestsFromName
+    module = __import__(module_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'tests.test_contiguous'
+
+
+----------------------------------------------------------------------
+Ran 51 tests in 2.281s
+
+FAILED (errors=1)

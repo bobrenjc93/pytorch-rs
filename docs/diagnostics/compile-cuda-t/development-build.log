@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/scripts/capture_depth_concat_build.py", line 107, in <module>
+    main()
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/scripts/capture_depth_concat_build.py", line 63, in main
+    run(command, "build")
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/scripts/capture_depth_concat_build.py", line 59, in run
+    result.check_returncode()
+  File "/usr/local/fbcode/platform010/lib/python3.12/subprocess.py", line 504, in check_returncode
+    raise CalledProcessError(self.returncode, self.args, self.stdout,
+subprocess.CalledProcessError: Command '['/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/bin/maturin', 'build', '--release', '--locked', '--offline', '--out', '/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/target/compile-t/development-release/wheels']' returned non-zero exit status 1.

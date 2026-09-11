@@ -8,6 +8,7 @@ use super::{
 #[derive(Clone, Copy)]
 pub(crate) enum Operation {
     Contiguous(usize),
+    T(usize),
     Neg(usize),
     MulScalar(usize, f32),
     Add(usize, usize),
@@ -54,6 +55,20 @@ impl Layout {
         }
     }
 
+    fn t(&self) -> Result<Self, TensorError> {
+        if self.shape.len() > 2 {
+            return Err(TensorError::UnsupportedCudaTranspose {
+                reason: "Tensor.t requires rank 0, 1 or 2",
+            });
+        }
+        // A checked view preserves storage/offset; no canonical
+        // materialized strides or tensor allocation are needed.
+        let mut output = self.clone();
+        output.shape.reverse();
+        output.strides.reverse();
+        Ok(output)
+    }
+
     pub(crate) fn matches(&self, tensor: &Tensor) -> bool {
         self.shape == tensor.shape()
             && self.strides == tensor.stride()
@@ -72,6 +87,7 @@ impl Operation {
         // independently satisfy its contiguous-only contract during planning.
         let get_contiguous = |index| get(index)?.require_contiguous();
         let shape = match self {
+            Self::T(input) => return get(input)?.t(),
             Self::Contiguous(input) => {
                 let input = get(input)?;
                 if input.is_contiguous()? {
@@ -177,6 +193,7 @@ impl Operation {
             }
         };
         match self {
+            Self::T(input) => get(input).t(),
             Self::Contiguous(input) => get(input).try_contiguous(MemoryFormat::Contiguous),
             Self::Neg(input) => get(input).negate(),
             Self::MulScalar(input, scalar) => get(input).mul_scalar(scalar),
@@ -197,6 +214,67 @@ thread_local! {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn t_plans_only_bounded_views_and_reuses_storage() {
+        use crate::{Device, cuda};
+        for (shape, strides) in [
+            (vec![], vec![]),
+            (vec![7], vec![3]),
+            (vec![3, 7], vec![9, 1]),
+            (vec![0, 1 << 32], vec![1 << 32, 1]),
+        ] {
+            let input = Layout {
+                shape,
+                strides,
+                offset: 13,
+            };
+            let output = Operation::T(0)
+                .layout(std::slice::from_ref(&input))
+                .unwrap();
+            assert_eq!(
+                output.shape,
+                input.shape.iter().rev().copied().collect::<Vec<_>>()
+            );
+            assert_eq!(
+                output.strides,
+                input.strides.iter().rev().copied().collect::<Vec<_>>()
+            );
+            assert_eq!(output.offset, 13);
+        }
+        assert!(
+            Operation::T(0)
+                .layout(&[Layout {
+                    shape: vec![1, 2, 3],
+                    strides: vec![6, 3, 1],
+                    offset: 0,
+                }])
+                .is_err()
+        );
+        assert!(Operation::T(1).layout(&[]).is_err());
+        if cuda::device_count() == 0 {
+            eprintln!("skipping CUDA view storage check: no CUDA device");
+            return;
+        }
+        for shape in [vec![], vec![6], vec![2, 3]] {
+            let elements = element_count(&shape).unwrap();
+            let input = Tensor::from_vec(vec![1.; elements], shape)
+                .unwrap()
+                .try_copy_cpu_to_cuda(Device::Cuda(0))
+                .unwrap();
+            let output = Operation::T(0).execute(&[&input], &[]).unwrap();
+            assert!(std::sync::Arc::ptr_eq(&input.storage, &output.storage));
+            assert_eq!(input.device(), output.device());
+            assert_eq!(input.dtype(), output.dtype());
+            assert_eq!(input.storage_offset(), output.storage_offset());
+            assert!(
+                Operation::T(0)
+                    .layout(&[Layout::from_tensor(&input)])
+                    .unwrap()
+                    .matches(&output)
+            );
+        }
+    }
 
     #[test]
     fn empty_alias_does_not_require_canonical_strides() {

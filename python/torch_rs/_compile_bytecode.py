@@ -140,6 +140,7 @@ class _OpcodeForm:
 
 
 _METHOD_TARGETS = {
+    "t": _MethodTarget("unary", "t", 0, "Tensor.t"),
     "contiguous": _MethodTarget("unary", "contiguous", 0, "Tensor.contiguous"),
     "sum": _MethodTarget("reduction", "sum", 1, "Tensor.sum"),
     "neg": _MethodTarget("unary", "neg", 0, "Tensor.neg"),

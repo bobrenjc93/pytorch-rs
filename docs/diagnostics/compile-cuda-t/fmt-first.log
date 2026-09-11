@@ -1,0 +1,31 @@
+Diff in /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/src/python_compile_cuda_graph.rs:17:
+ 
+ fn exact_indices(value: &Bound<'_, PyAny>) -> PyResult<Vec<usize>> {
+     if !value.is_exact_instance_of::<PyTuple>() && !value.is_exact_instance_of::<PyList>() {
+-        return Err(PyTypeError::new_err("CUDA graph metadata requires tuple/list of exact integers"));
++        return Err(PyTypeError::new_err(
++            "CUDA graph metadata requires tuple/list of exact integers",
++        ));
+     }
+-    value.try_iter()?.map(|item| {
+-        let item = item?;
+-        if !item.is_exact_instance_of::<PyInt>() {
+-            return Err(PyTypeError::new_err("CUDA graph metadata requires exact integers"));
+-        }
+-        item.extract()
+-    }).collect()
++    value
++        .try_iter()?
++        .map(|item| {
++            let item = item?;
++            if !item.is_exact_instance_of::<PyInt>() {
++                return Err(PyTypeError::new_err(
++                    "CUDA graph metadata requires exact integers",
++                ));
++            }
++            item.extract()
++        })
++        .collect()
+ }
+ 
+ #[pyfunction(name = "_compile_trace_cuda_graph", signature = (inputs, nodes, /))]

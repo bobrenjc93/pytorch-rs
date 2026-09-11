@@ -327,6 +327,7 @@ _COMPILE_H100_CUDA_SKIPPED_OPS = _builtins.frozenset(
     }
 )
 _COMPILE_TENSOR_METHOD_GUARD_NAMES = (
+    "t",
     "contiguous",
     "__abs__",
     "__add__",
@@ -979,7 +980,10 @@ def compile(
     exact bool/int/float constants, with type/value guards on captured globals;
     addition accepts equal shapes or exactly ``(M,N)`` and ``(N,)`` in either
     order. Scalar arguments, broader broadcasts, gradients and unary operations
-    other than negation are rejected. This is native graph capture without fusion.
+    outside the documented CUDA subset are rejected. Parameterless ``t()``
+    creates shared-storage rank-0/1/2 views; ``contiguous()`` packs supported
+    strided views before arithmetic. Each ``t()`` returns a distinct view object.
+    This is native graph capture without fusion.
     A private benchmark-only H100 CUDA pointwise-reduce
     workload is supported for ``backend="inductor"``, ``fullgraph=True``, and
     ``dynamic=False`` when called with the exact CUDA benchmark tensor inputs.

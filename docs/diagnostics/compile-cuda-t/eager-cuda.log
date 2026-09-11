@@ -1,0 +1,75 @@
+test_device_and_driver_context_restoration (tests.test_cuda_contiguous.ContiguousDeviceGuardTests.test_device_and_driver_context_restoration) ... skipped 'requires CUDA_VISIBLE_DEVICES=0,1'
+test_bit_exact_pack_and_reshape (tests.test_cuda_contiguous.CudaContiguousTests.test_bit_exact_pack_and_reshape) ... ok
+test_contiguous_identity_scalar_singleton_empty_and_offset (tests.test_cuda_contiguous.CudaContiguousTests.test_contiguous_identity_scalar_singleton_empty_and_offset) ... ok
+test_formats_ranks_gradients_and_copy_boundaries (tests.test_cuda_contiguous.CudaContiguousTests.test_formats_ranks_gradients_and_copy_boundaries) ... ok
+test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) ... ok
+test_lifetimes_threads_and_no_pytorch_forwarding (tests.test_cuda_contiguous.CudaContiguousTests.test_lifetimes_threads_and_no_pytorch_forwarding) ... ok
+test_reshape_copy_and_view_alias_mutations (tests.test_cuda_contiguous.CudaContiguousTests.test_reshape_copy_and_view_alias_mutations) ... ok
+test_allocation_reuse_and_threaded_lifetimes (tests.test_cuda_native_views.NativeCudaViewTests.test_allocation_reuse_and_threaded_lifetimes) ... ok
+test_bounded_staging_crosses_chunks_and_preserves_values (tests.test_cuda_native_views.NativeCudaViewTests.test_bounded_staging_crosses_chunks_and_preserves_values) ... ok
+test_nonzero_views_copy_to_cpu_and_keep_storage_alive (tests.test_cuda_native_views.NativeCudaViewTests.test_nonzero_views_copy_to_cpu_and_keep_storage_alive) ... ok
+test_unsupported_materialization_fails_at_operation (tests.test_cuda_native_views.NativeCudaViewTests.test_unsupported_materialization_fails_at_operation) ... ok
+test_widely_spaced_selection_copies_under_host_memory_limit (tests.test_cuda_native_views.NativeCudaViewTests.test_widely_spaced_selection_copies_under_host_memory_limit) ... ok
+test_device_guard_and_context_cache (tests.test_cuda_neg.CudaNegDeviceTests.test_device_guard_and_context_cache) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_completion_and_independent_output (tests.test_cuda_neg.CudaNegTests.test_completion_and_independent_output) ... ok
+test_generated_shapes_public_forms_and_input_preservation (tests.test_cuda_neg.CudaNegTests.test_generated_shapes_public_forms_and_input_preservation) ... ok
+test_ieee_bits_and_offset_views (tests.test_cuda_neg.CudaNegTests.test_ieee_bits_and_offset_views) ... ok
+test_large_allocation_lifetime_outside_front_cache (tests.test_cuda_neg.CudaNegTests.test_large_allocation_lifetime_outside_front_cache) ... ok
+test_layout_autograd_rejection_and_compiled_negation (tests.test_cuda_neg.CudaNegTests.test_layout_autograd_rejection_and_compiled_negation) ... ok
+test_lifetimes_reuse_and_fresh_thread_context (tests.test_cuda_neg.CudaNegTests.test_lifetimes_reuse_and_fresh_thread_context) ... ok
+test_no_pytorch_forwarding (tests.test_cuda_neg.CudaNegTests.test_no_pytorch_forwarding) ... ok
+test_allocation_failure_restores_device_and_recovers (tests.test_cuda_mul_scalar.CudaMulScalarDeviceTests.test_allocation_failure_restores_device_and_recovers) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_ownership_restoration_and_mixed_device_rejection (tests.test_cuda_mul_scalar.CudaMulScalarDeviceTests.test_ownership_restoration_and_mixed_device_rejection) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_compiler_rejection_does_not_execute_or_cache (tests.test_cuda_mul_scalar.CudaMulScalarTests.test_compiler_rejection_does_not_execute_or_cache) ... ok
+test_completion_fresh_storage_and_lifetimes (tests.test_cuda_mul_scalar.CudaMulScalarTests.test_completion_fresh_storage_and_lifetimes) ... ok
+test_generated_large_allocation_beyond_front_cache (tests.test_cuda_mul_scalar.CudaMulScalarTests.test_generated_large_allocation_beyond_front_cache) ... ok
+test_generated_shapes_and_all_public_forms (tests.test_cuda_mul_scalar.CudaMulScalarTests.test_generated_shapes_and_all_public_forms) ... ok
+test_ieee_values_offsets_and_empty_views (tests.test_cuda_mul_scalar.CudaMulScalarTests.test_ieee_values_offsets_and_empty_views) ... ok
+test_no_pytorch_forwarding (tests.test_cuda_mul_scalar.CudaMulScalarTests.test_no_pytorch_forwarding) ... ok
+test_scalar_conversion_contracts (tests.test_cuda_mul_scalar.CudaMulScalarTests.test_scalar_conversion_contracts) ... ok
+test_unsupported_boundaries_and_overrides (tests.test_cuda_mul_scalar.CudaMulScalarTests.test_unsupported_boundaries_and_overrides) ... ok
+test_cross_thread_pool_release_on_both_devices (tests.test_cuda_add.CudaAddDeviceTests.test_cross_thread_pool_release_on_both_devices) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_device_restoration_success_failure_and_drop (tests.test_cuda_add.CudaAddDeviceTests.test_device_restoration_success_failure_and_drop) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_replay_eviction_restores_context_across_devices (tests.test_cuda_add.CudaAddDeviceTests.test_replay_eviction_restores_context_across_devices) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_cached_allocation_on_fresh_host_thread (tests.test_cuda_add.CudaAddTests.test_cached_allocation_on_fresh_host_thread) ... ok
+test_completion_before_independent_stream_read (tests.test_cuda_add.CudaAddTests.test_completion_before_independent_stream_read) ... ok
+test_invalid_and_unsupported_inputs (tests.test_cuda_add.CudaAddTests.test_invalid_and_unsupported_inputs) ... ok
+test_numerical_edges (tests.test_cuda_add.CudaAddTests.test_numerical_edges) ... ok
+test_offsets_singletons_and_empty_views (tests.test_cuda_add.CudaAddTests.test_offsets_singletons_and_empty_views) ... ok
+test_random_held_out_shapes_and_public_forms (tests.test_cuda_add.CudaAddTests.test_random_held_out_shapes_and_public_forms) ... ok
+test_repeated_launch_eviction_aliases_and_immediate_drops (tests.test_cuda_add.CudaAddTests.test_repeated_launch_eviction_aliases_and_immediate_drops) ... ok
+test_source_output_lifetimes_chaining_and_reuse (tests.test_cuda_add.CudaAddTests.test_source_output_lifetimes_chaining_and_reuse) ... ok
+test_without_pytorch_import (tests.test_cuda_add.CudaAddTests.test_without_pytorch_import) ... ok
+test_device_guard_and_mixed_device_rejection (tests.test_cuda_matmul.CudaMatmulDeviceTests.test_device_guard_and_mixed_device_rejection) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_completion_thread_and_allocation_lifetimes (tests.test_cuda_matmul.CudaMatmulTests.test_completion_thread_and_allocation_lifetimes) ... ok
+test_generated_shapes_offsets_public_forms_and_preservation (tests.test_cuda_matmul.CudaMatmulTests.test_generated_shapes_offsets_public_forms_and_preservation) ... ok
+test_generated_wide_products_and_overlapping_offsets (tests.test_cuda_matmul.CudaMatmulTests.test_generated_wide_products_and_overlapping_offsets) ... ok
+test_intermediate_overflow_cancellation_and_nonfinite_classification (tests.test_cuda_matmul.CudaMatmulTests.test_intermediate_overflow_cancellation_and_nonfinite_classification) ... ok
+test_invalid_inputs_and_compilation (tests.test_cuda_matmul.CudaMatmulTests.test_invalid_inputs_and_compilation) ... ok
+test_no_pytorch_forwarding (tests.test_cuda_matmul.CudaMatmulTests.test_no_pytorch_forwarding) ... ok
+test_optional_blas_discovery_and_load_failure (tests.test_cuda_matmul.CudaMatmulTests.test_optional_blas_discovery_and_load_failure) ... ok
+test_singleton_empty_and_overlapping_views (tests.test_cuda_matmul.CudaMatmulTests.test_singleton_empty_and_overlapping_views) ... ok
+test_special_values_and_cancellation (tests.test_cuda_matmul.CudaMatmulTests.test_special_values_and_cancellation) ... ok
+test_wide_decimal_products (tests.test_cuda_matmul.CudaMatmulTests.test_wide_decimal_products) ... ok
+test_device_guard_restores_current_device (tests.test_cuda_sum_rows.CudaSumRowsDeviceTests.test_device_guard_restores_current_device) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_cancellation_nonfinite_and_subnormal_values (tests.test_cuda_sum_rows.CudaSumRowsTests.test_cancellation_nonfinite_and_subnormal_values) ... ok
+test_completion_fresh_storage_and_thread_lifetimes (tests.test_cuda_sum_rows.CudaSumRowsTests.test_completion_fresh_storage_and_thread_lifetimes) ... ok
+test_float32_cancellation_and_intermediate_overflow (tests.test_cuda_sum_rows.CudaSumRowsTests.test_float32_cancellation_and_intermediate_overflow) ... ok
+test_generated_rectangles_forms_and_preservation (tests.test_cuda_sum_rows.CudaSumRowsTests.test_generated_rectangles_forms_and_preservation) ... ok
+test_no_pytorch_forwarding (tests.test_cuda_sum_rows.CudaSumRowsTests.test_no_pytorch_forwarding) ... ok
+test_nonfinite_and_subnormal_values_across_reduction_trees (tests.test_cuda_sum_rows.CudaSumRowsTests.test_nonfinite_and_subnormal_values_across_reduction_trees) ... ok
+test_offset_singleton_and_empty_views (tests.test_cuda_sum_rows.CudaSumRowsTests.test_offset_singleton_and_empty_views) ... ok
+test_reduction_geometry_vector_alignment_and_dynamic_range (tests.test_cuda_sum_rows.CudaSumRowsTests.test_reduction_geometry_vector_alignment_and_dynamic_range) ... ok
+test_unsupported_boundaries_and_compiled_reductions (tests.test_cuda_sum_rows.CudaSumRowsTests.test_unsupported_boundaries_and_compiled_reductions) ... ok
+test_wide_same_sign_decimal_rows (tests.test_cuda_sum_rows.CudaSumRowsTests.test_wide_same_sign_decimal_rows) ... ok
+test_current_device_restored_and_cross_device_rejected (tests.test_cuda_same_device_copy.CopyDeviceGuardTests.test_current_device_restored_and_cross_device_rejected) ... skipped 'requires CUDA_VISIBLE_DEVICES=0,1'
+test_argument_forms_and_relaxed_contiguous_strides (tests.test_cuda_same_device_copy.SameDeviceCopyTests.test_argument_forms_and_relaxed_contiguous_strides) ... ok
+test_generated_lengths_offsets_and_exact_values (tests.test_cuda_same_device_copy.SameDeviceCopyTests.test_generated_lengths_offsets_and_exact_values) ... ok
+test_independence_source_mutation_and_allocation_reuse (tests.test_cuda_same_device_copy.SameDeviceCopyTests.test_independence_source_mutation_and_allocation_reuse) ... ok
+test_no_pytorch_forwarding (tests.test_cuda_same_device_copy.SameDeviceCopyTests.test_no_pytorch_forwarding) ... ok
+test_rejections_preserve_source (tests.test_cuda_same_device_copy.SameDeviceCopyTests.test_rejections_preserve_source) ... ok
+
+----------------------------------------------------------------------
+Ran 70 tests in 158.468s
+
+OK (skipped=10)

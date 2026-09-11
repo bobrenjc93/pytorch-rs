@@ -1,0 +1,35 @@
+   Compiling target-lexicon v0.13.5
+   Compiling proc-macro2 v1.0.107
+   Compiling crossbeam-utils v0.8.23
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.47
+   Compiling crossbeam-epoch v0.9.21
+   Compiling libc v0.2.189
+   Compiling crossbeam-deque v0.8.8
+   Compiling heck v0.5.0
+   Compiling rayon-core v1.13.0
+   Compiling inventory v0.3.24
+   Compiling cfg-if v1.0.4
+   Compiling once_cell v1.21.4
+   Compiling either v1.18.0
+   Compiling pyo3-build-config v0.29.2
+   Compiling libloading v0.8.9
+   Compiling syn v2.0.119
+   Compiling pyo3-ffi v0.29.2
+   Compiling pyo3 v0.29.2
+   Compiling rayon v1.12.0
+   Compiling pyo3-macros-backend v0.29.2
+   Compiling pyo3-macros v0.29.2
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.74s
+     Running unittests src/lib.rs (target/t-postcommit-2ce3dfbf/rust/debug/deps/pytorch_rs-545e4fdb10cc861f)
+
+running 5 tests
+test tensor::cuda_graph::tests::empty_alias_does_not_require_canonical_strides ... ok
+test tensor::cuda_graph::tests::packing_and_arithmetic_plan_layouts_independently ... ok
+test tensor::cuda_graph::tests::t_plans_only_bounded_views_and_reuses_storage ... ok
+test python::compile_cuda_graph::tests::invalid_late_nodes_execute_zero_native_operations ... ok
+test python::compile_cuda_graph::tests::t_metadata_types_reject_before_any_native_operation ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 190 filtered out; finished in 0.65s
+

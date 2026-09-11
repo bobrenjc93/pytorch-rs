@@ -1,0 +1,15 @@
+export GIT_OPTIONAL_LOCKS=0
+export CARGO_HOME="$PWD/target/local-cargo"
+export CARGO_TARGET_DIR="$PWD/target/compile-t/rust-managed"
+export UV_CACHE_DIR="$PWD/target/uv-cache"
+export UV_PYTHON_INSTALL_DIR="$PWD/target/python"
+export TMPDIR="$PWD/target/compile-t/tmp"
+export XDG_CACHE_HOME="$PWD/target/compile-t/xdg"
+export CUDA_CACHE_PATH="$PWD/target/compile-t/cuda"
+export TORCHINDUCTOR_CACHE_DIR="$PWD/target/compile-t/inductor"
+export TRITON_CACHE_DIR="$PWD/target/compile-t/triton"
+export PYTHONPYCACHEPREFIX="$PWD/target/compile-t/pycache"
+export CUDA_VISIBLE_DEVICES=0
+export TORCH_RS_CUDART="$PWD/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13"
+export PYO3_PYTHON="$PWD/.venv/bin/python"
+export VIRTUAL_ENV="$PWD/.venv"
