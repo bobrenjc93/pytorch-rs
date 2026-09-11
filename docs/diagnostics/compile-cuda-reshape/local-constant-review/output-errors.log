@@ -1,0 +1,7 @@
+test_bytecode_lowerer_rejects_cpython_314_small_int_output_leaf (tests.test_compile_corpus.CompileCorpusTraceTests.test_bytecode_lowerer_rejects_cpython_314_small_int_output_leaf) ... ok
+test_tuple_list_outputs_reject_non_tensor_leaves_and_dicts (tests.test_compile_corpus.CompileCorpusTraceTests.test_tuple_list_outputs_reject_non_tensor_leaves_and_dicts) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+OK

@@ -1,0 +1,64 @@
+{
+  "checks": {
+    "compiler-regressions": 0,
+    "cpu-layout": 0,
+    "cuda-packing": 0,
+    "docs": 0,
+    "hidden": 0,
+    "imports": 0,
+    "local-before": 1,
+    "output-errors": 0,
+    "preflight": 0,
+    "python-imports": 0,
+    "reshape-final": 0,
+    "two-device": 0,
+    "validation-after": 0
+  },
+  "clean_commit_capture": "required after Burner commits this revision",
+  "extension_sha256": "09520e5fc121711abc34c374de2c53a272f974bdd594429739f651ed6ff81795",
+  "full_manifests_published": 1,
+  "installed_native_matches_build": true,
+  "installed_python_matches_source": true,
+  "manifest_count": 2,
+  "measurement_kind": "precommit-diagnostic",
+  "prior_inventories_unchanged": 6,
+  "results": {
+    "compiler-regressions": {
+      "passed": 222,
+      "skipped": 10
+    },
+    "cpu-layout": {
+      "passed": 132,
+      "skipped": 0
+    },
+    "cuda-packing": {
+      "passed": 6,
+      "skipped": 1
+    },
+    "hidden": {
+      "passed": 2,
+      "skipped": 12
+    },
+    "output-errors": {
+      "passed": 2,
+      "skipped": 0
+    },
+    "reshape-final": {
+      "passed": 13,
+      "skipped": 1
+    },
+    "two-device": {
+      "passed": 4,
+      "skipped": 0
+    },
+    "validation-after": {
+      "passed": 1,
+      "skipped": 0
+    }
+  },
+  "source": {
+    "commit": "e8a4140048fcdfe3617201426a1fa7e6f9e3fee2",
+    "production_diff_sha256": "5810bbab173835f67335c21cad82fd216177f8b0256e5ee8ebd5ad383704412d",
+    "source_sha256": "199c5415583dc51919af8fa04216cd3603ddbd095655029eee4f3c1d6614d5c9"
+  }
+}

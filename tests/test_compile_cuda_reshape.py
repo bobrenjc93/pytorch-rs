@@ -266,6 +266,49 @@ class CompileCudaReshapeTests(unittest.TestCase):
                     with self.assertRaises(trace.CompileTraceUnsupportedError):
                         call_without_python(compile_with_cache(fn, fullgraph, dynamic)[0], {fn.__code__}, x)
 
+    def test_local_nonnumeric_constants_preserve_public_binding_errors(self):
+        x, y = native.ones((1,)).to('cuda:0'), torch.ones((1,), device='cuda:0')
+        for literal in ('None', "'invalid'", "b'invalid'", '1j', '...'):
+            for expression in ('(d)', '(1, d)', '((1, d),)', '(1, foo=d)',
+                               '(1, shape=d)', '((1,), d)', '(shape=d)'):
+                for prefix in ('a = x', 'a = -x'):
+                    local = make_program(f'def program(x):\n    {prefix}\n    d = {literal}\n    return a.reshape{expression}\n')
+                    inline = make_program(f'def program(x):\n    {prefix}\n    return a.reshape{expression.replace("d", literal)}\n')
+                    with self.subTest(literal=literal, expression=expression, prefix=prefix):
+                        with self.assertRaises(TypeError) as reference_local:
+                            local(y)
+                        with self.assertRaises(TypeError) as reference_inline:
+                            inline(y)
+                        self.assertEqual(str(reference_local.exception), str(reference_inline.exception))
+                        for fullgraph, dynamic in POLICIES:
+                            compiled, cache = compile_with_cache(local, fullgraph, dynamic)
+                            inline_compiled, _ = compile_with_cache(inline, fullgraph, dynamic)
+                            for attempt in range(2):
+                                with self.subTest(policy=(fullgraph, dynamic), attempt=attempt), \
+                                     patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('native execution')), \
+                                     patch.object(trace, '_execute_operation', side_effect=AssertionError('Python execution')):
+                                    with self.assertRaises(TypeError) as actual:
+                                        call_without_python(compiled, {local.__code__}, x)
+                                    with self.assertRaises(TypeError) as inline_error:
+                                        call_without_python(inline_compiled, {inline.__code__}, x)
+                                    self.assertEqual(str(actual.exception), str(inline_error.exception))
+                                    self.assertEqual(len(cache.graphs), 0)
+        # Deferring a local's rejection must not accept otherwise unsupported
+        # graphs, even if the local is unused, overwritten, or precedes reshape.
+        for literal in ('None', "'invalid'", "b'invalid'", '1j', '...'):
+            for body in ('return x', 'd = x\n    return d', 'return x.reshape(1)',
+                         'return d', 'return (x, d)', 'return x * d'):
+                fn = make_program(f'def program(x):\n    d = {literal}\n    {body}\n')
+                for fullgraph, dynamic in POLICIES:
+                    compiled, cache = compile_with_cache(fn, fullgraph, dynamic)
+                    for attempt in range(2):
+                        with self.subTest(literal=literal, unsupported=body, policy=(fullgraph, dynamic), attempt=attempt), \
+                             patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('native execution')), \
+                             patch.object(trace, '_execute_operation', side_effect=AssertionError('Python execution')):
+                            with self.assertRaises(trace.CompileTraceUnsupportedError):
+                                call_without_python(compiled, {fn.__code__}, x)
+                            self.assertEqual(len(cache.graphs), 0)
+
     def test_public_binding_order_and_unsupported_forms(self):
         x, y = native.ones((1,)).to('cuda:0'), torch.ones((1,), device='cuda:0')
         errors = ['()', '(True,)', '((True,),)', '(1.,)', '(1, 1.)',

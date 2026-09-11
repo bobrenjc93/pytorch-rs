@@ -112,6 +112,7 @@ class _LoweringState:
     global_values: dict[str, object] = field(default_factory=dict)
     helper_call_count: int = 0
     has_mixed_tuple: bool = False
+    local_constant_error: _trace.CompileTraceUnsupportedError | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -978,14 +979,20 @@ def _require_output_value(value, program, instruction, role):
     _unsupported_bytecode(program, instruction, f"non-Tensor {role}")
 
 
-def _store_local(locals, stack, program, instruction, name):
+def _store_local(locals, stack, program, instruction, name, state):
     value = _pop(stack, program, instruction)
     if isinstance(value, _BytecodeTuple):
         locals[name] = value
         return
     if _builtins.isinstance(value, _BytecodeConstant):
         if type(value.value) not in (int, tuple):
-            _trace._normalize_mul_scalar(value.value)
+            try:
+                _trace._normalize_mul_scalar(value.value)
+            except _trace.CompileTraceUnsupportedError as error:
+                # Preserve the value for public reshape argument validation.
+                # Still reject the graph if the local is unused or overwritten.
+                if state.local_constant_error is None:
+                    state.local_constant_error = error
         locals[name] = value
         return
     locals[name] = _require_output_value(
@@ -1393,9 +1400,9 @@ def _handle_local_load_pair(
 
 
 def _handle_store(recorder, locals, stack, program, instruction, state, active):
-    del recorder, state, active
+    del recorder, active
     (name,) = _local_names(program, instruction, 1)
-    _store_local(locals, stack, program, instruction, name)
+    _store_local(locals, stack, program, instruction, name, state)
 
 
 def _handle_store_load(
@@ -1407,9 +1414,9 @@ def _handle_store_load(
     state,
     active,
 ):
-    del recorder, state, active
+    del recorder, active
     store_name, load_name = _local_names(program, instruction, 2)
-    _store_local(locals, stack, program, instruction, store_name)
+    _store_local(locals, stack, program, instruction, store_name, state)
     _load_local(locals, stack, program, instruction, load_name)
 
 
@@ -1422,10 +1429,10 @@ def _handle_store_store(
     state,
     active,
 ):
-    del recorder, state, active
+    del recorder, active
     first_name, second_name = _local_names(program, instruction, 2)
-    _store_local(locals, stack, program, instruction, first_name)
-    _store_local(locals, stack, program, instruction, second_name)
+    _store_local(locals, stack, program, instruction, first_name, state)
+    _store_local(locals, stack, program, instruction, second_name, state)
 
 
 def _handle_load_const(recorder, locals, stack, program, instruction, state, active):
@@ -1554,6 +1561,8 @@ def lower_compile_graph(program, input_metadatas, *, name=None, compile_request=
         (program,),
         _lowerable_bytecode_instructions(program, code, input_metadatas),
     )
+    if state.local_constant_error is not None:
+        raise state.local_constant_error
     if state.has_mixed_tuple:
         raise _trace.CompileTraceUnsupportedError(
             "torch.compile mixed constant/Tensor tuples are only retained for reshape argument validation"

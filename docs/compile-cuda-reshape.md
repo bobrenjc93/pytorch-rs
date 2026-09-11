@@ -33,8 +33,10 @@ index conversions, lists, tuple subclasses, arbitrary containers, symbolic or
 computed dimensions and scalar function arguments. The compiler never invokes
 user conversion methods. Tensor-only input binding retains its existing errors.
 Known dimension type/overflow errors and invalid call structure are checked even
-when another value is nonconstant. Mixed literal/local tuples are retained only
-for validation; they cannot enter a compiled graph or become output pytrees.
+when another value is nonconstant. Local nonnumeric constants retain the same
+reshape binding errors as inline literals. Unsupported locals and mixed
+literal/local tuples are retained only for validation; they cannot enter a
+compiled graph or become output pytrees, even when unused or overwritten.
 
 A view-compatible reshape creates a distinct Python object sharing storage,
 with the native view planner's strides and the input offset. A copy-required
@@ -77,12 +79,19 @@ CUDA_VISIBLE_DEVICES='' .venv/bin/python -m unittest -v tests.test_compile_cuda_
 ```
 
 Hardware-only cases skip clearly when the required devices are unavailable.
-The [latest clean-commit capture](diagnostics/compile-cuda-reshape/postcommit-3d44687d/README.md)
+The [preceding clean-commit capture](diagnostics/compile-cuda-reshape/postcommit-3d44687d/README.md)
 measures `3d44687d186bcc0f4d3a003676b5719353c80ab4` with a fresh local environment
 and release build, including both reviews' argument-validation regressions.
 H100 differentials, compiler and CPU/layout regressions, two-device restoration,
 CUDA-hidden portability, Rust checks, Clippy and the example above passed;
 hardware skips remain recorded.
+
+The [local-constant review](diagnostics/compile-cuda-reshape/local-constant-review/README.md)
+records the current fix's development checks and preserves the failing
+reproduction. H100 reshape/compiler, CPU/layout, packing, two-device,
+CUDA-hidden and example checks passed after a fresh release build. The preceding
+clean capture does not validate this fix; a fresh clean-commit capture remains
+required after Burner commits this revision.
 
 The [original development capture](diagnostics/compile-cuda-reshape/README.md)
 preserves the fresh PR1977 baseline gap and failed attempts. The
