@@ -1,0 +1,37 @@
+[
+  {
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/.venv/bin/maturin",
+      "build",
+      "--release",
+      "--locked",
+      "--offline",
+      "--out",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/target/cuda-contiguous-release/wheels"
+    ],
+    "started_at": "2026-09-11T03:15:34.136600+00:00",
+    "ended_at": "2026-09-11T03:16:23.261955+00:00",
+    "wall_seconds": 49.12536156643182,
+    "exit_status": 0,
+    "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/target/cuda-contiguous-release/build.log",
+    "log_sha256": "38f690cd9f50fcfe6ca90fe99076b3dd97f8d4618e1300b2cf9e939261843d7a"
+  },
+  {
+    "command": [
+      "uv",
+      "pip",
+      "install",
+      "--python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/.venv/bin/python",
+      "--force-reinstall",
+      "--no-deps",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/target/cuda-contiguous-release/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl"
+    ],
+    "started_at": "2026-09-11T03:16:23.263189+00:00",
+    "ended_at": "2026-09-11T03:16:23.402213+00:00",
+    "wall_seconds": 0.13903777208179235,
+    "exit_status": 0,
+    "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/target/cuda-contiguous-release/install.log",
+    "log_sha256": "8f4c76783cfeb8bf30ad8636f298c294f7257835acf3d462d9e6d02036d9cf63"
+  }
+]

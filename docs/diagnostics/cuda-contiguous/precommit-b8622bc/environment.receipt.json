@@ -1,0 +1,35 @@
+{
+  "command": [
+    ".venv/bin/python",
+    "target/cuda-contiguous-preflight.py"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec",
+  "started_at": "2026-09-11T03:16:15.781819+00:00",
+  "ended_at": "2026-09-11T03:16:17.786567+00:00",
+  "wall_seconds": 2.004750887863338,
+  "exit_status": 0,
+  "log_sha256": "fa18d05b11a0f0f7414b6da1a398f169ed50b7d87ec29083680863deb7ba8106",
+  "source_before": {
+    "commit": "b8622bc673e6fc5e728871cf89eaeabab0eebb2f",
+    "source_sha256": "7c4d4950f5c99d24513f184ee596e5aed2e72b02181e0288be09f792b72f6f05",
+    "production_diff_sha256": "9fe75c82a06fc0d5d5681f255ea86fc43176bef681a6e76f057f3a2f7ae328b5"
+  },
+  "source_after": {
+    "commit": "b8622bc673e6fc5e728871cf89eaeabab0eebb2f",
+    "source_sha256": "7c4d4950f5c99d24513f184ee596e5aed2e72b02181e0288be09f792b72f6f05",
+    "production_diff_sha256": "9fe75c82a06fc0d5d5681f255ea86fc43176bef681a6e76f057f3a2f7ae328b5"
+  },
+  "extensions": {},
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": "0",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/target/local-cargo",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/target/cuda-contiguous-build",
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/target/uv-cache",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/target/tmp",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/target/xdg-cache",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/target/cuda-cache",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/.venv/bin/python",
+    "VIRTUAL_ENV": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/.venv"
+  }
+}

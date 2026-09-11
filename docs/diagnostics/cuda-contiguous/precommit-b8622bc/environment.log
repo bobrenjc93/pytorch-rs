@@ -1,0 +1,22 @@
+{
+  "python": "3.12.13 (main, Jul 20 2026, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-14)]",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/.venv/bin/python",
+  "prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/.venv",
+  "torch_version": "2.13.0+cu130",
+  "torch_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/.venv/lib64/python3.12/site-packages/torch/__init__.py",
+  "torch_cuda": "13.0",
+  "runtime_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+  "runtime_sha256": "96c42e418cec19054186b9429c321603cc190bf26a18104e19408117a2a817b0",
+  "runtime_version": 13000,
+  "driver_version": 13000,
+  "visible_devices": "0",
+  "gpu_count": 1,
+  "gpu_name": "NVIDIA H100",
+  "gpu_properties": "_CudaDeviceProperties(name='NVIDIA H100', major=9, minor=0, total_memory=97356MB, multi_processor_count=132, uuid=8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, pci_bus_id=6, pci_device_id=0, pci_domain_id=0, L2_cache_size=60MB)",
+  "platform": "Linux-6.13.2-0_fbk12_0_g0b66b3635210-x86_64-with-glibc2.34",
+  "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0\n",
+  "nvcc_used": false,
+  "cuda_compilation": "driver JIT of embedded PTX",
+  "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)\nbinary: rustc\ncommit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234\ncommit-date: 2025-12-08\nhost: x86_64-unknown-linux-gnu\nrelease: 1.92.0\nLLVM version: 21.1.3\n",
+  "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)\n"
+}

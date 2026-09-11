@@ -1,0 +1,27 @@
+import ctypes
+import hashlib
+import json
+import os
+from pathlib import Path
+import platform
+import subprocess
+import sys
+import torch
+root = Path.cwd()
+lib = Path(os.environ['TORCH_RS_CUDART'])
+runtime = ctypes.CDLL(str(lib))
+def version(name):
+    value = ctypes.c_int()
+    assert getattr(runtime, name)(ctypes.byref(value)) == 0
+    return value.value
+record = dict(python=sys.version, executable=sys.executable, prefix=sys.prefix,
+    torch_version=torch.__version__, torch_path=torch.__file__, torch_cuda=torch.version.cuda,
+    runtime_path=str(lib.resolve()), runtime_sha256=hashlib.sha256(lib.read_bytes()).hexdigest(),
+    runtime_version=version('cudaRuntimeGetVersion'), driver_version=version('cudaDriverGetVersion'),
+    visible_devices=os.environ.get('CUDA_VISIBLE_DEVICES'), gpu_count=torch.cuda.device_count(),
+    gpu_name=torch.cuda.get_device_name(0), gpu_properties=str(torch.cuda.get_device_properties(0)),
+    platform=platform.platform(), nvcc=subprocess.check_output(['nvcc', '--version'], text=True),
+    nvcc_used=False, cuda_compilation='driver JIT of embedded PTX',
+    rustc=subprocess.check_output(['rustc', '-Vv'], text=True),
+    cargo=subprocess.check_output(['cargo', '-V'], text=True))
+print(json.dumps(record, indent=2))

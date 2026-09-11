@@ -1,0 +1,231 @@
+"""Bounded native CUDA layout materialization against real PyTorch 2.13 CUDA."""
+import ctypes
+import gc
+import os
+from pathlib import Path
+import subprocess
+import sys
+import unittest
+from concurrent.futures import ThreadPoolExecutor
+
+import numpy as np
+import torch_rs as native
+try:
+    import torch
+except ImportError:
+    torch = None
+
+
+def available():
+    return torch is not None and torch.cuda.is_available()
+
+
+def metadata(x):
+    return (tuple(x.shape), x.stride(), x.storage_offset(), str(x.dtype),
+            str(x.device), x.device.index, x.requires_grad, x.is_leaf)
+
+
+def runtime():
+    from torch_rs._cuda_public_storage import _candidate_libraries
+    lib = ctypes.CDLL(os.environ.get("TORCH_RS_CUDART") or _candidate_libraries()[0])
+    lib.cudaMemcpy.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int]
+    lib.cudaMemcpy.restype = ctypes.c_int
+    return lib
+
+
+def read_bits(x):
+    # Raw bytes avoid quieting signaling NaNs in Python scalar conversions.
+    assert x.is_contiguous()
+    bits = np.empty(x.numel(), dtype=np.uint32)
+    if bits.size:
+        assert runtime().cudaMemcpy(bits.ctypes.data, x.data_ptr(), bits.nbytes, 2) == 0
+    return bits
+
+
+def write_bits(x, bits):
+    assert x.is_contiguous() and x.numel() == bits.size
+    assert runtime().cudaMemcpy(x.data_ptr(), bits.ctypes.data, bits.nbytes, 1) == 0
+
+
+@unittest.skipUnless(available(), "requires CUDA reference hardware")
+class CudaContiguousTests(unittest.TestCase):
+    def check(self, a, b, operation=lambda x: x.contiguous()):
+        before, pointer = metadata(a), a.data_ptr()
+        source = np.asarray(a.cpu().tolist(), dtype=np.float32)
+        out, ref = operation(a), operation(b)
+        self.assertEqual(metadata(out), metadata(ref))
+        self.assertEqual(metadata(a), before)
+        self.assertEqual(a.data_ptr(), pointer)
+        np.testing.assert_array_equal(np.asarray(a.cpu().tolist(), dtype=np.float32), source)
+        np.testing.assert_array_equal(np.asarray(out.cpu().tolist(), dtype=np.float32),
+                                      np.asarray(ref.cpu().tolist(), dtype=np.float32))
+        self.assertEqual(out is a, ref is b)
+        if out.numel():
+            self.assertEqual(out.data_ptr() == a.data_ptr(), ref.data_ptr() == b.data_ptr())
+        return out
+
+    def test_generated_transposes_slices_and_grid_stride_tail(self):
+        rng = np.random.default_rng(194867)
+        shapes = [(2, 7), (17, 31), (257, 263), (1031, 1033)]
+        shapes += [tuple(map(int, rng.integers(3, 81, size=2))) for _ in range(8)]
+        for rows, cols in shapes:
+            values = rng.normal(size=(rows, cols)).astype(np.float32)
+            a, b = native.tensor(values).to("cuda:0"), torch.tensor(values, device="cuda:0")
+            views = (lambda x: x.t(), lambda x: x[1:, 1:-1],
+                     lambda x: x[1:, 1:-1].t(), lambda x: x.select(1, 1),
+                     lambda x: x.t()[1:-1, 1:])
+            for view in views:
+                with self.subTest(shape=(rows, cols), view=views.index(view)):
+                    out = self.check(view(a), view(b))
+                    self.assertEqual(out.storage_offset(), 0)
+                    self.assertTrue(out.is_contiguous())
+
+    def test_contiguous_identity_scalar_singleton_empty_and_offset(self):
+        values = np.arange(35, dtype=np.float32).reshape(5, 7)
+        a, b = native.tensor(values).to("cuda:0"), torch.tensor(values, device="cuda:0")
+        for view in (lambda x: x, lambda x: x[2:], lambda x: x.select(0, 2),
+                     lambda x: x[2:3, 2:3].t(), lambda x: x[1:2].t(),
+                     lambda x: x.select(0, 1).select(0, 2),
+                     lambda x: x[5:5, 7:7].t(), lambda x: x[:, 7:7],
+                     lambda x: x.select(1, 2)[5:5],
+                     lambda x: x.reshape(1, 5, 7)):
+            aa, bb = view(a), view(b)
+            self.assertIs(self.check(aa, bb), aa)
+            self.assertIs(aa.contiguous(memory_format=native.preserve_format), aa)
+            self.assertIs(bb.contiguous(memory_format=torch.preserve_format), bb)
+
+    def test_bit_exact_pack_and_reshape(self):
+        bits = np.array([0, 0x80000000, 0x7f800001, 0xff800001, 0x7fc12345,
+                         0xffc54321, 1, 0x80000001, 0x7f800000, 0xff800000,
+                         0x3f800000, 0xbf800000], dtype=np.uint32)
+        a, b = native.zeros((3, 4), device="cuda:0"), torch.zeros((3, 4), device="cuda:0")
+        write_bits(a, bits)
+        write_bits(b, bits)
+        for view in (lambda x: x.t(), lambda x: x[:, 1:3], lambda x: x.select(1, 1)):
+            aa, bb = view(a), view(b)
+            for call in (lambda x: x.contiguous(), lambda x: x.reshape(-1)):
+                # A strided vector reshape aliases; contiguous() packs it for readback.
+                out, ref = call(aa), call(bb)
+                np.testing.assert_array_equal(read_bits(out.contiguous()), read_bits(ref.contiguous()))
+                self.assertEqual(metadata(out), metadata(ref))
+        np.testing.assert_array_equal(read_bits(a), bits)
+        np.testing.assert_array_equal(read_bits(b), bits)
+
+    def test_reshape_copy_and_view_alias_mutations(self):
+        values = np.arange(35, dtype=np.float32).reshape(5, 7)
+        for view, shape, aliases in ((lambda x: x.t(), (35,), False),
+                                     (lambda x: x[:, 1:4], (15,), False),
+                                     (lambda x: x.t(), (7, 1, 5), True),
+                                     (lambda x: x.select(1, 2), (1, 5), True),
+                                     (lambda x: x[1:3], (14,), True)):
+            a, b = native.tensor(values).to("cuda:0"), torch.tensor(values, device="cuda:0")
+            aa, bb = view(a), view(b)
+            out = self.check(aa, bb, lambda x: x.reshape(shape))
+            ref = bb.reshape(shape)
+            self.assertEqual(out.data_ptr() == aa.data_ptr(), aliases)
+            changed = np.full(35, -9, dtype=np.float32).view(np.uint32)
+            write_bits(a, changed)
+            write_bits(b, changed)
+            self.assertEqual(out.cpu().tolist(), ref.cpu().tolist())
+            self.assertEqual(aa.cpu().tolist(), bb.cpu().tolist())
+        # Contiguous returns the same object when possible; pack never aliases.
+        a = native.tensor(values).to("cuda:0")
+        alias, packed = a[1:], a.t().contiguous()
+        self.assertIs(alias.contiguous(), alias)
+        write_bits(packed, np.full(35, 42, dtype=np.float32).view(np.uint32))
+        np.testing.assert_array_equal(read_bits(a), values.reshape(-1).view(np.uint32))
+        write_bits(a, np.full(35, -3, dtype=np.float32).view(np.uint32))
+        self.assertEqual(alias.cpu().tolist(), [[-3.] * 7] * 4)
+        self.assertEqual(packed.cpu().tolist(), [[42.] * 5] * 7)
+
+    def test_formats_ranks_gradients_and_copy_boundaries(self):
+        a = native.tensor(np.arange(24, dtype=np.float32)).to("cuda:0")
+        b = torch.arange(24, dtype=torch.float32, device="cuda:0")
+        for fmt in ("preserve_format", "channels_last", "channels_last_3d"):
+            for module, source in ((native, a.reshape(4, 6).t()), (torch, b.reshape(4, 6).t())):
+                with self.assertRaises(RuntimeError):
+                    source.contiguous(memory_format=getattr(module, fmt))
+        for module, source in ((native, a), (torch, b)):
+            for invalid in (None, "contiguous_format", 1):
+                with self.assertRaises(TypeError):
+                    source.contiguous(memory_format=invalid)
+            with self.assertRaises(TypeError):
+                source.contiguous(module.contiguous_format)
+        for source in (a.reshape(2, 3, 4).transpose(0, 1), a.reshape(2, 3, 2, 2).transpose(0, 1)):
+            with self.assertRaisesRegex(NotImplementedError, "rank-1 or rank-2"):
+                source.contiguous()
+            with self.assertRaisesRegex(NotImplementedError, "rank-1 or rank-2"):
+                source.reshape(-1)
+        with self.assertRaises(NotImplementedError):
+            a.reshape(2, 3, 2, 2).contiguous(memory_format=native.channels_last)
+        with self.assertRaises(NotImplementedError):
+            a.requires_grad_()
+        for dtype in (native.float64, native.int64, native.bool):
+            with self.assertRaises((NotImplementedError, TypeError)):
+                native.zeros((3, 4), dtype=dtype, device="cuda:0")
+        for call in (lambda: a.reshape(4, 6).t().clone(),
+                     lambda: a.reshape(4, 6).t().to(copy=True),
+                     lambda: a.to(copy=True, memory_format=native.contiguous_format)):
+            with self.assertRaises(NotImplementedError):
+                call()
+        self.assertEqual(a.cpu().tolist(), list(map(float, range(24))))
+
+    def test_lifetimes_threads_and_no_pytorch_forwarding(self):
+        def work(i):
+            a = native.full((17, 31), float(i)).to("cuda:0")
+            packed = a.t().contiguous()
+            held = packed[2:4]
+            del a, packed
+            gc.collect()
+            self.assertEqual(held.cpu().tolist(), [[float(i)] * 17] * 2)
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            list(pool.map(work, range(24)))
+        script = '''
+import sys
+class BlockTorch:
+    def find_spec(self, fullname, *args):
+        if fullname == "torch" or fullname.startswith("torch."):
+            raise AssertionError("production imported PyTorch")
+sys.meta_path.insert(0, BlockTorch())
+import torch_rs as n
+x = n.tensor([[1., 2., 3.], [4., 5., 6.]]).to("cuda:0").t()
+assert x.contiguous().cpu().tolist() == [[1., 4.], [2., 5.], [3., 6.]]
+assert x.reshape(-1).cpu().tolist() == [1., 4., 2., 5., 3., 6.]
+assert "torch" not in sys.modules
+'''
+        result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True,
+                                timeout=60, cwd=Path(__file__).resolve().parents[1])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
+@unittest.skipUnless(available() and os.environ.get("CUDA_VISIBLE_DEVICES") == "0,1"
+                     and torch.cuda.device_count() == 2, "requires CUDA_VISIBLE_DEVICES=0,1")
+class ContiguousDeviceGuardTests(unittest.TestCase):
+    def test_device_and_driver_context_restoration(self):
+        driver = ctypes.CDLL("libcuda.so.1")
+        driver.cuCtxGetCurrent.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+        driver.cuCtxGetCurrent.restype = ctypes.c_int
+        def context():
+            pointer = ctypes.c_void_p()
+            self.assertEqual(driver.cuCtxGetCurrent(ctypes.byref(pointer)), 0)
+            return pointer.value
+        previous = torch.cuda.current_device()
+        try:
+            for target, current in ((0, 1), (1, 0)):
+                a = native.tensor([[1., 2., 3.], [4., 5., 6.]]).to(f"cuda:{target}").t()
+                torch.cuda.set_device(current)
+                torch.empty(1, device=f"cuda:{current}")
+                before = context()
+                for call in (lambda: a.contiguous(), lambda: a.reshape(-1)):
+                    out = call()
+                    self.assertEqual(str(out.device), f"cuda:{target}")
+                    self.assertEqual(torch.cuda.current_device(), current)
+                    self.assertEqual(context(), before)
+                    self.assertEqual(out.cpu().reshape(-1).tolist(), [1., 4., 2., 5., 3., 6.])
+                    del out
+                    self.assertEqual(context(), before)
+                with self.assertRaises(NotImplementedError):
+                    a.reshape(3, 1, 2).contiguous()
+                self.assertEqual(context(), before)
+        finally:
+            torch.cuda.set_device(previous)

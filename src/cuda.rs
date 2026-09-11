@@ -400,6 +400,32 @@ impl CudaFloat32Storage {
         })
     }
 
+    pub(crate) fn contiguous(
+        &self,
+        offset: usize,
+        shape: &[usize],
+        strides: &[usize],
+    ) -> Result<Self, TensorError> {
+        let (elements, span, columns, row_stride, column_stride) =
+            contiguous_layout(shape, strides)?;
+        // unary_output checks offset + span against storage BEFORE allocation,
+        // guards the device, and holds both owners through stream completion.
+        self.unary_output(offset, span, elements, |input, output| {
+            // SAFETY: the checked extent covers every positive-stride address;
+            // output is independent and large enough for all logical elements.
+            unsafe {
+                pointwise::launch_contiguous(
+                    input,
+                    output,
+                    elements,
+                    columns,
+                    row_stride,
+                    column_stride,
+                )
+            }
+        })
+    }
+
     pub(crate) fn sum_rows(
         &self,
         offset: usize,
@@ -833,9 +859,142 @@ impl Drop for CudaFloat32Storage {
     }
 }
 
+// Return logical count, physical span, and the rank-two indexing parameters.
+// This planner does not allocate, access a runtime, or form device pointers.
+fn contiguous_layout(
+    shape: &[usize],
+    strides: &[usize],
+) -> Result<(usize, usize, usize, usize, usize), TensorError> {
+    if !(1..=2).contains(&shape.len()) || strides.len() != shape.len() {
+        return Err(TensorError::UnsupportedCudaContiguous {
+            reason: "packing requires rank-1 or rank-2 with matching strides",
+        });
+    }
+    if shape.contains(&0) {
+        return Ok((0, 0, 0, 0, 0));
+    }
+    if strides.contains(&0) {
+        return Err(TensorError::UnsupportedCudaContiguous {
+            reason: "packing requires positive strides",
+        });
+    }
+    let mut elements = 1usize;
+    let mut span = 1usize;
+    for (&size, &stride) in shape.iter().zip(strides) {
+        elements = elements
+            .checked_mul(size)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        span = (size - 1)
+            .checked_mul(stride)
+            .and_then(|extent| span.checked_add(extent))
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+    }
+    let last = shape.len() - 1;
+    Ok((
+        elements,
+        span,
+        shape[last],
+        if last == 0 { 0 } else { strides[0] },
+        strides[last],
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{Device, Tensor};
+    #[test]
+    fn contiguous_layout_checks_without_runtime() {
+        use super::contiguous_layout;
+        use crate::TensorError;
+        for (shape, strides) in [
+            (vec![], vec![]),
+            (vec![2, 3, 4], vec![12, 4, 1]),
+            (vec![2], vec![]),
+            (vec![2], vec![0]),
+        ] {
+            assert!(matches!(
+                contiguous_layout(&shape, &strides),
+                Err(TensorError::UnsupportedCudaContiguous { .. })
+            ));
+        }
+        for (shape, strides) in [
+            ([2, 2], [usize::MAX, 1]),
+            ([3, 1], [usize::MAX / 2 + 1, 1]),
+            ([usize::MAX, 2], [1, 1]),
+        ] {
+            assert!(matches!(
+                contiguous_layout(&shape, &strides),
+                Err(TensorError::IndexCalculationOverflow)
+            ));
+        }
+        assert_eq!(
+            contiguous_layout(&[3, 2], &[1, 5]).unwrap(),
+            (6, 8, 2, 1, 5)
+        );
+        assert_eq!(
+            contiguous_layout(&[1], &[usize::MAX]).unwrap(),
+            (1, 1, 1, 0, usize::MAX)
+        );
+        assert_eq!(
+            contiguous_layout(&[0, usize::MAX], &[usize::MAX, 1]).unwrap(),
+            (0, 0, 0, 0, 0)
+        );
+    }
+
+    #[test]
+    fn contiguous_checked_offsets_and_exact_bits() {
+        if super::device_count() == 0 {
+            eprintln!("skipping CUDA contiguous primitive: no CUDA device");
+            return;
+        }
+        let bits = [0x8000_0000, 0x7f80_0001, 0x7fc1_2345, 1, 0xff80_0001, 0];
+        let values = bits.map(f32::from_bits);
+        let input = super::CudaFloat32Storage::from_host(&values, 0).unwrap();
+        for offset in [1, usize::MAX] {
+            assert!(matches!(
+                input.contiguous(offset, &[3, 2], &[1, 3]),
+                Err(crate::TensorError::IndexCalculationOverflow)
+            ));
+        }
+        let output = input.contiguous(0, &[3, 2], &[1, 3]).unwrap();
+        assert_eq!(
+            output
+                .copy_range(0, 6)
+                .unwrap()
+                .iter()
+                .map(|v| v.to_bits())
+                .collect::<Vec<_>>(),
+            [bits[0], bits[3], bits[1], bits[4], bits[2], bits[5]]
+        );
+        assert_eq!(
+            input
+                .copy_range(0, 6)
+                .unwrap()
+                .iter()
+                .map(|v| v.to_bits())
+                .collect::<Vec<_>>(),
+            bits
+        );
+        assert_eq!(
+            input
+                .contiguous(1, &[2], &[3])
+                .unwrap()
+                .copy_range(0, 2)
+                .unwrap()
+                .iter()
+                .map(|v| v.to_bits())
+                .collect::<Vec<_>>(),
+            [bits[1], bits[4]]
+        );
+        assert_eq!(
+            input
+                .contiguous(usize::MAX, &[0, usize::MAX], &[1, usize::MAX])
+                .unwrap()
+                .elements,
+            0
+        );
+    }
+
     #[test]
     fn cuda_allocation_checks_byte_overflow_before_loading_runtime() {
         for elements in [usize::MAX, isize::MAX as usize / size_of::<f32>() + 1] {
