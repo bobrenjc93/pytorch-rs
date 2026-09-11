@@ -32,6 +32,7 @@ artifacts are generated at merge time and are not source documentation.
 - [Compiled CUDA scalar multiplication validation](compile-cuda-mul-scalar-validation.md): Guarded scalar grammar, independent diagnostics, and H100 checks.
 - [Compiled CUDA negation validation](compile-cuda-neg-validation.md): Integrated-commit results, provenance, and current neg/add diagnostic commands.
 - [CUDA scalar multiplication validation](cuda-mul-scalar-validation.md): General eager float32 kernel, conversion/layout boundaries, and H100 evidence.
+- [Native and compiled CUDA ReLU](cuda-relu.md): Method capture, IEEE bit semantics, layout bounds and H100 development checks.
 - [CUDA negation validation](cuda-neg-validation.md): Contiguous float32 eager scope, H100 checks, and retained evaluation evidence.
 - [CUDA view packing validation](cuda-contiguous-validation.md): Bounded contiguous/reshape materialization, aliasing contracts and clean-commit H100 correctness evidence.
 - [Text collation diagnostics](text-collation-diagnostics.md): Public-call timings and identity checks for text-led metadata passthrough.

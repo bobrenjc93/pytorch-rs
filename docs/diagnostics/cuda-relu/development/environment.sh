@@ -1,0 +1,17 @@
+export UV_CACHE_DIR="$PWD/target/uv-cache"
+export UV_PYTHON_INSTALL_DIR="$PWD/target/uv-python"
+export UV_PROJECT_ENVIRONMENT="$PWD/.venv"
+export CARGO_HOME="$PWD/target/cargo-home"
+export CARGO_TARGET_DIR="$PWD/target/build"
+export TMPDIR="$PWD/target/tmp"
+export XDG_CACHE_HOME="$PWD/target/xdg-cache"
+export CUDA_CACHE_PATH="$PWD/target/cuda-cache"
+export TORCHINDUCTOR_CACHE_DIR="$PWD/target/inductor-cache"
+export TRITON_CACHE_DIR="$PWD/target/triton-cache"
+export PYTHONDONTWRITEBYTECODE=1
+export RUSTUP_TOOLCHAIN=1.92.0
+export VIRTUAL_ENV="$PWD/.venv"
+export PYO3_PYTHON="$PWD/.venv/bin/python"
+export CUDA_VISIBLE_DEVICES=0
+export PATH="$PWD/.venv/bin:$PATH"
+export GIT_OPTIONAL_LOCKS=0

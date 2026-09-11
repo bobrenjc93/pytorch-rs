@@ -126,6 +126,7 @@ fn parse_operation(
         ("t", &[input]) if payload.is_none() => Operation::T(input),
         ("contiguous", &[input]) if payload.is_none() => Operation::Contiguous(input),
         ("neg", &[input]) if payload.is_none() => Operation::Neg(input),
+        ("relu", &[input]) if payload.is_none() => Operation::Relu(input),
         ("add", &[left, right]) if payload.is_none() => Operation::Add(left, right),
         ("matmul", &[left, right]) if payload.is_none() => Operation::Matmul(left, right),
         _ => {
@@ -496,7 +497,7 @@ mod tests {
                 node("contiguous", vec![99], vec![7, 3], vec![3, 1]),
                 node("contiguous", vec![1], vec![7, 3], vec![1, 7]),
                 node("contiguous", vec![0, 1], vec![7, 3], vec![3, 1]),
-                node("relu", vec![1], vec![7, 3], vec![3, 1]),
+                node("abs", vec![1], vec![7, 3], vec![3, 1]),
             ];
             for last in bad {
                 EXECUTIONS.with(|count| count.set(0));
@@ -520,6 +521,62 @@ mod tests {
             .unwrap();
             EXECUTIONS.with(|count| assert_eq!(count.get(), 2));
             assert!(outputs[0].is(&outputs[1]));
+        });
+    }
+    #[test]
+    fn relu_graph_prevalidates_early_and_late_nodes() {
+        if cuda::device_count() == 0 {
+            eprintln!("skipping CUDA ReLU graph accounting: no CUDA device");
+            return;
+        }
+        Python::initialize();
+        Python::attach(|py| {
+            let base = CoreTensor::from_vec(vec![-1., 2., -3., 4., -5., 6.], [2, 3])
+                .unwrap()
+                .try_copy_cpu_to_cuda(Device::Cuda(0))
+                .unwrap();
+            let input = Py::new(py, PyTensor::new(base)).unwrap();
+            let inputs = PyTuple::new(py, [input]).unwrap();
+            let node = |indices: Vec<usize>, shape: Vec<usize>, strides: Vec<usize>| {
+                (
+                    "relu".to_owned(),
+                    PyTuple::new(py, indices).unwrap().into_any(),
+                    py.None().into_bound(py),
+                    PyTuple::new(py, shape).unwrap().into_any(),
+                    PyTuple::new(py, strides).unwrap().into_any(),
+                )
+            };
+            let valid = node(vec![0], vec![2, 3], vec![3, 1]);
+            let mut bad = vec![
+                node(vec![], vec![2, 3], vec![3, 1]),
+                node(vec![0, 0], vec![2, 3], vec![3, 1]),
+                node(vec![99], vec![2, 3], vec![3, 1]),
+                node(vec![0], vec![3, 2], vec![2, 1]),
+                node(vec![0], vec![2, 3], vec![1, 2]),
+            ];
+            for payload in [
+                false.into_pyobject(py).unwrap().to_owned().into_any(),
+                1_i32.into_pyobject(py).unwrap().into_any(),
+                PyTuple::empty(py).into_any(),
+            ] {
+                let mut wrong = valid.clone();
+                wrong.2 = payload;
+                bad.push(wrong);
+            }
+            for wrong in bad {
+                for nodes in [
+                    vec![wrong.clone(), valid.clone()],
+                    vec![valid.clone(), wrong],
+                ] {
+                    EXECUTIONS.with(|count| count.set(0));
+                    assert!(execute(&inputs, nodes).is_err());
+                    EXECUTIONS.with(|count| assert_eq!(count.get(), 0));
+                }
+            }
+            EXECUTIONS.with(|count| count.set(0));
+            let out = execute(&inputs, vec![valid, node(vec![1], vec![2, 3], vec![3, 1])]).unwrap();
+            EXECUTIONS.with(|count| assert_eq!(count.get(), 2));
+            assert!(!out[0].is(&out[1]));
         });
     }
 }

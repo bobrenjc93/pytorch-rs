@@ -210,7 +210,7 @@ class CompileCudaNegTests(Comparison, unittest.TestCase):
     def test_reject_before_execution_and_cache_insertion(self):
         cpu = native.ones((3, 4))
         cuda = cpu.to("cuda:0")
-        for program in (lambda x: (-x).abs(), lambda x: (-x).relu(), lambda x: (-x).square(),
+        for program in (lambda x: (-x).abs(), lambda x: (-x).absolute(), lambda x: (-x).square(),
                         lambda x: (-x).detach(), lambda x: (-x).float()):
             for warmed in (False, True):
                 compiled, cache = compile_with_cache(program)

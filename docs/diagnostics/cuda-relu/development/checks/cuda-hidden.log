@@ -1,0 +1,20 @@
+test_same_and_other_device_restoration (tests.test_cuda_relu.CudaReluDeviceTests.test_same_and_other_device_restoration) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_boundary_and_no_reference_forwarding (tests.test_cuda_relu.CudaReluTests.test_boundary_and_no_reference_forwarding) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_cold_threads_and_large_grid_stride_lifetimes (tests.test_cuda_relu.CudaReluTests.test_cold_threads_and_large_grid_stride_lifetimes) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_ieee_payloads_offsets_singleton_strides (tests.test_cuda_relu.CudaReluTests.test_ieee_payloads_offsets_singleton_strides) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_seeded_shapes_aliases_and_fresh_canonical_storage (tests.test_cuda_relu.CudaReluTests.test_seeded_shapes_aliases_and_fresh_canonical_storage) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_stream_completion_mutation_and_lifetime (tests.test_cuda_relu.CudaReluTests.test_stream_completion_mutation_and_lifetime) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_context_captures_mixed_devices_and_restoration (tests.test_compile_cuda_relu.CompileCudaReluDeviceTests.test_context_captures_mixed_devices_and_restoration) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_block_reference_import_and_python_execution_in_fresh_process (tests.test_compile_cuda_relu.CompileCudaReluTests.test_block_reference_import_and_python_execution_in_fresh_process) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_compiled_stream_completion_and_input_mutation (tests.test_compile_cuda_relu.CompileCudaReluTests.test_compiled_stream_completion_and_input_mutation) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_cpu_cuda_separation_capture_helpers_and_nested_lifetimes (tests.test_compile_cuda_relu.CompileCudaReluTests.test_cpu_cuda_separation_capture_helpers_and_nested_lifetimes) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_ieee_bits_offsets_strides_and_dynamic_guards (tests.test_compile_cuda_relu.CompileCudaReluTests.test_ieee_bits_offsets_strides_and_dynamic_guards) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_malformed_early_late_and_repeated_output_metadata_zero_execution (tests.test_compile_cuda_relu.CompileCudaReluTests.test_malformed_early_late_and_repeated_output_metadata_zero_execution) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_method_identity_strict_binding_and_native_compatibility (tests.test_compile_cuda_relu.CompileCudaReluTests.test_method_identity_strict_binding_and_native_compatibility) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_seeded_shapes_composition_and_real_cache_values (tests.test_compile_cuda_relu.CompileCudaReluTests.test_seeded_shapes_composition_and_real_cache_values) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_single_node_output_prevalidation_and_native_payload_types (tests.test_compile_cuda_relu.CompileCudaReluTests.test_single_node_output_prevalidation_and_native_payload_types) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+
+----------------------------------------------------------------------
+Ran 15 tests in 0.000s
+
+OK (skipped=15)

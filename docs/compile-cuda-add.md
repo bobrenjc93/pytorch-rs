@@ -1,7 +1,7 @@
-# Ordinary CUDA scalar-multiply, negation and addition graph capture
+# Ordinary CUDA arithmetic and ReLU graph capture
 
 The generic bytecode compiler accepts exact native contiguous float32 CUDA
-Tensors for one- and two-input scalar-multiply/negation/addition graphs, plus
+Tensors for one- and two-input scalar-multiply/negation/ReLU/addition graphs, plus
 [rank-2 matrix products](compile-cuda-matmul.md), with
 `torch.compile(fn, backend="eager", fullgraph=True)`. This is graph capture and
 native operation execution, with one Rust/CUDA kernel per recorded operation.
@@ -25,7 +25,7 @@ assert compiled(x, y).cpu().tolist() == [-7., -8., -9.]
 
 `x * scalar`, `scalar * x`, positional `.mul(scalar)`/`.multiply(scalar)`
 and positional `torch_rs.mul`/`torch_rs.multiply` calls (including imported
-aliases) compose with negation and addition. Scalars must be exact Python
+aliases) compose with negation, ReLU and addition. Scalars must be exact Python
 `bool`, `int`, or `float` literals, local constants, or module globals, including
 globals read by the existing same-module helper. Conversion uses the public
 scalar multiplication parser, including integer overflow and float32 rounding.
@@ -33,7 +33,7 @@ Scalar function arguments, closures, numeric subclasses/NumPy scalars, complex
 values, arithmetic on captured scalars, kwargs and `out` remain unsupported.
 Top-level calls require the native callable identity; patched bindings reject.
 
-Unary `-`, zero-argument `.neg()` and `.negative()` compose arbitrarily with
+Unary `-`, zero-argument `.neg()`, `.negative()` and `.relu()` compose arbitrarily with
 operator `+` and positional `.add(tensor)`. This syntax supports
 equal-shape addition and exactly `(M, N)+(N,)` in either operand order,
 self-addition, chains, scalar tensors, empty tensors, and contiguous views with
@@ -61,13 +61,18 @@ compiler metadata boundary also explicitly rejects those properties.
 The compiler reuses [native CUDA scalar multiplication](cuda-mul-scalar-validation.md);
 CPU multiplication capture and tensor-tensor multiplication remain unsupported.
 
+ReLU uses [native CUDA compare/select](cuda-relu.md), preserving NaN payloads
+and clamping negative zero to positive zero. Its method capture accepts any
+contiguous rank already admitted by negation. Top-level `torch.relu` and
+functional ReLU capture remain unsupported.
+
 ## Metadata and cache contract
 
 The Rust metadata hook reads dtype, device including ordinal, shape, strides,
 requires-grad, and storage offset from the actual tensor, without Python
 property dispatch. The compiler uses that native device metadata. CUDA input and
 capture metadata guard the exact offset as well as shape/stride/dtype/device;
-negation and equal-shape addition outputs own fresh CUDA storage with canonical
+negation, ReLU and equal-shape addition outputs own fresh CUDA storage with canonical
 contiguous strides and offset zero. Matrix/vector addition uses the shared
 elementwise stride planner, preserving singleton and empty output ordering;
 scalar multiplication uses the scalar layout planner. All allocate fresh storage
@@ -89,7 +94,7 @@ graph cache unchanged. A new graph is published only after successful native
 execution, and the entire graph is validated before executing any operation.
 Private metadata-only recorders can still describe unsupported CUDA unary graphs;
 the executor rejects these before any kernel runs. Native unary hooks admit
-only negation on CUDA and retain CPU-only guards for all other unary targets.
+negation and ReLU on CUDA and retain CPU-only guards for all other unary targets.
 The private binary bridge independently delegates shape, layout, dtype, device
 and autograd validation to `Tensor::add`; it cannot bypass the kernel boundary.
 CUDA add nodes also validate declared result metadata before execution, while

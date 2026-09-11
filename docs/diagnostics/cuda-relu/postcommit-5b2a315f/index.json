@@ -1,0 +1,58 @@
+{
+  "acceptance": "acceptance.json",
+  "audit": "audit.json",
+  "base_commit": "9407a208d12a6a650ced579e943154849973e037",
+  "build": "build/build-record.json",
+  "campaign": "campaign.json",
+  "checks": {
+    "acceptance": {
+      "exit_status": 0,
+      "receipt": "checks/postcommit-5b2a315f-acceptance.json"
+    },
+    "cuda-hidden": {
+      "exit_status": 0,
+      "receipt": "checks/postcommit-5b2a315f-cuda-hidden.json"
+    },
+    "focused": {
+      "exit_status": 0,
+      "receipt": "checks/postcommit-5b2a315f-focused.json"
+    },
+    "rust-bindings-relu": {
+      "exit_status": 0,
+      "receipt": "checks/postcommit-5b2a315f-rust-bindings-relu.json"
+    },
+    "rust-default-relu": {
+      "exit_status": 0,
+      "receipt": "checks/postcommit-5b2a315f-rust-default-relu.json"
+    },
+    "rust-kernel-slots": {
+      "exit_status": 0,
+      "receipt": "checks/postcommit-5b2a315f-rust-kernel-slots.json"
+    },
+    "two-device": {
+      "exit_status": 0,
+      "receipt": "checks/postcommit-5b2a315f-two-device.json"
+    },
+    "verify-release": {
+      "exit_status": 0,
+      "receipt": "checks/postcommit-5b2a315f-verify-release.json"
+    }
+  },
+  "historical_evidence": "../development/index.json",
+  "kind": "clean-commit semantic diagnostic; no timing or scoring claims",
+  "limitations": [
+    "No timing or general torch.compile/accelerator/training parity claim.",
+    "GPU inventory/utilization snapshots do not reserve hardware.",
+    "This evidence does not approve the branch or replace independent review or merge gates."
+  ],
+  "measured_commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+  "preflight": "preflight.json",
+  "prior_clean_capture": "../postcommit-a07d99d8/index.json",
+  "refresh_reason": "The earlier clean capture is preserved unchanged. Its recorded installed extension bytes and wheel/interpreter paths no longer matched the worktree; preflight.json records the observed mismatch before this fresh build.",
+  "reproduction": "capture.py is the executed command-orchestration record, using committed helpers without workload changes. Source environment.sh and run it from the repository root only in a fresh clean checkout with unused target paths; capture and build helpers refuse overwrites. package.py audits and copies the completed captures. Generated build products and caches remain ignored under target/.",
+  "scope": "Fresh release identity, seeded eager and eager-backend compiled reference differentials, IEEE bits, focused ReLU Python/Rust checks, two-device restoration and portable CUDA-hidden skips. Broader author validation and its failures remain in development/.",
+  "source_manifest_note": "Raw receipts identify manifests by basename. Resolve through this map to the unchanged development bundle; one immutable manifest is shared by all current checks without duplicating its bytes.",
+  "source_manifest_resolution": {
+    "ba052824dd7d5654503077dc0d65cf2662058f4a057a812d6f74ecfa3fd0e81b.manifest.json": "../development/checks/ba052824dd7d5654503077dc0d65cf2662058f4a057a812d6f74ecfa3fd0e81b.manifest.json"
+  }
+}

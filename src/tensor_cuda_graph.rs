@@ -13,6 +13,7 @@ pub(crate) enum Operation {
     Transpose(usize, i64, i64),
     Reshape(usize, Shape),
     Neg(usize),
+    Relu(usize),
     MulScalar(usize, f32),
     Add(usize, usize),
     Matmul(usize, usize),
@@ -183,7 +184,9 @@ impl Operation {
                 }
                 input.shape.clone()
             }
-            Self::Neg(input) | Self::MulScalar(input, _) => get_contiguous(input)?.shape.clone(),
+            Self::Neg(input) | Self::Relu(input) | Self::MulScalar(input, _) => {
+                get_contiguous(input)?.shape.clone()
+            }
             Self::Add(left, right) => {
                 let (left, right) = (get_contiguous(left)?, get_contiguous(right)?);
                 if left.shape == right.shape {
@@ -281,6 +284,7 @@ impl Operation {
             Self::Transpose(input, dim0, dim1) => get(input).transpose(dim0, dim1),
             Self::Contiguous(input) => get(input).try_contiguous(MemoryFormat::Contiguous),
             Self::Neg(input) => get(input).negate(),
+            Self::Relu(input) => get(input).relu(),
             Self::MulScalar(input, scalar) => get(input).mul_scalar(scalar),
             Self::Add(left, right) => get(left).add(get(right)),
             Self::Matmul(left, right) => get(left).matmul(get(right)),
@@ -525,6 +529,7 @@ mod tests {
         }];
         for op in [
             Operation::Neg(0),
+            Operation::Relu(0),
             Operation::MulScalar(0, 2.),
             Operation::Add(0, 0),
             Operation::Matmul(0, 0),
@@ -537,6 +542,7 @@ mod tests {
         assert_eq!(packed.offset, 0);
         values.push(packed);
         assert!(Operation::Neg(1).layout(&values).is_ok());
+        assert!(Operation::Relu(1).layout(&values).is_ok());
         assert!(Operation::Contiguous(2).layout(&values).is_err());
         for (shape, strides) in [(vec![2, 3, 4], vec![4, 8, 1]), (vec![3], vec![0])] {
             assert!(

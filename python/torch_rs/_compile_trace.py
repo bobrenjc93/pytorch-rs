@@ -701,7 +701,7 @@ def _unary_output_metadata(input_metadata, target, *, grad_enabled=None):
         return _t_output_metadata(input_metadata)
     if target == "contiguous":
         return _contiguous_output_metadata(input_metadata)
-    if input_metadata.device.type == "cuda" and target == "neg":
+    if input_metadata.device.type == "cuda" and target in ("neg", "relu"):
         _validate_cuda_metadata(input_metadata)
     if target in _SUPPORTED_ALIAS_UNARY_TARGETS:
         return CompileTraceTensorMetadata(
@@ -1294,7 +1294,7 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled, de
                 f"{operation.name!r}"
             )
         (input_name,) = operation.inputs
-        if metadata_values[input_name].device.type == "cuda" and operation.target != "neg":
+        if metadata_values[input_name].device.type == "cuda" and operation.target not in ("neg", "relu"):
             raise CompileTraceUnsupportedError(
                 f"torch.compile trace CUDA unary operation {operation.target!r} is unsupported"
             )
@@ -1462,7 +1462,7 @@ def execute_compile_trace_graph(graph, *inputs):
             )
         metadata_values[operation.name] = expected_metadata
 
-    if (len(graph.operations) > 1 or any(op.target in ("contiguous", "t", "transpose", "reshape") for op in graph.operations)) and all(
+    if (len(graph.operations) > 1 or any(op.target in ("contiguous", "t", "transpose", "reshape", "relu") for op in graph.operations)) and all(
         metadata.device.type == "cuda" for metadata in metadata_values.values()
     ):
         # Validate the output tree too before the native bridge can launch.

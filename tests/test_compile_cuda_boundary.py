@@ -184,7 +184,7 @@ class CompileCudaBoundaryTests(Comparison, unittest.TestCase):
     def test_unsupported_fresh_and_cpu_warmed_leave_cache_unchanged(self):
         cpu = native.ones((3, 4))
         cuda = cpu.to("cuda:0")
-        unary = (lambda x: x.abs(), lambda x: x.relu(),
+        unary = (lambda x: x.abs(), lambda x: x.absolute(),
                  lambda x: x.square(), lambda x: x.detach(), lambda x: x.float())
         for program in unary:
             for warmed in (False, True):
@@ -197,7 +197,7 @@ class CompileCudaBoundaryTests(Comparison, unittest.TestCase):
                 self.assertEqual(cache.graphs, before)
         for program in (lambda x: x * x, lambda x: x - x, lambda x: x.sum(),
                         lambda x: x + 1, lambda x: x.add(x, alpha=2),
-                        lambda x: (x + x).relu()):
+                        lambda x: (x + x).absolute()):
             compiled, cache = compile_with_cache(program)
             with patch.object(_compile_trace._native, "_compile_trace_binary",
                               side_effect=AssertionError("executed rejected graph")):
@@ -259,7 +259,7 @@ class CompileCudaBoundaryTests(Comparison, unittest.TestCase):
         self.assertEqual(backend._compile_trace_unary(cuda, "neg").cpu().tolist(), [-1., -2., -3.])
         with self.assertRaisesRegex(NotImplementedError, "contiguous"):
             backend._compile_trace_unary(native.ones((2, 3)).to("cuda:0").t(), "neg")
-        for target in ("float", "detach", "abs", "square", "relu"):
+        for target in ("float", "detach", "abs", "square", "absolute"):
             with self.assertRaisesRegex(NotImplementedError, "CPU.*CUDA"):
                 backend._compile_trace_unary(cuda, target)
         for left, right in ((cpu, cuda), (cuda, cpu), (cuda, cuda[:1])):

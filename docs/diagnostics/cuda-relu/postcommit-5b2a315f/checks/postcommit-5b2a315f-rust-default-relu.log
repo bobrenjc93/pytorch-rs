@@ -1,0 +1,9 @@
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.98s
+     Running tests/cuda_relu.rs (target/relu-postcommit-5b2a315f/rust-build/debug/deps/cuda_relu-882ef250872a0680)
+
+running 1 test
+test cuda_relu_bits_shapes_offsets_and_boundaries ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+

@@ -1,0 +1,13 @@
+source docs/diagnostics/cuda-relu/development/environment.sh
+export TMPDIR="$PWD/target/relu-postcommit-5b2a315f/tmp"
+export XDG_CACHE_HOME="$PWD/target/relu-postcommit-5b2a315f/xdg-cache"
+export CUDA_CACHE_PATH="$PWD/target/relu-postcommit-5b2a315f/cuda-cache"
+export TORCHINDUCTOR_CACHE_DIR="$PWD/target/relu-postcommit-5b2a315f/inductor-cache"
+export TRITON_CACHE_DIR="$PWD/target/relu-postcommit-5b2a315f/triton-cache"
+export TORCH_RS_CUDART="$PWD/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13"
+export PYTHONPATH="$PWD"
+mkdir -p "$TMPDIR" "$XDG_CACHE_HOME" "$CUDA_CACHE_PATH" "$TORCHINDUCTOR_CACHE_DIR" "$TRITON_CACHE_DIR"
+export UV_PYTHON_INSTALL_DIR="$PWD/target/root-docs-uv-python"
+export UV_CACHE_DIR="$PWD/target/root-docs-uv-cache"
+export CARGO_HOME="$PWD/target/root-docs-cargo"
+export CARGO_TARGET_DIR="$PWD/target/relu-postcommit-5b2a315f/rust-build"

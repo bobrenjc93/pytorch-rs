@@ -1,0 +1,295 @@
+{
+  "measurement_kind": "clean-commit non-scoring semantic diagnostic",
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee",
+  "initial_state": {
+    "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+    "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+    "git_status": ""
+  },
+  "started_at": "2026-09-11T12:33:31.593035+00:00",
+  "python_executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/.venv/bin/python",
+  "interpreter": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/root-docs-uv-python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+  "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+  "environment_script_sha256": "21e9b314c2fb167d1745f2eb4dab28a04cab65335385bf5ce06268ca9273cd4f",
+  "capture_script_sha256": "b6b6297652b03855c40e8b6359a2f5adc57e3fb3f5ef010e1c730c01eab2f520",
+  "cache_state": "fresh release build target and CUDA/XDG/Inductor/Triton caches; populated worktree-local Cargo registry, uv cache and locked .venv; fresh Rust test target",
+  "historical_bundle_manifest_sha256": "3c5d273838abd8c19231fe2a4e7a91d7d60757ab8b9b5b30ed1fdc38a21fcb6a",
+  "steps": [
+    {
+      "name": "historical-audit",
+      "state_before": {
+        "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+        "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+        "git_status": ""
+      },
+      "started_at": "2026-09-11T12:33:31.716220+00:00",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/.venv/bin/python",
+        "docs/diagnostics/cuda-relu/development/audit-evidence.py"
+      ],
+      "ended_at": "2026-09-11T12:33:32.590971+00:00",
+      "exit_status": 0,
+      "state_after": {
+        "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+        "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+        "git_status": ""
+      }
+    },
+    {
+      "name": "release-build",
+      "state_before": {
+        "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+        "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+        "git_status": ""
+      },
+      "started_at": "2026-09-11T12:33:32.832148+00:00",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/.venv/bin/python",
+        "scripts/capture_depth_concat_build.py",
+        "--output",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/relu-postcommit-5b2a315f/release"
+      ],
+      "ended_at": "2026-09-11T12:34:19.471447+00:00",
+      "exit_status": 0,
+      "state_after": {
+        "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+        "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+        "git_status": ""
+      }
+    },
+    {
+      "name": "verify-release",
+      "state_before": {
+        "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+        "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+        "git_status": ""
+      },
+      "started_at": "2026-09-11T12:34:19.698804+00:00",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/.venv/bin/python",
+        "docs/diagnostics/cuda-relu/development/run-check.py",
+        "postcommit-5b2a315f-verify-release",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/.venv/bin/python",
+        "docs/diagnostics/cuda-relu/development/verify-build.py",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/relu-postcommit-5b2a315f/release/build-record.json"
+      ],
+      "ended_at": "2026-09-11T12:34:21.398724+00:00",
+      "exit_status": 0,
+      "state_after": {
+        "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+        "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+        "git_status": ""
+      }
+    },
+    {
+      "name": "acceptance",
+      "state_before": {
+        "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+        "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+        "git_status": ""
+      },
+      "started_at": "2026-09-11T12:34:21.625649+00:00",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/.venv/bin/python",
+        "docs/diagnostics/cuda-relu/development/run-check.py",
+        "postcommit-5b2a315f-acceptance",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/.venv/bin/python",
+        "docs/diagnostics/cuda-relu/development/acceptance-probe.py",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/relu-postcommit-5b2a315f/acceptance.json"
+      ],
+      "ended_at": "2026-09-11T12:34:31.329981+00:00",
+      "exit_status": 0,
+      "state_after": {
+        "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+        "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+        "git_status": ""
+      }
+    },
+    {
+      "name": "focused",
+      "state_before": {
+        "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+        "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+        "git_status": ""
+      },
+      "started_at": "2026-09-11T12:34:31.572848+00:00",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/.venv/bin/python",
+        "docs/diagnostics/cuda-relu/development/run-check.py",
+        "postcommit-5b2a315f-focused",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/.venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_cuda_relu",
+        "tests.test_compile_cuda_relu",
+        "-v"
+      ],
+      "ended_at": "2026-09-11T12:34:48.469614+00:00",
+      "exit_status": 0,
+      "state_after": {
+        "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+        "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+        "git_status": ""
+      }
+    },
+    {
+      "name": "two-device",
+      "state_before": {
+        "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+        "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+        "git_status": ""
+      },
+      "started_at": "2026-09-11T12:34:48.716641+00:00",
+      "CUDA_VISIBLE_DEVICES": "0,1",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/.venv/bin/python",
+        "docs/diagnostics/cuda-relu/development/run-check.py",
+        "postcommit-5b2a315f-two-device",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/.venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_cuda_relu.CudaReluDeviceTests",
+        "tests.test_compile_cuda_relu.CompileCudaReluDeviceTests",
+        "-v"
+      ],
+      "ended_at": "2026-09-11T12:35:01.714029+00:00",
+      "exit_status": 0,
+      "state_after": {
+        "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+        "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+        "git_status": ""
+      }
+    },
+    {
+      "name": "cuda-hidden",
+      "state_before": {
+        "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+        "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+        "git_status": ""
+      },
+      "started_at": "2026-09-11T12:35:01.955570+00:00",
+      "CUDA_VISIBLE_DEVICES": "",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/.venv/bin/python",
+        "docs/diagnostics/cuda-relu/development/run-check.py",
+        "postcommit-5b2a315f-cuda-hidden",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/.venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_cuda_relu",
+        "tests.test_compile_cuda_relu",
+        "-v"
+      ],
+      "ended_at": "2026-09-11T12:35:05.569883+00:00",
+      "exit_status": 0,
+      "state_after": {
+        "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+        "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+        "git_status": ""
+      }
+    },
+    {
+      "name": "rust-bindings-relu",
+      "state_before": {
+        "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+        "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+        "git_status": ""
+      },
+      "started_at": "2026-09-11T12:35:05.832540+00:00",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/.venv/bin/python",
+        "docs/diagnostics/cuda-relu/development/run-check.py",
+        "postcommit-5b2a315f-rust-bindings-relu",
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--features",
+        "python-bindings",
+        "relu",
+        "--",
+        "--nocapture"
+      ],
+      "ended_at": "2026-09-11T12:35:23.100518+00:00",
+      "exit_status": 0,
+      "state_after": {
+        "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+        "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+        "git_status": ""
+      }
+    },
+    {
+      "name": "rust-default-relu",
+      "state_before": {
+        "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+        "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+        "git_status": ""
+      },
+      "started_at": "2026-09-11T12:35:23.368131+00:00",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/.venv/bin/python",
+        "docs/diagnostics/cuda-relu/development/run-check.py",
+        "postcommit-5b2a315f-rust-default-relu",
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--no-default-features",
+        "--test",
+        "cuda_relu",
+        "--",
+        "--nocapture"
+      ],
+      "ended_at": "2026-09-11T12:35:26.861497+00:00",
+      "exit_status": 0,
+      "state_after": {
+        "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+        "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+        "git_status": ""
+      }
+    },
+    {
+      "name": "rust-kernel-slots",
+      "state_before": {
+        "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+        "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+        "git_status": ""
+      },
+      "started_at": "2026-09-11T12:35:27.105481+00:00",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/.venv/bin/python",
+        "docs/diagnostics/cuda-relu/development/run-check.py",
+        "postcommit-5b2a315f-rust-kernel-slots",
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--lib",
+        "kernel_slots_match_driver_entry_order",
+        "--",
+        "--nocapture"
+      ],
+      "ended_at": "2026-09-11T12:35:31.400456+00:00",
+      "exit_status": 0,
+      "state_after": {
+        "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+        "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+        "git_status": ""
+      }
+    }
+  ],
+  "ended_at": "2026-09-11T12:35:31.510551+00:00",
+  "final_state": {
+    "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+    "tree": "2e9703537173ec8aac83e7a7f4226a4c78e84da3",
+    "git_status": ""
+  }
+}

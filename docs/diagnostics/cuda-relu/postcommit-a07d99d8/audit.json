@@ -1,0 +1,31 @@
+{
+  "all_installed_dependency_versions_in_uv_lock": true,
+  "audit_script_sha256": "608181aa2f8483de6e347050de3b44242d4d0c09572154d88ba917a41c92b860",
+  "audited_at": "2026-09-11T12:09:30.746228+00:00",
+  "baseline_inputs_unchanged": true,
+  "clean_steps": 10,
+  "command": [
+    "target/relu-postcommit-a07d99d8/package.py"
+  ],
+  "commit": "a07d99d8aac23b05148f0b9b73e485edd2787735",
+  "historical_artifacts_unchanged": 85,
+  "ieee_patterns_verified": 22,
+  "programs_verified": 3,
+  "receipt_native_and_manifest_hashes_verified": true,
+  "release_and_installed_package_verified": true,
+  "rust_executable_sha256": {
+    "target/build/debug/deps/autograd-c7090ba32b58d520": "74394abc297221ca61f31d96565c1a413dda515e3584b97046808983b2da052f",
+    "target/build/debug/deps/cuda_add-5deb32d0f04f37a5": "aeddea72bb9e65e688e96b2688de702cab8779137d6db2a43da6615474ba988a",
+    "target/build/debug/deps/cuda_contiguous-e347a8ffbedebebe": "8b74863a9b8ca17caf9cb185e175eaa010b45b090ee1137c06729731cbcfa37b",
+    "target/build/debug/deps/cuda_matmul-b08cb3cd9cb7cb2a": "52df4c1407ae02f0a6bdb5617ae5c146c7995dc5e2621d6c3e7202e7afe56af7",
+    "target/build/debug/deps/cuda_mul_scalar-c7a5f748c3b6163d": "57a173d12ee487e900a648fb6f01be9536cc1eaaba5b8b41abbb8c8e7329d553",
+    "target/build/debug/deps/cuda_native_boundaries-d1989b833fa39cb2": "e32915f10201e94e1ba1371c088d217ab6a6c4c9f2490c0114ba890456f8bf6a",
+    "target/build/debug/deps/cuda_relu-882ef250872a0680": "feca5a5c9c78ecd04a2a5d38223944516135dfacfdef94dadc167aa48b088493",
+    "target/build/debug/deps/cuda_relu-e7d26181bf9b77d1": "447b0604cc04a3dc2b3083d4b90cc7f465e355a340545e8bb54d348177e641c3",
+    "target/build/debug/deps/cuda_same_device_copy-432b5115cd74b76d": "21e32edc2722213cb2f842bacebeea4d2a04d84eba77e03b567fecd480980de7",
+    "target/build/debug/deps/cuda_sum_rows-e7aedf248eab7b18": "84e46dde7446727b93c190ac896861929613f00748b073aa18067760535a8c78",
+    "target/build/debug/deps/pytorch_rs-545e4fdb10cc861f": "14f30481ad559c9bffd19dbe4383ae856faed4bb1c64ef8dce1734253d7abdf8",
+    "target/build/debug/deps/pytorch_rs-a84bc75b3d7dfab2": "b6ca4d9134aba6f226cecd2eb397bcb4a7fc7a2ef6b4edd2a0bd56960ac8aca3",
+    "target/build/debug/deps/tensor_baseline-7971a89f517e13eb": "1c696979e211139edc7b8f9c3aa9e81a9b5406414f4a8cd1dfbf12674a89fc0e"
+  }
+}

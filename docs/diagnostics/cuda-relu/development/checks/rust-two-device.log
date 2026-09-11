@@ -1,0 +1,68 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running unittests src/lib.rs (target/build/debug/deps/pytorch_rs-545e4fdb10cc861f)
+
+running 1 test
+test cuda::tests::scalar_multiplication_bounds_and_launch_failure_cleanup ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 201 filtered out; finished in 0.57s
+
+     Running tests/autograd.rs (target/build/debug/deps/autograd-c7090ba32b58d520)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 92 filtered out; finished in 0.00s
+
+     Running tests/cuda_add.rs (target/build/debug/deps/cuda_add-5deb32d0f04f37a5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/cuda_contiguous.rs (target/build/debug/deps/cuda_contiguous-e347a8ffbedebebe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/cuda_matmul.rs (target/build/debug/deps/cuda_matmul-b08cb3cd9cb7cb2a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/cuda_mul_scalar.rs (target/build/debug/deps/cuda_mul_scalar-c7a5f748c3b6163d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/cuda_native_boundaries.rs (target/build/debug/deps/cuda_native_boundaries-d1989b833fa39cb2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running tests/cuda_relu.rs (target/build/debug/deps/cuda_relu-e7d26181bf9b77d1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/cuda_same_device_copy.rs (target/build/debug/deps/cuda_same_device_copy-432b5115cd74b76d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/cuda_sum_rows.rs (target/build/debug/deps/cuda_sum_rows-e7aedf248eab7b18)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/tensor_baseline.rs (target/build/debug/deps/tensor_baseline-7971a89f517e13eb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 103 filtered out; finished in 0.00s
+

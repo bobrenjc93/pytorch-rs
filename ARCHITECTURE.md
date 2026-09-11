@@ -5,7 +5,7 @@ tensor core. The native implementation is intentionally small today: tensors
 carry strided CPU `float32` storage and optional native CUDA `float32` storage,
 Python-facing metadata objects, selected CPU operators, and limited eager
 reverse-mode autograd. Native CUDA storage, transfers, bounded view packing,
-contiguous addition, negation and scalar multiplication, matrix-plus-trailing-vector
+contiguous addition, negation, ReLU and scalar multiplication, matrix-plus-trailing-vector
 addition, row sums, and [rank-2 matmul](docs/cuda-matmul.md) execute without Python.
 
 ## Source Map
@@ -14,7 +14,7 @@ addition, row sums, and [rank-2 matmul](docs/cuda-matmul.md) execute without Pyt
 | --- | --- | --- |
 | Crate entry | [src/lib.rs](src/lib.rs) | Declares the Rust modules and re-exports `Tensor`, `TensorError`, `DType`, `Device`, and `MemoryFormat`. Python-only modules are gated behind `python-bindings`. |
 | Storage | [src/storage.rs](src/storage.rs) | Owns `Storage`, native CPU/CUDA payload dispatch, the CPU `f32` payload, inline scalar storage, owned vectors, and mutex-backed leaf-gradient buffers. |
-| CUDA backend | [src/cuda.rs](src/cuda.rs), [src/cuda/pointwise.rs](src/cuda/pointwise.rs), [src/cuda/pool.rs](src/cuda/pool.rs), [src/cuda/blas.rs](src/cuda/blas.rs), [src/cuda/add.ptx](src/cuda/add.ptx), [src/cuda/add_trailing_vector.ptx](src/cuda/add_trailing_vector.ptx), [src/cuda/neg.ptx](src/cuda/neg.ptx), [src/cuda/mul_scalar.ptx](src/cuda/mul_scalar.ptx), [src/cuda/sum_rows.rs](src/cuda/sum_rows.rs), [src/cuda/sum_rows.ptx](src/cuda/sum_rows.ptx) | Loads the optional CUDA runtime, owns device allocations, restores the calling thread's device, and performs synchronous host-to-device and device-to-host transfers from/to Rust buffers, plus bounded same-device vector copies. A front cache retains at most 32 buffers / 64 MiB across devices; optional private pools budget another 256 MiB of unused backing per device, as detailed below. The optional driver loads embedded contiguous float32 addition, negation, scalar multiplication and matrix row reduction kernels. Matmul lazily loads native cuBLAS SGEMM with float32 accumulation and context-owned handles. Python only discovers optional wheel library paths. |
+| CUDA backend | [src/cuda.rs](src/cuda.rs), [src/cuda/pointwise.rs](src/cuda/pointwise.rs), [src/cuda/pool.rs](src/cuda/pool.rs), [src/cuda/blas.rs](src/cuda/blas.rs), [src/cuda/add.ptx](src/cuda/add.ptx), [src/cuda/add_trailing_vector.ptx](src/cuda/add_trailing_vector.ptx), [src/cuda/neg.ptx](src/cuda/neg.ptx), [src/cuda/relu.ptx](src/cuda/relu.ptx), [src/cuda/mul_scalar.ptx](src/cuda/mul_scalar.ptx), [src/cuda/sum_rows.rs](src/cuda/sum_rows.rs), [src/cuda/sum_rows.ptx](src/cuda/sum_rows.ptx) | Loads the optional CUDA runtime, owns device allocations, restores the calling thread's device, and performs synchronous host-to-device and device-to-host transfers from/to Rust buffers, plus bounded same-device vector copies. A front cache retains at most 32 buffers / 64 MiB across devices; optional private pools budget another 256 MiB of unused backing per device, as detailed below. The optional driver loads embedded contiguous float32 addition, negation, ReLU, scalar multiplication and matrix row reduction kernels. Matmul lazily loads native cuBLAS SGEMM with float32 accumulation and context-owned handles. Python only discovers optional wheel library paths. |
 | CUDA view packing | [src/cuda/contiguous.ptx](src/cuda/contiguous.ptx), [src/cuda.rs](src/cuda.rs) | Copies float32 bits in logical order for positive-stride rank-1/rank-2 views. The checked layout planner and shared unary storage helper own bounds, allocation, device restoration and completion; copy-requiring reshape reuses this path. |
 | Dimension reduction kernels | [src/reduction.rs](src/reduction.rs) | Uses layout-aware slices and four-level float32 accumulation for CPU rank-2 single-axis sums and means. CUDA contiguous row sums use the [native reduction geometry and PTX](docs/cuda-sum-rows.md). [src/parallel.rs](src/parallel.rs) manages an explicit worker budget; large reductions split independent outputs without changing their accumulation order. |
 | Tensor layout | [src/tensor.rs](src/tensor.rs) | `Tensor` stores shared storage plus shape, strides, storage offset, element count, output number, view grad state, and optional autograd metadata. It also implements contiguity, view, stride, indexing, and materialization helpers. Integer-size and list/tuple-section split and chunk reuse `partition_dimension` slice views and one shared multi-output backward node per call; explicit sections use `SplitWithSizes` metadata. |
@@ -145,6 +145,15 @@ with its elementwise planner, and guards inputs before execution. Its private
 native bridge delegates independent validation to `Tensor::add`, sharing the
 eager kernel boundary. Compiled add syntax remains operator/positional method
 only; compiler alpha/out forms remain unsupported.
+Native float32 CUDA ReLU uses integer compare/select on IEEE bits: negative
+non-NaN values become positive zero, while positive values and all NaN payloads
+remain unchanged. It shares `unary_pointwise`/`unary_output` bounds, ownership,
+stream completion and device restoration with negation. The driver function
+slot is explicit across feature combinations. `Tensor.relu()` capture uses
+explicit native graph planning and execution even for a single node; every
+node and output declaration is checked before allocation or launch. See the
+[ReLU contract and development evidence](docs/cuda-relu.md).
+
 Native float32 CUDA negation
 also accepts contiguous inputs, offsets, scalars, and empties. The
 [src/cuda/neg.ptx](src/cuda/neg.ptx) sign-bit kernel uses the shared 64-bit

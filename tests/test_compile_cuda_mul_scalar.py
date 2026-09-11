@@ -286,7 +286,7 @@ class CompileCudaMulScalarTests(Comparison, unittest.TestCase):
         closed = 2.
         def closure(x):
             return x * closed
-        programs = [lambda x: (x * 2) * x, lambda x: (x * 2).relu(),
+        programs = [lambda x: (x * 2) * x, lambda x: (x * 2).absolute(),
                     lambda x: (x * 2).detach(), lambda x: (x * 2).float(),
                     lambda x: x.mul(other=2), lambda x: native.mul(x, 2, out=None),
                     lambda x: x * 1j, closure, lambda x, scalar: x * scalar]

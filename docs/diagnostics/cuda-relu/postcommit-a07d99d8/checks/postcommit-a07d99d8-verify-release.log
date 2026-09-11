@@ -1,0 +1,10 @@
+{
+  "verified_python_files": 59,
+  "native_sha256": "e2d940b975b100590061e917e0a72c60bcafc0c6ba762d731213d83570681382",
+  "source": {
+    "commit": "a07d99d8aac23b05148f0b9b73e485edd2787735",
+    "source_sha256": "82d0b635270b5359fc64b152444f2e443e6a8ec4ecc32ea3609dbabfab691381",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "wheel_sha256": "7799946b0f14769fd978f08209d19a947063964c7739d72404ec84c187d7dcd9"
+}
