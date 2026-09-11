@@ -1,0 +1,7 @@
+{
+  "remove": [],
+  "replace": {
+    "python/torch_rs/__init__.py": "b15d9055388347163e3e4bf0a8b343e53f6cd57fd45623240a5c480f92acd419",
+    "tests/test_compile_cuda_transpose.py": "b1e3b28bac76fc4eb2366c3695e407eef63ae127f2b26ba8eb546a673a6f7d4b"
+  }
+}

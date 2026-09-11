@@ -1,31 +1,33 @@
-# Compiled CUDA Tensor.t views
+# Compiled CUDA transpose views
 
-The bounded eager compiler captures parameterless `Tensor.t()` for native CUDA
-float32 tensors of rank 0, 1 or 2 without gradients:
+The bounded eager compiler captures `Tensor.t()` and `Tensor.transpose(dim0, dim1)`
+for native CUDA float32 tensors of rank 0, 1 or 2 without gradients:
 
 ```python
 import torch_rs as torch
 
 def transpose_and_pack(x):
-    return -x.t().contiguous()
+    return -x.transpose(dim0=0, dim1=1).contiguous()
 
 x = torch.tensor([[1., 2., 3.], [4., 5., 6.]]).to("cuda:0")
 f = torch.compile(transpose_and_pack, backend="eager", fullgraph=True)
 assert f(x).cpu().tolist() == [[-1., -4.], [-2., -5.], [-3., -6.]]
 ```
 
-Each `t()` creates a new view object sharing the input's storage, dtype, device
-and offset. Rank-2 shape and strides swap; scalars and vectors keep their
-metadata but still return a distinct object. Repeated references to one result
-preserve identity, distinct calls produce distinct objects, and `x.t().t()`
+Each `t()` or `transpose()` creates a new view object sharing the input's
+storage, dtype, device and offset. Different rank-2 axes swap shape and strides;
+scalars, vectors and same-axis transposes keep their metadata but still return
+a distinct object. Repeated references to one result preserve identity,
+distinct calls produce distinct objects, and double transpose
 shares storage without returning `x` itself. Views retain storage after their
 inputs go out of scope and observe shared mutations.
 
 The node calls the existing checked native view primitive through the whole-graph
 executor. It allocates view metadata only: no tensor-storage copy, CPU staging,
 arithmetic kernel, Python-body replay, Tensor-method redispatch or reference
-PyTorch import. `t().contiguous()` reuses native packing, while a transposed
-input may become contiguous through `t()` alone. Negation, scalar multiplication,
+PyTorch import. `transpose(...).contiguous()` and `t().contiguous()` reuse native
+packing, while a transposed input may become contiguous through either view
+alone. Negation, scalar multiplication,
 addition, matmul and row sums still reject genuinely strided operands unless
 packed first.
 
@@ -38,10 +40,20 @@ and output leaves. Repeated output containers retain identity while each distinc
 output/metadata pairing is validated. All actual inputs and captures, including
 unused captures, must be on the same CUDA device.
 
-Arguments, rank >2, CPU capture, other dtypes, gradients, general
-transpose/permute/reshape, `.T`/`.mT`, top-level `torch.t` and new backends remain
-unsupported. No-break `fullgraph=False` retains its existing default-dynamic
-policy. These graphlets are non-scoring diagnostics: the frozen 38-case corpus,
+`transpose` binds two positional axes, `dim0`/`dim1` keywords in either order,
+or a positional `dim0` with keyword `dim1`. Axes must be exact integer constants
+(literals, frozen locals or guarded globals). Negative axes normalize against
+rank; scalars accept `0` and `-1`. Same-axis calls still create views. Invalid
+bindings and boolean/float axes raise `TypeError`, out-of-range axes raise
+`IndexError`, and integers outside signed 64-bit range raise `ValueError`.
+Index-like objects/integer subclasses, named dimensions and dynamic axis
+expressions are deliberately unsupported. Static and dynamic policies do not
+imply support for arbitrary shape-dependent Python expressions.
+
+Arguments to `t()`, rank >2, CPU capture, other dtypes, gradients,
+`swapdims`/`swapaxes`, general permute/reshape, `.T`/`.mT`, top-level
+`torch.t`/`torch.transpose` and new backends remain unsupported. No-break
+`fullgraph=False` retains its existing default-dynamic policy. These graphlets are non-scoring diagnostics: the frozen 38-case corpus,
 performance workloads, evaluator/observer/hardware contracts and unadopted
 PR1970/PR1971 campaigns are unchanged.
 
@@ -50,8 +62,8 @@ PR1970/PR1971 campaigns are unchanged.
 Use the [locked contributor setup](../CONTRIBUTING.md), then run:
 
 ```sh
-CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest -v tests.test_compile_cuda_t
-CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m unittest -v tests.test_compile_cuda_t.CompileTDeviceTests
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest -v tests.test_compile_cuda_t tests.test_compile_cuda_transpose
+CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m unittest -v tests.test_compile_cuda_t.CompileTDeviceTests tests.test_compile_cuda_transpose.TransposeDeviceTests
 CUDA_VISIBLE_DEVICES=0 cargo test --locked --features python-bindings --lib cuda_graph
 ```
 
@@ -59,12 +71,18 @@ Hardware-only tests skip clearly without the required devices. Rust test-only
 accounting checks zero native operations for malformed early/late nodes; it is
 absent from release builds and does not alter scoring observers.
 
-The [current clean-commit capture](diagnostics/compile-cuda-t/postcommit-2ce3dfbf/README.md)
+The [transpose development capture](diagnostics/compile-cuda-transpose/README.md)
+records the fresh PR1976 release-build gap reproduction, candidate release build,
+H100 differentials and regressions. Candidate clean-commit validation is deferred
+until Burner creates the delivery commit; this implementation agent cannot commit.
+
+The [t-only clean-commit capture](diagnostics/compile-cuda-t/postcommit-2ce3dfbf/README.md)
 measured `2ce3dfbf627c59a57d1e37131663a26c2ebfccad` with a fresh locked `.venv`
 and release build. H100 t/packing differentials, repeated-output metadata
 rejection, compiler regressions, two-device restoration, focused Rust and
 CPU/docs checks passed. Its receipts verify source, installed imports, native
-binary and clean status. No required clean capture remains deferred.
+binary and clean status. That capture validates `t()` and its output-metadata
+repair; parameterized transpose is covered by the development capture above.
 
 The [review-repair diagnostics](diagnostics/compile-cuda-t/review-output-metadata/README.md)
 preserve the failing reproduction and source-bound development validation.

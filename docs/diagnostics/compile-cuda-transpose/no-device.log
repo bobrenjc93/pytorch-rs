@@ -1,0 +1,16 @@
+test_bits_mutation_and_lifetime (tests.test_compile_cuda_transpose.CompileCudaTransposeTests.test_bits_mutation_and_lifetime) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_blocked_reference_import (tests.test_compile_cuda_transpose.CompileCudaTransposeTests.test_blocked_reference_import) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_cached_nodes_outputs_and_repeated_metadata_pairings (tests.test_compile_cuda_transpose.CompileCudaTransposeTests.test_cached_nodes_outputs_and_repeated_metadata_pairings) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_composed_arithmetic_and_dynamic_pack_transition (tests.test_compile_cuda_transpose.CompileCudaTransposeTests.test_composed_arithmetic_and_dynamic_pack_transition) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_every_axis_layout_policy_identity_and_cache (tests.test_compile_cuda_transpose.CompileCudaTransposeTests.test_every_axis_layout_policy_identity_and_cache) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_global_axis_type_and_value_guards (tests.test_compile_cuda_transpose.CompileCudaTransposeTests.test_global_axis_type_and_value_guards) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_guards_and_no_method_redispatch (tests.test_compile_cuda_transpose.CompileCudaTransposeTests.test_guards_and_no_method_redispatch) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_large_empty_and_large_nonsquare (tests.test_compile_cuda_transpose.CompileCudaTransposeTests.test_large_empty_and_large_nonsquare) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_public_argument_errors_and_unsupported_forms_before_execution (tests.test_compile_cuda_transpose.CompileCudaTransposeTests.test_public_argument_errors_and_unsupported_forms_before_execution) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_restore_device_context_and_unused_capture (tests.test_compile_cuda_transpose.TransposeDeviceTests.test_restore_device_context_and_unused_capture) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_proxy_and_exact_axis_types (tests.test_compile_cuda_transpose.TransposeMetadataTests.test_proxy_and_exact_axis_types) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.001s
+
+OK (skipped=10)

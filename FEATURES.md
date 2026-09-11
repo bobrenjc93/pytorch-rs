@@ -228,7 +228,7 @@ including unary `-`, `Tensor.neg()`/`negative()`, scalar/empty/offset inputs,
 self-addition, chains, and global captures. Negation allocates fresh contiguous
 CUDA storage with offset zero.
 CUDA metadata and caches guard the actual device ordinal and storage offset.
-Other CUDA unary operations except parameterless `contiguous()` and bounded `t()`, closures, broader
+Other CUDA unary operations except parameterless `contiguous()` and bounded `t()`/`transpose()`, closures, broader
 broadcasting, gradients and mixed devices remain unsupported. Arithmetic still
 requires contiguous operands. This is bounded graph capture under explicit
 `backend="eager"` and the existing fullgraph options, with no new fusion or
@@ -244,7 +244,10 @@ H100 graphlets verify these semantics; the frozen compiler denominator is unchan
 [Compiled CUDA `Tensor.t()`](docs/compile-cuda-t.md) also captures parameterless
 rank-0/1/2 float32 no-grad views, preserving storage and offsets while creating
 a distinct view object per call. It composes with packing and existing arithmetic;
-general transpose/reshape, properties and top-level `torch.t` are not captured.
+`Tensor.transpose(dim0, dim1)` shares this path with exact constant integer axes,
+including negative/same axes and positional/keyword binding. Static/dynamic
+captures retain metadata and cache guards. Dynamic axis expressions, general
+permute/reshape, swapdims/swapaxes, properties and top-level transpose are excluded.
 
 [Compiled CUDA rank-2 matmul](docs/compile-cuda-matmul.md) captures `@`, positional
 `Tensor.matmul`/`Tensor.__matmul__`, and positional top-level `torch.matmul`

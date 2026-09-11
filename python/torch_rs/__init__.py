@@ -327,6 +327,7 @@ _COMPILE_H100_CUDA_SKIPPED_OPS = _builtins.frozenset(
     }
 )
 _COMPILE_TENSOR_METHOD_GUARD_NAMES = (
+    "transpose",
     "t",
     "contiguous",
     "__abs__",
@@ -980,9 +981,10 @@ def compile(
     exact bool/int/float constants, with type/value guards on captured globals;
     addition accepts equal shapes or exactly ``(M,N)`` and ``(N,)`` in either
     order. Scalar arguments, broader broadcasts, gradients and unary operations
-    outside the documented CUDA subset are rejected. Parameterless ``t()``
-    creates shared-storage rank-0/1/2 views; ``contiguous()`` packs supported
-    strided views before arithmetic. Each ``t()`` returns a distinct view object.
+    outside the documented CUDA subset are rejected. Parameterless ``t()`` and
+    ``transpose(dim0, dim1)`` with exact constant integer axes create shared-storage
+    rank-0/1/2 views; ``contiguous()`` packs supported strided views before
+    arithmetic. Each transpose call returns a distinct view object.
     This is native graph capture without fusion.
     A private benchmark-only H100 CUDA pointwise-reduce
     workload is supported for ``backend="inductor"``, ``fullgraph=True``, and

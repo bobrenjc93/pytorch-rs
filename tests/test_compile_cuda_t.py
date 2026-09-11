@@ -289,7 +289,7 @@ class CompileCudaTTests(unittest.TestCase):
         x = native.ones((3, 7)).to('cuda:0')
         expressions = ('-a', 'a * 2', 'a + a', 'a @ a', 'a.sum(1)',
                        'x.t(0)', 'x.t(dim=0)', 'x.t(foo=True)', 'x.t().reshape(-1)',
-                       'x.transpose(0, 1)', 'x.permute(1, 0)', 'x.T', 'x.mT', 'm.t(x)')
+                       'x.swapdims(0, 1)', 'x.permute(1, 0)', 'x.T', 'x.mT', 'm.t(x)')
         for dynamic in (False, True):
             for expression in expressions:
                 fn = make_program(f'def program(x):\n    a = x.t()\n    b = a.contiguous()\n    return {expression}\n')

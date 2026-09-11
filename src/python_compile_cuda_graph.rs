@@ -54,6 +54,28 @@ fn parse_operation(
                 super::compile_trace_sum_options(&options.get_item(0)?, &options.get_item(1)?)?,
             )
         }
+        ("transpose", &[input]) => {
+            if !payload.is_exact_instance_of::<PyTuple>() {
+                return Err(PyTypeError::new_err(
+                    "transpose axes require an exact tuple",
+                ));
+            }
+            let axes = payload.cast::<PyTuple>()?;
+            if axes.len() != 2
+                || axes
+                    .iter()
+                    .any(|axis| !axis.is_exact_instance_of::<PyInt>())
+            {
+                return Err(PyTypeError::new_err(
+                    "transpose requires two exact integer axes",
+                ));
+            }
+            Operation::Transpose(
+                input,
+                axes.get_item(0)?.extract()?,
+                axes.get_item(1)?.extract()?,
+            )
+        }
         ("t", &[input]) if payload.is_none() => Operation::T(input),
         ("contiguous", &[input]) if payload.is_none() => Operation::Contiguous(input),
         ("neg", &[input]) if payload.is_none() => Operation::Neg(input),
@@ -135,7 +157,7 @@ pub(super) fn execute(
     // Existing core operations synchronize even on launch errors and restore
     // the current device. No Python call or PyO3 crossing occurs between nodes.
     // Packing stays native; contiguous aliases preserve their original owner.
-    // T always wraps a fresh view object, even for unchanged rank-0/1 metadata.
+    // T and Transpose always wrap fresh view objects, even for unchanged metadata.
     let mut outputs = Vec::with_capacity(operations.len());
     for (index, operation) in operations.into_iter().enumerate() {
         let output = operation
@@ -250,6 +272,75 @@ mod tests {
             EXECUTIONS.with(|count| count.set(0));
             assert!(execute(&inputs, vec![node("neg"), node("t")]).is_err());
             EXECUTIONS.with(|count| assert_eq!(count.get(), 0));
+        });
+    }
+
+    #[test]
+    fn transpose_axes_reject_before_early_or_late_execution() {
+        if cuda::device_count() == 0 {
+            eprintln!("skipping transpose graph validation: no CUDA device");
+            return;
+        }
+        Python::initialize();
+        Python::attach(|py| {
+            let tensor = CoreTensor::from_vec(vec![1.], [1, 1])
+                .unwrap()
+                .try_copy_cpu_to_cuda(Device::Cuda(0))
+                .unwrap();
+            let inputs = PyTuple::new(py, [Py::new(py, PyTensor::new(tensor)).unwrap()]).unwrap();
+            let valid = (
+                "transpose".to_owned(),
+                PyTuple::new(py, [0]).unwrap().into_any(),
+                PyTuple::new(py, [-1, -2]).unwrap().into_any(),
+                PyTuple::new(py, [1, 1]).unwrap().into_any(),
+                PyTuple::new(py, [1, 1]).unwrap().into_any(),
+            );
+            let mut bad = Vec::new();
+            for expr in [
+                c"None",
+                c"(True, 1)",
+                c"(0, False)",
+                c"(0.0, 1)",
+                c"(0,)",
+                c"[0, 1]",
+                c"(0, 2)",
+                c"(-3, 0)",
+                c"(0, 9223372036854775808)",
+            ] {
+                let mut node = valid.clone();
+                node.2 = py.eval(expr, None, None).unwrap();
+                bad.push(node);
+            }
+            for expr in [c"(True, 1)", c"(1.0, 1)", c"(1, False)"] {
+                for field in [3, 4] {
+                    let mut node = valid.clone();
+                    let value = py.eval(expr, None, None).unwrap();
+                    if field == 3 {
+                        node.3 = value;
+                    } else {
+                        node.4 = value;
+                    }
+                    bad.push(node);
+                }
+            }
+            for expr in [c"(False,)", c"(0.0,)", c"(99,)", c"()", c"(0, 0)"] {
+                let mut node = valid.clone();
+                node.1 = py.eval(expr, None, None).unwrap();
+                bad.push(node);
+            }
+            for invalid in bad {
+                for nodes in [
+                    vec![invalid.clone(), valid.clone()],
+                    vec![valid.clone(), invalid],
+                ] {
+                    EXECUTIONS.with(|count| count.set(0));
+                    assert!(execute(&inputs, nodes).is_err());
+                    EXECUTIONS.with(|count| assert_eq!(count.get(), 0));
+                }
+            }
+            let outputs = execute(&inputs, vec![valid.clone(), valid]).unwrap();
+            assert!(!outputs[0].is(&outputs[1]));
+            assert!(!outputs[0].bind(py).is(inputs.get_item(0).unwrap()));
         });
     }
 

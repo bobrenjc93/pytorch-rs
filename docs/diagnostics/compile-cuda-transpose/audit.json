@@ -1,0 +1,59 @@
+{
+  "baseline_clean_build_verified": true,
+  "candidate_clean_commit_capture": "pending Burner delivery commit; agent cannot commit",
+  "changed_docs_sha256": {
+    "ARCHITECTURE.md": "59123c2e602ae1a3ab6aee2d02b1606e7d4b0254242081a7f35fd0325be5da47",
+    "FEATURES.md": "581c9b2675bfa379b46f21987bc5e98ae692ffe5e1bb93c060aa45ef82c8926d",
+    "docs/README.md": "9840f7e453a3b42d05bddc00e52cf910cc526195344aeac7fe76743acd6cf0aa",
+    "docs/compile-cuda-t.md": "aa0eaac9f90747e64288f4c6e0b81bd7c6bd4c571257d87dd14626a98debd325",
+    "docs/supported-surface.md": "51a8c2f6bbda83bf72cd2735cd4556cd156cacc3651d5c23a2f1140ae66a83bf"
+  },
+  "checks": {
+    "baseline-gap": 0,
+    "clippy": 0,
+    "compiler-regressions": 0,
+    "cpu-final": 0,
+    "cpu-layout-docs": 0,
+    "cuda-packing": 0,
+    "docs-example": 0,
+    "docs-verified": 0,
+    "fmt": 0,
+    "guard-repair": 0,
+    "imports": 0,
+    "no-device": 0,
+    "preflight": 0,
+    "preflight-final": 0,
+    "preflight-verified": 0,
+    "rust-final": 0,
+    "rust-graph": 0,
+    "rust-packing": 0,
+    "transpose-final": 1,
+    "transpose-first": 1,
+    "transpose-verified": 0,
+    "two-device": 0
+  },
+  "final_extension_sha256": "7bc73f243fb712638f21db758817637438511cf0ba4f70749fc623df2ec4757c",
+  "full_manifests_published": 1,
+  "installed_native_matches_build": true,
+  "installed_python_matches_source": true,
+  "managed_artifacts_and_evaluators_unchanged": true,
+  "manifest_count": 4,
+  "source": {
+    "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+    "production_diff_sha256": "f83b9aa82898de020446fa2cdeb631bd5297091856fc10d6f958b500b0e4e4d9",
+    "source_sha256": "62de92bd7993ea90fa434aaaf109dd1e407553c66c74b7e12ea753f66e4cb895"
+  },
+  "tracked_changed_paths": [
+    "ARCHITECTURE.md",
+    "FEATURES.md",
+    "docs/README.md",
+    "docs/compile-cuda-t.md",
+    "docs/supported-surface.md",
+    "python/torch_rs/__init__.py",
+    "python/torch_rs/_compile_bytecode.py",
+    "python/torch_rs/_compile_trace.py",
+    "src/python_compile_cuda_graph.rs",
+    "src/tensor_cuda_graph.rs",
+    "tests/test_compile_cuda_t.py"
+  ]
+}

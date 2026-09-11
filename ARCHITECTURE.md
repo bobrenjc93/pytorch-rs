@@ -179,15 +179,17 @@ scalars, empties, singleton strides and higher ranks. Packs own fresh storage.
 Callable/global/device/gradient/cache guards remain live. See
 [compiled layout scope and validation](docs/compile-cuda-contiguous.md).
 
-Parameterless CUDA `Tensor.t()` adds a bounded rank-0/1/2 view node to the same
-executor. `src/tensor_cuda_graph.rs` reverses shape/strides during planning and
-calls the existing checked `Tensor::t` view primitive during execution. Storage
+CUDA `Tensor.t()` and constant-axis `Tensor.transpose(dim0, dim1)` add bounded
+rank-0/1/2 view nodes to the same executor. The bytecode binder and proxy record
+transpose axes separately from arithmetic payloads. `src/tensor_cuda_graph.rs`
+reverses or swaps shape/strides during planning, reusing native axis normalization;
+execution calls the existing checked `Tensor::t`/`Tensor::transpose` primitives. Storage
 is shared without storage allocation, CPU staging or a kernel launch. Unlike
-contiguous no-ops, each t node receives a new Python owner even when metadata
+contiguous no-ops, each view node receives a new Python owner even when metadata
 is unchanged; output references reuse that owner. Packing and arithmetic consume
 the resulting layout normally. Frontend declarations and native shape/stride
 fields reject bool/float substitutions before equality or execution. See the
-[compiled t guide](docs/compile-cuda-t.md) for scope and non-scoring diagnostics.
+[compiled transpose guide](docs/compile-cuda-t.md) for scope and non-scoring diagnostics.
 
 Eager scalar multiplication routes `BinaryOperation::Multiply.apply_scalar` to
 `Tensor::mul_scalar`, shared scalar output-stride planning, and the native

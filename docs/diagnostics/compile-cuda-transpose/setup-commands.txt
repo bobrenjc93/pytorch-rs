@@ -1,0 +1,9 @@
+source target/transpose/env.sh
+uv python install 3.12.14
+uv venv --python 3.12.14
+uv sync --locked --no-install-project --group dev --group reference
+cp -r /home/bobren/.cargo/registry target/transpose/cargo/
+.venv/bin/python scripts/capture_depth_concat_build.py --output target/transpose/baseline
+.venv/bin/python scripts/capture_depth_concat_build.py --allow-dirty --output target/transpose/development
+.venv/bin/python scripts/capture_depth_concat_build.py --allow-dirty --output target/transpose/final-build
+.venv/bin/python scripts/capture_depth_concat_build.py --allow-dirty --output target/transpose/verified-build

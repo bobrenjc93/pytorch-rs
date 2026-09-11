@@ -1,0 +1,26 @@
+test_bits_mutation_and_lifetime (tests.test_compile_cuda_transpose.CompileCudaTransposeTests.test_bits_mutation_and_lifetime) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ok
+test_blocked_reference_import (tests.test_compile_cuda_transpose.CompileCudaTransposeTests.test_blocked_reference_import) ... ok
+test_cached_nodes_outputs_and_repeated_metadata_pairings (tests.test_compile_cuda_transpose.CompileCudaTransposeTests.test_cached_nodes_outputs_and_repeated_metadata_pairings) ... ok
+test_composed_arithmetic_and_dynamic_pack_transition (tests.test_compile_cuda_transpose.CompileCudaTransposeTests.test_composed_arithmetic_and_dynamic_pack_transition) ... ok
+test_every_axis_layout_policy_identity_and_cache (tests.test_compile_cuda_transpose.CompileCudaTransposeTests.test_every_axis_layout_policy_identity_and_cache) ... ok
+test_guards_and_no_method_redispatch (tests.test_compile_cuda_transpose.CompileCudaTransposeTests.test_guards_and_no_method_redispatch) ... ERROR
+test_large_empty_and_large_nonsquare (tests.test_compile_cuda_transpose.CompileCudaTransposeTests.test_large_empty_and_large_nonsquare) ... ok
+test_public_argument_errors_and_unsupported_forms_before_execution (tests.test_compile_cuda_transpose.CompileCudaTransposeTests.test_public_argument_errors_and_unsupported_forms_before_execution) ... ok
+test_restore_device_context_and_unused_capture (tests.test_compile_cuda_transpose.TransposeDeviceTests.test_restore_device_context_and_unused_capture) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_proxy_and_exact_axis_types (tests.test_compile_cuda_transpose.TransposeMetadataTests.test_proxy_and_exact_axis_types) ... ok
+
+======================================================================
+ERROR: test_guards_and_no_method_redispatch (tests.test_compile_cuda_transpose.CompileCudaTransposeTests.test_guards_and_no_method_redispatch)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc/tests/test_compile_cuda_transpose.py", line 261, in test_guards_and_no_method_redispatch
+    native.ones((3, 7), device='cuda:0', requires_grad=True)):
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: ones(): device 'cuda:0' is not supported; only 'cpu' is implemented
+
+----------------------------------------------------------------------
+Ran 10 tests in 81.426s
+
+FAILED (errors=1, skipped=1)
