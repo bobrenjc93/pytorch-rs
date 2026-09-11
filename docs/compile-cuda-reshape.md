@@ -85,7 +85,9 @@ non-scoring diagnostics. Frozen38, performance workloads, evaluator definitions,
 observer/hardware contracts and the separate unadopted PR1970/PR1971 campaigns
 are unchanged.
 
-The [binding review revision](diagnostics/compile-cuda-reshape/binding-review/README.md)
-adds Tensor-valued invalid-call differentials across all compile policies. Its
-development checks passed; a fresh clean-commit capture remains required after
-Burner commits this revision. The earlier capture does not validate this fix.
+The [latest clean-commit capture](diagnostics/compile-cuda-reshape/postcommit-7533cbbc/README.md)
+measures `7533cbbcd00bdf2b9213bba7a0cefb2f96d43ccd`, including the
+[binding review revision](diagnostics/compile-cuda-reshape/binding-review/README.md)
+and its Tensor-valued invalid-call differentials across all compile policies.
+All requested checks passed with a fresh local environment and release build;
+earlier captures and failures remain pinned to their original code.
