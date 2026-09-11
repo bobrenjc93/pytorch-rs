@@ -2016,6 +2016,11 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 with self.subTest(reduction=reduction, scale=scale):
                     self.check_backward_layouts(reduction, scale=scale)
 
+    def test_sum_backward_layouts_match_pytorch_2_13(self):
+        for scale in (1.0, -2.5):
+            with self.subTest(scale=scale):
+                self.check_backward_layouts({"reduction": "sum"}, scale=scale)
+
     def check_backward_layouts(self, reduction, *, scale=1.0):
         for case in (
             "dense", "scalar", "empty", "transposed", "offset",
@@ -2034,8 +2039,11 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                         if module is reference_torch:
                             self.assertEqual(
                                 output.grad_fn.name(),
-                                "AbsBackward0" if reduction.get("reduction") == "none"
-                                else "MeanBackward0",
+                                {
+                                    "none": "AbsBackward0",
+                                    "mean": "MeanBackward0",
+                                    "sum": "SumBackward0",
+                                }[reduction.get("reduction", "mean")],
                             )
                         for operand in operands:
                             if output.numel():
@@ -2125,6 +2133,9 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                 for actual, expected in zip(*results):
                     self.assert_matches(actual, expected, case=case)
 
+    def test_sum_shared_operands_and_repeated_use_match_pytorch_2_13(self):
+        self.check_shared_operands_and_repeated_use({"reduction": "sum"})
+
     def test_unreduced_backward_releases_graph_matches_pytorch_2_13(self):
         self.check_backward_releases_graph({"reduction": "none"})
 
@@ -2132,6 +2143,9 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
         for reduction in ({}, {"reduction": "mean"}):
             with self.subTest(reduction=reduction):
                 self.check_backward_releases_graph(reduction)
+
+    def test_sum_backward_releases_graph_matches_pytorch_2_13(self):
+        self.check_backward_releases_graph({"reduction": "sum"})
 
     def check_backward_releases_graph(self, reduction):
         results = []
@@ -2186,22 +2200,11 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
                     target_requires_grad=target_requires_grad,
                     reduction=reduction,
                 ):
-                    if reduction in ("none", "mean"):
-                        self.assertTrue(
-                            functional.l1_loss(
-                                actual_input, actual_target, reduction=reduction,
-                            ).requires_grad
-                        )
-                    else:
-                        with self.assertRaisesRegex(
-                            RuntimeError,
-                            r"^l1_loss\(\): autograd recording is not supported$",
-                        ):
-                            functional.l1_loss(
-                                actual_input,
-                                actual_target,
-                                reduction=reduction,
-                            )
+                    self.assertTrue(
+                        functional.l1_loss(
+                            actual_input, actual_target, reduction=reduction,
+                        ).requires_grad
+                    )
 
                     with torch.no_grad():
                         actual = functional.l1_loss(

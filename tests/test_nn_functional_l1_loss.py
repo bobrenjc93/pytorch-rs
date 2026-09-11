@@ -1360,7 +1360,10 @@ class FunctionalL1LossTests(unittest.TestCase):
                             ).transpose(0, 1)
                             for side, flag in enumerate(flags)
                         )
-                        for reduction in ({"reduction": "none"}, {}, {"reduction": "mean"}):
+                        for reduction in (
+                            {"reduction": "none"}, {}, {"reduction": "mean"},
+                            {"reduction": "sum"},
+                        ):
                             with self.assertRaisesRegex(
                                 RuntimeError,
                                 r"^l1_loss\(\): autograd recording is not supported$",
@@ -1369,17 +1372,42 @@ class FunctionalL1LossTests(unittest.TestCase):
                             with torch.no_grad():
                                 actual = functional.l1_loss(*operands, **reduction)
                                 expected = (operands[0] - operands[1]).abs()
-                                if reduction.get("reduction") != "none":
+                                if reduction.get("reduction") == "sum":
+                                    expected = expected.sum()
+                                elif reduction.get("reduction") != "none":
                                     expected = expected.mean()
                             self.assert_matches_composition(actual, expected, case=value)
 
     def test_matching_shape_is_required_even_for_same_element_count(self):
         input = torch.tensor([1.0], requires_grad=True)
         target = torch.tensor([[2.0]], requires_grad=True)
-        for reduction in ({"reduction": "none"}, {}, {"reduction": "mean"}):
+        for reduction in (
+            {"reduction": "none"}, {}, {"reduction": "mean"}, {"reduction": "sum"},
+        ):
             with self.assertWarns(UserWarning):
                 with self.assertRaisesRegex(RuntimeError, "autograd recording is not supported"):
                     functional.l1_loss(input, target, **reduction)
+        self.assertIsNone(input.grad)
+        self.assertIsNone(target.grad)
+
+    def test_sum_active_grad_preserves_unsupported_argument_rejections(self):
+        input = torch.tensor([1.0, -2.0], requires_grad=True)
+        target = torch.tensor([0.0, -2.0], requires_grad=True)
+        for options in (
+            {"weight": torch.ones((2,))}, {"weight": 1.0},
+            {"size_average": True}, {"size_average": False},
+            {"reduce": True}, {"reduce": False},
+            {"reduction": "batchmean"}, {"reduction": None},
+            {"unexpected": True},
+        ):
+            with self.subTest(options=options):
+                kwargs = {"reduction": "sum", **options}
+                with torch.no_grad():
+                    with self.assertRaises((NotImplementedError, TypeError)) as inference:
+                        functional.l1_loss(input, target, **kwargs)
+                with self.assertRaises(type(inference.exception)) as active:
+                    functional.l1_loss(input, target, **kwargs)
+                self.assertEqual(str(active.exception), str(inference.exception))
         self.assertIsNone(input.grad)
         self.assertIsNone(target.grad)
 
@@ -1417,14 +1445,7 @@ class FunctionalL1LossTests(unittest.TestCase):
                     ),
                 ):
                     with self.subTest(form=form):
-                        if form in ("none", "mean", "default mean"):
-                            self.assertTrue(call().requires_grad)
-                        else:
-                            with self.assertRaisesRegex(
-                                RuntimeError,
-                                r"^l1_loss\(\): autograd recording is not supported$",
-                            ):
-                                call()
+                        self.assertTrue(call().requires_grad)
 
                         with torch.no_grad():
                             expected = (input - target).abs()
