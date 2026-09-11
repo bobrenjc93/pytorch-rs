@@ -570,6 +570,19 @@ def _reshape_dimensions(shape):
     return shape
 
 
+def _validate_reshape_binding(args, kwargs):
+    """Check call structure without inspecting or converting dimension values."""
+    if not args and "shape" not in kwargs:
+        raise TypeError('reshape() missing 1 required positional arguments: "shape"')
+    if args and type(args[0]) is tuple and len(args) > 1:
+        raise TypeError("reshape() takes 1 positional argument")
+    if args and "shape" in kwargs:
+        raise TypeError("reshape() got multiple values for argument 'shape'")
+    for name in kwargs:
+        if name != "shape":
+            raise TypeError(f"reshape() got an unexpected keyword argument '{name}'")
+
+
 def _bind_reshape_shape(args, kwargs):
     if not args and "shape" not in kwargs:
         raise TypeError('reshape() missing 1 required positional arguments: "shape"')
@@ -589,11 +602,7 @@ def _bind_reshape_shape(args, kwargs):
     # binding; remaining dimensions and overflow follow keyword binding.
     if shape and type(shape[0]) is not int:
         _reshape_dimensions((shape[0],))
-    if args and "shape" in kwargs:
-        raise TypeError("reshape() got multiple values for argument 'shape'")
-    for name in kwargs:
-        if name != "shape":
-            raise TypeError(f"reshape() got an unexpected keyword argument '{name}'")
+    _validate_reshape_binding(args, kwargs)
     return _reshape_dimensions(shape)
 
 

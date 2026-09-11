@@ -1,0 +1,13 @@
+{
+  "141e445946055fb2d175e05790f0b2b3cc33a2df5ef4ee47f3a61ca8cecc6ca7": {
+    "file": "measured-inputs.json"
+  },
+  "966f2ac59489ca5f18af6ae160f7b238e47a3053be3e35313c7da0aae0f787f2": {
+    "base": "measured-inputs.json",
+    "delta": "inputs-delta-966f2ac59489.json"
+  },
+  "eeb3fb50d6b5ad1cf2486f9a1ac07174f34aa0ed34c3451206f7338349a073d5": {
+    "base": "measured-inputs.json",
+    "delta": "inputs-delta-eeb3fb50d6b5.json"
+  }
+}

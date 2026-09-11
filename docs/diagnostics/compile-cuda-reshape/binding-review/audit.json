@@ -1,0 +1,52 @@
+{
+  "checks": {
+    "binding-after": 0,
+    "binding-before": 1,
+    "compiler": 0,
+    "docs": 0,
+    "hidden": 0,
+    "imports": 0,
+    "imports-final": 0,
+    "preflight": 0,
+    "python-imports": 1,
+    "python-imports-final": 0,
+    "regression-before": 1,
+    "reshape": 0,
+    "reshape-reference": 0
+  },
+  "clean_commit_capture": "required after Burner commits this revision",
+  "extension_sha256": "b1402bc8c1510243090626715da87421337bed4e31458f16ecbefbe75bcc9297",
+  "full_manifests_published": 1,
+  "installed_native_matches_build": true,
+  "installed_python_matches_source": true,
+  "manifest_count": 3,
+  "measurement_kind": "precommit-diagnostic",
+  "previous_inventories_unchanged": true,
+  "results": {
+    "binding-after": {
+      "passed": 1,
+      "skipped": 0
+    },
+    "compiler": {
+      "passed": 98,
+      "skipped": 4
+    },
+    "hidden": {
+      "passed": 2,
+      "skipped": 10
+    },
+    "reshape": {
+      "passed": 11,
+      "skipped": 1
+    },
+    "reshape-reference": {
+      "passed": 19,
+      "skipped": 0
+    }
+  },
+  "source": {
+    "commit": "0c9e1397040b60c82c20b589ab5b79e26dd399a9",
+    "production_diff_sha256": "681f334d8af2842d055970965fc7a1c5845eaa8c935ec4bf8645d1275d9bd52c",
+    "source_sha256": "c4a5f260b136edea02470d2f01c325ae45b1349599453a9196c24b44dee906bd"
+  }
+}

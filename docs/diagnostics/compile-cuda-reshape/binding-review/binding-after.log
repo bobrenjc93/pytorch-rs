@@ -1,0 +1,6 @@
+test_tensor_valued_invalid_binding_before_execution (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_tensor_valued_invalid_binding_before_execution) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.496s
+
+OK

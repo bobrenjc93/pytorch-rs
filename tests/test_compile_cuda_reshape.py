@@ -197,6 +197,35 @@ class CompileCudaReshapeTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 compiled(base)
 
+    def test_tensor_valued_invalid_binding_before_execution(self):
+        x, y = native.ones((1,)).to('cuda:0'), torch.ones((1,), device='cuda:0')
+        for expression in ('(1, shape=x)', '(1, foo=x)', '((1,), x)',
+                           '(shape=(1,), foo=x)', '(x, shape=(1,))',
+                           '(x, foo=1)', '(foo=x)'):
+            for prefix in ('a = x', 'a = -x'):
+                fn = make_program(f'def program(x):\n    {prefix}\n    return a.reshape{expression}\n')
+                with self.subTest(expression=expression, prefix=prefix):
+                    with self.assertRaises(TypeError):
+                        fn(y)
+                    for fullgraph, dynamic in POLICIES:
+                        compiled, cache = compile_with_cache(fn, fullgraph, dynamic)
+                        for attempt in range(2):
+                            with self.subTest(policy=(fullgraph, dynamic), attempt=attempt), \
+                                 patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('native execution')), \
+                                 patch.object(trace, '_execute_operation', side_effect=AssertionError('Python execution')):
+                                with self.assertRaises(TypeError):
+                                    call_without_python(compiled, {fn.__code__}, x)
+                                self.assertEqual(len(cache.graphs), 0)
+        # Structurally valid nonconstant dimensions remain unsupported capture.
+        for expression in ('(x)', '(1, x)', '(shape=x)'):
+            fn = make_program(f'def program(x):\n    return x.reshape{expression}\n')
+            for fullgraph, dynamic in POLICIES:
+                with self.subTest(unsupported=expression, policy=(fullgraph, dynamic)), \
+                     patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('native execution')), \
+                     patch.object(trace, '_execute_operation', side_effect=AssertionError('Python execution')):
+                    with self.assertRaises(trace.CompileTraceUnsupportedError):
+                        call_without_python(compile_with_cache(fn, fullgraph, dynamic)[0], {fn.__code__}, x)
+
     def test_public_binding_order_and_unsupported_forms(self):
         x, y = native.ones((1,)).to('cuda:0'), torch.ones((1,), device='cuda:0')
         errors = ['()', '(True,)', '((True,),)', '(1.,)', '(1, 1.)',

@@ -1083,13 +1083,16 @@ def _lower_function_body(
 
 def _record_method_call(recorder, method, args, program, instruction, names=()):
     if method.name == "reshape":
-        if any(not isinstance(value, _BytecodeConstant) for value in args):
-            _unsupported_bytecode(program, instruction, "Tensor.reshape requires constant dimensions")
         positional = len(args) - len(names)
-        shape = _trace._bind_reshape_shape(
-            tuple(value.value for value in args[:positional]),
-            dict(zip(names, (value.value for value in args[positional:]))),
-        )
+        values = tuple(value.value if isinstance(value, _BytecodeConstant) else value for value in args)
+        positional_args = values[:positional]
+        kwargs = dict(zip(names, values[positional:]))
+        if any(not isinstance(value, _BytecodeConstant) for value in args):
+            # Invalid calls still have public binding errors even when a value
+            # cannot be captured. Do not convert or evaluate that value.
+            _trace._validate_reshape_binding(positional_args, kwargs)
+            _unsupported_bytecode(program, instruction, "Tensor.reshape requires constant dimensions")
+        shape = _trace._bind_reshape_shape(positional_args, kwargs)
         return recorder.record_reshape(method.receiver, shape)
     if method.name == "transpose":
         positional = len(args) - len(names)

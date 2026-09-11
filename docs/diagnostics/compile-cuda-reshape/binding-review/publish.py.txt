@@ -1,0 +1,150 @@
+"""Preserve review-revision measurements with the established capture helpers."""
+import difflib, hashlib, json, re, shutil, subprocess, sys
+from pathlib import Path
+ROOT=Path.cwd()
+WORK=ROOT/'target/reshape-binding-review'
+OUT=ROOT/'docs/diagnostics/compile-cuda-reshape/binding-review'
+sys.path.insert(0,str(ROOT/'scripts'))
+from evaluate_cuda_math import source_provenance, sha256
+
+def dump(path,value): path.write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
+source=source_provenance()
+assert not OUT.exists()
+for prior in (OUT.parent,OUT.parent/'postcommit-1ad5fd62'):
+    for name,digest in json.loads((prior/'inventory.json').read_text()).items():
+        assert sha256(prior/name)==digest,name
+build=json.loads((WORK/'release/build-record.json').read_text())
+assert all(build[k]==v for k,v in source.items())
+assert not build['clean_checkout'] and build['source_unchanged_during_build']
+for command in build['commands']:
+    assert command['exit_status']==0 and sha256(command['log'])==command['log_sha256']
+for field in ('extension','wheel','interpreter'):
+    assert Path(build[field+'_path']).resolve().is_relative_to(ROOT)
+    assert sha256(build[field+'_path'])==build[field+'_sha256']
+expected={'regression-before':1,'binding-before':1,'imports':0,'python-imports':1,
+          'imports-final':0,'python-imports-final':0,'preflight':0,'binding-after':0,
+          'reshape':0,'compiler':0,'hidden':0,'reshape-reference':0,'docs':0}
+final_checks=set(expected)-{'regression-before','binding-before','imports','python-imports'}
+receipts={}
+for path in (WORK/'evidence').glob('*.receipt.json'):
+    name=path.name.removesuffix('.receipt.json');r=json.loads(path.read_text())
+    assert r['exit_status']==expected[name],name
+    assert r['source_before']==r['source_after'] and r['inputs_unchanged'],name
+    assert r['git_status_before']==r['git_status_after'],name
+    assert r['command_files_before']==r['command_files_after'],name
+    assert r['native_before']==r['native_after'],name
+    assert r['log_sha256']==sha256(WORK/'evidence'/f'{name}.log'),name
+    if name in final_checks:
+        assert r['source_before']==source,name
+        assert set(r['native_after'].values())=={build['extension_sha256']},name
+    receipts[name]=r
+assert set(receipts)==set(expected)
+import torch_rs
+installed=Path(torch_rs.__file__).parent
+for path in (ROOT/'python/torch_rs').rglob('*.py'):
+    assert sha256(path)==sha256(installed/path.relative_to(ROOT/'python/torch_rs'))
+assert sha256(torch_rs._C.__file__)==build['extension_sha256']
+manifests={sha256(p):json.loads(p.read_text()) for p in (WORK/'evidence').glob('inputs-*.json')}
+final_hash=receipts['reshape']['measured_inputs_sha256'];manifest=manifests[final_hash]
+assert all(sha256(ROOT/p)==digest for p,digest in manifest.items())
+results={}
+for name in ('binding-after','reshape','compiler','hidden','reshape-reference'):
+    text=(WORK/'evidence'/f'{name}.log').read_text()
+    count=int(re.search(r'Ran (\d+) tests? in ',text).group(1))
+    match=re.search(r'OK \(skipped=(\d+)\)',text)
+    skipped=int(match.group(1)) if match else 0
+    assert re.search(r'\nOK(?: \(skipped=\d+\))?\s*$',text),name
+    results[name]={'passed':count-skipped,'skipped':skipped}
+# Recover the first fixture attempt and verify it against its measured hash.
+test_path='tests/test_compile_cuda_reshape.py'
+current=(ROOT/test_path).read_text()
+first=current.replace("native.ones((1,)).to('cuda:0'), torch.ones((1,), device='cuda:0')", "native.ones((1,), device='cuda:0'), torch.ones((1,), device='cuda:0')",1)
+first_hash=manifests[receipts['regression-before']['measured_inputs_sha256']][test_path]
+assert hashlib.sha256(first.encode()).hexdigest()==first_hash
+OUT.mkdir()
+(OUT/'release').mkdir()
+for name in ('build-record.json','commands.json','build.log','install.log'):
+    shutil.copyfile(WORK/'release'/name,OUT/'release'/name)
+for name in receipts:
+    for suffix in ('.log','.receipt.json'):
+        shutil.copyfile(WORK/'evidence'/(name+suffix),OUT/(name+suffix))
+dump(OUT/'measured-inputs.json',manifest)
+index={}
+for digest,measured in manifests.items():
+    if digest==final_hash:
+        index[digest]={'file':'measured-inputs.json'};continue
+    delta={p:h for p,h in measured.items() if manifest.get(p)!=h}
+    removed=sorted(set(manifest)-set(measured))
+    name='inputs-delta-'+digest[:12]+'.json'
+    dump(OUT/name,{'replace':delta,'remove':removed})
+    recovered={p:h for p,h in manifest.items() if p not in removed}|delta
+    assert hashlib.sha256((json.dumps(recovered,indent=2,sort_keys=True)+'\n').encode()).hexdigest()==digest
+    index[digest]={'base':'measured-inputs.json','delta':name}
+dump(OUT/'manifest-index.json',index)
+(OUT/'first-fixture.patch').write_text(''.join(difflib.unified_diff(current.splitlines(keepends=True),first.splitlines(keepends=True),fromfile='a/'+test_path,tofile='b/'+test_path)))
+(OUT/'revision.patch').write_bytes(subprocess.check_output(['git','diff','HEAD','--','python/torch_rs/_compile_bytecode.py','python/torch_rs/_compile_trace.py',test_path]))
+for name in ('capture.py','run.py','run-initial.py','publish.py'):
+    shutil.copyfile(WORK/name,OUT/(name+'.txt'))
+for name in ('env.sh','preflight.py','check_install.py','docs_example.py'):
+    shutil.copyfile(ROOT/'target/reshape-postcommit-1ad5fd62'/name,OUT/(name+'.txt'))
+for name in ('validation.log','validation-final.log'):
+    shutil.copyfile(WORK/name,OUT/name)
+rows=[]
+for name,result in results.items():
+    rows.append(f"| [{name}]({name}.log) | {result['passed']} passed; {result['skipped']} skipped |")
+(OUT/'README.md').write_text(f"""# Reshape binding review revision
+
+These are **development measurements**, based on `{source['commit']}` plus
+[the recorded Python/test revision](revision.patch), with source hash
+`{source['source_sha256']}`. A fresh release wheel was built with the existing
+[build helper](../../../../scripts/capture_depth_concat_build.py); installed Python
+files and native imports were verified before the final checks. The existing
+worktree-local CPython 3.12.14 environment and locked dependencies were reused;
+Cargo used an empty release target and populated local registry. See the
+[build record](release/build-record.json), [preflight](preflight.log), command
+receipts and [runner](run.py.txt). All writes and caches stayed in this worktree.
+
+The reviewer regression exercises seven Tensor-valued invalid call forms,
+early/late nodes, all four supported policies and repeated rejected calls with
+empty caches. Reference PyTorch raises TypeError; native capture must match before
+native execution or Python-body replay. Valid nonconstant dimension forms remain
+unsupported. The dedicated test passed after the fix.
+
+| Check | Result |
+| --- | --- |
+"""+'\n'.join(rows)+"""
+
+Installed imports, source/installed Python byte equality and the guide example
+also passed. This Python-only revision did not change native kernels or planners.
+CUDA checks use GPU 0, an H100 with driver 580.82.07 and native/reference CUDA
+13.0 (PyTorch 2.13.0+cu130). Build metadata records Rust 1.92.0; nvcc 12.6.85 was
+present but unused. Each receipt records physical UUID/utilization/memory
+snapshots; snapshots do not reserve hardware.
+
+All failed attempts are preserved. [regression-before](regression-before.log)
+failed because the initial test used the unsupported `ones(device='cuda:0')`
+factory; [first-fixture.patch](first-fixture.patch) reconstructs that fixture.
+After correcting the fixture, [binding-before](binding-before.log) reproduced
+112 errors from the original constant-first rejection. An early validation
+launch preceded completion of wheel installation: [python-imports](python-imports.log)
+correctly rejected stale installed Python. Validation stopped there and was
+rerun after the build completed; [python-imports-final](python-imports-final.log)
+verified the installed revision. These failures are not counted as passing runs.
+
+One [input manifest](measured-inputs.json) plus hash-verified deltas covers all
+attempts; [manifest-index](manifest-index.json) maps their receipt hashes.
+The previous development and [clean-commit capture](../postcommit-1ad5fd62/README.md)
+remain unchanged and pinned to their recorded code. They do not validate this
+revision. **A fresh clean-commit capture of this binding fix remains required
+after Burner commits it**; this development bundle does not satisfy that step.
+No scoring corpora, evaluators, workloads, managed progress or Burner contracts
+were changed. Independent review and merge gates remain required.
+""")
+dump(OUT/'audit.json',{'source':source,'measurement_kind':'precommit-diagnostic','checks':expected,
+ 'results':results,'installed_python_matches_source':True,'installed_native_matches_build':True,
+ 'extension_sha256':build['extension_sha256'],'previous_inventories_unchanged':True,
+ 'clean_commit_capture':'required after Burner commits this revision',
+ 'manifest_count':len(manifests),'full_manifests_published':1})
+dump(OUT/'inventory.json',{str(p.relative_to(OUT)):sha256(p) for p in OUT.rglob('*') if p.is_file() and p.name!='inventory.json'})
+print(json.dumps(results,indent=2))
+print('Published',OUT)
