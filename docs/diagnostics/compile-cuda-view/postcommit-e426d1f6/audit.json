@@ -1,0 +1,105 @@
+{
+  "all_installed_python_matches_source": true,
+  "all_receipts_clean_and_source_native_command_inputs_unchanged": true,
+  "audited_at": "2026-09-11T14:45:46.663361+00:00",
+  "build_record": "release/build-record.json",
+  "commands": {
+    "clippy-bindings": {
+      "cuda_visible_devices": "",
+      "ended_at": "2026-09-11T14:39:25.386875+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:39:11.226385+00:00"
+    },
+    "clippy-default": {
+      "cuda_visible_devices": "",
+      "ended_at": "2026-09-11T14:39:10.516345+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:39:05.910424+00:00"
+    },
+    "compiler": {
+      "cuda_visible_devices": "0",
+      "ended_at": "2026-09-11T14:44:48.533435+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:39:03.004239+00:00"
+    },
+    "format": {
+      "cuda_visible_devices": "",
+      "ended_at": "2026-09-11T14:39:27.222694+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:39:26.197166+00:00"
+    },
+    "guide-examples": {
+      "cuda_visible_devices": "0",
+      "ended_at": "2026-09-11T14:45:11.002192+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:45:10.082247+00:00"
+    },
+    "native-verification": {
+      "cuda_visible_devices": "0",
+      "ended_at": "2026-09-11T14:38:58.851343+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:38:58.576042+00:00"
+    },
+    "portable": {
+      "cuda_visible_devices": "",
+      "ended_at": "2026-09-11T14:39:05.157313+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:39:00.258109+00:00"
+    },
+    "preflight": {
+      "cuda_visible_devices": "0",
+      "ended_at": "2026-09-11T14:39:02.110786+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:38:59.614181+00:00"
+    },
+    "rust-graph": {
+      "cuda_visible_devices": "0",
+      "ended_at": "2026-09-11T14:45:05.108721+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:44:52.694082+00:00"
+    },
+    "rust-storage": {
+      "cuda_visible_devices": "0",
+      "ended_at": "2026-09-11T14:45:09.312843+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:45:05.828304+00:00"
+    },
+    "two-device": {
+      "cuda_visible_devices": "0,1",
+      "ended_at": "2026-09-11T14:44:51.929458+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:44:49.308807+00:00"
+    }
+  },
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_67fce754",
+  "external_read_only_tools": "Pinned Rust toolchain, system nvcc and NVIDIA driver",
+  "git_status_at_audit": "",
+  "historical_inventories_verified_unchanged": {
+    ".": {
+      "artifacts": 105,
+      "inventory_sha256": "6359c6de1c39e7fc66b13fb02cbfa78862b28100a344afce365052e798e8b5b5"
+    },
+    "postcommit-12ac70fd": {
+      "artifacts": 43,
+      "inventory_sha256": "32ff2d0dd2be43b1bab0b434bfd9075b78953498b74e591dd967ac38a66621b5"
+    },
+    "review-revision": {
+      "artifacts": 63,
+      "inventory_sha256": "6d5f3d185c5904c3a6c445394f6c8651e415106eb9b8115242ac986c37afd8ed"
+    }
+  },
+  "interpreter": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_67fce754/target/view-postcommit-12ac70fd/python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+  "measured_inputs_base": "../measured-inputs.json",
+  "measured_inputs_deltas": "../review-revision/input-manifest-deltas.json",
+  "measured_inputs_sha256": "52cd63ee1435eaf02cb17948a847bdb09118e118ca20ace67d3410c3b08c5fe9",
+  "measurement_kind": "fresh clean implementation-commit capture",
+  "native_sha256": "62f8b5830d7784de34de1771daf2af500aa54c921def9b7043c9245f25f8fc13",
+  "python_source_files_checked": 59,
+  "source": {
+    "commit": "e426d1f6d8eec9521dc13695af68b5da168415e2",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source_sha256": "09344d895e1f5a4750d06a88e9e26b3b2009fa1530dc65ac31fc8f4eb1ca8d16"
+  },
+  "wheel_sha256": "1e1da0ba441fcdbeb3020ace2d76779ece9a7de2f2211f19a43e26e7103fc66e",
+  "worktree_build_import_executable_cache_paths_within_current_worktree": true
+}

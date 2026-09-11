@@ -341,7 +341,7 @@ class CompileCudaReshapeTests(unittest.TestCase):
             with self.assertRaises(RuntimeError), patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('early execution')):
                 compile_with_cache(fn)[0](native.zeros((0,), device='cuda:0'))
         for text in ('def program(x, n):\n    return x.reshape(n)\n',
-                     'def program(x):\n    return x.view(-1)\n',
+                     'def program(x):\n    return x.view_as(x)\n',
                      'def program(x):\n    return x.reshape_as(x)\n',
                      'def program(x):\n    return module.reshape(x, (1,))\n'):
             fn = make_program(text, module=native)

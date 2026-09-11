@@ -1,0 +1,7 @@
+test_context_restoration_and_unused_mixed_capture (tests.test_compile_cuda_view.ViewDeviceTests.test_context_restoration_and_unused_mixed_capture) ... ok
+test_context_restoration_and_unused_mixed_capture (tests.test_compile_cuda_reshape.ReshapeDeviceTests.test_context_restoration_and_unused_mixed_capture) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.531s
+
+OK

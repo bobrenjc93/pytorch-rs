@@ -1,0 +1,56 @@
+--- python/torch_rs/_compile_bytecode.py
++++ python/torch_rs/_compile_bytecode.py
+@@ -1109,8 +1109,6 @@
+         return tuple(_reshape_argument(element) for element in value.elements)
+     if type(value) is tuple:
+         return tuple(_reshape_argument(element) for element in value)
+-    if type(value) is list:
+-        return [_reshape_argument(element) for element in value]
+     return _trace._RESHAPE_UNKNOWN_DIMENSION
+ 
+ 
+@@ -1341,21 +1339,8 @@
+ 
+ 
+ def _handle_binary(recorder, locals, stack, program, instruction, state, active):
+-    del locals, active
++    del locals, state, active
+     symbol = _binary_operator_symbol(instruction)
+-    # Bounded exact integer arithmetic is retained only to diagnose public
+-    # argument errors later in the call. Even an unused/overwritten result
+-    # rejects the graph; computed dimensions never become captured constants.
+-    if (symbol in ("+", "-", "*") and len(stack) >= 2
+-            and all(isinstance(v, _BytecodeConstant) and type(v.value) is int
+-                    and -(2**63) <= v.value < 2**63 for v in stack[-2:])):
+-        right, left = stack.pop().value, stack.pop().value
+-        value = left + right if symbol == "+" else left - right if symbol == "-" else left * right
+-        state.local_constant_error = state.local_constant_error or _trace.CompileTraceUnsupportedError(
+-            "torch.compile computed integer values are only retained for argument validation"
+-        )
+-        stack.append(_BytecodeConstant(value))
+-        return
+     if symbol == "*":
+         right = _pop(stack, program, instruction)
+         left = _pop(stack, program, instruction)
+@@ -1475,19 +1460,12 @@
+ 
+ 
+ def _handle_build_list(recorder, locals, stack, program, instruction, state, active):
+-    del recorder, locals, active
++    del recorder, locals, state, active
+     argument_count = instruction.arg or 0
+     values = [_pop(stack, program, instruction) for _ in range(argument_count)]
+     values.reverse()
+     output = list(values)
+-    try:
+-        _require_output_value(output, program, instruction, "list return value")
+-    except _trace.CompileTraceUnsupportedError as error:
+-        # Preserve a literal/local container for binding/type validation. It
+-        # remains forbidden as a shape, output, helper input or unused local.
+-        state.local_constant_error = state.local_constant_error or error
+-        stack.append(_BytecodeConstant([_reshape_argument(v) for v in values]))
+-        return
++    _require_output_value(output, program, instruction, "list return value")
+     stack.append(output)
+ 
+ 

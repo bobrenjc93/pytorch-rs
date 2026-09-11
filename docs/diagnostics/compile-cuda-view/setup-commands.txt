@@ -1,0 +1,19 @@
+# All caches, interpreters, packages, targets and temporary files are worktree-local.
+# environment.sh.txt contains the exact exports; source it as target/view/env.sh.
+source target/view/env.sh
+uv python install 3.12.14
+uv venv --python 3.12.14
+uv sync --locked --no-install-project --group dev --group reference
+cp -r /home/bobren/.cargo/registry target/view/cargo/
+.venv/bin/python scripts/capture_depth_concat_build.py --output target/view/baseline
+# Run the baseline probe before production edits.
+.venv/bin/python target/view/capture.py baseline-gap-verified .venv/bin/python target/view/baseline_probe.py
+# Each release capture uses a fresh empty target and preserves previous outputs.
+.venv/bin/python scripts/capture_depth_concat_build.py --allow-dirty --output target/view/development
+.venv/bin/python scripts/capture_depth_concat_build.py --allow-dirty --output target/view/verified-build
+.venv/bin/python scripts/capture_depth_concat_build.py --allow-dirty --output target/view/final-build
+# All exact validation commands and environments are in *.receipt.json.
+# In particular, the final sweep expands every matching file after final edits:
+.venv/bin/python target/view/capture.py compiler-current-source .venv/bin/python -m unittest -v tests/test_compile*.py tests/test_top_level_compile.py
+# After Burner commits, make a separate clean capture in a fresh output directory,
+# without --allow-dirty; update the capture wrapper's COMMIT and OUT for that run.

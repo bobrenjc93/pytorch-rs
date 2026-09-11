@@ -1,0 +1,217 @@
+{
+  "all_installed_python_matches_source": true,
+  "audited_at": "2026-09-11T14:35:35.825734+00:00",
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_67fce754",
+  "final_commands": {
+    "clippy-current-source": {
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--all-targets",
+        "--features",
+        "python-bindings",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "ended_at": "2026-09-11T14:29:14.516688+00:00",
+      "exit_status": 0,
+      "measured_inputs_sha256": "52cd63ee1435eaf02cb17948a847bdb09118e118ca20ace67d3410c3b08c5fe9",
+      "started_at": "2026-09-11T14:29:14.196690+00:00"
+    },
+    "compiler-current-source": {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests/test_compile_benchmark_artifact.py",
+        "tests/test_compile_corpus.py",
+        "tests/test_compile_cuda_benchmark.py",
+        "tests/test_compile_cuda_boundary.py",
+        "tests/test_compile_cuda_contiguous.py",
+        "tests/test_compile_cuda_graph.py",
+        "tests/test_compile_cuda_matmul.py",
+        "tests/test_compile_cuda_matmul_diagnostic.py",
+        "tests/test_compile_cuda_mul_scalar.py",
+        "tests/test_compile_cuda_mul_scalar_diagnostic.py",
+        "tests/test_compile_cuda_neg.py",
+        "tests/test_compile_cuda_neg_add_diagnostic.py",
+        "tests/test_compile_cuda_relu.py",
+        "tests/test_compile_cuda_reshape.py",
+        "tests/test_compile_cuda_sum_rows.py",
+        "tests/test_compile_cuda_t.py",
+        "tests/test_compile_cuda_trailing_vector.py",
+        "tests/test_compile_cuda_trailing_vector_diagnostic.py",
+        "tests/test_compile_cuda_transpose.py",
+        "tests/test_compile_cuda_view.py",
+        "tests/test_compile_static_analysis.py",
+        "tests/test_compile_sum_lowering.py",
+        "tests/test_compile_tanh_composition.py",
+        "tests/test_compiled_with_cxx11_abi.py",
+        "tests/test_compiled_with_cxx11_abi_reference.py",
+        "tests/test_compiler_assume_constant_result.py",
+        "tests/test_compiler_assume_constant_result_reference.py",
+        "tests/test_compiler_disable.py",
+        "tests/test_compiler_disable_reference.py",
+        "tests/test_compiler_get_default_backend.py",
+        "tests/test_compiler_get_default_backend_reference.py",
+        "tests/test_compiler_is_compiling.py",
+        "tests/test_compiler_is_compiling_reference.py",
+        "tests/test_compiler_is_dynamo_compiling.py",
+        "tests/test_compiler_is_dynamo_compiling_reference.py",
+        "tests/test_compiler_is_exporting.py",
+        "tests/test_compiler_is_exporting_reference.py",
+        "tests/test_compiler_keep_portable_guards_unsafe.py",
+        "tests/test_compiler_keep_portable_guards_unsafe_reference.py",
+        "tests/test_compiler_keep_tensor_guards_unsafe.py",
+        "tests/test_compiler_keep_tensor_guards_unsafe_reference.py",
+        "tests/test_compiler_list_backends.py",
+        "tests/test_compiler_list_backends_reference.py",
+        "tests/test_compiler_register_backend.py",
+        "tests/test_compiler_register_backend_reference.py",
+        "tests/test_compiler_set_default_backend.py",
+        "tests/test_compiler_set_default_backend_reference.py",
+        "tests/test_compiler_set_enable_guard_collectives.py",
+        "tests/test_compiler_set_enable_guard_collectives_reference.py",
+        "tests/test_compiler_skip_all_guards_unsafe.py",
+        "tests/test_compiler_skip_all_guards_unsafe_reference.py",
+        "tests/test_compiler_skip_guard_on_all_nn_modules_unsafe.py",
+        "tests/test_compiler_skip_guard_on_all_nn_modules_unsafe_reference.py",
+        "tests/test_compiler_skip_guard_on_globals_unsafe.py",
+        "tests/test_compiler_skip_guard_on_globals_unsafe_reference.py",
+        "tests/test_compiler_skip_guard_on_inbuilt_nn_modules_unsafe.py",
+        "tests/test_top_level_compile.py"
+      ],
+      "ended_at": "2026-09-11T14:34:58.412921+00:00",
+      "exit_status": 0,
+      "measured_inputs_sha256": "52cd63ee1435eaf02cb17948a847bdb09118e118ca20ace67d3410c3b08c5fe9",
+      "started_at": "2026-09-11T14:29:11.742196+00:00"
+    },
+    "format-current-source": {
+      "command": [
+        "cargo",
+        "fmt",
+        "--check"
+      ],
+      "ended_at": "2026-09-11T14:29:16.090975+00:00",
+      "exit_status": 0,
+      "measured_inputs_sha256": "52cd63ee1435eaf02cb17948a847bdb09118e118ca20ace67d3410c3b08c5fe9",
+      "started_at": "2026-09-11T14:29:15.261888+00:00"
+    },
+    "guide-examples": {
+      "command": [
+        ".venv/bin/python",
+        "docs/diagnostics/compile-cuda-view/guide_examples.py.txt"
+      ],
+      "ended_at": "2026-09-11T14:35:08.606068+00:00",
+      "exit_status": 0,
+      "measured_inputs_sha256": "52cd63ee1435eaf02cb17948a847bdb09118e118ca20ace67d3410c3b08c5fe9",
+      "started_at": "2026-09-11T14:35:07.713792+00:00"
+    },
+    "native-verification-final": {
+      "command": [
+        ".venv/bin/python",
+        ".github/scripts/verify_native_extension.py"
+      ],
+      "ended_at": "2026-09-11T14:29:10.908361+00:00",
+      "exit_status": 0,
+      "measured_inputs_sha256": "52cd63ee1435eaf02cb17948a847bdb09118e118ca20ace67d3410c3b08c5fe9",
+      "started_at": "2026-09-11T14:29:10.629605+00:00"
+    },
+    "portable-current-source": {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_compile_cuda_view",
+        "tests.test_view",
+        "tests.test_view_reference",
+        "tests.test_reshape",
+        "tests.test_reshape_reference"
+      ],
+      "ended_at": "2026-09-11T14:29:13.433140+00:00",
+      "exit_status": 0,
+      "measured_inputs_sha256": "52cd63ee1435eaf02cb17948a847bdb09118e118ca20ace67d3410c3b08c5fe9",
+      "started_at": "2026-09-11T14:29:08.072949+00:00"
+    },
+    "preflight": {
+      "command": [
+        ".venv/bin/python",
+        "docs/diagnostics/compile-cuda-view/preflight.py.txt"
+      ],
+      "ended_at": "2026-09-11T14:35:06.907691+00:00",
+      "exit_status": 0,
+      "measured_inputs_sha256": "52cd63ee1435eaf02cb17948a847bdb09118e118ca20ace67d3410c3b08c5fe9",
+      "started_at": "2026-09-11T14:35:04.298629+00:00"
+    },
+    "review-regressions-current-source": {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_compile_cuda_view.ViewMetadataTests",
+        "tests.test_compile_cuda_view.CompileCudaViewTests.test_unsupported_argument_expressions_preserve_public_errors",
+        "tests.test_compile_cuda_view.CompileCudaViewTests.test_validation_only_lists_and_computed_integer_dimensions",
+        "tests.test_compile_cuda_view.CompileCudaViewTests.test_public_binding_order_and_unsupported_forms"
+      ],
+      "ended_at": "2026-09-11T14:29:09.831417+00:00",
+      "exit_status": 0,
+      "measured_inputs_sha256": "52cd63ee1435eaf02cb17948a847bdb09118e118ca20ace67d3410c3b08c5fe9",
+      "started_at": "2026-09-11T14:29:06.527672+00:00"
+    },
+    "rust-graph": {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--features",
+        "python-bindings",
+        "--lib",
+        "cuda_graph",
+        "--",
+        "--nocapture"
+      ],
+      "ended_at": "2026-09-11T14:35:03.541250+00:00",
+      "exit_status": 0,
+      "measured_inputs_sha256": "52cd63ee1435eaf02cb17948a847bdb09118e118ca20ace67d3410c3b08c5fe9",
+      "started_at": "2026-09-11T14:35:02.737235+00:00"
+    },
+    "two-device": {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_compile_cuda_view.ViewDeviceTests",
+        "tests.test_compile_cuda_reshape.ReshapeDeviceTests"
+      ],
+      "ended_at": "2026-09-11T14:35:01.998136+00:00",
+      "exit_status": 0,
+      "measured_inputs_sha256": "52cd63ee1435eaf02cb17948a847bdb09118e118ca20ace67d3410c3b08c5fe9",
+      "started_at": "2026-09-11T14:34:59.212810+00:00"
+    }
+  },
+  "git_status_at_publication": " M docs/compile-cuda-view.md\n M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M tests/test_compile_cuda_view.py\n?? docs/diagnostics/compile-cuda-view/review-revision/\n",
+  "historical_inventories_verified_unchanged": {
+    "docs/diagnostics/compile-cuda-view": 105,
+    "docs/diagnostics/compile-cuda-view/postcommit-12ac70fd": 43
+  },
+  "interpreter": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_67fce754/target/view-postcommit-12ac70fd/python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+  "manifest_base": "../measured-inputs.json",
+  "manifest_base_sha256": "865c3aaa1a280d78079b64c57d874efd3df6b85de4f1f607c6e94ef54bd13e4e",
+  "measurement_kind": "review revision development; fresh clean-commit capture required after Burner commits",
+  "native_sha256": "62f8b5830d7784de34de1771daf2af500aa54c921def9b7043c9245f25f8fc13",
+  "python_source_files_checked": 59,
+  "source": {
+    "commit": "4a0a77d4d73e70898e7b073dbc150a7d2a1a0562",
+    "production_diff_sha256": "719c7800c48b3b118cd4612cb8a1c745a80a3f96ecbd684dfbe399e67e0e29aa",
+    "source_sha256": "09344d895e1f5a4750d06a88e9e26b3b2009fa1530dc65ac31fc8f4eb1ca8d16"
+  },
+  "wheel_sha256": "5feb8cf7d7f9c1081a324cfaaf017b426a25fd34a89dc0ff32583740e5765a29"
+}

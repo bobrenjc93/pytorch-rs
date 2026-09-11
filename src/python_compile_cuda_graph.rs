@@ -35,25 +35,29 @@ fn exact_indices(value: &Bound<'_, PyAny>) -> PyResult<Vec<usize>> {
         .collect()
 }
 
-fn exact_shape(payload: &Bound<'_, PyAny>) -> PyResult<Shape> {
+fn exact_shape_dimensions(payload: &Bound<'_, PyAny>) -> PyResult<Vec<i64>> {
     if !payload.is_exact_instance_of::<PyTuple>() {
         return Err(PyTypeError::new_err(
-            "reshape shape requires an exact tuple",
+            "shape payload requires an exact tuple",
         ));
     }
     let dimensions = payload.cast::<PyTuple>()?;
-    let requested = dimensions
+    dimensions
         .iter()
         .map(|dim| {
             if !dim.is_exact_instance_of::<PyInt>() {
                 return Err(PyTypeError::new_err(
-                    "reshape dimensions require exact integers",
+                    "shape dimensions require exact integers",
                 ));
             }
             dim.extract::<i64>()
-                .map_err(|_| PyTypeError::new_err("reshape dimension overflow"))
+                .map_err(|_| PyTypeError::new_err("shape dimension overflow"))
         })
-        .collect::<PyResult<Vec<_>>>()?;
+        .collect()
+}
+
+fn exact_shape(payload: &Bound<'_, PyAny>) -> PyResult<Shape> {
+    let requested = exact_shape_dimensions(payload)?;
     Shape::new(&requested).map_err(|error| tensor_error(&error))
 }
 
@@ -65,9 +69,29 @@ pub(super) fn reshape_metadata(
     offset: &Bound<'_, PyAny>,
     requested: &Bound<'_, PyAny>,
 ) -> PyResult<(Vec<usize>, Vec<usize>, usize)> {
+    shape_metadata(shape, strides, offset, requested, false)
+}
+
+#[pyfunction(name = "_compile_trace_cuda_view_metadata")]
+pub(super) fn view_metadata(
+    shape: &Bound<'_, PyAny>,
+    strides: &Bound<'_, PyAny>,
+    offset: &Bound<'_, PyAny>,
+    requested: &Bound<'_, PyAny>,
+) -> PyResult<(Vec<usize>, Vec<usize>, usize)> {
+    shape_metadata(shape, strides, offset, requested, true)
+}
+
+fn shape_metadata(
+    shape: &Bound<'_, PyAny>,
+    strides: &Bound<'_, PyAny>,
+    offset: &Bound<'_, PyAny>,
+    requested: &Bound<'_, PyAny>,
+    alias_only: bool,
+) -> PyResult<(Vec<usize>, Vec<usize>, usize)> {
     if !offset.is_exact_instance_of::<PyInt>() {
         return Err(PyTypeError::new_err(
-            "reshape offset requires an exact integer",
+            "shape offset requires an exact integer",
         ));
     }
     let input = Layout {
@@ -75,7 +99,21 @@ pub(super) fn reshape_metadata(
         strides: exact_indices(strides)?,
         offset: offset.extract()?,
     };
-    let output = Operation::Reshape(0, exact_shape(requested)?)
+    let dimensions = exact_shape_dimensions(requested)?;
+    if dimensions.len() > 2 && input.shape.len() <= 2 {
+        // Error validation does not admit higher-rank operations. Use eager's
+        // checked resolver before applying the unchanged graph rank bound.
+        input
+            .validate_requested_shape(&dimensions)
+            .map_err(|error| tensor_error(&error))?;
+    }
+    let requested = Shape::new(&dimensions).map_err(|error| tensor_error(&error))?;
+    let operation = if alias_only {
+        Operation::View(0, requested)
+    } else {
+        Operation::Reshape(0, requested)
+    };
+    let output = operation
         .layout(&[input])
         .map_err(|error| tensor_error(&error))?;
     Ok((output.shape, output.strides, output.offset))
@@ -101,6 +139,7 @@ fn parse_operation(
             )
         }
         ("reshape", &[input]) => Operation::Reshape(input, exact_shape(payload)?),
+        ("view", &[input]) => Operation::View(input, exact_shape(payload)?),
         ("transpose", &[input]) => {
             if !payload.is_exact_instance_of::<PyTuple>() {
                 return Err(PyTypeError::new_err(
@@ -205,7 +244,7 @@ pub(super) fn execute(
     // Existing core operations synchronize even on launch errors and restore
     // the current device. No Python call or PyO3 crossing occurs between nodes.
     // Packing stays native; contiguous aliases preserve their original owner.
-    // T and Transpose always wrap fresh view objects, even for unchanged metadata.
+    // T, Transpose, Reshape and View always wrap fresh objects, even for unchanged metadata.
     let mut outputs = Vec::with_capacity(operations.len());
     for (index, operation) in operations.into_iter().enumerate() {
         let output = operation
@@ -251,9 +290,89 @@ mod tests {
     use crate::{Device, cuda, tensor::cuda_graph::EXECUTIONS};
 
     #[test]
-    fn reshape_payloads_reject_before_early_or_late_execution() {
+    fn shape_payloads_reject_before_early_or_late_execution() {
         if cuda::device_count() == 0 {
             eprintln!("skipping CUDA reshape bridge checks: no CUDA device");
+            return;
+        }
+        Python::initialize();
+        Python::attach(|py| {
+            for target in ["reshape", "view"] {
+                let tensor = CoreTensor::from_vec(vec![1.; 6], [2, 3])
+                    .unwrap()
+                    .try_copy_cpu_to_cuda(Device::Cuda(0))
+                    .unwrap()
+                    .t()
+                    .unwrap();
+                let tensor = if target == "view" {
+                    tensor.t().unwrap()
+                } else {
+                    tensor
+                };
+                let inputs =
+                    PyTuple::new(py, [Py::new(py, PyTensor::new(tensor)).unwrap()]).unwrap();
+                let valid = (
+                    target.to_owned(),
+                    PyTuple::new(py, [0]).unwrap().into_any(),
+                    PyTuple::new(py, [-1]).unwrap().into_any(),
+                    PyTuple::new(py, [6]).unwrap().into_any(),
+                    PyTuple::new(py, [1]).unwrap().into_any(),
+                );
+                let mut bad = Vec::new();
+                for expr in [
+                    c"None",
+                    c"[6]",
+                    c"(True, 6)",
+                    c"(1, True)",
+                    c"(6.0,)",
+                    c"(-1, -1)",
+                    c"(-2,)",
+                    c"(7,)",
+                    c"(1, 2, 3)",
+                    c"()",
+                    c"(9223372036854775808,)",
+                    c"(9223372036854775807, 2)",
+                ] {
+                    let mut node = valid.clone();
+                    node.2 = py.eval(expr, None, None).unwrap();
+                    bad.push(node);
+                }
+                for expr in [c"(True,)", c"(6.0,)", c"(7,)"] {
+                    let mut node = valid.clone();
+                    node.3 = py.eval(expr, None, None).unwrap();
+                    bad.push(node);
+                }
+                for expr in [c"(True,)", c"(1.0,)", c"(2,)"] {
+                    let mut node = valid.clone();
+                    node.4 = py.eval(expr, None, None).unwrap();
+                    bad.push(node);
+                }
+                for expr in [c"(False,)", c"(0.0,)", c"(99,)", c"()", c"(0, 0)"] {
+                    let mut node = valid.clone();
+                    node.1 = py.eval(expr, None, None).unwrap();
+                    bad.push(node);
+                }
+                for invalid in bad {
+                    for nodes in [
+                        vec![invalid.clone(), valid.clone()],
+                        vec![valid.clone(), invalid],
+                    ] {
+                        EXECUTIONS.with(|count| count.set(0));
+                        assert!(execute(&inputs, nodes).is_err());
+                        EXECUTIONS.with(|count| assert_eq!(count.get(), 0));
+                    }
+                }
+                let outputs = execute(&inputs, vec![valid.clone(), valid]).unwrap();
+                assert!(!outputs[0].is(&outputs[1]));
+                assert!(!outputs[0].bind(py).is(inputs.get_item(0).unwrap()));
+            }
+        });
+    }
+
+    #[test]
+    fn incompatible_view_rejects_before_even_an_earlier_pack() {
+        if cuda::device_count() == 0 {
+            eprintln!("skipping CUDA view prevalidation: no CUDA device");
             return;
         }
         Python::initialize();
@@ -265,60 +384,27 @@ mod tests {
                 .t()
                 .unwrap();
             let inputs = PyTuple::new(py, [Py::new(py, PyTensor::new(tensor)).unwrap()]).unwrap();
-            let valid = (
-                "reshape".to_owned(),
+            let pack = (
+                "contiguous".to_owned(),
+                PyTuple::new(py, [0]).unwrap().into_any(),
+                py.None().into_bound(py),
+                PyTuple::new(py, [3, 2]).unwrap().into_any(),
+                PyTuple::new(py, [2, 1]).unwrap().into_any(),
+            );
+            let view = (
+                "view".to_owned(),
                 PyTuple::new(py, [0]).unwrap().into_any(),
                 PyTuple::new(py, [-1]).unwrap().into_any(),
                 PyTuple::new(py, [6]).unwrap().into_any(),
                 PyTuple::new(py, [1]).unwrap().into_any(),
             );
-            let mut bad = Vec::new();
-            for expr in [
-                c"None",
-                c"[6]",
-                c"(True, 6)",
-                c"(1, True)",
-                c"(6.0,)",
-                c"(-1, -1)",
-                c"(-2,)",
-                c"(7,)",
-                c"(1, 2, 3)",
-                c"()",
-                c"(9223372036854775808,)",
-                c"(9223372036854775807, 2)",
-            ] {
-                let mut node = valid.clone();
-                node.2 = py.eval(expr, None, None).unwrap();
-                bad.push(node);
+            for nodes in [vec![view.clone(), pack.clone()], vec![pack, view]] {
+                EXECUTIONS.with(|count| count.set(0));
+                let error = execute(&inputs, nodes).unwrap_err();
+                assert!(error.is_instance_of::<PyRuntimeError>(py));
+                assert!(error.to_string().contains("view size is not compatible"));
+                EXECUTIONS.with(|count| assert_eq!(count.get(), 0));
             }
-            for expr in [c"(True,)", c"(6.0,)", c"(7,)"] {
-                let mut node = valid.clone();
-                node.3 = py.eval(expr, None, None).unwrap();
-                bad.push(node);
-            }
-            for expr in [c"(True,)", c"(1.0,)", c"(2,)"] {
-                let mut node = valid.clone();
-                node.4 = py.eval(expr, None, None).unwrap();
-                bad.push(node);
-            }
-            for expr in [c"(False,)", c"(0.0,)", c"(99,)", c"()", c"(0, 0)"] {
-                let mut node = valid.clone();
-                node.1 = py.eval(expr, None, None).unwrap();
-                bad.push(node);
-            }
-            for invalid in bad {
-                for nodes in [
-                    vec![invalid.clone(), valid.clone()],
-                    vec![valid.clone(), invalid],
-                ] {
-                    EXECUTIONS.with(|count| count.set(0));
-                    assert!(execute(&inputs, nodes).is_err());
-                    EXECUTIONS.with(|count| assert_eq!(count.get(), 0));
-                }
-            }
-            let outputs = execute(&inputs, vec![valid.clone(), valid]).unwrap();
-            assert!(!outputs[0].is(&outputs[1]));
-            assert!(!outputs[0].bind(py).is(inputs.get_item(0).unwrap()));
         });
     }
 

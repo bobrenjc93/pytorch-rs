@@ -50,7 +50,8 @@ Index-like objects/integer subclasses, named dimensions and dynamic axis
 expressions are deliberately unsupported. Static and dynamic policies do not
 imply support for arbitrary shape-dependent Python expressions.
 
-[Constant-shape rank-0/1/2 reshape](compile-cuda-reshape.md) also composes with these views.
+[Constant-shape rank-0/1/2 reshape](compile-cuda-reshape.md) and
+[alias-only view](compile-cuda-view.md) also compose with these views.
 
 Arguments to `t()`, rank >2, CPU capture, other dtypes, gradients,
 `swapdims`/`swapaxes`, general permute, `.T`/`.mT`, top-level

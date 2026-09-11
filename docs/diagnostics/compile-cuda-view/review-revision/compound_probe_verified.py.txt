@@ -1,0 +1,9 @@
+from torch_rs import _compile_bytecode
+import sys
+sys.path.insert(0,'.')
+from tests.test_compile_cuda_view import *
+metadata = trace.CompileTraceRecorder().input(shape=(1,), device='cuda:0').metadata
+for expr in ('(k//1)+1', '(k//1)*1', '(k//1)+k', 'k+1.0'):
+    f=make_program(f'def program(x):\n    k=1\n    return x.view(2**63, {expr})\n')
+    try: _compile_bytecode.lower_compile_graph(f,(metadata,))
+    except Exception as e: print(expr,type(e).__name__,str(e))

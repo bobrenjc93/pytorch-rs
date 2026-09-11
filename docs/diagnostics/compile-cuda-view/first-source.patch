@@ -1,0 +1,672 @@
+diff --git a/python/torch_rs/_compile_bytecode.py b/python/torch_rs/_compile_bytecode.py
+index c55d929..7177d88 100644
+--- a/python/torch_rs/_compile_bytecode.py
++++ b/python/torch_rs/_compile_bytecode.py
+@@ -29,7 +29,7 @@ class _BytecodeConstant:
+ 
+ @dataclass(frozen=True, slots=True)
+ class _BytecodeTuple:
+-    # Mixed constants/tensors are retained for reshape call validation only.
++    # Mixed constants/tensors are retained for shape call validation only.
+     # They are not Tensor output pytrees or accepted helper arguments.
+     elements: tuple
+ 
+@@ -149,6 +149,7 @@ class _OpcodeForm:
+ 
+ 
+ _METHOD_TARGETS = {
++    "view": _MethodTarget("view", "view", 1, "Tensor.view"),
+     "reshape": _MethodTarget("view", "reshape", 1, "Tensor.reshape"),
+     "transpose": _MethodTarget("view", "transpose", 2, "Tensor.transpose"),
+     "t": _MethodTarget("unary", "t", 0, "Tensor.t"),
+@@ -989,7 +990,7 @@ def _store_local(locals, stack, program, instruction, name, state):
+             try:
+                 _trace._normalize_mul_scalar(value.value)
+             except _trace.CompileTraceUnsupportedError as error:
+-                # Preserve the value for public reshape argument validation.
++                # Preserve the value for public shape argument validation.
+                 # Still reject the graph if the local is unused or overwritten.
+                 if state.local_constant_error is None:
+                     state.local_constant_error = error
+@@ -1112,13 +1113,14 @@ def _reshape_argument(value):
+ 
+ 
+ def _record_method_call(recorder, method, args, program, instruction, names=()):
+-    if method.name == "reshape":
++    if method.name in ("reshape", "view"):
+         positional = len(args) - len(names)
+         values = tuple(_reshape_argument(value) for value in args)
+         positional_args = values[:positional]
+         kwargs = dict(zip(names, values[positional:]))
+-        shape = _trace._bind_reshape_shape(positional_args, kwargs)
+-        return recorder.record_reshape(method.receiver, shape)
++        binder = _trace._bind_view_shape if method.name == "view" else _trace._bind_reshape_shape
++        shape = binder(positional_args, kwargs)
++        return recorder._record_shape(method.receiver, shape, method.name)
+     if method.name == "transpose":
+         positional = len(args) - len(names)
+         if positional > 2:
+@@ -1565,7 +1567,7 @@ def lower_compile_graph(program, input_metadatas, *, name=None, compile_request=
+         raise state.local_constant_error
+     if state.has_mixed_tuple:
+         raise _trace.CompileTraceUnsupportedError(
+-            "torch.compile mixed constant/Tensor tuples are only retained for reshape argument validation"
++            "torch.compile mixed constant/Tensor tuples are only retained for shape argument validation"
+         )
+     return recorder.finish(output)
+ 
+diff --git a/python/torch_rs/_compile_trace.py b/python/torch_rs/_compile_trace.py
+index 42fe55b..2cf7f9b 100644
+--- a/python/torch_rs/_compile_trace.py
++++ b/python/torch_rs/_compile_trace.py
+@@ -191,6 +191,7 @@ _SUPPORTED_UNARY_METHODS = (
+     "Tensor.t (CUDA, parameterless, rank <= 2)",
+     "Tensor.transpose (CUDA, constant integer axes, rank <= 2)",
+     "Tensor.reshape (CUDA, constant integer shape, rank <= 2)",
++    "Tensor.view (CUDA, constant integer shape, alias-only, rank <= 2)",
+     "Tensor.contiguous (CUDA, parameterless)",
+     "Tensor.neg",
+     "Tensor.negative",
+@@ -554,7 +555,7 @@ def _t_output_metadata(metadata):
+ _RESHAPE_UNKNOWN_DIMENSION = object()
+ 
+ 
+-def _validate_reshape_dimension(dimension, index):
++def _validate_reshape_dimension(dimension, index, method="reshape"):
+     # An opaque bytecode value is never inspected or converted. Keep checking
+     # known dimensions so unsupported capture cannot hide a public type error.
+     if dimension is _RESHAPE_UNKNOWN_DIMENSION:
+@@ -563,25 +564,25 @@ def _validate_reshape_dimension(dimension, index):
+         if ((type(dimension) is bool and index > 0)
+                 or (type(dimension) is not bool and hasattr(type(dimension), "__index__"))):
+             return False
+-        raise TypeError(f"reshape(): shape dimension {index} must be int, not {type(dimension).__name__}")
++        raise TypeError(f"{method}(): shape dimension {index} must be int, not {type(dimension).__name__}")
+     if not -(2**63) <= dimension < 2**63:
+-        raise TypeError(f"reshape(): shape dimension {index} overflows signed int64")
++        raise TypeError(f"{method}(): shape dimension {index} overflows signed int64")
+     return True
+ 
+ 
+-def _reshape_dimensions(shape):
++def _reshape_dimensions(shape, method="reshape"):
+     if type(shape) is not tuple:
+-        raise CompileTraceUnsupportedError("torch.compile reshape requires an exact flat tuple")
++        raise CompileTraceUnsupportedError(f"torch.compile {method} requires an exact flat tuple")
+     # PyTorch's schema checks the first dimension, then unpacks in order.
+     # Later booleans/index conversions can be reference-valid, but are outside
+     # this exact-integer capture contract. Never use bool/int equality here.
+     constant = True
+     for index, dimension in enumerate(shape):
+-        constant = _validate_reshape_dimension(dimension, index) and constant
++        constant = _validate_reshape_dimension(dimension, index, method) and constant
+     if not constant:
+-        raise CompileTraceUnsupportedError("torch.compile reshape requires exact integer constants")
++        raise CompileTraceUnsupportedError(f"torch.compile {method} requires exact integer constants")
+     if len(shape) > 2:
+-        raise CompileTraceUnsupportedError("torch.compile reshape requires output rank 0, 1 or 2")
++        raise CompileTraceUnsupportedError(f"torch.compile {method} requires output rank 0, 1 or 2")
+     return shape
+ 
+ 
+@@ -624,14 +625,57 @@ def _bind_reshape_shape(args, kwargs):
+     return _reshape_dimensions(shape)
+ 
+ 
++def _bind_view_shape(args, kwargs):
++    # Unlike reshape(shape=...), view's overloaded parser rejects call
++    # structure before unpacking dimensions. Never invoke either dtype overload
++    # or user conversion methods while inspecting this bounded shape form.
++    if kwargs:
++        if not args and tuple(kwargs) == ("dtype",):
++            raise CompileTraceUnsupportedError("torch.compile view dtype overload is unsupported")
++        if args or tuple(kwargs) != ("size",):
++            raise TypeError("view() received an invalid combination of arguments")
++    elif not args:
++        raise TypeError("view() received an invalid combination of arguments")
++    first = args[0] if args else kwargs["size"]
++    if type(first) is tuple:
++        if len(args) > 1:
++            raise TypeError("view() received an invalid combination of arguments")
++        shape = first
++    elif isinstance(first, (tuple, list)):
++        if len(args) > 1:
++            raise TypeError("view() received an invalid combination of arguments")
++        raise CompileTraceUnsupportedError("torch.compile view requires an exact tuple")
++    elif first is _RESHAPE_UNKNOWN_DIMENSION:
++        shape = args if args else (first,)
++    elif type(first) is type(_native.float32):
++        if len(args) > 1 or not args:
++            raise TypeError("view() received an invalid combination of arguments")
++        raise CompileTraceUnsupportedError("torch.compile view dtype overload is unsupported")
++    elif not args:
++        raise TypeError("view(): argument 'size' must be tuple of ints")
++    else:
++        shape = args
++    return _reshape_dimensions(shape, "view")
++
++
++def _view_output_metadata(metadata, shape):
++    return _shape_output_metadata(metadata, shape, "view")
++
++
+ def _reshape_output_metadata(metadata, shape):
+-    shape = _reshape_dimensions(shape)
++    return _shape_output_metadata(metadata, shape, "reshape")
++
++
++def _shape_output_metadata(metadata, shape, method):
++    shape = _reshape_dimensions(shape, method)
+     _validate_cuda_metadata(metadata, require_contiguous=False)
+     if metadata.device.type != "cuda" or len(metadata.shape) > 2:
+-        raise CompileTraceUnsupportedError("torch.compile Tensor.reshape requires CUDA rank 0, 1 or 2")
++        raise CompileTraceUnsupportedError(f"torch.compile Tensor.{method} requires CUDA rank 0, 1 or 2")
+     # No tensor storage is allocated here. Both frontend and executor call the
+     # shared checked eager resolver/view-stride planner, including empty layouts.
+-    resolved, stride, offset = _native._compile_trace_cuda_reshape_metadata(
++    planner = (_native._compile_trace_cuda_view_metadata if method == "view"
++               else _native._compile_trace_cuda_reshape_metadata)
++    resolved, stride, offset = planner(
+         metadata.shape, metadata.stride, metadata.storage_offset, shape,
+     )
+     return CompileTraceTensorMetadata(
+@@ -1222,8 +1266,8 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled, de
+     # Validate the complete node before any graph operation can execute, even
+     # for graphs built manually or modified with dataclasses.replace().
+     _validate_metadata_types(operation.metadata)
+-    if operation.target != "reshape" and operation.shape is not None:
+-        raise CompileTraceUnsupportedError("torch.compile non-reshape node has a shape payload")
++    if operation.target not in ("reshape", "view") and operation.shape is not None:
++        raise CompileTraceUnsupportedError("torch.compile non-shape node has a shape payload")
+     if operation.target != "transpose" and operation.axes is not None:
+         raise CompileTraceUnsupportedError("torch.compile non-transpose node has axes")
+     if operation.op == "call_reduction":
+@@ -1263,13 +1307,13 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled, de
+         return expected
+     if operation.scalar is not None:
+         raise CompileTraceUnsupportedError("torch.compile non-scalar operation has a scalar payload")
+-    if operation.target in ("contiguous", "t", "transpose", "reshape"):
++    if operation.target in ("contiguous", "t", "transpose", "reshape", "view"):
+         if len(operation.inputs) != 1:
+             raise CompileTraceUnsupportedError(f"torch.compile {operation.target} requires one input")
+         name = operation.inputs[0]
+-        if operation.target == "reshape":
++        if operation.target in ("reshape", "view"):
+             def infer(metadata):
+-                return _reshape_output_metadata(metadata, operation.shape)
++                return _shape_output_metadata(metadata, operation.shape, operation.target)
+         elif operation.target == "transpose":
+             def infer(metadata):
+                 return _transpose_output_metadata(metadata, operation.axes)
+@@ -1462,7 +1506,7 @@ def execute_compile_trace_graph(graph, *inputs):
+             )
+         metadata_values[operation.name] = expected_metadata
+ 
+-    if (len(graph.operations) > 1 or any(op.target in ("contiguous", "t", "transpose", "reshape", "relu") for op in graph.operations)) and all(
++    if (len(graph.operations) > 1 or any(op.target in ("contiguous", "t", "transpose", "reshape", "view", "relu") for op in graph.operations)) and all(
+         metadata.device.type == "cuda" for metadata in metadata_values.values()
+     ):
+         # Validate the output tree too before the native bridge can launch.
+@@ -1479,7 +1523,7 @@ def execute_compile_trace_graph(graph, *inputs):
+         indices = {name: index for index, name in enumerate(metadata_values)}
+         nodes = [
+             (operation.target, tuple(indices[name] for name in operation.inputs),
+-             operation.shape if operation.target == "reshape" else
++             operation.shape if operation.target in ("reshape", "view") else
+              operation.axes if operation.target == "transpose" else (
+                  operation.reduction if operation.op == "call_reduction" else operation.scalar),
+              metadata_values[operation.name].shape,
+@@ -1552,6 +1596,9 @@ class CompileTraceTensorProxy:
+     def dim(self):
+         return len(self.metadata.shape)
+ 
++    def view(self, *args, **kwargs):
++        return self._recorder.record_view(self, _bind_view_shape(args, kwargs))
++
+     def reshape(self, *args, **kwargs):
+         return self._recorder.record_reshape(self, _bind_reshape_shape(args, kwargs))
+ 
+@@ -1803,13 +1850,19 @@ class CompileTraceRecorder:
+         self._operations.append(operation)
+         return CompileTraceTensorProxy(self, name, metadata)
+ 
++    def record_view(self, input, shape):
++        return self._record_shape(input, shape, "view")
++
+     def record_reshape(self, input, shape):
++        return self._record_shape(input, shape, "reshape")
++
++    def _record_shape(self, input, shape, method):
+         self._ensure_open()
+         self._require_owned_proxy(input)
+-        metadata = _reshape_output_metadata(input.metadata, shape)
+-        name = self._next_operation_name("reshape")
++        metadata = _shape_output_metadata(input.metadata, shape, method)
++        name = self._next_operation_name(method)
+         self._operations.append(CompileTraceOperation(
+-            name=name, op="call_method", target="reshape", inputs=(input.name,),
++            name=name, op="call_method", target=method, inputs=(input.name,),
+             metadata=metadata, shape=shape,
+         ))
+         return CompileTraceTensorProxy(self, name, metadata)
+diff --git a/src/python.rs b/src/python.rs
+index 3ef0c81..7dde2e7 100644
+--- a/src/python.rs
++++ b/src/python.rs
+@@ -25981,6 +25981,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
+         compile_cuda_graph::reshape_metadata,
+         module
+     )?)?;
++    module.add_function(wrap_pyfunction!(compile_cuda_graph::view_metadata, module)?)?;
+     module.add_function(wrap_pyfunction!(compile_trace_mul_scalar_value, module)?)?;
+     let exports = module.getattr("__all__")?;
+     for name in [
+@@ -25994,6 +25995,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
+         "_compile_trace_reduction",
+         "_compile_trace_cuda_graph",
+         "_compile_trace_cuda_reshape_metadata",
++        "_compile_trace_cuda_view_metadata",
+         "_compile_trace_mul_scalar_value",
+     ] {
+         exports.call_method1("remove", (name,))?;
+diff --git a/src/python_compile_cuda_graph.rs b/src/python_compile_cuda_graph.rs
+index 6177b96..b49c6ee 100644
+--- a/src/python_compile_cuda_graph.rs
++++ b/src/python_compile_cuda_graph.rs
+@@ -38,7 +38,7 @@ fn exact_indices(value: &Bound<'_, PyAny>) -> PyResult<Vec<usize>> {
+ fn exact_shape(payload: &Bound<'_, PyAny>) -> PyResult<Shape> {
+     if !payload.is_exact_instance_of::<PyTuple>() {
+         return Err(PyTypeError::new_err(
+-            "reshape shape requires an exact tuple",
++            "shape payload requires an exact tuple",
+         ));
+     }
+     let dimensions = payload.cast::<PyTuple>()?;
+@@ -47,11 +47,11 @@ fn exact_shape(payload: &Bound<'_, PyAny>) -> PyResult<Shape> {
+         .map(|dim| {
+             if !dim.is_exact_instance_of::<PyInt>() {
+                 return Err(PyTypeError::new_err(
+-                    "reshape dimensions require exact integers",
++                    "shape dimensions require exact integers",
+                 ));
+             }
+             dim.extract::<i64>()
+-                .map_err(|_| PyTypeError::new_err("reshape dimension overflow"))
++                .map_err(|_| PyTypeError::new_err("shape dimension overflow"))
+         })
+         .collect::<PyResult<Vec<_>>>()?;
+     Shape::new(&requested).map_err(|error| tensor_error(&error))
+@@ -64,10 +64,30 @@ pub(super) fn reshape_metadata(
+     strides: &Bound<'_, PyAny>,
+     offset: &Bound<'_, PyAny>,
+     requested: &Bound<'_, PyAny>,
++) -> PyResult<(Vec<usize>, Vec<usize>, usize)> {
++    shape_metadata(shape, strides, offset, requested, false)
++}
++
++#[pyfunction(name = "_compile_trace_cuda_view_metadata")]
++pub(super) fn view_metadata(
++    shape: &Bound<'_, PyAny>,
++    strides: &Bound<'_, PyAny>,
++    offset: &Bound<'_, PyAny>,
++    requested: &Bound<'_, PyAny>,
++) -> PyResult<(Vec<usize>, Vec<usize>, usize)> {
++    shape_metadata(shape, strides, offset, requested, true)
++}
++
++fn shape_metadata(
++    shape: &Bound<'_, PyAny>,
++    strides: &Bound<'_, PyAny>,
++    offset: &Bound<'_, PyAny>,
++    requested: &Bound<'_, PyAny>,
++    alias_only: bool,
+ ) -> PyResult<(Vec<usize>, Vec<usize>, usize)> {
+     if !offset.is_exact_instance_of::<PyInt>() {
+         return Err(PyTypeError::new_err(
+-            "reshape offset requires an exact integer",
++            "shape offset requires an exact integer",
+         ));
+     }
+     let input = Layout {
+@@ -75,7 +95,13 @@ pub(super) fn reshape_metadata(
+         strides: exact_indices(strides)?,
+         offset: offset.extract()?,
+     };
+-    let output = Operation::Reshape(0, exact_shape(requested)?)
++    let requested = exact_shape(requested)?;
++    let operation = if alias_only {
++        Operation::View(0, requested)
++    } else {
++        Operation::Reshape(0, requested)
++    };
++    let output = operation
+         .layout(&[input])
+         .map_err(|error| tensor_error(&error))?;
+     Ok((output.shape, output.strides, output.offset))
+@@ -101,6 +127,7 @@ fn parse_operation(
+             )
+         }
+         ("reshape", &[input]) => Operation::Reshape(input, exact_shape(payload)?),
++        ("view", &[input]) => Operation::View(input, exact_shape(payload)?),
+         ("transpose", &[input]) => {
+             if !payload.is_exact_instance_of::<PyTuple>() {
+                 return Err(PyTypeError::new_err(
+@@ -205,7 +232,7 @@ pub(super) fn execute(
+     // Existing core operations synchronize even on launch errors and restore
+     // the current device. No Python call or PyO3 crossing occurs between nodes.
+     // Packing stays native; contiguous aliases preserve their original owner.
+-    // T and Transpose always wrap fresh view objects, even for unchanged metadata.
++    // T, Transpose, Reshape and View always wrap fresh objects, even for unchanged metadata.
+     let mut outputs = Vec::with_capacity(operations.len());
+     for (index, operation) in operations.into_iter().enumerate() {
+         let output = operation
+@@ -251,12 +278,92 @@ mod tests {
+     use crate::{Device, cuda, tensor::cuda_graph::EXECUTIONS};
+ 
+     #[test]
+-    fn reshape_payloads_reject_before_early_or_late_execution() {
++    fn shape_payloads_reject_before_early_or_late_execution() {
+         if cuda::device_count() == 0 {
+             eprintln!("skipping CUDA reshape bridge checks: no CUDA device");
+             return;
+         }
+         Python::initialize();
++        Python::attach(|py| {
++            for target in ["reshape", "view"] {
++                let tensor = CoreTensor::from_vec(vec![1.; 6], [2, 3])
++                    .unwrap()
++                    .try_copy_cpu_to_cuda(Device::Cuda(0))
++                    .unwrap()
++                    .t()
++                    .unwrap();
++                let tensor = if target == "view" {
++                    tensor.t().unwrap()
++                } else {
++                    tensor
++                };
++                let inputs =
++                    PyTuple::new(py, [Py::new(py, PyTensor::new(tensor)).unwrap()]).unwrap();
++                let valid = (
++                    target.to_owned(),
++                    PyTuple::new(py, [0]).unwrap().into_any(),
++                    PyTuple::new(py, [-1]).unwrap().into_any(),
++                    PyTuple::new(py, [6]).unwrap().into_any(),
++                    PyTuple::new(py, [1]).unwrap().into_any(),
++                );
++                let mut bad = Vec::new();
++                for expr in [
++                    c"None",
++                    c"[6]",
++                    c"(True, 6)",
++                    c"(1, True)",
++                    c"(6.0,)",
++                    c"(-1, -1)",
++                    c"(-2,)",
++                    c"(7,)",
++                    c"(1, 2, 3)",
++                    c"()",
++                    c"(9223372036854775808,)",
++                    c"(9223372036854775807, 2)",
++                ] {
++                    let mut node = valid.clone();
++                    node.2 = py.eval(expr, None, None).unwrap();
++                    bad.push(node);
++                }
++                for expr in [c"(True,)", c"(6.0,)", c"(7,)"] {
++                    let mut node = valid.clone();
++                    node.3 = py.eval(expr, None, None).unwrap();
++                    bad.push(node);
++                }
++                for expr in [c"(True,)", c"(1.0,)", c"(2,)"] {
++                    let mut node = valid.clone();
++                    node.4 = py.eval(expr, None, None).unwrap();
++                    bad.push(node);
++                }
++                for expr in [c"(False,)", c"(0.0,)", c"(99,)", c"()", c"(0, 0)"] {
++                    let mut node = valid.clone();
++                    node.1 = py.eval(expr, None, None).unwrap();
++                    bad.push(node);
++                }
++                for invalid in bad {
++                    for nodes in [
++                        vec![invalid.clone(), valid.clone()],
++                        vec![valid.clone(), invalid],
++                    ] {
++                        EXECUTIONS.with(|count| count.set(0));
++                        assert!(execute(&inputs, nodes).is_err());
++                        EXECUTIONS.with(|count| assert_eq!(count.get(), 0));
++                    }
++                }
++                let outputs = execute(&inputs, vec![valid.clone(), valid]).unwrap();
++                assert!(!outputs[0].is(&outputs[1]));
++                assert!(!outputs[0].bind(py).is(inputs.get_item(0).unwrap()));
++            }
++        });
++    }
++
++    #[test]
++    fn incompatible_view_rejects_before_even_an_earlier_pack() {
++        if cuda::device_count() == 0 {
++            eprintln!("skipping CUDA view prevalidation: no CUDA device");
++            return;
++        }
++        Python::initialize();
+         Python::attach(|py| {
+             let tensor = CoreTensor::from_vec(vec![1.; 6], [2, 3])
+                 .unwrap()
+@@ -265,60 +372,27 @@ mod tests {
+                 .t()
+                 .unwrap();
+             let inputs = PyTuple::new(py, [Py::new(py, PyTensor::new(tensor)).unwrap()]).unwrap();
+-            let valid = (
+-                "reshape".to_owned(),
++            let pack = (
++                "contiguous".to_owned(),
++                PyTuple::new(py, [0]).unwrap().into_any(),
++                py.None().into_bound(py),
++                PyTuple::new(py, [3, 2]).unwrap().into_any(),
++                PyTuple::new(py, [2, 1]).unwrap().into_any(),
++            );
++            let view = (
++                "view".to_owned(),
+                 PyTuple::new(py, [0]).unwrap().into_any(),
+                 PyTuple::new(py, [-1]).unwrap().into_any(),
+                 PyTuple::new(py, [6]).unwrap().into_any(),
+                 PyTuple::new(py, [1]).unwrap().into_any(),
+             );
+-            let mut bad = Vec::new();
+-            for expr in [
+-                c"None",
+-                c"[6]",
+-                c"(True, 6)",
+-                c"(1, True)",
+-                c"(6.0,)",
+-                c"(-1, -1)",
+-                c"(-2,)",
+-                c"(7,)",
+-                c"(1, 2, 3)",
+-                c"()",
+-                c"(9223372036854775808,)",
+-                c"(9223372036854775807, 2)",
+-            ] {
+-                let mut node = valid.clone();
+-                node.2 = py.eval(expr, None, None).unwrap();
+-                bad.push(node);
+-            }
+-            for expr in [c"(True,)", c"(6.0,)", c"(7,)"] {
+-                let mut node = valid.clone();
+-                node.3 = py.eval(expr, None, None).unwrap();
+-                bad.push(node);
+-            }
+-            for expr in [c"(True,)", c"(1.0,)", c"(2,)"] {
+-                let mut node = valid.clone();
+-                node.4 = py.eval(expr, None, None).unwrap();
+-                bad.push(node);
+-            }
+-            for expr in [c"(False,)", c"(0.0,)", c"(99,)", c"()", c"(0, 0)"] {
+-                let mut node = valid.clone();
+-                node.1 = py.eval(expr, None, None).unwrap();
+-                bad.push(node);
+-            }
+-            for invalid in bad {
+-                for nodes in [
+-                    vec![invalid.clone(), valid.clone()],
+-                    vec![valid.clone(), invalid],
+-                ] {
+-                    EXECUTIONS.with(|count| count.set(0));
+-                    assert!(execute(&inputs, nodes).is_err());
+-                    EXECUTIONS.with(|count| assert_eq!(count.get(), 0));
+-                }
++            for nodes in [vec![view.clone(), pack.clone()], vec![pack, view]] {
++                EXECUTIONS.with(|count| count.set(0));
++                let error = execute(&inputs, nodes).unwrap_err();
++                assert!(error.is_instance_of::<PyRuntimeError>(py));
++                assert!(error.to_string().contains("view size is not compatible"));
++                EXECUTIONS.with(|count| assert_eq!(count.get(), 0));
+             }
+-            let outputs = execute(&inputs, vec![valid.clone(), valid]).unwrap();
+-            assert!(!outputs[0].is(&outputs[1]));
+-            assert!(!outputs[0].bind(py).is(inputs.get_item(0).unwrap()));
+         });
+     }
+ 
+diff --git a/src/tensor_cuda_graph.rs b/src/tensor_cuda_graph.rs
+index 9421e91..09d9d73 100644
+--- a/src/tensor_cuda_graph.rs
++++ b/src/tensor_cuda_graph.rs
+@@ -12,6 +12,7 @@ pub(crate) enum Operation {
+     T(usize),
+     Transpose(usize, i64, i64),
+     Reshape(usize, Shape),
++    View(usize, Shape),
+     Neg(usize),
+     Relu(usize),
+     MulScalar(usize, f32),
+@@ -31,7 +32,7 @@ impl Shape {
+     pub(crate) fn new(requested: &[i64]) -> Result<Self, TensorError> {
+         if requested.len() > 2 {
+             return Err(TensorError::UnsupportedCudaContiguous {
+-                reason: "compiled reshape requires output rank 0, 1 or 2",
++                reason: "compiled shape operation requires output rank 0, 1 or 2",
+             });
+         }
+         let mut dimensions = [0; 2];
+@@ -116,10 +117,10 @@ impl Layout {
+         Ok(output)
+     }
+ 
+-    fn reshape(&self, requested: Shape) -> Result<Self, TensorError> {
++    fn reshape(&self, requested: Shape, alias_only: bool) -> Result<Self, TensorError> {
+         if self.shape.len() > 2 || self.shape.len() != self.strides.len() {
+             return Err(TensorError::UnsupportedCudaContiguous {
+-                reason: "compiled reshape requires input rank 0, 1 or 2",
++                reason: "compiled shape operation requires input rank 0, 1 or 2",
+             });
+         }
+         let elements = element_count(&self.shape)?;
+@@ -131,6 +132,9 @@ impl Layout {
+                 offset: self.offset,
+             });
+         }
++        if alias_only {
++            return Err(TensorError::ViewIncompatibleLayout);
++        }
+         if !(1..=2).contains(&self.shape.len()) || self.strides.contains(&0) {
+             return Err(TensorError::UnsupportedCudaContiguous {
+                 reason: "reshape packing requires positive-stride rank-1 or rank-2 inputs",
+@@ -170,7 +174,8 @@ impl Operation {
+         let get_contiguous = |index| get(index)?.require_contiguous();
+         let shape = match self {
+             Self::T(input) => return get(input)?.t(),
+-            Self::Reshape(input, shape) => return get(input)?.reshape(shape),
++            Self::Reshape(input, shape) => return get(input)?.reshape(shape, false),
++            Self::View(input, shape) => return get(input)?.reshape(shape, true),
+             Self::Transpose(input, dim0, dim1) => return get(input)?.transpose(dim0, dim1),
+             Self::Contiguous(input) => {
+                 let input = get(input)?;
+@@ -281,6 +286,7 @@ impl Operation {
+         match self {
+             Self::T(input) => get(input).t(),
+             Self::Reshape(input, shape) => get(input).reshape(shape.as_slice()),
++            Self::View(input, shape) => get(input).view(shape.as_slice()),
+             Self::Transpose(input, dim0, dim1) => get(input).transpose(dim0, dim1),
+             Self::Contiguous(input) => get(input).try_contiguous(MemoryFormat::Contiguous),
+             Self::Neg(input) => get(input).negate(),
+@@ -389,6 +395,77 @@ mod tests {
+         );
+     }
+ 
++    #[test]
++    fn view_plans_only_aliases_including_offsets_empty_and_singleton_strides() {
++        use std::sync::Arc;
++        let base = Tensor::from_vec((0_u16..21).map(f32::from).collect(), [3, 7]).unwrap();
++        let column = base.select_dimension(1, 2).unwrap();
++        let scalar = column.select_dimension(0, 1).unwrap();
++        let transposed = base.t().unwrap();
++        let empty = Tensor::from_vec(vec![], [0, 7]).unwrap();
++        for tensor in [&base, &column, &scalar, &transposed, &empty] {
++            for requested in [
++                vec![],
++                vec![-1],
++                vec![1, -1],
++                vec![7, 3],
++                vec![0, 7],
++                vec![-2],
++                vec![-1, -1],
++                vec![0, -1],
++                vec![i64::MAX, 2],
++            ] {
++                let op = Operation::View(0, Shape::new(&requested).unwrap());
++                let planned = op.layout(&[Layout::from_tensor(tensor)]);
++                let eager = tensor.view(&requested);
++                assert_eq!(planned.is_ok(), eager.is_ok());
++                if let (Ok(plan), Ok(eager)) = (planned, eager) {
++                    assert!(plan.matches(&eager));
++                    let output = op.execute(&[tensor], &[]).unwrap();
++                    assert!(plan.matches(&output));
++                    assert!(Arc::ptr_eq(&tensor.storage, &output.storage));
++                    assert_eq!(output.try_to_vec().unwrap(), eager.try_to_vec().unwrap());
++                }
++            }
++        }
++        for (shape, strides, requested, expected) in [
++            (vec![1, 3], vec![37, 2], vec![3, 1], vec![2, 2]),
++            (vec![3, 1], vec![2, 37], vec![3], vec![2]),
++            (vec![0, 7], vec![17, 3], vec![0, 7], vec![17, 3]),
++            (vec![0, 7], vec![17, 3], vec![7, 0], vec![1, 1]),
++        ] {
++            let output = Operation::View(0, Shape::new(&requested).unwrap())
++                .layout(&[Layout {
++                    shape,
++                    strides,
++                    offset: 9,
++                }])
++                .unwrap();
++            assert_eq!(output.strides, expected);
++            assert_eq!(output.offset, 9);
++        }
++        let incompatible = Operation::View(0, Shape::new(&[-1]).unwrap())
++            .layout(&[Layout::from_tensor(&transposed)]);
++        assert!(matches!(
++            incompatible,
++            Err(TensorError::ViewIncompatibleLayout)
++        ));
++        assert!(
++            Operation::View(1, Shape::new(&[-1]).unwrap())
++                .layout(&[])
++                .is_err()
++        );
++        assert!(
++            Operation::View(0, Shape::new(&[-1]).unwrap())
++                .layout(&[Layout {
++                    shape: vec![1, 2, 3],
++                    strides: vec![6, 3, 1],
++                    offset: 0
++                }])
++                .is_err()
++        );
++    }
++
+     #[test]
+     fn t_plans_only_bounded_views_and_reuses_storage() {
+         use crate::{Device, cuda};

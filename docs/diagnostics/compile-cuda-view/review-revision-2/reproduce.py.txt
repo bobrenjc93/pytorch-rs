@@ -1,0 +1,18 @@
+import sys
+sys.path.insert(0,'.')
+from tests.test_compile_cuda_view import native, torch, trace, make_program, compile_with_cache, POLICIES
+for size,expression,expected in ((1,'(2**63, -k)',TypeError),(1,'(-2, -k)',RuntimeError),(1,'(0, True)',RuntimeError),(1,'((2,1,1))',RuntimeError),(0,'((0,-1,1))',RuntimeError)):
+    f=make_program(f'def program(x):\n    k=1\n    return x.view{expression}\n')
+    print(size,expression)
+    for module in (native,torch):
+        try:f(module.ones((size,)).to('cuda:0'))
+        except Exception as e:
+            print(module.__name__,type(e).__name__,str(e).splitlines()[0])
+            assert type(e) is expected
+        else:raise AssertionError('expected public error')
+    for policy in POLICIES:
+        try:compile_with_cache(f,*policy)[0](native.ones((size,)).to('cuda:0'))
+        except Exception as e:
+            print(policy,type(e).__name__,str(e))
+            assert type(e) is trace.CompileTraceUnsupportedError
+        else:raise AssertionError('expected capture gap')

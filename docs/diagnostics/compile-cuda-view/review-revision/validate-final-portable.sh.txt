@@ -1,0 +1,7 @@
+set -eu
+source target/view-review-setup.sh
+export CUDA_VISIBLE_DEVICES=''
+capture() { .venv/bin/python target/view-review/capture.py "$@"; }
+capture portable-current-source .venv/bin/python -m unittest -v tests.test_compile_cuda_view tests.test_view tests.test_view_reference tests.test_reshape tests.test_reshape_reference
+capture clippy-current-source cargo clippy --locked --offline --all-targets --features python-bindings -- -D warnings
+capture format-current-source cargo fmt --check

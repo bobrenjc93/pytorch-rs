@@ -176,6 +176,11 @@ print(x.device, x.shape, x.stride(), "roundtrip passed")
 PY
 ```
 
+Compiled `Tensor.view` retains eager alias-only semantics: a transposed matrix
+cannot usually flatten without copying. Use `reshape(-1)` or
+`contiguous().view(-1)` to request packing; see [compiled view](compile-cuda-view.md).
+The compiler validates layout compatibility before executing any graph node.
+
 For public CUDA-add latency, sustained-throughput and allocation-cache
 diagnostics, see [CUDA-add diagnostics](cuda-add-diagnostics.md).
 

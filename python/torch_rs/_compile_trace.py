@@ -191,6 +191,7 @@ _SUPPORTED_UNARY_METHODS = (
     "Tensor.t (CUDA, parameterless, rank <= 2)",
     "Tensor.transpose (CUDA, constant integer axes, rank <= 2)",
     "Tensor.reshape (CUDA, constant integer shape, rank <= 2)",
+    "Tensor.view (CUDA, constant integer shape, alias-only, rank <= 2)",
     "Tensor.contiguous (CUDA, parameterless)",
     "Tensor.neg",
     "Tensor.negative",
@@ -554,7 +555,7 @@ def _t_output_metadata(metadata):
 _RESHAPE_UNKNOWN_DIMENSION = object()
 
 
-def _validate_reshape_dimension(dimension, index):
+def _validate_reshape_dimension(dimension, index, method="reshape"):
     # An opaque bytecode value is never inspected or converted. Keep checking
     # known dimensions so unsupported capture cannot hide a public type error.
     if dimension is _RESHAPE_UNKNOWN_DIMENSION:
@@ -563,25 +564,57 @@ def _validate_reshape_dimension(dimension, index):
         if ((type(dimension) is bool and index > 0)
                 or (type(dimension) is not bool and hasattr(type(dimension), "__index__"))):
             return False
-        raise TypeError(f"reshape(): shape dimension {index} must be int, not {type(dimension).__name__}")
+        raise TypeError(f"{method}(): shape dimension {index} must be int, not {type(dimension).__name__}")
     if not -(2**63) <= dimension < 2**63:
-        raise TypeError(f"reshape(): shape dimension {index} overflows signed int64")
+        raise TypeError(f"{method}(): shape dimension {index} overflows signed int64")
     return True
 
 
-def _reshape_dimensions(shape):
+def _reshape_dimensions(shape, method="reshape", metadata=None):
     if type(shape) is not tuple:
-        raise CompileTraceUnsupportedError("torch.compile reshape requires an exact flat tuple")
+        raise CompileTraceUnsupportedError(f"torch.compile {method} requires an exact flat tuple")
     # PyTorch's schema checks the first dimension, then unpacks in order.
     # Later booleans/index conversions can be reference-valid, but are outside
     # this exact-integer capture contract. Never use bool/int equality here.
     constant = True
     for index, dimension in enumerate(shape):
-        constant = _validate_reshape_dimension(dimension, index) and constant
+        constant = _validate_reshape_dimension(dimension, index, method) and constant
+    # Public unpacking/type/range errors precede shape validation. After that,
+    # known invalid dimensions and repeated inference are errors independently
+    # of opaque dimensions or the capture rank limit. Inspect exact ints only;
+    # do not convert bools, index objects or subclasses to admit a shape.
+    if not constant or len(shape) > 2:
+        if (metadata is not None and metadata.device.type == "cuda"
+                and len(metadata.shape) <= 2
+                and all(type(dimension) in (int, bool) for dimension in shape)):
+            _validate_cuda_metadata(metadata, require_contiguous=False)
+            # Exact later bools have known eager values without calling a user
+            # conversion. Normalize solely for validation, never for capture.
+            # The native resolver diagnoses count/ambiguous-inference errors
+            # before its rank limit; valid out-of-scope shapes still reject.
+            requested = tuple(1 if d is True else 0 if d is False else d for d in shape)
+            planner = (_native._compile_trace_cuda_view_metadata if method == "view"
+                       else _native._compile_trace_cuda_reshape_metadata)
+            try:
+                planner(metadata.shape, metadata.stride, metadata.storage_offset, requested)
+            except NotImplementedError:
+                # Keep the frontend's capture rejection for valid higher ranks
+                # or unsupported layouts, while propagating public errors.
+                pass
+        inferred = False
+        for index, dimension in enumerate(shape):
+            if type(dimension) is not int:
+                continue
+            if dimension == -1:
+                if inferred:
+                    raise RuntimeError("only one dimension can be inferred")
+                inferred = True
+            elif dimension < 0:
+                raise RuntimeError(f"invalid shape dimension {dimension} at index {index}")
     if not constant:
-        raise CompileTraceUnsupportedError("torch.compile reshape requires exact integer constants")
+        raise CompileTraceUnsupportedError(f"torch.compile {method} requires exact integer constants")
     if len(shape) > 2:
-        raise CompileTraceUnsupportedError("torch.compile reshape requires output rank 0, 1 or 2")
+        raise CompileTraceUnsupportedError(f"torch.compile {method} requires output rank 0, 1 or 2")
     return shape
 
 
@@ -598,7 +631,7 @@ def _validate_reshape_binding(args, kwargs):
             raise TypeError(f"reshape() got an unexpected keyword argument '{name}'")
 
 
-def _bind_reshape_shape(args, kwargs):
+def _bind_reshape_shape(args, kwargs, metadata=None):
     if not args and "shape" not in kwargs:
         raise TypeError('reshape() missing 1 required positional arguments: "shape"')
     first = args[0] if args else kwargs["shape"]
@@ -621,17 +654,63 @@ def _bind_reshape_shape(args, kwargs):
     if shape and type(shape[0]) is not int:
         _validate_reshape_dimension(shape[0], 0)
     _validate_reshape_binding(args, kwargs)
-    return _reshape_dimensions(shape)
+    return _reshape_dimensions(shape, metadata=metadata)
+
+
+def _bind_view_shape(args, kwargs, metadata=None):
+    # Unlike reshape(shape=...), view's overloaded parser rejects call
+    # structure before unpacking dimensions. Never invoke either dtype overload
+    # or user conversion methods while inspecting this bounded shape form.
+    if kwargs:
+        if not args and tuple(kwargs) == ("dtype",):
+            dtype = kwargs["dtype"]
+            if dtype is not _RESHAPE_UNKNOWN_DIMENSION and type(dtype) is not type(_native.float32):
+                raise TypeError("view() received an invalid combination of arguments")
+            raise CompileTraceUnsupportedError("torch.compile view dtype overload is unsupported")
+        if args or tuple(kwargs) != ("size",):
+            raise TypeError("view() received an invalid combination of arguments")
+    elif not args:
+        raise TypeError("view() received an invalid combination of arguments")
+    first = args[0] if args else kwargs["size"]
+    if type(first) is tuple:
+        if len(args) > 1:
+            raise TypeError("view() received an invalid combination of arguments")
+        shape = first
+    elif isinstance(first, (tuple, list)):
+        if len(args) > 1:
+            raise TypeError("view() received an invalid combination of arguments")
+        raise CompileTraceUnsupportedError("torch.compile view requires an exact tuple")
+    elif first is _RESHAPE_UNKNOWN_DIMENSION:
+        shape = args if args else (first,)
+    elif type(first) is type(_native.float32):
+        if len(args) > 1 or not args:
+            raise TypeError("view() received an invalid combination of arguments")
+        raise CompileTraceUnsupportedError("torch.compile view dtype overload is unsupported")
+    elif not args:
+        raise TypeError("view(): argument 'size' must be tuple of ints")
+    else:
+        shape = args
+    return _reshape_dimensions(shape, "view", metadata)
+
+
+def _view_output_metadata(metadata, shape):
+    return _shape_output_metadata(metadata, shape, "view")
 
 
 def _reshape_output_metadata(metadata, shape):
-    shape = _reshape_dimensions(shape)
+    return _shape_output_metadata(metadata, shape, "reshape")
+
+
+def _shape_output_metadata(metadata, shape, method):
+    shape = _reshape_dimensions(shape, method, metadata)
     _validate_cuda_metadata(metadata, require_contiguous=False)
     if metadata.device.type != "cuda" or len(metadata.shape) > 2:
-        raise CompileTraceUnsupportedError("torch.compile Tensor.reshape requires CUDA rank 0, 1 or 2")
+        raise CompileTraceUnsupportedError(f"torch.compile Tensor.{method} requires CUDA rank 0, 1 or 2")
     # No tensor storage is allocated here. Both frontend and executor call the
     # shared checked eager resolver/view-stride planner, including empty layouts.
-    resolved, stride, offset = _native._compile_trace_cuda_reshape_metadata(
+    planner = (_native._compile_trace_cuda_view_metadata if method == "view"
+               else _native._compile_trace_cuda_reshape_metadata)
+    resolved, stride, offset = planner(
         metadata.shape, metadata.stride, metadata.storage_offset, shape,
     )
     return CompileTraceTensorMetadata(
@@ -1222,8 +1301,8 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled, de
     # Validate the complete node before any graph operation can execute, even
     # for graphs built manually or modified with dataclasses.replace().
     _validate_metadata_types(operation.metadata)
-    if operation.target != "reshape" and operation.shape is not None:
-        raise CompileTraceUnsupportedError("torch.compile non-reshape node has a shape payload")
+    if operation.target not in ("reshape", "view") and operation.shape is not None:
+        raise CompileTraceUnsupportedError("torch.compile non-shape node has a shape payload")
     if operation.target != "transpose" and operation.axes is not None:
         raise CompileTraceUnsupportedError("torch.compile non-transpose node has axes")
     if operation.op == "call_reduction":
@@ -1263,13 +1342,13 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled, de
         return expected
     if operation.scalar is not None:
         raise CompileTraceUnsupportedError("torch.compile non-scalar operation has a scalar payload")
-    if operation.target in ("contiguous", "t", "transpose", "reshape"):
+    if operation.target in ("contiguous", "t", "transpose", "reshape", "view"):
         if len(operation.inputs) != 1:
             raise CompileTraceUnsupportedError(f"torch.compile {operation.target} requires one input")
         name = operation.inputs[0]
-        if operation.target == "reshape":
+        if operation.target in ("reshape", "view"):
             def infer(metadata):
-                return _reshape_output_metadata(metadata, operation.shape)
+                return _shape_output_metadata(metadata, operation.shape, operation.target)
         elif operation.target == "transpose":
             def infer(metadata):
                 return _transpose_output_metadata(metadata, operation.axes)
@@ -1462,7 +1541,7 @@ def execute_compile_trace_graph(graph, *inputs):
             )
         metadata_values[operation.name] = expected_metadata
 
-    if (len(graph.operations) > 1 or any(op.target in ("contiguous", "t", "transpose", "reshape", "relu") for op in graph.operations)) and all(
+    if (len(graph.operations) > 1 or any(op.target in ("contiguous", "t", "transpose", "reshape", "view", "relu") for op in graph.operations)) and all(
         metadata.device.type == "cuda" for metadata in metadata_values.values()
     ):
         # Validate the output tree too before the native bridge can launch.
@@ -1479,7 +1558,7 @@ def execute_compile_trace_graph(graph, *inputs):
         indices = {name: index for index, name in enumerate(metadata_values)}
         nodes = [
             (operation.target, tuple(indices[name] for name in operation.inputs),
-             operation.shape if operation.target == "reshape" else
+             operation.shape if operation.target in ("reshape", "view") else
              operation.axes if operation.target == "transpose" else (
                  operation.reduction if operation.op == "call_reduction" else operation.scalar),
              metadata_values[operation.name].shape,
@@ -1552,8 +1631,11 @@ class CompileTraceTensorProxy:
     def dim(self):
         return len(self.metadata.shape)
 
+    def view(self, *args, **kwargs):
+        return self._recorder.record_view(self, _bind_view_shape(args, kwargs, self.metadata))
+
     def reshape(self, *args, **kwargs):
-        return self._recorder.record_reshape(self, _bind_reshape_shape(args, kwargs))
+        return self._recorder.record_reshape(self, _bind_reshape_shape(args, kwargs, self.metadata))
 
     def transpose(self, dim0, dim1):
         return self._recorder.record_transpose(self, dim0, dim1)
@@ -1803,13 +1885,19 @@ class CompileTraceRecorder:
         self._operations.append(operation)
         return CompileTraceTensorProxy(self, name, metadata)
 
+    def record_view(self, input, shape):
+        return self._record_shape(input, shape, "view")
+
     def record_reshape(self, input, shape):
+        return self._record_shape(input, shape, "reshape")
+
+    def _record_shape(self, input, shape, method):
         self._ensure_open()
         self._require_owned_proxy(input)
-        metadata = _reshape_output_metadata(input.metadata, shape)
-        name = self._next_operation_name("reshape")
+        metadata = _shape_output_metadata(input.metadata, shape, method)
+        name = self._next_operation_name(method)
         self._operations.append(CompileTraceOperation(
-            name=name, op="call_method", target="reshape", inputs=(input.name,),
+            name=name, op="call_method", target=method, inputs=(input.name,),
             metadata=metadata, shape=shape,
         ))
         return CompileTraceTensorProxy(self, name, metadata)

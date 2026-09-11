@@ -209,6 +209,11 @@ is separate from storage copying. Every reshape gets a fresh wrapper while repea
 output references retain it. Dynamic replanning can switch alias/copy behavior
 without weakening input guards or cached/output metadata validation. See the
 [compiled reshape guide](docs/compile-cuda-reshape.md).
+`Tensor.view` shares that shape payload and checked resolver, with an explicit
+`Operation::View` that rejects incompatible strides during whole-graph planning
+and executes native `Tensor::view`. Its separate binder accepts `size=`, while
+its metadata and cache validation reuse the shape path. It cannot enter the
+packing branch. See [compiled view](docs/compile-cuda-view.md).
 
 Eager scalar multiplication routes `BinaryOperation::Multiply.apply_scalar` to
 `Tensor::mul_scalar`, shared scalar output-stride planning, and the native

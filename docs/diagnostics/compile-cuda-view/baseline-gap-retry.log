@@ -1,0 +1,6 @@
+{"torch": "2.13.0+cu130", "reference_cuda": "13.0", "native_runtime": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_67fce754/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13", "gpu": "NVIDIA H100"}
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_67fce754/target/view/baseline_probe.py", line 8, in <module>
+    nx=n.ones((3,7),device='cuda:0'); nw=n.ones((7,5),device='cuda:0')
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: ones(): device 'cuda:0' is not supported; only 'cpu' is implemented

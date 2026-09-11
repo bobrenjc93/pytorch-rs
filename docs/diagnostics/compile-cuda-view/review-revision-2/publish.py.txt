@@ -1,0 +1,107 @@
+"""Verify and publish immutable development command receipts for review round 2."""
+from pathlib import Path
+import datetime, hashlib, json, re, shutil, subprocess, sys
+ROOT = Path.cwd().resolve()
+SRC = ROOT / 'target/view-review2'
+HISTORY = ROOT / 'docs/diagnostics/compile-cuda-view'
+OUT = HISTORY / 'review-revision-2'
+def sha(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+def read(p): return json.loads(Path(p).read_text())
+def put(p, data): p.write_text(json.dumps(data, indent=2, sort_keys=True)+'\n')
+sys.path.insert(0, str(ROOT/'scripts'))
+from evaluate_cuda_math import source_provenance
+import torch_rs
+source = source_provenance()
+build = read(SRC/'release/build-record.json')
+assert source['commit'] == 'd634f3670d6365157e8a854231c02ae81d80a46d'
+assert build['source_sha256'] == source['source_sha256']
+assert build['production_diff_sha256'] == source['production_diff_sha256']
+assert not build['clean_checkout'] and build['source_unchanged_during_build']
+assert Path(sys.executable).resolve().is_relative_to(ROOT)
+assert sha(torch_rs._C.__file__) == build['extension_sha256']
+assert sha(build['wheel_path']) == build['wheel_sha256']
+assert sha(build['interpreter_path']) == build['interpreter_sha256']
+for command in build['commands']:
+    assert command['exit_status'] == 0 and sha(command['log']) == command['log_sha256']
+installed = Path(torch_rs.__file__).parent
+python_files = list((ROOT/'python/torch_rs').rglob('*.py'))
+assert all(sha(p) == sha(installed/p.relative_to(ROOT/'python/torch_rs')) for p in python_files)
+history_counts = {}
+for folder in (HISTORY, HISTORY/'postcommit-12ac70fd', HISTORY/'review-revision', HISTORY/'postcommit-e426d1f6'):
+    inventory = read(folder/'inventory.json')
+    assert all(sha(folder/p) == h for p,h in inventory.items())
+    history_counts[str(folder.relative_to(ROOT))] = len(inventory)
+base = read(HISTORY/'measured-inputs.json')
+prior_deltas = read(HISTORY/'review-revision/input-manifest-deltas.json')
+manifest_index = {}
+for p in (SRC/'evidence').glob('inputs-*.json'):
+    data = read(p)
+    delta = {'replace': {k:v for k,v in data.items() if base.get(k) != v}, 'remove': sorted(set(base)-set(data))}
+    if sha(p) in prior_deltas:
+        assert delta == prior_deltas[sha(p)]
+        manifest_index[sha(p)] = {'reuse': '../review-revision/input-manifest-deltas.json', 'key': sha(p)}
+    else:
+        manifest_index[sha(p)] = delta
+receipts = list((SRC/'evidence').glob('*.receipt.json'))
+expected = {'reproduced-findings','view-focused','portable','rust-graph','native-verification','preflight','compiler-current-source','two-device','rust-storage','guide-examples','rust-default','rust-bindings','clippy-default','clippy-bindings','format'}
+assert {p.name.removesuffix('.receipt.json') for p in receipts} == expected
+old_build = read(HISTORY/'postcommit-e426d1f6/release/build-record.json')
+for p in receipts:
+    r = read(p)
+    assert r['cwd'] == str(ROOT)
+    assert r['source_before'] == r['source_after']
+    assert r['git_status_before'] == r['git_status_after']
+    assert r['native_before'] == r['native_after'] and r['inputs_unchanged']
+    assert r['command_files_before'] == r['command_files_after']
+    for path,h in r['command_files_before'].items():
+        assert Path(path).resolve().is_relative_to(ROOT) and sha(path) == h
+    assert r['capture_script_sha256'] == sha(SRC/'capture.py')
+    assert r['measured_inputs_sha256'] in manifest_index
+    assert r['log_sha256'] == sha(SRC/'evidence'/p.name.replace('.receipt.json','.log'))
+    for key,value in r['environment'].items():
+        if isinstance(value,str) and value.startswith('/'):
+            assert Path(value).resolve().is_relative_to(ROOT), (key,value)
+    assert r['exit_status'] == 0, (p.name,r['exit_status'])
+    if p.name == 'reproduced-findings.receipt.json':
+        assert r['git_status_before'] == ''
+        assert r['source_before']['source_sha256'] == old_build['source_sha256']
+        assert set(r['native_before'].values()) == {old_build['extension_sha256']}
+    else:
+        assert r['source_before'] == source
+        assert set(r['native_before'].values()) == {build['extension_sha256']}
+        delta = manifest_index[r['measured_inputs_sha256']]
+        assert 'reuse' not in delta
+        inputs = base | delta['replace']
+        for key in delta['remove']: inputs.pop(key)
+        assert all(sha(ROOT/path) == h for path,h in inputs.items())
+compiler = (SRC/'evidence/compiler-current-source.log').read_text()
+assert 'Ran 637 tests' in compiler and 'OK (skipped=13)' in compiler
+assert '13 passed; 0 failed' in (SRC/'evidence/rust-graph.log').read_text()
+assert '96 tests' in (SRC/'evidence/portable.log').read_text()
+assert sum(map(int,re.findall(r'test result: ok\. (\d+) passed', (SRC/'evidence/rust-default.log').read_text()))) == 395
+assert '205 passed; 0 failed' in (SRC/'evidence/rust-bindings.log').read_text()
+assert not OUT.exists()
+OUT.mkdir()
+for p in (SRC/'evidence').iterdir():
+    if not p.name.startswith('inputs-'): shutil.copyfile(p, OUT/p.name)
+(OUT/'release').mkdir()
+for name in ('build-record.json','build.log','commands.json','install.log'):
+    shutil.copyfile(SRC/'release'/name, OUT/'release'/name)
+for name in ('capture.py','reproduce.py','env.sh','validate-gpu.sh','validate-rust.sh','publish.py'):
+    shutil.copyfile(SRC/name, OUT/(name+'.txt'))
+shutil.copyfile(SRC/'README.md', OUT/'README.md')
+(OUT/'source-and-tests.patch').write_bytes(subprocess.check_output(['git','diff','HEAD','--','python/torch_rs/_compile_bytecode.py','python/torch_rs/_compile_trace.py','src/python_compile_cuda_graph.rs','src/tensor_cuda_graph.rs','tests/test_compile_cuda_view.py']))
+put(OUT/'input-manifest-index.json',manifest_index)
+put(OUT/'audit.json',{
+    'measurement_kind':'review round 2 development; fresh clean-commit capture required after Burner commits',
+    'audited_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    'source':source, 'cwd':str(ROOT),
+    'git_status_at_publication':subprocess.check_output(['git','status','--porcelain'],text=True),
+    'native_sha256':build['extension_sha256'], 'wheel_sha256':build['wheel_sha256'],
+    'interpreter':build['interpreter_path'], 'all_installed_python_matches_source':True,
+    'python_source_files_checked':len(python_files),
+    'historical_inventories_verified_unchanged':history_counts,
+    'manifest_base':'../measured-inputs.json', 'manifest_base_sha256':sha(HISTORY/'measured-inputs.json'),
+    'commands':{p.name.removesuffix('.receipt.json'):{k:read(p)[k] for k in ('command','exit_status','started_at','ended_at','measured_inputs_sha256')} for p in receipts},
+})
+print('Published audited development evidence:', OUT)

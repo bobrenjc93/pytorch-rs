@@ -1,0 +1,12 @@
+error: no test target named `cuda_native_storage` in default-run packages
+help: available test targets:
+    autograd
+    cuda_add
+    cuda_contiguous
+    cuda_matmul
+    cuda_mul_scalar
+    cuda_native_boundaries
+    cuda_relu
+    cuda_same_device_copy
+    cuda_sum_rows
+    tensor_baseline

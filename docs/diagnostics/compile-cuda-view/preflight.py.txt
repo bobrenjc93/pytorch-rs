@@ -1,0 +1,14 @@
+import ctypes, hashlib, importlib.metadata as md, json, os, pathlib, subprocess, sys
+sys.path.insert(0,str(pathlib.Path.cwd()))
+import torch, torch_rs
+from tests.test_cuda_add import runtime
+lib=runtime()
+versions={}
+for name in ('cudaRuntimeGetVersion','cudaDriverGetVersion'):
+    value=ctypes.c_int()
+    call=getattr(lib,name)
+    call.argtypes=[ctypes.POINTER(ctypes.c_int)]
+    assert call(ctypes.byref(value))==0
+    versions[name]=value.value
+x=torch_rs.zeros((1,),device='cuda:0'); assert x.cpu().tolist()==[0.]
+print(json.dumps({'python':sys.version,'executable':sys.executable,'interpreter':str(pathlib.Path(sys.executable).resolve()),'torch':torch.__version__,'torch_cuda':torch.version.cuda,'numpy':md.version('numpy'),'native_package':torch_rs.__file__,'native_extension':torch_rs._C.__file__,'runtime_library':lib._name,'versions':versions,'gpu':torch.cuda.get_device_name(0),'capability':torch.cuda.get_device_capability(0),'visible_devices':os.environ['CUDA_VISIBLE_DEVICES'],'loaded_cuda_libraries':sorted({line.split()[-1] for line in pathlib.Path('/proc/self/maps').read_text().splitlines() if any(name in line for name in ('libcudart','libcuda.so','libcublas.so'))}),'nvcc':subprocess.check_output(['nvcc','--version'],text=True),'nvcc_used':False,'kernel_compilation':'driver JIT of embedded PTX; matmul uses runtime cuBLAS'},indent=2))

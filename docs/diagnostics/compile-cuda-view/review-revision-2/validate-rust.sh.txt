@@ -1,0 +1,9 @@
+set -eu
+source target/view-review2/env.sh
+export CUDA_VISIBLE_DEVICES=''
+capture() { .venv/bin/python target/view-review2/capture.py "$@"; }
+capture rust-default cargo test --locked --offline --all-targets
+capture rust-bindings cargo test --locked --offline --features python-bindings --lib
+capture clippy-default cargo clippy --locked --offline --all-targets -- -D warnings
+capture clippy-bindings cargo clippy --locked --offline --all-targets --features python-bindings -- -D warnings
+capture format cargo fmt --check

@@ -1,0 +1,30 @@
+{
+  "38d764edadd07538f0a516203e0cfab3aa92db4f6ef7e2a627d40320831f2151": {
+    "remove": [],
+    "replace": {
+      "python/torch_rs/_compile_bytecode.py": "609f7a6f85b20bc96272846312646305186aba99aeb2261f782034a6cbd7faa2",
+      "python/torch_rs/_compile_trace.py": "dc743ce50d2308ecbef1430e27ba4f2ae287e8383bb96ad45664ec4a170176d6",
+      "tests/test_compile_cuda_view.py": "20302e2930af67fa0465f7a4ea150894182142fadcce9d723d374e118da11d8a"
+    }
+  },
+  "4c056b3cef10a179df4251c6f562d69ea97a84cb4288a0c53b827e49368dbab1": {
+    "remove": [],
+    "replace": {
+      "python/torch_rs/_compile_bytecode.py": "609f7a6f85b20bc96272846312646305186aba99aeb2261f782034a6cbd7faa2",
+      "python/torch_rs/_compile_trace.py": "dc743ce50d2308ecbef1430e27ba4f2ae287e8383bb96ad45664ec4a170176d6",
+      "tests/test_compile_cuda_view.py": "11c23b88fe4f2e7a2a3b3ebdaf06ca32e6e7a373798a6207bc111763f64202c8"
+    }
+  },
+  "52cd63ee1435eaf02cb17948a847bdb09118e118ca20ace67d3410c3b08c5fe9": {
+    "remove": [],
+    "replace": {
+      "python/torch_rs/_compile_bytecode.py": "2f9a5a64fc9c55bbee1b2bee1659139980353c53cf489f418ee28445e41da59f",
+      "python/torch_rs/_compile_trace.py": "dc743ce50d2308ecbef1430e27ba4f2ae287e8383bb96ad45664ec4a170176d6",
+      "tests/test_compile_cuda_view.py": "99c9292724d2cfc749a0753c8f32111bf707c61f38802f1aedaf79f5fbdfa7f6"
+    }
+  },
+  "865c3aaa1a280d78079b64c57d874efd3df6b85de4f1f607c6e94ef54bd13e4e": {
+    "remove": [],
+    "replace": {}
+  }
+}

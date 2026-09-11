@@ -1,0 +1,370 @@
+diff --git a/python/torch_rs/_compile_bytecode.py b/python/torch_rs/_compile_bytecode.py
+index bfdaa10..11d6ecf 100644
+--- a/python/torch_rs/_compile_bytecode.py
++++ b/python/torch_rs/_compile_bytecode.py
+@@ -1122,7 +1122,7 @@ def _record_method_call(recorder, method, args, program, instruction, names=()):
+         positional_args = values[:positional]
+         kwargs = dict(zip(names, values[positional:]))
+         binder = _trace._bind_view_shape if method.name == "view" else _trace._bind_reshape_shape
+-        shape = binder(positional_args, kwargs)
++        shape = binder(positional_args, kwargs, method.receiver.metadata)
+         return recorder._record_shape(method.receiver, shape, method.name)
+     if method.name == "transpose":
+         positional = len(args) - len(names)
+@@ -1396,9 +1396,23 @@ def _handle_binary(recorder, locals, stack, program, instruction, state, active)
+ 
+ 
+ def _handle_unary_neg(recorder, locals, stack, program, instruction, state, active):
+-    del locals, state, active
++    del locals, active
++    operand = _pop(stack, program, instruction)
++    if not isinstance(operand, _trace.CompileTraceTensorProxy):
++        # As with bounded binary arithmetic, retain exact integer values only
++        # for public error validation. Never invoke a user __neg__ conversion,
++        # and keep the rejection even if the computed result is discarded.
++        value = _trace._RESHAPE_UNKNOWN_DIMENSION
++        if (isinstance(operand, _BytecodeConstant) and type(operand.value) is int
++                and -(2**63) <= operand.value < 2**63):
++            value = -operand.value
++        state.local_constant_error = state.local_constant_error or _trace.CompileTraceUnsupportedError(
++            "torch.compile computed unary values are only retained for argument validation"
++        )
++        stack.append(_BytecodeConstant(value))
++        return
+     input = _require_tensor(
+-        _pop(stack, program, instruction),
++        operand,
+         program,
+         instruction,
+         "operand",
+diff --git a/python/torch_rs/_compile_trace.py b/python/torch_rs/_compile_trace.py
+index ae465e5..79f3b0e 100644
+--- a/python/torch_rs/_compile_trace.py
++++ b/python/torch_rs/_compile_trace.py
+@@ -570,7 +570,7 @@ def _validate_reshape_dimension(dimension, index, method="reshape"):
+     return True
+ 
+ 
+-def _reshape_dimensions(shape, method="reshape"):
++def _reshape_dimensions(shape, method="reshape", metadata=None):
+     if type(shape) is not tuple:
+         raise CompileTraceUnsupportedError(f"torch.compile {method} requires an exact flat tuple")
+     # PyTorch's schema checks the first dimension, then unpacks in order.
+@@ -584,6 +584,23 @@ def _reshape_dimensions(shape, method="reshape"):
+     # of opaque dimensions or the capture rank limit. Inspect exact ints only;
+     # do not convert bools, index objects or subclasses to admit a shape.
+     if not constant or len(shape) > 2:
++        if (metadata is not None and metadata.device.type == "cuda"
++                and len(metadata.shape) <= 2
++                and all(type(dimension) in (int, bool) for dimension in shape)):
++            _validate_cuda_metadata(metadata, require_contiguous=False)
++            # Exact later bools have known eager values without calling a user
++            # conversion. Normalize solely for validation, never for capture.
++            # The native resolver diagnoses count/ambiguous-inference errors
++            # before its rank limit; valid out-of-scope shapes still reject.
++            requested = tuple(1 if d is True else 0 if d is False else d for d in shape)
++            planner = (_native._compile_trace_cuda_view_metadata if method == "view"
++                       else _native._compile_trace_cuda_reshape_metadata)
++            try:
++                planner(metadata.shape, metadata.stride, metadata.storage_offset, requested)
++            except NotImplementedError:
++                # Keep the frontend's capture rejection for valid higher ranks
++                # or unsupported layouts, while propagating public errors.
++                pass
+         inferred = False
+         for index, dimension in enumerate(shape):
+             if type(dimension) is not int:
+@@ -614,7 +631,7 @@ def _validate_reshape_binding(args, kwargs):
+             raise TypeError(f"reshape() got an unexpected keyword argument '{name}'")
+ 
+ 
+-def _bind_reshape_shape(args, kwargs):
++def _bind_reshape_shape(args, kwargs, metadata=None):
+     if not args and "shape" not in kwargs:
+         raise TypeError('reshape() missing 1 required positional arguments: "shape"')
+     first = args[0] if args else kwargs["shape"]
+@@ -637,10 +654,10 @@ def _bind_reshape_shape(args, kwargs):
+     if shape and type(shape[0]) is not int:
+         _validate_reshape_dimension(shape[0], 0)
+     _validate_reshape_binding(args, kwargs)
+-    return _reshape_dimensions(shape)
++    return _reshape_dimensions(shape, metadata=metadata)
+ 
+ 
+-def _bind_view_shape(args, kwargs):
++def _bind_view_shape(args, kwargs, metadata=None):
+     # Unlike reshape(shape=...), view's overloaded parser rejects call
+     # structure before unpacking dimensions. Never invoke either dtype overload
+     # or user conversion methods while inspecting this bounded shape form.
+@@ -673,7 +690,7 @@ def _bind_view_shape(args, kwargs):
+         raise TypeError("view(): argument 'size' must be tuple of ints")
+     else:
+         shape = args
+-    return _reshape_dimensions(shape, "view")
++    return _reshape_dimensions(shape, "view", metadata)
+ 
+ 
+ def _view_output_metadata(metadata, shape):
+@@ -685,7 +702,7 @@ def _reshape_output_metadata(metadata, shape):
+ 
+ 
+ def _shape_output_metadata(metadata, shape, method):
+-    shape = _reshape_dimensions(shape, method)
++    shape = _reshape_dimensions(shape, method, metadata)
+     _validate_cuda_metadata(metadata, require_contiguous=False)
+     if metadata.device.type != "cuda" or len(metadata.shape) > 2:
+         raise CompileTraceUnsupportedError(f"torch.compile Tensor.{method} requires CUDA rank 0, 1 or 2")
+@@ -1615,10 +1632,10 @@ class CompileTraceTensorProxy:
+         return len(self.metadata.shape)
+ 
+     def view(self, *args, **kwargs):
+-        return self._recorder.record_view(self, _bind_view_shape(args, kwargs))
++        return self._recorder.record_view(self, _bind_view_shape(args, kwargs, self.metadata))
+ 
+     def reshape(self, *args, **kwargs):
+-        return self._recorder.record_reshape(self, _bind_reshape_shape(args, kwargs))
++        return self._recorder.record_reshape(self, _bind_reshape_shape(args, kwargs, self.metadata))
+ 
+     def transpose(self, dim0, dim1):
+         return self._recorder.record_transpose(self, dim0, dim1)
+diff --git a/src/python_compile_cuda_graph.rs b/src/python_compile_cuda_graph.rs
+index b49c6ee..c60b9bf 100644
+--- a/src/python_compile_cuda_graph.rs
++++ b/src/python_compile_cuda_graph.rs
+@@ -35,14 +35,14 @@ fn exact_indices(value: &Bound<'_, PyAny>) -> PyResult<Vec<usize>> {
+         .collect()
+ }
+ 
+-fn exact_shape(payload: &Bound<'_, PyAny>) -> PyResult<Shape> {
++fn exact_shape_dimensions(payload: &Bound<'_, PyAny>) -> PyResult<Vec<i64>> {
+     if !payload.is_exact_instance_of::<PyTuple>() {
+         return Err(PyTypeError::new_err(
+             "shape payload requires an exact tuple",
+         ));
+     }
+     let dimensions = payload.cast::<PyTuple>()?;
+-    let requested = dimensions
++    dimensions
+         .iter()
+         .map(|dim| {
+             if !dim.is_exact_instance_of::<PyInt>() {
+@@ -53,7 +53,11 @@ fn exact_shape(payload: &Bound<'_, PyAny>) -> PyResult<Shape> {
+             dim.extract::<i64>()
+                 .map_err(|_| PyTypeError::new_err("shape dimension overflow"))
+         })
+-        .collect::<PyResult<Vec<_>>>()?;
++        .collect()
++}
++
++fn exact_shape(payload: &Bound<'_, PyAny>) -> PyResult<Shape> {
++    let requested = exact_shape_dimensions(payload)?;
+     Shape::new(&requested).map_err(|error| tensor_error(&error))
+ }
+ 
+@@ -95,7 +99,15 @@ fn shape_metadata(
+         strides: exact_indices(strides)?,
+         offset: offset.extract()?,
+     };
+-    let requested = exact_shape(requested)?;
++    let dimensions = exact_shape_dimensions(requested)?;
++    if dimensions.len() > 2 && input.shape.len() <= 2 {
++        // Error validation does not admit higher-rank operations. Use eager's
++        // checked resolver before applying the unchanged graph rank bound.
++        input
++            .validate_requested_shape(&dimensions)
++            .map_err(|error| tensor_error(&error))?;
++    }
++    let requested = Shape::new(&dimensions).map_err(|error| tensor_error(&error))?;
+     let operation = if alias_only {
+         Operation::View(0, requested)
+     } else {
+diff --git a/src/tensor_cuda_graph.rs b/src/tensor_cuda_graph.rs
+index 09d9d73..c0cfea9 100644
+--- a/src/tensor_cuda_graph.rs
++++ b/src/tensor_cuda_graph.rs
+@@ -117,6 +117,10 @@ impl Layout {
+         Ok(output)
+     }
+ 
++    pub(crate) fn validate_requested_shape(&self, requested: &[i64]) -> Result<(), TensorError> {
++        Tensor::resolve_reshape_shape(requested, element_count(&self.shape)?).map(|_| ())
++    }
++
+     fn reshape(&self, requested: Shape, alias_only: bool) -> Result<Self, TensorError> {
+         if self.shape.len() > 2 || self.shape.len() != self.strides.len() {
+             return Err(TensorError::UnsupportedCudaContiguous {
+@@ -310,6 +314,32 @@ thread_local! {
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn shape_count_validation_does_not_admit_higher_rank_operations() {
++        let scalar = Layout {
++            shape: vec![],
++            strides: vec![],
++            offset: 7,
++        };
++        assert!(matches!(
++            scalar.validate_requested_shape(&[2, 1, 1]),
++            Err(TensorError::ReshapeElementCountMismatch { .. })
++        ));
++        let empty = Layout {
++            shape: vec![0],
++            strides: vec![1],
++            offset: 9,
++        };
++        assert!(matches!(
++            empty.validate_requested_shape(&[0, -1, 1]),
++            Err(TensorError::ReshapeAmbiguousZeroElements { .. })
++        ));
++        for (input, requested) in [(&scalar, [1, 1, 1]), (&empty, [0, 1, 1])] {
++            input.validate_requested_shape(&requested).unwrap();
++            assert!(Shape::new(&requested).is_err());
++        }
++    }
++
+     #[test]
+     fn reshape_plans_shared_views_and_device_packs() {
+         use crate::{Device, cuda};
+diff --git a/tests/test_compile_cuda_view.py b/tests/test_compile_cuda_view.py
+index ef2da30..3a16099 100644
+--- a/tests/test_compile_cuda_view.py
++++ b/tests/test_compile_cuda_view.py
+@@ -1,6 +1,7 @@
+ """Alias-only CUDA view capture: public differentials and fail-closed planning."""
+ import ctypes
+ from dataclasses import replace
++import dis
+ import gc
+ import subprocess
+ import sys
+@@ -124,6 +125,10 @@ class ViewMetadataTests(unittest.TestCase):
+                                      ('(2**63, k//1)', TypeError),
+                                      ('(2**63, (k//1)+1)', TypeError),
+                                      ('(2**63, (k//1)*x)', TypeError),
++                                     ('(2**63, -k)', TypeError),
++                                     ('(-2, -k)', RuntimeError),
++                                     ('(0, True)', RuntimeError),
++                                     ('((2,1,1))', RuntimeError),
+                                      ('(-2, True)', RuntimeError),
+                                      ('((-1,-1,1))', RuntimeError)):
+             fn = make_program(f'def program(x):\n    k = 1\n    a = -x\n    return a.view{expression}\n')
+@@ -133,6 +138,47 @@ class ViewMetadataTests(unittest.TestCase):
+                     _compile_bytecode.lower_compile_graph(fn, (metadata,))
+                 self.assertIs(type(caught.exception), expected)
+ 
++        class Poison:
++            def __neg__(self):
++                raise AssertionError('user negation')
++            def __index__(self):
++                raise AssertionError('user conversion')
++        fn = make_program('def program(x):\n    return -x\n')
++        instruction = next(i for i in dis.get_instructions(fn) if i.opname == 'UNARY_NEGATIVE')
++        state = _compile_bytecode._LoweringState(fn)
++        stack = [_compile_bytecode._BytecodeConstant(Poison())]
++        _compile_bytecode._handle_unary_neg(None, {}, stack, fn, instruction, state, ())
++        self.assertIs(stack[0].value, trace._RESHAPE_UNKNOWN_DIMENSION)
++        self.assertIsInstance(state.local_constant_error, trace.CompileTraceUnsupportedError)
++
++    def test_known_element_counts_before_capture_admission_without_hardware(self):
++        for method in ('view', 'reshape'):
++            for size, shape, message in ((1, (0, True), 'invalid for input of size 1'),
++                                         (1, (2, 1, 1), 'invalid for input of size 1'),
++                                         (0, (0, -1, 1), 'ambiguous'),
++                                         (0, (-1, False), 'ambiguous')):
++                recorder = trace.CompileTraceRecorder()
++                x = recorder.input(shape=(size,), device='cuda:0')
++                with self.subTest(method=method, size=size, shape=shape):
++                    with self.assertRaisesRegex(RuntimeError, message) as caught:
++                        getattr(x, method)(shape)
++                    self.assertIs(type(caught.exception), RuntimeError)
++                    self.assertEqual(recorder._operations, [])
++            for size, shape in ((1, (1, True)), (1, (1, 1, 1)),
++                                (0, (0, True)), (0, (0, 1, 1))):
++                x = trace.CompileTraceRecorder().input(shape=(size,), device='cuda:0')
++                with self.assertRaises(trace.CompileTraceUnsupportedError):
++                    getattr(x, method)(shape)
++        for planner in (trace._native._compile_trace_cuda_view_metadata,
++                        trace._native._compile_trace_cuda_reshape_metadata):
++            with self.assertRaisesRegex(RuntimeError, 'invalid for input of size 1') as caught:
++                planner((1,), (1,), 0, (2, 1, 1))
++            self.assertIs(type(caught.exception), RuntimeError)
++            with self.assertRaises(NotImplementedError):
++                planner((1,), (1,), 0, (1, 1, 1))
++            with self.assertRaises(TypeError):
++                planner((1,), (1,), 0, (0, True))
++
+ 
+ 
+ @unittest.skipUnless(available('0'), 'requires real CUDA with CUDA_VISIBLE_DEVICES=0')
+@@ -451,6 +497,12 @@ class CompileCudaViewTests(unittest.TestCase):
+             ('(2**63, (k//1)+k)', TypeError, 'overflows signed int64'),
+             ('(2**63, (k//1)*x)', TypeError, 'overflows signed int64'),
+             ('(2**63, k+1.0)', TypeError, 'overflows signed int64'),
++            ('(2**63, -k)', TypeError, 'overflows signed int64'),
++            ('(-k, 2**63)', TypeError, 'overflows signed int64'),
++            ('(2**63, -(k//1))', TypeError, 'overflows signed int64'),
++            ('(2**63, -(-k)+1)', TypeError, 'overflows signed int64'),
++            ('(0, -k)', RuntimeError, 'invalid for input of size 1'),
++            ('(-2, -k)', RuntimeError, 'invalid shape dimension -2'),
+             ('(-2, k//1)', RuntimeError, 'invalid shape dimension -2'),
+             ('(-2, True)', RuntimeError, 'invalid shape dimension -2'),
+             ('(size=(-2, True))', RuntimeError, 'invalid shape dimension -2'),
+@@ -480,7 +532,8 @@ class CompileCudaViewTests(unittest.TestCase):
+         # even if discarded. This includes division by zero and enormous shifts.
+         for expression in ('k//1', 'k/1', 'k%1', 'k**1', 'k<<1', 'k>>1',
+                            'k&1', 'k|1', 'k^1', 'k//0', 'k<<2**63', '[1,2,3]', '[*x]',
+-                           '(k//1)+1', '(k//1)*x', '(k//1)@x', 'k+1.0'):
++                           '(k//1)+1', '(k//1)*x', '(k//1)@x', 'k+1.0',
++                           '-k', '-(-k)', '-(k//1)', '-(k//1)+1'):
+             for body in (f'return x.view({expression})',
+                          f'd = {expression}\n    return x',
+                          f'd = {expression}\n    d = x\n    return d'):
+@@ -494,6 +547,47 @@ class CompileCudaViewTests(unittest.TestCase):
+                             call_without_python(compiled, {fn.__code__}, x)
+                         self.assertFalse(cache.graphs)
+ 
++    def test_known_element_count_errors_before_unsupported_capture(self):
++        invalid = ((1, '(0, True)'), (1, '(1, False)'), (1, '(-1, False)'),
++                   (1, '((2, 1, 1))'), (1, '(size=(2, 1, 1))'),
++                   (0, '((0, -1, 1))'), (0, '(size=(0, -1, 1))'),
++                   (0, '((-1, 0, True))'), (6, '((4, -1, True))'))
++        for size, expression in invalid:
++            x, y = native.ones((size,)).to('cuda:0'), torch.ones((size,), device='cuda:0')
++            for prefix in ('a = x', 'a = -x'):
++                fn = make_program(f'def program(x):\n    {prefix}\n    return a.view{expression}\n')
++                with self.assertRaises(RuntimeError) as native_error:
++                    fn(x)
++                with self.assertRaises(RuntimeError) as reference_error:
++                    fn(y)
++                self.assertIs(type(native_error.exception), RuntimeError)
++                self.assertIs(type(reference_error.exception), RuntimeError)
++                self.assertEqual(str(native_error.exception), str(reference_error.exception))
++                for fullgraph, dynamic in POLICIES:
++                    compiled, cache = compile_with_cache(fn, fullgraph, dynamic)
++                    for attempt in range(2):
++                        with self.subTest(size=size, expression=expression, prefix=prefix, policy=(fullgraph, dynamic), attempt=attempt), \
++                             patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('native execution')), \
++                             patch.object(trace, '_execute_operation', side_effect=AssertionError('Python execution')):
++                            with self.assertRaises(RuntimeError) as caught:
++                                call_without_python(compiled, {fn.__code__}, x)
++                            self.assertIs(type(caught.exception), RuntimeError)
++                            self.assertEqual(str(caught.exception), str(reference_error.exception))
++                            self.assertFalse(cache.graphs)
++        for size, shape in ((1, (1, True)), (1, (1, 1, 1)), (0, (0, True)),
++                            (0, (0, 1, 1)), (6, (2, -1, True))):
++            x, y = native.ones((size,)).to('cuda:0'), torch.ones((size,), device='cuda:0')
++            for expression in (f'({shape!r})', f'(size={shape!r})'):
++                fn = make_program(f'def program(x):\n    return x.view{expression}\n')
++                self.assert_pair(fn(x), fn(y))
++                for fullgraph, dynamic in POLICIES:
++                    compiled, cache = compile_with_cache(fn, fullgraph, dynamic)
++                    with self.subTest(valid_out_of_scope=expression, size=size, policy=(fullgraph, dynamic)), \
++                         patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('native execution')):
++                        with self.assertRaises(trace.CompileTraceUnsupportedError):
++                            call_without_python(compiled, {fn.__code__}, x)
++                        self.assertFalse(cache.graphs)
++
+     def test_public_binding_order_and_unsupported_forms(self):
+         x, y = native.ones((1,)).to('cuda:0'), torch.ones((1,), device='cuda:0')
+         errors = ['()', '(True,)', '((True,),)', '(1.,)', '(1, 1.)',

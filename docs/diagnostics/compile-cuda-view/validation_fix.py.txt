@@ -1,0 +1,74 @@
+from pathlib import Path
+p=Path('python/torch_rs/_compile_bytecode.py');s=p.read_text()
+s=s.replace('    if type(value) is tuple:\n        return tuple(_reshape_argument(element) for element in value)\n', '    if type(value) is tuple:\n        return tuple(_reshape_argument(element) for element in value)\n    if type(value) is list:\n        return [_reshape_argument(element) for element in value]\n')
+s=s.replace('''    del locals, state, active
+    symbol = _binary_operator_symbol(instruction)
+''','''    del locals, active
+    symbol = _binary_operator_symbol(instruction)
+    # Bounded exact integer arithmetic is retained only to diagnose public
+    # argument errors later in the call. Even an unused/overwritten result
+    # rejects the graph; computed dimensions never become captured constants.
+    if (symbol in ("+", "-", "*") and len(stack) >= 2
+            and all(isinstance(v, _BytecodeConstant) and type(v.value) is int
+                    and -(2**63) <= v.value < 2**63 for v in stack[-2:])):
+        right, left = stack.pop().value, stack.pop().value
+        value = left + right if symbol == "+" else left - right if symbol == "-" else left * right
+        state.local_constant_error = state.local_constant_error or _trace.CompileTraceUnsupportedError(
+            "torch.compile computed integer values are only retained for argument validation"
+        )
+        stack.append(_BytecodeConstant(value))
+        return
+''')
+s=s.replace('''def _handle_build_list(recorder, locals, stack, program, instruction, state, active):
+    del recorder, locals, state, active''','''def _handle_build_list(recorder, locals, stack, program, instruction, state, active):
+    del recorder, locals, active''')
+s=s.replace('''    output = list(values)
+    _require_output_value(output, program, instruction, "list return value")
+    stack.append(output)''','''    output = list(values)
+    try:
+        _require_output_value(output, program, instruction, "list return value")
+    except _trace.CompileTraceUnsupportedError as error:
+        # Preserve a literal/local container for binding/type validation. It
+        # remains forbidden as a shape, output, helper input or unused local.
+        state.local_constant_error = state.local_constant_error or error
+        stack.append(_BytecodeConstant([_reshape_argument(v) for v in values]))
+        return
+    stack.append(output)''')
+p.write_text(s)
+p=Path('tests/test_compile_cuda_view.py');s=p.read_text();idx=s.index('    def test_public_binding_order_and_unsupported_forms')
+s=s[:idx]+'''    def test_validation_only_lists_and_computed_integer_dimensions(self):
+        x, y = native.ones((1,)).to('cuda:0'), torch.ones((1,), device='cuda:0')
+        for expression in ('([1], foo=x)', '(size=[1], foo=x)', '([1], x)',
+                           '(1, [1], 1.)', '((1, [x]),)', '(2**63, n+1)',
+                           '(-2, n+1)', '(2, n*n)', '(size=(n+1,))',
+                           '(n-2, -1)', '(d, foo=x)', '(1, size=d)'):
+            fn = make_program(f'def program(x):\\n    n = 1\\n    d = [1]\\n    a = -x\\n    return a.view{expression}\\n')
+            try:
+                fn(y)
+            except (TypeError, RuntimeError) as error:
+                expected = type(error)
+            else:
+                self.fail(expression)
+            for fullgraph, dynamic in POLICIES:
+                compiled, cache = compile_with_cache(fn, fullgraph, dynamic)
+                with self.subTest(expression=expression, policy=(fullgraph, dynamic)), \\
+                     patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('native execution')), \\
+                     patch.object(trace, '_execute_operation', side_effect=AssertionError('Python execution')):
+                    with self.assertRaises(expected):
+                        call_without_python(compiled, {fn.__code__}, x)
+                    self.assertFalse(cache.graphs)
+        for body in ('return x.view([1])', 'return x.view(size=[1])',
+                     'd = [1]\\n    return x', 'd = [1]\\n    d = x\\n    return d',
+                     'd = [1]\\n    return (x, d)', 'return helper([1])',
+                     'n = 1\\n    return x.view(n+0)', 'n = 1\\n    return x.view(n*1)',
+                     'n = 1\\n    return x.view(size=(n-0,))',
+                     'n = 1\\n    d = n+1\\n    return x',
+                     'n = 1\\n    d = n+1\\n    d = x\\n    return d'):
+            fn = make_program(f'def helper(x):\\n    return x\\ndef program(x):\\n    {body}\\n')
+            with self.subTest(unsupported=body), \\
+                 patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('native execution')), \\
+                 patch.object(trace, '_execute_operation', side_effect=AssertionError('Python execution')):
+                with self.assertRaises(trace.CompileTraceUnsupportedError):
+                    call_without_python(compile_with_cache(fn)[0], {fn.__code__}, x)
+
+'''+s[idx:];p.write_text(s)

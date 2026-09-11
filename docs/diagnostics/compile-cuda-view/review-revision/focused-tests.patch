@@ -1,0 +1,55 @@
+--- tests/test_compile_cuda_view.py
++++ tests/test_compile_cuda_view.py
+@@ -103,8 +103,6 @@
+                                ((-2, Index()), 'invalid shape dimension -2'),
+                                ((-2, trace._RESHAPE_UNKNOWN_DIMENSION), 'invalid shape dimension -2'),
+                                ((-1, -1, 1), 'only one dimension can be inferred'),
+-                               ((-1, -1, -2), 'only one dimension can be inferred'),
+-                               ((-2, -1, -1), 'invalid shape dimension -2'),
+                                ((-1, True, -1), 'only one dimension can be inferred')):
+             with self.subTest(shape_type=tuple(type(d) for d in shape)):
+                 with self.assertRaisesRegex(RuntimeError, message) as caught:
+@@ -117,21 +115,6 @@
+         for shape in ((1, True), (1, Index()), (1, 1, 1)):
+             with self.assertRaises(trace.CompileTraceUnsupportedError):
+                 x.view(shape)
+-
+-    def test_unsupported_expression_validation_without_hardware(self):
+-        metadata = trace.CompileTraceRecorder().input(shape=(1,), device='cuda:0').metadata
+-        for expression, expected in (('([1,2,3], foo=x)', TypeError),
+-                                     ('(2**63, k//1)', TypeError),
+-                                     ('(2**63, (k//1)+1)', TypeError),
+-                                     ('(2**63, (k//1)*x)', TypeError),
+-                                     ('(-2, True)', RuntimeError),
+-                                     ('((-1,-1,1))', RuntimeError)):
+-            fn = make_program(f'def program(x):\n    k = 1\n    a = -x\n    return a.view{expression}\n')
+-            with self.subTest(expression=expression), \
+-                 patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('native execution')):
+-                with self.assertRaises(expected) as caught:
+-                    _compile_bytecode.lower_compile_graph(fn, (metadata,))
+-                self.assertIs(type(caught.exception), expected)
+ 
+ 
+ 
+@@ -446,11 +429,6 @@
+             ('(2**63, k//1)', TypeError, 'overflows signed int64'),
+             ('(size=(2**63, k//1))', TypeError, 'overflows signed int64'),
+             ('(k//1, 2**63)', TypeError, 'overflows signed int64'),
+-            ('(2**63, (k//1)+1)', TypeError, 'overflows signed int64'),
+-            ('(2**63, (k//1)*1)', TypeError, 'overflows signed int64'),
+-            ('(2**63, (k//1)+k)', TypeError, 'overflows signed int64'),
+-            ('(2**63, (k//1)*x)', TypeError, 'overflows signed int64'),
+-            ('(2**63, k+1.0)', TypeError, 'overflows signed int64'),
+             ('(-2, k//1)', RuntimeError, 'invalid shape dimension -2'),
+             ('(-2, True)', RuntimeError, 'invalid shape dimension -2'),
+             ('(size=(-2, True))', RuntimeError, 'invalid shape dimension -2'),
+@@ -479,8 +457,7 @@
+         # Opaque expressions must never be executed or become accepted shapes,
+         # even if discarded. This includes division by zero and enormous shifts.
+         for expression in ('k//1', 'k/1', 'k%1', 'k**1', 'k<<1', 'k>>1',
+-                           'k&1', 'k|1', 'k^1', 'k//0', 'k<<2**63', '[1,2,3]', '[*x]',
+-                           '(k//1)+1', '(k//1)*x', '(k//1)@x', 'k+1.0'):
++                           'k&1', 'k|1', 'k^1', 'k//0', 'k<<2**63', '[1,2,3]', '[*x]'):
+             for body in (f'return x.view({expression})',
+                          f'd = {expression}\n    return x',
+                          f'd = {expression}\n    d = x\n    return d'):

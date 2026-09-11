@@ -1,0 +1,8 @@
+set -eu
+source target/view-postcommit-d682311e/env.sh
+export CUDA_VISIBLE_DEVICES=''
+capture() { .venv/bin/python target/view-postcommit-d682311e/capture.py "$@"; }
+capture portable .venv/bin/python -m unittest -v tests.test_compile_cuda_view tests.test_view tests.test_view_reference tests.test_reshape tests.test_reshape_reference
+capture clippy-default cargo clippy --locked --offline --all-targets -- -D warnings
+capture clippy-bindings cargo clippy --locked --offline --all-targets --features python-bindings -- -D warnings
+capture format cargo fmt --check

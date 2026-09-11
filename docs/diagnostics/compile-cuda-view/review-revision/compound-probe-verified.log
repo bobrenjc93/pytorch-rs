@@ -1,0 +1,4 @@
+(k//1)+1 CompileTraceUnsupportedError torch.compile trace bytecode lowering does not support non-Tensor right operand in 'program': BINARY_OP
+(k//1)*1 CompileTraceUnsupportedError torch.compile trace bytecode lowering does not support non-Tensor scalar multiply operand in 'program': BINARY_OP
+(k//1)+k CompileTraceUnsupportedError torch.compile trace bytecode lowering does not support non-Tensor right operand in 'program': BINARY_OP
+k+1.0 CompileTraceUnsupportedError torch.compile trace bytecode lowering does not support non-Tensor right operand in 'program': BINARY_OP

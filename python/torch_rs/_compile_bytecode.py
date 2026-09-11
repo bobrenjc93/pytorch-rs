@@ -29,7 +29,7 @@ class _BytecodeConstant:
 
 @dataclass(frozen=True, slots=True)
 class _BytecodeTuple:
-    # Mixed constants/tensors are retained for reshape call validation only.
+    # Mixed constants/tensors are retained for shape call validation only.
     # They are not Tensor output pytrees or accepted helper arguments.
     elements: tuple
 
@@ -149,6 +149,7 @@ class _OpcodeForm:
 
 
 _METHOD_TARGETS = {
+    "view": _MethodTarget("view", "view", 1, "Tensor.view"),
     "reshape": _MethodTarget("view", "reshape", 1, "Tensor.reshape"),
     "transpose": _MethodTarget("view", "transpose", 2, "Tensor.transpose"),
     "t": _MethodTarget("unary", "t", 0, "Tensor.t"),
@@ -311,6 +312,7 @@ _OPCODE_FORMS = (
     _OpcodeForm("load_const", frozenset(("LOAD_CONST", "LOAD_SMALL_INT"))),
     _OpcodeForm("build_tuple", frozenset(("BUILD_TUPLE",))),
     _OpcodeForm("build_list", frozenset(("BUILD_LIST",))),
+    _OpcodeForm("list_extend", frozenset(("LIST_EXTEND",))),
     _OpcodeForm("binary", frozenset(("BINARY_ADD", "BINARY_MATRIX_MULTIPLY", "BINARY_MULTIPLY", "BINARY_OP", "INPLACE_ADD"))),
     _OpcodeForm("unary_neg", frozenset(("UNARY_NEGATIVE",))),
     _OpcodeForm("return", frozenset(("RETURN_VALUE", "RETURN_CONST"))),
@@ -989,7 +991,7 @@ def _store_local(locals, stack, program, instruction, name, state):
             try:
                 _trace._normalize_mul_scalar(value.value)
             except _trace.CompileTraceUnsupportedError as error:
-                # Preserve the value for public reshape argument validation.
+                # Preserve the value for public shape argument validation.
                 # Still reject the graph if the local is unused or overwritten.
                 if state.local_constant_error is None:
                     state.local_constant_error = error
@@ -1108,17 +1110,20 @@ def _reshape_argument(value):
         return tuple(_reshape_argument(element) for element in value.elements)
     if type(value) is tuple:
         return tuple(_reshape_argument(element) for element in value)
+    if type(value) is list:
+        return [_reshape_argument(element) for element in value]
     return _trace._RESHAPE_UNKNOWN_DIMENSION
 
 
 def _record_method_call(recorder, method, args, program, instruction, names=()):
-    if method.name == "reshape":
+    if method.name in ("reshape", "view"):
         positional = len(args) - len(names)
         values = tuple(_reshape_argument(value) for value in args)
         positional_args = values[:positional]
         kwargs = dict(zip(names, values[positional:]))
-        shape = _trace._bind_reshape_shape(positional_args, kwargs)
-        return recorder.record_reshape(method.receiver, shape)
+        binder = _trace._bind_view_shape if method.name == "view" else _trace._bind_reshape_shape
+        shape = binder(positional_args, kwargs, method.receiver.metadata)
+        return recorder._record_shape(method.receiver, shape, method.name)
     if method.name == "transpose":
         positional = len(args) - len(names)
         if positional > 2:
@@ -1336,9 +1341,40 @@ def _binary_operator_symbol(instruction):
     return instruction.argrepr
 
 
+def _defer_binary(stack, program, instruction, state, symbol):
+    # Consume the operands without evaluating them, including user operators.
+    _pop(stack, program, instruction)
+    _pop(stack, program, instruction)
+    state.local_constant_error = state.local_constant_error or _trace.CompileTraceUnsupportedError(
+        f"torch.compile binary operator {symbol!r} is only retained for argument validation"
+    )
+    stack.append(_BytecodeConstant(_trace._RESHAPE_UNKNOWN_DIMENSION))
+
+
 def _handle_binary(recorder, locals, stack, program, instruction, state, active):
-    del locals, state, active
+    del locals, active
     symbol = _binary_operator_symbol(instruction)
+    # Bounded exact integer arithmetic is retained only to diagnose public
+    # argument errors later in the call. Even an unused/overwritten result
+    # rejects the graph; computed dimensions never become captured constants.
+    if (symbol in ("+", "-", "*") and len(stack) >= 2
+            and all(isinstance(v, _BytecodeConstant) and type(v.value) is int
+                    and -(2**63) <= v.value < 2**63 for v in stack[-2:])):
+        right, left = stack.pop().value, stack.pop().value
+        value = left + right if symbol == "+" else left - right if symbol == "-" else left * right
+        state.local_constant_error = state.local_constant_error or _trace.CompileTraceUnsupportedError(
+            "torch.compile computed integer values are only retained for argument validation"
+        )
+        stack.append(_BytecodeConstant(value))
+        return
+    if (symbol in ("+", "*", "@") and len(stack) >= 2
+            and (all(isinstance(v, _BytecodeConstant) for v in stack[-2:])
+                 or any(isinstance(v, _BytecodeConstant)
+                        and v.value is _trace._RESHAPE_UNKNOWN_DIMENSION for v in stack[-2:]))):
+        # A surrounding expression must not turn an already opaque dimension
+        # into an immediate rejection (e.g. (k // 1) + 1 or (k // 1) * x).
+        _defer_binary(stack, program, instruction, state, symbol)
+        return
     if symbol == "*":
         right = _pop(stack, program, instruction)
         left = _pop(stack, program, instruction)
@@ -1349,13 +1385,34 @@ def _handle_binary(recorder, locals, stack, program, instruction, state, active)
         return
     if symbol == "+=":
         _unsupported_bytecode(program, instruction, "mutation")
+    if symbol in ("-", "/", "//", "%", "**", "<<", ">>", "&", "|", "^"):
+        # Do not evaluate unsupported expressions, even on apparently constant
+        # operands. Preserve their stack position so a later call can diagnose
+        # independently known binding/range/shape errors. The deferred error
+        # still rejects unused, overwritten and returned results.
+        _defer_binary(stack, program, instruction, state, symbol)
+        return
     _unsupported_bytecode(program, instruction, f"binary operator {symbol!r}")
 
 
 def _handle_unary_neg(recorder, locals, stack, program, instruction, state, active):
-    del locals, state, active
+    del locals, active
+    operand = _pop(stack, program, instruction)
+    if not isinstance(operand, _trace.CompileTraceTensorProxy):
+        # As with bounded binary arithmetic, retain exact integer values only
+        # for public error validation. Never invoke a user __neg__ conversion,
+        # and keep the rejection even if the computed result is discarded.
+        value = _trace._RESHAPE_UNKNOWN_DIMENSION
+        if (isinstance(operand, _BytecodeConstant) and type(operand.value) is int
+                and -(2**63) <= operand.value < 2**63):
+            value = -operand.value
+        state.local_constant_error = state.local_constant_error or _trace.CompileTraceUnsupportedError(
+            "torch.compile computed unary values are only retained for argument validation"
+        )
+        stack.append(_BytecodeConstant(value))
+        return
     input = _require_tensor(
-        _pop(stack, program, instruction),
+        operand,
         program,
         instruction,
         "operand",
@@ -1458,13 +1515,40 @@ def _handle_build_tuple(recorder, locals, stack, program, instruction, state, ac
 
 
 def _handle_build_list(recorder, locals, stack, program, instruction, state, active):
-    del recorder, locals, state, active
+    del recorder, locals, active
     argument_count = instruction.arg or 0
     values = [_pop(stack, program, instruction) for _ in range(argument_count)]
     values.reverse()
     output = list(values)
-    _require_output_value(output, program, instruction, "list return value")
+    try:
+        _require_output_value(output, program, instruction, "list return value")
+    except _trace.CompileTraceUnsupportedError as error:
+        # Preserve a literal/local container for binding/type validation. It
+        # remains forbidden as a shape, output, helper input or unused local.
+        state.local_constant_error = state.local_constant_error or error
+        stack.append(_BytecodeConstant([_reshape_argument(v) for v in values]))
+        return
     stack.append(output)
+
+
+def _handle_list_extend(recorder, locals, stack, program, instruction, state, active):
+    del recorder, locals, active
+    values = _pop(stack, program, instruction)
+    depth = instruction.arg or 0
+    if not 0 < depth <= len(stack):
+        _unsupported_bytecode(program, instruction, "list extension stack")
+    target = _reshape_argument(stack[-depth])
+    if type(target) is not list:
+        _unsupported_bytecode(program, instruction, "list extension target")
+    # CPython emits BUILD_LIST 0 / LOAD_CONST / LIST_EXTEND for longer
+    # literals. Only inspect exact internal tuples/lists; never iterate a user
+    # object. This is validation-only, including empty and Tensor containers.
+    values = _reshape_argument(values)
+    items = values if type(values) in (tuple, list) else (_trace._RESHAPE_UNKNOWN_DIMENSION,)
+    stack[-depth] = _BytecodeConstant(target + list(items))
+    state.local_constant_error = state.local_constant_error or _trace.CompileTraceUnsupportedError(
+        "torch.compile list extension is only retained for argument validation"
+    )
 
 
 def _handle_noop(recorder, locals, stack, program, instruction, state, active):
@@ -1489,6 +1573,7 @@ _OPCODE_HANDLERS = {
     "load_const": _handle_load_const,
     "build_tuple": _handle_build_tuple,
     "build_list": _handle_build_list,
+    "list_extend": _handle_list_extend,
     "binary": _handle_binary,
     "unary_neg": _handle_unary_neg,
     "return": _handle_return,
@@ -1565,7 +1650,7 @@ def lower_compile_graph(program, input_metadatas, *, name=None, compile_request=
         raise state.local_constant_error
     if state.has_mixed_tuple:
         raise _trace.CompileTraceUnsupportedError(
-            "torch.compile mixed constant/Tensor tuples are only retained for reshape argument validation"
+            "torch.compile mixed constant/Tensor tuples are only retained for shape argument validation"
         )
     return recorder.finish(output)
 

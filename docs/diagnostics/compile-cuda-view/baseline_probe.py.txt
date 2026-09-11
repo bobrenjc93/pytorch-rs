@@ -1,0 +1,14 @@
+import sys; sys.path.insert(0, str(__import__("pathlib").Path.cwd()))
+import json, torch, torch_rs as n
+from tests.test_compile_cuda_mul_scalar import make_program
+from tests.test_cuda_add import runtime
+print(json.dumps({'torch':torch.__version__, 'reference_cuda':torch.version.cuda,'native_runtime':runtime().cudaRuntimeGetVersion if False else str(runtime()._name),'gpu':torch.cuda.get_device_name(0)}))
+for expression in ('x.view(-1)', 'x.view((3,-1))', '(x@w).relu().view(-1)', 'x.view(size=(21,))', 'x.t().view(-1)', 'x.t().reshape(-1)'):
+ fn=make_program('def program(x,w):\n    return '+expression+'\n')
+ nx=n.ones((3,7)).to('cuda:0'); nw=n.ones((7,5)).to('cuda:0')
+ tx=torch.ones((3,7),device='cuda:0'); tw=torch.ones((7,5),device='cuda:0')
+ for label, call, args in [('native eager',fn,(nx,nw)),('reference eager',fn,(tx,tw)),('reference compiled',torch.compile(fn,backend='eager',fullgraph=True),(tx,tw)),('native compiled',n.compile(fn,backend='eager',fullgraph=True),(nx,nw))]:
+  try:
+   out=call(*args); row={'shape':list(out.shape),'values':out.cpu().tolist()}
+  except Exception as e: row={'error':type(e).__name__,'message':str(e).splitlines()[0]}
+  print(json.dumps({'expression':expression,'mode':label,**row}),flush=True)

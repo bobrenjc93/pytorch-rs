@@ -1,0 +1,28 @@
+([1,2,3], foo=x)
+torch_rs TypeError view() received an invalid combination of arguments - got (list, foo=Tensor), but expected one of:
+torch TypeError view() received an invalid combination of arguments - got (list, foo=Tensor), but expected one of:
+(True, None) CompileTraceUnsupportedError torch.compile trace bytecode lowering does not support unsupported bytecode in 'program': LIST_EXTEND
+(True, False) CompileTraceUnsupportedError torch.compile trace bytecode lowering does not support unsupported bytecode in 'program': LIST_EXTEND
+(True, True) CompileTraceUnsupportedError torch.compile trace bytecode lowering does not support unsupported bytecode in 'program': LIST_EXTEND
+(False, None) CompileTraceUnsupportedError torch.compile trace bytecode lowering does not support unsupported bytecode in 'program': LIST_EXTEND
+(2**63, k//1)
+torch_rs TypeError view(): argument 'size' failed to unpack the object at pos 1 with error "Overflow when unpacking long long"
+torch TypeError view(): argument 'size' failed to unpack the object at pos 1 with error "Overflow when unpacking long long
+(True, None) CompileTraceUnsupportedError torch.compile trace bytecode lowering does not support binary operator '//' in 'program': BINARY_OP
+(True, False) CompileTraceUnsupportedError torch.compile trace bytecode lowering does not support binary operator '//' in 'program': BINARY_OP
+(True, True) CompileTraceUnsupportedError torch.compile trace bytecode lowering does not support binary operator '//' in 'program': BINARY_OP
+(False, None) CompileTraceUnsupportedError torch.compile trace bytecode lowering does not support binary operator '//' in 'program': BINARY_OP
+(-2, True)
+torch_rs RuntimeError invalid shape dimension -2 at index 0 of shape [-2, 1]
+torch RuntimeError invalid shape dimension -2 at index 0 of shape [-2, 1]
+(True, None) CompileTraceUnsupportedError torch.compile view requires exact integer constants
+(True, False) CompileTraceUnsupportedError torch.compile view requires exact integer constants
+(True, True) CompileTraceUnsupportedError torch.compile view requires exact integer constants
+(False, None) CompileTraceUnsupportedError torch.compile view requires exact integer constants
+((-1,-1,1))
+torch_rs RuntimeError only one dimension can be inferred
+torch RuntimeError only one dimension can be inferred
+(True, None) CompileTraceUnsupportedError torch.compile view requires output rank 0, 1 or 2
+(True, False) CompileTraceUnsupportedError torch.compile view requires output rank 0, 1 or 2
+(True, True) CompileTraceUnsupportedError torch.compile view requires output rank 0, 1 or 2
+(False, None) CompileTraceUnsupportedError torch.compile view requires output rank 0, 1 or 2

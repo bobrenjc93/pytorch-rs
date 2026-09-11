@@ -1,0 +1,17 @@
+test_benchmarking_indexes_historical_release_timing_reports (tests.test_readme_quickstart.ReadmeQuickstartTests.test_benchmarking_indexes_historical_release_timing_reports) ... ok
+test_detailed_support_contracts_live_in_focused_docs (tests.test_readme_quickstart.ReadmeQuickstartTests.test_detailed_support_contracts_live_in_focused_docs) ... ok
+test_docs_readme_indexes_contracts_guides_and_timing_evidence (tests.test_readme_quickstart.ReadmeQuickstartTests.test_docs_readme_indexes_contracts_guides_and_timing_evidence) ... ok
+test_entry_point_links_resolve (tests.test_readme_quickstart.ReadmeQuickstartTests.test_entry_point_links_resolve) ... ok
+test_first_success_example_is_short_and_runs (tests.test_readme_quickstart.ReadmeQuickstartTests.test_first_success_example_is_short_and_runs) ... ok
+test_readme_keeps_quickstart_scope_and_evaluation_route (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_keeps_quickstart_scope_and_evaluation_route) ... ok
+test_readme_links_contributing_guide (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_links_contributing_guide) ... ok
+test_readme_routes_benchmark_policy_to_focused_docs (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_routes_benchmark_policy_to_focused_docs) ... ok
+test_readme_routes_to_supported_surface_anchors (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_routes_to_supported_surface_anchors) ... ok
+test_readme_scope_is_scan_friendly_table (tests.test_readme_quickstart.ReadmeQuickstartTests.test_readme_scope_is_scan_friendly_table) ... ok
+test_source_install_commands_are_locked (tests.test_readme_quickstart.ReadmeQuickstartTests.test_source_install_commands_are_locked) ... ok
+test_stale_wheel_recovery_uses_wheel_test_workflow (tests.test_readme_quickstart.ReadmeQuickstartTests.test_stale_wheel_recovery_uses_wheel_test_workflow) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 0.116s
+
+OK

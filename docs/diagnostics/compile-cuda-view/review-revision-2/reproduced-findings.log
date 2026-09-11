@@ -1,0 +1,35 @@
+1 (2**63, -k)
+torch_rs TypeError view(): argument 'size' failed to unpack the object at pos 1 with error "Overflow when unpacking long long"
+torch TypeError view(): argument 'size' failed to unpack the object at pos 1 with error "Overflow when unpacking long long
+(True, None) CompileTraceUnsupportedError torch.compile trace bytecode lowering does not support non-Tensor operand in 'program': UNARY_NEGATIVE
+(True, False) CompileTraceUnsupportedError torch.compile trace bytecode lowering does not support non-Tensor operand in 'program': UNARY_NEGATIVE
+(True, True) CompileTraceUnsupportedError torch.compile trace bytecode lowering does not support non-Tensor operand in 'program': UNARY_NEGATIVE
+(False, None) CompileTraceUnsupportedError torch.compile trace bytecode lowering does not support non-Tensor operand in 'program': UNARY_NEGATIVE
+1 (-2, -k)
+torch_rs RuntimeError invalid shape dimension -2 at index 0 of shape [-2, -1]
+torch RuntimeError invalid shape dimension -2 at index 0 of shape [-2, -1]
+(True, None) CompileTraceUnsupportedError torch.compile trace bytecode lowering does not support non-Tensor operand in 'program': UNARY_NEGATIVE
+(True, False) CompileTraceUnsupportedError torch.compile trace bytecode lowering does not support non-Tensor operand in 'program': UNARY_NEGATIVE
+(True, True) CompileTraceUnsupportedError torch.compile trace bytecode lowering does not support non-Tensor operand in 'program': UNARY_NEGATIVE
+(False, None) CompileTraceUnsupportedError torch.compile trace bytecode lowering does not support non-Tensor operand in 'program': UNARY_NEGATIVE
+1 (0, True)
+torch_rs RuntimeError shape '[0, 1]' is invalid for input of size 1
+torch RuntimeError shape '[0, 1]' is invalid for input of size 1
+(True, None) CompileTraceUnsupportedError torch.compile view requires exact integer constants
+(True, False) CompileTraceUnsupportedError torch.compile view requires exact integer constants
+(True, True) CompileTraceUnsupportedError torch.compile view requires exact integer constants
+(False, None) CompileTraceUnsupportedError torch.compile view requires exact integer constants
+1 ((2,1,1))
+torch_rs RuntimeError shape '[2, 1, 1]' is invalid for input of size 1
+torch RuntimeError shape '[2, 1, 1]' is invalid for input of size 1
+(True, None) CompileTraceUnsupportedError torch.compile view requires output rank 0, 1 or 2
+(True, False) CompileTraceUnsupportedError torch.compile view requires output rank 0, 1 or 2
+(True, True) CompileTraceUnsupportedError torch.compile view requires output rank 0, 1 or 2
+(False, None) CompileTraceUnsupportedError torch.compile view requires output rank 0, 1 or 2
+0 ((0,-1,1))
+torch_rs RuntimeError cannot reshape tensor of 0 elements into shape [0, -1, 1] because the unspecified dimension size -1 can be any value and is ambiguous
+torch RuntimeError cannot reshape tensor of 0 elements into shape [0, -1, 1] because the unspecified dimension size -1 can be any value and is ambiguous
+(True, None) CompileTraceUnsupportedError torch.compile view requires output rank 0, 1 or 2
+(True, False) CompileTraceUnsupportedError torch.compile view requires output rank 0, 1 or 2
+(True, True) CompileTraceUnsupportedError torch.compile view requires output rank 0, 1 or 2
+(False, None) CompileTraceUnsupportedError torch.compile view requires output rank 0, 1 or 2

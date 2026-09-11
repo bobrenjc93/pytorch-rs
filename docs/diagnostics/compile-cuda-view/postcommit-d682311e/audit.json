@@ -1,0 +1,113 @@
+{
+  "all_installed_python_matches_source": true,
+  "all_receipts_clean_and_source_native_command_inputs_unchanged": true,
+  "audited_at": "2026-09-11T15:15:31.831034+00:00",
+  "build_record": "release/build-record.json",
+  "commands": {
+    "clippy-bindings": {
+      "cuda_visible_devices": "",
+      "ended_at": "2026-09-11T15:09:41.319881+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T15:09:27.559322+00:00"
+    },
+    "clippy-default": {
+      "cuda_visible_devices": "",
+      "ended_at": "2026-09-11T15:09:26.856123+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T15:09:22.154564+00:00"
+    },
+    "compiler": {
+      "cuda_visible_devices": "0",
+      "ended_at": "2026-09-11T15:15:00.610492+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T15:09:20.190202+00:00"
+    },
+    "format": {
+      "cuda_visible_devices": "",
+      "ended_at": "2026-09-11T15:09:42.865256+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T15:09:42.023325+00:00"
+    },
+    "guide-examples": {
+      "cuda_visible_devices": "0",
+      "ended_at": "2026-09-11T15:15:24.231956+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T15:15:23.334473+00:00"
+    },
+    "native-verification": {
+      "cuda_visible_devices": "0",
+      "ended_at": "2026-09-11T15:09:16.188871+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T15:09:15.866428+00:00"
+    },
+    "portable": {
+      "cuda_visible_devices": "",
+      "ended_at": "2026-09-11T15:09:21.342764+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T15:09:15.843599+00:00"
+    },
+    "preflight": {
+      "cuda_visible_devices": "0",
+      "ended_at": "2026-09-11T15:09:19.412010+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T15:09:16.990604+00:00"
+    },
+    "rust-graph": {
+      "cuda_visible_devices": "0",
+      "ended_at": "2026-09-11T15:15:18.431117+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T15:15:05.104638+00:00"
+    },
+    "rust-storage": {
+      "cuda_visible_devices": "0",
+      "ended_at": "2026-09-11T15:15:22.607087+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T15:15:19.145334+00:00"
+    },
+    "two-device": {
+      "cuda_visible_devices": "0,1",
+      "ended_at": "2026-09-11T15:15:04.360410+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T15:15:01.607995+00:00"
+    }
+  },
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_67fce754",
+  "external_read_only_tools": "Pinned Rust toolchain, system nvcc and NVIDIA driver",
+  "git_status_at_audit": "",
+  "historical_inventories_verified_unchanged": {
+    ".": {
+      "artifacts": 105,
+      "inventory_sha256": "6359c6de1c39e7fc66b13fb02cbfa78862b28100a344afce365052e798e8b5b5"
+    },
+    "postcommit-12ac70fd": {
+      "artifacts": 43,
+      "inventory_sha256": "32ff2d0dd2be43b1bab0b434bfd9075b78953498b74e591dd967ac38a66621b5"
+    },
+    "postcommit-e426d1f6": {
+      "artifacts": 38,
+      "inventory_sha256": "a477a18690a22e280cfa7adf7f2cec8da73003c5860790e934ea97968cebc90c"
+    },
+    "review-revision": {
+      "artifacts": 63,
+      "inventory_sha256": "6d5f3d185c5904c3a6c445394f6c8651e415106eb9b8115242ac986c37afd8ed"
+    },
+    "review-revision-2": {
+      "artifacts": 46,
+      "inventory_sha256": "56d60e9a0baa72ef2fe27493096510d6a0061e16b68a3156b8ad768e9a9497a8"
+    }
+  },
+  "interpreter": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_67fce754/target/view-postcommit-12ac70fd/python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+  "measured_inputs_base": "../measured-inputs.json",
+  "measured_inputs_deltas": "../review-revision-2/input-manifest-index.json",
+  "measured_inputs_sha256": "0f35e9e0b9bacf419db011b961d5e87772738b869335c456426adf11f5bf31c5",
+  "measurement_kind": "fresh clean implementation-commit capture",
+  "native_sha256": "5d72cfca4fcdea24855ec992edc535908fce2d74ed1471b9d99815fffe22852d",
+  "python_source_files_checked": 59,
+  "source": {
+    "commit": "d682311eb60dd0908116c12340deac75fb3f8120",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source_sha256": "92c6837dd4dd350390e37e047971efe146bcc5db1823646c9d86ad60937f5756"
+  },
+  "wheel_sha256": "d7b347c6e4ea7fc5d948cac7534cbfdc4cf262bc55a7def45958b3045e622987",
+  "worktree_build_import_executable_cache_paths_within_current_worktree": true
+}
