@@ -1,0 +1,17 @@
+test_allocation_reuse_and_threaded_lifetimes (tests.test_cuda_native_views.NativeCudaViewTests.test_allocation_reuse_and_threaded_lifetimes) ... ok
+test_bounded_staging_crosses_chunks_and_preserves_values (tests.test_cuda_native_views.NativeCudaViewTests.test_bounded_staging_crosses_chunks_and_preserves_values) ... ok
+test_nonzero_views_copy_to_cpu_and_keep_storage_alive (tests.test_cuda_native_views.NativeCudaViewTests.test_nonzero_views_copy_to_cpu_and_keep_storage_alive) ... ok
+test_unsupported_materialization_fails_at_operation (tests.test_cuda_native_views.NativeCudaViewTests.test_unsupported_materialization_fails_at_operation) ... ok
+test_widely_spaced_selection_copies_under_host_memory_limit (tests.test_cuda_native_views.NativeCudaViewTests.test_widely_spaced_selection_copies_under_host_memory_limit) ... ok
+test_device_and_driver_context_restoration (tests.test_cuda_contiguous.ContiguousDeviceGuardTests.test_device_and_driver_context_restoration) ... skipped 'requires CUDA_VISIBLE_DEVICES=0,1'
+test_bit_exact_pack_and_reshape (tests.test_cuda_contiguous.CudaContiguousTests.test_bit_exact_pack_and_reshape) ... ok
+test_contiguous_identity_scalar_singleton_empty_and_offset (tests.test_cuda_contiguous.CudaContiguousTests.test_contiguous_identity_scalar_singleton_empty_and_offset) ... ok
+test_formats_ranks_gradients_and_copy_boundaries (tests.test_cuda_contiguous.CudaContiguousTests.test_formats_ranks_gradients_and_copy_boundaries) ... ok
+test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) ... ok
+test_lifetimes_threads_and_no_pytorch_forwarding (tests.test_cuda_contiguous.CudaContiguousTests.test_lifetimes_threads_and_no_pytorch_forwarding) ... ok
+test_reshape_copy_and_view_alias_mutations (tests.test_cuda_contiguous.CudaContiguousTests.test_reshape_copy_and_view_alias_mutations) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 6.314s
+
+OK (skipped=1)

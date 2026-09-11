@@ -1,0 +1,10 @@
+set -eu
+source target/view-postcommit-12ac70fd/env.sh
+export CUDA_VISIBLE_DEVICES=''
+export TORCH_RS_CUDART="$PWD/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13"
+capture() { .venv/bin/python target/view-postcommit-12ac70fd/capture.py "$@"; }
+capture hidden .venv/bin/python -m unittest -v tests.test_compile_cuda_view
+capture cpu-view-docs .venv/bin/python -m unittest -v tests.test_view tests.test_view_reference tests.test_view_as tests.test_view_as_reference tests.test_reshape tests.test_reshape_reference tests.test_reshape_as tests.test_reshape_as_reference tests.test_readme_quickstart
+capture clippy-default cargo clippy --locked --offline --all-targets -- -D warnings
+capture clippy-bindings cargo clippy --locked --offline --all-targets --features python-bindings -- -D warnings
+capture format cargo fmt --check

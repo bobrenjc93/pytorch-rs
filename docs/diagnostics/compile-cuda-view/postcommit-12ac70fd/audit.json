@@ -1,0 +1,104 @@
+{
+  "all_installed_python_matches_source": true,
+  "all_receipts_clean_and_source_native_command_inputs_unchanged": true,
+  "audited_at": "2026-09-11T14:16:10.609911+00:00",
+  "build_record": "release/build-record.json",
+  "commands": {
+    "clippy-bindings": {
+      "cuda_visible_devices": "",
+      "ended_at": "2026-09-11T14:08:43.430154+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:08:29.532273+00:00"
+    },
+    "clippy-default": {
+      "cuda_visible_devices": "",
+      "ended_at": "2026-09-11T14:08:28.807060+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:08:24.031982+00:00"
+    },
+    "compiler": {
+      "cuda_visible_devices": "0",
+      "ended_at": "2026-09-11T14:14:14.805789+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:08:18.498783+00:00"
+    },
+    "cpu-view-docs": {
+      "cuda_visible_devices": "",
+      "ended_at": "2026-09-11T14:08:23.275151+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:08:18.069525+00:00"
+    },
+    "cuda-storage": {
+      "cuda_visible_devices": "0",
+      "ended_at": "2026-09-11T14:14:27.416498+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:14:18.985196+00:00"
+    },
+    "format": {
+      "cuda_visible_devices": "",
+      "ended_at": "2026-09-11T14:08:45.036319+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:08:44.158077+00:00"
+    },
+    "guide-examples": {
+      "cuda_visible_devices": "0",
+      "ended_at": "2026-09-11T14:14:29.121058+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:14:28.220607+00:00"
+    },
+    "hidden": {
+      "cuda_visible_devices": "",
+      "ended_at": "2026-09-11T14:08:17.242271+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:08:13.713241+00:00"
+    },
+    "native-verification": {
+      "cuda_visible_devices": "0",
+      "ended_at": "2026-09-11T14:08:12.571801+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:08:12.292987+00:00"
+    },
+    "preflight": {
+      "cuda_visible_devices": "0",
+      "ended_at": "2026-09-11T14:08:17.685926+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:08:13.352747+00:00"
+    },
+    "rust-graph": {
+      "cuda_visible_devices": "0",
+      "ended_at": "2026-09-11T14:14:43.521501+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:14:29.873204+00:00"
+    },
+    "rust-storage": {
+      "cuda_visible_devices": "0",
+      "ended_at": "2026-09-11T14:14:47.689956+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:14:44.240879+00:00"
+    },
+    "two-device": {
+      "cuda_visible_devices": "0,1",
+      "ended_at": "2026-09-11T14:14:18.195516+00:00",
+      "exit_status": 0,
+      "started_at": "2026-09-11T14:14:15.594755+00:00"
+    }
+  },
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_67fce754",
+  "external_read_only_tools": "Pinned Rust toolchain, system nvcc and NVIDIA driver",
+  "git_status_at_audit": "",
+  "historical_artifacts_verified_unchanged": 105,
+  "historical_inventory": "../inventory.json",
+  "interpreter": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_67fce754/target/view-postcommit-12ac70fd/python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+  "measured_inputs": "../measured-inputs.json",
+  "measured_inputs_sha256": "865c3aaa1a280d78079b64c57d874efd3df6b85de4f1f607c6e94ef54bd13e4e",
+  "measurement_kind": "fresh clean implementation-commit capture",
+  "native_sha256": "62f8b5830d7784de34de1771daf2af500aa54c921def9b7043c9245f25f8fc13",
+  "python_source_files_checked": 59,
+  "source": {
+    "commit": "12ac70fd1e7ab039d9317866ddaf269ef0c2d484",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source_sha256": "fa2bc2ed12827fb87cebf1406c94bc1bcbcd12cef02f8973c943c03139c40875"
+  },
+  "wheel_sha256": "6b926c9db64b5e83dde93b67da21d469687362999a562f84aa705796ca928819",
+  "worktree_build_import_executable_cache_paths_within_current_worktree": true
+}

@@ -1,0 +1,11 @@
+set -eu
+source target/view-postcommit-12ac70fd/env.sh
+printf 'Started: '; date -u --iso-8601=seconds
+git rev-parse HEAD
+git status --porcelain
+nvidia-smi --query-gpu=index,uuid,name,driver_version,compute_cap,utilization.gpu,memory.used,memory.total --format=csv
+mv .venv target/view-postcommit-12ac70fd/previous-development-venv
+uv python install 3.12.14
+uv venv --python 3.12.14
+uv sync --locked --no-install-project --group dev --group reference
+printf 'Finished: '; date -u --iso-8601=seconds

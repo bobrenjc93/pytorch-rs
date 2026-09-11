@@ -1,0 +1,4 @@
+First publication link check, before inventory generation (no workload failure):
+Traceback (most recent call last):
+  File "<stdin>", line 27, in <module>
+AssertionError: (PosixPath('/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_67fce754/docs/diagnostics/compile-cuda-view/postcommit-12ac70fd/README.md'), 'inventory.json')
