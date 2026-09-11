@@ -703,8 +703,7 @@ fn _nn_functional_l1_loss(
         warn_loss_broadcast(py, "l1_loss", input_shape, target_shape)?;
     }
     if is_grad_enabled() && (input.inner().requires_grad() || target.inner().requires_grad()) {
-        if reduction == L1LossReduction::Sum
-            || input_shape != target_shape
+        if input_shape != target_shape
             || !input.inner().logical_values().all(f32::is_finite)
             || !target.inner().logical_values().all(f32::is_finite)
         {
@@ -720,10 +719,10 @@ fn _nn_functional_l1_loss(
             .sub(target.inner())
             .and_then(|difference| difference.abs())
             .map_err(|error| tensor_error(&error))?;
-        let output = if reduction == L1LossReduction::Mean {
-            output.mean().map_err(|error| tensor_error(&error))?
-        } else {
-            output
+        let output = match reduction {
+            L1LossReduction::None => output,
+            L1LossReduction::Mean => output.mean().map_err(|error| tensor_error(&error))?,
+            L1LossReduction::Sum => output.try_sum().map_err(|error| tensor_error(&error))?,
         };
         return PyTensor::new(output).into_py_any(py);
     }
