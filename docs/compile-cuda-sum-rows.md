@@ -69,7 +69,14 @@ CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest -v \
   tests.test_compile_sum_lowering tests.test_compile_cuda_sum_rows
 ```
 
-The fixed six-case hardware check is correctness evidence. The separate
+The unchanged hardware evaluator still observes the old unary entry point,
+so compiled row sums receive zero credit despite working natively. The
+[separate observer campaign](https://github.com/bobrenjc93/pytorch-rs/pull/1970)
+requires human review before adoption; the six-case denominator is unchanged.
+See the [measurement boundary](compile-cuda-sum-rows-validation.md#current-scoring-boundary)
+for this distinction and the earlier captures.
+
+The separate
 four-workload private CUDA timing suite is unchanged and does not measure the
 new generic row-sum graph. Its saved timing summaries do not contain individual
 latency samples; see the [measurement limitations](compile-cuda-sum-rows-validation.md#clean-implementation-commit-capture).

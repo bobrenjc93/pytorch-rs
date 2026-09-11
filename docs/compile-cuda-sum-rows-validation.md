@@ -19,22 +19,51 @@ The complete Python graph and native composed plan are validated before
 execution. No original Python body or reference PyTorch is executed by the
 candidate.
 
-The six-case hardware evaluator changes only its observed native hook for
-`sum`, from the old unary hook to the real reduction entry point. Its programs,
-input generation, seeds policy, options, tolerances, denominator and weights
-are unchanged. Negative controls retain rejection of Python forwarding,
-counterfeit hooks, body execution, re-lowering, malformed evidence and incorrect
-results. The 38-case CPU compile corpus and four-workload private CUDA
-performance suite are unchanged.
+## Current scoring boundary
+
+The implementation PR now preserves `scripts/evaluate_cuda_compilation.py`
+byte-for-byte from its main-branch base `563d5596`. That observer still watches
+`_compile_trace_unary` for the row-sum case; the native implementation correctly
+uses the shape-changing `_compile_trace_reduction` entry point instead.
+Successful native outputs alone do not satisfy the observer's recorded-call
+contract, so the row-sum slot must remain zero under this scoring campaign.
+The existing five slots and six-case denominator remain unchanged.
+
+The observer adaptation is isolated in
+[campaign PR #1970](https://github.com/bobrenjc93/pytorch-rs/pull/1970), which
+requires separate human review before adoption. This implementation does not
+adopt that campaign or earn its observation-related hardware-score increase.
+Held-out GPU tests and changed-input comparisons still verify the real native
+capability independently of that score.
+
+Earlier captures below used the adapted reduction observer and retain their
+original implementation and harness identities. Their 6/6 results are not
+current canonical-observer scores. Fresh clean-commit captures using the
+restored observer remain a delivery prerequisite; no such new result is
+claimed here yet. Programs, seed policy, input distribution, tolerances,
+compile options, denominator, weights, the 38-case compiler corpus and the
+four-workload private performance suite are unchanged. Negative controls still
+reject Python forwarding, counterfeit hooks, body execution, re-lowering,
+malformed evidence and incorrect results.
+
+During local separation checks, the first hardware-test run failed on row-sum
+seeds `1927` and `83719` because a new assertion expected `passed`. The unchanged
+worker correctly returned `failed` after rejecting the unobserved native
+return, while preserving both executions and their outputs. The assertion was
+corrected to require that rejection; the rerun passed all six cases at both
+seeds without production or evaluator changes. These were dirty local checks,
+not the deferred clean capture. The initial failure output was truncated and
+its complete raw log was not archived; it is not represented as a passing run.
 
 ## Clean implementation-commit capture
 
-A fresh capture at clean commit `472ed6c26404176686a0cde6cb32b0722979be84`
-revalidates the final candidate. The changes since `e9adfdca` contain only
+This historical capture at clean commit `472ed6c26404176686a0cde6cb32b0722979be84`
+validated the earlier candidate with its adapted observer, before the scoring
+separation described above. The changes since `e9adfdca` contained only
 evidence and documentation, and all 873 recorded source, test and evaluator
-hashes still match. However, the earlier local build/interpreter directories
+hashes matched that capture. However, the earlier local build/interpreter directories
 had been removed and the installed extension differed from that capture's
-hash. This run therefore rebuilt and recaptured current provenance; it does
+hash. That run therefore rebuilt and recaptured its provenance; it does
 not rewrite or reuse the earlier measurements as new results.
 
 The release ABI3 wheel was built with `maturin build --offline --release

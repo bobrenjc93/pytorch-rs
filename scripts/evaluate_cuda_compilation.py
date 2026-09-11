@@ -69,7 +69,7 @@ PROGRAMS = dict(zip((
 def native_hook(case):
     return "_compile_trace_" + {
         "add": "binary", "neg": "unary", "mul_scalar": "scalar",
-        "sum": "reduction", "matmul": "binary",
+        "sum": "unary", "matmul": "binary",
     }[case["operation"]]
 
 
