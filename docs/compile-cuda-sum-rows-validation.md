@@ -29,6 +29,74 @@ performance suite are unchanged.
 
 ## Clean implementation-commit capture
 
+A fresh capture at clean commit `472ed6c26404176686a0cde6cb32b0722979be84`
+revalidates the final candidate. The changes since `e9adfdca` contain only
+evidence and documentation, and all 873 recorded source, test and evaluator
+hashes still match. However, the earlier local build/interpreter directories
+had been removed and the installed extension differed from that capture's
+hash. This run therefore rebuilt and recaptured current provenance; it does
+not rewrite or reuse the earlier measurements as new results.
+
+The release ABI3 wheel was built with `maturin build --offline --release
+--locked` in an initially absent local Cargo target. Worktree-local Python
+3.10.21, 3.11.16, 3.12.14, 3.13.15 and 3.14.7 distributions were installed.
+The existing local Python dependencies and Cargo registry cache were reused;
+no lockfile, implementation, test or evaluator changed. The installed Python
+sources and native extension matched the build used by evaluator workers.
+All 22 build/measurement command receipts record an empty Git status and
+unchanged source hashes before and after execution.
+
+See the [build receipt](diagnostics/compile-cuda-sum-rows/postcommit-472ed6c/build-record.json),
+[setup record](diagnostics/compile-cuda-sum-rows/postcommit-472ed6c/setup.json),
+[provenance audit](diagnostics/compile-cuda-sum-rows/postcommit-472ed6c/audit.json),
+[source hashes](diagnostics/compile-cuda-sum-rows/postcommit-472ed6c/source-files.json),
+and [artifact hashes](diagnostics/compile-cuda-sum-rows/postcommit-472ed6c/artifact-sha256.json).
+The archived [capture commands](diagnostics/compile-cuda-sum-rows/postcommit-472ed6c/capture.py.txt)
+invoke the committed repository tools without changing their cases or scoring.
+
+| Check | Result | Raw evidence |
+| --- | --- | --- |
+| Held-out reduction and boundary tests | 14 tests; one expected two-device skip | [log](diagnostics/compile-cuda-sum-rows/postcommit-472ed6c/held-out.stderr.log) |
+| GPU0/GPU1 restoration | One test passed | [log](diagnostics/compile-cuda-sum-rows/postcommit-472ed6c/two-device.stderr.log) |
+| Python 3.10–3.14 lowering/native execution | Six tests passed per version; 3.12 included above | [3.10](diagnostics/compile-cuda-sum-rows/postcommit-472ed6c/python-3.10.stderr.log), [3.11](diagnostics/compile-cuda-sum-rows/postcommit-472ed6c/python-3.11.stderr.log), [3.13](diagnostics/compile-cuda-sum-rows/postcommit-472ed6c/python-3.13.stderr.log), [3.14](diagnostics/compile-cuda-sum-rows/postcommit-472ed6c/python-3.14.stderr.log) |
+| Observer/accounting negative controls | 17 tests passed | [log](diagnostics/compile-cuda-sum-rows/postcommit-472ed6c/observer-controls.stderr.log) |
+| Fixed hardware compilation, capture 1 | 6/6, both evaluator-selected seeds | [report](diagnostics/compile-cuda-sum-rows/postcommit-472ed6c/hardware-1.json) |
+| Fixed hardware compilation, capture 2 | 6/6, both evaluator-selected seeds | [report](diagnostics/compile-cuda-sum-rows/postcommit-472ed6c/hardware-2.json) |
+| Frozen compiler corpus | 38/38 | [report](diagnostics/compile-cuda-sum-rows/postcommit-472ed6c/frozen38.stdout.log) |
+| Private CUDA performance, fresh caches | 4/4; 1.2735x common-success ratio, 100.00% capped result | [report](diagnostics/compile-cuda-sum-rows/postcommit-472ed6c/performance-fresh.json) |
+| Private CUDA performance, reused caches | 4/4; 1.2080x common-success ratio, 100.00% capped result | [report](diagnostics/compile-cuda-sum-rows/postcommit-472ed6c/performance-reused.json) |
+
+The hardware captures selected seeds `2634653737215571408`,
+`3320354213672585458` and `6071828783403128758`, `1384939189734677963`,
+respectively. Both retain the existing five passes and the row-sum pass,
+including changed-input executions through the same wrapper. The six cases,
+input distribution, tolerances, compile options, denominator and weights are
+unchanged. Unsupported behavior outside these cases receives no new credit.
+
+The private performance runs retained all four workloads, five warmups,
+17 samples, three repetitions and equal weights. Both private kernel caches
+were initially absent, as were the first run's CUDA/Inductor/Triton caches;
+the second run reused them. All reported slow results and warnings remain.
+The timing artifacts retain summary statistics, cold/factory accounting and
+checksums, not individual latency samples. Their medians and distributions
+cannot be independently reconstructed from the saved summaries. This suite
+does not measure the new generic row-sum graph or establish universal parity.
+
+The host was NVIDIA H100 with driver 580.82.07. Ordinary runs used GPU0;
+only the restoration test used GPU0/GPU1. Rust 1.92.0 built the release
+extension. The native row-sum kernel uses driver-JIT PTX; the unchanged
+private performance kernels used nvcc 12.6.85. Main candidate/reference workers
+used local CUDA runtime 13.0 and PyTorch 2.13.0+cu130; standalone Python checks
+recorded the read-only system CUDA 13.0.96 runtime and no PyTorch imports.
+Interpreter, import, cache and build paths resolve inside this worktree;
+system compiler/driver/runtime paths are identified separately.
+
+No build or capture command failed. Earlier evidence bundles and development
+failures remain byte-for-byte unchanged. Independent review and Burner's
+ordinary ten no-regression gates remain separate delivery steps.
+
+## Earlier clean implementation-commit capture (e9adfdca)
+
 The post-commit measurements below use clean implementation commit
 `e9adfdca71626190a17e36544af97b1066499bbe`. They complete the previously deferred
 clean-build capture; the development records below remain unchanged and keep

@@ -1,0 +1,41 @@
+{
+  "base_prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-472ed6c/interpreters/cpython-3.12.14-linux-x86_64-gnu",
+  "commit": "472ed6c26404176686a0cde6cb32b0722979be84",
+  "dependency_cache": "target/root-row-sum-docs-check/cargo",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv/bin/python",
+  "existing_python_dependencies_reused": true,
+  "interpreter_binaries": {
+    "3.10": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-472ed6c/interpreters/cpython-3.10.21-linux-x86_64-gnu/bin/python3.10",
+      "sha256": "ca420bd4614ae7757b4cd4938b3c663e98d2b631bda518610071d9a4ca0b509e"
+    },
+    "3.11": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-472ed6c/interpreters/cpython-3.11.16-linux-x86_64-gnu/bin/python3.11",
+      "sha256": "1e761eb19d6f2594ab8dc64bd99ad4e1753589f3bf1ec199e4eef3aaa21e3930"
+    },
+    "3.12": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-472ed6c/interpreters/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+      "sha256": "f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526"
+    },
+    "3.13": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-472ed6c/interpreters/cpython-3.13.15-linux-x86_64-gnu/bin/python3.13",
+      "sha256": "93a93f4c8af5ae6f127fb0310f923d5fab89eb7257a0b801eec2e44b3f199840"
+    },
+    "3.14": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-472ed6c/interpreters/cpython-3.14.7-linux-x86_64-gnu/bin/python3.14",
+      "sha256": "241bf774a81580bb760adf960b48df7e6b23b1de026c9c912d4ca6be1a08241e"
+    }
+  },
+  "prior_capture_build_environment_removed": true,
+  "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+  "setup_commands": [
+    "mkdir -p target/row-sum-postcommit-472ed6c/tmp target/row-sum-postcommit-472ed6c/cache target/row-sum-postcommit-472ed6c/uv-cache",
+    "UV_CACHE_DIR=\"$PWD/target/row-sum-postcommit-472ed6c/uv-cache\" UV_PYTHON_INSTALL_DIR=\"$PWD/target/row-sum-postcommit-472ed6c/interpreters\" UV_PYTHON_BIN_DIR=\"$PWD/target/row-sum-postcommit-472ed6c/bin\" /home/bobren/.local/bin/uv --no-config python install 3.10 3.11 3.12 3.13 3.14",
+    "UV_CACHE_DIR=\"$PWD/target/row-sum-postcommit-472ed6c/uv-cache\" TMPDIR=\"$PWD/target/row-sum-postcommit-472ed6c/tmp\" uv --no-config venv --allow-existing --python \"$PWD/target/row-sum-postcommit-472ed6c/interpreters/cpython-3.12-linux-x86_64-gnu/bin/python3.12\" .venv",
+    ". target/row-sum-postcommit-472ed6c/env.sh",
+    ".venv/bin/python -B target/row-sum-postcommit-472ed6c/capture.py"
+  ],
+  "setup_timing_scope": "Setup timestamp records inspection after setup, not download or virtual-environment creation latency. Build and capture timing is in command receipts.",
+  "time_recorded_unix": 1789086642.4529223,
+  "typing_extensions_copied_to_standalone_interpreters": true
+}
