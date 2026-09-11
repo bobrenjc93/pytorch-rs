@@ -50,6 +50,9 @@ variants guard rank and exact strides; a reused graph recomputes operation
 shapes and validates equal shapes or exactly `(M, N)` and `(N,)` before
 executing any operation. Dynamic shapes do not enable broader broadcasting.
 
+[No-argument squeeze](compile-cuda-squeeze.md) also captures rank-0/1/2
+shared-storage views; its strided outputs require packing before arithmetic.
+
 CUDA graphs reject other unary operations (including `float` and `detach`), scalar
 number operands outside multiplication, broader broadcasts (including `(M,N)+(1,N)`,
 `(M,N)+(M,1)`, rank-three plus vector, or scalar expansion), noncontiguous layouts,

@@ -1,0 +1,1130 @@
+{
+  "commit": "22d2bd4e9bd211cc2c65e8186b08ee3c827196a2",
+  "source_sha256": "30c8a7ad78fa3e1e8a87b59446a6fa2d759d18c5d66be1b77d5655a993acb4e3",
+  "production_diff_sha256": "c7767558e48b0bfe8a6940fc19f2cd9e5996d4360820a5a515ce06be3ac15bee",
+  "native_extension_sha256": "f492541e80297882996e1ab9474b92c942c074c66d5af71ff31fad3dfffcc070",
+  "runtime": {
+    "native_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "native_sha256": "96c42e418cec19054186b9429c321603cc190bf26a18104e19408117a2a817b0",
+    "native_version": 13000,
+    "reference_cuda": "13.0",
+    "reference_version": "2.13.0+cu130",
+    "mapped_after_reference": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13"
+    ]
+  },
+  "measurement_kind": "uncommitted development; clean-commit capture deferred to Burner",
+  "gpu_resource": "gpu; CUDA_VISIBLE_DEVICES=0 except 0,1 restoration and CUDA-hidden checks",
+  "setup_boundary_incident": {
+    "command": "uv python install 3.12.14",
+    "unexpected_external_symlink": "/home/bobren/.local/bin/python3.12",
+    "target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+    "observed_symlink_mtime": "2026-09-11 16:04:33.790986422 -0700",
+    "cleanup": "Explicit authorization requested; no further external changes made.",
+    "prevention": "UV_PYTHON_BIN_DIR is now worktree-local; future installs should also use --no-bin."
+  },
+  "scoring_changes": false,
+  "environment": {
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/cargo-home",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/squeeze-final-build/build",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/bin/python",
+    "VIRTUAL_ENV": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/tmp",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/xdg-cache",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/cuda-cache",
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/uv-cache",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "TORCH_RS_CUDART": null,
+    "RUSTFLAGS": null,
+    "CARGO_BUILD_RUSTFLAGS": null
+  },
+  "software": {
+    "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+    "python_executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/bin/python",
+    "interpreter_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+    "interpreter_sha256": "f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526",
+    "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)\nbinary: rustc\ncommit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234\ncommit-date: 2025-12-08\nhost: x86_64-unknown-linux-gnu\nrelease: 1.92.0\nLLVM version: 21.1.3\n",
+    "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)\n",
+    "rustc_path": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustc",
+    "rustc_sha256": "028fd60b0e0add5505c661cd3ccde91393d615c8729bd95d94ab1e91409b36a1",
+    "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0\n",
+    "nvcc_used": false,
+    "cuda_compilation": "driver JIT of embedded PTX",
+    "profile": {
+      "name": "release",
+      "lto": "thin",
+      "codegen_units": 1,
+      "features": [
+        "extension-module"
+      ]
+    },
+    "uv_lock_sha256": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced",
+    "dependencies": {
+      "cuda-toolkit": "13.0.3.0",
+      "typing_extensions": "4.16.0",
+      "nvidia-cusparse": "12.6.3.3",
+      "nvidia-nvjitlink": "13.3.33",
+      "maturin": "1.14.1",
+      "nvidia-cusparselt-cu13": "0.8.1",
+      "MarkupSafe": "3.0.3",
+      "nvidia-cufile": "1.15.1.6",
+      "nvidia-cufft": "12.0.0.61",
+      "nvidia-cuda-nvrtc": "13.0.88",
+      "nvidia-cusolver": "12.0.4.66",
+      "nvidia-cublas": "13.1.1.3",
+      "cuda-pathfinder": "1.6.0",
+      "filelock": "3.32.2",
+      "nvidia-curand": "10.4.0.35",
+      "Jinja2": "3.1.6",
+      "nvidia-cudnn-cu13": "9.20.0.48",
+      "nvidia-nccl-cu13": "2.29.7",
+      "nvidia-nvtx": "13.0.85",
+      "nvidia-cuda-cupti": "13.0.85",
+      "fsspec": "2026.7.0",
+      "nvidia-nvshmem-cu13": "3.4.5",
+      "cuda-bindings": "13.3.1",
+      "mpmath": "1.3.0",
+      "nvidia-cuda-runtime": "13.0.96",
+      "setuptools": "84.0.0",
+      "triton": "3.7.1",
+      "networkx": "3.6.1",
+      "numpy": "2.5.1",
+      "sympy": "1.14.0",
+      "torch": "2.13.0",
+      "torch-rs": "0.1.0"
+    }
+  },
+  "builds": {
+    "baseline": {
+      "commit": "22d2bd4e9bd211cc2c65e8186b08ee3c827196a2",
+      "source_sha256": "92c6837dd4dd350390e37e047971efe146bcc5db1823646c9d86ad60937f5756",
+      "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "clean_checkout": true,
+      "measurement_kind": "clean-code",
+      "source_unchanged_during_build": true,
+      "extension_sha256": "7b89b7cfdb68879b28a8efb7aa29287be4e5e82fe5ada1cf723c8dc29ab59ffc",
+      "wheel_sha256": "0c5924faf3e739e219398be7682548e84631fef26ea8da25fc25a9cb54488b43",
+      "commands": [
+        {
+          "command": [
+            "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/bin/maturin",
+            "build",
+            "--release",
+            "--locked",
+            "--offline",
+            "--out",
+            "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/squeeze-baseline-build/wheels"
+          ],
+          "started_at": "2026-09-11T23:04:57.367492+00:00",
+          "ended_at": "2026-09-11T23:05:45.025833+00:00",
+          "wall_seconds": 47.6583468625322,
+          "exit_status": 0,
+          "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/squeeze-baseline-build/build.log",
+          "log_sha256": "9936e744a7f1510d6abf8fe3196bd42b0c11dc515195f4cf9a37706be9fc16d0"
+        },
+        {
+          "command": [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/bin/python",
+            "--force-reinstall",
+            "--no-deps",
+            "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/squeeze-baseline-build/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl"
+          ],
+          "started_at": "2026-09-11T23:05:45.026859+00:00",
+          "ended_at": "2026-09-11T23:05:45.275729+00:00",
+          "wall_seconds": 0.24888814613223076,
+          "exit_status": 0,
+          "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/squeeze-baseline-build/install.log",
+          "log_sha256": "a8d25a426fd7d795b01240cb1052412ec13fd9c8243365c64efd713c4740aebc"
+        }
+      ],
+      "cache_state": "empty build target; populated local Cargo registry and locked .venv; offline build"
+    },
+    "initial": {
+      "commit": "22d2bd4e9bd211cc2c65e8186b08ee3c827196a2",
+      "source_sha256": "3b63fa74ebb3ec53d6fd429384669ecbcea266d3bd12619a173e2e3ab70c7313",
+      "production_diff_sha256": "fe703d75a928a91a3226e66fe7d93d63e946f6aaaa30b93090db26b668fc1931",
+      "clean_checkout": false,
+      "measurement_kind": "precommit-diagnostic",
+      "source_unchanged_during_build": true,
+      "extension_sha256": "f492541e80297882996e1ab9474b92c942c074c66d5af71ff31fad3dfffcc070",
+      "wheel_sha256": "9ab6e1784dae60ffac794cb3b2b3bdac204a13ed95fb516c4713e61967fe76ee",
+      "commands": [
+        {
+          "command": [
+            "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/bin/maturin",
+            "build",
+            "--release",
+            "--locked",
+            "--offline",
+            "--out",
+            "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/squeeze-candidate-build/wheels"
+          ],
+          "started_at": "2026-09-11T23:07:58.676205+00:00",
+          "ended_at": "2026-09-11T23:08:45.001966+00:00",
+          "wall_seconds": 46.32576986216009,
+          "exit_status": 0,
+          "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/squeeze-candidate-build/build.log",
+          "log_sha256": "7c4b6de5b3db07ef09ff892f7aadb02cc9ad60c2464022f75c3ac7951857210d"
+        },
+        {
+          "command": [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/bin/python",
+            "--force-reinstall",
+            "--no-deps",
+            "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/squeeze-candidate-build/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl"
+          ],
+          "started_at": "2026-09-11T23:08:45.002949+00:00",
+          "ended_at": "2026-09-11T23:08:45.217874+00:00",
+          "wall_seconds": 0.21494287624955177,
+          "exit_status": 0,
+          "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/squeeze-candidate-build/install.log",
+          "log_sha256": "d2b42e4b51764288eceb9bdc6cdf67c0a34bf33bc0ae414a27c32ea5f446e84d"
+        }
+      ],
+      "cache_state": "empty build target; populated local Cargo registry and locked .venv; offline build"
+    },
+    "final": {
+      "commit": "22d2bd4e9bd211cc2c65e8186b08ee3c827196a2",
+      "source_sha256": "30c8a7ad78fa3e1e8a87b59446a6fa2d759d18c5d66be1b77d5655a993acb4e3",
+      "production_diff_sha256": "c7767558e48b0bfe8a6940fc19f2cd9e5996d4360820a5a515ce06be3ac15bee",
+      "clean_checkout": false,
+      "measurement_kind": "precommit-diagnostic",
+      "source_unchanged_during_build": true,
+      "extension_sha256": "f492541e80297882996e1ab9474b92c942c074c66d5af71ff31fad3dfffcc070",
+      "wheel_sha256": "70db324b4fa1338c4d1820436bda0967b4faf1a51690b36131623d8d249e2e07",
+      "commands": [
+        {
+          "command": [
+            "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/bin/maturin",
+            "build",
+            "--release",
+            "--locked",
+            "--offline",
+            "--out",
+            "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/squeeze-final-build/wheels"
+          ],
+          "started_at": "2026-09-11T23:09:44.346553+00:00",
+          "ended_at": "2026-09-11T23:10:31.661371+00:00",
+          "wall_seconds": 47.31482617650181,
+          "exit_status": 0,
+          "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/squeeze-final-build/build.log",
+          "log_sha256": "bc06b900b04c02cda6b890174544f5c0dde162657fd2a40656f5ee959790d1bf"
+        },
+        {
+          "command": [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/bin/python",
+            "--force-reinstall",
+            "--no-deps",
+            "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/squeeze-final-build/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl"
+          ],
+          "started_at": "2026-09-11T23:10:31.662481+00:00",
+          "ended_at": "2026-09-11T23:10:31.893400+00:00",
+          "wall_seconds": 0.23093661665916443,
+          "exit_status": 0,
+          "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/squeeze-final-build/install.log",
+          "log_sha256": "cbb12720087a75b5d26e4d538d6501aeb1c19fd7fa49fdeef44239981a3e77cf"
+        }
+      ],
+      "cache_state": "empty build target; populated local Cargo registry and locked .venv; offline build"
+    }
+  },
+  "checks": [
+    {
+      "command": [
+        ".venv/bin/python",
+        "target/baseline-probe.py",
+        "22d2bd4e9bd211cc2c65e8186b08ee3c827196a2"
+      ],
+      "visible_devices": "0",
+      "gpu_before": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "started": 1789167961.8389113,
+      "exit_code": 0,
+      "ended": 1789167973.1451824,
+      "gpu_after": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 2 %, 116 MiB"
+      ],
+      "log_sha256": "b356fce5b12e75e4233bb21a4756b586f2f486a7ce458227bfdc0586af141842",
+      "name": "baseline",
+      "gpu_before_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "gpu_after_full_sha256": "fe50fb4b47247e16d76fa52736dc86a2d553420fd63768412fdc6571258d63e5",
+      "summary": [],
+      "build": "baseline"
+    },
+    {
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "visible_devices": "0",
+      "gpu_before": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 1279 MiB"
+      ],
+      "started": 1789168328.8049068,
+      "exit_code": 0,
+      "ended": 1789168331.6604989,
+      "gpu_after": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 639 MiB"
+      ],
+      "log_sha256": "d11dce5239e55d3652a01cf3211e203941c8b72ecc07955cf78a3af62a62c6ce",
+      "name": "clippy-default",
+      "gpu_before_full_sha256": "31a49f67a9488092c7504fbc90f8e2cc8bf6a79d7a27549faf389b3ae5a9c2d1",
+      "gpu_after_full_sha256": "5016ac6deba6d9373b70eef40bfaeb7ed9e795fb871a58500c607e4c427c5ad0",
+      "summary": [],
+      "build": "final"
+    },
+    {
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--all-targets",
+        "--features",
+        "python-bindings",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "visible_devices": "0",
+      "gpu_before": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "started": 1789168186.627784,
+      "exit_code": 0,
+      "ended": 1789168196.947385,
+      "gpu_after": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "log_sha256": "7f13b056ed7013817ba217a036e0c901e41dad71c8a68da5ac5caed503e0d0b3",
+      "name": "clippy",
+      "gpu_before_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "gpu_after_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "summary": [],
+      "build": "final"
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_compile*.py",
+        "-v"
+      ],
+      "visible_devices": "0",
+      "gpu_before": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "started": 1789168278.116346,
+      "exit_code": 0,
+      "ended": 1789168717.0700758,
+      "gpu_after": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "log_sha256": "404cba7b3599a34fa6d22e474586961f2047b9d9daadc225900ef6f0eca13a08",
+      "name": "compiler-final",
+      "gpu_before_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "gpu_after_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "summary": [
+        "Ran 599 tests in 427.240s",
+        "OK (skipped=14)"
+      ],
+      "build": "final"
+    },
+    {
+      "command": [
+        "cargo",
+        "fmt",
+        "--check"
+      ],
+      "visible_devices": "0",
+      "gpu_before": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "started": 1789168185.6554852,
+      "exit_code": 0,
+      "ended": 1789168186.234898,
+      "gpu_after": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "name": "fmt",
+      "gpu_before_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "gpu_after_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "summary": [],
+      "build": "final"
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "target/guide_examples.py"
+      ],
+      "visible_devices": "0",
+      "gpu_before": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "started": 1789168781.9428205,
+      "exit_code": 0,
+      "ended": 1789168782.5200717,
+      "gpu_after": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 2 %, 116 MiB"
+      ],
+      "log_sha256": "bec9f3550ef3004fced55b79988c65d2be256cf8b6d8e48c58db871870eece5d",
+      "name": "guide-examples",
+      "gpu_before_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "gpu_after_full_sha256": "fe50fb4b47247e16d76fa52736dc86a2d553420fd63768412fdc6571258d63e5",
+      "summary": [],
+      "build": "final"
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_compile_cuda_squeeze",
+        "tests.test_squeeze",
+        "tests.test_squeeze_reference",
+        "tests.test_readme_quickstart"
+      ],
+      "visible_devices": "",
+      "gpu_before": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 927 MiB"
+      ],
+      "started": 1789168258.5397632,
+      "exit_code": 0,
+      "ended": 1789168261.9461339,
+      "gpu_after": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 927 MiB"
+      ],
+      "log_sha256": "8b7f5bbf9d06268c15999bc301eba5eebcab9a38c42d035990f83ca34737bde0",
+      "name": "portable-cpu-docs",
+      "gpu_before_full_sha256": "164d3f646f636485cfa4c84ec03a84a0e3d39c41f0f2b1ccd2443ba434ba533e",
+      "gpu_after_full_sha256": "164d3f646f636485cfa4c84ec03a84a0e3d39c41f0f2b1ccd2443ba434ba533e",
+      "summary": [
+        "Ran 31 tests in 0.199s",
+        "OK (skipped=10)"
+      ],
+      "build": "final"
+    },
+    {
+      "command": [
+        "env",
+        "TORCH_RS_CUDART=/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "python-bindings",
+        "--all-targets"
+      ],
+      "visible_devices": "0",
+      "gpu_before": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "started": 1789168766.127438,
+      "exit_code": 0,
+      "ended": 1789168781.6332645,
+      "gpu_after": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 1 %, 116 MiB"
+      ],
+      "log_sha256": "10352296e6696de90274c1fd9c55e0c23a3131a930d4d101ddfc493bb4480b7f",
+      "name": "rust-bindings-all",
+      "gpu_before_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "gpu_after_full_sha256": "cdaf87bb9651470b92ed34ed806418a0aa85cdf08d4c232389bfe60c50a91dbc",
+      "summary": [
+        "test result: ok. 207 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.60s",
+        "test result: ok. 92 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.56s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.55s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.83s",
+        "test result: ok. 103 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
+      ],
+      "build": "final"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--all-targets"
+      ],
+      "visible_devices": "",
+      "gpu_before": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 755 MiB"
+      ],
+      "started": 1789168367.6744702,
+      "exit_code": 0,
+      "ended": 1789168375.0092547,
+      "gpu_after": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 757 MiB"
+      ],
+      "log_sha256": "5a13130529ed0872edf44b82ca8b2bd1ef6b34dc0bc6f0d87ef66488b5980ade",
+      "name": "rust-default-all",
+      "gpu_before_full_sha256": "57db0af0133330bf531c53247084a793561805c7c5baed0306b3136e276755be",
+      "gpu_after_full_sha256": "52c5b767638c9ccc0ae9675d406c6a4c8e464006018a84078093d37ea806f4e0",
+      "summary": [
+        "test result: ok. 180 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.60s",
+        "test result: ok. 92 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s",
+        "test result: ok. 103 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
+      ],
+      "build": "final"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--lib"
+      ],
+      "visible_devices": "0",
+      "gpu_before": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "started": 1789168084.80931,
+      "exit_code": 0,
+      "ended": 1789168091.9787474,
+      "gpu_after": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 2 %, 116 MiB"
+      ],
+      "log_sha256": "7aa55ff98b2129db9bb72993122799f1992d1e7d2a42074f238d34570bb43773",
+      "name": "rust-default",
+      "gpu_before_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "gpu_after_full_sha256": "fe50fb4b47247e16d76fa52736dc86a2d553420fd63768412fdc6571258d63e5",
+      "summary": [
+        "test result: ok. 180 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.60s"
+      ],
+      "build": "development; Rust source unchanged semantically in final (guard fix is Python only)"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "python-bindings",
+        "--lib",
+        "cuda_graph"
+      ],
+      "visible_devices": "0",
+      "gpu_before": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "started": 1789168133.7745385,
+      "exit_code": 0,
+      "ended": 1789168149.9598017,
+      "gpu_after": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 3 %, 927 MiB"
+      ],
+      "log_sha256": "19349ace06eba7b4d75e02403befca7490974bceb0cae1b19b9b7797ce15abfd",
+      "name": "rust-graph",
+      "gpu_before_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "gpu_after_full_sha256": "52e53b253d7e59587c2253b4295e045f384a5381b14e8fd46c103af18fd87c56",
+      "summary": [
+        "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 192 filtered out; finished in 0.42s"
+      ],
+      "build": "development; Rust source unchanged semantically in final (guard fix is Python only)"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "python-bindings",
+        "--lib",
+        "cuda_graph"
+      ],
+      "visible_devices": "",
+      "gpu_before": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "started": 1789168279.6753137,
+      "exit_code": 0,
+      "ended": 1789168280.024644,
+      "gpu_after": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "log_sha256": "509a78c2c25f1fbfd8300402f2115caacb4a4f9437b4d6ebfcb9be708bdede77",
+      "name": "rust-portable",
+      "gpu_before_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "gpu_after_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "summary": [
+        "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 192 filtered out; finished in 0.26s"
+      ],
+      "build": "final"
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "target/verify_source.py"
+      ],
+      "visible_devices": "0",
+      "gpu_before": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "started": 1789168790.0579112,
+      "exit_code": 0,
+      "ended": 1789168793.2866085,
+      "gpu_after": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "log_sha256": "f98c248334d2d8b4e78f12fd304fccd92724b26d0429a7d4eaa1dc58934ef090",
+      "name": "source-final",
+      "gpu_before_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "gpu_after_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "summary": [],
+      "build": "final"
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_compile_cuda_squeeze"
+      ],
+      "visible_devices": "0",
+      "gpu_before": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "started": 1789168245.6201072,
+      "exit_code": 0,
+      "ended": 1789168272.6593263,
+      "gpu_after": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "log_sha256": "f846e5cd0eb8dd7fbd6e15eb5bbff2efe7b65d6b7df18a979bd4c9056d694313",
+      "name": "squeeze-final",
+      "gpu_before_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "gpu_after_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "summary": [
+        "Ran 11 tests in 22.727s",
+        "OK (skipped=1)"
+      ],
+      "build": "final"
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_compile_cuda_squeeze"
+      ],
+      "visible_devices": "0",
+      "gpu_before": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "started": 1789168131.697367,
+      "exit_code": 1,
+      "ended": 1789168155.9416013,
+      "gpu_after": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "log_sha256": "12baf50d3306e66d8254e99de561e1e4de0762661681ad463ae5303760afdec1",
+      "name": "squeeze-first",
+      "gpu_before_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "gpu_after_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "summary": [
+        "Ran 11 tests in 20.187s",
+        "FAILED (failures=1, skipped=1)"
+      ],
+      "build": "initial",
+      "failure": "Method replacement was accepted: squeeze omitted from method identity guard registry. Repaired without weakening test."
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_top_level_compile"
+      ],
+      "visible_devices": "0",
+      "gpu_before": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "started": 1789168717.3830187,
+      "exit_code": 0,
+      "ended": 1789168717.8182526,
+      "gpu_after": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "log_sha256": "f726e68d3afbd8aa74ff22e3c4350828918f1b0748405d36b2301ccae0ef2ad7",
+      "name": "top-level-final",
+      "gpu_before_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "gpu_after_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "summary": [
+        "Ran 49 tests in 0.339s",
+        "OK"
+      ],
+      "build": "final"
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_compile_cuda_squeeze.SqueezeDeviceTests",
+        "tests.test_compile_cuda_t.CompileTDeviceTests",
+        "tests.test_compile_cuda_transpose.TransposeDeviceTests"
+      ],
+      "visible_devices": "0,1",
+      "gpu_before": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB",
+        "1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB"
+      ],
+      "started": 1789168761.9203324,
+      "exit_code": 0,
+      "ended": 1789168765.8196728,
+      "gpu_after": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB",
+        "1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB"
+      ],
+      "log_sha256": "a8d1998ee94b1e27fe45104188c715bcf8a9834d7bdb048a3af4472cf980c8ca",
+      "name": "two-device",
+      "gpu_before_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "gpu_after_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "summary": [
+        "Ran 3 tests in 0.523s",
+        "OK"
+      ],
+      "build": "final"
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "target/verify_source.py"
+      ],
+      "visible_devices": "0",
+      "gpu_before": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "started": 1789168241.0738297,
+      "exit_code": 0,
+      "ended": 1789168244.5309827,
+      "gpu_after": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "log_sha256": "f98c248334d2d8b4e78f12fd304fccd92724b26d0429a7d4eaa1dc58934ef090",
+      "name": "verify-source",
+      "gpu_before_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "gpu_after_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "summary": [],
+      "build": "final"
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        ".github/scripts/verify_native_extension.py"
+      ],
+      "visible_devices": "0",
+      "gpu_before": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "started": 1789168244.9226594,
+      "exit_code": 0,
+      "ended": 1789168245.2177267,
+      "gpu_after": [
+        "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB"
+      ],
+      "log_sha256": "1d242f902f69d615d9637db6ca22cb85f1842316376d9777b652348422ded68c",
+      "name": "verify-wheel",
+      "gpu_before_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "gpu_after_full_sha256": "7b000e07a22e81a2e6a6bc1cc46e288cc17610c31b3f64da27b9a7864c98c76a",
+      "summary": [],
+      "build": "final"
+    }
+  ],
+  "baseline": {
+    "cases": [
+      {
+        "name": "leading_singleton",
+        "function": "squeeze_all",
+        "shapes": [
+          [
+            1,
+            7
+          ]
+        ],
+        "initial_input_sha256": [
+          "542ed115372e42f1ef397f2d44c62f31f44cc21aede831853f3ae39e81922564"
+        ],
+        "reference_eager_and_compiled_passed": true,
+        "native_eager_passed": true,
+        "input_address_matches": true,
+        "returns_original_input": false,
+        "storage_alias_mutation_verified": true,
+        "empty_alias_not_proven_by_pointer": false,
+        "native_compiled_cold": "CompileTraceUnsupportedError",
+        "native_compiled_repeat": "CompileTraceUnsupportedError"
+      },
+      {
+        "name": "trailing_singleton",
+        "function": "squeeze_all",
+        "shapes": [
+          [
+            7,
+            1
+          ]
+        ],
+        "initial_input_sha256": [
+          "83ec41e367540270219d69b1545b2ddbd9b05695212816f8e4c4395eb8a56d98"
+        ],
+        "reference_eager_and_compiled_passed": true,
+        "native_eager_passed": true,
+        "input_address_matches": true,
+        "returns_original_input": false,
+        "storage_alias_mutation_verified": true,
+        "empty_alias_not_proven_by_pointer": false,
+        "native_compiled_cold": "CompileTraceUnsupportedError",
+        "native_compiled_repeat": "CompileTraceUnsupportedError"
+      },
+      {
+        "name": "keyword_dimension",
+        "function": "squeeze_keyword",
+        "shapes": [
+          [
+            7,
+            1
+          ]
+        ],
+        "initial_input_sha256": [
+          "7be97e1c2db1a1dce9c590eec377c0e87e8d06768f5dedc02bed38620e577955"
+        ],
+        "reference_eager_and_compiled_passed": true,
+        "native_eager_passed": true,
+        "input_address_matches": true,
+        "returns_original_input": false,
+        "storage_alias_mutation_verified": true,
+        "empty_alias_not_proven_by_pointer": false,
+        "native_compiled_cold": "CompileTraceUnsupportedError",
+        "native_compiled_repeat": "CompileTraceUnsupportedError"
+      },
+      {
+        "name": "tuple_dimensions",
+        "function": "squeeze_tuple",
+        "shapes": [
+          [
+            1,
+            1
+          ]
+        ],
+        "initial_input_sha256": [
+          "9affaf3ccbe78a0b37adda7315c64fc2a2a7f66f2616bda6ab8ad2271de623e9"
+        ],
+        "reference_eager_and_compiled_passed": true,
+        "native_eager_passed": true,
+        "input_address_matches": true,
+        "returns_original_input": false,
+        "storage_alias_mutation_verified": true,
+        "empty_alias_not_proven_by_pointer": false,
+        "native_compiled_cold": "CompileTraceUnsupportedError",
+        "native_compiled_repeat": "CompileTraceUnsupportedError"
+      },
+      {
+        "name": "list_dimensions",
+        "function": "squeeze_list",
+        "shapes": [
+          [
+            1,
+            1
+          ]
+        ],
+        "initial_input_sha256": [
+          "f7dd1e486df9dedb91861894e35cbc43d6ee89145f11ef3ca7c16f69e8c21892"
+        ],
+        "reference_eager_and_compiled_passed": true,
+        "native_eager_passed": true,
+        "input_address_matches": true,
+        "returns_original_input": false,
+        "storage_alias_mutation_verified": true,
+        "empty_alias_not_proven_by_pointer": false,
+        "native_compiled_cold": "CompileTraceUnsupportedError",
+        "native_compiled_repeat": "CompileTraceUnsupportedError"
+      },
+      {
+        "name": "variadic_dimensions",
+        "function": "squeeze_variadic",
+        "shapes": [
+          [
+            1,
+            1
+          ]
+        ],
+        "initial_input_sha256": [
+          "19611ff10681c192f4b37abd76e63ba68b1b701d467665605b38307801b5f801"
+        ],
+        "reference_eager_and_compiled_passed": true,
+        "native_eager_passed": true,
+        "input_address_matches": true,
+        "returns_original_input": false,
+        "storage_alias_mutation_verified": true,
+        "empty_alias_not_proven_by_pointer": false,
+        "native_compiled_cold": "CompileTraceUnsupportedError",
+        "native_compiled_repeat": "CompileTraceUnsupportedError"
+      },
+      {
+        "name": "unchanged_matrix",
+        "function": "squeeze_all",
+        "shapes": [
+          [
+            3,
+            7
+          ]
+        ],
+        "initial_input_sha256": [
+          "90301ff4775673828f71f6bdd2e3b47551439e1ae837d990c2f09938289a4eae"
+        ],
+        "reference_eager_and_compiled_passed": true,
+        "native_eager_passed": true,
+        "input_address_matches": true,
+        "returns_original_input": false,
+        "storage_alias_mutation_verified": true,
+        "empty_alias_not_proven_by_pointer": false,
+        "native_compiled_cold": "CompileTraceUnsupportedError",
+        "native_compiled_repeat": "CompileTraceUnsupportedError"
+      },
+      {
+        "name": "nonsingleton_dimension",
+        "function": "squeeze_one",
+        "shapes": [
+          [
+            3,
+            7
+          ]
+        ],
+        "initial_input_sha256": [
+          "33eebf6f1020b8723e445cbf94fabcb574165a10ae509a84581bc8cbc0cb956a"
+        ],
+        "reference_eager_and_compiled_passed": true,
+        "native_eager_passed": true,
+        "input_address_matches": true,
+        "returns_original_input": false,
+        "storage_alias_mutation_verified": true,
+        "empty_alias_not_proven_by_pointer": false,
+        "native_compiled_cold": "CompileTraceUnsupportedError",
+        "native_compiled_repeat": "CompileTraceUnsupportedError"
+      },
+      {
+        "name": "empty_dimensions",
+        "function": "squeeze_empty_dims",
+        "shapes": [
+          [
+            1,
+            7
+          ]
+        ],
+        "initial_input_sha256": [
+          "249576186c1bf65d84239b0e6a3c4c66158074d130c272e8f7a777944f0e3987"
+        ],
+        "reference_eager_and_compiled_passed": true,
+        "native_eager_passed": true,
+        "input_address_matches": true,
+        "returns_original_input": false,
+        "storage_alias_mutation_verified": true,
+        "empty_alias_not_proven_by_pointer": false,
+        "native_compiled_cold": "CompileTraceUnsupportedError",
+        "native_compiled_repeat": "CompileTraceUnsupportedError"
+      },
+      {
+        "name": "vector",
+        "function": "squeeze_all",
+        "shapes": [
+          [
+            7
+          ]
+        ],
+        "initial_input_sha256": [
+          "4e64b53a7968b0e3bc654fdf9bf0e90edc8a8d319ced7bc467939cea5846dc6a"
+        ],
+        "reference_eager_and_compiled_passed": true,
+        "native_eager_passed": true,
+        "input_address_matches": true,
+        "returns_original_input": false,
+        "storage_alias_mutation_verified": true,
+        "empty_alias_not_proven_by_pointer": false,
+        "native_compiled_cold": "CompileTraceUnsupportedError",
+        "native_compiled_repeat": "CompileTraceUnsupportedError"
+      },
+      {
+        "name": "scalar",
+        "function": "squeeze_all",
+        "shapes": [
+          []
+        ],
+        "initial_input_sha256": [
+          "f8cb6d1c5486a01bedb98e122f896b376f28c781b49bc0fb5afa5ed70e4dbf34"
+        ],
+        "reference_eager_and_compiled_passed": true,
+        "native_eager_passed": true,
+        "input_address_matches": true,
+        "returns_original_input": false,
+        "storage_alias_mutation_verified": true,
+        "empty_alias_not_proven_by_pointer": false,
+        "native_compiled_cold": "CompileTraceUnsupportedError",
+        "native_compiled_repeat": "CompileTraceUnsupportedError"
+      },
+      {
+        "name": "scalar_dimension",
+        "function": "squeeze_one",
+        "shapes": [
+          []
+        ],
+        "initial_input_sha256": [
+          "a8e10c8c1a478473fe33d638027a24871f2fe75b0102e5e5bc24b0333be4f353"
+        ],
+        "reference_eager_and_compiled_passed": true,
+        "native_eager_passed": true,
+        "input_address_matches": true,
+        "returns_original_input": false,
+        "storage_alias_mutation_verified": true,
+        "empty_alias_not_proven_by_pointer": false,
+        "native_compiled_cold": "CompileTraceUnsupportedError",
+        "native_compiled_repeat": "CompileTraceUnsupportedError"
+      },
+      {
+        "name": "zero_sized",
+        "function": "squeeze_all",
+        "shapes": [
+          [
+            1,
+            0
+          ]
+        ],
+        "initial_input_sha256": [
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ],
+        "reference_eager_and_compiled_passed": true,
+        "native_eager_passed": true,
+        "input_address_matches": true,
+        "returns_original_input": false,
+        "storage_alias_mutation_verified": false,
+        "empty_alias_not_proven_by_pointer": true,
+        "native_compiled_cold": "CompileTraceUnsupportedError",
+        "native_compiled_repeat": "CompileTraceUnsupportedError"
+      },
+      {
+        "name": "transposed_singleton",
+        "function": "squeeze_transpose",
+        "shapes": [
+          [
+            1,
+            7
+          ]
+        ],
+        "initial_input_sha256": [
+          "bb82d4a98d0db91b816c5c8f26dde3df81451e6c0b1cf964d7ba7dbd46fd046d"
+        ],
+        "reference_eager_and_compiled_passed": true,
+        "native_eager_passed": true,
+        "input_address_matches": true,
+        "returns_original_input": false,
+        "storage_alias_mutation_verified": true,
+        "empty_alias_not_proven_by_pointer": false,
+        "native_compiled_cold": "CompileTraceUnsupportedError",
+        "native_compiled_repeat": "CompileTraceUnsupportedError"
+      },
+      {
+        "name": "affine_relu",
+        "function": "affine_relu_squeeze",
+        "shapes": [
+          [
+            1,
+            7
+          ],
+          [
+            7,
+            5
+          ]
+        ],
+        "initial_input_sha256": [
+          "f69df8d4b074b428b420a337e597448c7b398b27dc7b94a9cca0aa61a7f0734f",
+          "a124b73d04a5637dd6fd47bcf666203a65c510e56d05dc57d5e4c2beb3ae4c6f"
+        ],
+        "reference_eager_and_compiled_passed": true,
+        "native_eager_passed": true,
+        "input_address_matches": false,
+        "returns_original_input": false,
+        "storage_alias_mutation_verified": false,
+        "empty_alias_not_proven_by_pointer": false,
+        "native_compiled_cold": "CompileTraceUnsupportedError",
+        "native_compiled_repeat": "CompileTraceUnsupportedError"
+      }
+    ],
+    "bindings": {
+      "positive_out_of_range": {
+        "reference": "IndexError",
+        "native": "IndexError"
+      },
+      "negative_out_of_range": {
+        "reference": "IndexError",
+        "native": "IndexError"
+      },
+      "duplicate_dimensions": {
+        "reference": "RuntimeError",
+        "native": "RuntimeError"
+      },
+      "bool_dimension": {
+        "reference": "TypeError",
+        "native": "TypeError"
+      },
+      "none_dimension": {
+        "reference": "TypeError",
+        "native": "TypeError"
+      },
+      "huge_dimension": {
+        "reference": "ValueError",
+        "native": "ValueError"
+      },
+      "huge_tuple_dimension": {
+        "reference": "TypeError",
+        "native": "TypeError"
+      },
+      "duplicate_binding": {
+        "reference": "TypeError",
+        "native": "TypeError"
+      },
+      "unexpected_keyword": {
+        "reference": "TypeError",
+        "native": "TypeError"
+      }
+    }
+  }
+}

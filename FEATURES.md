@@ -260,6 +260,15 @@ sizes may change view-versus-pack behavior under unchanged rank/stride/offset
 and device guards. Shape expressions, arbitrary containers, CPU/gradient capture,
 `reshape_as` and top-level reshape remain excluded; scoring corpora are unchanged.
 
+[Compiled CUDA `Tensor.squeeze()`](docs/compile-cuda-squeeze.md) accepts exactly
+no-argument methods on rank-0/1/2 CUDA float32 tensors without gradients.
+Every call creates a fresh wrapper sharing storage, removing only singleton
+shape/stride entries and preserving offset and bits, even for unchanged or empty
+layouts. Dynamic input sizes can remove/reintroduce singleton axes under the
+existing rank/stride/offset guards. Nested output identity and whole-graph
+prevalidation apply. Dimensions, keywords, top-level squeeze, CPU capture,
+higher ranks and gradients remain excluded; native eager overloads are unchanged.
+
 [Compiled CUDA `Tensor.view`](docs/compile-cuda-view.md) accepts the same bounded
 integer shapes with `size=` keyword binding and strict alias-only semantics.
 Incompatible layouts fail before any graph operation, including dynamic cache

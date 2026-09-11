@@ -188,6 +188,7 @@ class CompileTraceGraph:
 
 
 _SUPPORTED_UNARY_METHODS = (
+    "Tensor.squeeze (CUDA, parameterless, rank <= 2)",
     "Tensor.t (CUDA, parameterless, rank <= 2)",
     "Tensor.transpose (CUDA, constant integer axes, rank <= 2)",
     "Tensor.reshape (CUDA, constant integer shape, rank <= 2)",
@@ -206,7 +207,7 @@ _SUPPORTED_VALUE_UNARY_TARGETS = frozenset(("neg", "abs", "relu", "square"))
 _SUPPORTED_ALIAS_UNARY_TARGETS = frozenset(("detach",))
 _SUPPORTED_IDENTITY_UNARY_TARGETS = frozenset(("float",))
 _SUPPORTED_UNARY_TARGETS = (
-    frozenset(("contiguous", "t"))
+    frozenset(("contiguous", "t", "squeeze"))
     | _SUPPORTED_VALUE_UNARY_TARGETS
     | _SUPPORTED_ALIAS_UNARY_TARGETS
     | _SUPPORTED_IDENTITY_UNARY_TARGETS
@@ -759,6 +760,18 @@ def _transpose_output_metadata(metadata, axes):
     )
 
 
+def _squeeze_output_metadata(metadata):
+    _validate_cuda_metadata(metadata, require_contiguous=False)
+    if metadata.device.type != "cuda" or len(metadata.shape) > 2:
+        raise CompileTraceUnsupportedError("torch.compile Tensor.squeeze requires CUDA rank 0, 1 or 2")
+    return CompileTraceTensorMetadata(
+        shape=tuple(n for n in metadata.shape if n != 1),
+        stride=tuple(s for n, s in zip(metadata.shape, metadata.stride) if n != 1),
+        dtype=metadata.dtype, device=metadata.device, requires_grad=False,
+        storage_offset=metadata.storage_offset,
+    )
+
+
 def _contiguous_output_metadata(metadata):
     if metadata.device.type != "cuda":
         raise CompileTraceUnsupportedError("torch.compile contiguous only supports CUDA")
@@ -776,6 +789,8 @@ def _contiguous_output_metadata(metadata):
 
 
 def _unary_output_metadata(input_metadata, target, *, grad_enabled=None):
+    if target == "squeeze":
+        return _squeeze_output_metadata(input_metadata)
     if target == "t":
         return _t_output_metadata(input_metadata)
     if target == "contiguous":
@@ -1342,7 +1357,7 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled, de
         return expected
     if operation.scalar is not None:
         raise CompileTraceUnsupportedError("torch.compile non-scalar operation has a scalar payload")
-    if operation.target in ("contiguous", "t", "transpose", "reshape", "view"):
+    if operation.target in ("contiguous", "t", "squeeze", "transpose", "reshape", "view"):
         if len(operation.inputs) != 1:
             raise CompileTraceUnsupportedError(f"torch.compile {operation.target} requires one input")
         name = operation.inputs[0]
@@ -1352,6 +1367,8 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled, de
         elif operation.target == "transpose":
             def infer(metadata):
                 return _transpose_output_metadata(metadata, operation.axes)
+        elif operation.target == "squeeze":
+            infer = _squeeze_output_metadata
         else:
             infer = _t_output_metadata if operation.target == "t" else _contiguous_output_metadata
         expected = infer(metadata_values[name])
@@ -1541,7 +1558,7 @@ def execute_compile_trace_graph(graph, *inputs):
             )
         metadata_values[operation.name] = expected_metadata
 
-    if (len(graph.operations) > 1 or any(op.target in ("contiguous", "t", "transpose", "reshape", "view", "relu") for op in graph.operations)) and all(
+    if (len(graph.operations) > 1 or any(op.target in ("contiguous", "t", "squeeze", "transpose", "reshape", "view", "relu") for op in graph.operations)) and all(
         metadata.device.type == "cuda" for metadata in metadata_values.values()
     ):
         # Validate the output tree too before the native bridge can launch.
@@ -1642,6 +1659,9 @@ class CompileTraceTensorProxy:
 
     def t(self):
         return self._recorder.record_unary("t", self)
+
+    def squeeze(self):
+        return self._recorder.record_unary("squeeze", self)
 
     def contiguous(self):
         return self._recorder.record_unary("contiguous", self)

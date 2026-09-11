@@ -3,13 +3,14 @@
 use super::{
     ElementwiseLayout, MemoryFormat, Tensor, TensorError, contiguous_strides, element_count,
     elementwise_output_strides, layout_is_contiguous, normalize_transpose_dimension,
-    reshape_view_strides, validated_layout,
+    reshape_view_strides, squeeze_layout, validated_layout,
 };
 
 #[derive(Clone, Copy)]
 pub(crate) enum Operation {
     Contiguous(usize),
     T(usize),
+    Squeeze(usize),
     Transpose(usize, i64, i64),
     Reshape(usize, Shape),
     View(usize, Shape),
@@ -85,6 +86,25 @@ impl Layout {
             shape: &self.shape,
             strides: &self.strides,
         }
+    }
+
+    fn squeeze(&self) -> Result<Self, TensorError> {
+        if self.shape.len() > 2 || self.shape.len() != self.strides.len() {
+            return Err(TensorError::UnsupportedCudaContiguous {
+                reason: "compiled Tensor.squeeze requires rank 0, 1 or 2",
+            });
+        }
+        let (shape, strides) = squeeze_layout(
+            &self.shape,
+            &self.strides,
+            element_count(&self.shape)?,
+            |_, n| n == 1,
+        )?;
+        Ok(Self {
+            shape,
+            strides,
+            offset: self.offset,
+        })
     }
 
     fn t(&self) -> Result<Self, TensorError> {
@@ -177,6 +197,7 @@ impl Operation {
         // independently satisfy its contiguous-only contract during planning.
         let get_contiguous = |index| get(index)?.require_contiguous();
         let shape = match self {
+            Self::Squeeze(input) => return get(input)?.squeeze(),
             Self::T(input) => return get(input)?.t(),
             Self::Reshape(input, shape) => return get(input)?.reshape(shape, false),
             Self::View(input, shape) => return get(input)?.reshape(shape, true),
@@ -289,6 +310,7 @@ impl Operation {
         };
         match self {
             Self::T(input) => get(input).t(),
+            Self::Squeeze(input) => get(input).squeeze(),
             Self::Reshape(input, shape) => get(input).reshape(shape.as_slice()),
             Self::View(input, shape) => get(input).view(shape.as_slice()),
             Self::Transpose(input, dim0, dim1) => get(input).transpose(dim0, dim1),
@@ -313,6 +335,84 @@ thread_local! {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn squeeze_plans_surviving_strides_and_retains_storage_even_when_empty() {
+        use crate::{Device, cuda};
+        use std::sync::Arc;
+        let base = Tensor::from_vec((0_u16..21).map(f32::from).collect(), [3, 7]).unwrap();
+        let empty = Tensor::from_vec(vec![], [1, 0]).unwrap();
+        let large_empty = Tensor::from_vec(vec![], [0, 1_usize << 32]).unwrap();
+        for tensor in [
+            base.clone(),
+            base.t().unwrap(),
+            base.slice_dimension(0, 1, 1).unwrap(),
+            base.slice_dimension(1, 2, 1).unwrap(),
+            base.select_dimension(1, 2).unwrap(),
+            base.select_dimension(0, 1)
+                .unwrap()
+                .select_dimension(0, 2)
+                .unwrap(),
+            empty,
+            large_empty,
+        ] {
+            for gpu in [false, true] {
+                if gpu && cuda::device_count() == 0 {
+                    continue;
+                }
+                let input = if gpu {
+                    tensor.try_copy_cpu_to_cuda(Device::Cuda(0)).unwrap()
+                } else {
+                    tensor.clone()
+                };
+                let operation = Operation::Squeeze(0);
+                let plan = operation.layout(&[Layout::from_tensor(&input)]).unwrap();
+                let eager = input.squeeze().unwrap();
+                let output = operation.execute(&[&input], &[]).unwrap();
+                assert!(plan.matches(&eager));
+                assert!(plan.matches(&output));
+                // Arc identity proves aliasing even when the data pointer is zero.
+                assert!(Arc::ptr_eq(&input.storage, &output.storage));
+                let storage = Arc::downgrade(&input.storage);
+                drop(eager);
+                drop(input);
+                assert!(storage.upgrade().is_some());
+                assert_eq!(output.storage_offset(), plan.offset);
+            }
+        }
+        for (shape, strides, expected_shape, expected_strides) in [
+            (vec![1, 7], vec![123, 3], vec![7], vec![3]),
+            (vec![7, 1], vec![3, 123], vec![7], vec![3]),
+            (vec![1, 0], vec![123, 7], vec![0], vec![7]),
+            (vec![1, 1], vec![123, 7], vec![], vec![]),
+        ] {
+            let output = Operation::Squeeze(0)
+                .layout(&[Layout {
+                    shape,
+                    strides,
+                    offset: 11,
+                }])
+                .unwrap();
+            assert_eq!(output.shape, expected_shape);
+            assert_eq!(output.strides, expected_strides);
+            assert_eq!(output.offset, 11);
+        }
+        for layout in [
+            Layout {
+                shape: vec![1, 1, 1],
+                strides: vec![1, 1, 1],
+                offset: 0,
+            },
+            Layout {
+                shape: vec![1, 7],
+                strides: vec![1],
+                offset: 0,
+            },
+        ] {
+            assert!(Operation::Squeeze(0).layout(&[layout]).is_err());
+        }
+        assert!(Operation::Squeeze(1).layout(&[]).is_err());
+    }
 
     #[test]
     fn shape_count_validation_does_not_admit_higher_rank_operations() {

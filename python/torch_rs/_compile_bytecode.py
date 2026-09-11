@@ -152,6 +152,7 @@ _METHOD_TARGETS = {
     "view": _MethodTarget("view", "view", 1, "Tensor.view"),
     "reshape": _MethodTarget("view", "reshape", 1, "Tensor.reshape"),
     "transpose": _MethodTarget("view", "transpose", 2, "Tensor.transpose"),
+    "squeeze": _MethodTarget("unary", "squeeze", 0, "Tensor.squeeze"),
     "t": _MethodTarget("unary", "t", 0, "Tensor.t"),
     "contiguous": _MethodTarget("unary", "contiguous", 0, "Tensor.contiguous"),
     "sum": _MethodTarget("reduction", "sum", 1, "Tensor.sum"),

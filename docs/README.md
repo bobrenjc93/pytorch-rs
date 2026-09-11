@@ -23,6 +23,7 @@ artifacts are generated at merge time and are not source documentation.
 - [Setup troubleshooting](troubleshooting.md): Short fixes for common environment, import, reference dependency, and stale wheel failures.
 - [Repository README](../README.md): Install commands, first-success example, scope summary, and validation entry points.
 - [Architecture map](../ARCHITECTURE.md): Source map for the Rust core, Python bindings, wrappers, and test layout.
+- [Compiled CUDA squeeze](compile-cuda-squeeze.md): No-argument singleton removal, fresh shared-storage wrappers and H100 validation.
 - [Compiled CUDA view](compile-cuda-view.md): Alias-only constant shapes, strict stride compatibility and H100 validation.
 - [Compiled CUDA reshape](compile-cuda-reshape.md): Constant rank-0/1/2 shapes, native alias-or-pack semantics and H100 validation.
 - [Compiled CUDA transpose views](compile-cuda-t.md): Bounded `t()`/constant-axis `transpose()` capture, packing composition and H100 validation.
