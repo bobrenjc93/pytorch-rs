@@ -77,25 +77,22 @@ CUDA_VISIBLE_DEVICES='' .venv/bin/python -m unittest -v tests.test_compile_cuda_
 ```
 
 Hardware-only cases skip clearly when the required devices are unavailable.
-The [development capture](diagnostics/compile-cuda-reshape/README.md) records the
-fresh PR1977 baseline gap, installed release builds, failures and final checks.
-The separate [clean-commit capture](diagnostics/compile-cuda-reshape/postcommit-1ad5fd62/README.md)
-measures `1ad5fd620be0c0fb93638ee5061c9e1b2577cc35` with a fresh local environment
-and release build. H100 differentials, compiler and CPU/layout regressions,
-two-device restoration, CUDA-hidden portability, Rust checks, Clippy and the
-example above passed; hardware skips remain recorded. These graphlets are
-non-scoring diagnostics. Frozen38, performance workloads, evaluator definitions,
-observer/hardware contracts and the separate unadopted PR1970/PR1971 campaigns
-are unchanged.
+The [latest clean-commit capture](diagnostics/compile-cuda-reshape/postcommit-3d44687d/README.md)
+measures `3d44687d186bcc0f4d3a003676b5719353c80ab4` with a fresh local environment
+and release build, including both reviews' argument-validation regressions.
+H100 differentials, compiler and CPU/layout regressions, two-device restoration,
+CUDA-hidden portability, Rust checks, Clippy and the example above passed;
+hardware skips remain recorded.
 
-The [latest clean-commit capture](diagnostics/compile-cuda-reshape/postcommit-7533cbbc/README.md)
-measures `7533cbbcd00bdf2b9213bba7a0cefb2f96d43ccd`, including the
-[binding review revision](diagnostics/compile-cuda-reshape/binding-review/README.md)
-and its Tensor-valued invalid-call differentials across all compile policies.
-All requested checks passed with a fresh local environment and release build;
-earlier captures and failures remain pinned to their original code.
+The [original development capture](diagnostics/compile-cuda-reshape/README.md)
+preserves the fresh PR1977 baseline gap and failed attempts. The
+[binding review](diagnostics/compile-cuda-reshape/binding-review/README.md) and
+[partial-argument review](diagnostics/compile-cuda-reshape/validation-review/README.md)
+retain their development failures and checks. Earlier clean captures at
+[`1ad5fd62`](diagnostics/compile-cuda-reshape/postcommit-1ad5fd62/README.md) and
+[`7533cbbc`](diagnostics/compile-cuda-reshape/postcommit-7533cbbc/README.md) remain
+pinned to their original code and build identities.
 
-The subsequent [partial-argument validation revision](diagnostics/compile-cuda-reshape/validation-review/README.md)
-records the second review's regressions, retained failures and passing development
-checks. A fresh clean-commit capture is required after Burner commits this fix;
-the earlier captures do not validate it.
+These graphlets are non-scoring diagnostics. Frozen38, performance workloads,
+evaluator definitions, observer/hardware contracts and the separate unadopted
+PR1970/PR1971 campaigns are unchanged.
