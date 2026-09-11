@@ -1,0 +1,38 @@
+{
+  "all_measurements_clean": true,
+  "build_source_matches_clean_commit": true,
+  "candidate_clean_commit_capture": "complete",
+  "candidate_diff_files_inspected": 90,
+  "checks": {
+    "compiler-regressions": 0,
+    "cpu-docs": 0,
+    "cuda-packing": 0,
+    "docs-example": 0,
+    "imports": 0,
+    "no-device": 0,
+    "preflight": 1,
+    "preflight-clean": 0,
+    "release-build": 0,
+    "rust-graph": 0,
+    "rust-packing": 0,
+    "setup": 0,
+    "transpose": 0,
+    "two-device": 0
+  },
+  "code_build_import_and_python_runtime_paths_within_current_worktree": true,
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+  "implementation_dependencies_tests_and_harnesses_unchanged": true,
+  "installed_native_matches_build": true,
+  "installed_python_matches_source": true,
+  "manifest_sha256": "fb3ea619cca55f4fad6e0102cf639eb5e9ef6bd81b9858dacd8466c4d925ce45",
+  "measured_commit": "fef2ad8258a09c6e3d2554d9477526500447fe27",
+  "native_sha256": "7bc73f243fb712638f21db758817637438511cf0ba4f70749fc623df2ec4757c",
+  "previous_evidence_preserved": true,
+  "publication_changes": "M docs/compile-cuda-t.md\n?? docs/diagnostics/compile-cuda-transpose/postcommit-fef2ad82/",
+  "retained_failure": "preflight helper was initially named inspect.py, shadowing stdlib; renamed before successful retry",
+  "source": {
+    "commit": "fef2ad8258a09c6e3d2554d9477526500447fe27",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source_sha256": "62de92bd7993ea90fa434aaaf109dd1e407553c66c74b7e12ea753f66e4cb895"
+  }
+}

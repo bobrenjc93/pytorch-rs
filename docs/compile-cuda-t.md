@@ -71,10 +71,13 @@ Hardware-only tests skip clearly without the required devices. Rust test-only
 accounting checks zero native operations for malformed early/late nodes; it is
 absent from release builds and does not alter scoring observers.
 
-The [transpose development capture](diagnostics/compile-cuda-transpose/README.md)
-records the fresh PR1976 release-build gap reproduction, candidate release build,
-H100 differentials and regressions. Candidate clean-commit validation is deferred
-until Burner creates the delivery commit; this implementation agent cannot commit.
+The [clean-commit transpose capture](diagnostics/compile-cuda-transpose/postcommit-fef2ad82/README.md)
+measured `fef2ad8258a09c6e3d2554d9477526500447fe27` with a fresh locked `.venv`
+and release build. H100 transpose/composition, compiler, two-device, Rust and
+CPU/docs checks passed with clean status throughout measurement. This completes
+the capture deferred by the [development bundle](diagnostics/compile-cuda-transpose/README.md),
+whose baseline and failed attempts remain unchanged. Independent review and
+Burner merge gates remain required.
 
 The [t-only clean-commit capture](diagnostics/compile-cuda-t/postcommit-2ce3dfbf/README.md)
 measured `2ce3dfbf627c59a57d1e37131663a26c2ebfccad` with a fresh locked `.venv`
@@ -82,7 +85,7 @@ and release build. H100 t/packing differentials, repeated-output metadata
 rejection, compiler regressions, two-device restoration, focused Rust and
 CPU/docs checks passed. Its receipts verify source, installed imports, native
 binary and clean status. That capture validates `t()` and its output-metadata
-repair; parameterized transpose is covered by the development capture above.
+repair; current parameterized transpose validation is linked above.
 
 The [review-repair diagnostics](diagnostics/compile-cuda-t/review-output-metadata/README.md)
 preserve the failing reproduction and source-bound development validation.

@@ -1,0 +1,16 @@
+set -euo pipefail
+source target/transpose-postcommit-fef2ad82/environment.sh
+uv python install 3.12.14
+mv .venv target/transpose-postcommit-fef2ad82/previous-venv
+uv venv --python 3.12.14
+uv sync --locked --no-install-project --group dev --group reference
+.venv/bin/python - <<'PY'
+from pathlib import Path
+import importlib.metadata as md
+import sys
+assert sys.version_info[:3] == (3,12,14)
+assert Path(sys.prefix).resolve() == Path('.venv').resolve()
+assert Path(sys.executable).resolve().is_relative_to(Path.cwd()/'target/transpose/python')
+print(sys.version, sys.executable, Path(sys.executable).resolve())
+print({name:md.version(name) for name in ('numpy','torch','maturin')})
+PY

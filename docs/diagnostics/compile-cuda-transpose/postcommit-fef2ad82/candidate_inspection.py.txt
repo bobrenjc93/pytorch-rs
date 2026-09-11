@@ -1,0 +1,37 @@
+import hashlib, json, subprocess
+from pathlib import Path
+root=Path.cwd().resolve()
+out=root/'target/transpose-postcommit-fef2ad82'
+def sha(path): return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+def git(*args): return subprocess.check_output(['git',*args],text=True).strip()
+assert git('status','--porcelain') == ''
+assert git('rev-parse','HEAD') == 'fef2ad8258a09c6e3d2554d9477526500447fe27'
+assert git('merge-base','main','HEAD') == '1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b'
+paths=git('diff','--name-only','main...HEAD').splitlines()
+history=root/'docs/diagnostics/compile-cuda-transpose'
+prior=json.loads((history/'inventory.json').read_text())
+for path,digest in prior.items():
+ assert sha(history/path)==digest,path
+receipts={}
+for p in history.glob('*.receipt.json'):
+ r=json.loads(p.read_text())
+ assert r['source_before']==r['source_after']
+ assert r['inputs_unchanged']
+ assert r['log_sha256']==sha(history/(p.name.removesuffix('.receipt.json')+'.log'))
+ receipts[p.name]={'commit':r['source_before']['commit'], 'git_status':r['git_status_before'],
+                 'exit_status':r['exit_status'], 'cwd':r['cwd'], 'kind':'development or baseline; retained unchanged'}
+for p in history.glob('*/build-record.json'):
+ r=json.loads(p.read_text())
+ receipts[str(p.relative_to(history))]={'commit':r['commit'],'kind':r['measurement_kind'],
+  'clean':r['clean_checkout'],'source_sha256':r['source_sha256'],'extension':r['extension_path']}
+non_evidence=[p for p in paths if not p.startswith('docs/diagnostics/')]
+assert len(paths)==90
+assert not any(p.startswith('scripts/') or p in ('pyproject.toml','uv.lock','Cargo.lock') for p in paths)
+record={'commit':git('rev-parse','HEAD'),'base':git('rev-parse','main'), 'cwd':str(root),
+ 'git_status':git('status','--porcelain'), 'candidate_diff_sha256':hashlib.sha256(subprocess.check_output(['git','diff','--binary','main...HEAD'])).hexdigest(),
+ 'candidate_files':{p:sha(root/p) for p in paths},'non_evidence_files':non_evidence,
+ 'existing_evidence_inventory_verified':True, 'existing_records':receipts,
+ 'task_required_capture':'fresh clean-commit release build, bounded H100 transpose/composition and relevant regressions',
+ 'historical_policy':'Preserve baseline, development failures and unrelated evidence unchanged; publish fresh clean-commit capture separately.'}
+(out/'candidate-inspection.json').write_text(json.dumps(record,indent=2)+'\n')
+print('Inspected all',len(paths),'candidate paths;',len(receipts),'existing receipts/build records; historical inventory verified.')

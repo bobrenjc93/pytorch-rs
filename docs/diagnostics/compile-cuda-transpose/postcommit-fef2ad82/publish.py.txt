@@ -1,0 +1,146 @@
+"""Verify and publish clean-code captures; no workload or result rewriting."""
+import hashlib, json, re, shutil, subprocess, sys
+from pathlib import Path
+ROOT=Path.cwd().resolve()
+WORK=ROOT/'target/transpose-postcommit-fef2ad82'
+HISTORY=ROOT/'docs/diagnostics/compile-cuda-transpose'
+OUT=HISTORY/'postcommit-fef2ad82'
+COMMIT='fef2ad8258a09c6e3d2554d9477526500447fe27'
+sys.path.insert(0,str(ROOT/'scripts'))
+from evaluate_cuda_math import source_provenance, sha256
+
+def dump(path,value): path.write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
+def git(*args): return subprocess.check_output(['git',*args],text=True).strip()
+assert git('status','--porcelain') == '', 'publish only after all clean-code captures finish'
+assert git('rev-parse','HEAD') == COMMIT
+assert not OUT.exists(), 'preserve any previous publication'
+source=source_provenance()
+build=json.loads((WORK/'release/build-record.json').read_text())
+assert all(build[k]==v for k,v in source.items())
+assert build['clean_checkout'] and build['measurement_kind']=='clean-code'
+assert build['git_status_before_build']=='' and build['source_unchanged_during_build']
+assert build['source_sha256']==json.loads((HISTORY/'verified-build/build-record.json').read_text())['source_sha256']
+for key in ('extension_path','source_extension_path','wheel_path','python_executable','interpreter_path'):
+ assert Path(build[key]).resolve().is_relative_to(ROOT),key
+assert sha256(build['extension_path'])==build['extension_sha256']
+assert sha256(build['source_extension_path'])==build['extension_sha256']
+assert sha256(build['wheel_path'])==build['wheel_sha256']
+assert sha256(build['interpreter_path'])==build['interpreter_sha256']
+for command in build['commands']:
+ assert command['exit_status']==0
+ assert Path(command['log']).resolve().is_relative_to(ROOT)
+ assert sha256(command['log'])==command['log_sha256']
+
+old_inventory=json.loads((HISTORY/'inventory.json').read_text())
+for name,digest in old_inventory.items(): assert sha256(HISTORY/name)==digest,name
+inspection=json.loads((WORK/'candidate-inspection.json').read_text())
+assert inspection['commit']==COMMIT and inspection['git_status']==''
+for name,digest in inspection['candidate_files'].items(): assert sha256(ROOT/name)==digest,name
+
+expected={'setup','release-build','preflight','preflight-clean','imports','transpose',
+          'compiler-regressions','two-device','no-device','rust-graph','rust-packing',
+          'cuda-packing','cpu-docs','docs-example'}
+receipts={p.name.removesuffix('.receipt.json'):json.loads(p.read_text())
+          for p in (WORK/'evidence').glob('*.receipt.json')}
+assert set(receipts)==expected
+for name,r in receipts.items():
+ assert r['source_before']==source==r['source_after'],name
+ assert r['git_status_before']==r['git_status_after']=='',name
+ assert r['inputs_unchanged'] and r['cwd']==str(ROOT),name
+ assert r['exit_status']==(1 if name=='preflight' else 0),name
+ assert sha256(WORK/'evidence'/f'{name}.log')==r['log_sha256'],name
+ for path in (*r['native_before'],*r['native_after']):
+  assert Path(path).resolve().is_relative_to(ROOT),path
+ if name not in ('setup','release-build'):
+  assert r['native_before']==r['native_after'],name
+  assert set(r['native_before'].values())=={build['extension_sha256']},name
+
+# Verify the documented counts, including hardware skips, from unchanged logs.
+for name, (total, skipped) in {
+    'transpose': (11, 1), 'compiler-regressions': (221, 9),
+    'two-device': (5, 0), 'no-device': (11, 10),
+    'cuda-packing': (7, 1), 'cpu-docs': (132, 0),
+}.items():
+    log=(WORK/'evidence'/f'{name}.log').read_text()
+    assert re.search(rf'Ran {total} tests in ', log), name
+    assert ('OK (skipped='+str(skipped)+')' if skipped else '\nOK\n') in log, name
+for name, count in (('rust-graph', 7), ('rust-packing', 1)):
+    assert f'test result: ok. {count} passed; 0 failed;' in (WORK/'evidence'/f'{name}.log').read_text()
+for name, r in receipts.items():
+    expected_mask='0,1' if name=='two-device' else '' if name=='no-device' else '0'
+    assert r['environment']['CUDA_VISIBLE_DEVICES']==expected_mask, name
+
+manifest_files=list((WORK/'evidence').glob('inputs-*.json'))
+assert len(manifest_files)==1
+manifest_sha=sha256(manifest_files[0])
+assert all(r['measured_inputs_sha256']==manifest_sha for r in receipts.values())
+assert manifest_sha==sha256(HISTORY/'measured-inputs.json')
+for name,digest in json.loads(manifest_files[0].read_text()).items():
+ assert sha256(ROOT/name)==digest,name
+import torch_rs
+installed=Path(torch_rs.__file__).resolve().parent
+assert installed.is_relative_to(ROOT/'.venv')
+for p in (ROOT/'python/torch_rs').rglob('*.py'):
+ assert sha256(p)==sha256(installed/p.relative_to(ROOT/'python/torch_rs')),p
+assert Path(torch_rs._C.__file__).resolve()==Path(build['extension_path'])
+assert not (ROOT/'.venv').is_symlink()
+assert build['python'].startswith('3.12.14 ')
+preflight=json.loads((WORK/'evidence/preflight-clean.log').read_text())
+assert preflight['gpu']=='NVIDIA H100' and preflight['visible_count']==1
+assert preflight['native_runtime']==13000 and preflight['reference_cuda']=='13.0'
+for key in ('python_executable','interpreter','native_import','extension','native_runtime_library'):
+ assert Path(preflight[key]).resolve().is_relative_to(ROOT),key
+
+OUT.mkdir()
+(OUT/'release').mkdir()
+for name in ('build-record.json','commands.json','build.log','install.log'):
+ shutil.copyfile(WORK/'release'/name,OUT/'release'/name)
+for name in receipts:
+ for suffix in ('.log','.receipt.json'):
+  shutil.copyfile(WORK/'evidence'/(name+suffix),OUT/(name+suffix))
+for name in ('capture.py','environment.sh','setup.sh','preflight.py','docs-example.py',
+             'run.py','candidate_inspection.py','publish.py'):
+ shutil.copyfile(WORK/name,OUT/(name+'.txt'))
+shutil.copyfile(WORK/'candidate-inspection.json',OUT/'candidate-inspection.json')
+dump(OUT/'manifest-reference.json',{'file':'../measured-inputs.json','sha256':manifest_sha,
+ 'commit':COMMIT,'reason':'Freshly hashed inputs match the existing same-source manifest exactly; no duplicate manifest.'})
+
+readme=(WORK/'README.md').read_text()
+(OUT/'README.md').write_text(readme)
+guide=ROOT/'docs/compile-cuda-t.md'
+text=guide.read_text()
+old='''The [transpose development capture](diagnostics/compile-cuda-transpose/README.md)
+records the fresh PR1976 release-build gap reproduction, candidate release build,
+H100 differentials and regressions. Candidate clean-commit validation is deferred
+until Burner creates the delivery commit; this implementation agent cannot commit.'''
+new='''The [clean-commit transpose capture](diagnostics/compile-cuda-transpose/postcommit-fef2ad82/README.md)
+measured `fef2ad8258a09c6e3d2554d9477526500447fe27` with a fresh locked `.venv`
+and release build. H100 transpose/composition, compiler, two-device, Rust and
+CPU/docs checks passed with clean status throughout measurement. This completes
+the capture deferred by the [development bundle](diagnostics/compile-cuda-transpose/README.md),
+whose baseline and failed attempts remain unchanged. Independent review and
+Burner merge gates remain required.'''
+assert old in text
+text=text.replace(old,new).replace('repair; parameterized transpose is covered by the development capture above.',
+                                  'repair; current parameterized transpose validation is linked above.')
+guide.write_text(text)
+assert git('diff','--name-only')=='docs/compile-cuda-t.md'
+assert source_provenance()==source
+for name,digest in old_inventory.items(): assert sha256(HISTORY/name)==digest,name
+dump(OUT/'audit.json',{'measured_commit':COMMIT,'cwd':str(ROOT),'source':source,
+ 'build_source_matches_clean_commit':True,'installed_python_matches_source':True,
+ 'installed_native_matches_build':True,'native_sha256':build['extension_sha256'],
+ 'all_measurements_clean':True,'code_build_import_and_python_runtime_paths_within_current_worktree':True,
+ 'candidate_diff_files_inspected':len(inspection['candidate_files']),
+ 'previous_evidence_preserved':True,'manifest_sha256':manifest_sha,
+ 'implementation_dependencies_tests_and_harnesses_unchanged':True,
+ 'candidate_clean_commit_capture':'complete',
+ 'checks':{name:r['exit_status'] for name,r in receipts.items()},
+ 'retained_failure':'preflight helper was initially named inspect.py, shadowing stdlib; renamed before successful retry',
+ 'publication_changes':git('status','--porcelain')})
+dump(OUT/'inventory.json',{str(p.relative_to(OUT)):sha256(p) for p in OUT.rglob('*') if p.is_file() and p.name!='inventory.json'})
+for path in (OUT/'README.md',guide):
+ for link in re.findall(r'\]\(([^)]+)\)',path.read_text()):
+  if '://' not in link:
+   assert (path.parent/link.split('#')[0]).exists(),(path,link)
+print('Published clean-commit evidence:',COMMIT,'with',len(receipts),'receipts; historical evidence unchanged.')
