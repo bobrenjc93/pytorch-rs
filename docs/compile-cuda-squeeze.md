@@ -63,9 +63,12 @@ CUDA_VISIBLE_DEVICES=0 cargo test --locked --features python-bindings --lib cuda
 CUDA_VISIBLE_DEVICES= .venv/bin/python -m unittest -v tests.test_compile_cuda_squeeze
 ```
 
-The [development evidence](diagnostics/compile-cuda-squeeze/README.md) records the
-exact-main baseline, release build and checks. Hardware cases skip clearly when
-CUDA is unavailable. These are non-scoring diagnostics: the frozen 38-case corpus,
-performance workloads, evaluator and hardware contracts are unchanged.
-PR1970/PR1971 remain separate, unadopted human-review campaigns. A fresh
-clean-commit capture and independent review remain Burner delivery steps.
+The [clean-commit capture](diagnostics/compile-cuda-squeeze/postcommit-e835f7f/README.md)
+validates `e835f7f173af4ffc7783560d9b03709660fa3141` with a fresh release wheel,
+H100 differentials, the complete compiler sweep, two-device restoration and
+focused native/portable checks. The [development evidence](diagnostics/compile-cuda-squeeze/README.md)
+retains the exact-main baseline and initial failed attempt unchanged. Hardware
+cases skip clearly when CUDA is unavailable. These are non-scoring diagnostics:
+the frozen 38-case corpus, performance workloads, evaluator and hardware contracts
+are unchanged. PR1970/PR1971 remain separate unadopted human-review campaigns;
+independent review and Burner delivery gates remain required.

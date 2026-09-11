@@ -1,0 +1,4 @@
+set -eu
+uv python install --no-bin 3.12.14
+uv venv --clear --python 3.12.14
+uv sync --locked --no-install-project --group dev --group reference

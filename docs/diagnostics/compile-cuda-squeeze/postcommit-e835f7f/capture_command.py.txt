@@ -1,0 +1,36 @@
+"""Evidence-only command receipts; commands retain their own assertions."""
+from datetime import datetime, timezone
+import hashlib, json, os
+from pathlib import Path
+import re, subprocess, sys, time
+ROOT = Path.cwd().resolve()
+OUT = ROOT / 'target/postcommit-e835f7f/capture'
+COMMIT = 'e835f7f173af4ffc7783560d9b03709660fa3141'
+def sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+def git(*args):
+    return subprocess.check_output(['git', *args], text=True)
+def snapshot():
+    return subprocess.check_output(['nvidia-smi', '--query-gpu=index,uuid,name,driver_version,utilization.gpu,memory.used', '--format=csv'], text=True)
+def state():
+    head, status = git('rev-parse', 'HEAD').strip(), git('status', '--porcelain')
+    assert head == COMMIT and status == '', (head, status)
+    return {'commit': head, 'git_status': status, 'tree': git('rev-parse', 'HEAD^{tree}').strip()}
+name, *command = sys.argv[1:]
+assert command and not (OUT / (name + '.receipt.json')).exists()
+record = {'command': command, 'cwd': str(ROOT), 'before': state(),
+          'started_at': datetime.now(timezone.utc).isoformat(), 'gpu_before': snapshot(),
+          'environment': {k:os.environ.get(k) for k in ('CUDA_VISIBLE_DEVICES','TORCH_RS_CUDART','CARGO_TARGET_DIR','UV_CACHE_DIR','UV_PYTHON_INSTALL_DIR','UV_PYTHON_BIN_DIR','UV_PROJECT_ENVIRONMENT','TMPDIR','XDG_CACHE_HOME','CUDA_CACHE_PATH','TORCHINDUCTOR_CACHE_DIR','TRITON_CACHE_DIR','PYO3_PYTHON','RUSTUP_TOOLCHAIN')}}
+started = time.monotonic()
+with (OUT / (name + '.log')).open('w') as log:
+    result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT)
+record.update(ended_at=datetime.now(timezone.utc).isoformat(), elapsed_seconds=time.monotonic()-started,
+              exit_status=result.returncode, gpu_after=snapshot(), log_sha256=sha(OUT / (name+'.log')))
+try:
+    record['after'] = state()
+finally:
+    (OUT / (name+'.receipt.json')).write_text(json.dumps(record, indent=2)+'\n')
+log = (OUT/(name+'.log')).read_text()
+print(name, 'exit', result.returncode)
+print(log[-2400:])
+sys.exit(result.returncode)

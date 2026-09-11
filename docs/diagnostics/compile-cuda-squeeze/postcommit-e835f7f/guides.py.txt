@@ -1,0 +1,6 @@
+import pathlib, re
+for name in ('compile-cuda-squeeze.md', 'compile-cuda-t.md', 'compile-cuda-contiguous.md', 'compile-cuda-add.md'):
+    path = pathlib.Path('docs') / name
+    for index, body in enumerate(re.findall(r'```python\n(.*?)```', path.read_text(), re.S)):
+        exec(compile(body, f'{path}:example{index}', 'exec'), {'__name__': '__main__'})
+        print(path, index, 'passed')
