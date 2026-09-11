@@ -1,8 +1,8 @@
 //! Metadata planning for the existing CUDA capture operations. No allocation
 //! of tensor storage or kernel launch is allowed while constructing this plan.
 use super::{
-    ElementwiseLayout, MemoryFormat, Tensor, TensorError, element_count,
-    elementwise_output_strides, layout_is_contiguous, validated_layout,
+    ElementwiseLayout, MemoryFormat, Tensor, TensorError, element_count, elementwise_output_strides,
+    layout_is_contiguous, validated_layout,
 };
 
 #[derive(Clone, Copy)]

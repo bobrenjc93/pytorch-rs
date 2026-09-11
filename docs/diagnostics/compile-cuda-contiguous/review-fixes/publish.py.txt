@@ -1,0 +1,115 @@
+"""Archive byte-identical repair diagnostics, keeping earlier captures intact."""
+import hashlib, json, re, shutil
+from pathlib import Path
+ROOT = Path.cwd().resolve()
+OUT = ROOT / 'target/contiguous-review-fixes'
+DEST = ROOT / 'docs/diagnostics/compile-cuda-contiguous/review-fixes'
+audit = json.loads((OUT / 'audit.json').read_text())
+assert audit['status'] == 'passed'
+assert json.loads((OUT / 'evidence-audit.receipt.json').read_text())['exit_status'] == 0
+assert not DEST.exists()
+DEST.mkdir()
+manifest_names = {}
+for path in OUT.iterdir():
+    if not path.is_file():
+        continue
+    if path.name.endswith('.inputs.json'):
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        name = f'inputs/{digest}.json'
+        manifest_names[path.name] = name
+        (DEST / 'inputs').mkdir(exist_ok=True)
+    else:
+        name = path.name + '.txt' if path.suffix in ('.py', '.sh') else path.name
+    shutil.copyfile(path, DEST / name)
+    assert path.read_bytes() == (DEST / name).read_bytes()
+(DEST / 'input-manifest-index.json').write_text(json.dumps(manifest_names, indent=2) + '\n')
+for directory in ('release', 'release-final'):
+    (DEST / directory).mkdir()
+    for name in ('build-record.json', 'commands.json', 'build.log', 'install.log'):
+        shutil.copyfile(OUT / directory / name, DEST / directory / name)
+        assert (OUT / directory / name).read_bytes() == (DEST / directory / name).read_bytes()
+inventory = {str(p.relative_to(DEST)): hashlib.sha256(p.read_bytes()).hexdigest()
+             for p in DEST.rglob('*') if p.is_file()}
+(DEST / 'inventory.json').write_text(json.dumps(inventory, indent=2, sort_keys=True) + '\n')
+
+def result(name):
+    log = (OUT / f'{name}.log').read_text()
+    assert '\nOK' in log
+    ran = int(re.search(r'Ran (\d+) tests?', log).group(1))
+    match = re.search(r'OK \(skipped=(\d+)\)', log)
+    skips = int(match.group(1)) if match else 0
+    return f'{ran - skips} passed' + (f'; {skips} hardware skips' if skips else '')
+link = 'diagnostics/compile-cuda-contiguous/review-fixes'
+section = f'''## Review fixes and current validation
+
+The three reproduced review findings are fixed: empty aliases are classified
+without canonical-stride construction; actual inputs and captures must share
+one CUDA device before executor selection; contiguous output declarations pass
+strict metadata validation before equality checks. Static and dynamic cache-hit
+regressions assert zero native bridge calls for malformed graphs.
+
+These repairs are **uncommitted development evidence**, based on
+`{audit['source']['commit']}`. A fresh clean-commit capture is still
+required after Burner commits them; the earlier capture below does not validate
+this repaired source. No commit or delivery action was performed here.
+
+The [release receipt]({link}/release-final/build-record.json),
+[audit]({link}/audit.json) and [inventory]({link}/inventory.json)
+record exact source/build/native hashes, commands and environment. Production
+source SHA-256 is `{audit['source']['source_sha256']}`;
+installed/source-package native SHA-256 is
+`{audit['extension_sha256']}`.
+The canonical locked `.venv` was reused; the unchanged capture tool built a fresh
+release target with `--allow-dirty`, `--locked` and `--offline`. H100 checks used
+mask `0`, restoration alone used `0,1`, and CPU/portability checks hid CUDA.
+Runtime was local CUDA 13.0 with PyTorch 2.13.0+cu130; nvcc 12.6 was unused.
+
+| Repair validation | Result | Log |
+| --- | --- | --- |
+| Reproduced findings after fixes | {result('review-green')} | [log]({link}/review-green.log) |
+| Compiled contiguous differentials and guards | {result('compiled-contiguous')} | [log]({link}/compiled-contiguous.log) |
+| Existing CPU/CUDA compiler regressions | {result('compiler-regressions')} | [log]({link}/compiler-regressions.log) |
+| Device/context restoration | {result('two-device')} | [log]({link}/two-device.log) |
+| CPU layout/reference regressions | {result('cpu-layout')} | [log]({link}/cpu-layout.log) |
+| Eager CUDA packing | {result('cuda-packing')} | [log]({link}/cuda-packing.log) |
+| No-device portability | {result('no-device')} | [log]({link}/no-device.log) |
+
+Rust graph planning/zero-execution checks (3 tests), CUDA packing integration
+(1 test), formatting, Clippy with Python bindings and warnings denied, and wheel
+provenance also passed. The [failing reproduction]({link}/review-red.log),
+original regression source and an import-formatting failure are preserved.
+The first reproduction also tried a transpose that the existing eager constructor
+rejects; the final differential uses supported empty aliases at dimensions
+`2**32` and `2**32 + 1`. No unsupported eager behavior was added. Prior raw
+captures remain unchanged; these diagnostics add no frozen-corpus coverage.
+
+'''
+p = ROOT / 'docs/compile-cuda-contiguous.md'
+s = p.read_text()
+old = '''## Clean-commit validation
+
+The deferred capture is complete at clean implementation commit
+`68766b43882081ab62c54925e94562297ecd5999`. Git status was empty
+before and after the release build and every measurement. This evidence and
+documentation were added afterward; implementation, dependencies, tests,
+harnesses and supported behavior are unchanged.
+'''
+new = '''## Prior clean-commit validation (before review fixes)
+
+Implementation commit `68766b43882081ab62c54925e94562297ecd5999` was
+captured clean before independent review. Git status was empty before and after
+the release build and every measurement. The subsequent evidence-only commit
+`d148fcb78560756ba6bac38d098ffe40ddc05aca` added these records and
+documentation. This capture predates the repairs above; their clean recapture
+remains pending.
+'''
+assert old in s
+s = s.replace(old, section + new, 1)
+s = s.replace('binds the final uncommitted source and release wheel.', "binds the original implementation's uncommitted source and release wheel.")
+p.write_text(s)
+p = ROOT / 'docs/README.md'
+s = p.read_text()
+old = 'Parameterless native view packing, alias semantics and clean-commit H100 evidence.'
+assert old in s
+p.write_text(s.replace(old, 'Parameterless native view packing, alias semantics, H100 evidence and review-fix validation.', 1))
+print(f'Archived {len(inventory)} artifacts; clean-commit recapture pending.')

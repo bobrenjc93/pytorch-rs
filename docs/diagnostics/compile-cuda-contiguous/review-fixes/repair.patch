@@ -1,0 +1,161 @@
+diff --git a/python/torch_rs/_compile_trace.py b/python/torch_rs/_compile_trace.py
+index 523e841..be70b57 100644
+--- a/python/torch_rs/_compile_trace.py
++++ b/python/torch_rs/_compile_trace.py
+@@ -1070,10 +1070,14 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled, de
+             raise CompileTraceUnsupportedError("torch.compile contiguous requires one input")
+         name = operation.inputs[0]
+         expected = _contiguous_output_metadata(metadata_values[name])
++        declared = operation.metadata
++        if not _builtins.isinstance(declared, CompileTraceTensorMetadata):
++            raise CompileTraceUnsupportedError("torch.compile malformed contiguous output metadata")
++        _validate_cuda_metadata(declared)
+         # Dynamic sizes may change whether this is an alias or a pack. Check
+         # the stored declaration against its original input independently.
+         declared_input = metadata_values[name] if declared_values is None else declared_values[name]
+-        if operation.metadata != _contiguous_output_metadata(declared_input):
++        if declared != _contiguous_output_metadata(declared_input):
+             raise CompileTraceUnsupportedError("torch.compile malformed contiguous output metadata")
+         return expected
+     if operation.target in _SUPPORTED_UNARY_TARGETS:
+@@ -1195,6 +1199,13 @@ def execute_compile_trace_graph(graph, *inputs):
+         )
+         values[graph_input.name] = input
+         metadata_values[graph_input.name] = input_metadata
++    # Include unused captures and inputs: they must not divert a CUDA graph
++    # into the per-operation executor, even when a cached graph was modified.
++    devices = {metadata.device for metadata in metadata_values.values()}
++    if any(device.type == "cuda" for device in devices) and len(devices) != 1:
++        raise CompileTraceUnsupportedError(
++            "torch.compile trace CUDA requires matching devices for all inputs and captures"
++        )
+     grad_enabled = _grad_enabled()
+     declared_values = {item.name: item.metadata for item in (*graph.captures, *graph.inputs)}
+     # Validate every operation before launching any work. In particular a
+diff --git a/src/tensor_cuda_graph.rs b/src/tensor_cuda_graph.rs
+index 15c1d99..aea5e75 100644
+--- a/src/tensor_cuda_graph.rs
++++ b/src/tensor_cuda_graph.rs
+@@ -1,8 +1,8 @@
+ //! Metadata planning for the existing CUDA capture operations. No allocation
+ //! of tensor storage or kernel launch is allowed while constructing this plan.
+ use super::{
+-    ElementwiseLayout, MemoryFormat, Tensor, TensorError, elementwise_output_strides,
+-    layout_is_contiguous, validated_layout,
++    ElementwiseLayout, MemoryFormat, Tensor, TensorError, element_count,
++    elementwise_output_strides, layout_is_contiguous, validated_layout,
+ };
+ 
+ #[derive(Clone, Copy)]
+@@ -32,7 +32,9 @@ impl Layout {
+     }
+ 
+     pub(crate) fn is_contiguous(&self) -> Result<bool, TensorError> {
+-        let (elements, _) = validated_layout(&self.shape)?;
++        // Classify the existing layout without constructing materialized
++        // strides: an empty alias can have no representable canonical layout.
++        let elements = element_count(&self.shape)?;
+         Ok(layout_is_contiguous(&self.shape, &self.strides, elements))
+     }
+ 
+@@ -196,6 +198,26 @@ thread_local! {
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn empty_alias_does_not_require_canonical_strides() {
++        let dimension = 1_usize << (usize::BITS / 2);
++        let input = Layout {
++            shape: vec![0, dimension, dimension],
++            strides: vec![dimension, dimension, 1],
++            offset: 13,
++        };
++        assert!(validated_layout(&input.shape).is_err());
++        assert!(input.is_contiguous().unwrap());
++        let alias = Operation::Contiguous(0)
++            .layout(std::slice::from_ref(&input))
++            .unwrap();
++        assert_eq!(alias.shape, input.shape);
++        assert_eq!(alias.strides, input.strides);
++        assert_eq!(alias.offset, input.offset);
++        // Materializing arithmetic must still reject the overflowing layout.
++        assert!(Operation::Neg(0).layout(&[input]).is_err());
++    }
++
+     #[test]
+     fn packing_and_arithmetic_plan_layouts_independently() {
+         let mut values = vec![Layout {
+diff --git a/tests/test_compile_cuda_contiguous.py b/tests/test_compile_cuda_contiguous.py
+index 2ca0d67..8473122 100644
+--- a/tests/test_compile_cuda_contiguous.py
++++ b/tests/test_compile_cuda_contiguous.py
+@@ -162,6 +162,69 @@ class CompileCudaContiguousTests(unittest.TestCase):
+             del a, x
+             self.assert_pair(results[1], expected)
+ 
++    def test_empty_alias_without_representable_canonical_strides(self):
++        for dimension in (2**32, 2**32 + 1):
++            x = native.empty((dimension, 0, dimension)).to('cuda:0').transpose(0, 1)
++            y = torch.empty((dimension, 0, dimension), device='cuda:0').transpose(0, 1)
++            self.assertIs(x.contiguous(), x)
++            for fullgraph, dynamic in POLICIES:
++                with self.subTest(dimension=dimension, fullgraph=fullgraph, dynamic=dynamic):
++                    torch._dynamo.reset()
++                    compiled, cache = compile_with_cache(pack, fullgraph, dynamic)
++                    reference = torch.compile(pack, backend='eager', fullgraph=fullgraph, dynamic=dynamic)
++                    for warm in (False, True):
++                        expected = reference(y)
++                        if warm:
++                            with patch.object(_compile_bytecode, 'lower_compile_graph', side_effect=AssertionError('cache miss')):
++                                actual = call_without_python(compiled, {pack.__code__}, x)
++                        else:
++                            actual = call_without_python(compiled, {pack.__code__}, x)
++                        self.assertIs(actual, x)
++                        self.assertIs(expected, y)
++                        self.assertEqual(metadata(actual), metadata(expected))
++                    self.assertEqual(len(cache.graphs), 1)
++
++    def test_mixed_device_unused_capture_rejected_before_native_execution(self):
++        fn = make_program('def program(x):\n    y = -x\n    return y.contiguous()\n')
++        x = native.ones((3, 7)).to('cuda:0')
++        cpu = native.ones((3, 7))
++        capture = trace.CompileTraceCapture('unused_cpu', cpu, trace._metadata_from_native_tensor(cpu))
++        for dynamic in (False, True):
++            with self.subTest(dynamic=dynamic):
++                compiled, cache = compile_with_cache(fn, dynamic=dynamic)
++                compiled(x)
++                key, graph = next(iter(cache.graphs.items()))
++                cache.graphs[key] = replace(graph, captures=(*graph.captures, capture))
++                with patch.object(_compile_bytecode, 'lower_compile_graph', side_effect=AssertionError('cache miss')), \
++                     patch.object(trace._native, '_compile_trace_cuda_graph', wraps=trace._native._compile_trace_cuda_graph) as graph_calls, \
++                     patch.object(trace._native, '_compile_trace_unary', wraps=trace._native._compile_trace_unary) as unary_calls:
++                    with self.assertRaises(NotImplementedError):
++                        compiled(x)
++                    graph_calls.assert_not_called()
++                    unary_calls.assert_not_called()
++                cache.graphs[key] = graph
++                self.assertEqual(compiled(x).cpu().tolist(), [[-1.] * 7] * 3)
++
++    def test_strict_contiguous_declarations_before_native_execution(self):
++        x = native.ones((3, 7)).to('cuda:0').t()
++        for dynamic in (False, True):
++            compiled, cache = compile_with_cache(pack, dynamic=dynamic)
++            compiled(x)
++            key, graph = next(iter(cache.graphs.items()))
++            node = graph.operations[0]
++            for change in ({'shape': (7.0, 3)}, {'stride': (3, True)},
++                           {'storage_offset': 0.0}, {'requires_grad': 0}):
++                with self.subTest(dynamic=dynamic, change=change):
++                    invalid = replace(node, metadata=replace(node.metadata, **change))
++                    cache.graphs[key] = replace(graph, operations=(invalid,))
++                    with patch.object(_compile_bytecode, 'lower_compile_graph', side_effect=AssertionError('cache miss')), \
++                         patch.object(trace._native, '_compile_trace_cuda_graph', wraps=trace._native._compile_trace_cuda_graph) as launches:
++                        with self.assertRaises(NotImplementedError):
++                            compiled(x)
++                        launches.assert_not_called()
++            cache.graphs[key] = graph
++            self.assertEqual(compiled(x).cpu().tolist(), [[1.] * 3] * 7)
++
+     def test_dynamic_alias_pack_transition_and_static_guards(self):
+         a = native.tensor(np.arange(35, dtype=np.float32).reshape(5, 7)).to('cuda:0')
+         compiled, cache = compile_with_cache(pack, dynamic=True)

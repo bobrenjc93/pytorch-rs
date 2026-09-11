@@ -1,0 +1,33 @@
+{
+  "status": "passed",
+  "measurement_kind": "precommit-diagnostic",
+  "source": {
+    "commit": "d148fcb78560756ba6bac38d098ffe40ddc05aca",
+    "source_sha256": "02647f45847695e0f386956541be69aca2a8c76f7ce05d0e5fa6734c46b56488",
+    "production_diff_sha256": "c9fff3d2f11c59aa738837d4469da45f5748e62c9e753ea035df86a3eadad8ae"
+  },
+  "extension_sha256": "0aa957dad68e63d207d8945d25d51d4c4bb931dae303d10d53e063180725f3ce",
+  "wheel_sha256": "27103c118bb15d19f4bc05928d203998ca4c830b315603578478a32518e50772",
+  "checks": [
+    "release-final",
+    "formatting-final",
+    "rust-graph-final",
+    "clippy",
+    "review-green",
+    "verify-wheel",
+    "compiled-contiguous",
+    "compiler-regressions",
+    "two-device",
+    "cuda-packing",
+    "rust-packing",
+    "cpu-layout",
+    "no-device"
+  ],
+  "preserved_failures": [
+    "review-red",
+    "formatting"
+  ],
+  "previous_captures_unchanged": true,
+  "installed_python_and_native_match_checkout": true,
+  "pending": "Clean-commit recapture after Burner commits review fixes."
+}

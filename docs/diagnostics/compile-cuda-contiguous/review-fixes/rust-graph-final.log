@@ -1,0 +1,11 @@
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.87s
+     Running unittests src/lib.rs (target/contiguous-review-fixes/rust-build/debug/deps/pytorch_rs-545e4fdb10cc861f)
+
+running 3 tests
+test tensor::cuda_graph::tests::empty_alias_does_not_require_canonical_strides ... ok
+test tensor::cuda_graph::tests::packing_and_arithmetic_plan_layouts_independently ... ok
+test python::compile_cuda_graph::tests::invalid_late_nodes_execute_zero_native_operations ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 190 filtered out; finished in 0.44s
+

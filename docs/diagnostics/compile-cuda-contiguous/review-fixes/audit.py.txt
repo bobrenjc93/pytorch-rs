@@ -1,0 +1,70 @@
+"""Verify repair captures against the actual uncommitted source; no scoring."""
+import hashlib, importlib.metadata, json, os, subprocess, sys, zipfile
+from pathlib import Path
+ROOT = Path.cwd().resolve()
+OUT = ROOT / 'target/contiguous-review-fixes'
+sys.path.insert(0, str(ROOT / 'scripts'))
+from evaluate_cuda_math import source_provenance
+
+def sha(path): return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+source = source_provenance()
+assert source['commit'] == 'd148fcb78560756ba6bac38d098ffe40ddc05aca'
+assert source['production_diff_sha256'] != hashlib.sha256(b'').hexdigest()
+status = subprocess.check_output(['git', 'status', '--porcelain'], text=True)
+assert status
+build = json.loads((OUT / 'release-final/build-record.json').read_text())
+for key, value in source.items(): assert build[key] == value, key
+assert not build['clean_checkout'] and build['measurement_kind'] == 'precommit-diagnostic'
+assert build['source_unchanged_during_build'] and build['git_status_before_build'] == status
+for key in ('extension_path', 'source_extension_path', 'wheel_path'):
+    path = Path(build[key]).resolve()
+    assert path.is_relative_to(ROOT), path
+    assert sha(path) == build['wheel_sha256' if key == 'wheel_path' else 'extension_sha256']
+for command in build['commands']:
+    assert command['exit_status'] == 0
+    assert sha(command['log']) == command['log_sha256']
+assert sha(ROOT / 'uv.lock') == build['uv_lock_sha256']
+assert {d.metadata['Name']: d.version for d in importlib.metadata.distributions()} == build['dependencies']
+import torch_rs
+assert Path(sys.prefix).resolve() == ROOT / '.venv'
+assert Path(torch_rs.__file__).resolve().is_relative_to(ROOT / '.venv')
+assert sha(torch_rs._C.__file__) == build['extension_sha256']
+installed = Path(torch_rs.__file__).parent
+for path in (ROOT / 'python/torch_rs').rglob('*.py'):
+    assert sha(path) == sha(installed / path.relative_to(ROOT / 'python/torch_rs')), path
+with zipfile.ZipFile(build['wheel_path']) as wheel:
+    assert hashlib.sha256(wheel.read('torch_rs/' + Path(build['extension_path']).name)).hexdigest() == build['extension_sha256']
+checks = ['release-final', 'formatting-final', 'rust-graph-final', 'clippy', 'review-green',
+          'verify-wheel', 'compiled-contiguous', 'compiler-regressions', 'two-device',
+          'cuda-packing', 'rust-packing', 'cpu-layout', 'no-device']
+for name in checks:
+    receipt = json.loads((OUT / f'{name}.receipt.json').read_text())
+    assert receipt['source_before'] == receipt['source_after'] == source, name
+    assert receipt['git_status_before'] == receipt['git_status_after'] == status, name
+    assert receipt['exit_status'] == 0 and receipt['inputs_unchanged'], name
+    manifest_path = OUT / f'{name}.inputs.json'
+    assert receipt['measured_inputs_sha256'] == sha(manifest_path), name
+    for path, digest in json.loads(manifest_path.read_text()).items():
+        assert sha(ROOT / path) == digest, (name, path)
+    assert receipt['log_sha256'] == sha(OUT / f'{name}.log'), name
+    assert receipt['cwd'] == str(ROOT), name
+    for key in ('CARGO_HOME', 'CARGO_TARGET_DIR', 'UV_CACHE_DIR', 'TMPDIR', 'XDG_CACHE_HOME', 'CUDA_CACHE_PATH', 'PYTHONPYCACHEPREFIX'):
+        assert Path(receipt['environment'][key]).resolve().is_relative_to(ROOT), (name, key)
+    if name not in ('release-final', 'formatting-final', 'rust-graph-final', 'clippy'):
+        assert receipt['native_before'] == receipt['native_after'], name
+        assert all(v == build['extension_sha256'] for v in receipt['native_before'].values()), name
+for phase in ('development', 'postcommit-68766b43'):
+    directory = ROOT / 'docs/diagnostics/compile-cuda-contiguous' / phase
+    for path, digest in json.loads((directory / 'inventory.json').read_text()).items():
+        assert sha(directory / path) == digest, path
+for name in ('review-red', 'formatting'):
+    receipt = json.loads((OUT / f'{name}.receipt.json').read_text())
+    assert receipt['exit_status'] != 0
+    assert receipt['log_sha256'] == sha(OUT / f'{name}.log')
+result = {'status': 'passed', 'measurement_kind': 'precommit-diagnostic', 'source': source,
+          'extension_sha256': build['extension_sha256'], 'wheel_sha256': build['wheel_sha256'],
+          'checks': checks, 'preserved_failures': ['review-red', 'formatting'],
+          'previous_captures_unchanged': True, 'installed_python_and_native_match_checkout': True,
+          'pending': 'Clean-commit recapture after Burner commits review fixes.'}
+(OUT / 'audit.json').write_text(json.dumps(result, indent=2) + '\n')
+print(json.dumps(result, indent=2))

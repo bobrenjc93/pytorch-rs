@@ -1,0 +1,11 @@
+set -eu
+source target/contiguous-review-fixes/environment.sh
+capture() { .venv/bin/python target/contiguous-review-fixes/capture.py "$@"; }
+capture verify-wheel .venv/bin/python .github/scripts/verify_native_extension.py
+capture compiled-contiguous .venv/bin/python -m unittest -v tests.test_compile_cuda_contiguous
+capture compiler-regressions .venv/bin/python -m unittest -v tests.test_compile_cuda_boundary tests.test_compile_cuda_graph tests.test_compile_cuda_neg tests.test_compile_cuda_mul_scalar tests.test_compile_cuda_matmul tests.test_compile_cuda_sum_rows tests.test_compile_cuda_trailing_vector tests.test_compile_sum_lowering tests.test_compile_static_analysis tests.test_top_level_compile tests.test_compile_corpus tests.test_compile_tanh_composition
+CUDA_VISIBLE_DEVICES=0,1 capture two-device .venv/bin/python -m unittest -v tests.test_compile_cuda_contiguous.CompileContiguousDeviceTests tests.test_compile_cuda_graph.CudaGraphDeviceTests tests.test_cuda_contiguous.ContiguousDeviceGuardTests
+capture cuda-packing .venv/bin/python -m unittest -v tests.test_cuda_contiguous
+capture rust-packing cargo test --locked --offline --test cuda_contiguous -- --nocapture
+CUDA_VISIBLE_DEVICES= capture cpu-layout .venv/bin/python -m unittest -v tests.test_contiguous_reference tests.test_reshape tests.test_reshape_reference tests.test_view tests.test_view_reference tests.test_clone_channels_last tests.test_clone_channels_last_reference tests.test_transpose tests.test_transpose_reference
+CUDA_VISIBLE_DEVICES= capture no-device .venv/bin/python -m unittest -v tests.test_compile_cuda_contiguous

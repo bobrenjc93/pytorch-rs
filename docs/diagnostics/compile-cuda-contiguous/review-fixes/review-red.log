@@ -1,0 +1,226 @@
+test_empty_alias_without_representable_canonical_strides (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_empty_alias_without_representable_canonical_strides) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+
+  test_empty_alias_without_representable_canonical_strides (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_empty_alias_without_representable_canonical_strides) (axes=(0, 1), fullgraph=True, dynamic=None) ... ERROR
+  test_empty_alias_without_representable_canonical_strides (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_empty_alias_without_representable_canonical_strides) (axes=(0, 1), fullgraph=True, dynamic=False) ... ERROR
+  test_empty_alias_without_representable_canonical_strides (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_empty_alias_without_representable_canonical_strides) (axes=(0, 1), fullgraph=True, dynamic=True) ... ERROR
+  test_empty_alias_without_representable_canonical_strides (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_empty_alias_without_representable_canonical_strides) (axes=(0, 1), fullgraph=False, dynamic=None) ... ERROR
+test_empty_alias_without_representable_canonical_strides (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_empty_alias_without_representable_canonical_strides) ... ERROR
+test_mixed_device_unused_capture_rejected_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_mixed_device_unused_capture_rejected_before_native_execution) ... 
+  test_mixed_device_unused_capture_rejected_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_mixed_device_unused_capture_rejected_before_native_execution) (dynamic=False) ... FAIL
+  test_mixed_device_unused_capture_rejected_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_mixed_device_unused_capture_rejected_before_native_execution) (dynamic=True) ... FAIL
+test_strict_contiguous_declarations_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_strict_contiguous_declarations_before_native_execution) ... 
+  test_strict_contiguous_declarations_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_strict_contiguous_declarations_before_native_execution) (dynamic=False, change={'shape': (7.0, 3)}) ... FAIL
+  test_strict_contiguous_declarations_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_strict_contiguous_declarations_before_native_execution) (dynamic=False, change={'stride': (3, True)}) ... FAIL
+  test_strict_contiguous_declarations_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_strict_contiguous_declarations_before_native_execution) (dynamic=False, change={'storage_offset': 0.0}) ... FAIL
+  test_strict_contiguous_declarations_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_strict_contiguous_declarations_before_native_execution) (dynamic=False, change={'requires_grad': 0}) ... FAIL
+  test_strict_contiguous_declarations_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_strict_contiguous_declarations_before_native_execution) (dynamic=True, change={'shape': (7.0, 3)}) ... FAIL
+  test_strict_contiguous_declarations_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_strict_contiguous_declarations_before_native_execution) (dynamic=True, change={'stride': (3, True)}) ... FAIL
+  test_strict_contiguous_declarations_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_strict_contiguous_declarations_before_native_execution) (dynamic=True, change={'storage_offset': 0.0}) ... FAIL
+  test_strict_contiguous_declarations_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_strict_contiguous_declarations_before_native_execution) (dynamic=True, change={'requires_grad': 0}) ... FAIL
+
+======================================================================
+ERROR: test_empty_alias_without_representable_canonical_strides (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_empty_alias_without_representable_canonical_strides) (axes=(0, 1), fullgraph=True, dynamic=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_compile_cuda_contiguous.py", line 182, in test_empty_alias_without_representable_canonical_strides
+    actual = call_without_python(compiled, {pack.__code__}, x)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch_rs/__init__.py", line 439, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch_rs/__init__.py", line 852, in compiled_model
+    result = _execute_native_eager_compile_graph(graph, args, _compile_trace)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch_rs/__init__.py", line 773, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch_rs/_compile_trace.py", line 1266, in execute_compile_trace_graph
+    outputs = _native._compile_trace_cuda_graph(tuple(values.values()), nodes)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: Stride calculation overflowed
+
+======================================================================
+ERROR: test_empty_alias_without_representable_canonical_strides (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_empty_alias_without_representable_canonical_strides) (axes=(0, 1), fullgraph=True, dynamic=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_compile_cuda_contiguous.py", line 182, in test_empty_alias_without_representable_canonical_strides
+    actual = call_without_python(compiled, {pack.__code__}, x)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch_rs/__init__.py", line 439, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch_rs/__init__.py", line 852, in compiled_model
+    result = _execute_native_eager_compile_graph(graph, args, _compile_trace)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch_rs/__init__.py", line 773, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch_rs/_compile_trace.py", line 1266, in execute_compile_trace_graph
+    outputs = _native._compile_trace_cuda_graph(tuple(values.values()), nodes)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: Stride calculation overflowed
+
+======================================================================
+ERROR: test_empty_alias_without_representable_canonical_strides (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_empty_alias_without_representable_canonical_strides) (axes=(0, 1), fullgraph=True, dynamic=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_compile_cuda_contiguous.py", line 182, in test_empty_alias_without_representable_canonical_strides
+    actual = call_without_python(compiled, {pack.__code__}, x)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch_rs/__init__.py", line 439, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch_rs/__init__.py", line 852, in compiled_model
+    result = _execute_native_eager_compile_graph(graph, args, _compile_trace)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch_rs/__init__.py", line 773, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch_rs/_compile_trace.py", line 1266, in execute_compile_trace_graph
+    outputs = _native._compile_trace_cuda_graph(tuple(values.values()), nodes)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: Stride calculation overflowed
+
+======================================================================
+ERROR: test_empty_alias_without_representable_canonical_strides (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_empty_alias_without_representable_canonical_strides) (axes=(0, 1), fullgraph=False, dynamic=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_compile_cuda_contiguous.py", line 182, in test_empty_alias_without_representable_canonical_strides
+    actual = call_without_python(compiled, {pack.__code__}, x)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch_rs/__init__.py", line 439, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch_rs/__init__.py", line 852, in compiled_model
+    result = _execute_native_eager_compile_graph(graph, args, _compile_trace)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch_rs/__init__.py", line 773, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch_rs/_compile_trace.py", line 1266, in execute_compile_trace_graph
+    outputs = _native._compile_trace_cuda_graph(tuple(values.values()), nodes)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: Stride calculation overflowed
+
+======================================================================
+ERROR: test_empty_alias_without_representable_canonical_strides (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_empty_alias_without_representable_canonical_strides)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_compile_cuda_contiguous.py", line 168, in test_empty_alias_without_representable_canonical_strides
+    x = native.empty((dimension, 0, dimension)).to('cuda:0').transpose(*axes)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: numel: integer multiplication overflow
+
+======================================================================
+FAIL: test_mixed_device_unused_capture_rejected_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_mixed_device_unused_capture_rejected_before_native_execution) (dynamic=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_compile_cuda_contiguous.py", line 205, in test_mixed_device_unused_capture_rejected_before_native_execution
+    unary_calls.assert_not_called()
+  File "/usr/lib64/python3.12/unittest/mock.py", line 910, in assert_not_called
+    raise AssertionError(msg)
+AssertionError: Expected '_compile_trace_unary' to not have been called. Called 2 times.
+Calls: [call(tensor([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], device='cuda:0', shape=[3, 7]), 'neg'),
+ call(tensor([-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0], device='cuda:0', shape=[3, 7]), 'contiguous')].
+
+======================================================================
+FAIL: test_mixed_device_unused_capture_rejected_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_mixed_device_unused_capture_rejected_before_native_execution) (dynamic=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_compile_cuda_contiguous.py", line 205, in test_mixed_device_unused_capture_rejected_before_native_execution
+    unary_calls.assert_not_called()
+  File "/usr/lib64/python3.12/unittest/mock.py", line 910, in assert_not_called
+    raise AssertionError(msg)
+AssertionError: Expected '_compile_trace_unary' to not have been called. Called 2 times.
+Calls: [call(tensor([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], device='cuda:0', shape=[3, 7]), 'neg'),
+ call(tensor([-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0], device='cuda:0', shape=[3, 7]), 'contiguous')].
+
+======================================================================
+FAIL: test_strict_contiguous_declarations_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_strict_contiguous_declarations_before_native_execution) (dynamic=False, change={'shape': (7.0, 3)})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_compile_cuda_contiguous.py", line 223, in test_strict_contiguous_declarations_before_native_execution
+    with self.assertRaises(NotImplementedError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: NotImplementedError not raised
+
+======================================================================
+FAIL: test_strict_contiguous_declarations_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_strict_contiguous_declarations_before_native_execution) (dynamic=False, change={'stride': (3, True)})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_compile_cuda_contiguous.py", line 223, in test_strict_contiguous_declarations_before_native_execution
+    with self.assertRaises(NotImplementedError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: NotImplementedError not raised
+
+======================================================================
+FAIL: test_strict_contiguous_declarations_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_strict_contiguous_declarations_before_native_execution) (dynamic=False, change={'storage_offset': 0.0})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_compile_cuda_contiguous.py", line 223, in test_strict_contiguous_declarations_before_native_execution
+    with self.assertRaises(NotImplementedError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: NotImplementedError not raised
+
+======================================================================
+FAIL: test_strict_contiguous_declarations_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_strict_contiguous_declarations_before_native_execution) (dynamic=False, change={'requires_grad': 0})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_compile_cuda_contiguous.py", line 223, in test_strict_contiguous_declarations_before_native_execution
+    with self.assertRaises(NotImplementedError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: NotImplementedError not raised
+
+======================================================================
+FAIL: test_strict_contiguous_declarations_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_strict_contiguous_declarations_before_native_execution) (dynamic=True, change={'shape': (7.0, 3)})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_compile_cuda_contiguous.py", line 223, in test_strict_contiguous_declarations_before_native_execution
+    with self.assertRaises(NotImplementedError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: NotImplementedError not raised
+
+======================================================================
+FAIL: test_strict_contiguous_declarations_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_strict_contiguous_declarations_before_native_execution) (dynamic=True, change={'stride': (3, True)})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_compile_cuda_contiguous.py", line 223, in test_strict_contiguous_declarations_before_native_execution
+    with self.assertRaises(NotImplementedError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: NotImplementedError not raised
+
+======================================================================
+FAIL: test_strict_contiguous_declarations_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_strict_contiguous_declarations_before_native_execution) (dynamic=True, change={'storage_offset': 0.0})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_compile_cuda_contiguous.py", line 223, in test_strict_contiguous_declarations_before_native_execution
+    with self.assertRaises(NotImplementedError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: NotImplementedError not raised
+
+======================================================================
+FAIL: test_strict_contiguous_declarations_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_strict_contiguous_declarations_before_native_execution) (dynamic=True, change={'requires_grad': 0})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_compile_cuda_contiguous.py", line 223, in test_strict_contiguous_declarations_before_native_execution
+    with self.assertRaises(NotImplementedError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: NotImplementedError not raised
+
+----------------------------------------------------------------------
+Ran 3 tests in 5.618s
+
+FAILED (failures=10, errors=5)

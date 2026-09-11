@@ -1070,10 +1070,14 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled, de
             raise CompileTraceUnsupportedError("torch.compile contiguous requires one input")
         name = operation.inputs[0]
         expected = _contiguous_output_metadata(metadata_values[name])
+        declared = operation.metadata
+        if not _builtins.isinstance(declared, CompileTraceTensorMetadata):
+            raise CompileTraceUnsupportedError("torch.compile malformed contiguous output metadata")
+        _validate_cuda_metadata(declared)
         # Dynamic sizes may change whether this is an alias or a pack. Check
         # the stored declaration against its original input independently.
         declared_input = metadata_values[name] if declared_values is None else declared_values[name]
-        if operation.metadata != _contiguous_output_metadata(declared_input):
+        if declared != _contiguous_output_metadata(declared_input):
             raise CompileTraceUnsupportedError("torch.compile malformed contiguous output metadata")
         return expected
     if operation.target in _SUPPORTED_UNARY_TARGETS:
@@ -1195,6 +1199,13 @@ def execute_compile_trace_graph(graph, *inputs):
         )
         values[graph_input.name] = input
         metadata_values[graph_input.name] = input_metadata
+    # Include unused captures and inputs: they must not divert a CUDA graph
+    # into the per-operation executor, even when a cached graph was modified.
+    devices = {metadata.device for metadata in metadata_values.values()}
+    if any(device.type == "cuda" for device in devices) and len(devices) != 1:
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace CUDA requires matching devices for all inputs and captures"
+        )
     grad_enabled = _grad_enabled()
     declared_values = {item.name: item.metadata for item in (*graph.captures, *graph.inputs)}
     # Validate every operation before launching any work. In particular a

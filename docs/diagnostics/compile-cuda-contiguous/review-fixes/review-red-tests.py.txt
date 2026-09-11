@@ -163,12 +163,13 @@ class CompileCudaContiguousTests(unittest.TestCase):
             self.assert_pair(results[1], expected)
 
     def test_empty_alias_without_representable_canonical_strides(self):
-        for dimension in (2**32, 2**32 + 1):
-            x = native.empty((dimension, 0, dimension)).to('cuda:0').transpose(0, 1)
-            y = torch.empty((dimension, 0, dimension), device='cuda:0').transpose(0, 1)
+        dimension = 2**32
+        for axes in ((0, 1), (1, 2)):
+            x = native.empty((dimension, 0, dimension)).to('cuda:0').transpose(*axes)
+            y = torch.empty((dimension, 0, dimension), device='cuda:0').transpose(*axes)
             self.assertIs(x.contiguous(), x)
             for fullgraph, dynamic in POLICIES:
-                with self.subTest(dimension=dimension, fullgraph=fullgraph, dynamic=dynamic):
+                with self.subTest(axes=axes, fullgraph=fullgraph, dynamic=dynamic):
                     torch._dynamo.reset()
                     compiled, cache = compile_with_cache(pack, fullgraph, dynamic)
                     reference = torch.compile(pack, backend='eager', fullgraph=fullgraph, dynamic=dynamic)
