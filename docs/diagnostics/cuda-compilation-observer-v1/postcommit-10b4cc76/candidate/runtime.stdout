@@ -1,0 +1,324 @@
+{
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/bin/python",
+  "executable_resolved": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/bin/python",
+  "executable_sha256": "41987ba66b0d1234f81ccf9ddfe1f21abcdb6ed8e31956f1edcac13122db017f",
+  "prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv",
+  "base_prefix": "/usr",
+  "python": "3.12.13 (main, Jul 20 2026, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-14)]",
+  "torch": "2.13.0+cu130",
+  "torch_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib64/python3.12/site-packages/torch/__init__.py",
+  "cuda": "13.0",
+  "gpu_uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1",
+  "dependencies": [
+    {
+      "name": "cuda-bindings",
+      "version": "13.3.1",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "cuda-bindings",
+      "version": "13.3.1",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "cuda-pathfinder",
+      "version": "1.6.0",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "cuda-pathfinder",
+      "version": "1.6.0",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "cuda-toolkit",
+      "version": "13.0.3.0",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "cuda-toolkit",
+      "version": "13.0.3.0",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "filelock",
+      "version": "3.32.2",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "filelock",
+      "version": "3.32.2",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "fsspec",
+      "version": "2026.7.0",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "fsspec",
+      "version": "2026.7.0",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "Jinja2",
+      "version": "3.1.6",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "Jinja2",
+      "version": "3.1.6",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "MarkupSafe",
+      "version": "3.0.3",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "MarkupSafe",
+      "version": "3.0.3",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "maturin",
+      "version": "1.14.1",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "maturin",
+      "version": "1.14.1",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "mpmath",
+      "version": "1.3.0",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "mpmath",
+      "version": "1.3.0",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "networkx",
+      "version": "3.6.1",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "networkx",
+      "version": "3.6.1",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.1",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.1",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-cublas",
+      "version": "13.1.1.3",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-cublas",
+      "version": "13.1.1.3",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-cuda-cupti",
+      "version": "13.0.85",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-cuda-cupti",
+      "version": "13.0.85",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-cuda-nvrtc",
+      "version": "13.0.88",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-cuda-nvrtc",
+      "version": "13.0.88",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-cuda-runtime",
+      "version": "13.0.96",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-cuda-runtime",
+      "version": "13.0.96",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-cudnn-cu13",
+      "version": "9.20.0.48",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-cudnn-cu13",
+      "version": "9.20.0.48",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-cufft",
+      "version": "12.0.0.61",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-cufft",
+      "version": "12.0.0.61",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-cufile",
+      "version": "1.15.1.6",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-cufile",
+      "version": "1.15.1.6",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-curand",
+      "version": "10.4.0.35",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-curand",
+      "version": "10.4.0.35",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-cusolver",
+      "version": "12.0.4.66",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-cusolver",
+      "version": "12.0.4.66",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-cusparse",
+      "version": "12.6.3.3",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-cusparse",
+      "version": "12.6.3.3",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-cusparselt-cu13",
+      "version": "0.8.1",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-cusparselt-cu13",
+      "version": "0.8.1",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-nccl-cu13",
+      "version": "2.29.7",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-nccl-cu13",
+      "version": "2.29.7",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-nvjitlink",
+      "version": "13.3.33",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-nvjitlink",
+      "version": "13.3.33",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-nvshmem-cu13",
+      "version": "3.4.5",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-nvshmem-cu13",
+      "version": "3.4.5",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-nvtx",
+      "version": "13.0.85",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "nvidia-nvtx",
+      "version": "13.0.85",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "setuptools",
+      "version": "84.0.0",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "setuptools",
+      "version": "84.0.0",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "sympy",
+      "version": "1.14.0",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "sympy",
+      "version": "1.14.0",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "torch",
+      "version": "2.13.0",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "torch",
+      "version": "2.13.0",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "triton",
+      "version": "3.7.1",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "triton",
+      "version": "3.7.1",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "typing_extensions",
+      "version": "4.16.0",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    },
+    {
+      "name": "typing_extensions",
+      "version": "4.16.0",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout/.venv/lib/python3.12/site-packages"
+    }
+  ]
+}

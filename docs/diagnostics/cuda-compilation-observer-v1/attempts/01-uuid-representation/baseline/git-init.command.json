@@ -1,0 +1,28 @@
+{
+  "argv": [
+    "git",
+    "init",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-development/baseline-checkout"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506",
+  "started_at": "2026-09-10T23:31:42.428441+00:00",
+  "elapsed_seconds": 0.033992874436080456,
+  "returncode": 0,
+  "environment": {
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-development/target/campaign-cache/cargo",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-development/target/build",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "MKL_NUM_THREADS": "1",
+    "OMP_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "PATH": "/home/bobren/.cache/dotslash/obj/cas/d7/ac9f889c9c1964b6e77ca80f9102c1ed/extract/tar.zst/linux_x86_64/codex-path:/data/users/bobren/depot_tools:/home/bobren/.codex/tmp/arg0/codex-arg0iynhjv:/home/bobren/.cache/dotslash/obj/cas/d7/ac9f889c9c1964b6e77ca80f9102c1ed/extract/tar.zst/linux_x86_64/codex-path:/home/bobren/.cache/dotslash/obj/cas/d7/ac9f889c9c1964b6e77ca80f9102c1ed/extract/tar.zst/linux_x86_64/codex-path:/home/bobren/.local/bin:/data/users/bobren/depot_tools:/home/bobren/.codex/tmp/arg0/codex-arg0qrircC:/home/bobren/.cache/dotslash/obj/cas/d7/ac9f889c9c1964b6e77ca80f9102c1ed/extract/tar.zst/linux_x86_64/codex-path:/usr/local/cuda-12.6/bin:/home/bobren/.config/emacs/bin:/data/users/bobren/fbsource/fbcode/common/rust/cargo_from_buck/bin:/data/users/bobren/fbsource/fbcode/third-party-buck/platform007/build/rust/bin:/data/users/bobren/fbsource/xplat/third-party/node/bin:/data/users/bobren/depot_tools:/home/bobren/local/a/pytorch-env/bin:/usr/local/cuda-12.6/bin:/home/bobren/.config/emacs/bin:/data/users/bobren/fbsource/fbcode/common/rust/cargo_from_buck/bin:/data/users/bobren/fbsource/fbcode/third-party-buck/platform007/build/rust/bin:/data/users/bobren/fbsource/xplat/third-party/node/bin:/home/bobren/miniconda3/bin:/home/bobren/.cargo/bin:/data/users/bobren/depot_tools:/usr/share/Modules/bin:/usr/condabin:/usr/lib64/ccache:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/local/sbin:/usr/sbin:/sbin:/var/www/scripts/bin:/home/bobren/.yarn/bin:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/local/sbin:/usr/sbin:/sbin:/var/www/scripts/bin:/home/bobren/.yarn/bin:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/ops/scripts:/usr/facebook/scripts:/usr/facebook/scripts:/usr/facebook/scripts/db",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-development/.venv/bin/python",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "RUSTUP_AUTO_INSTALL": "0",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-development/target/campaign-cache",
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-development/target/campaign-cache/uv",
+    "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-development/target/campaign-cache/python",
+    "VIRTUAL_ENV": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-development/.venv",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-development/target/campaign-cache"
+  }
+}

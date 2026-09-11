@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/scripts/cuda_compilation_campaign.py", line 419, in <module>
+    main()
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/scripts/cuda_compilation_campaign.py", line 413, in main
+    run(args, manifest, evaluator)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/scripts/cuda_compilation_campaign.py", line 387, in run
+    build_and_run(root, evidence, role, manifest, evaluator)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/scripts/cuda_compilation_campaign.py", line 247, in build_and_run
+    command(root, evidence, 'controls', [python, '-B', '-m', 'unittest', '-v',
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/scripts/cuda_compilation_campaign.py", line 137, in command
+    require(result.returncode == 0, f'{name} failed ({result.returncode}); see {evidence}')
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/scripts/cuda_compilation_campaign.py", line 33, in require
+    raise ValueError(message)
+ValueError: controls failed (1); see /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-development-v2/baseline

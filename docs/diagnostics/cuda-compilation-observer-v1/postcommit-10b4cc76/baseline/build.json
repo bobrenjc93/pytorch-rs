@@ -1,0 +1,11 @@
+{
+  "commit": "10b4cc76f1bf211714e7588b2b92790895a1d6a6",
+  "source_sha256": "2fe1d2ab1404f3bc26ff3c6e1dc20216603f6577b09ab38cce4703b4205c67cc",
+  "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "extension_sha256": "10d9e339bd9aeaaa8e129dfbf5dfb3cf8a37beec42829a4509fc61bab8f8fc44",
+  "wheel_sha256": "b1edcdd63bbe638da2ae7112fcd28ecc576682f107f1ebb34160250c2af938ea",
+  "build_command": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/baseline-checkout/.venv/bin/maturin build --release --locked --interpreter /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/baseline-checkout/.venv/bin/python --out /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/baseline-checkout/target/wheels",
+  "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)\n",
+  "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)\n",
+  "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0\n"
+}

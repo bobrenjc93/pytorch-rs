@@ -1,0 +1,36 @@
+{
+  "captured_at": "2026-09-10T23:44:31.337127+00:00",
+  "scope": "Author validation; not independent review or human approval. No clean-commit claim.",
+  "commands": [
+    "CUDA_VISIBLE_DEVICES= /usr/bin/python3.12 -B -m unittest discover -s tests -p test_cuda*evaluator.py -v",
+    "CUDA_VISIBLE_DEVICES= /usr/bin/python3.12 -B -m unittest discover -s tests -p test_cuda_observer_campaign.py -v",
+    "/usr/bin/python3.12 -B scripts/cuda_compilation_campaign.py validate --evidence docs/diagnostics/cuda-compilation-observer-v1/development",
+    "ruff check --no-cache scripts/cuda_compilation_campaign.py tests/test_cuda_observer_campaign.py",
+    "git diff --check"
+  ],
+  "portable_tests_passed": 56,
+  "portable_hardware_skips": 4,
+  "control_tests_per_revision": 17,
+  "source_sha256": {
+    "scripts/cuda_compilation_campaign.py": "ae1c8b3cdbd424c5dc286a6583bfe691239d358330c48fabd3eec25aebee83b7",
+    "scripts/campaigns/cuda-compilation-observer-v1.json": "3fc109e5c18bfa3cc2168f2552daaf0a2b603317733586ba526721d2505c59d0",
+    "scripts/evaluate_cuda_compilation.py": "e245a4f8920dcbff28bb4a5f2ad31ba5427a64984d7039241525f15e5290f1b7",
+    "scripts/evaluate_cuda_math.py": "29a97d07bad0d82c261e28aa880de68cdf46df0731d5ff0aa9802ec5bb8e605b",
+    "docs/hardware-heterogeneity-matrix-v1.json": "9691ee4f03715ab0eb737195bad264a13d12069f4e15e5db9eedbd812c8b7ffc",
+    "tests/test_cuda_observer_campaign.py": "1793fce7448dd53f279f361eb80a6094a733f0ce73c58af78e8a53eb8f986315",
+    "tests/test_cuda_compilation_evaluator.py": "11501b44603c8d34b1495ed1cdd06fb481dae9f3c5bc83ea87fcf4473077e53e"
+  },
+  "files": {
+    "campaign-tests.stderr": "6da11f9edf79aaccea79a1af0a59ba909c0c9589a0d928ac017d1a12a2ceac1e",
+    "campaign-tests.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "diff-check.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evaluator-tests.stderr": "52ede2274de82296bb51de1783cca0cc7ba5e4a40d1a9828de8d169ae6d82039",
+    "evaluator-tests.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "host.json": "2fb4d0a05e6bbf574f04fb52aba24c655f1417306e264b68ed94c7e7c0174179",
+    "portable-validation.json": "20d9d741b9bc7e90671909b2c4e8a053609b5821ea188e450be256d609434167",
+    "ruff.stdout": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "scope.json": "e5ef1adcbf7fdf2efaa72152dbefdc24718c2a3e4ddcd268bd382330260612ee"
+  },
+  "independent_reviews": [],
+  "human_approval": false
+}

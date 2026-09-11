@@ -1,0 +1,121 @@
+{
+  "audited_at": "2026-09-10T23:52:24.580895+00:00",
+  "scope": "Author raw-data and local provenance audit; not independent review or human approval.",
+  "validation": {
+    "mode": "clean-commit",
+    "results": {
+      "baseline": {
+        "passed": 5,
+        "denominator": 6,
+        "slots": [
+          1,
+          1,
+          1,
+          1,
+          0,
+          1
+        ],
+        "compared_native_output_values": 1596
+      },
+      "candidate": {
+        "passed": 6,
+        "denominator": 6,
+        "slots": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "compared_native_output_values": 1624
+      }
+    },
+    "expected_outcomes_observed": true,
+    "human_approval": false,
+    "independent_review": false,
+    "implementation_credit_claimed": false
+  },
+  "records": {
+    "baseline": {
+      "measured_commit": "10b4cc76f1bf211714e7588b2b92790895a1d6a6",
+      "checkout": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/baseline-checkout",
+      "clean_status_verified": true,
+      "production_sha256": "6c2ddba951a29d5b960cf1e9499307545ab3307c5412d33a52bd4d9ab0e596a2",
+      "wheel_sha256": "b1edcdd63bbe638da2ae7112fcd28ecc576682f107f1ebb34160250c2af938ea",
+      "extension_sha256": "10d9e339bd9aeaaa8e129dfbf5dfb3cf8a37beec42829a4509fc61bab8f8fc44",
+      "reference_executions": 24,
+      "native_executions": 20,
+      "compared_output_values": 1596,
+      "max_absolute_error_by_case": {
+        "cuda_f32_compile_add_same_shape": 0,
+        "cuda_f32_compile_add_trailing_vector": 0,
+        "cuda_f32_compile_neg": 0,
+        "cuda_f32_compile_mul_scalar": 0,
+        "cuda_f32_compile_matmul": 0
+      },
+      "failures": [
+        {
+          "case_id": "cuda_f32_compile_sum_rows",
+          "seed": 8454740352132840342,
+          "status": "failed",
+          "error": "AttributeError: module 'torch_rs.torch_rs' has no attribute '_compile_trace_reduction'",
+          "executions": []
+        },
+        {
+          "case_id": "cuda_f32_compile_sum_rows",
+          "seed": 4006623364652518084,
+          "status": "failed",
+          "error": "AttributeError: module 'torch_rs.torch_rs' has no attribute '_compile_trace_reduction'",
+          "executions": []
+        }
+      ],
+      "slots": [
+        1,
+        1,
+        1,
+        1,
+        0,
+        1
+      ]
+    },
+    "candidate": {
+      "measured_commit": "b3659e76011239388da710d4de2f30c52018016f",
+      "checkout": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6b0d5506/target/cuda-observer-postcommit-10b4cc76/candidate-checkout",
+      "clean_status_verified": true,
+      "production_sha256": "7a882054999d1ae58a1e0ec6457c56ec65f957473c5f441f2638c95e25eb85c1",
+      "wheel_sha256": "6568bd882b74496b3f0b8d3e60355bf94f29e64b1bc1ab464b78b84923b0f0a3",
+      "extension_sha256": "355202dbaeb38a0d8ba2bb279b387bc6439e7d9629eff460d66961159db4bc7c",
+      "reference_executions": 24,
+      "native_executions": 24,
+      "compared_output_values": 1624,
+      "max_absolute_error_by_case": {
+        "cuda_f32_compile_add_same_shape": 0,
+        "cuda_f32_compile_add_trailing_vector": 0,
+        "cuda_f32_compile_neg": 0,
+        "cuda_f32_compile_mul_scalar": 0,
+        "cuda_f32_compile_sum_rows": 0,
+        "cuda_f32_compile_matmul": 0
+      },
+      "failures": [],
+      "slots": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ]
+    }
+  },
+  "distinct_worker_processes": 48,
+  "previous_candidate_files_preserved": true,
+  "controller_after_capture": {
+    "commit": "10b4cc76f1bf211714e7588b2b92790895a1d6a6",
+    "status": "",
+    "diff_stat": ""
+  },
+  "independent_reviews": [],
+  "human_approval": false,
+  "timing_speedup_claimed": false
+}
