@@ -101,7 +101,35 @@ remain intact. Evaluator definitions, frozen38, performance workloads, hardware
 matrix and historical evidence remain unchanged; PR1970/PR1971 remain separate
 unadopted review campaigns.
 
-After Burner commits the implementation, a separate fresh release build and
-clean-commit capture must be published without overwriting this development
-bundle. Commit creation, review, delivery and full merge gates belong to Burner;
-they cannot be claimed by this uncommitted worktree run.
+## Clean-commit validation
+
+The [post-commit capture](diagnostics/cuda-relu/postcommit-a07d99d8/index.json)
+measures `a07d99d8aac23b05148f0b9b73e485edd2787735` from a clean checkout on
+2026-09-11. A fresh offline release build used the committed capture helper,
+an empty build target and worktree-local caches. Native bytes and all 59 Python
+files matched the wheel and checkout. The command record verifies an unchanged,
+clean tree before and after every measurement; evidence was published afterward.
+
+| Fresh check | Result |
+| --- | --- |
+| Seeded reference/native eager and compiled programs | All three passed with the original baseline inputs |
+| Raw IEEE patterns, including signed signaling NaNs | All 22 matched bit-for-bit across four execution modes |
+| Focused ReLU Python suite | 13 passed; 2 two-device tests skipped in the single-device run |
+| Two-device restoration | 2 passed with only `0,1` visible |
+| CUDA hidden | All 15 hardware-only Python tests skipped clearly |
+| Rust ReLU filter with Python bindings | 8 passed, including CPU backward, storage and zero-operation graph prevalidation |
+| Rust default-feature ReLU / driver slot mapping | 1 / 1 passed |
+
+The reference was PyTorch `2.13.0+cu130`, with native and reference CUDA 13.0,
+driver 580.82.07, uv-managed CPython 3.12.14 and Rust 1.92.0. The recorded nvcc
+was 12.6.85; the native extension uses driver-JIT PTX and did not invoke it.
+Ordinary runs used physical GPU 0, UUID
+`GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1`; restoration also used GPU 1,
+`GPU-11979b85-93e3-21d3-e68f-df37b8a4c296`. Inventory snapshots do not reserve
+hardware. Receipts share the unchanged development source manifest; the index
+provides its location rather than duplicating it.
+
+Historical baseline/development records and failures remain unchanged. Broader
+author regressions above were not repeated by this focused evidence step.
+This capture makes no timing or general compiler/accelerator parity claim and
+does not replace Burner's independent review, delivery or full merge gates.
