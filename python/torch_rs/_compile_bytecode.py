@@ -28,6 +28,13 @@ class _BytecodeConstant:
 
 
 @dataclass(frozen=True, slots=True)
+class _BytecodeTuple:
+    # Mixed constants/tensors are retained for reshape call validation only.
+    # They are not Tensor output pytrees or accepted helper arguments.
+    elements: tuple
+
+
+@dataclass(frozen=True, slots=True)
 class _BytecodeKeywordNames:
     names: tuple[str, ...]
 
@@ -104,6 +111,7 @@ class _LoweringState:
     )
     global_values: dict[str, object] = field(default_factory=dict)
     helper_call_count: int = 0
+    has_mixed_tuple: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -956,6 +964,8 @@ def _require_tensor(value, program, instruction, role):
 def _require_output_value(value, program, instruction, role):
     if _builtins.isinstance(value, _trace.CompileTraceTensorProxy):
         return value
+    if isinstance(value, _BytecodeTuple):
+        return _require_output_value(value.elements, program, instruction, "tuple return value")
     if _builtins.type(value) in (_builtins.tuple, _builtins.list):
         for index, element in enumerate(value):
             _require_output_value(
@@ -970,6 +980,9 @@ def _require_output_value(value, program, instruction, role):
 
 def _store_local(locals, stack, program, instruction, name):
     value = _pop(stack, program, instruction)
+    if isinstance(value, _BytecodeTuple):
+        locals[name] = value
+        return
     if _builtins.isinstance(value, _BytecodeConstant):
         if type(value.value) not in (int, tuple):
             _trace._normalize_mul_scalar(value.value)
@@ -1081,17 +1094,22 @@ def _lower_function_body(
     )
 
 
+def _reshape_argument(value):
+    if isinstance(value, _BytecodeConstant):
+        return value.value
+    if isinstance(value, _BytecodeTuple):
+        return tuple(_reshape_argument(element) for element in value.elements)
+    if type(value) is tuple:
+        return tuple(_reshape_argument(element) for element in value)
+    return _trace._RESHAPE_UNKNOWN_DIMENSION
+
+
 def _record_method_call(recorder, method, args, program, instruction, names=()):
     if method.name == "reshape":
         positional = len(args) - len(names)
-        values = tuple(value.value if isinstance(value, _BytecodeConstant) else value for value in args)
+        values = tuple(_reshape_argument(value) for value in args)
         positional_args = values[:positional]
         kwargs = dict(zip(names, values[positional:]))
-        if any(not isinstance(value, _BytecodeConstant) for value in args):
-            # Invalid calls still have public binding errors even when a value
-            # cannot be captured. Do not convert or evaluate that value.
-            _trace._validate_reshape_binding(positional_args, kwargs)
-            _unsupported_bytecode(program, instruction, "Tensor.reshape requires constant dimensions")
         shape = _trace._bind_reshape_shape(positional_args, kwargs)
         return recorder.record_reshape(method.receiver, shape)
     if method.name == "transpose":
@@ -1416,12 +1434,16 @@ def _handle_load_const(recorder, locals, stack, program, instruction, state, act
 
 
 def _handle_build_tuple(recorder, locals, stack, program, instruction, state, active):
-    del recorder, locals, state, active
+    del recorder, locals, active
     argument_count = instruction.arg or 0
     values = [_pop(stack, program, instruction) for _ in range(argument_count)]
     values.reverse()
     if values and all(isinstance(value, _BytecodeConstant) for value in values):
         stack.append(_BytecodeConstant(tuple(value.value for value in values)))
+        return
+    if any(isinstance(value, (_BytecodeConstant, _BytecodeTuple)) for value in values):
+        state.has_mixed_tuple = True
+        stack.append(_BytecodeTuple(tuple(values)))
         return
     output = tuple(values)
     _require_output_value(output, program, instruction, "tuple return value")
@@ -1532,6 +1554,10 @@ def lower_compile_graph(program, input_metadatas, *, name=None, compile_request=
         (program,),
         _lowerable_bytecode_instructions(program, code, input_metadatas),
     )
+    if state.has_mixed_tuple:
+        raise _trace.CompileTraceUnsupportedError(
+            "torch.compile mixed constant/Tensor tuples are only retained for reshape argument validation"
+        )
     return recorder.finish(output)
 
 

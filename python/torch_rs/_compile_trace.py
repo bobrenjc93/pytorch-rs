@@ -551,20 +551,35 @@ def _t_output_metadata(metadata):
     )
 
 
+_RESHAPE_UNKNOWN_DIMENSION = object()
+
+
+def _validate_reshape_dimension(dimension, index):
+    # An opaque bytecode value is never inspected or converted. Keep checking
+    # known dimensions so unsupported capture cannot hide a public type error.
+    if dimension is _RESHAPE_UNKNOWN_DIMENSION:
+        return False
+    if type(dimension) is not int:
+        if ((type(dimension) is bool and index > 0)
+                or (type(dimension) is not bool and hasattr(type(dimension), "__index__"))):
+            return False
+        raise TypeError(f"reshape(): shape dimension {index} must be int, not {type(dimension).__name__}")
+    if not -(2**63) <= dimension < 2**63:
+        raise TypeError(f"reshape(): shape dimension {index} overflows signed int64")
+    return True
+
+
 def _reshape_dimensions(shape):
     if type(shape) is not tuple:
         raise CompileTraceUnsupportedError("torch.compile reshape requires an exact flat tuple")
     # PyTorch's schema checks the first dimension, then unpacks in order.
     # Later booleans/index conversions can be reference-valid, but are outside
     # this exact-integer capture contract. Never use bool/int equality here.
+    constant = True
     for index, dimension in enumerate(shape):
-        if type(dimension) is not int:
-            if ((type(dimension) is bool and index > 0)
-                    or (type(dimension) is not bool and hasattr(type(dimension), "__index__"))):
-                raise CompileTraceUnsupportedError("torch.compile reshape requires exact integer constants")
-            raise TypeError(f"reshape(): shape dimension {index} must be int, not {type(dimension).__name__}")
-        if not -(2**63) <= dimension < 2**63:
-            raise TypeError(f"reshape(): shape dimension {index} overflows signed int64")
+        constant = _validate_reshape_dimension(dimension, index) and constant
+    if not constant:
+        raise CompileTraceUnsupportedError("torch.compile reshape requires exact integer constants")
     if len(shape) > 2:
         raise CompileTraceUnsupportedError("torch.compile reshape requires output rank 0, 1 or 2")
     return shape
@@ -587,7 +602,9 @@ def _bind_reshape_shape(args, kwargs):
     if not args and "shape" not in kwargs:
         raise TypeError('reshape() missing 1 required positional arguments: "shape"')
     first = args[0] if args else kwargs["shape"]
-    if type(first) is int and args:
+    if first is _RESHAPE_UNKNOWN_DIMENSION:
+        shape = args if args else (first,)
+    elif type(first) is int and args:
         shape = args
     elif type(first) is tuple:
         if len(args) > 1:
@@ -595,13 +612,14 @@ def _bind_reshape_shape(args, kwargs):
         shape = first
     elif isinstance(first, (tuple, list)) or (type(first) not in (bool, int, _builtins.float, str, type(None))
                                and hasattr(type(first), "__index__")):
+        _validate_reshape_binding(args, kwargs)
         raise CompileTraceUnsupportedError("torch.compile reshape requires exact integer constants or an exact tuple")
     else:
         raise TypeError("reshape(): argument 'shape' must be tuple of ints")
     # Schema validation of the first ordinary dimension precedes keyword
     # binding; remaining dimensions and overflow follow keyword binding.
     if shape and type(shape[0]) is not int:
-        _reshape_dimensions((shape[0],))
+        _validate_reshape_dimension(shape[0], 0)
     _validate_reshape_binding(args, kwargs)
     return _reshape_dimensions(shape)
 

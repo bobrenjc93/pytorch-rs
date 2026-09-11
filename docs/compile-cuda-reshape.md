@@ -32,6 +32,9 @@ later boolean forms are deliberately unsupported here, as are integer subclasses
 index conversions, lists, tuple subclasses, arbitrary containers, symbolic or
 computed dimensions and scalar function arguments. The compiler never invokes
 user conversion methods. Tensor-only input binding retains its existing errors.
+Known dimension type/overflow errors and invalid call structure are checked even
+when another value is nonconstant. Mixed literal/local tuples are retained only
+for validation; they cannot enter a compiled graph or become output pytrees.
 
 A view-compatible reshape creates a distinct Python object sharing storage,
 with the native view planner's strides and the input offset. A copy-required
@@ -91,3 +94,8 @@ measures `7533cbbcd00bdf2b9213bba7a0cefb2f96d43ccd`, including the
 and its Tensor-valued invalid-call differentials across all compile policies.
 All requested checks passed with a fresh local environment and release build;
 earlier captures and failures remain pinned to their original code.
+
+The subsequent [partial-argument validation revision](diagnostics/compile-cuda-reshape/validation-review/README.md)
+records the second review's regressions, retained failures and passing development
+checks. A fresh clean-commit capture is required after Burner commits this fix;
+the earlier captures do not validate it.

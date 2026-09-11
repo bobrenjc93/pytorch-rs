@@ -226,6 +226,46 @@ class CompileCudaReshapeTests(unittest.TestCase):
                     with self.assertRaises(trace.CompileTraceUnsupportedError):
                         call_without_python(compile_with_cache(fn, fullgraph, dynamic)[0], {fn.__code__}, x)
 
+    def test_partial_shapes_validate_known_errors_before_unsupported_capture(self):
+        x, y = native.ones((1,)).to('cuda:0'), torch.ones((1,), device='cuda:0')
+        errors = ('(True, x)', '(1.0, x)', '(2**63, x)', '(-2**63-1, x)',
+                  '((1, x), foo=1)', '((1, x), shape=(1,))', '((1, x), 1)',
+                  '((True, x),)', '((1.0, x),)', '((2**63, x),)',
+                  '(1, x, 1.0)', '(x, 1.0)', '((x, 1.0),)',
+                  '(shape=(1, x), foo=1)', '(shape, foo=1)', '(shape, shape=(1,))')
+        for expression in errors:
+            for prefix in ('a = x', 'a = -x'):
+                local = '    shape = (1, x)\n' if expression.startswith('(shape,') else ''
+                fn = make_program(f'def program(x):\n    {prefix}\n{local}    return a.reshape{expression}\n')
+                with self.subTest(expression=expression, prefix=prefix):
+                    with self.assertRaises(TypeError):
+                        fn(y)
+                    for fullgraph, dynamic in POLICIES:
+                        compiled, cache = compile_with_cache(fn, fullgraph, dynamic)
+                        for attempt in range(2):
+                            with self.subTest(policy=(fullgraph, dynamic), attempt=attempt), \
+                                 patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('native execution')), \
+                                 patch.object(trace, '_execute_operation', side_effect=AssertionError('Python execution')):
+                                with self.assertRaises(TypeError):
+                                    call_without_python(compiled, {fn.__code__}, x)
+                                self.assertEqual(len(cache.graphs), 0)
+        # Retaining a tuple for call validation must not admit nonconstant shapes,
+        # mixed output pytrees, tuple helper arguments or tuple arithmetic.
+        for body in ('return x.reshape((1, x))', 'return x.reshape(shape=(1, x))',
+                     'shape = (1, x)\n    return x.reshape(shape)',
+                     'return (1, x)', 'out = (1, x)\n    return out',
+                     'unused = (1, x)\n    return x',
+                     'unused = (1, x)\n    unused = x\n    return x',
+                     'return ((1, x), x)', 'return [(1, x), x]',
+                     'return helper((1, x))', 'return x + (1, x)'):
+            fn = make_program(f'def helper(x):\n    return -x\ndef program(x):\n    {body}\n')
+            for fullgraph, dynamic in POLICIES:
+                with self.subTest(unsupported=body, policy=(fullgraph, dynamic)), \
+                     patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('native execution')), \
+                     patch.object(trace, '_execute_operation', side_effect=AssertionError('Python execution')):
+                    with self.assertRaises(trace.CompileTraceUnsupportedError):
+                        call_without_python(compile_with_cache(fn, fullgraph, dynamic)[0], {fn.__code__}, x)
+
     def test_public_binding_order_and_unsupported_forms(self):
         x, y = native.ones((1,)).to('cuda:0'), torch.ones((1,), device='cuda:0')
         errors = ['()', '(True,)', '((True,),)', '(1.,)', '(1, 1.)',

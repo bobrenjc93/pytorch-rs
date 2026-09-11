@@ -1,0 +1,11 @@
+--- a/tests/test_compile_cuda_reshape.py
++++ b/tests/test_compile_cuda_reshape.py
+@@ -254,8 +254,6 @@
+         for body in ('return x.reshape((1, x))', 'return x.reshape(shape=(1, x))',
+                      'shape = (1, x)\n    return x.reshape(shape)',
+                      'return (1, x)', 'out = (1, x)\n    return out',
+-                     'unused = (1, x)\n    return x',
+-                     'unused = (1, x)\n    unused = x\n    return x',
+                      'return ((1, x), x)', 'return [(1, x), x]',
+                      'return helper((1, x))', 'return x + (1, x)'):
+             fn = make_program(f'def helper(x):\n    return -x\ndef program(x):\n    {body}\n')
