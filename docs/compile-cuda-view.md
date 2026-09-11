@@ -81,18 +81,16 @@ CUDA_VISIBLE_DEVICES=0 cargo test --locked --features python-bindings --lib cuda
 Metadata/planner tests run without hardware; hardware-only cases skip clearly.
 The [development capture](diagnostics/compile-cuda-view/README.md) records the
 fresh main baseline, release build, seeded H100 differentials and regressions,
-including failed attempts. The separate [clean-commit capture](diagnostics/compile-cuda-view/postcommit-e426d1f6/README.md)
+including failed attempts. The separate [clean-commit capture](diagnostics/compile-cuda-view/postcommit-d682311e/README.md)
 records the release rebuild and fresh validation of implementation commit
-`e426d1f6d8eec9521dc13695af68b5da168415e2`. These are non-scoring diagnostics;
+`d682311eb60dd0908116c12340deac75fb3f8120`. These are non-scoring diagnostics;
 scoring corpora, performance workloads, evaluator contracts and the separate
 PR1970/PR1971 campaigns are unchanged.
 
 The [review revision diagnostics](diagnostics/compile-cuda-view/review-revision/README.md)
-record the subsequent public-error precedence fixes and their development checks.
-The earlier `12ac70fd` capture remains unchanged; the clean capture above
-measures the committed review revision.
-
-The [second review revision](diagnostics/compile-cuda-view/review-revision-2/README.md)
-records unary-expression and element-count validation fixes. Its fresh clean
-capture is required after Burner commits the revision; prior captures stay pinned
-to their original source identities.
+and [second review revision](diagnostics/compile-cuda-view/review-revision-2/README.md)
+preserve the development checks for both rounds of public-error fixes. The earlier
+[12ac70fd capture](diagnostics/compile-cuda-view/postcommit-12ac70fd/README.md) and
+[e426d1f6 capture](diagnostics/compile-cuda-view/postcommit-e426d1f6/README.md)
+remain pinned to their original source identities. The clean capture above measures
+the committed revision, including unary-expression and element-count validation.
