@@ -40,6 +40,10 @@ artifacts are generated at merge time and are not source documentation.
 
 ## Historical Validation Evidence
 
+- [Compiler analysis and CPU tanh composite validation](diagnostics/compile-cuda-graph/composite-postcommit-d94daecd/README.md): Historical measurements of implementation `d94daecd`, with
+  [source clean](diagnostics/compile-cuda-graph/postcommit-4cb0432/README.md) (`4cb0432`) and
+  [source development](diagnostics/compile-cuda-graph/static-analysis-b7936239-development/README.md) predecessors.
+  Measured revisions are distinct from evidence publication commits; each report retains its provenance and performance caveats.
 - [Compiled CUDA row-sum validation](compile-cuda-sum-rows-validation.md): Commit-bound source captures, retained development attempts, and timing-artifact limitations.
 - [Matmul diagnostic index](diagnostics/composite-matmul-unflatten-l1/README.md): Current evidence and earlier source/composite captures, with their original identities and raw results.
 - [Matmul, unflatten and L1 integration history](composite-matmul-unflatten-l1-validation.md): Repair history, development validation and managed handoff notes.

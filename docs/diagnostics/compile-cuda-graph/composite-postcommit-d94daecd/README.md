@@ -96,8 +96,6 @@ loaded CUDA library hashes, private fixed-score kernels and command log hashes.
 The [paired reference check](paired-reference-check.json) additionally compares
 installed PyTorch and NumPy native-library bytes on both sides. Additional
 read-only identity/accounting commands have their own
-[verification receipts](verification-commands.json). Additional
-read-only identity/accounting commands have their own
 [verification receipts](verification-commands.json).
 The existing private-kernel source checksum is BLAKE2b-128; SHA-256 is recorded
 separately for the source and binary. Exact commands and timestamps are in the
