@@ -377,6 +377,14 @@ impl CudaFloat32Storage {
         })
     }
 
+    pub(crate) fn relu(&self, offset: usize, elements: usize) -> Result<Self, TensorError> {
+        self.unary_pointwise(offset, elements, |input, output, count| {
+            // SAFETY: unary_pointwise checks bounds, guards the device and holds
+            // both allocations through legacy-stream completion, even on errors.
+            unsafe { pointwise::launch_relu(input, output, count) }
+        })
+    }
+
     pub(crate) fn mul_scalar(
         &self,
         offset: usize,
@@ -1316,6 +1324,34 @@ mod tests {
         assert_eq!(
             input.sum_rows(0, 2, 2).unwrap().copy_range(0, 2).unwrap(),
             [3., 7.]
+        );
+    }
+
+    #[test]
+    fn relu_storage_bounds_and_bit_preservation() {
+        use super::CudaFloat32Storage;
+        use crate::TensorError;
+        if super::device_count() == 0 {
+            eprintln!("skipping CUDA ReLU storage: no CUDA runtime/device");
+            return;
+        }
+        let input = CudaFloat32Storage::from_host(&[-0., -2., 3.5, f32::from_bits(0xff80_0001)], 0)
+            .unwrap();
+        for (offset, count) in [(4, 1), (usize::MAX, 2), (0, 5)] {
+            assert!(matches!(
+                input.relu(offset, count),
+                Err(TensorError::IndexCalculationOverflow)
+            ));
+        }
+        assert_eq!(input.relu(usize::MAX, 0).unwrap().elements, 0);
+        let result = input.relu(1, 3).unwrap().copy_range(0, 3).unwrap();
+        assert_eq!(
+            result.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            [0, 3.5_f32.to_bits(), 0xff80_0001]
+        );
+        assert_eq!(
+            input.relu(0, 1).unwrap().copy_range(0, 1).unwrap()[0].to_bits(),
+            0
         );
     }
 

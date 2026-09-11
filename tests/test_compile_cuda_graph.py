@@ -61,7 +61,7 @@ class CudaGraphTests(Comparison, unittest.TestCase):
             compiled(a, b)
             graph = next(iter(cache.graphs.values()))
             last = graph.operations[-1]
-            changes = ({'inputs': ('missing',)}, {'target': 'relu'}, {'scalar': 2},
+            changes = ({'inputs': ('missing',)}, {'target': 'abs'}, {'scalar': 2},
                        {'metadata': replace(last.metadata, storage_offset=3)},
                        {'metadata': replace(last.metadata, device='cuda:1')},
                        {'metadata': replace(last.metadata, requires_grad=True)})
@@ -92,7 +92,7 @@ class CudaGraphTests(Comparison, unittest.TestCase):
             ('add', (2, 99), None, (3, 7), (7, 1)),
             ('neg', (2,), 1., (3, 7), (7, 1)),
             ('mul_scalar', (2,), 2**64, (3, 7), (7, 1)),
-            ('relu', (2,), None, (3, 7), (7, 1)),
+            ('abs', (2,), None, (3, 7), (7, 1)),
         ]
         for last in bad_nodes:
             with self.subTest(last=last), self.assertRaises((NotImplementedError, RuntimeError, ValueError, OverflowError)):

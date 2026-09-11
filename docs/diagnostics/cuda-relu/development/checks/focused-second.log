@@ -1,0 +1,30 @@
+test_same_and_other_device_restoration (tests.test_cuda_relu.CudaReluDeviceTests.test_same_and_other_device_restoration) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_boundary_and_no_reference_forwarding (tests.test_cuda_relu.CudaReluTests.test_boundary_and_no_reference_forwarding) ... ok
+test_cold_threads_and_large_grid_stride_lifetimes (tests.test_cuda_relu.CudaReluTests.test_cold_threads_and_large_grid_stride_lifetimes) ... ok
+test_ieee_payloads_offsets_singleton_strides (tests.test_cuda_relu.CudaReluTests.test_ieee_payloads_offsets_singleton_strides) ... ok
+test_seeded_shapes_aliases_and_fresh_canonical_storage (tests.test_cuda_relu.CudaReluTests.test_seeded_shapes_aliases_and_fresh_canonical_storage) ... ok
+test_stream_completion_mutation_and_lifetime (tests.test_cuda_relu.CudaReluTests.test_stream_completion_mutation_and_lifetime) ... ok
+test_context_captures_mixed_devices_and_restoration (tests.test_compile_cuda_relu.CompileCudaReluDeviceTests.test_context_captures_mixed_devices_and_restoration) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_block_reference_import_and_python_execution_in_fresh_process (tests.test_compile_cuda_relu.CompileCudaReluTests.test_block_reference_import_and_python_execution_in_fresh_process) ... ok
+test_cpu_cuda_separation_capture_helpers_and_nested_lifetimes (tests.test_compile_cuda_relu.CompileCudaReluTests.test_cpu_cuda_separation_capture_helpers_and_nested_lifetimes) ... ok
+test_ieee_bits_offsets_strides_and_dynamic_guards (tests.test_compile_cuda_relu.CompileCudaReluTests.test_ieee_bits_offsets_strides_and_dynamic_guards) ... ok
+test_malformed_early_late_and_repeated_output_metadata_zero_execution (tests.test_compile_cuda_relu.CompileCudaReluTests.test_malformed_early_late_and_repeated_output_metadata_zero_execution) ... ok
+test_method_identity_strict_binding_and_native_compatibility (tests.test_compile_cuda_relu.CompileCudaReluTests.test_method_identity_strict_binding_and_native_compatibility) ... ok
+test_seeded_shapes_composition_and_real_cache_values (tests.test_compile_cuda_relu.CompileCudaReluTests.test_seeded_shapes_composition_and_real_cache_values) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ok
+test_single_node_output_prevalidation_and_native_payload_types (tests.test_compile_cuda_relu.CompileCudaReluTests.test_single_node_output_prevalidation_and_native_payload_types) ... FAIL
+
+======================================================================
+FAIL: test_single_node_output_prevalidation_and_native_payload_types (tests.test_compile_cuda_relu.CompileCudaReluTests.test_single_node_output_prevalidation_and_native_payload_types)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/tests/test_compile_cuda_relu.py", line 211, in test_single_node_output_prevalidation_and_native_payload_types
+    with self.assertRaises((ValueError, NotImplementedError, TypeError, OverflowError)):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: (<class 'ValueError'>, <class 'NotImplementedError'>, <class 'TypeError'>, <class 'OverflowError'>) not raised
+
+----------------------------------------------------------------------
+Ran 14 tests in 12.352s
+
+FAILED (failures=1, skipped=2)

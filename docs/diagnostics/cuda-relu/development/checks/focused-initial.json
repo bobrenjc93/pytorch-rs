@@ -1,0 +1,40 @@
+{
+  "commit": "9407a208d12a6a650ced579e943154849973e037",
+  "source_sha256": "0612f46af548592648133e5dac5d1a9fd04cdb379b534288b351f664775c0110",
+  "production_diff_sha256": "9d37dc69b1a65bd0582966077fbf1c425f7b7d1a241663784558815b9dd1fa72",
+  "command": [
+    "python",
+    "-m",
+    "unittest",
+    "tests.test_cuda_relu",
+    "tests.test_compile_cuda_relu",
+    "-v"
+  ],
+  "source_manifest": "0caf31b5218a351f4a03bc0f48d3cff470b2cf3e8ab040a28c844969bf75b052.manifest.json",
+  "source_manifest_sha256": "0caf31b5218a351f4a03bc0f48d3cff470b2cf3e8ab040a28c844969bf75b052",
+  "gpu_before": "index, uuid, name, driver_version, compute_cap, utilization.gpu [%], memory.used [MiB], memory.total [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 9.0, 0 %, 116 MiB, 97871 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 9.0, 0 %, 130 MiB, 97871 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 9.0, 0 %, 4 MiB, 97871 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 9.0, 0 %, 4 MiB, 97871 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 9.0, 0 %, 102 MiB, 97871 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 9.0, 0 %, 108 MiB, 97871 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 9.0, 0 %, 60 MiB, 97871 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 9.0, 0 %, 114 MiB, 97871 MiB\n",
+  "started_at": "2026-09-11T11:41:18.197055+00:00",
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": "0",
+    "TORCH_RS_CUDART": null,
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/cargo-home",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/build",
+    "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/uv-python",
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/uv-cache",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/tmp",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/xdg-cache",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/cuda-cache",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/inductor-cache",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/triton-cache",
+    "RUSTUP_TOOLCHAIN": "1.92.0"
+  },
+  "native_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+  "native_sha256": "ea0e8cf815396e20a3cd5c3d6edfcf89eab4e20d23a18b04b248d66697ff725b",
+  "exit_status": 1,
+  "wall_seconds": 13.30314569734037,
+  "ended_at": "2026-09-11T11:41:31.629254+00:00",
+  "gpu_after": "index, uuid, name, driver_version, compute_cap, utilization.gpu [%], memory.used [MiB], memory.total [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 9.0, 3 %, 116 MiB, 97871 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 9.0, 0 %, 130 MiB, 97871 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 9.0, 0 %, 4 MiB, 97871 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 9.0, 0 %, 4 MiB, 97871 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 9.0, 0 %, 102 MiB, 97871 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 9.0, 0 %, 108 MiB, 97871 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 9.0, 0 %, 60 MiB, 97871 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 9.0, 0 %, 114 MiB, 97871 MiB\n",
+  "log": "focused-initial.log",
+  "log_sha256": "37f650dff5236981712f5a8575219681e6399263f69c4672fae4d9f839862812",
+  "source_unchanged": true
+}

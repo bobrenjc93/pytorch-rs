@@ -275,7 +275,7 @@ class CompileCudaMatmulTests(Comparison, unittest.TestCase):
                 with self.assertRaises(NotImplementedError):
                     compiled(x,y)
             for expr in ('m.mm(x,y)', 'm.matmul(input=x, other=y)', 'x.matmul(other=y)',
-                         '(x @ y).relu()', '(x @ y).sum()', 'x @ y.t()'):
+                         '(x @ y).absolute()', '(x @ y).sum()', 'x @ y.t()'):
                 fn = make_program(f'def program(x,y):\n    return {expr}\n')
                 with self.assertRaises(NotImplementedError):
                     native.compile(fn, backend='eager', fullgraph=fullgraph)(a,b)

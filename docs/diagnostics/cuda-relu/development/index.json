@@ -1,0 +1,127 @@
+{
+  "kind": "uncommitted-development-diagnostic",
+  "base_commit": "9407a208d12a6a650ced579e943154849973e037",
+  "build": "builds/acceptance-build-record.json",
+  "baseline": "baseline.json",
+  "acceptance": "acceptance.json",
+  "checks": {
+    "focused-initial": {
+      "exit_status": 1,
+      "receipt": "checks/focused-initial.json"
+    },
+    "rust-default": {
+      "exit_status": 101,
+      "receipt": "checks/rust-default.json"
+    },
+    "rust-default-corrected": {
+      "exit_status": 0,
+      "receipt": "checks/rust-default-corrected.json"
+    },
+    "rust-bindings": {
+      "exit_status": 101,
+      "receipt": "checks/rust-bindings.json"
+    },
+    "clippy-default": {
+      "exit_status": 101,
+      "receipt": "checks/clippy-default.json"
+    },
+    "focused-second": {
+      "exit_status": 1,
+      "receipt": "checks/focused-second.json"
+    },
+    "rust-bindings-corrected": {
+      "exit_status": 0,
+      "receipt": "checks/rust-bindings-corrected.json"
+    },
+    "clippy-all": {
+      "exit_status": 0,
+      "receipt": "checks/clippy-all.json"
+    },
+    "clippy-default-corrected": {
+      "exit_status": 0,
+      "receipt": "checks/clippy-default-corrected.json"
+    },
+    "verify-release": {
+      "exit_status": 0,
+      "receipt": "checks/verify-release.json"
+    },
+    "verify-environment": {
+      "exit_status": 0,
+      "receipt": "checks/verify-environment.json"
+    },
+    "focused-final": {
+      "exit_status": 1,
+      "receipt": "checks/focused-final.json"
+    },
+    "acceptance-probe": {
+      "exit_status": 0,
+      "receipt": "checks/acceptance-probe.json"
+    },
+    "compiler-regressions": {
+      "exit_status": 1,
+      "receipt": "checks/compiler-regressions.json"
+    },
+    "cuda-regressions": {
+      "exit_status": 0,
+      "receipt": "checks/cuda-regressions.json"
+    },
+    "cpu-relu-autograd-layout": {
+      "exit_status": 0,
+      "receipt": "checks/cpu-relu-autograd-layout.json"
+    },
+    "two-device": {
+      "exit_status": 0,
+      "receipt": "checks/two-device.json"
+    },
+    "cuda-hidden": {
+      "exit_status": 0,
+      "receipt": "checks/cuda-hidden.json"
+    },
+    "rust-default-final": {
+      "exit_status": 0,
+      "receipt": "checks/rust-default-final.json"
+    },
+    "rust-bindings-final": {
+      "exit_status": 0,
+      "receipt": "checks/rust-bindings-final.json"
+    },
+    "rust-two-device": {
+      "exit_status": 0,
+      "receipt": "checks/rust-two-device.json"
+    },
+    "format": {
+      "exit_status": 0,
+      "receipt": "checks/format.json"
+    },
+    "diff-check": {
+      "exit_status": 0,
+      "receipt": "checks/diff-check.json"
+    },
+    "focused-corrected": {
+      "exit_status": 0,
+      "receipt": "checks/focused-corrected.json"
+    },
+    "rust-pinned-runtime": {
+      "exit_status": 0,
+      "receipt": "checks/rust-pinned-runtime.json"
+    },
+    "rust-default-pinned-runtime": {
+      "exit_status": 0,
+      "receipt": "checks/rust-default-pinned-runtime.json"
+    },
+    "rust-two-device-pinned": {
+      "exit_status": 0,
+      "receipt": "checks/rust-two-device-pinned.json"
+    },
+    "rust-cuda-hidden": {
+      "exit_status": 0,
+      "receipt": "checks/rust-cuda-hidden.json"
+    }
+  },
+  "clean_commit_capture": "Pending Burner-created implementation commit; rebuild in a fresh target and publish a separate immutable bundle.",
+  "limitations": [
+    "No scoring/evaluator definitions or benchmark evidence were changed.",
+    "No timing, general torch.compile, training or accelerator parity claim.",
+    "GPU snapshots report observations, not exclusive access."
+  ]
+}

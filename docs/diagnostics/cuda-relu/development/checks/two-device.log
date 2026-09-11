@@ -1,0 +1,7 @@
+test_same_and_other_device_restoration (tests.test_cuda_relu.CudaReluDeviceTests.test_same_and_other_device_restoration) ... ok
+test_context_captures_mixed_devices_and_restoration (tests.test_compile_cuda_relu.CompileCudaReluDeviceTests.test_context_captures_mixed_devices_and_restoration) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 6.741s
+
+OK

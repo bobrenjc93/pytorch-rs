@@ -5383,11 +5383,42 @@ impl Tensor {
     }
 
     /// Applies rectified linear activation element by element.
+    /// CUDA admits contiguous float32 tensors without gradients at any rank,
+    /// including offset views, and returns fresh canonical storage. Nonpositive
+    /// numbers become positive zero; NaN payloads are preserved bit-for-bit.
     ///
     /// # Errors
     ///
     /// Returns an error when result metadata or storage allocation fails.
     pub fn relu(&self) -> Result<Self, TensorError> {
+        if self.is_cuda() {
+            let reason = if self.dtype() != DType::Float32 {
+                Some("only float32 is supported")
+            } else if self.requires_grad() {
+                Some("autograd is unsupported")
+            } else if !self.is_contiguous() {
+                Some("input must be contiguous")
+            } else {
+                None
+            };
+            if let Some(reason) = reason {
+                return Err(TensorError::UnsupportedCudaRelu { reason });
+            }
+            let shape = try_clone_result_shape(&self.shape, self.elements)?;
+            let strides = contiguous_strides(&shape, self.elements)?;
+            let storage = self.storage.cuda_relu_float32(self.offset, self.elements)?;
+            return Ok(Self {
+                storage: Arc::new(storage),
+                shape,
+                strides,
+                offset: 0,
+                elements: self.elements,
+                output_nr: 0,
+                leaf_requires_grad: requires_grad_flag(false),
+                view_requires_grad: None,
+                autograd: None,
+            });
+        }
         let output = self.unary_map(relu_value)?;
         self.finish_saved_input_unary_vjp(output, AutogradNode::Relu, apply_relu_vjp)
     }

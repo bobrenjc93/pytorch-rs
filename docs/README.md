@@ -28,10 +28,11 @@ artifacts are generated at merge time and are not source documentation.
 - [Compiled CUDA contiguous](compile-cuda-contiguous.md): Parameterless native view packing, alias semantics and clean-commit H100 validation including review regressions.
 - [Compiled CUDA matmul](compile-cuda-matmul.md): Exact capture scope, runnable example, and separate `torch.compile` timing reproduction.
 - [Compiled CUDA row sums](compile-cuda-sum-rows.md): Runnable example, constant reduction options, layout/device boundaries, and focused checks.
-- [CUDA mul/neg/add graph capture](compile-cuda-add.md): Public bounded eager compilation, device/cache guards, unsupported cases, and reproduction.
+- [CUDA arithmetic and ReLU graph capture](compile-cuda-add.md): Public bounded eager compilation, device/cache guards, unsupported cases, and reproduction.
 - [Compiled CUDA scalar multiplication validation](compile-cuda-mul-scalar-validation.md): Guarded scalar grammar, independent diagnostics, and H100 checks.
 - [Compiled CUDA negation validation](compile-cuda-neg-validation.md): Integrated-commit results, provenance, and current neg/add diagnostic commands.
 - [CUDA scalar multiplication validation](cuda-mul-scalar-validation.md): General eager float32 kernel, conversion/layout boundaries, and H100 evidence.
+- [Native and compiled CUDA ReLU](cuda-relu.md): Method capture, IEEE bit semantics, layout bounds and H100 development checks.
 - [CUDA negation validation](cuda-neg-validation.md): Contiguous float32 eager scope, H100 checks, and retained evaluation evidence.
 - [CUDA view packing validation](cuda-contiguous-validation.md): Bounded contiguous/reshape materialization, aliasing contracts and clean-commit H100 correctness evidence.
 - [Text collation diagnostics](text-collation-diagnostics.md): Public-call timings and identity checks for text-led metadata passthrough.

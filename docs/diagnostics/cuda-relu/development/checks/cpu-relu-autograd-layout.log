@@ -1,0 +1,7 @@
+torch_rs/_grad_mode.py:25: DeprecationWarning: the (type, exc, tb) signature of throw() is deprecated, use the single-arg signature instead.
+/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/.venv/lib/python3.12/site-packages/torch/utils/_contextlib.py:56: DeprecationWarning: the (type, exc, tb) signature of throw() is deprecated, use the single-arg signature instead.
+  response = gen.throw(*sys.exc_info())
+----------------------------------------------------------------------
+Ran 196 tests in 1.751s
+
+OK

@@ -35,7 +35,7 @@ struct Driver {
 struct Module {
     context: usize,
     _handle: usize,
-    functions: [usize; 8],
+    functions: [usize; 9],
 }
 
 enum Kernel {
@@ -47,7 +47,8 @@ enum Kernel {
     SumRowsFinalize,
     Contiguous,
     #[cfg(any(feature = "python-bindings", test))]
-    Negate,
+    Negate = 7,
+    Relu = 8,
 }
 
 static DRIVER: OnceLock<Result<Driver, String>> = OnceLock::new();
@@ -142,7 +143,7 @@ impl Driver {
             .try_reserve(1)
             .map_err(|_| TensorError::AllocationFailed { elements: 1 })?;
         let mut module = std::ptr::null_mut();
-        let mut functions = [0; 8];
+        let mut functions = [0; 9];
         // SAFETY: static NUL-terminated PTX and entry names; writable handles.
         unsafe {
             self.check(
@@ -160,6 +161,8 @@ impl Driver {
                         include_str!("neg.ptx"),
                         "\n",
                         include_str!("contiguous.ptx"),
+                        "\n",
+                        include_str!("relu.ptx"),
                         "\0"
                     )
                     .as_ptr()
@@ -176,6 +179,7 @@ impl Driver {
                 c"sum_rows_finalize_f32",
                 c"contiguous_f32",
                 c"neg_f32",
+                c"relu_f32",
             ]) {
                 let mut function = std::ptr::null_mut();
                 if let Err(error) = self.check(
@@ -364,6 +368,46 @@ pub(super) unsafe fn launch_negate(
 /// Input and output refer to `elements` live contiguous floats on the guarded
 /// device, without aliasing. Caller must synchronize the legacy stream before
 /// releasing either allocation, including on launch errors.
+pub(super) unsafe fn launch_relu(
+    mut input: u64,
+    mut output: u64,
+    elements: usize,
+) -> Result<(), TensorError> {
+    let driver = driver()?;
+    let function = driver.function(Kernel::Relu)?;
+    let mut count = elements as u64;
+    let mut arguments = [
+        (&raw mut input).cast(),
+        (&raw mut output).cast(),
+        (&raw mut count).cast(),
+    ];
+    let blocks = u32::try_from(elements.div_ceil(256).min(4096)).expect("bounded grid");
+    // SAFETY: parameters survive the launch argument copy; the cached function
+    // belongs to this context. CU_STREAM_LEGACY matches runtime copies/zero-fill.
+    driver.check(
+        unsafe {
+            (driver.launch)(
+                function as *mut c_void,
+                blocks,
+                1,
+                1,
+                256,
+                1,
+                1,
+                0,
+                std::ptr::without_provenance_mut(1),
+                arguments.as_mut_ptr(),
+                std::ptr::null_mut(),
+            )
+        },
+        "cuLaunchKernel",
+    )
+}
+
+/// # Safety
+/// Input and output refer to `elements` live contiguous floats on the guarded
+/// device, without aliasing. Caller must synchronize the legacy stream before
+/// releasing either allocation, including on launch errors.
 pub(super) unsafe fn launch_mul_scalar(
     mut input: u64,
     mut output: u64,
@@ -449,4 +493,22 @@ pub(super) unsafe fn launch_contiguous(
         },
         "cuLaunchKernel",
     )
+}
+
+#[cfg(test)]
+mod slot_tests {
+    use super::Kernel;
+
+    #[test]
+    fn kernel_slots_match_driver_entry_order() {
+        assert_eq!(Kernel::Add as usize, 0);
+        assert_eq!(Kernel::AddVector as usize, 1);
+        assert_eq!(Kernel::MultiplyScalar as usize, 2);
+        assert_eq!(Kernel::AddTrailingVector as usize, 3);
+        assert_eq!(Kernel::SumRows as usize, 4);
+        assert_eq!(Kernel::SumRowsFinalize as usize, 5);
+        assert_eq!(Kernel::Contiguous as usize, 6);
+        assert_eq!(Kernel::Negate as usize, 7);
+        assert_eq!(Kernel::Relu as usize, 8);
+    }
 }
