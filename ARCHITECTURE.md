@@ -4,8 +4,9 @@
 tensor core. The native implementation is intentionally small today: tensors
 carry strided CPU `float32` storage and optional native CUDA `float32` storage,
 Python-facing metadata objects, selected CPU operators, and limited eager
-reverse-mode autograd. Native CUDA storage and transfers, same-shape contiguous
-addition and matrix-plus-trailing-vector addition, contiguous negation, and contiguous scalar multiplication, matrix row sums, and [rank-2 matmul](docs/cuda-matmul.md) execute without Python.
+reverse-mode autograd. Native CUDA storage, transfers, bounded view packing,
+contiguous addition, negation and scalar multiplication, matrix-plus-trailing-vector
+addition, row sums, and [rank-2 matmul](docs/cuda-matmul.md) execute without Python.
 
 ## Source Map
 
@@ -14,6 +15,7 @@ addition and matrix-plus-trailing-vector addition, contiguous negation, and cont
 | Crate entry | [src/lib.rs](src/lib.rs) | Declares the Rust modules and re-exports `Tensor`, `TensorError`, `DType`, `Device`, and `MemoryFormat`. Python-only modules are gated behind `python-bindings`. |
 | Storage | [src/storage.rs](src/storage.rs) | Owns `Storage`, native CPU/CUDA payload dispatch, the CPU `f32` payload, inline scalar storage, owned vectors, and mutex-backed leaf-gradient buffers. |
 | CUDA backend | [src/cuda.rs](src/cuda.rs), [src/cuda/pointwise.rs](src/cuda/pointwise.rs), [src/cuda/pool.rs](src/cuda/pool.rs), [src/cuda/blas.rs](src/cuda/blas.rs), [src/cuda/add.ptx](src/cuda/add.ptx), [src/cuda/add_trailing_vector.ptx](src/cuda/add_trailing_vector.ptx), [src/cuda/neg.ptx](src/cuda/neg.ptx), [src/cuda/mul_scalar.ptx](src/cuda/mul_scalar.ptx), [src/cuda/sum_rows.rs](src/cuda/sum_rows.rs), [src/cuda/sum_rows.ptx](src/cuda/sum_rows.ptx) | Loads the optional CUDA runtime, owns device allocations, restores the calling thread's device, and performs synchronous host-to-device and device-to-host transfers from/to Rust buffers, plus bounded same-device vector copies. A front cache retains at most 32 buffers / 64 MiB across devices; optional private pools budget another 256 MiB of unused backing per device, as detailed below. The optional driver loads embedded contiguous float32 addition, negation, scalar multiplication and matrix row reduction kernels. Matmul lazily loads native cuBLAS SGEMM with float32 accumulation and context-owned handles. Python only discovers optional wheel library paths. |
+| CUDA view packing | [src/cuda/contiguous.ptx](src/cuda/contiguous.ptx), [src/cuda.rs](src/cuda.rs) | Copies float32 bits in logical order for positive-stride rank-1/rank-2 views. The checked layout planner and shared unary storage helper own bounds, allocation, device restoration and completion; copy-requiring reshape reuses this path. |
 | Dimension reduction kernels | [src/reduction.rs](src/reduction.rs) | Uses layout-aware slices and four-level float32 accumulation for CPU rank-2 single-axis sums and means. CUDA contiguous row sums use the [native reduction geometry and PTX](docs/cuda-sum-rows.md). [src/parallel.rs](src/parallel.rs) manages an explicit worker budget; large reductions split independent outputs without changing their accumulation order. |
 | Tensor layout | [src/tensor.rs](src/tensor.rs) | `Tensor` stores shared storage plus shape, strides, storage offset, element count, output number, view grad state, and optional autograd metadata. It also implements contiguity, view, stride, indexing, and materialization helpers. Integer-size and list/tuple-section split and chunk reuse `partition_dimension` slice views and one shared multi-output backward node per call; explicit sections use `SplitWithSizes` metadata. |
 | Metadata types | [src/dtype.rs](src/dtype.rs), [src/device.rs](src/device.rs), [src/memory_format.rs](src/memory_format.rs) | Define the currently compiled native dtype/device/memory-format enums and query behavior. |
@@ -175,16 +177,28 @@ device guards, completion, and failure cleanup for both multiplication and negat
 Results are fresh, offset zero, and preserve the reference scalar operation
 stride ordering, including singleton dimensions. No compiler capture, tensor-tensor
 CUDA multiplication, out variants, or autograd support is added. See
-[validation](docs/cuda-mul-scalar-validation.md). Other CUDA materialization and
-arithmetic reject at the operation boundary.
+[validation](docs/cuda-mul-scalar-validation.md). Other CUDA arithmetic rejects
+at the operation boundary.
+
+CUDA `contiguous()` preserves identity and metadata for already-contiguous
+float32 tensors without gradients, including scalar, empty and higher-rank
+layouts. Noncontiguous positive-stride rank-1/rank-2 views pack directly into
+fresh same-device contiguous storage at offset zero, preserving float32 bits
+without CPU staging. Copy-requiring `reshape()` reuses that packing path;
+view-only reshape remains an alias. Other dtypes, gradient tracking, higher-rank
+packing and channels-last materialization remain unsupported. See the
+[layout contract](docs/supported-surface.md) and
+[clean-commit H100 checks](docs/cuda-contiguous-validation.md).
+
 Direct public CUDA factory allocation supports rank-1 and rank-2 float32 zeros
 without autograd on explicit indexed devices. Contiguous rank-1 CUDA float32
 tensors with `requires_grad=False` support `clone()` and same-device
 `to(copy=True)` with preserve format, including empty and offset views. Native
 device-to-device copies own independent storage at offset zero, complete before
 return, and restore the calling thread's device. Ordinary same-device `to()`
-returns the original object. Cross-device, noncontiguous, scalar, and rank-2 or
-higher CUDA copies remain unsupported. Transfers do not add dtype conversions,
+returns the original object. Cross-device copies remain unsupported, as do
+noncontiguous, scalar and rank-2-or-higher `clone()` and `to(copy=True)` copies.
+Transfers do not add dtype conversions,
 autograd (even under `no_grad` for grad-requiring inputs), asynchronous copies,
 or other CUDA math. See the [exact transfer contract](docs/supported-surface.md)
 for Python argument forms and unsupported boundaries.

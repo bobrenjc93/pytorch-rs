@@ -1,0 +1,12 @@
+export CARGO_HOME="$PWD/target/local-cargo"
+export CARGO_TARGET_DIR="$PWD/target/cuda-contiguous-postcommit-cbb0df3/rust-target"
+export UV_CACHE_DIR="$PWD/target/uv-cache"
+export TMPDIR="$PWD/target/tmp"
+export XDG_CACHE_HOME="$PWD/target/xdg-cache"
+export CUDA_CACHE_PATH="$PWD/target/cuda-contiguous-postcommit-cbb0df3/cuda-cache"
+export UV_PYTHON_DOWNLOADS=never
+export CUDA_VISIBLE_DEVICES=0
+export TORCH_RS_CUDART="$PWD/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13"
+export PYO3_PYTHON="$PWD/.venv/bin/python"
+export VIRTUAL_ENV="$PWD/.venv"
+export PATH="$VIRTUAL_ENV/bin:$PATH"

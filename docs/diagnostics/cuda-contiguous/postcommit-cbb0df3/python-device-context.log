@@ -1,0 +1,7 @@
+test_device_and_driver_context_restoration (tests.test_cuda_contiguous.ContiguousDeviceGuardTests.test_device_and_driver_context_restoration) ... ok
+test_current_device_restored_and_cross_device_rejected (tests.test_cuda_same_device_copy.CopyDeviceGuardTests.test_current_device_restored_and_cross_device_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.566s
+
+OK

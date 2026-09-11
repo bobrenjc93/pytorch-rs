@@ -1,0 +1,133 @@
+{
+  "commit": "cbb0df3489b6a9546aafa2926a40da201bf38a23",
+  "source_sha256": "7c4d4950f5c99d24513f184ee596e5aed2e72b02181e0288be09f792b72f6f05",
+  "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "extension_sha256": "cc4bf845fece98275489f9d9665c4dc3ae68a74d7687a8d0f7ad9a8851c6eb9e",
+  "clean_before_publication": true,
+  "required_captures": [
+    "preserve-venv",
+    "setup",
+    "release-build",
+    "preflight",
+    "python-contiguous",
+    "python-device-context",
+    "rust-cuda-unit",
+    "rust-cuda-integration",
+    "python-cpu-layout",
+    "python-no-device",
+    "python-cuda-regressions"
+  ],
+  "all_captures_clean_source_matched": true,
+  "source_native_and_wheel_hashes_verified": true,
+  "imports_verified_by": "preflight.log",
+  "historical_artifacts_unchanged": true,
+  "protected_paths_unchanged": true,
+  "tracked_inputs_sha256": "b1a3bebdb78d08985423782fc4b6e5815d2a559a5afdfaf2175e3ff17554c83e",
+  "build_record_sha256": "40f30aa063f03efa2c944f332ae60e9160fffc551cf4806365c97d20596fd817",
+  "captures": {
+    "evidence-audit-final.receipt.json": {
+      "exit_status": 0,
+      "started_at": "2026-09-11T03:36:17.141669+00:00",
+      "ended_at": "2026-09-11T03:36:17.505142+00:00"
+    },
+    "evidence-audit.receipt.json": {
+      "exit_status": 1,
+      "started_at": "2026-09-11T03:36:02.605761+00:00",
+      "ended_at": "2026-09-11T03:36:02.886241+00:00"
+    },
+    "preflight.receipt.json": {
+      "exit_status": 0,
+      "started_at": "2026-09-11T03:30:31.925653+00:00",
+      "ended_at": "2026-09-11T03:30:35.729680+00:00"
+    },
+    "preserve-venv.receipt.json": {
+      "exit_status": 0,
+      "started_at": "2026-09-11T03:24:01.324721+00:00",
+      "ended_at": "2026-09-11T03:24:01.328619+00:00"
+    },
+    "python-contiguous.receipt.json": {
+      "exit_status": 0,
+      "started_at": "2026-09-11T03:30:36.618955+00:00",
+      "ended_at": "2026-09-11T03:30:42.262116+00:00"
+    },
+    "python-cpu-layout.receipt.json": {
+      "exit_status": 0,
+      "started_at": "2026-09-11T03:30:33.491007+00:00",
+      "ended_at": "2026-09-11T03:30:40.225496+00:00"
+    },
+    "python-cuda-regressions.receipt.json": {
+      "exit_status": 0,
+      "started_at": "2026-09-11T03:31:18.063019+00:00",
+      "ended_at": "2026-09-11T03:35:56.131256+00:00"
+    },
+    "python-device-context.receipt.json": {
+      "exit_status": 0,
+      "started_at": "2026-09-11T03:30:43.108208+00:00",
+      "ended_at": "2026-09-11T03:30:45.824844+00:00"
+    },
+    "python-no-device.receipt.json": {
+      "exit_status": 0,
+      "started_at": "2026-09-11T03:30:41.070942+00:00",
+      "ended_at": "2026-09-11T03:30:42.891634+00:00"
+    },
+    "release-build.receipt.json": {
+      "exit_status": 0,
+      "started_at": "2026-09-11T03:24:19.453033+00:00",
+      "ended_at": "2026-09-11T03:25:07.041579+00:00"
+    },
+    "rust-cuda-integration.receipt.json": {
+      "exit_status": 0,
+      "started_at": "2026-09-11T03:30:53.740671+00:00",
+      "ended_at": "2026-09-11T03:31:00.686134+00:00"
+    },
+    "rust-cuda-unit.receipt.json": {
+      "exit_status": 0,
+      "started_at": "2026-09-11T03:30:46.691261+00:00",
+      "ended_at": "2026-09-11T03:30:52.881295+00:00"
+    },
+    "setup.receipt.json": {
+      "exit_status": 0,
+      "started_at": "2026-09-11T03:24:02.222661+00:00",
+      "ended_at": "2026-09-11T03:24:03.591111+00:00"
+    }
+  },
+  "failed_audit_source": "audit-first.py.txt",
+  "artifacts_sha256": {
+    "audit-first.py.txt": "e5ea1b1d3f6083f3dc2d00ffc7fd401af84251771c782c94e4f98e97703f0003",
+    "audit.py.txt": "1c6672d25658e3c5ec64d7032f4b0846e4d3d4fd5505413bf7bad1950bf633a7",
+    "build-record.json": "40f30aa063f03efa2c944f332ae60e9160fffc551cf4806365c97d20596fd817",
+    "build.log": "4ae3bf589c4e6d4f559dd68240be697aa34a3a6d4db8f6ed01f903530198b309",
+    "capture.py.txt": "68e2a293e29b6db76363bcc5b94a0e7bded9b66050f9937c22d71ac270621587",
+    "commands.json": "ac60b1fd882ea0c05884416795c3189a3c3caf0adca35f09a903c1bca6c000e4",
+    "environment.sh.txt": "03c61fbef8ef41afda0ce387ee1da1feaf74842077d0ab7db403df3d05d3d810",
+    "evidence-audit-final.log": "8d15c24a322f93bd9555065a9d15fee6ac56e4dbb31a615a9555eeb8ab5b2655",
+    "evidence-audit-final.receipt.json": "b523e41c10421392adc897390d3ec734cdaeaf0947f8f98a7686eb0fa412f684",
+    "evidence-audit.log": "67ba763253f8ee13bcc72fd837b59eb683c990c34664724afe169617c94fe1e9",
+    "evidence-audit.receipt.json": "d7fe4880603458c947119c4016909d559299d92a936278e332bf3497acd92dbf",
+    "install.log": "0a325e5ad2b15de5e545ab7d39031b713cbfe62b1bbf74472a5d784f6f4965a7",
+    "preflight.log": "c81971a8b91c69da8aad5bf73af964d45bf1acb72911c3354ed0b3ffc8e8841d",
+    "preflight.py.txt": "aa06563f24a8ae253b0a543ca349e4fe0862f11cc1a573589c3578f89263bd8c",
+    "preflight.receipt.json": "6a769769d2e74bdabf9ce65170869cec09b848c33d8202f4137b9ca81ffd42fd",
+    "preserve-venv.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "preserve-venv.receipt.json": "4caffbcf005e0fec392f5f824e16d52d9a7966e24a02bbbf01eb4ecda2be1e07",
+    "python-contiguous.log": "cf9426e379812c5d33ef4491b96f117256fb6f653e3b84b19a83f6c0df126db1",
+    "python-contiguous.receipt.json": "e1bb11703a0918e115754769d557c704149644a2e1b04bd187f0f1a4dc6610af",
+    "python-cpu-layout.log": "4b5fea8136f81cda3d001056222da00b5fac5f463e449fa7e6d0d9d6194cdcd1",
+    "python-cpu-layout.receipt.json": "d8e30df2d1c182dab1cc30a6d90deeecfae03ebdc4ce5631c8e8c4cde96adffc",
+    "python-cuda-regressions.log": "f4678af2574485baf54c5820ae69206b4ef235a3cb4ee99c69db1ebdb2477a6a",
+    "python-cuda-regressions.receipt.json": "f60f9a5f5e62d315965300c74b2e699902863f7c8e9d62db2def9e503c9f97f5",
+    "python-device-context.log": "765db4921d125db981a0db4f4f8024cd7baedd24643917903c9ed9f9c35ab676",
+    "python-device-context.receipt.json": "87bcc5d4cc95045ddc5d3157bd4d0942347aea923509f18e1f03dea2777a7560",
+    "python-no-device.log": "7f454bef5c39913a0e5e993c3aef2e3de9f1d0b62a7f2d68a991f66314ad282d",
+    "python-no-device.receipt.json": "6ddbcdae7da8a1aeb45d70a84cb58c5dcc725bd148720a71a35350c7f2e3c364",
+    "release-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "release-build.receipt.json": "eef6e66260b7081c54a9cb162aaedcfb6207388073417c40d57f4af9f9f173d0",
+    "rust-cuda-integration.log": "d4d95126369a212dd9629e9c65d21fb84044298b0f3adb416b80a4996376ddda",
+    "rust-cuda-integration.receipt.json": "69a2cf40580f834c36aa1b0e3e2d29496758605ba5384bac78afcc35943be68e",
+    "rust-cuda-unit.log": "77a444daff4cae8a78038c0b7012fac306d46bfd4706898ce797b291d661e76b",
+    "rust-cuda-unit.receipt.json": "d95ac6c0440b75482891081c164ead32a54cbf0f2a26cec385818adc8eb6bfcf",
+    "setup.log": "b62a99965601d655c029dbb8424a46645c40c6d1311d5658f043a30b28ec934b",
+    "setup.receipt.json": "88e898ff8800d3475b7931df1cf28164dcd9468a29698fd38b46611145c67fb9",
+    "tracked-inputs.json": "a97a2d18f0b057f0fd858fef768408764effb5b5119e9142c3644d2b77c88203"
+  }
+}

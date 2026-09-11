@@ -1,0 +1,39 @@
+test_device_and_driver_context_restoration (tests.test_cuda_contiguous.ContiguousDeviceGuardTests.test_device_and_driver_context_restoration) ... skipped 'requires CUDA_VISIBLE_DEVICES=0,1'
+test_bit_exact_pack_and_reshape (tests.test_cuda_contiguous.CudaContiguousTests.test_bit_exact_pack_and_reshape) ... ok
+test_contiguous_identity_scalar_singleton_empty_and_offset (tests.test_cuda_contiguous.CudaContiguousTests.test_contiguous_identity_scalar_singleton_empty_and_offset) ... ok
+test_formats_ranks_gradients_and_copy_boundaries (tests.test_cuda_contiguous.CudaContiguousTests.test_formats_ranks_gradients_and_copy_boundaries) ... ok
+test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) ... 
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(2, 7), view=1) ... FAIL
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(2, 7), view=2) ... FAIL
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(2, 7), view=4) ... FAIL
+test_lifetimes_threads_and_no_pytorch_forwarding (tests.test_cuda_contiguous.CudaContiguousTests.test_lifetimes_threads_and_no_pytorch_forwarding) ... ok
+test_reshape_copy_and_view_alias_mutations (tests.test_cuda_contiguous.CudaContiguousTests.test_reshape_copy_and_view_alias_mutations) ... ok
+
+======================================================================
+FAIL: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(2, 7), view=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 80, in test_generated_transposes_slices_and_grid_stride_tail
+    self.assertEqual(out.storage_offset(), 0)
+AssertionError: 8 != 0
+
+======================================================================
+FAIL: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(2, 7), view=2)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 80, in test_generated_transposes_slices_and_grid_stride_tail
+    self.assertEqual(out.storage_offset(), 0)
+AssertionError: 8 != 0
+
+======================================================================
+FAIL: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(2, 7), view=4)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 80, in test_generated_transposes_slices_and_grid_stride_tail
+    self.assertEqual(out.storage_offset(), 0)
+AssertionError: 8 != 0
+
+----------------------------------------------------------------------
+Ran 7 tests in 3.627s
+
+FAILED (failures=3, skipped=1)

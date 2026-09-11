@@ -1,0 +1,27 @@
+   Compiling crossbeam-utils v0.8.23
+   Compiling crossbeam-epoch v0.9.21
+   Compiling crossbeam-deque v0.8.8
+   Compiling rayon-core v1.13.0
+   Compiling either v1.18.0
+   Compiling cfg-if v1.0.4
+   Compiling libloading v0.8.9
+   Compiling rayon v1.12.0
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.85s
+     Running unittests src/lib.rs (target/cuda-contiguous-build/debug/deps/pytorch_rs-a84bc75b3d7dfab2)
+
+running 10 tests
+test cuda::tests::cuda_allocation_checks_byte_overflow_before_loading_runtime ... ok
+test cuda::tests::packed_copy_regions_validate_bounds_and_output_length ... ok
+test cuda::tests::standalone_native_cuda_roundtrip ... ok
+test cuda::tests::device_copy_checks_bounds_and_exact_bits ... ok
+test cuda::tests::trailing_vector_checks_independent_bounds ... ok
+skipping two-device CUDA addition guard check: requires CUDA_VISIBLE_DEVICES=0,1
+test cuda::tests::addition_checks_storage_bounds_and_restores_device ... ok
+test cuda::tests::scalar_multiplication_bounds_and_launch_failure_cleanup ... ok
+test cuda::tests::negation_bounds_and_bitwise_values_without_python ... ok
+test cuda::tests::row_sum_bounds_empty_inputs_and_failure_cleanup ... ok
+test cuda::tests::matmul_checked_offsets_products_and_empty_inputs ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 166 filtered out; finished in 1.19s
+

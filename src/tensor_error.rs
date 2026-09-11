@@ -123,6 +123,9 @@ pub enum TensorError {
     UnsupportedCudaTransfer {
         reason: &'static str,
     },
+    UnsupportedCudaContiguous {
+        reason: &'static str,
+    },
     CudaRuntimeError {
         operation: &'static str,
         message: String,
@@ -233,6 +236,7 @@ impl Display for TensorError {
             | Self::UnsupportedCudaSum { .. }
             | Self::UnsupportedCudaMatmul { .. }
             | Self::UnsupportedCudaTransfer { .. }
+            | Self::UnsupportedCudaContiguous { .. }
             | Self::CudaRuntimeError { .. }) => format_device_error(formatter, error),
             error @ (Self::UnsupportedMemoryFormat { .. }
             | Self::ContiguousPreserveFormatUnsupported
@@ -461,6 +465,12 @@ fn format_device_error(formatter: &mut Formatter<'_>, error: &TensorError) -> st
         }
         TensorError::UnsupportedCudaTransfer { reason } => {
             write!(formatter, "to(): unsupported CUDA transfer ({reason})")
+        }
+        TensorError::UnsupportedCudaContiguous { reason } => {
+            write!(
+                formatter,
+                "contiguous(): unsupported CUDA materialization ({reason})"
+            )
         }
         _ => unreachable!("only device errors are formatted here"),
     }

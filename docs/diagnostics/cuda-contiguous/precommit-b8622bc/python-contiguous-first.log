@@ -1,0 +1,501 @@
+test_device_and_driver_context_restoration (tests.test_cuda_contiguous.ContiguousDeviceGuardTests.test_device_and_driver_context_restoration) ... skipped 'requires CUDA_VISIBLE_DEVICES=0,1'
+test_bit_exact_pack_and_reshape (tests.test_cuda_contiguous.CudaContiguousTests.test_bit_exact_pack_and_reshape) ... ok
+test_contiguous_identity_scalar_singleton_empty_and_offset (tests.test_cuda_contiguous.CudaContiguousTests.test_contiguous_identity_scalar_singleton_empty_and_offset) ... ERROR
+test_formats_ranks_gradients_and_copy_boundaries (tests.test_cuda_contiguous.CudaContiguousTests.test_formats_ranks_gradients_and_copy_boundaries) ... ERROR
+test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) ... 
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(2, 7), view=1) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(2, 7), view=2) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(2, 7), view=4) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(17, 31), view=1) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(17, 31), view=2) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(17, 31), view=4) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(257, 263), view=1) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(257, 263), view=2) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(257, 263), view=4) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(1031, 1033), view=1) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(1031, 1033), view=2) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(1031, 1033), view=4) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(33, 58), view=1) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(33, 58), view=2) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(33, 58), view=4) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(15, 16), view=1) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(15, 16), view=2) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(15, 16), view=4) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(71, 73), view=1) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(71, 73), view=2) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(71, 73), view=4) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(58, 13), view=1) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(58, 13), view=2) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(58, 13), view=4) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(61, 7), view=1) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(61, 7), view=2) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(61, 7), view=4) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(51, 11), view=1) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(51, 11), view=2) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(51, 11), view=4) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(19, 63), view=1) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(19, 63), view=2) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(19, 63), view=4) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(4, 25), view=1) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(4, 25), view=2) ... ERROR
+  test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(4, 25), view=4) ... ERROR
+test_lifetimes_threads_and_no_pytorch_forwarding (tests.test_cuda_contiguous.CudaContiguousTests.test_lifetimes_threads_and_no_pytorch_forwarding) ... ok
+test_reshape_copy_and_view_alias_mutations (tests.test_cuda_contiguous.CudaContiguousTests.test_reshape_copy_and_view_alias_mutations) ... ok
+
+======================================================================
+ERROR: test_contiguous_identity_scalar_singleton_empty_and_offset (tests.test_cuda_contiguous.CudaContiguousTests.test_contiguous_identity_scalar_singleton_empty_and_offset)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 92, in test_contiguous_identity_scalar_singleton_empty_and_offset
+    aa, bb = view(a), view(b)
+             ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 87, in <lambda>
+    lambda x: x[2:3, 2:3].t(), lambda x: x[1:2].t(),
+              ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_formats_ranks_gradients_and_copy_boundaries (tests.test_cuda_contiguous.CudaContiguousTests.test_formats_ranks_gradients_and_copy_boundaries)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 163, in test_formats_ranks_gradients_and_copy_boundaries
+    for dtype in (native.float64, native.int64, native.bool):
+                  ^^^^^^^^^^^^^^
+AttributeError: module 'torch_rs' has no attribute 'float64'. Did you mean: 'float'?
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(2, 7), view=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 74, in <lambda>
+    views = (lambda x: x.t(), lambda x: x[1:, 1:-1],
+                                        ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(2, 7), view=2)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 75, in <lambda>
+    lambda x: x[1:, 1:-1].t(), lambda x: x.select(1, 1),
+              ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(2, 7), view=4)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 76, in <lambda>
+    lambda x: x.t()[1:-1, 1:])
+              ~~~~~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(17, 31), view=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 74, in <lambda>
+    views = (lambda x: x.t(), lambda x: x[1:, 1:-1],
+                                        ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(17, 31), view=2)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 75, in <lambda>
+    lambda x: x[1:, 1:-1].t(), lambda x: x.select(1, 1),
+              ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(17, 31), view=4)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 76, in <lambda>
+    lambda x: x.t()[1:-1, 1:])
+              ~~~~~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(257, 263), view=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 74, in <lambda>
+    views = (lambda x: x.t(), lambda x: x[1:, 1:-1],
+                                        ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(257, 263), view=2)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 75, in <lambda>
+    lambda x: x[1:, 1:-1].t(), lambda x: x.select(1, 1),
+              ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(257, 263), view=4)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 76, in <lambda>
+    lambda x: x.t()[1:-1, 1:])
+              ~~~~~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(1031, 1033), view=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 74, in <lambda>
+    views = (lambda x: x.t(), lambda x: x[1:, 1:-1],
+                                        ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(1031, 1033), view=2)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 75, in <lambda>
+    lambda x: x[1:, 1:-1].t(), lambda x: x.select(1, 1),
+              ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(1031, 1033), view=4)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 76, in <lambda>
+    lambda x: x.t()[1:-1, 1:])
+              ~~~~~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(33, 58), view=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 74, in <lambda>
+    views = (lambda x: x.t(), lambda x: x[1:, 1:-1],
+                                        ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(33, 58), view=2)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 75, in <lambda>
+    lambda x: x[1:, 1:-1].t(), lambda x: x.select(1, 1),
+              ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(33, 58), view=4)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 76, in <lambda>
+    lambda x: x.t()[1:-1, 1:])
+              ~~~~~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(15, 16), view=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 74, in <lambda>
+    views = (lambda x: x.t(), lambda x: x[1:, 1:-1],
+                                        ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(15, 16), view=2)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 75, in <lambda>
+    lambda x: x[1:, 1:-1].t(), lambda x: x.select(1, 1),
+              ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(15, 16), view=4)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 76, in <lambda>
+    lambda x: x.t()[1:-1, 1:])
+              ~~~~~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(71, 73), view=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 74, in <lambda>
+    views = (lambda x: x.t(), lambda x: x[1:, 1:-1],
+                                        ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(71, 73), view=2)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 75, in <lambda>
+    lambda x: x[1:, 1:-1].t(), lambda x: x.select(1, 1),
+              ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(71, 73), view=4)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 76, in <lambda>
+    lambda x: x.t()[1:-1, 1:])
+              ~~~~~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(58, 13), view=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 74, in <lambda>
+    views = (lambda x: x.t(), lambda x: x[1:, 1:-1],
+                                        ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(58, 13), view=2)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 75, in <lambda>
+    lambda x: x[1:, 1:-1].t(), lambda x: x.select(1, 1),
+              ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(58, 13), view=4)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 76, in <lambda>
+    lambda x: x.t()[1:-1, 1:])
+              ~~~~~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(61, 7), view=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 74, in <lambda>
+    views = (lambda x: x.t(), lambda x: x[1:, 1:-1],
+                                        ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(61, 7), view=2)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 75, in <lambda>
+    lambda x: x[1:, 1:-1].t(), lambda x: x.select(1, 1),
+              ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(61, 7), view=4)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 76, in <lambda>
+    lambda x: x.t()[1:-1, 1:])
+              ~~~~~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(51, 11), view=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 74, in <lambda>
+    views = (lambda x: x.t(), lambda x: x[1:, 1:-1],
+                                        ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(51, 11), view=2)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 75, in <lambda>
+    lambda x: x[1:, 1:-1].t(), lambda x: x.select(1, 1),
+              ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(51, 11), view=4)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 76, in <lambda>
+    lambda x: x.t()[1:-1, 1:])
+              ~~~~~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(19, 63), view=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 74, in <lambda>
+    views = (lambda x: x.t(), lambda x: x[1:, 1:-1],
+                                        ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(19, 63), view=2)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 75, in <lambda>
+    lambda x: x[1:, 1:-1].t(), lambda x: x.select(1, 1),
+              ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(19, 63), view=4)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 76, in <lambda>
+    lambda x: x.t()[1:-1, 1:])
+              ~~~~~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(4, 25), view=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 74, in <lambda>
+    views = (lambda x: x.t(), lambda x: x[1:, 1:-1],
+                                        ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(4, 25), view=2)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 75, in <lambda>
+    lambda x: x[1:, 1:-1].t(), lambda x: x.select(1, 1),
+              ~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_generated_transposes_slices_and_grid_stride_tail (tests.test_cuda_contiguous.CudaContiguousTests.test_generated_transposes_slices_and_grid_stride_tail) (shape=(4, 25), view=4)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 79, in test_generated_transposes_slices_and_grid_stride_tail
+    out = self.check(view(a), view(b))
+                     ^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/tests/test_cuda_contiguous.py", line 76, in <lambda>
+    lambda x: x.t()[1:-1, 1:])
+              ~~~~~^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+----------------------------------------------------------------------
+Ran 7 tests in 3.403s
+
+FAILED (errors=38, skipped=1)

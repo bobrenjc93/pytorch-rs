@@ -642,7 +642,7 @@ compatible `Tensor.reshape()`/sequence-form `torch.reshape(input, shape)` and
 `Tensor.adjoint()`/`torch.adjoint()` matrix-adjoint views, rank-limited
 `Tensor.t()` and `torch.t()`, `Tensor.flatten()`, `Tensor.ravel()`, and
 `torch.flatten()`, plus native `Tensor.contiguous()` materialization for
-row-major, channels-last, and channels-last-3d storage. PyTorch-compatible
+row-major, channels-last, and channels-last-3d CPU storage. PyTorch-compatible
 `Tensor.cpu()` identity and memory-format conversion are supported for the CPU
 device. Native CUDA float32 tensors support synchronized device-to-host
 `Tensor.cpu()`/`Tensor.to("cpu")` copies, including metadata views. `Tensor.to()` supports
@@ -673,6 +673,19 @@ computation is forwarded to installed PyTorch. Autograd inputs (including under
 broader CUDA math remain unsupported. Direct CUDA factory support is limited:
 only rank-1 and rank-2 float32 `zeros` can create CUDA storage directly. See the
 [CUDA setup and focused tests](troubleshooting.md#optional-native-cuda-runtime).
+
+Native CUDA float32 views without autograd support `contiguous()` packing for
+positive-stride rank-one and rank-two inputs, including transposes, slices and
+nonzero storage offsets. Packing copies logical values bit-for-bit into independent
+same-device storage with canonical row-major strides and offset zero; no CPU
+staging or installed-PyTorch execution is used. Already-contiguous tensors keep
+their metadata and Python object identity, including scalar, singleton and empty
+views. Reshape reuses this packing path only when its existing view-stride planner
+requires a copy; compatible reshapes still alias. Noncontiguous higher-rank inputs,
+channel-last CUDA materialization, other dtypes and accelerator autograd remain
+unsupported. This does not expand clone/device-copy or compile-capture support.
+See `tests/cuda_contiguous.rs`, `tests/test_cuda_contiguous.py` and
+[hardware correctness evidence](cuda-contiguous-validation.md).
 
 Contiguous rank-1 native CUDA float32 tensors with `requires_grad=False` support
 `Tensor.clone()` (also `torch.clone`) and same-device `Tensor.to("cuda:N", copy=True)`.

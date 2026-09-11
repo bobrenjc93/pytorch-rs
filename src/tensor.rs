@@ -2765,6 +2765,8 @@ impl Tensor {
     /// the storage offset to zero, and assigns canonical strides for the
     /// requested format. This is the checked packing primitive reused by
     /// reshape and flatten when existing strides cannot represent a result.
+    /// CUDA packing supports positive-stride rank-one/rank-two float32 views
+    /// without autograd, using same-device storage and no host staging.
     ///
     /// [`MemoryFormat::Preserve`] is accepted only by the row-contiguous
     /// identity path, matching `PyTorch`'s contiguous operator. Channel-last
@@ -2949,7 +2951,14 @@ impl Tensor {
         reuse_matching_storage: bool,
         node: AutogradNode,
     ) -> Result<Self, TensorError> {
-        validate_cpu_storage_device("contiguous", self.device())?;
+        // Device-copy callers retain their separate, bounded copy contract.
+        if !self.is_cuda() || !reuse_matching_storage {
+            validate_cpu_storage_device("contiguous", self.device())?;
+        } else if self.dtype() != DType::Float32 || self.requires_grad() {
+            return Err(TensorError::UnsupportedCudaContiguous {
+                reason: "requires float32 without autograd",
+            });
+        }
         let expected_rank = match memory_format {
             MemoryFormat::ChannelsLast => Some(4),
             MemoryFormat::ChannelsLast3d => Some(5),
@@ -2990,6 +2999,29 @@ impl Tensor {
             MemoryFormat::ChannelsLast3d => channels_last_3d_strides(&self.shape, self.elements)?,
         };
         let shape = try_clone_result_shape(&self.shape, self.elements)?;
+        if self.is_cuda() {
+            // Only packing is rank-bounded; already-contiguous metadata aliases
+            // above (including scalars and empty views) need no CUDA launch.
+            if memory_format != MemoryFormat::Contiguous {
+                return Err(TensorError::UnsupportedCudaContiguous {
+                    reason: "only contiguous_format materialization is supported",
+                });
+            }
+            let storage =
+                self.storage
+                    .cuda_contiguous_float32(self.offset, &self.shape, &self.strides)?;
+            return Ok(Self {
+                storage: Arc::new(storage),
+                shape,
+                strides,
+                offset: 0,
+                elements: self.elements,
+                output_nr: 0,
+                leaf_requires_grad: requires_grad_flag(false),
+                view_requires_grad: None,
+                autograd: None,
+            });
+        }
         let data = self.materialize_with_strides(&strides, |value| value)?;
         let mut output = Self::from_owned_parts(data, shape, strides, self.dtype(), self.device());
         self.record_transform(&mut output, TransformMapping::Identity, node)?;

@@ -1,0 +1,61 @@
+"""Capture unchanged repository commands; enforce clean commit and local provenance."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+root = Path.cwd().resolve()
+output = Path(__file__).resolve().parent
+assert output.is_relative_to(root / 'target')
+sys.path.insert(0, str(root / 'scripts'))
+from evaluate_cuda_math import source_provenance
+name, *command = sys.argv[1:]
+log = output / (name + '.log')
+receipt = output / (name + '.receipt.json')
+assert not log.exists() and not receipt.exists()
+def sha(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+def git_status():
+    return subprocess.check_output(['git', 'status', '--porcelain'], text=True)
+def tracked_inputs():
+    paths = subprocess.check_output(['git', 'ls-files', '-z', '--', 'src', 'python', 'tests', 'scripts', 'Cargo.toml', 'Cargo.lock', 'pyproject.toml', 'uv.lock', 'rust-toolchain.toml'], text=True).split('\0')
+    return {p: sha(root / p) for p in paths if p}
+def extensions():
+    return {str(p.resolve()): sha(p) for directory in (root / '.venv/lib/python3.12/site-packages/torch_rs', root / 'python/torch_rs') for p in directory.glob('*.so')}
+snapshot_command = ['nvidia-smi', '--query-gpu=timestamp,index,uuid,name,memory.total,memory.used,utilization.gpu,driver_version,compute_cap', '--format=csv']
+def gpu_snapshot():
+    result = subprocess.run(snapshot_command, capture_output=True, text=True)
+    return dict(command=snapshot_command, exit_status=result.returncode, stdout=result.stdout, stderr=result.stderr)
+before = source_provenance()
+assert before['commit'] == 'cbb0df3489b6a9546aafa2926a40da201bf38a23'
+status = git_status()
+assert not status, status
+inputs = tracked_inputs()
+ext_before = extensions()
+gpu_before = gpu_snapshot()
+started = datetime.now(timezone.utc).isoformat()
+tick = time.perf_counter()
+with log.open('w') as stream:
+    result = subprocess.run(command, stdout=stream, stderr=subprocess.STDOUT)
+record = dict(command=command, cwd=str(root), started_at=started,
+    ended_at=datetime.now(timezone.utc).isoformat(), wall_seconds=time.perf_counter()-tick,
+    exit_status=result.returncode, log=str(log), log_sha256=sha(log),
+    source_before=before, source_after=source_provenance(),
+    git_status_before=status, git_status_after=git_status(),
+    tracked_inputs_sha256=hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest(),
+    tracked_inputs_unchanged=inputs == tracked_inputs(),
+    extensions_before=ext_before, extensions_after=extensions(),
+    gpu_before=gpu_before, gpu_after=gpu_snapshot(),
+    environment={k: os.environ.get(k) for k in ('CUDA_VISIBLE_DEVICES', 'TORCH_RS_CUDART',
+        'CARGO_HOME', 'CARGO_TARGET_DIR', 'UV_CACHE_DIR', 'TMPDIR', 'XDG_CACHE_HOME',
+        'CUDA_CACHE_PATH', 'PYO3_PYTHON', 'VIRTUAL_ENV')})
+receipt.write_text(json.dumps(record, indent=2)+'\n')
+assert record['source_before'] == record['source_after']
+assert record['tracked_inputs_unchanged'] and not record['git_status_after']
+print(name, 'exit', result.returncode, 'seconds', round(record['wall_seconds'], 3))
+if result.returncode:
+    print(log.read_text())
+sys.exit(result.returncode)

@@ -267,6 +267,22 @@ impl Storage {
         }
     }
 
+    pub(crate) fn cuda_contiguous_float32(
+        &self,
+        offset: usize,
+        shape: &[usize],
+        strides: &[usize],
+    ) -> Result<Self, TensorError> {
+        match &self.payload {
+            StoragePayload::CudaFloat32(input) => Ok(Self {
+                payload: StoragePayload::CudaFloat32(input.contiguous(offset, shape, strides)?),
+            }),
+            StoragePayload::CpuFloat32(_) => Err(TensorError::UnsupportedCudaContiguous {
+                reason: "input must be CUDA",
+            }),
+        }
+    }
+
     pub(crate) fn cuda_sum_rows_float32(
         &self,
         offset: usize,

@@ -71,11 +71,12 @@ class NativeCudaViewTests(unittest.TestCase):
 
     def test_unsupported_materialization_fails_at_operation(self):
         a = native.zeros((12,), device="cuda:0").reshape(3, 4).t()
-        for operation in (lambda: a.clone(), lambda: a.contiguous(),
-                          lambda: a.reshape(12), lambda: a.sum(0), lambda: a + a):
+        for operation in (lambda: a.clone(), lambda: a.sum(0), lambda: a + a):
             with self.assertRaises(NotImplementedError):
                 operation()
         self.assertEqual(a.cpu().tolist(), [[0.0] * 3] * 4)
+        self.assertEqual(a.contiguous().cpu().tolist(), [[0.0] * 3] * 4)
+        self.assertEqual(a.reshape(12).cpu().tolist(), [0.0] * 12)
 
     def test_allocation_reuse_and_threaded_lifetimes(self):
         def roundtrip(index):

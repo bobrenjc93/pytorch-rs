@@ -1,0 +1,461 @@
+diff --git a/src/cuda.rs b/src/cuda.rs
+index 93d7dea..c749ceb 100644
+--- a/src/cuda.rs
++++ b/src/cuda.rs
+@@ -400,6 +400,32 @@ impl CudaFloat32Storage {
+         })
+     }
+ 
++    pub(crate) fn contiguous(
++        &self,
++        offset: usize,
++        shape: &[usize],
++        strides: &[usize],
++    ) -> Result<Self, TensorError> {
++        let (elements, span, columns, row_stride, column_stride) =
++            contiguous_layout(shape, strides)?;
++        // unary_output checks offset + span against storage BEFORE allocation,
++        // guards the device, and holds both owners through stream completion.
++        self.unary_output(offset, span, elements, |input, output| {
++            // SAFETY: the checked extent covers every positive-stride address;
++            // output is independent and large enough for all logical elements.
++            unsafe {
++                pointwise::launch_contiguous(
++                    input,
++                    output,
++                    elements,
++                    columns,
++                    row_stride,
++                    column_stride,
++                )
++            }
++        })
++    }
++
+     pub(crate) fn sum_rows(
+         &self,
+         offset: usize,
+@@ -833,9 +859,142 @@ impl Drop for CudaFloat32Storage {
+     }
+ }
+ 
++// Return logical count, physical span, and the rank-two indexing parameters.
++// This planner does not allocate, access a runtime, or form device pointers.
++fn contiguous_layout(
++    shape: &[usize],
++    strides: &[usize],
++) -> Result<(usize, usize, usize, usize, usize), TensorError> {
++    if !(1..=2).contains(&shape.len()) || strides.len() != shape.len() {
++        return Err(TensorError::UnsupportedCudaContiguous {
++            reason: "packing requires rank-1 or rank-2 with matching strides",
++        });
++    }
++    if shape.contains(&0) {
++        return Ok((0, 0, 0, 0, 0));
++    }
++    if strides.contains(&0) {
++        return Err(TensorError::UnsupportedCudaContiguous {
++            reason: "packing requires positive strides",
++        });
++    }
++    let mut elements = 1usize;
++    let mut span = 1usize;
++    for (&size, &stride) in shape.iter().zip(strides) {
++        elements = elements
++            .checked_mul(size)
++            .ok_or(TensorError::IndexCalculationOverflow)?;
++        span = (size - 1)
++            .checked_mul(stride)
++            .and_then(|extent| span.checked_add(extent))
++            .ok_or(TensorError::IndexCalculationOverflow)?;
++    }
++    let last = shape.len() - 1;
++    Ok((
++        elements,
++        span,
++        shape[last],
++        if last == 0 { 0 } else { strides[0] },
++        strides[last],
++    ))
++}
++
+ #[cfg(test)]
+ mod tests {
+     use crate::{Device, Tensor};
++    #[test]
++    fn contiguous_layout_checks_without_runtime() {
++        use super::contiguous_layout;
++        use crate::TensorError;
++        for (shape, strides) in [
++            (vec![], vec![]),
++            (vec![2, 3, 4], vec![12, 4, 1]),
++            (vec![2], vec![]),
++            (vec![2], vec![0]),
++        ] {
++            assert!(matches!(
++                contiguous_layout(&shape, &strides),
++                Err(TensorError::UnsupportedCudaContiguous { .. })
++            ));
++        }
++        for (shape, strides) in [
++            ([2, 2], [usize::MAX, 1]),
++            ([3, 1], [usize::MAX / 2 + 1, 1]),
++            ([usize::MAX, 2], [1, 1]),
++        ] {
++            assert!(matches!(
++                contiguous_layout(&shape, &strides),
++                Err(TensorError::IndexCalculationOverflow)
++            ));
++        }
++        assert_eq!(
++            contiguous_layout(&[3, 2], &[1, 5]).unwrap(),
++            (6, 8, 2, 1, 5)
++        );
++        assert_eq!(
++            contiguous_layout(&[1], &[usize::MAX]).unwrap(),
++            (1, 1, 1, 0, usize::MAX)
++        );
++        assert_eq!(
++            contiguous_layout(&[0, usize::MAX], &[usize::MAX, 1]).unwrap(),
++            (0, 0, 0, 0, 0)
++        );
++    }
++
++    #[test]
++    fn contiguous_checked_offsets_and_exact_bits() {
++        if super::device_count() == 0 {
++            eprintln!("skipping CUDA contiguous primitive: no CUDA device");
++            return;
++        }
++        let bits = [0x8000_0000, 0x7f80_0001, 0x7fc1_2345, 1, 0xff80_0001, 0];
++        let values = bits.map(f32::from_bits);
++        let input = super::CudaFloat32Storage::from_host(&values, 0).unwrap();
++        for offset in [1, usize::MAX] {
++            assert!(matches!(
++                input.contiguous(offset, &[3, 2], &[1, 3]),
++                Err(crate::TensorError::IndexCalculationOverflow)
++            ));
++        }
++        let output = input.contiguous(0, &[3, 2], &[1, 3]).unwrap();
++        assert_eq!(
++            output
++                .copy_range(0, 6)
++                .unwrap()
++                .iter()
++                .map(|v| v.to_bits())
++                .collect::<Vec<_>>(),
++            [bits[0], bits[3], bits[1], bits[4], bits[2], bits[5]]
++        );
++        assert_eq!(
++            input
++                .copy_range(0, 6)
++                .unwrap()
++                .iter()
++                .map(|v| v.to_bits())
++                .collect::<Vec<_>>(),
++            bits
++        );
++        assert_eq!(
++            input
++                .contiguous(1, &[2], &[3])
++                .unwrap()
++                .copy_range(0, 2)
++                .unwrap()
++                .iter()
++                .map(|v| v.to_bits())
++                .collect::<Vec<_>>(),
++            [bits[1], bits[4]]
++        );
++        assert_eq!(
++            input
++                .contiguous(usize::MAX, &[0, usize::MAX], &[1, usize::MAX])
++                .unwrap()
++                .elements,
++            0
++        );
++    }
++
+     #[test]
+     fn cuda_allocation_checks_byte_overflow_before_loading_runtime() {
+         for elements in [usize::MAX, isize::MAX as usize / size_of::<f32>() + 1] {
+diff --git a/src/cuda/pointwise.rs b/src/cuda/pointwise.rs
+index 2dd9318..54a5c45 100644
+--- a/src/cuda/pointwise.rs
++++ b/src/cuda/pointwise.rs
+@@ -35,7 +35,7 @@ struct Driver {
+ struct Module {
+     context: usize,
+     _handle: usize,
+-    functions: [usize; 7],
++    functions: [usize; 8],
+ }
+ 
+ enum Kernel {
+@@ -45,6 +45,7 @@ enum Kernel {
+     AddTrailingVector,
+     SumRows,
+     SumRowsFinalize,
++    Contiguous,
+     #[cfg(any(feature = "python-bindings", test))]
+     Negate,
+ }
+@@ -141,7 +142,7 @@ impl Driver {
+             .try_reserve(1)
+             .map_err(|_| TensorError::AllocationFailed { elements: 1 })?;
+         let mut module = std::ptr::null_mut();
+-        let mut functions = [0; 7];
++        let mut functions = [0; 8];
+         // SAFETY: static NUL-terminated PTX and entry names; writable handles.
+         unsafe {
+             self.check(
+@@ -157,6 +158,8 @@ impl Driver {
+                         include_str!("sum_rows.ptx"),
+                         "\n",
+                         include_str!("neg.ptx"),
++                        "\n",
++                        include_str!("contiguous.ptx"),
+                         "\0"
+                     )
+                     .as_ptr()
+@@ -171,6 +174,7 @@ impl Driver {
+                 c"add_trailing_vector_f32",
+                 c"sum_rows_f32",
+                 c"sum_rows_finalize_f32",
++                c"contiguous_f32",
+                 c"neg_f32",
+             ]) {
+                 let mut function = std::ptr::null_mut();
+@@ -397,3 +401,52 @@ pub(super) unsafe fn launch_mul_scalar(
+         "cuLaunchKernel",
+     )
+ }
++
++/// # Safety
++/// Input covers the checked rank-one/two positive-stride extent on the guarded
++/// device. Output holds `elements` disjoint floats. Both allocations must remain
++/// live through legacy-stream completion, including after a launch error.
++pub(super) unsafe fn launch_contiguous(
++    mut input: u64,
++    mut output: u64,
++    elements: usize,
++    columns: usize,
++    row_stride: usize,
++    column_stride: usize,
++) -> Result<(), TensorError> {
++    let driver = driver()?;
++    let function = driver.function(Kernel::Contiguous)?;
++    let mut count = elements as u64;
++    let mut columns = columns as u64;
++    let mut row_stride = row_stride as u64;
++    let mut column_stride = column_stride as u64;
++    let mut arguments = [
++        (&raw mut input).cast(),
++        (&raw mut output).cast(),
++        (&raw mut count).cast(),
++        (&raw mut columns).cast(),
++        (&raw mut row_stride).cast(),
++        (&raw mut column_stride).cast(),
++    ];
++    let blocks = u32::try_from(elements.div_ceil(256).min(4096)).expect("bounded grid");
++    // SAFETY: live arguments and cached function in this context. The caller
++    // retains storage through synchronization of CU_STREAM_LEGACY.
++    driver.check(
++        unsafe {
++            (driver.launch)(
++                function as *mut c_void,
++                blocks,
++                1,
++                1,
++                256,
++                1,
++                1,
++                0,
++                std::ptr::without_provenance_mut(1),
++                arguments.as_mut_ptr(),
++                std::ptr::null_mut(),
++            )
++        },
++        "cuLaunchKernel",
++    )
++}
+diff --git a/src/python_tensor_errors.rs b/src/python_tensor_errors.rs
+index 997a3d5..cf97ea3 100644
+--- a/src/python_tensor_errors.rs
++++ b/src/python_tensor_errors.rs
+@@ -58,6 +58,7 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
+         | TensorError::UnsupportedCudaNegation { .. }
+         | TensorError::UnsupportedCudaSum { .. }
+         | TensorError::UnsupportedCudaMatmul { .. }
++        | TensorError::UnsupportedCudaContiguous { .. }
+         | TensorError::UnsupportedCudaTransfer { .. } => {
+             PyNotImplementedError::new_err(error.to_string())
+         }
+diff --git a/src/storage.rs b/src/storage.rs
+index ef159fd..1450ff0 100644
+--- a/src/storage.rs
++++ b/src/storage.rs
+@@ -267,6 +267,22 @@ impl Storage {
+         }
+     }
+ 
++    pub(crate) fn cuda_contiguous_float32(
++        &self,
++        offset: usize,
++        shape: &[usize],
++        strides: &[usize],
++    ) -> Result<Self, TensorError> {
++        match &self.payload {
++            StoragePayload::CudaFloat32(input) => Ok(Self {
++                payload: StoragePayload::CudaFloat32(input.contiguous(offset, shape, strides)?),
++            }),
++            StoragePayload::CpuFloat32(_) => Err(TensorError::UnsupportedCudaContiguous {
++                reason: "input must be CUDA",
++            }),
++        }
++    }
++
+     pub(crate) fn cuda_sum_rows_float32(
+         &self,
+         offset: usize,
+diff --git a/src/tensor.rs b/src/tensor.rs
+index f162dfa..a348e97 100644
+--- a/src/tensor.rs
++++ b/src/tensor.rs
+@@ -2765,6 +2765,8 @@ impl Tensor {
+     /// the storage offset to zero, and assigns canonical strides for the
+     /// requested format. This is the checked packing primitive reused by
+     /// reshape and flatten when existing strides cannot represent a result.
++    /// CUDA packing supports positive-stride rank-one/rank-two float32 views
++    /// without autograd, using same-device storage and no host staging.
+     ///
+     /// [`MemoryFormat::Preserve`] is accepted only by the row-contiguous
+     /// identity path, matching `PyTorch`'s contiguous operator. Channel-last
+@@ -2949,7 +2951,14 @@ impl Tensor {
+         reuse_matching_storage: bool,
+         node: AutogradNode,
+     ) -> Result<Self, TensorError> {
+-        validate_cpu_storage_device("contiguous", self.device())?;
++        // Device-copy callers retain their separate, bounded copy contract.
++        if !self.is_cuda() || !reuse_matching_storage {
++            validate_cpu_storage_device("contiguous", self.device())?;
++        } else if self.dtype() != DType::Float32 || self.requires_grad() {
++            return Err(TensorError::UnsupportedCudaContiguous {
++                reason: "requires float32 without autograd",
++            });
++        }
+         let expected_rank = match memory_format {
+             MemoryFormat::ChannelsLast => Some(4),
+             MemoryFormat::ChannelsLast3d => Some(5),
+@@ -2990,6 +2999,29 @@ impl Tensor {
+             MemoryFormat::ChannelsLast3d => channels_last_3d_strides(&self.shape, self.elements)?,
+         };
+         let shape = try_clone_result_shape(&self.shape, self.elements)?;
++        if self.is_cuda() {
++            // Only packing is rank-bounded; already-contiguous metadata aliases
++            // above (including scalars and empty views) need no CUDA launch.
++            if memory_format != MemoryFormat::Contiguous {
++                return Err(TensorError::UnsupportedCudaContiguous {
++                    reason: "only contiguous_format materialization is supported",
++                });
++            }
++            let storage =
++                self.storage
++                    .cuda_contiguous_float32(self.offset, &self.shape, &self.strides)?;
++            return Ok(Self {
++                storage: Arc::new(storage),
++                shape,
++                strides,
++                offset: 0,
++                elements: self.elements,
++                output_nr: 0,
++                leaf_requires_grad: requires_grad_flag(false),
++                view_requires_grad: None,
++                autograd: None,
++            });
++        }
+         let data = self.materialize_with_strides(&strides, |value| value)?;
+         let mut output = Self::from_owned_parts(data, shape, strides, self.dtype(), self.device());
+         self.record_transform(&mut output, TransformMapping::Identity, node)?;
+diff --git a/src/tensor_error.rs b/src/tensor_error.rs
+index d5a0c1e..3e4cb19 100644
+--- a/src/tensor_error.rs
++++ b/src/tensor_error.rs
+@@ -123,6 +123,9 @@ pub enum TensorError {
+     UnsupportedCudaTransfer {
+         reason: &'static str,
+     },
++    UnsupportedCudaContiguous {
++        reason: &'static str,
++    },
+     CudaRuntimeError {
+         operation: &'static str,
+         message: String,
+@@ -233,6 +236,7 @@ impl Display for TensorError {
+             | Self::UnsupportedCudaSum { .. }
+             | Self::UnsupportedCudaMatmul { .. }
+             | Self::UnsupportedCudaTransfer { .. }
++            | Self::UnsupportedCudaContiguous { .. }
+             | Self::CudaRuntimeError { .. }) => format_device_error(formatter, error),
+             error @ (Self::UnsupportedMemoryFormat { .. }
+             | Self::ContiguousPreserveFormatUnsupported
+@@ -462,6 +466,12 @@ fn format_device_error(formatter: &mut Formatter<'_>, error: &TensorError) -> st
+         TensorError::UnsupportedCudaTransfer { reason } => {
+             write!(formatter, "to(): unsupported CUDA transfer ({reason})")
+         }
++        TensorError::UnsupportedCudaContiguous { reason } => {
++            write!(
++                formatter,
++                "contiguous(): unsupported CUDA materialization ({reason})"
++            )
++        }
+         _ => unreachable!("only device errors are formatted here"),
+     }
+ }
+diff --git a/src/cuda/contiguous.ptx b/src/cuda/contiguous.ptx
+new file mode 100644
+index 0000000..1836cf6
+--- /dev/null
++++ b/src/cuda/contiguous.ptx
+@@ -0,0 +1,42 @@
++// Appended to add.ptx's version/target directives. Copy bits in logical row
++// order, without float arithmetic (including signaling NaNs and signed zero).
++.visible .entry contiguous_f32(
++    .param .u64 input, .param .u64 output, .param .u64 count,
++    .param .u64 columns, .param .u64 row_stride, .param .u64 column_stride
++) {
++    .reg .pred done;
++    .reg .b32 tid, block, width, blocks, value;
++    .reg .b64 a, b, n, cols, rs, cs, i, step, lane;
++    .reg .b64 row, col, offset, pa, pb;
++    ld.param.u64 a, [input];
++    ld.param.u64 b, [output];
++    ld.param.u64 n, [count];
++    ld.param.u64 cols, [columns];
++    ld.param.u64 rs, [row_stride];
++    ld.param.u64 cs, [column_stride];
++    mov.u32 tid, %tid.x;
++    mov.u32 block, %ctaid.x;
++    mov.u32 width, %ntid.x;
++    mov.u32 blocks, %nctaid.x;
++    mul.wide.u32 i, block, width;
++    cvt.u64.u32 lane, tid;
++    add.u64 i, i, lane;
++    mul.wide.u32 step, blocks, width;
++loop:
++    setp.ge.u64 done, i, n;
++    @done bra end;
++    div.u64 row, i, cols;
++    rem.u64 col, i, cols;
++    mul.lo.u64 offset, row, rs;
++    mad.lo.u64 offset, col, cs, offset;
++    shl.b64 offset, offset, 2;
++    add.u64 pa, a, offset;
++    shl.b64 offset, i, 2;
++    add.u64 pb, b, offset;
++    ld.global.b32 value, [pa];
++    st.global.b32 [pb], value;
++    add.u64 i, i, step;
++    bra loop;
++end:
++    ret;
++}

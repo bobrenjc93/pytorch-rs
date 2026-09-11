@@ -1,0 +1,117 @@
+{
+  "note": "Untimed command inventory; exit statuses observed during this run. Initial Rust CUDA run preceded addition of the two focused primitive tests; later runs include them.",
+  "commands": [
+    {
+      "command": [
+        "uv",
+        "sync",
+        "--locked",
+        "--no-install-project",
+        "--group",
+        "dev",
+        "--group",
+        "reference",
+        "--python",
+        "/usr/bin/python3.12"
+      ],
+      "exit_status": 0,
+      "log": "setup.log",
+      "log_sha256": "2967a6c4367f50ce7a5beb5d08ff28aa1deb1405e2025e5e94ddf5b39808e846"
+    },
+    {
+      "command": [
+        "cargo",
+        "fetch",
+        "--locked"
+      ],
+      "exit_status": 0,
+      "log": "cargo-fetch.log",
+      "log_sha256": "50b8c14b691663f8403090d82acaa5e03c249d57f6fad06fbb8e84c8a7fc8796"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--lib",
+        "cuda::tests",
+        "--",
+        "--nocapture"
+      ],
+      "exit_status": 0,
+      "log": "rust-cuda-initial.log",
+      "log_sha256": "3f014a04a64dc17277c6c008dd905b088dd9c7dddc0324180331dae8172612f3"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--lib",
+        "cuda::tests",
+        "--",
+        "--nocapture"
+      ],
+      "exit_status": 0,
+      "log": "rust-cuda.log",
+      "log_sha256": "a0f41d08c0b2bdf265602de4478bf7f9400f7f7ea618027a1d32277f4363d376"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--lib",
+        "--test",
+        "cuda_contiguous",
+        "--test",
+        "cuda_same_device_copy",
+        "--test",
+        "cuda_native_boundaries",
+        "--test",
+        "cuda_add",
+        "--test",
+        "cuda_matmul",
+        "--test",
+        "cuda_mul_scalar",
+        "--test",
+        "cuda_sum_rows"
+      ],
+      "exit_status": 0,
+      "log": "rust-regressions.log",
+      "log_sha256": "9d187a5d70e796fb8d8f4c2b282c2f30ecd0af7c37e7fbd2798916e5da24645d"
+    },
+    {
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_status": 0,
+      "log": "fmt.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--all-targets",
+        "--features",
+        "python-bindings",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_status": 0,
+      "log": "clippy.log",
+      "log_sha256": "d89d7971425297ad393148df597d20cf2670b1f7518ec8254c3389ffaead8bed"
+    }
+  ]
+}

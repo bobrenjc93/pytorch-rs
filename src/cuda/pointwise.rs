@@ -35,7 +35,7 @@ struct Driver {
 struct Module {
     context: usize,
     _handle: usize,
-    functions: [usize; 7],
+    functions: [usize; 8],
 }
 
 enum Kernel {
@@ -45,6 +45,7 @@ enum Kernel {
     AddTrailingVector,
     SumRows,
     SumRowsFinalize,
+    Contiguous,
     #[cfg(any(feature = "python-bindings", test))]
     Negate,
 }
@@ -141,7 +142,7 @@ impl Driver {
             .try_reserve(1)
             .map_err(|_| TensorError::AllocationFailed { elements: 1 })?;
         let mut module = std::ptr::null_mut();
-        let mut functions = [0; 7];
+        let mut functions = [0; 8];
         // SAFETY: static NUL-terminated PTX and entry names; writable handles.
         unsafe {
             self.check(
@@ -157,6 +158,8 @@ impl Driver {
                         include_str!("sum_rows.ptx"),
                         "\n",
                         include_str!("neg.ptx"),
+                        "\n",
+                        include_str!("contiguous.ptx"),
                         "\0"
                     )
                     .as_ptr()
@@ -171,6 +174,7 @@ impl Driver {
                 c"add_trailing_vector_f32",
                 c"sum_rows_f32",
                 c"sum_rows_finalize_f32",
+                c"contiguous_f32",
                 c"neg_f32",
             ]) {
                 let mut function = std::ptr::null_mut();
@@ -378,6 +382,55 @@ pub(super) unsafe fn launch_mul_scalar(
     let blocks = u32::try_from(elements.div_ceil(256).min(4096)).expect("bounded grid");
     // SAFETY: parameters survive the launch argument copy; the cached function
     // belongs to this context. CU_STREAM_LEGACY matches runtime copies/zero-fill.
+    driver.check(
+        unsafe {
+            (driver.launch)(
+                function as *mut c_void,
+                blocks,
+                1,
+                1,
+                256,
+                1,
+                1,
+                0,
+                std::ptr::without_provenance_mut(1),
+                arguments.as_mut_ptr(),
+                std::ptr::null_mut(),
+            )
+        },
+        "cuLaunchKernel",
+    )
+}
+
+/// # Safety
+/// Input covers the checked rank-one/two positive-stride extent on the guarded
+/// device. Output holds `elements` disjoint floats. Both allocations must remain
+/// live through legacy-stream completion, including after a launch error.
+pub(super) unsafe fn launch_contiguous(
+    mut input: u64,
+    mut output: u64,
+    elements: usize,
+    columns: usize,
+    row_stride: usize,
+    column_stride: usize,
+) -> Result<(), TensorError> {
+    let driver = driver()?;
+    let function = driver.function(Kernel::Contiguous)?;
+    let mut count = elements as u64;
+    let mut columns = columns as u64;
+    let mut row_stride = row_stride as u64;
+    let mut column_stride = column_stride as u64;
+    let mut arguments = [
+        (&raw mut input).cast(),
+        (&raw mut output).cast(),
+        (&raw mut count).cast(),
+        (&raw mut columns).cast(),
+        (&raw mut row_stride).cast(),
+        (&raw mut column_stride).cast(),
+    ];
+    let blocks = u32::try_from(elements.div_ceil(256).min(4096)).expect("bounded grid");
+    // SAFETY: live arguments and cached function in this context. The caller
+    // retains storage through synchronization of CU_STREAM_LEGACY.
     driver.check(
         unsafe {
             (driver.launch)(

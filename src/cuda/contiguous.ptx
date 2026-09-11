@@ -1,0 +1,42 @@
+// Appended to add.ptx's version/target directives. Copy bits in logical row
+// order, without float arithmetic (including signaling NaNs and signed zero).
+.visible .entry contiguous_f32(
+    .param .u64 input, .param .u64 output, .param .u64 count,
+    .param .u64 columns, .param .u64 row_stride, .param .u64 column_stride
+) {
+    .reg .pred done;
+    .reg .b32 tid, block, width, blocks, value;
+    .reg .b64 a, b, n, cols, rs, cs, i, step, lane;
+    .reg .b64 row, col, offset, pa, pb;
+    ld.param.u64 a, [input];
+    ld.param.u64 b, [output];
+    ld.param.u64 n, [count];
+    ld.param.u64 cols, [columns];
+    ld.param.u64 rs, [row_stride];
+    ld.param.u64 cs, [column_stride];
+    mov.u32 tid, %tid.x;
+    mov.u32 block, %ctaid.x;
+    mov.u32 width, %ntid.x;
+    mov.u32 blocks, %nctaid.x;
+    mul.wide.u32 i, block, width;
+    cvt.u64.u32 lane, tid;
+    add.u64 i, i, lane;
+    mul.wide.u32 step, blocks, width;
+loop:
+    setp.ge.u64 done, i, n;
+    @done bra end;
+    div.u64 row, i, cols;
+    rem.u64 col, i, cols;
+    mul.lo.u64 offset, row, rs;
+    mad.lo.u64 offset, col, cs, offset;
+    shl.b64 offset, offset, 2;
+    add.u64 pa, a, offset;
+    shl.b64 offset, i, 2;
+    add.u64 pb, b, offset;
+    ld.global.b32 value, [pa];
+    st.global.b32 [pb], value;
+    add.u64 i, i, step;
+    bra loop;
+end:
+    ret;
+}
