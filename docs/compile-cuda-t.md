@@ -59,18 +59,17 @@ Hardware-only tests skip clearly without the required devices. Rust test-only
 accounting checks zero native operations for malformed early/late nodes; it is
 absent from release builds and does not alter scoring observers.
 
-The [initial clean-commit capture](diagnostics/compile-cuda-t/postcommit-e01f1d0f/README.md)
-measured `e01f1d0f69dffa8018e1b333bb5ab642ce9fdcb9` with a fresh locked `.venv`
-and release build. H100 t/packing differentials, compiler regressions, strict
-metadata negatives, two-device restoration, focused Rust and CPU/docs checks
-passed. Source, installed imports, native binary and clean status are verified
-in its receipts. It predates the repeated-output metadata repair.
+The [current clean-commit capture](diagnostics/compile-cuda-t/postcommit-2ce3dfbf/README.md)
+measured `2ce3dfbf627c59a57d1e37131663a26c2ebfccad` with a fresh locked `.venv`
+and release build. H100 t/packing differentials, repeated-output metadata
+rejection, compiler regressions, two-device restoration, focused Rust and
+CPU/docs checks passed. Its receipts verify source, installed imports, native
+binary and clean status. No required clean capture remains deferred.
 
 The [review-repair diagnostics](diagnostics/compile-cuda-t/review-output-metadata/README.md)
-preserve the failing reproduction and fresh release-build validation of that
-repair, including static/dynamic cache-hit rejection before native execution.
-These are source-bound development measurements; a fresh clean-code capture
-remains required after Burner commits the repair.
+preserve the failing reproduction and source-bound development validation.
+The [initial clean capture](diagnostics/compile-cuda-t/postcommit-e01f1d0f/README.md)
+remains pinned to `e01f1d0f`, before the repeated-output metadata repair.
 
 The [original development bundle](diagnostics/compile-cuda-t/README.md), including
 the fresh PR1975 baseline reproduction and failed attempts, remains unchanged.

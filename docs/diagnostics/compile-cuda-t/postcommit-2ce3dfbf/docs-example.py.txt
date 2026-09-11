@@ -1,0 +1,9 @@
+import torch_rs as torch
+
+def transpose_and_pack(x):
+    return -x.t().contiguous()
+
+x = torch.tensor([[1., 2., 3.], [4., 5., 6.]]).to('cuda:0')
+f = torch.compile(transpose_and_pack, backend='eager', fullgraph=True)
+assert f(x).cpu().tolist() == [[-1., -4.], [-2., -5.], [-3., -6.]]
+print('compiled t guide example passed')

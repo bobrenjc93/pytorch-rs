@@ -1,0 +1,4 @@
+set -eu
+mv .venv target/t-postcommit-2ce3dfbf/venv-previous
+uv venv --managed-python --python 3.12
+uv sync --locked --offline --no-install-project --group dev --group reference

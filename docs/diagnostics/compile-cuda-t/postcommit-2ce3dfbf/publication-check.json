@@ -1,0 +1,22 @@
+{
+  "command": [
+    ".venv/bin/python",
+    "-m",
+    "unittest",
+    "-v",
+    "tests.test_readme_quickstart"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf",
+  "earlier_evidence_unchanged": true,
+  "ended_at": "2026-09-11T06:44:46.268732+00:00",
+  "exit_status": 0,
+  "guide_sha256": "63534d73fa94ce8140cd3ce8fd68c0de49b57caa1d848b7bae70fe494d255d71",
+  "implementation_tests_dependencies_and_harnesses_unchanged": true,
+  "log_sha256": "33e7b064678647d534b4cd3ea1e0f8fab85416a00be54c1755eeb745bafa5949",
+  "measured_commit": "2ce3dfbf627c59a57d1e37131663a26c2ebfccad",
+  "publication_changes": [
+    "docs/compile-cuda-t.md",
+    "docs/diagnostics/compile-cuda-t/postcommit-2ce3dfbf"
+  ],
+  "started_at": "2026-09-11T06:44:45.961030+00:00"
+}

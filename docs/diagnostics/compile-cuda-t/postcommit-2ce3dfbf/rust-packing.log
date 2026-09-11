@@ -1,0 +1,9 @@
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.96s
+     Running tests/cuda_contiguous.rs (target/t-postcommit-2ce3dfbf/rust/debug/deps/cuda_contiguous-19470d316c601991)
+
+running 1 test
+test cuda_contiguous_and_reshape_layout_contract ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s
+

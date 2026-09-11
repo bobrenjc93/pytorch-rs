@@ -1,0 +1,37 @@
+[
+  {
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/bin/maturin",
+      "build",
+      "--release",
+      "--locked",
+      "--offline",
+      "--out",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/target/t-postcommit-2ce3dfbf/release/wheels"
+    ],
+    "started_at": "2026-09-11T06:41:00.061621+00:00",
+    "ended_at": "2026-09-11T06:41:47.147705+00:00",
+    "wall_seconds": 47.08609079755843,
+    "exit_status": 0,
+    "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/target/t-postcommit-2ce3dfbf/release/build.log",
+    "log_sha256": "ed808f71cc3c8103f6a0b63e674aebd1201e7f424860c28ca1c52b52fe2e5a45"
+  },
+  {
+    "command": [
+      "uv",
+      "pip",
+      "install",
+      "--python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/bin/python",
+      "--force-reinstall",
+      "--no-deps",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/target/t-postcommit-2ce3dfbf/release/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl"
+    ],
+    "started_at": "2026-09-11T06:41:47.148817+00:00",
+    "ended_at": "2026-09-11T06:41:47.325563+00:00",
+    "wall_seconds": 0.1767654763534665,
+    "exit_status": 0,
+    "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/target/t-postcommit-2ce3dfbf/release/install.log",
+    "log_sha256": "614dbecca0ca2e21ea18ca5b43787f42d4fdf08b019c64dde49e4befc9826741"
+  }
+]
