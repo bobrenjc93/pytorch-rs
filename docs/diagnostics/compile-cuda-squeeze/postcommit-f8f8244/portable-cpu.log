@@ -1,0 +1,28 @@
+test_compositions_all_policies (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_compositions_all_policies) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_dynamic_consumer_declarations_still_prevalidated (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_consumer_declarations_still_prevalidated) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_dynamic_consumers_keep_strided_arithmetic_unsupported (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_consumers_keep_strided_arithmetic_unsupported) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_dynamic_singletons_disappear_and_reappear (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_singletons_disappear_and_reappear) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_reference_import_is_not_needed (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_reference_import_is_not_needed) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_repeated_output_metadata_is_prevalidated (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_repeated_output_metadata_is_prevalidated) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_scalar_vector_and_empty_constructors (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_scalar_vector_and_empty_constructors) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_scope_and_method_identity_guards_without_user_hooks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_scope_and_method_identity_guards_without_user_hooks) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_seeded_layouts_fresh_wrappers_and_nested_identity (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_seeded_layouts_fresh_wrappers_and_nested_identity) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_shared_raw_bits_mutation_and_storage_lifetime (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_shared_raw_bits_mutation_and_storage_lifetime) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_whole_graph_validation_on_cache_hits (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_whole_graph_validation_on_cache_hits) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_restoration_and_unused_input_capture_device_guards (tests.test_compile_cuda_squeeze.SqueezeDeviceTests.test_restoration_and_unused_input_capture_device_guards) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_consumer_declarations_and_runtime_ranks_are_independent (tests.test_compile_cuda_squeeze.SqueezeMetadataTests.test_consumer_declarations_and_runtime_ranks_are_independent) ... ok
+test_layouts_and_boundaries_without_hardware (tests.test_compile_cuda_squeeze.SqueezeMetadataTests.test_layouts_and_boundaries_without_hardware) ... ok
+test_invalid_dimensions_types_and_bindings_have_public_errors (tests.test_squeeze.SqueezeTests.test_invalid_dimensions_types_and_bindings_have_public_errors) ... ok
+test_method_accepts_variadic_dims_and_keywords_match_pytorch (tests.test_squeeze.SqueezeTests.test_method_accepts_variadic_dims_and_keywords_match_pytorch) ... ok
+test_method_and_top_level_squeeze_only_view_metadata (tests.test_squeeze.SqueezeTests.test_method_and_top_level_squeeze_only_view_metadata) ... ok
+test_non_contiguous_offset_view_and_stride_aware_consumers (tests.test_squeeze.SqueezeTests.test_non_contiguous_offset_view_and_stride_aware_consumers) ... ok
+test_scalars_zero_sizes_negative_dims_and_high_ranks (tests.test_squeeze.SqueezeTests.test_scalars_zero_sizes_negative_dims_and_high_ranks) ... ok
+test_non_contiguous_offsets_forms_and_top_level_method_parity (tests.test_squeeze_reference.SqueezeReferenceTests.test_non_contiguous_offsets_forms_and_top_level_method_parity) ... ok
+test_scalar_zero_sized_high_rank_and_errors_match_pytorch_2_13 (tests.test_squeeze_reference.SqueezeReferenceTests.test_scalar_zero_sized_high_rank_and_errors_match_pytorch_2_13) ... ok
+test_seeded_values_metadata_and_composed_consumers_match_pytorch_2_13 (tests.test_squeeze_reference.SqueezeReferenceTests.test_seeded_values_metadata_and_composed_consumers_match_pytorch_2_13) ... ok
+
+----------------------------------------------------------------------
+Ran 23 tests in 0.102s
+
+OK (skipped=13)

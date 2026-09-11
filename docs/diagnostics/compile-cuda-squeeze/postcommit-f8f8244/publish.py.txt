@@ -1,0 +1,80 @@
+"""Publish fresh clean-code receipts after all measurements have completed."""
+import hashlib
+import json
+from pathlib import Path
+import shutil
+import subprocess
+
+ROOT = Path.cwd().resolve()
+WORK = ROOT / 'target/postcommit-f8f8244'
+OUT = ROOT / 'docs/diagnostics/compile-cuda-squeeze/postcommit-f8f8244'
+COMMIT = 'f8f8244c2cfa81e255c1814d1bd101c5d846b03d'
+
+def sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+def git(*args):
+    return subprocess.check_output(['git', *args])
+
+assert git('rev-parse', 'HEAD').decode().strip() == COMMIT
+assert git('status', '--porcelain') == b''
+assert not OUT.exists()
+verification_path = WORK / 'capture/verification-after.json'
+verification = json.loads(verification_path.read_text())
+assert verification == json.loads((WORK / 'capture/verification-before.json').read_text())
+receipts = []
+for path in sorted((WORK / 'capture').glob('*.receipt.json')):
+    receipt = json.loads(path.read_text())
+    assert receipt['exit_status'] == 0, path
+    for key in ('before', 'after'):
+        assert receipt[key]['commit'] == COMMIT and receipt[key]['git_status'] == '', path
+    assert sha(path.with_name(path.name.replace('.receipt.json', '.log'))) == receipt['log_sha256']
+    receipts.append({'name': path.name.removesuffix('.receipt.json'), **receipt})
+assert any(c['name'] == 'compiler-sweep' for c in receipts)
+history = {}
+for name in git('ls-files', 'docs/diagnostics/compile-cuda-squeeze').decode().splitlines():
+    assert (ROOT / name).read_bytes() == git('show', 'HEAD:' + name), name
+    history[name] = sha(ROOT / name)
+candidate_diff_sha = hashlib.sha256(git('diff', 'main...HEAD')).hexdigest()
+for script, archived in (
+    ('environment.sh', 'environment.sh.txt'), ('guides.py', 'guides.py.txt'),
+):
+    assert sha(ROOT / 'target/postcommit-e835f7f' / script) == sha(ROOT / 'docs/diagnostics/compile-cuda-squeeze/postcommit-e835f7f' / archived)
+OUT.mkdir()
+files = {}
+def copy(source, name):
+    shutil.copyfile(source, OUT / name)
+    files[name] = sha(OUT / name)
+
+copy(verification_path, 'verification.json')
+copy(WORK / 'release/build-record.json', 'build-record.json')
+copy(WORK / 'release/build.log', 'wheel-build.log')
+copy(WORK / 'release/install.log', 'wheel-install.log')
+for name in ('capture_command.py', 'verify.py', 'publish.py', 'publication_check.py'):
+    copy(WORK / name, name + '.txt')
+for receipt in receipts:
+    name = receipt['name'] + '.log'
+    copy(WORK / 'capture' / name, name)
+record = {
+    'measurement_kind': 'clean-code', 'measured_commit': COMMIT,
+    'worktree': str(ROOT), 'source_sha256': verification['source_sha256'],
+    'native_extension_sha256': verification['extension_sha256'],
+    'build_record': 'build-record.json', 'verification': 'verification.json',
+    'input_manifests': {
+        verification['input_manifest']: verification['input_manifest_sha256'],
+        verification['input_override_manifest']: verification['input_override_manifest_sha256'],
+    },
+    'reused_recipes': {
+        '../postcommit-e835f7f/environment.sh.txt': sha(ROOT / 'docs/diagnostics/compile-cuda-squeeze/postcommit-e835f7f/environment.sh.txt'),
+        '../postcommit-e835f7f/guides.py.txt': sha(ROOT / 'docs/diagnostics/compile-cuda-squeeze/postcommit-e835f7f/guides.py.txt'),
+    },
+    'commands': receipts, 'files': files, 'all_measurements_clean': True,
+    'historical_artifact_hashes': history,
+    'candidate_diff_against_main_sha256': candidate_diff_sha,
+    'cache_state': 'Existing canonical uv-managed CPython 3.12.14 .venv; locked dependency sync; fresh empty release target; reused local registry/download/CUDA/Inductor and Rust test caches.',
+    'scope': 'Non-scoring clean capture of no-argument CUDA squeeze including dynamic arithmetic consumer fix; unchanged tests, workload matrix, reference, denominator and unsupported outcomes.',
+    'gpu_resource': 'declared; CUDA_VISIBLE_DEVICES=0, except 0,1 for restoration',
+    'gpu_snapshots_are_not_reservations': True,
+}
+(OUT / 'capture.json').write_text(json.dumps(record, indent=2) + '\n')
+print('Published', len(receipts), 'clean command receipts and', len(files), 'files')

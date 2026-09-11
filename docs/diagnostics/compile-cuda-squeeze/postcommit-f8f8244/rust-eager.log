@@ -1,0 +1,11 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.01s
+     Running tests/tensor_baseline.rs (target/postcommit-e835f7f/rust-tests/debug/deps/tensor_baseline-1f3bc301430510b8)
+
+running 4 tests
+test squeeze_handles_scalars_empty_tensors_dimensions_and_high_ranks ... ok
+test squeeze_is_a_metadata_only_shared_storage_view ... ok
+test squeeze_reports_pytorch_compatible_dimension_errors ... ok
+test squeeze_preserves_non_contiguous_layouts_offsets_lifetimes_and_consumers ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 99 filtered out; finished in 0.00s
+

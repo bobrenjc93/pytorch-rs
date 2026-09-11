@@ -1,0 +1,52 @@
+"""Check evidence publication separately from clean-code measurements."""
+from datetime import datetime, timezone
+import hashlib
+import json
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+ROOT = Path.cwd().resolve()
+OUT = ROOT / 'docs/diagnostics/compile-cuda-squeeze/postcommit-f8f8244'
+sys.path.insert(0, str(ROOT / 'scripts'))
+from evaluate_cuda_math import source_provenance
+
+def sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+def git(*args):
+    return subprocess.check_output(['git', *args], text=True)
+
+capture = json.loads((OUT / 'capture.json').read_text())
+assert git('rev-parse', 'HEAD').strip() == capture['measured_commit']
+assert source_provenance()['source_sha256'] == capture['source_sha256']
+assert git('diff', '--name-only').splitlines() == ['docs/compile-cuda-squeeze.md']
+assert all((ROOT / p).is_relative_to(OUT) for p in git('ls-files', '--others', '--exclude-standard').splitlines())
+for name, digest in capture['files'].items():
+    assert sha(OUT / name) == digest, name
+for name, digest in capture['historical_artifact_hashes'].items():
+    assert sha(ROOT / name) == digest, name
+for doc in (OUT / 'README.md', ROOT / 'docs/compile-cuda-squeeze.md'):
+    for target in re.findall(r'\]\(([^)]+)\)', doc.read_text()):
+        assert (doc.parent / target.split('#')[0]).exists(), target
+command = [sys.executable, '-m', 'unittest', '-v', 'tests.test_readme_quickstart']
+record = {'phase': 'evidence/documentation publication after clean-code measurements',
+          'measured_code_commit': capture['measured_commit'], 'command': command,
+          'cwd': str(ROOT), 'started_at': datetime.now(timezone.utc).isoformat(),
+          'status_before': git('status', '--porcelain'),
+          'capture_sha256': sha(OUT / 'capture.json'),
+          'guide_sha256': sha(ROOT / 'docs/compile-cuda-squeeze.md'),
+          'readme_sha256': sha(OUT / 'README.md'),
+          'implementation_dependencies_tests_harnesses_unchanged': True,
+          'historical_artifacts_unchanged': True, 'all_artifact_hashes_match': True}
+log = OUT / 'publication-docs.log'
+assert not log.exists()
+with log.open('w') as stream:
+    result = subprocess.run(command, stdout=stream, stderr=subprocess.STDOUT)
+record.update(ended_at=datetime.now(timezone.utc).isoformat(), exit_status=result.returncode,
+              log_sha256=sha(log), status_after=git('status', '--porcelain'))
+(OUT / 'publication-check.json').write_text(json.dumps(record, indent=2) + '\n')
+print(log.read_text())
+result.check_returncode()
+print('Verified evidence hashes, links, publication scope and unchanged historical artifacts.')

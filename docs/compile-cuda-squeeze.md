@@ -68,15 +68,16 @@ CUDA_VISIBLE_DEVICES=0 cargo test --locked --features python-bindings --lib cuda
 CUDA_VISIBLE_DEVICES= .venv/bin/python -m unittest -v tests.test_compile_cuda_squeeze
 ```
 
-The [clean-commit capture](diagnostics/compile-cuda-squeeze/postcommit-e835f7f/README.md)
-validates `e835f7f173af4ffc7783560d9b03709660fa3141` with a fresh release wheel,
-H100 differentials, the complete compiler sweep, two-device restoration and
-focused native/portable checks. The [development evidence](diagnostics/compile-cuda-squeeze/README.md)
-retains the exact-main baseline and initial failed attempt unchanged. The
+The [clean-commit capture](diagnostics/compile-cuda-squeeze/postcommit-f8f8244/README.md)
+validates `f8f8244c2cfa81e255c1814d1bd101c5d846b03d`, including dynamic arithmetic
+consumers, with a fresh release wheel, H100 differentials, the complete compiler
+sweep, two-device restoration and focused native/portable checks. The
+[earlier capture](diagnostics/compile-cuda-squeeze/postcommit-e835f7f/README.md) and
+[development evidence](diagnostics/compile-cuda-squeeze/README.md) retain their
+original measurements, exact-main baseline and initial failed attempt. The
 [dynamic-consumer review revision](diagnostics/compile-cuda-squeeze/review-dynamic-consumers/README.md)
-records the reproduced cache-hit failure and validation of its fix. The earlier
-clean capture does not cover this revision; a fresh clean-commit capture remains
-required after Burner commits it. Hardware
+records the reproduced cache-hit failure and development validation of its fix;
+the new clean capture completes that revision's deferred measurement. Hardware
 cases skip clearly when CUDA is unavailable. These are non-scoring diagnostics:
 the frozen 38-case corpus, performance workloads, evaluator and hardware contracts
 are unchanged. PR1970/PR1971 remain separate unadopted human-review campaigns;
