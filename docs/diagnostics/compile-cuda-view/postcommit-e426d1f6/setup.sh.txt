@@ -1,0 +1,10 @@
+set -eu
+source target/view-postcommit-e426d1f6/env.sh
+date -u --iso-8601=seconds
+git rev-parse HEAD
+git status --porcelain
+uv python find --managed-python 3.12.14
+uv sync --locked --no-install-project --group dev --group reference
+.venv/bin/python --version
+nvidia-smi --query-gpu=index,uuid,name,driver_version,compute_cap,utilization.gpu,memory.used,memory.total --format=csv
+date -u --iso-8601=seconds

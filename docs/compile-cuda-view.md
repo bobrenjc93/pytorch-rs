@@ -78,13 +78,13 @@ CUDA_VISIBLE_DEVICES=0 cargo test --locked --features python-bindings --lib cuda
 Metadata/planner tests run without hardware; hardware-only cases skip clearly.
 The [development capture](diagnostics/compile-cuda-view/README.md) records the
 fresh main baseline, release build, seeded H100 differentials and regressions,
-including failed attempts. The separate [clean-commit capture](diagnostics/compile-cuda-view/postcommit-12ac70fd/README.md)
+including failed attempts. The separate [clean-commit capture](diagnostics/compile-cuda-view/postcommit-e426d1f6/README.md)
 records the release rebuild and fresh validation of implementation commit
-`12ac70fd1e7ab039d9317866ddaf269ef0c2d484`. These are non-scoring diagnostics;
+`e426d1f6d8eec9521dc13695af68b5da168415e2`. These are non-scoring diagnostics;
 scoring corpora, performance workloads, evaluator contracts and the separate
 PR1970/PR1971 campaigns are unchanged.
 
 The [review revision diagnostics](diagnostics/compile-cuda-view/review-revision/README.md)
 record the subsequent public-error precedence fixes and their development checks.
-The earlier clean capture remains pinned to `12ac70fd`; a fresh clean capture of
-this revision is required after Burner commits it.
+The earlier `12ac70fd` capture remains unchanged; the clean capture above
+measures the committed review revision.

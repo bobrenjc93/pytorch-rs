@@ -1,0 +1,104 @@
+"""Publish measured receipts unchanged, auditing them against the clean checkout."""
+from pathlib import Path
+import datetime, hashlib, json, shutil, subprocess, sys
+ROOT = Path.cwd().resolve()
+SRC = ROOT / 'target/view-postcommit-e426d1f6'
+HISTORY = ROOT / 'docs/diagnostics/compile-cuda-view'
+OUT = HISTORY / 'postcommit-e426d1f6'
+COMMIT = 'e426d1f6d8eec9521dc13695af68b5da168415e2'
+def sha(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+def read(p): return json.loads(Path(p).read_text())
+def local(p):
+    assert Path(p).resolve().is_relative_to(ROOT), p
+    return p
+def put(p, obj): p.write_text(json.dumps(obj, indent=2, sort_keys=True)+'\n')
+sys.path.insert(0, str(ROOT/'scripts'))
+from evaluate_cuda_math import source_provenance
+import torch_rs
+assert not subprocess.check_output(['git','status','--porcelain'], text=True)
+source = source_provenance()
+assert source['commit'] == COMMIT
+build = read(SRC/'release/build-record.json')
+assert build['commit'] == COMMIT and build['clean_checkout']
+assert build['git_status_before_build'] == '' and build['source_unchanged_during_build']
+assert build['source_sha256'] == source['source_sha256']
+assert build['production_diff_sha256'] == source['production_diff_sha256']
+for path_key, hash_key in [('extension_path','extension_sha256'), ('source_extension_path','extension_sha256'), ('wheel_path','wheel_sha256'), ('interpreter_path','interpreter_sha256')]:
+    assert sha(local(build[path_key])) == build[hash_key]
+for command in build['commands']:
+    assert command['exit_status'] == 0
+    assert sha(local(command['log'])) == command['log_sha256']
+for value in build['environment'].values():
+    if isinstance(value,str) and value.startswith('/'): local(value)
+local(build['python_executable'])
+assert sha(build['rustc_path']) == build['rustc_sha256']
+assert sha(local(torch_rs._C.__file__)) == build['extension_sha256']
+installed = Path(local(torch_rs.__file__)).parent
+python_paths = list((ROOT/'python/torch_rs').rglob('*.py'))
+assert all(sha(p)==sha(installed/p.relative_to(ROOT/'python/torch_rs')) for p in python_paths)
+manifest = HISTORY/'measured-inputs.json'
+manifest_index = HISTORY/'review-revision/input-manifest-deltas.json'
+manifest_hash = read(HISTORY/'review-revision/compiler-current-source.receipt.json')['measured_inputs_sha256']
+mapping = read(manifest)
+delta = read(manifest_index)[manifest_hash]
+mapping.update(delta['replace'])
+for key in delta['remove']: mapping.pop(key)
+assert hashlib.sha256((json.dumps(mapping,indent=2,sort_keys=True)+'\n').encode()).hexdigest() == manifest_hash
+assert all(sha(ROOT/p)==h for p,h in mapping.items())
+inputs = list((SRC/'evidence').glob('inputs-*.json'))
+assert len(inputs)==1 and sha(inputs[0])==manifest_hash and read(inputs[0])==mapping
+historical = {}
+for folder in (HISTORY,HISTORY/'postcommit-12ac70fd',HISTORY/'review-revision'):
+    inventory=read(folder/'inventory.json')
+    assert all(sha(folder/p)==h for p,h in inventory.items())
+    historical[str(folder.relative_to(HISTORY))]={'artifacts':len(inventory),'inventory_sha256':sha(folder/'inventory.json')}
+expected = {'native-verification','preflight','compiler','two-device','guide-examples','rust-graph','rust-storage','portable','clippy-default','clippy-bindings','format'}
+receipts = list((SRC/'evidence').glob('*.receipt.json'))
+assert {p.name.removesuffix('.receipt.json') for p in receipts} == expected
+results = {}
+for p in receipts:
+    r = read(p)
+    assert r['cwd'] == str(ROOT)
+    assert r['source_before'] == r['source_after'] == source
+    assert r['git_status_before'] == r['git_status_after'] == ''
+    assert r['inputs_unchanged'] and r['measured_inputs_sha256'] == manifest_hash
+    assert r['native_before'] == r['native_after']
+    assert set(r['native_after'].values()) == {build['extension_sha256']}
+    for path, h in r['native_after'].items(): assert sha(local(path)) == h
+    assert r['command_files_before'] == r['command_files_after']
+    for path, h in r['command_files_after'].items(): assert sha(local(path)) == h
+    assert r['capture_script_sha256'] == sha(SRC/'capture.py')
+    for value in r['environment'].values():
+        if isinstance(value,str) and value.startswith('/'): local(value)
+    name = p.name.removesuffix('.receipt.json')
+    assert sha(SRC/'evidence'/f'{name}.log') == r['log_sha256']
+    assert r['exit_status'] == 0, name
+    results[name] = {'exit_status':r['exit_status'], 'started_at':r['started_at'], 'ended_at':r['ended_at'], 'cuda_visible_devices':r['environment']['CUDA_VISIBLE_DEVICES']}
+audit_time = datetime.datetime.now(datetime.timezone.utc).isoformat()
+audit_status = subprocess.check_output(['git','status','--porcelain'], text=True)
+assert audit_status == ''
+assert not OUT.exists()
+OUT.mkdir()
+for p in (SRC/'evidence').iterdir():
+    if not p.name.startswith('inputs-'): shutil.copyfile(p,OUT/p.name)
+(OUT/'release').mkdir()
+for name in ('build-record.json','build.log','install.log','commands.json'):
+    shutil.copyfile(SRC/'release'/name, OUT/'release'/name)
+for name in ('capture.py','env.sh','setup.sh','setup.log','validate-gpu.sh','validate-portable.sh','audit-publish.py'):
+    shutil.copyfile(SRC/name, OUT/(name+'.txt' if name.endswith(('.py','.sh')) else name))
+put(OUT/'audit.json', {
+    'audited_at':audit_time,
+    'measurement_kind':'fresh clean implementation-commit capture',
+    'source':source, 'cwd':str(ROOT), 'git_status_at_audit':audit_status,
+    'build_record':'release/build-record.json',
+    'native_sha256':build['extension_sha256'], 'wheel_sha256':build['wheel_sha256'],
+    'interpreter':build['interpreter_path'], 'all_installed_python_matches_source':True,
+    'python_source_files_checked':len(python_paths),
+    'measured_inputs_base':'../measured-inputs.json', 'measured_inputs_deltas':'../review-revision/input-manifest-deltas.json', 'measured_inputs_sha256':manifest_hash,
+    'historical_inventories_verified_unchanged':historical,
+    'all_receipts_clean_and_source_native_command_inputs_unchanged':True,
+    'worktree_build_import_executable_cache_paths_within_current_worktree':True,
+    'external_read_only_tools':'Pinned Rust toolchain, system nvcc and NVIDIA driver',
+    'commands':results,
+})
+print('Published clean capture:', OUT)
