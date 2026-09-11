@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/target/cuda-contiguous-postcommit-cbb0df3/audit.py", line 50, in <module>
+    assert Path(v).resolve().is_relative_to(root), (name, k, v)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ('preserve-venv', 'PYO3_PYTHON', '/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_df4659ec/.venv/bin/python')

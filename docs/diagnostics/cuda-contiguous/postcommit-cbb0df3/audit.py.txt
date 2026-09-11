@@ -1,0 +1,73 @@
+"""Validate this clean-commit capture before publishing evidence-only files."""
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+import sys
+root = Path.cwd().resolve()
+out = Path(__file__).resolve().parent
+sys.path.insert(0, str(root / 'scripts'))
+from evaluate_cuda_math import source_provenance
+
+def sha(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+source = source_provenance()
+assert source['commit'] == 'cbb0df3489b6a9546aafa2926a40da201bf38a23'
+status = subprocess.check_output(['git', 'status', '--porcelain'], text=True)
+assert status == '', status
+build = json.loads((out / 'release/build-record.json').read_text())
+assert build['clean_checkout'] and build['measurement_kind'] == 'clean-code'
+assert build['git_status_before_build'] == ''
+assert build['source_unchanged_during_build']
+assert all(build[k] == v for k, v in source.items())
+for key in ('extension_path', 'source_extension_path', 'wheel_path'):
+    path = Path(build[key])
+    assert path.resolve().is_relative_to(root), path
+    expected = build['wheel_sha256' if key == 'wheel_path' else 'extension_sha256']
+    assert sha(path) == expected
+for command in build['commands']:
+    assert command['exit_status'] == 0
+    assert Path(command['log']).resolve().is_relative_to(root)
+    assert sha(Path(command['log'])) == command['log_sha256']
+inputs = json.loads((out / 'tracked-inputs.json').read_text())
+assert inputs['commit'] == source['commit']
+for name, expected in inputs['files'].items():
+    assert sha(root / name) == expected, name
+input_hash = hashlib.sha256(json.dumps(inputs['files'], sort_keys=True).encode()).hexdigest()
+required = ['preserve-venv', 'setup', 'release-build', 'preflight', 'python-contiguous',
+            'python-device-context', 'rust-cuda-unit', 'rust-cuda-integration',
+            'python-cpu-layout', 'python-no-device', 'python-cuda-regressions']
+for name in required:
+    r = json.loads((out / f'{name}.receipt.json').read_text())
+    assert r['exit_status'] == 0, name
+    assert r['source_before'] == r['source_after'] == source, name
+    assert r['git_status_before'] == r['git_status_after'] == '', name
+    assert r['tracked_inputs_unchanged'] and r['tracked_inputs_sha256'] == input_hash
+    assert Path(r['cwd']).resolve() == root
+    assert sha(Path(r['log'])) == r['log_sha256']
+    for k, v in r['environment'].items():
+        if k == 'PYO3_PYTHON':
+            # The canonical venv interpreter may link to a system binary.
+            assert Path(v).absolute() == root / '.venv/bin/python', (name, k, v)
+        elif k != 'CUDA_VISIBLE_DEVICES' and v is not None:
+            assert Path(v).resolve().is_relative_to(root), (name, k, v)
+    for snapshot in ('gpu_before', 'gpu_after'):
+        assert r[snapshot]['exit_status'] == 0
+    if name not in ('preserve-venv', 'setup', 'release-build'):
+        assert r['extensions_before'] == r['extensions_after']
+        assert len(r['extensions_after']) == 2
+        for path, digest in r['extensions_after'].items():
+            assert Path(path).resolve().is_relative_to(root)
+            assert digest == build['extension_sha256'] == sha(Path(path))
+old = root / 'docs/diagnostics/cuda-contiguous/precommit-b8622bc'
+old_inventory = json.loads((old / 'inventory.json').read_text())
+for name, digest in old_inventory['artifacts_sha256'].items():
+    assert sha(old / name) == digest, name
+assert not subprocess.check_output(['git', 'diff', 'main...HEAD', '--', 'scripts', 'Cargo.lock',
+    'uv.lock', 'pyproject.toml', '.burner', 'README.md', 'docs/burner-evaluation-history.json',
+    'docs/burner-evaluation-progress.svg'])
+print(json.dumps(dict(**source, extension_sha256=build['extension_sha256'],
+    clean_before_publication=True, required_captures=required,
+    all_captures_clean_source_matched=True, source_native_and_wheel_hashes_verified=True,
+    imports_verified_by='preflight.log', historical_artifacts_unchanged=True,
+    protected_paths_unchanged=True, tracked_inputs_sha256=input_hash), indent=2))
