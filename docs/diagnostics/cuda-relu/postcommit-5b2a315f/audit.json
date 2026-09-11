@@ -1,0 +1,31 @@
+{
+  "all_installed_dependency_versions_in_uv_lock": true,
+  "audit_script_sha256": "d4f2f005ae1ac68232bb501f47e9870d3fea2207ff8bafd1392eb5d69b708e3b",
+  "audited_at": "2026-09-11T12:35:41.414613+00:00",
+  "baseline_inputs_unchanged": true,
+  "clean_steps": 10,
+  "command": [
+    "target/relu-postcommit-5b2a315f/package.py"
+  ],
+  "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+  "historical_artifacts_unchanged": 85,
+  "ieee_patterns_verified": 22,
+  "programs_verified": 3,
+  "receipt_native_and_manifest_hashes_verified": true,
+  "release_and_installed_package_verified": true,
+  "rust_executable_sha256": {
+    "target/relu-postcommit-5b2a315f/rust-build/debug/deps/autograd-c7090ba32b58d520": "5aea0ca53b7e3765ca7dba86321a9fc048910eb1c60bf150aa479dda2fb22cdb",
+    "target/relu-postcommit-5b2a315f/rust-build/debug/deps/cuda_add-5deb32d0f04f37a5": "864aefc11bd4263bfcc07aa2536346aebc610873d714ddc89b08a66e7fcff3bf",
+    "target/relu-postcommit-5b2a315f/rust-build/debug/deps/cuda_contiguous-e347a8ffbedebebe": "9420381c852ed1ca7c1ed3d838352dfc0c390f2b3bf5f128129e454fd1647e01",
+    "target/relu-postcommit-5b2a315f/rust-build/debug/deps/cuda_matmul-b08cb3cd9cb7cb2a": "4abe1a21ad4f62698e95aefff2a84e5b54925a94b0e77672217da73323fe3b19",
+    "target/relu-postcommit-5b2a315f/rust-build/debug/deps/cuda_mul_scalar-c7a5f748c3b6163d": "7b121204f1b2af2e1fbe813b0816f894d3fb9f78934e257e392e2cb826bae245",
+    "target/relu-postcommit-5b2a315f/rust-build/debug/deps/cuda_native_boundaries-d1989b833fa39cb2": "ed36bca3c3def36a52df086c019b24546b4be073cb9829e75cf2f351e28aa1bb",
+    "target/relu-postcommit-5b2a315f/rust-build/debug/deps/cuda_relu-882ef250872a0680": "009fe85493233775f9e5c9e25ffb778c27db579b8ca5e008cc386d00becda8c1",
+    "target/relu-postcommit-5b2a315f/rust-build/debug/deps/cuda_relu-e7d26181bf9b77d1": "a95c630db81555c55cf519c0103b01afb7c0bebaa523330759ac1644e9763143",
+    "target/relu-postcommit-5b2a315f/rust-build/debug/deps/cuda_same_device_copy-432b5115cd74b76d": "6dea6b13e10d40265508862a58fe435560a83639670d80656fe53b74d1071322",
+    "target/relu-postcommit-5b2a315f/rust-build/debug/deps/cuda_sum_rows-e7aedf248eab7b18": "b89cdb82a22b0a9673adcf1de3fa9fcfcb27d4525c276f4ad4f1cd0b538bb5ec",
+    "target/relu-postcommit-5b2a315f/rust-build/debug/deps/pytorch_rs-545e4fdb10cc861f": "763bf0bfec81a30ba05fc326384a1974bafb48b6e60db25f8dfcbfdd876f36f1",
+    "target/relu-postcommit-5b2a315f/rust-build/debug/deps/pytorch_rs-a84bc75b3d7dfab2": "49e1dfb39b915b76abae6c2a81ceb9cc987118ea686bf8b909d91d727fdf792d",
+    "target/relu-postcommit-5b2a315f/rust-build/debug/deps/tensor_baseline-7971a89f517e13eb": "6bfc8ee81110c3404d80baed53e92c165a9ae82e412279d7ef6bc558e0991f92"
+  }
+}

@@ -103,12 +103,19 @@ unadopted review campaigns.
 
 ## Clean-commit validation
 
-The [post-commit capture](diagnostics/cuda-relu/postcommit-a07d99d8/index.json)
-measures `a07d99d8aac23b05148f0b9b73e485edd2787735` from a clean checkout on
+The [post-commit capture](diagnostics/cuda-relu/postcommit-5b2a315f/index.json)
+measures `5b2a315f8c433a839e56844f5b0766580cf55a6b` from a clean checkout on
 2026-09-11. A fresh offline release build used the committed capture helper,
 an empty build target and worktree-local caches. Native bytes and all 59 Python
 files matched the wheel and checkout. The command record verifies an unchanged,
 clean tree before and after every measurement; evidence was published afterward.
+
+The [earlier clean capture](diagnostics/cuda-relu/postcommit-a07d99d8/index.json)
+remains unchanged. Its recorded installed extension bytes and wheel/interpreter
+paths no longer matched the worktree, as recorded in the
+[refresh preflight](diagnostics/cuda-relu/postcommit-5b2a315f/preflight.json).
+The new bundle rebuilds and remeasures the same source and workloads with current
+worktree-local build identities.
 
 | Fresh check | Result |
 | --- | --- |

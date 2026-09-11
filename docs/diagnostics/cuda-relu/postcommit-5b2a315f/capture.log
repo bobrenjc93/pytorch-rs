@@ -1,0 +1,19 @@
+{
+  "artifacts_verified": 85,
+  "source": {
+    "commit": "5b2a315f8c433a839e56844f5b0766580cf55a6b",
+    "source_sha256": "82d0b635270b5359fc64b152444f2e443e6a8ec4ecc32ea3609dbabfab691381",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "baseline_gap_verified": true,
+  "acceptance_bits_and_programs_verified": true,
+  "evaluators_and_locks_unchanged": true
+}
+postcommit-5b2a315f-verify-release 0 /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/relu-checks/postcommit-5b2a315f-verify-release.log
+postcommit-5b2a315f-acceptance 0 /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/relu-checks/postcommit-5b2a315f-acceptance.log
+postcommit-5b2a315f-focused 0 /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/relu-checks/postcommit-5b2a315f-focused.log
+postcommit-5b2a315f-two-device 0 /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/relu-checks/postcommit-5b2a315f-two-device.log
+postcommit-5b2a315f-cuda-hidden 0 /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/relu-checks/postcommit-5b2a315f-cuda-hidden.log
+postcommit-5b2a315f-rust-bindings-relu 0 /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/relu-checks/postcommit-5b2a315f-rust-bindings-relu.log
+postcommit-5b2a315f-rust-default-relu 0 /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/relu-checks/postcommit-5b2a315f-rust-default-relu.log
+postcommit-5b2a315f-rust-kernel-slots 0 /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/relu-checks/postcommit-5b2a315f-rust-kernel-slots.log

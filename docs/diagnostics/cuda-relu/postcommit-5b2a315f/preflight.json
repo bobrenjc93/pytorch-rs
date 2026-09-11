@@ -1,0 +1,36 @@
+{
+  "observed_at": "2026-09-11T12:33:31.444796+00:00",
+  "prior_build_record": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/docs/diagnostics/cuda-relu/postcommit-a07d99d8/build/build-record.json",
+  "prior_measured_commit": "a07d99d8aac23b05148f0b9b73e485edd2787735",
+  "result": "prior live build provenance no longer matches; fresh capture required",
+  "observations": {
+    "extension_path": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+      "recorded_sha256": "e2d940b975b100590061e917e0a72c60bcafc0c6ba762d731213d83570681382",
+      "exists": true,
+      "actual_sha256": "a3d6d3406a6cb3f68f2826cd7a32b21f626c9acdd1cbd88418fbaa0c295c8791",
+      "matches": false
+    },
+    "source_extension_path": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/python/torch_rs/torch_rs.abi3.so",
+      "recorded_sha256": "e2d940b975b100590061e917e0a72c60bcafc0c6ba762d731213d83570681382",
+      "exists": true,
+      "actual_sha256": "a3d6d3406a6cb3f68f2826cd7a32b21f626c9acdd1cbd88418fbaa0c295c8791",
+      "matches": false
+    },
+    "wheel_path": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/relu-postcommit-a07d99d8/release/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+      "recorded_sha256": "7799946b0f14769fd978f08209d19a947063964c7739d72404ec84c187d7dcd9",
+      "exists": false,
+      "actual_sha256": null,
+      "matches": false
+    },
+    "interpreter_path": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_82b287ee/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+      "recorded_sha256": "f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526",
+      "exists": false,
+      "actual_sha256": null,
+      "matches": false
+    }
+  }
+}
