@@ -1,0 +1,11 @@
+--- a/tests/test_compile_cuda_reshape.py
++++ b/tests/test_compile_cuda_reshape.py
+@@ -198,7 +198,7 @@
+                 compiled(base)
+ 
+     def test_tensor_valued_invalid_binding_before_execution(self):
+-        x, y = native.ones((1,)).to('cuda:0'), torch.ones((1,), device='cuda:0')
++        x, y = native.ones((1,), device='cuda:0'), torch.ones((1,), device='cuda:0')
+         for expression in ('(1, shape=x)', '(1, foo=x)', '((1,), x)',
+                            '(shape=(1,), foo=x)', '(x, shape=(1,))',
+                            '(x, foo=1)', '(foo=x)'):

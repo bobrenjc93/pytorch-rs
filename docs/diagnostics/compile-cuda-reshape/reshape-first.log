@@ -1,0 +1,75 @@
+test_bits_mutation_independence_and_lifetimes (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_bits_mutation_independence_and_lifetimes) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ok
+test_cached_graph_early_late_and_repeated_output_metadata (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_cached_graph_early_late_and_repeated_output_metadata) ... ok
+test_composition_and_dynamic_alias_pack_transition (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_composition_and_dynamic_alias_pack_transition) ... ERROR
+test_guards_methods_and_blocked_reference_import (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_guards_methods_and_blocked_reference_import) ... ok
+test_large_valid_empty_singleton_scalar_and_pack (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_large_valid_empty_singleton_scalar_and_pack) ... ok
+test_live_globals_locals_and_helpers (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_live_globals_locals_and_helpers) ... ok
+test_public_binding_order_and_unsupported_forms (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_public_binding_order_and_unsupported_forms) ... 
+  test_public_binding_order_and_unsupported_forms (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_public_binding_order_and_unsupported_forms) (expression='(shape=1)') ... ERROR
+test_public_binding_order_and_unsupported_forms (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_public_binding_order_and_unsupported_forms) ... ERROR
+test_seeded_layouts_shapes_policies_identity_and_cache (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_seeded_layouts_shapes_policies_identity_and_cache) ... ok
+test_context_restoration_and_unused_mixed_capture (tests.test_compile_cuda_reshape.ReshapeDeviceTests.test_context_restoration_and_unused_mixed_capture) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_exact_dimensions_and_no_index_conversion (tests.test_compile_cuda_reshape.ReshapeMetadataTests.test_exact_dimensions_and_no_index_conversion) ... ok
+test_shared_native_planner_without_hardware (tests.test_compile_cuda_reshape.ReshapeMetadataTests.test_shared_native_planner_without_hardware) ... ok
+
+======================================================================
+ERROR: test_composition_and_dynamic_alias_pack_transition (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_composition_and_dynamic_alias_pack_transition)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/tests/test_compile_cuda_reshape.py", line 186, in test_composition_and_dynamic_alias_pack_transition
+    x, y = base[:rows, :3], ref[:rows, :3]
+           ~~~~^^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got slice)
+
+======================================================================
+ERROR: test_public_binding_order_and_unsupported_forms (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_public_binding_order_and_unsupported_forms) (expression='(shape=1)')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/tests/test_compile_cuda_reshape.py", line 219, in test_public_binding_order_and_unsupported_forms
+    compile_with_cache(fn)[0](x)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 442, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 840, in compiled_model
+    graph = _compile_bytecode.lower_one_input_compile_graph(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 1542, in lower_one_input_compile_graph
+    return lower_compile_graph(
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 1522, in lower_compile_graph
+    output = _lower_function_body(
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 1067, in _lower_function_body
+    output = _lower_instruction(
+             ^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 1468, in _lower_instruction
+    return _OPCODE_HANDLERS[kind](
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 1228, in _handle_call
+    _record_method_call(
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 1089, in _record_method_call
+    shape = _trace._bind_reshape_shape(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 585, in _bind_reshape_shape
+    raise CompileTraceUnsupportedError("torch.compile reshape requires exact integer constants or an exact tuple")
+torch_rs._compile_trace.CompileTraceUnsupportedError: torch.compile reshape requires exact integer constants or an exact tuple
+
+======================================================================
+ERROR: test_public_binding_order_and_unsupported_forms (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_public_binding_order_and_unsupported_forms)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/tests/test_compile_cuda_reshape.py", line 237, in test_public_binding_order_and_unsupported_forms
+    compile_with_cache(fn)[0](*((x, 1) if 'x, n' in text else (x,)))
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 442, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 806, in compiled_model
+    raise TypeError(
+TypeError: torch.compile trace bytecode lowering expected exact native torch_rs Tensor input, got <class 'int'>
+
+----------------------------------------------------------------------
+Ran 11 tests in 25.814s
+
+FAILED (errors=3, skipped=1)

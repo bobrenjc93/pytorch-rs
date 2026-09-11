@@ -1,0 +1,70 @@
+{
+  "checks": {
+    "compiler-regressions": 1,
+    "compiler-regressions-verified": 0,
+    "cpu-layout-verified": 0,
+    "cuda-packing-verified": 0,
+    "docs-verified": 0,
+    "hidden-verified": 0,
+    "imports": 0,
+    "imports-verified": 0,
+    "output-errors-verified": 0,
+    "preflight": 0,
+    "preflight-verified": 0,
+    "python-imports": 0,
+    "python-imports-verified": 0,
+    "reshape-final": 0,
+    "reshape-final-verified": 0,
+    "two-device-verified": 0,
+    "validation-after": 0,
+    "validation-after-verified": 0,
+    "validation-before": 1
+  },
+  "clean_commit_capture": "required after Burner commits this revision",
+  "extension_sha256": "aca5ce4d7e9f375886b57beb698fe3b1739c552d4e4a4bacdfddac27941a27cf",
+  "full_manifests_published": 1,
+  "installed_native_matches_build": true,
+  "installed_python_matches_source": true,
+  "manifest_count": 3,
+  "measurement_kind": "precommit-diagnostic",
+  "previous_inventories_unchanged": true,
+  "results": {
+    "compiler-regressions-verified": {
+      "passed": 222,
+      "skipped": 10
+    },
+    "cpu-layout-verified": {
+      "passed": 132,
+      "skipped": 0
+    },
+    "cuda-packing-verified": {
+      "passed": 6,
+      "skipped": 1
+    },
+    "hidden-verified": {
+      "passed": 2,
+      "skipped": 11
+    },
+    "output-errors-verified": {
+      "passed": 2,
+      "skipped": 0
+    },
+    "reshape-final-verified": {
+      "passed": 12,
+      "skipped": 1
+    },
+    "two-device-verified": {
+      "passed": 4,
+      "skipped": 0
+    },
+    "validation-after-verified": {
+      "passed": 1,
+      "skipped": 0
+    }
+  },
+  "source": {
+    "commit": "d3c2545604a20074a9fcde74e9b585d68fccc3ca",
+    "production_diff_sha256": "15adda5f191f519ae7e41ce2747d1251e44bd123a7aee6b9c995cf72a46c689b",
+    "source_sha256": "5ae61d6c8c8ca60f242fc3e3d5b931924ef898007873bccd1755b7c76033ceab"
+  }
+}

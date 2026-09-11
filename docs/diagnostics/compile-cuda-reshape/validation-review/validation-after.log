@@ -1,0 +1,6 @@
+test_partial_shapes_validate_known_errors_before_unsupported_capture (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_partial_shapes_validate_known_errors_before_unsupported_capture) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.673s
+
+OK

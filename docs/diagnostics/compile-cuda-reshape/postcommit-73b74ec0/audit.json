@@ -1,0 +1,78 @@
+{
+  "all_measurements_clean": true,
+  "checks": {
+    "clippy": 0,
+    "compiler-regressions": 0,
+    "cpu-layout": 0,
+    "cuda-packing": 0,
+    "docs": 0,
+    "format": 0,
+    "hidden": 0,
+    "imports": 0,
+    "preflight": 0,
+    "python-imports": 0,
+    "reshape-final": 0,
+    "rust-final": 0,
+    "rust-packing": 0,
+    "two-device": 0
+  },
+  "extension_sha256": "f4544c90fa3701984bb083c1ba6ae744bcfd187ea8e28ffa1c3b238c52179eda",
+  "historical_inventory_sha256": "fd3330e062f295ae7da730176ebbdc576da310c0b2d8532b6d04362bc01a5e8c",
+  "historical_inventory_unchanged": true,
+  "installed_native_matches_build": true,
+  "installed_python_matches_source": true,
+  "measured_commit": "73b74ec00a4608debc49ef0795231aa6298e68cb",
+  "measured_inputs_sha256": "9950df585ec505bf627e2540f7e79fe18ea1911e42036a8b840b0c936be9f656",
+  "measurement_kind": "clean-code",
+  "one_shared_input_manifest": true,
+  "prior_inventory_sha256": {
+    ".": "fd3330e062f295ae7da730176ebbdc576da310c0b2d8532b6d04362bc01a5e8c",
+    "binding-review": "ed30905c656cecc0c1f17c3b161c08175f008470adb29e478640be96866195f0",
+    "local-constant-review": "c4488d2cb704e2823c1fb6a5ba2607ceeb0d4205669348e47962892cc9a06ab7",
+    "postcommit-1ad5fd62": "3fd863ddce0f324bfa80a2a2a61a1f7b55c6ca4a43c07aae556d12b52c24685c",
+    "postcommit-3d44687d": "3b1eefd037709535397b32e23c4cdbff53033df0e3606f06aa923608ff142fe2",
+    "postcommit-7533cbbc": "cfe4a1eacc0f4bc7abbae3ff30b103a2038c455122490470871d4fc61703bb3c",
+    "validation-review": "e118c945068127ca781f8510915e7767d279ce0c97af6ddd7d89c9933d43365e"
+  },
+  "publication_policy": "evidence/docs only, after clean measurements; no implementation or harness edits",
+  "results": {
+    "compiler-regressions": {
+      "passed": 222,
+      "skipped": 10
+    },
+    "cpu-layout": {
+      "passed": 132,
+      "skipped": 0
+    },
+    "cuda-packing": {
+      "passed": 6,
+      "skipped": 1
+    },
+    "hidden": {
+      "passed": 2,
+      "skipped": 12
+    },
+    "reshape-final": {
+      "passed": 13,
+      "skipped": 1
+    },
+    "rust-final": {
+      "passed": 9,
+      "skipped": 0
+    },
+    "rust-packing": {
+      "passed": 1,
+      "skipped": 0
+    },
+    "two-device": {
+      "passed": 4,
+      "skipped": 0
+    }
+  },
+  "runtime_library_sha256": "96c42e418cec19054186b9429c321603cc190bf26a18104e19408117a2a817b0",
+  "source": {
+    "commit": "73b74ec00a4608debc49ef0795231aa6298e68cb",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source_sha256": "199c5415583dc51919af8fa04216cd3603ddbd095655029eee4f3c1d6614d5c9"
+  }
+}

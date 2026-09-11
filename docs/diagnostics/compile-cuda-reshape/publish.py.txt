@@ -1,0 +1,106 @@
+"""Publish development diagnostics using the existing source/build helpers."""
+import difflib, hashlib, json, shutil, subprocess, sys
+from pathlib import Path
+ROOT=Path.cwd()
+WORK=ROOT/'target/reshape'
+OUT=ROOT/'docs/diagnostics/compile-cuda-reshape'
+sys.path.insert(0,str(ROOT/'scripts'))
+from evaluate_cuda_math import source_provenance, sha256
+
+def dump(path,obj): path.write_text(json.dumps(obj,indent=2,sort_keys=True)+'\n')
+final=json.loads((WORK/'verified-build/build-record.json').read_text())
+assert all(final[k]==v for k,v in source_provenance().items())
+assert not final['clean_checkout']
+base=json.loads((WORK/'baseline/build-record.json').read_text())
+assert base['clean_checkout'] and base['commit']=='7ee52792de45df190efecf0e5812c2416e4f96ea'
+OUT.mkdir(parents=True,exist_ok=True)
+for build in ('baseline','development','final-build','verified-build'):
+    (OUT/build).mkdir(exist_ok=True)
+    for name in ('build-record.json','commands.json','build.log','install.log'):
+        shutil.copyfile(WORK/build/name,OUT/build/name)
+receipts={}
+final_checks={'preflight','imports','python-imports','reshape-final','compiler-regressions-final','two-device',
+              'cuda-packing','hidden','rust-final','rust-packing','rust-runtime-pinned','rust-packing-runtime-pinned','cpu-layout','format','docs'}
+for path in (WORK/'evidence').glob('*.receipt.json'):
+    record=json.loads(path.read_text())
+    name=path.name.removesuffix('.receipt.json')
+    assert record['source_before']==record['source_after']
+    assert record['inputs_unchanged'] and record['git_status_before']==record['git_status_after']
+    assert record['log_sha256']==sha256(WORK/'evidence'/f'{name}.log')
+    expected={'reshape-first':1,'rust-first':101,'clippy-second':101,'compiler-regressions':1}.get(name,0)
+    assert record['exit_status']==expected,(name,record['exit_status'])
+    if name in final_checks:
+        assert record['source_before']==source_provenance(),name
+        assert set(record['native_before'].values())=={final['extension_sha256']},name
+        assert record['native_before']==record['native_after'],name
+        assert record['command_files_before']==record['command_files_after'],name
+    receipts[name]=record
+    shutil.copyfile(path,OUT/path.name)
+    shutil.copyfile(WORK/'evidence'/f'{name}.log',OUT/f'{name}.log')
+assert final_checks <= receipts.keys()
+manifests={sha256(p):json.loads(p.read_text()) for p in (WORK/'evidence').glob('inputs-*.json')}
+final_hash=receipts['compiler-regressions-final']['measured_inputs_sha256']
+manifest=manifests[final_hash]
+dump(OUT/'measured-inputs.json',manifest)
+assert sha256(OUT/'measured-inputs.json')==final_hash
+index={}
+for digest,measured in manifests.items():
+    if digest==final_hash:
+        index[digest]={'file':'measured-inputs.json'}
+        continue
+    delta={p:h for p,h in measured.items() if manifest.get(p)!=h}
+    removed=sorted(set(manifest)-set(measured))
+    name='inputs-delta-'+digest[:12]+'.json'
+    dump(OUT/name,{'replace':delta,'remove':removed})
+    recovered={p:h for p,h in manifest.items() if p not in removed}|delta
+    assert hashlib.sha256((json.dumps(recovered,indent=2,sort_keys=True)+'\n').encode()).hexdigest()==digest
+    index[digest]={'base':'measured-inputs.json','delta':name}
+dump(OUT/'manifest-index.json',index)
+for saved,path,receipt,name in (
+    ('first-tests.py.txt','tests/test_compile_cuda_reshape.py','reshape-first','first-test-fixture.patch'),
+    ('rust-first.rs.txt','src/tensor_cuda_graph.rs','rust-first','rust-first.patch'),
+    ('rust-before-clippy.rs.txt','src/tensor_cuda_graph.rs','clippy-second','clippy-first.patch')):
+    assert sha256(WORK/saved)==manifests[receipts[receipt]['measured_inputs_sha256']][path]
+    patch=difflib.unified_diff((ROOT/path).read_text().splitlines(keepends=True),
+        (WORK/saved).read_text().splitlines(keepends=True),fromfile='a/'+path,tofile='b/'+path)
+    (OUT/name).write_text(''.join(patch))
+boundary_patch=[]
+for path in ('tests/test_compile_cuda_t.py','tests/test_compile_cuda_contiguous.py'):
+    saved=WORK/(Path(path).name+'.before.txt')
+    assert sha256(saved)==manifests[receipts['compiler-regressions']['measured_inputs_sha256']][path]
+    boundary_patch.extend(difflib.unified_diff((ROOT/path).read_text().splitlines(keepends=True),
+        saved.read_text().splitlines(keepends=True),fromfile='a/'+path,tofile='b/'+path))
+(OUT/'old-boundaries.patch').write_text(''.join(boundary_patch))
+for source,name in (
+    ('capture.py','capture.py.txt'),('capture-initial.py.txt','capture-initial.py.txt'),
+    ('env.sh','environment.sh.txt'),('baseline_gap.py','baseline-gap.py.txt'),
+    ('preflight.py','preflight.py.txt'),('check_install.py','check-install.py.txt'),
+    ('validate.py','validate.py.txt'),('resume.py','resume.py.txt'),('publish.py','publish.py.txt'),
+    ('setup-commands.txt','setup-commands.txt'),('docs_example.py','docs-example.py.txt'),
+    ('first-source.patch','first-source-from-baseline.patch')):
+    shutil.copyfile(WORK/source,OUT/name)
+for name in ('setup.log',):
+    shutil.copyfile(WORK/'evidence'/name,OUT/name)
+import torch_rs
+installed=Path(torch_rs.__file__).parent
+for path in (ROOT/'python/torch_rs').rglob('*.py'):
+    assert sha256(path)==sha256(installed/path.relative_to(ROOT/'python/torch_rs'))
+assert sha256(torch_rs._C.__file__)==final['extension_sha256']
+changed=subprocess.check_output(['git','diff','--name-only','HEAD'],text=True).splitlines()
+allowed={'ARCHITECTURE.md','FEATURES.md','docs/README.md','docs/compile-cuda-t.md','docs/compile-cuda-contiguous.md','docs/supported-surface.md',
+         'python/torch_rs/__init__.py','python/torch_rs/_compile_bytecode.py','python/torch_rs/_compile_trace.py',
+         'src/python.rs','src/python_compile_cuda_graph.rs','src/tensor.rs','src/tensor_cuda_graph.rs',
+         'tests/test_compile_cuda_t.py','tests/test_compile_cuda_contiguous.py'}
+assert set(changed)<=allowed,changed
+untracked=subprocess.check_output(['git','ls-files','--others','--exclude-standard'],text=True).splitlines()
+assert all(p in ('tests/test_compile_cuda_reshape.py','docs/compile-cuda-reshape.md') or p.startswith('docs/diagnostics/compile-cuda-reshape/') for p in untracked),untracked
+assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==base['commit']
+dump(OUT/'audit.json',{'source':source_provenance(),'final_extension_sha256':final['extension_sha256'],
+    'installed_python_matches_source':True,'installed_native_matches_build':True,
+    'baseline_clean_build_verified':True,'candidate_clean_commit_capture':'pending Burner delivery commit; agent cannot commit',
+    'checks':{name:r['exit_status'] for name,r in receipts.items()},
+    'manifest_count':len(manifests),'full_manifests_published':1,'tracked_changed_paths':changed,
+    'managed_artifacts_and_evaluators_unchanged':True,
+    'changed_docs_sha256':{p:sha256(ROOT/p) for p in [*changed, 'docs/compile-cuda-reshape.md'] if p.endswith('.md')}})
+dump(OUT/'inventory.json',{str(p.relative_to(OUT)):sha256(p) for p in OUT.rglob('*') if p.is_file() and p.name!='inventory.json'})
+print('Published',len(receipts),'receipts; verified sources/build/imports and deduplicated manifests.')

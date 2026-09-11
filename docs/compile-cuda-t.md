@@ -50,8 +50,10 @@ Index-like objects/integer subclasses, named dimensions and dynamic axis
 expressions are deliberately unsupported. Static and dynamic policies do not
 imply support for arbitrary shape-dependent Python expressions.
 
+[Constant-shape rank-0/1/2 reshape](compile-cuda-reshape.md) also composes with these views.
+
 Arguments to `t()`, rank >2, CPU capture, other dtypes, gradients,
-`swapdims`/`swapaxes`, general permute/reshape, `.T`/`.mT`, top-level
+`swapdims`/`swapaxes`, general permute, `.T`/`.mT`, top-level
 `torch.t`/`torch.transpose` and new backends remain unsupported. No-break
 `fullgraph=False` retains its existing default-dynamic policy. These graphlets are non-scoring diagnostics: the frozen 38-case corpus,
 performance workloads, evaluator/observer/hardware contracts and unadopted

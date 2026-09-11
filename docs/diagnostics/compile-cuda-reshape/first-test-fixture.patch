@@ -1,0 +1,20 @@
+--- a/tests/test_compile_cuda_reshape.py
++++ b/tests/test_compile_cuda_reshape.py
+@@ -183,7 +183,7 @@
+         for dynamic in (False, True):
+             compiled, cache = compile_with_cache(fn, dynamic=dynamic)
+             for rows in (1, 5, 0, 1):
+-                x, y = base[:rows][:, :3], ref[:rows][:, :3]
++                x, y = base[:rows, :3], ref[:rows, :3]
+                 out, expected = compiled(x), y.reshape(-1)
+                 self.assert_pair(out, expected)
+                 if x.numel():
+@@ -233,7 +233,7 @@
+                      'def program(x):\n    return x.reshape_as(x)\n',
+                      'def program(x):\n    return module.reshape(x, (1,))\n'):
+             fn = make_program(text, module=native)
+-            with self.assertRaises(TypeError if 'x, n' in text else NotImplementedError):
++            with self.assertRaises(NotImplementedError):
+                 compile_with_cache(fn)[0](*((x, 1) if 'x, n' in text else (x,)))
+         # View-compatible reshape may remain strided; arithmetic still needs packing.
+         for expression in ('-x.reshape(-1)', 'x.reshape(-1) * 2.'):

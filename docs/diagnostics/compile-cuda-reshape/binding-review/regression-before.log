@@ -1,0 +1,15 @@
+test_tensor_valued_invalid_binding_before_execution (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_tensor_valued_invalid_binding_before_execution) ... ERROR
+
+======================================================================
+ERROR: test_tensor_valued_invalid_binding_before_execution (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_tensor_valued_invalid_binding_before_execution)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/tests/test_compile_cuda_reshape.py", line 201, in test_tensor_valued_invalid_binding_before_execution
+    x, y = native.ones((1,), device='cuda:0'), torch.ones((1,), device='cuda:0')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: ones(): device 'cuda:0' is not supported; only 'cpu' is implemented
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (errors=1)

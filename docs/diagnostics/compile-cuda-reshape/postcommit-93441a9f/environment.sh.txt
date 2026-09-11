@@ -1,0 +1,17 @@
+export UV_CACHE_DIR="$PWD/target/root-docs-uv-cache"
+export UV_PYTHON_INSTALL_DIR="$PWD/target/reshape-postcommit-93441a9f/python"
+export CARGO_HOME="$PWD/target/reshape-postcommit-93441a9f/cargo"
+export CARGO_TARGET_DIR="$PWD/target/reshape-postcommit-93441a9f/build"
+export TMPDIR="$PWD/target/reshape-postcommit-93441a9f/tmp"
+export XDG_CACHE_HOME="$PWD/target/reshape-postcommit-93441a9f/cache"
+export CUDA_CACHE_PATH="$PWD/target/reshape-postcommit-93441a9f/cuda"
+export TORCHINDUCTOR_CACHE_DIR="$PWD/target/reshape-postcommit-93441a9f/inductor"
+export TRITON_CACHE_DIR="$PWD/target/reshape-postcommit-93441a9f/triton"
+export PYTHONPYCACHEPREFIX="$PWD/target/reshape-postcommit-93441a9f/pycache"
+export CUDA_VISIBLE_DEVICES=0
+export VIRTUAL_ENV="$PWD/.venv"
+export PYO3_PYTHON="$PWD/.venv/bin/python"
+export GIT_OPTIONAL_LOCKS=0
+export UV_PYTHON_BIN_DIR="$PWD/target/reshape-postcommit-93441a9f/python-bin"
+export UV_LINK_MODE=copy
+export TORCH_RS_CUDART="$PWD/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13"

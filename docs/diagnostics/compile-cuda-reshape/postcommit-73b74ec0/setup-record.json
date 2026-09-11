@@ -1,0 +1,99 @@
+{
+  "commit": "73b74ec00a4608debc49ef0795231aa6298e68cb",
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a",
+  "bootstrap_python": "/home/bobren/local/a/pytorch-env/bin/python3",
+  "commands": [
+    {
+      "command": [
+        "mv",
+        ".venv",
+        "target/reshape-local-review/development-venv"
+      ],
+      "started_at": "2026-09-11T10:10:58.151119+00:00",
+      "ended_at": "2026-09-11T10:10:58.155902+00:00",
+      "wall_seconds": 0.004765478894114494,
+      "exit_status": 0,
+      "git_status_after": ""
+    },
+    {
+      "command": [
+        "uv",
+        "python",
+        "install",
+        "3.12.14"
+      ],
+      "started_at": "2026-09-11T10:10:58.261457+00:00",
+      "ended_at": "2026-09-11T10:10:59.067132+00:00",
+      "wall_seconds": 0.8057117592543364,
+      "exit_status": 0,
+      "git_status_after": ""
+    },
+    {
+      "command": [
+        "uv",
+        "venv",
+        "--python",
+        "3.12.14"
+      ],
+      "started_at": "2026-09-11T10:10:59.174549+00:00",
+      "ended_at": "2026-09-11T10:10:59.330812+00:00",
+      "wall_seconds": 0.15627000853419304,
+      "exit_status": 0,
+      "git_status_after": ""
+    },
+    {
+      "command": [
+        "uv",
+        "sync",
+        "--locked",
+        "--no-install-project",
+        "--group",
+        "dev",
+        "--group",
+        "reference"
+      ],
+      "started_at": "2026-09-11T10:10:59.435838+00:00",
+      "ended_at": "2026-09-11T10:11:01.358336+00:00",
+      "wall_seconds": 1.9224929912015796,
+      "exit_status": 0,
+      "git_status_after": ""
+    },
+    {
+      "command": [
+        "cp",
+        "-a",
+        "target/reshape/cargo/registry",
+        "target/reshape-postcommit-73b74ec0/cargo/"
+      ],
+      "started_at": "2026-09-11T10:11:01.461199+00:00",
+      "ended_at": "2026-09-11T10:11:01.637892+00:00",
+      "wall_seconds": 0.17669489607214928,
+      "exit_status": 0,
+      "git_status_after": ""
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "scripts/capture_depth_concat_build.py",
+        "--output",
+        "target/reshape-postcommit-73b74ec0/release"
+      ],
+      "started_at": "2026-09-11T10:11:01.744816+00:00",
+      "ended_at": "2026-09-11T10:11:51.757768+00:00",
+      "wall_seconds": 50.012957327999175,
+      "exit_status": 0,
+      "git_status_after": ""
+    }
+  ],
+  "environment": {
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/target/reshape/uv",
+    "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/target/reshape-postcommit-73b74ec0/python-bin",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/target/reshape-postcommit-73b74ec0/cuda",
+    "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/target/reshape-postcommit-73b74ec0/python",
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/target/reshape-postcommit-73b74ec0/cargo",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/target/reshape-postcommit-73b74ec0/tmp",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/target/reshape-postcommit-73b74ec0/cache"
+  },
+  "cache_state": "fresh canonical .venv, fresh local interpreter install, populated current-worktree uv cache and copied registry, empty release target",
+  "setup_log_sha256": "f9e777b71cadcd0f98fcad708381f57c3a828d3d3c431f47fe3d38d7d9e6316a"
+}

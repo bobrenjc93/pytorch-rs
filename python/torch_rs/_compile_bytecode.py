@@ -28,6 +28,13 @@ class _BytecodeConstant:
 
 
 @dataclass(frozen=True, slots=True)
+class _BytecodeTuple:
+    # Mixed constants/tensors are retained for reshape call validation only.
+    # They are not Tensor output pytrees or accepted helper arguments.
+    elements: tuple
+
+
+@dataclass(frozen=True, slots=True)
 class _BytecodeKeywordNames:
     names: tuple[str, ...]
 
@@ -104,6 +111,8 @@ class _LoweringState:
     )
     global_values: dict[str, object] = field(default_factory=dict)
     helper_call_count: int = 0
+    has_mixed_tuple: bool = False
+    local_constant_error: _trace.CompileTraceUnsupportedError | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +149,7 @@ class _OpcodeForm:
 
 
 _METHOD_TARGETS = {
+    "reshape": _MethodTarget("view", "reshape", 1, "Tensor.reshape"),
     "transpose": _MethodTarget("view", "transpose", 2, "Tensor.transpose"),
     "t": _MethodTarget("unary", "t", 0, "Tensor.t"),
     "contiguous": _MethodTarget("unary", "contiguous", 0, "Tensor.contiguous"),
@@ -955,6 +965,8 @@ def _require_tensor(value, program, instruction, role):
 def _require_output_value(value, program, instruction, role):
     if _builtins.isinstance(value, _trace.CompileTraceTensorProxy):
         return value
+    if isinstance(value, _BytecodeTuple):
+        return _require_output_value(value.elements, program, instruction, "tuple return value")
     if _builtins.type(value) in (_builtins.tuple, _builtins.list):
         for index, element in enumerate(value):
             _require_output_value(
@@ -967,10 +979,20 @@ def _require_output_value(value, program, instruction, role):
     _unsupported_bytecode(program, instruction, f"non-Tensor {role}")
 
 
-def _store_local(locals, stack, program, instruction, name):
+def _store_local(locals, stack, program, instruction, name, state):
     value = _pop(stack, program, instruction)
+    if isinstance(value, _BytecodeTuple):
+        locals[name] = value
+        return
     if _builtins.isinstance(value, _BytecodeConstant):
-        _trace._normalize_mul_scalar(value.value)
+        if type(value.value) not in (int, tuple):
+            try:
+                _trace._normalize_mul_scalar(value.value)
+            except _trace.CompileTraceUnsupportedError as error:
+                # Preserve the value for public reshape argument validation.
+                # Still reject the graph if the local is unused or overwritten.
+                if state.local_constant_error is None:
+                    state.local_constant_error = error
         locals[name] = value
         return
     locals[name] = _require_output_value(
@@ -1079,7 +1101,24 @@ def _lower_function_body(
     )
 
 
+def _reshape_argument(value):
+    if isinstance(value, _BytecodeConstant):
+        return value.value
+    if isinstance(value, _BytecodeTuple):
+        return tuple(_reshape_argument(element) for element in value.elements)
+    if type(value) is tuple:
+        return tuple(_reshape_argument(element) for element in value)
+    return _trace._RESHAPE_UNKNOWN_DIMENSION
+
+
 def _record_method_call(recorder, method, args, program, instruction, names=()):
+    if method.name == "reshape":
+        positional = len(args) - len(names)
+        values = tuple(_reshape_argument(value) for value in args)
+        positional_args = values[:positional]
+        kwargs = dict(zip(names, values[positional:]))
+        shape = _trace._bind_reshape_shape(positional_args, kwargs)
+        return recorder.record_reshape(method.receiver, shape)
     if method.name == "transpose":
         positional = len(args) - len(names)
         if positional > 2:
@@ -1361,9 +1400,9 @@ def _handle_local_load_pair(
 
 
 def _handle_store(recorder, locals, stack, program, instruction, state, active):
-    del recorder, state, active
+    del recorder, active
     (name,) = _local_names(program, instruction, 1)
-    _store_local(locals, stack, program, instruction, name)
+    _store_local(locals, stack, program, instruction, name, state)
 
 
 def _handle_store_load(
@@ -1375,9 +1414,9 @@ def _handle_store_load(
     state,
     active,
 ):
-    del recorder, state, active
+    del recorder, active
     store_name, load_name = _local_names(program, instruction, 2)
-    _store_local(locals, stack, program, instruction, store_name)
+    _store_local(locals, stack, program, instruction, store_name, state)
     _load_local(locals, stack, program, instruction, load_name)
 
 
@@ -1390,10 +1429,10 @@ def _handle_store_store(
     state,
     active,
 ):
-    del recorder, state, active
+    del recorder, active
     first_name, second_name = _local_names(program, instruction, 2)
-    _store_local(locals, stack, program, instruction, first_name)
-    _store_local(locals, stack, program, instruction, second_name)
+    _store_local(locals, stack, program, instruction, first_name, state)
+    _store_local(locals, stack, program, instruction, second_name, state)
 
 
 def _handle_load_const(recorder, locals, stack, program, instruction, state, active):
@@ -1402,10 +1441,17 @@ def _handle_load_const(recorder, locals, stack, program, instruction, state, act
 
 
 def _handle_build_tuple(recorder, locals, stack, program, instruction, state, active):
-    del recorder, locals, state, active
+    del recorder, locals, active
     argument_count = instruction.arg or 0
     values = [_pop(stack, program, instruction) for _ in range(argument_count)]
     values.reverse()
+    if values and all(isinstance(value, _BytecodeConstant) for value in values):
+        stack.append(_BytecodeConstant(tuple(value.value for value in values)))
+        return
+    if any(isinstance(value, (_BytecodeConstant, _BytecodeTuple)) for value in values):
+        state.has_mixed_tuple = True
+        stack.append(_BytecodeTuple(tuple(values)))
+        return
     output = tuple(values)
     _require_output_value(output, program, instruction, "tuple return value")
     stack.append(output)
@@ -1515,6 +1561,12 @@ def lower_compile_graph(program, input_metadatas, *, name=None, compile_request=
         (program,),
         _lowerable_bytecode_instructions(program, code, input_metadatas),
     )
+    if state.local_constant_error is not None:
+        raise state.local_constant_error
+    if state.has_mixed_tuple:
+        raise _trace.CompileTraceUnsupportedError(
+            "torch.compile mixed constant/Tensor tuples are only retained for reshape argument validation"
+        )
     return recorder.finish(output)
 
 

@@ -1,0 +1,9 @@
+test_context_restoration_and_unused_mixed_capture (tests.test_compile_cuda_reshape.ReshapeDeviceTests.test_context_restoration_and_unused_mixed_capture) ... ok
+test_restore_device_context_and_unused_capture (tests.test_compile_cuda_transpose.TransposeDeviceTests.test_restore_device_context_and_unused_capture) ... ok
+test_device_context_and_unused_capture (tests.test_compile_cuda_t.CompileTDeviceTests.test_device_context_and_unused_capture) ... ok
+test_device_and_context_restored (tests.test_compile_cuda_contiguous.CompileContiguousDeviceTests.test_device_and_context_restored) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.504s
+
+OK

@@ -1,0 +1,53 @@
+"""Record unchanged repository commands; never adapt a workload or its results."""
+import datetime, hashlib, json, os, subprocess, sys, time
+from pathlib import Path
+ROOT = Path.cwd().resolve()
+OUT = ROOT / 'target/reshape-postcommit-93441a9f/evidence'
+COMMIT = '93441a9fc13e8124a507a34810f2c3d97f7e69f1'
+sys.path.insert(0, str(ROOT / 'scripts'))
+from evaluate_cuda_math import source_provenance
+
+def sha(path): return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+def stamp(): return datetime.datetime.now(datetime.timezone.utc).isoformat()
+def status(): return subprocess.check_output(['git', 'status', '--porcelain'], text=True)
+def gpu():
+    return subprocess.check_output(['nvidia-smi', '--query-gpu=index,uuid,name,driver_version,compute_cap,utilization.gpu,memory.used,memory.total', '--format=csv'], text=True)
+def inputs():
+    paths = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', 'src', 'python', 'tests', 'scripts', '.github/scripts', 'Cargo.toml', 'Cargo.lock', 'pyproject.toml', 'uv.lock', 'rust-toolchain.toml'], text=True).split('\0')
+    return {p: sha(ROOT/p) for p in paths if p}
+def native():
+    return {str(p.resolve()): sha(p) for directory in (ROOT/'python/torch_rs', ROOT/'.venv/lib/python3.12/site-packages/torch_rs') for p in directory.glob('*.so')}
+
+def command_files(command):
+    return {str(Path(arg).resolve()): sha(arg) for arg in command
+            if Path(arg).is_file() and Path(arg).resolve().is_relative_to(ROOT)}
+
+def main():
+    name, *command = sys.argv[1:]
+    log = OUT / f'{name}.log'
+    receipt = OUT / f'{name}.receipt.json'
+    assert not log.exists() and not receipt.exists(), 'preserve previous attempts'
+    before = source_provenance()
+    assert before['commit'] == COMMIT
+    status_before = status()
+    assert status_before == '', 'clean committed checkout required'
+    manifest = inputs()
+    input_file = OUT / ('inputs-' + hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest() + '.json')
+    if input_file.exists(): assert json.loads(input_file.read_text()) == manifest
+    else: input_file.write_text(json.dumps(manifest, indent=2, sort_keys=True)+'\n')
+    record = {'command': command, 'command_files_before': command_files(command), 'capture_script_sha256': sha(__file__), 'cwd': str(ROOT), 'started_at': stamp(), 'source_before': before,
+              'git_status_before': status(), 'native_before': native(), 'gpu_before': gpu(),
+              'measured_inputs_sha256': sha(input_file),
+              'environment': {key: os.environ.get(key) for key in ('GIT_OPTIONAL_LOCKS', 'CARGO_HOME', 'CARGO_TARGET_DIR', 'UV_CACHE_DIR', 'UV_PYTHON_INSTALL_DIR', 'TMPDIR', 'XDG_CACHE_HOME', 'CUDA_CACHE_PATH', 'TORCHINDUCTOR_CACHE_DIR', 'TRITON_CACHE_DIR', 'PYTHONPYCACHEPREFIX', 'CUDA_VISIBLE_DEVICES', 'TORCH_RS_CUDART', 'PYO3_PYTHON', 'VIRTUAL_ENV')}}
+    start = time.monotonic()
+    with log.open('w') as stream:
+        result = subprocess.run(command, cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT)
+    record.update(ended_at=stamp(), wall_seconds=time.monotonic()-start, exit_status=result.returncode,
+                  source_after=source_provenance(), git_status_after=status(), gpu_after=gpu(),
+                  native_after=native(), command_files_after=command_files(command), inputs_unchanged=inputs()==manifest, log_sha256=sha(log))
+    receipt.write_text(json.dumps(record, indent=2)+'\n')
+    print(name, result.returncode, flush=True)
+    assert record['source_after'] == before and record['git_status_after'] == status_before and record['inputs_unchanged'] and record['command_files_before'] == record['command_files_after']
+    sys.exit(result.returncode)
+
+if __name__ == '__main__': main()

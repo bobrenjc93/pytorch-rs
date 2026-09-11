@@ -1,0 +1,6 @@
+test_local_nonnumeric_constants_preserve_public_binding_errors (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_local_nonnumeric_constants_preserve_public_binding_errors) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 1.300s
+
+OK

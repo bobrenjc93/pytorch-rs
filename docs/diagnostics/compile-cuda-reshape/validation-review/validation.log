@@ -1,0 +1,14 @@
+preflight 0
+imports 0
+python-imports 0
+validation-after 0
+reshape-final 0
+compiler-regressions 1
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/target/reshape-validation-review/validate.py", line 14, in <module>
+    run('compiler-regressions',python,'-m','unittest','-v',*[f'tests.{n}' for n in (
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/target/reshape-validation-review/validate.py", line 8, in run
+    subprocess.run(capture+[name,*args],env={**os.environ,'CUDA_VISIBLE_DEVICES':visible},check=True)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/target/reshape-postcommit-7533cbbc/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/bin/python', '/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/target/reshape-validation-review/capture.py', 'compiler-regressions', '/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/bin/python', '-m', 'unittest', '-v', 'tests.test_compile_cuda_transpose', 'tests.test_compile_cuda_t', 'tests.test_compile_cuda_contiguous', 'tests.test_compile_cuda_boundary', 'tests.test_compile_cuda_graph', 'tests.test_compile_cuda_neg', 'tests.test_compile_cuda_mul_scalar', 'tests.test_compile_cuda_matmul', 'tests.test_compile_cuda_sum_rows', 'tests.test_compile_cuda_trailing_vector', 'tests.test_compile_sum_lowering', 'tests.test_compile_static_analysis', 'tests.test_top_level_compile', 'tests.test_compile_corpus', 'tests.test_compile_tanh_composition']' returned non-zero exit status 1.

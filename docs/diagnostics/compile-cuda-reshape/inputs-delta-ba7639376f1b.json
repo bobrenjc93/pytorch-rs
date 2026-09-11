@@ -1,0 +1,12 @@
+{
+  "remove": [],
+  "replace": {
+    "python/torch_rs/__init__.py": "18eea24d4a6b2018d812c1f49ba356baf9b5f19092312c0d84db81826bc5d10d",
+    "python/torch_rs/_compile_trace.py": "0d5858cbc4414ec18d02b532225c8b96ef28390d673d1f6448dc50f76faab471",
+    "src/python_compile_cuda_graph.rs": "c324444e6777cf0253cc4c5c95f10d7494aa8ba413341101b26cf810de650db3",
+    "src/tensor_cuda_graph.rs": "4d9c5ee7703b0a7f739e41c98022345d5d8fe14197a3bbd81372439536cd1e23",
+    "tests/test_compile_cuda_contiguous.py": "8d0c2c617fc5b6c22f2556ba6d92af1d00b58097abb187c87f19e1e5810d5e9a",
+    "tests/test_compile_cuda_reshape.py": "a1eae6b791a97426fa0cffa67bea00eb5ee4b90ef666437485c784b33f760ee5",
+    "tests/test_compile_cuda_t.py": "1607002954d4832198a0d1e7b9075f11dd933105ae9d672ba5ab452a4d293343"
+  }
+}

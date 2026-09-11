@@ -1,0 +1,22 @@
+import datetime, hashlib, json, os, subprocess, sys, time
+from pathlib import Path
+root=Path.cwd()
+out=root/'target/reshape-postcommit-93441a9f'
+def stamp(): return datetime.datetime.now(datetime.timezone.utc).isoformat()
+def status(): return subprocess.check_output(['git','status','--porcelain'],text=True)
+assert status()==''
+assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()=='93441a9fc13e8124a507a34810f2c3d97f7e69f1'
+commands=[['mv','.venv','target/reshape-postcommit-93441a9f/previous-venv'],['uv','python','install','3.12.14'],
+ ['uv','venv','--python','3.12.14'],['uv','sync','--locked','--no-install-project','--group','dev','--group','reference'],
+ ['cp','-a','target/root-docs-cargo/registry','target/reshape-postcommit-93441a9f/cargo/'],
+ ['.venv/bin/python','scripts/capture_depth_concat_build.py','--output','target/reshape-postcommit-93441a9f/release']]
+records=[]
+for command in commands:
+ start=stamp(); tick=time.monotonic()
+ with (out/'setup.log').open('a') as stream:
+  stream.write(json.dumps(command)+'\n');stream.flush()
+  result=subprocess.run(command,stdout=stream,stderr=subprocess.STDOUT)
+ records.append(dict(command=command,started_at=start,ended_at=stamp(),wall_seconds=time.monotonic()-tick,exit_status=result.returncode,git_status_after=status()))
+ (out/'setup-record.json').write_text(json.dumps(dict(commit='93441a9fc13e8124a507a34810f2c3d97f7e69f1',cwd=str(root),bootstrap_python=sys.executable,commands=records,environment={k:v for k,v in os.environ.items() if k in ('UV_CACHE_DIR','UV_PYTHON_INSTALL_DIR','UV_PYTHON_BIN_DIR','CARGO_HOME','TMPDIR','XDG_CACHE_HOME','CUDA_CACHE_PATH')},cache_state='fresh canonical .venv, fresh local interpreter install, populated current-worktree uv cache and copied registry, empty release target',setup_log_sha256=hashlib.sha256((out/'setup.log').read_bytes()).hexdigest()),indent=2)+'\n')
+ result.check_returncode(); assert status()==''
+ print(command[0],result.returncode,flush=True)

@@ -1,0 +1,16 @@
+{
+  "remove": [
+    "tests/test_compile_cuda_reshape.py"
+  ],
+  "replace": {
+    "python/torch_rs/__init__.py": "16e3030eca431a0f219c7a10b059ed631eb163756fed8c5fe2e09072ac7d4427",
+    "python/torch_rs/_compile_bytecode.py": "ee6cc32f4bdca424d3b7b759fab7c42bf8d185a09103928e2dd20c1272831fec",
+    "python/torch_rs/_compile_trace.py": "f3cf5ff9ff0d877576a25971043ae43b8f858231c8e78a22dd657ba6ef08fc7b",
+    "src/python.rs": "f90822c318c34cf33fec25150f2ac8eb400ab6311a27362f5aff10b7b1f73c2e",
+    "src/python_compile_cuda_graph.rs": "9cc87042eae387427d05f0ac321b7cfda8e5f765e00a614469ef361d2013d838",
+    "src/tensor.rs": "747c3113da33dfebe832cf1ca3b68ebef985685cba97d313ba917c38886246b7",
+    "src/tensor_cuda_graph.rs": "1ed37518e50d224d51795d428acb2397bc9662ff6db5466a1e9dd522ecc4a421",
+    "tests/test_compile_cuda_contiguous.py": "8d0c2c617fc5b6c22f2556ba6d92af1d00b58097abb187c87f19e1e5810d5e9a",
+    "tests/test_compile_cuda_t.py": "1607002954d4832198a0d1e7b9075f11dd933105ae9d672ba5ab452a4d293343"
+  }
+}

@@ -25977,6 +25977,10 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
     module.add_function(wrap_pyfunction!(compile_trace_scalar, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_reduction, module)?)?;
     module.add_function(wrap_pyfunction!(compile_cuda_graph::execute, module)?)?;
+    module.add_function(wrap_pyfunction!(
+        compile_cuda_graph::reshape_metadata,
+        module
+    )?)?;
     module.add_function(wrap_pyfunction!(compile_trace_mul_scalar_value, module)?)?;
     let exports = module.getattr("__all__")?;
     for name in [
@@ -25989,6 +25993,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
         "_compile_trace_scalar",
         "_compile_trace_reduction",
         "_compile_trace_cuda_graph",
+        "_compile_trace_cuda_reshape_metadata",
         "_compile_trace_mul_scalar_value",
     ] {
         exports.call_method1("remove", (name,))?;

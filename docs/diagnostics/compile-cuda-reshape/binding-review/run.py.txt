@@ -1,0 +1,16 @@
+import os, subprocess, sys
+from pathlib import Path
+root=Path.cwd()
+python=str(root/'.venv/bin/python')
+capture=[python,str(root/'target/reshape-binding-review/capture.py')]
+def run(name,*command,visible='0'):
+    subprocess.run(capture+[name,*command],env={**os.environ,'CUDA_VISIBLE_DEVICES':visible},check=True)
+run('imports-final',python,'.github/scripts/verify_native_extension.py')
+run('python-imports-final',python,'target/reshape-postcommit-1ad5fd62/check_install.py')
+run('preflight',python,'target/reshape-postcommit-1ad5fd62/preflight.py')
+run('binding-after',python,'-m','unittest','-v','tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_tensor_valued_invalid_binding_before_execution')
+run('reshape',python,'-m','unittest','-v','tests.test_compile_cuda_reshape')
+run('compiler',python,'-m','unittest','-v','tests.test_compile_cuda_boundary','tests.test_compile_cuda_transpose','tests.test_compile_cuda_t','tests.test_compile_cuda_contiguous','tests.test_compile_static_analysis','tests.test_top_level_compile')
+run('hidden',python,'-m','unittest','-v','tests.test_compile_cuda_reshape',visible='')
+run('reshape-reference',python,'-m','unittest','-v','tests.test_reshape','tests.test_reshape_reference')
+run('docs',python,'target/reshape-postcommit-1ad5fd62/docs_example.py')

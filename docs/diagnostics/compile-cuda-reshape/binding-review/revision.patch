@@ -1,0 +1,103 @@
+diff --git a/python/torch_rs/_compile_bytecode.py b/python/torch_rs/_compile_bytecode.py
+index c6f009c..cb57117 100644
+--- a/python/torch_rs/_compile_bytecode.py
++++ b/python/torch_rs/_compile_bytecode.py
+@@ -1083,13 +1083,16 @@ def _lower_function_body(
+ 
+ def _record_method_call(recorder, method, args, program, instruction, names=()):
+     if method.name == "reshape":
++        positional = len(args) - len(names)
++        values = tuple(value.value if isinstance(value, _BytecodeConstant) else value for value in args)
++        positional_args = values[:positional]
++        kwargs = dict(zip(names, values[positional:]))
+         if any(not isinstance(value, _BytecodeConstant) for value in args):
++            # Invalid calls still have public binding errors even when a value
++            # cannot be captured. Do not convert or evaluate that value.
++            _trace._validate_reshape_binding(positional_args, kwargs)
+             _unsupported_bytecode(program, instruction, "Tensor.reshape requires constant dimensions")
+-        positional = len(args) - len(names)
+-        shape = _trace._bind_reshape_shape(
+-            tuple(value.value for value in args[:positional]),
+-            dict(zip(names, (value.value for value in args[positional:]))),
+-        )
++        shape = _trace._bind_reshape_shape(positional_args, kwargs)
+         return recorder.record_reshape(method.receiver, shape)
+     if method.name == "transpose":
+         positional = len(args) - len(names)
+diff --git a/python/torch_rs/_compile_trace.py b/python/torch_rs/_compile_trace.py
+index cdaa0fe..430dbb9 100644
+--- a/python/torch_rs/_compile_trace.py
++++ b/python/torch_rs/_compile_trace.py
+@@ -570,6 +570,19 @@ def _reshape_dimensions(shape):
+     return shape
+ 
+ 
++def _validate_reshape_binding(args, kwargs):
++    """Check call structure without inspecting or converting dimension values."""
++    if not args and "shape" not in kwargs:
++        raise TypeError('reshape() missing 1 required positional arguments: "shape"')
++    if args and type(args[0]) is tuple and len(args) > 1:
++        raise TypeError("reshape() takes 1 positional argument")
++    if args and "shape" in kwargs:
++        raise TypeError("reshape() got multiple values for argument 'shape'")
++    for name in kwargs:
++        if name != "shape":
++            raise TypeError(f"reshape() got an unexpected keyword argument '{name}'")
++
++
+ def _bind_reshape_shape(args, kwargs):
+     if not args and "shape" not in kwargs:
+         raise TypeError('reshape() missing 1 required positional arguments: "shape"')
+@@ -589,11 +602,7 @@ def _bind_reshape_shape(args, kwargs):
+     # binding; remaining dimensions and overflow follow keyword binding.
+     if shape and type(shape[0]) is not int:
+         _reshape_dimensions((shape[0],))
+-    if args and "shape" in kwargs:
+-        raise TypeError("reshape() got multiple values for argument 'shape'")
+-    for name in kwargs:
+-        if name != "shape":
+-            raise TypeError(f"reshape() got an unexpected keyword argument '{name}'")
++    _validate_reshape_binding(args, kwargs)
+     return _reshape_dimensions(shape)
+ 
+ 
+diff --git a/tests/test_compile_cuda_reshape.py b/tests/test_compile_cuda_reshape.py
+index ded53b7..8e4ff42 100644
+--- a/tests/test_compile_cuda_reshape.py
++++ b/tests/test_compile_cuda_reshape.py
+@@ -197,6 +197,35 @@ class CompileCudaReshapeTests(unittest.TestCase):
+             with self.assertRaises(RuntimeError):
+                 compiled(base)
+ 
++    def test_tensor_valued_invalid_binding_before_execution(self):
++        x, y = native.ones((1,)).to('cuda:0'), torch.ones((1,), device='cuda:0')
++        for expression in ('(1, shape=x)', '(1, foo=x)', '((1,), x)',
++                           '(shape=(1,), foo=x)', '(x, shape=(1,))',
++                           '(x, foo=1)', '(foo=x)'):
++            for prefix in ('a = x', 'a = -x'):
++                fn = make_program(f'def program(x):\n    {prefix}\n    return a.reshape{expression}\n')
++                with self.subTest(expression=expression, prefix=prefix):
++                    with self.assertRaises(TypeError):
++                        fn(y)
++                    for fullgraph, dynamic in POLICIES:
++                        compiled, cache = compile_with_cache(fn, fullgraph, dynamic)
++                        for attempt in range(2):
++                            with self.subTest(policy=(fullgraph, dynamic), attempt=attempt), \
++                                 patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('native execution')), \
++                                 patch.object(trace, '_execute_operation', side_effect=AssertionError('Python execution')):
++                                with self.assertRaises(TypeError):
++                                    call_without_python(compiled, {fn.__code__}, x)
++                                self.assertEqual(len(cache.graphs), 0)
++        # Structurally valid nonconstant dimensions remain unsupported capture.
++        for expression in ('(x)', '(1, x)', '(shape=x)'):
++            fn = make_program(f'def program(x):\n    return x.reshape{expression}\n')
++            for fullgraph, dynamic in POLICIES:
++                with self.subTest(unsupported=expression, policy=(fullgraph, dynamic)), \
++                     patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('native execution')), \
++                     patch.object(trace, '_execute_operation', side_effect=AssertionError('Python execution')):
++                    with self.assertRaises(trace.CompileTraceUnsupportedError):
++                        call_without_python(compile_with_cache(fn, fullgraph, dynamic)[0], {fn.__code__}, x)
++
+     def test_public_binding_order_and_unsupported_forms(self):
+         x, y = native.ones((1,)).to('cuda:0'), torch.ones((1,), device='cuda:0')
+         errors = ['()', '(True,)', '((True,),)', '(1.,)', '(1, 1.)',

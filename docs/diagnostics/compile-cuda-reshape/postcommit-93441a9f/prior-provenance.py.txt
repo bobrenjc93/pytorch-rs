@@ -1,0 +1,23 @@
+"""Read-only verification of the preceding capture after local build cleanup."""
+import datetime, hashlib, json, subprocess, sys
+from pathlib import Path
+root=Path.cwd().resolve()
+sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest()
+old=root/'docs/diagnostics/compile-cuda-reshape/postcommit-73b74ec0'
+build=json.loads((old/'release/build-record.json').read_text())
+checks={}
+for field in ('extension','wheel','interpreter'):
+    path=Path(build[field+'_path'])
+    actual=sha(path) if path.is_file() else None
+    checks[field]={'path':str(path),'expected_sha256':build[field+'_sha256'],'actual_sha256':actual,'matches':actual==build[field+'_sha256']}
+record={'verified_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        'command':[sys.executable,*sys.argv],'script_sha256':sha(__file__),
+        'cwd':str(root),'interpreter':str(Path(sys.executable).resolve()),
+        'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+        'git_status':subprocess.check_output(['git','status','--porcelain'],text=True),
+        'preceding_measured_commit':build['commit'],'preceding_build_record_sha256':sha(old/'release/build-record.json'),
+        'preceding_environment_script_exists':(root/'target/reshape-postcommit-73b74ec0/env.sh').exists(),
+        'checks':checks,'verification_passed':all(c['matches'] for c in checks.values()),
+        'initial_verification_failure':'Sourcing the preceding env.sh failed because it was missing; the following native extension hash assertion failed.',
+        'action':'Preserve preceding records; regenerate a clean capture at the current commit.'}
+print(json.dumps(record,indent=2))

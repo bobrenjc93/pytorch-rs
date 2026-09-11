@@ -1,0 +1,19 @@
+test_bits_mutation_independence_and_lifetimes (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_bits_mutation_independence_and_lifetimes) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ok
+test_cached_graph_early_late_and_repeated_output_metadata (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_cached_graph_early_late_and_repeated_output_metadata) ... ok
+test_composition_and_dynamic_alias_pack_transition (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_composition_and_dynamic_alias_pack_transition) ... ok
+test_guards_methods_and_blocked_reference_import (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_guards_methods_and_blocked_reference_import) ... ok
+test_large_valid_empty_singleton_scalar_and_pack (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_large_valid_empty_singleton_scalar_and_pack) ... ok
+test_live_globals_locals_and_helpers (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_live_globals_locals_and_helpers) ... ok
+test_public_binding_order_and_unsupported_forms (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_public_binding_order_and_unsupported_forms) ... ok
+test_seeded_layouts_shapes_policies_identity_and_cache (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_seeded_layouts_shapes_policies_identity_and_cache) ... ok
+test_tensor_valued_invalid_binding_before_execution (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_tensor_valued_invalid_binding_before_execution) ... ok
+test_context_restoration_and_unused_mixed_capture (tests.test_compile_cuda_reshape.ReshapeDeviceTests.test_context_restoration_and_unused_mixed_capture) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_exact_dimensions_and_no_index_conversion (tests.test_compile_cuda_reshape.ReshapeMetadataTests.test_exact_dimensions_and_no_index_conversion) ... ok
+test_shared_native_planner_without_hardware (tests.test_compile_cuda_reshape.ReshapeMetadataTests.test_shared_native_planner_without_hardware) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 27.754s
+
+OK (skipped=1)

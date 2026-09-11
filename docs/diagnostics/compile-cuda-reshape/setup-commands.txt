@@ -1,0 +1,8 @@
+source target/reshape/env.sh
+uv python install 3.12.14
+uv venv --python 3.12.14
+uv sync --locked --no-install-project --group dev --group reference
+cp -r /home/bobren/.cargo/registry target/reshape/cargo/
+.venv/bin/python scripts/capture_depth_concat_build.py --output target/reshape/baseline
+.venv/bin/python scripts/capture_depth_concat_build.py --allow-dirty --output target/reshape/development
+.venv/bin/python scripts/capture_depth_concat_build.py --allow-dirty --output target/reshape/final-build

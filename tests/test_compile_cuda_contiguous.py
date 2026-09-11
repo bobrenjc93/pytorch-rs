@@ -296,7 +296,7 @@ class CompileCudaContiguousTests(unittest.TestCase):
         a = native.ones((3, 7)).to('cuda:0').t()
         for expr in ('x.contiguous(1)', 'x.contiguous(memory_format=None)',
                      'x.contiguous(memory_format=m.contiguous_format)', 'x.contiguous(foo=True)',
-                     'x.contiguous().reshape(-1)'):
+                     'x.contiguous().reshape(1, 3, 7)'):
             fn = make_program(f'def program(x):\n    return {expr}\n')
             with self.assertRaises(NotImplementedError):
                 compile_with_cache(fn)[0](a)

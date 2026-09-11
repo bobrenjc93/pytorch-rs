@@ -1,0 +1,11 @@
+--- a/python/torch_rs/_compile_bytecode.py
++++ b/python/torch_rs/_compile_bytecode.py
+@@ -964,8 +964,6 @@
+ def _require_output_value(value, program, instruction, role):
+     if _builtins.isinstance(value, _trace.CompileTraceTensorProxy):
+         return value
+-    if isinstance(value, _BytecodeTuple):
+-        return _require_output_value(value.elements, program, instruction, "tuple return value")
+     if _builtins.type(value) in (_builtins.tuple, _builtins.list):
+         for index, element in enumerate(value):
+             _require_output_value(

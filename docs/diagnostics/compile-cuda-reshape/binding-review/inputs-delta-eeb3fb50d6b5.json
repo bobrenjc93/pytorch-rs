@@ -1,0 +1,8 @@
+{
+  "remove": [],
+  "replace": {
+    "python/torch_rs/_compile_bytecode.py": "885aa10d961ddc997fbad7b1f9223a68c154923fbb774b16295eadc21b8c878c",
+    "python/torch_rs/_compile_trace.py": "e12d19261d30eea3b7a3cb614d87c83ff2581e7290e5669bc1f05787bc62a3d9",
+    "tests/test_compile_cuda_reshape.py": "645e35134fd6675986ae078babebc403ebdfbaa518f71c969fdd6084f20b55c9"
+  }
+}

@@ -1,0 +1,88 @@
+   Compiling cfg-if v1.0.4
+   Compiling once_cell v1.21.4
+   Compiling either v1.18.0
+   Compiling inventory v0.3.24
+   Compiling crossbeam-utils v0.8.23
+   Compiling libc v0.2.189
+   Compiling libloading v0.8.9
+   Compiling crossbeam-epoch v0.9.21
+   Compiling crossbeam-deque v0.8.8
+   Compiling rayon-core v1.13.0
+   Compiling pyo3-ffi v0.29.2
+   Compiling rayon v1.12.0
+   Compiling pyo3 v0.29.2
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a)
+error[E0599]: no method named `select` found for struct `tensor::Tensor` in the current scope
+   --> src/tensor_cuda_graph.rs:310:27
+    |
+310 |         let column = base.select(1, 1).unwrap();
+    |                           ^^^^^^ method not found in `tensor::Tensor`
+    |
+   ::: src/tensor.rs:424:1
+    |
+424 | pub struct Tensor {
+    | ----------------- method `select` not found for this struct
+
+error[E0282]: type annotations needed
+   --> src/tensor_cuda_graph.rs:317:17
+    |
+317 |                 source
+    |                 ^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+   --> src/tensor_cuda_graph.rs:331:25
+    |
+331 |                 assert!(plan.matches(&eager));
+    |                         ^^^^ cannot infer type
+
+error[E0599]: no method named `select` found for struct `tensor::Tensor` in the current scope
+   --> src/tensor_cuda_graph.rs:342:30
+    |
+342 |                     gpu_base.select(1, 1).unwrap()
+    |                              ^^^^^^ method not found in `tensor::Tensor`
+    |
+   ::: src/tensor.rs:424:1
+    |
+424 | pub struct Tensor {
+    | ----------------- method `select` not found for this struct
+
+error[E0599]: no method named `select` found for struct `tensor::Tensor` in the current scope
+   --> src/tensor_cuda_graph.rs:344:30
+    |
+344 |                     gpu_base.select(1, 1).unwrap().select(0, 1).unwrap()
+    |                              ^^^^^^ method not found in `tensor::Tensor`
+    |
+   ::: src/tensor.rs:424:1
+    |
+424 | pub struct Tensor {
+    | ----------------- method `select` not found for this struct
+
+error[E0599]: no method named `to_vec` found for struct `tensor::Tensor` in the current scope
+   --> src/tensor_cuda_graph.rs:359:60
+    |
+359 |                     output.try_copy_cuda_to_cpu().unwrap().to_vec(),
+    |                                                            ^^^^^^
+    |
+   ::: src/tensor.rs:424:1
+    |
+424 | pub struct Tensor {
+    | ----------------- method `to_vec` not found for this struct
+    |
+    = help: items from traits can only be used if the trait is implemented and in scope
+    = note: the following traits define an item `to_vec`, perhaps you need to implement one of them:
+            candidate #1: `conversion::from_py_object_sequence::FromPyObjectSequence`
+            candidate #2: `pyo3::types::PyByteArrayMethods`
+help: some of the expressions' fields have a method of the same name
+    |
+359 |                     output.try_copy_cuda_to_cpu().unwrap().shape.to_vec(),
+    |                                                            ++++++
+359 |                     output.try_copy_cuda_to_cpu().unwrap().strides.to_vec(),
+    |                                                            ++++++++
+help: there is a method `into_vec` with a similar name
+    |
+359 |                     output.try_copy_cuda_to_cpu().unwrap().into_vec(),
+    |                                                            ++
+
+Some errors have detailed explanations: E0282, E0599.
+For more information about an error, try `rustc --explain E0282`.
+error: could not compile `pytorch-rs` (lib test) due to 6 previous errors

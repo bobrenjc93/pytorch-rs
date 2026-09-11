@@ -1,0 +1,14 @@
+import ctypes, json, sys, subprocess
+from pathlib import Path
+import torch, torch_rs as n
+from torch_rs._cuda_public_storage import _candidate_libraries
+libpath=_candidate_libraries()[0]
+lib=ctypes.CDLL(libpath)
+rt, driver=ctypes.c_int(),ctypes.c_int()
+assert lib.cudaRuntimeGetVersion(ctypes.byref(rt))==0
+assert lib.cudaDriverGetVersion(ctypes.byref(driver))==0
+assert Path(sys.prefix).resolve()==Path('.venv').resolve()
+assert Path(sys.executable).resolve().is_relative_to(Path('target/reshape-postcommit-1ad5fd62/python').resolve())
+assert Path(n.__file__).resolve().is_relative_to(Path('.venv').resolve())
+assert Path(n._C.__file__).resolve().is_relative_to(Path('.venv').resolve())
+print(json.dumps(dict(python=sys.version,python_executable=sys.executable,interpreter=str(Path(sys.executable).resolve()),native_import=n.__file__,extension=n._C.__file__,reference=torch.__version__,reference_cuda=torch.version.cuda,native_runtime_library=libpath,native_runtime=rt.value,native_driver=driver.value,gpu=torch.cuda.get_device_name(0),capability=torch.cuda.get_device_capability(0),visible_count=torch.cuda.device_count(),nvcc=subprocess.check_output(['nvcc','--version'],text=True),nvcc_used=False,kernel_compilation='driver JIT embedded PTX'),indent=2))

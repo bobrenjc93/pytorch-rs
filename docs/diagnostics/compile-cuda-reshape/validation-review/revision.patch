@@ -1,0 +1,229 @@
+diff --git a/python/torch_rs/_compile_bytecode.py b/python/torch_rs/_compile_bytecode.py
+index cb57117..17c1fef 100644
+--- a/python/torch_rs/_compile_bytecode.py
++++ b/python/torch_rs/_compile_bytecode.py
+@@ -27,6 +27,13 @@ class _BytecodeConstant:
+     value: object
+ 
+ 
++@dataclass(frozen=True, slots=True)
++class _BytecodeTuple:
++    # Mixed constants/tensors are retained for reshape call validation only.
++    # They are not Tensor output pytrees or accepted helper arguments.
++    elements: tuple
++
++
+ @dataclass(frozen=True, slots=True)
+ class _BytecodeKeywordNames:
+     names: tuple[str, ...]
+@@ -104,6 +111,7 @@ class _LoweringState:
+     )
+     global_values: dict[str, object] = field(default_factory=dict)
+     helper_call_count: int = 0
++    has_mixed_tuple: bool = False
+ 
+ 
+ @dataclass(frozen=True, slots=True)
+@@ -956,6 +964,8 @@ def _require_tensor(value, program, instruction, role):
+ def _require_output_value(value, program, instruction, role):
+     if _builtins.isinstance(value, _trace.CompileTraceTensorProxy):
+         return value
++    if isinstance(value, _BytecodeTuple):
++        return _require_output_value(value.elements, program, instruction, "tuple return value")
+     if _builtins.type(value) in (_builtins.tuple, _builtins.list):
+         for index, element in enumerate(value):
+             _require_output_value(
+@@ -970,6 +980,9 @@ def _require_output_value(value, program, instruction, role):
+ 
+ def _store_local(locals, stack, program, instruction, name):
+     value = _pop(stack, program, instruction)
++    if isinstance(value, _BytecodeTuple):
++        locals[name] = value
++        return
+     if _builtins.isinstance(value, _BytecodeConstant):
+         if type(value.value) not in (int, tuple):
+             _trace._normalize_mul_scalar(value.value)
+@@ -1081,17 +1094,22 @@ def _lower_function_body(
+     )
+ 
+ 
++def _reshape_argument(value):
++    if isinstance(value, _BytecodeConstant):
++        return value.value
++    if isinstance(value, _BytecodeTuple):
++        return tuple(_reshape_argument(element) for element in value.elements)
++    if type(value) is tuple:
++        return tuple(_reshape_argument(element) for element in value)
++    return _trace._RESHAPE_UNKNOWN_DIMENSION
++
++
+ def _record_method_call(recorder, method, args, program, instruction, names=()):
+     if method.name == "reshape":
+         positional = len(args) - len(names)
+-        values = tuple(value.value if isinstance(value, _BytecodeConstant) else value for value in args)
++        values = tuple(_reshape_argument(value) for value in args)
+         positional_args = values[:positional]
+         kwargs = dict(zip(names, values[positional:]))
+-        if any(not isinstance(value, _BytecodeConstant) for value in args):
+-            # Invalid calls still have public binding errors even when a value
+-            # cannot be captured. Do not convert or evaluate that value.
+-            _trace._validate_reshape_binding(positional_args, kwargs)
+-            _unsupported_bytecode(program, instruction, "Tensor.reshape requires constant dimensions")
+         shape = _trace._bind_reshape_shape(positional_args, kwargs)
+         return recorder.record_reshape(method.receiver, shape)
+     if method.name == "transpose":
+@@ -1416,13 +1434,17 @@ def _handle_load_const(recorder, locals, stack, program, instruction, state, act
+ 
+ 
+ def _handle_build_tuple(recorder, locals, stack, program, instruction, state, active):
+-    del recorder, locals, state, active
++    del recorder, locals, active
+     argument_count = instruction.arg or 0
+     values = [_pop(stack, program, instruction) for _ in range(argument_count)]
+     values.reverse()
+     if values and all(isinstance(value, _BytecodeConstant) for value in values):
+         stack.append(_BytecodeConstant(tuple(value.value for value in values)))
+         return
++    if any(isinstance(value, (_BytecodeConstant, _BytecodeTuple)) for value in values):
++        state.has_mixed_tuple = True
++        stack.append(_BytecodeTuple(tuple(values)))
++        return
+     output = tuple(values)
+     _require_output_value(output, program, instruction, "tuple return value")
+     stack.append(output)
+@@ -1532,6 +1554,10 @@ def lower_compile_graph(program, input_metadatas, *, name=None, compile_request=
+         (program,),
+         _lowerable_bytecode_instructions(program, code, input_metadatas),
+     )
++    if state.has_mixed_tuple:
++        raise _trace.CompileTraceUnsupportedError(
++            "torch.compile mixed constant/Tensor tuples are only retained for reshape argument validation"
++        )
+     return recorder.finish(output)
+ 
+ 
+diff --git a/python/torch_rs/_compile_trace.py b/python/torch_rs/_compile_trace.py
+index 430dbb9..ae6b052 100644
+--- a/python/torch_rs/_compile_trace.py
++++ b/python/torch_rs/_compile_trace.py
+@@ -551,20 +551,35 @@ def _t_output_metadata(metadata):
+     )
+ 
+ 
++_RESHAPE_UNKNOWN_DIMENSION = object()
++
++
++def _validate_reshape_dimension(dimension, index):
++    # An opaque bytecode value is never inspected or converted. Keep checking
++    # known dimensions so unsupported capture cannot hide a public type error.
++    if dimension is _RESHAPE_UNKNOWN_DIMENSION:
++        return False
++    if type(dimension) is not int:
++        if ((type(dimension) is bool and index > 0)
++                or (type(dimension) is not bool and hasattr(type(dimension), "__index__"))):
++            return False
++        raise TypeError(f"reshape(): shape dimension {index} must be int, not {type(dimension).__name__}")
++    if not -(2**63) <= dimension < 2**63:
++        raise TypeError(f"reshape(): shape dimension {index} overflows signed int64")
++    return True
++
++
+ def _reshape_dimensions(shape):
+     if type(shape) is not tuple:
+         raise CompileTraceUnsupportedError("torch.compile reshape requires an exact flat tuple")
+     # PyTorch's schema checks the first dimension, then unpacks in order.
+     # Later booleans/index conversions can be reference-valid, but are outside
+     # this exact-integer capture contract. Never use bool/int equality here.
++    constant = True
+     for index, dimension in enumerate(shape):
+-        if type(dimension) is not int:
+-            if ((type(dimension) is bool and index > 0)
+-                    or (type(dimension) is not bool and hasattr(type(dimension), "__index__"))):
+-                raise CompileTraceUnsupportedError("torch.compile reshape requires exact integer constants")
+-            raise TypeError(f"reshape(): shape dimension {index} must be int, not {type(dimension).__name__}")
+-        if not -(2**63) <= dimension < 2**63:
+-            raise TypeError(f"reshape(): shape dimension {index} overflows signed int64")
++        constant = _validate_reshape_dimension(dimension, index) and constant
++    if not constant:
++        raise CompileTraceUnsupportedError("torch.compile reshape requires exact integer constants")
+     if len(shape) > 2:
+         raise CompileTraceUnsupportedError("torch.compile reshape requires output rank 0, 1 or 2")
+     return shape
+@@ -587,7 +602,9 @@ def _bind_reshape_shape(args, kwargs):
+     if not args and "shape" not in kwargs:
+         raise TypeError('reshape() missing 1 required positional arguments: "shape"')
+     first = args[0] if args else kwargs["shape"]
+-    if type(first) is int and args:
++    if first is _RESHAPE_UNKNOWN_DIMENSION:
++        shape = args if args else (first,)
++    elif type(first) is int and args:
+         shape = args
+     elif type(first) is tuple:
+         if len(args) > 1:
+@@ -595,13 +612,14 @@ def _bind_reshape_shape(args, kwargs):
+         shape = first
+     elif isinstance(first, (tuple, list)) or (type(first) not in (bool, int, _builtins.float, str, type(None))
+                                and hasattr(type(first), "__index__")):
++        _validate_reshape_binding(args, kwargs)
+         raise CompileTraceUnsupportedError("torch.compile reshape requires exact integer constants or an exact tuple")
+     else:
+         raise TypeError("reshape(): argument 'shape' must be tuple of ints")
+     # Schema validation of the first ordinary dimension precedes keyword
+     # binding; remaining dimensions and overflow follow keyword binding.
+     if shape and type(shape[0]) is not int:
+-        _reshape_dimensions((shape[0],))
++        _validate_reshape_dimension(shape[0], 0)
+     _validate_reshape_binding(args, kwargs)
+     return _reshape_dimensions(shape)
+ 
+diff --git a/tests/test_compile_cuda_reshape.py b/tests/test_compile_cuda_reshape.py
+index 8e4ff42..65eb571 100644
+--- a/tests/test_compile_cuda_reshape.py
++++ b/tests/test_compile_cuda_reshape.py
+@@ -226,6 +226,46 @@ class CompileCudaReshapeTests(unittest.TestCase):
+                     with self.assertRaises(trace.CompileTraceUnsupportedError):
+                         call_without_python(compile_with_cache(fn, fullgraph, dynamic)[0], {fn.__code__}, x)
+ 
++    def test_partial_shapes_validate_known_errors_before_unsupported_capture(self):
++        x, y = native.ones((1,)).to('cuda:0'), torch.ones((1,), device='cuda:0')
++        errors = ('(True, x)', '(1.0, x)', '(2**63, x)', '(-2**63-1, x)',
++                  '((1, x), foo=1)', '((1, x), shape=(1,))', '((1, x), 1)',
++                  '((True, x),)', '((1.0, x),)', '((2**63, x),)',
++                  '(1, x, 1.0)', '(x, 1.0)', '((x, 1.0),)',
++                  '(shape=(1, x), foo=1)', '(shape, foo=1)', '(shape, shape=(1,))')
++        for expression in errors:
++            for prefix in ('a = x', 'a = -x'):
++                local = '    shape = (1, x)\n' if expression.startswith('(shape,') else ''
++                fn = make_program(f'def program(x):\n    {prefix}\n{local}    return a.reshape{expression}\n')
++                with self.subTest(expression=expression, prefix=prefix):
++                    with self.assertRaises(TypeError):
++                        fn(y)
++                    for fullgraph, dynamic in POLICIES:
++                        compiled, cache = compile_with_cache(fn, fullgraph, dynamic)
++                        for attempt in range(2):
++                            with self.subTest(policy=(fullgraph, dynamic), attempt=attempt), \
++                                 patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('native execution')), \
++                                 patch.object(trace, '_execute_operation', side_effect=AssertionError('Python execution')):
++                                with self.assertRaises(TypeError):
++                                    call_without_python(compiled, {fn.__code__}, x)
++                                self.assertEqual(len(cache.graphs), 0)
++        # Retaining a tuple for call validation must not admit nonconstant shapes,
++        # mixed output pytrees, tuple helper arguments or tuple arithmetic.
++        for body in ('return x.reshape((1, x))', 'return x.reshape(shape=(1, x))',
++                     'shape = (1, x)\n    return x.reshape(shape)',
++                     'return (1, x)', 'out = (1, x)\n    return out',
++                     'unused = (1, x)\n    return x',
++                     'unused = (1, x)\n    unused = x\n    return x',
++                     'return ((1, x), x)', 'return [(1, x), x]',
++                     'return helper((1, x))', 'return x + (1, x)'):
++            fn = make_program(f'def helper(x):\n    return -x\ndef program(x):\n    {body}\n')
++            for fullgraph, dynamic in POLICIES:
++                with self.subTest(unsupported=body, policy=(fullgraph, dynamic)), \
++                     patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('native execution')), \
++                     patch.object(trace, '_execute_operation', side_effect=AssertionError('Python execution')):
++                    with self.assertRaises(trace.CompileTraceUnsupportedError):
++                        call_without_python(compile_with_cache(fn, fullgraph, dynamic)[0], {fn.__code__}, x)
++
+     def test_public_binding_order_and_unsupported_forms(self):
+         x, y = native.ones((1,)).to('cuda:0'), torch.ones((1,), device='cuda:0')
+         errors = ['()', '(True,)', '((True,),)', '(1.,)', '(1, 1.)',

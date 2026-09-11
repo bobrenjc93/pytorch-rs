@@ -1,0 +1,160 @@
+"""Publish development receipts, retaining the failed pre-fix reproduction."""
+import gzip, hashlib, json, re, shutil, subprocess, sys
+from pathlib import Path
+ROOT = Path.cwd()
+WORK = ROOT / 'target/reshape-local-review'
+OUT = ROOT / 'docs/diagnostics/compile-cuda-reshape/local-constant-review'
+sys.path.insert(0, str(ROOT / 'scripts'))
+from evaluate_cuda_math import source_provenance, sha256
+
+def dump(path, value):
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + '\n')
+
+source = source_provenance()
+assert not OUT.exists()
+prior_inventories = list(OUT.parent.rglob('inventory.json'))
+for inventory in prior_inventories:
+    for name, digest in json.loads(inventory.read_text()).items():
+        assert sha256(inventory.parent / name) == digest, (inventory, name)
+build = json.loads((WORK / 'release/build-record.json').read_text())
+assert all(build[k] == v for k, v in source.items())
+assert not build['clean_checkout'] and build['source_unchanged_during_build']
+for command in build['commands']:
+    assert command['exit_status'] == 0 and sha256(command['log']) == command['log_sha256']
+for field in ('extension', 'wheel', 'interpreter'):
+    assert Path(build[field + '_path']).resolve().is_relative_to(ROOT)
+    assert sha256(build[field + '_path']) == build[field + '_sha256']
+final_names = ('preflight', 'imports', 'python-imports', 'validation-after', 'output-errors',
+               'reshape-final', 'compiler-regressions', 'two-device', 'cuda-packing',
+               'hidden', 'cpu-layout', 'docs')
+expected = {name: 0 for name in final_names} | {'local-before': 1}
+receipts = {}
+for path in (WORK / 'evidence').glob('*.receipt.json'):
+    name = path.name.removesuffix('.receipt.json')
+    r = json.loads(path.read_text())
+    assert r['exit_status'] == expected[name], name
+    assert r['source_before'] == r['source_after'] and r['inputs_unchanged'], name
+    assert r['git_status_before'] == r['git_status_after'], name
+    assert r['command_files_before'] == r['command_files_after'], name
+    assert all(sha256(p) == digest for p, digest in r['command_files_after'].items()), name
+    assert r['capture_script_sha256'] == sha256(WORK / 'capture.py'), name
+    assert r['native_before'] == r['native_after'], name
+    assert r['log_sha256'] == sha256(WORK / 'evidence' / f'{name}.log'), name
+    if name in final_names:
+        assert r['source_before'] == source, name
+        assert set(r['native_after'].values()) == {build['extension_sha256']}, name
+    receipts[name] = r
+assert set(receipts) == set(expected)
+import torch_rs
+installed = Path(torch_rs.__file__).parent
+for path in (ROOT / 'python/torch_rs').rglob('*.py'):
+    assert sha256(path) == sha256(installed / path.relative_to(ROOT / 'python/torch_rs'))
+assert sha256(torch_rs._C.__file__) == build['extension_sha256']
+manifests = {sha256(p): json.loads(p.read_text()) for p in (WORK / 'evidence').glob('inputs-*.json')}
+final_hash = receipts['reshape-final']['measured_inputs_sha256']
+manifest = manifests[final_hash]
+assert all(sha256(ROOT / p) == digest for p, digest in manifest.items())
+# The failing reproduction used the committed frontend and the unchanged new test.
+before_manifest = manifests[receipts['local-before']['measured_inputs_sha256']]
+frontend = 'python/torch_rs/_compile_bytecode.py'
+assert before_manifest['tests/test_compile_cuda_reshape.py'] == manifest['tests/test_compile_cuda_reshape.py']
+assert hashlib.sha256(subprocess.check_output(['git', 'show', 'HEAD:' + frontend])).hexdigest() == before_manifest[frontend]
+prior_build = json.loads((OUT.parent / 'postcommit-3d44687d/release/build-record.json').read_text())
+assert set(receipts['local-before']['native_before'].values()) == {prior_build['extension_sha256']}
+results = {}
+for name in ('validation-after', 'output-errors', 'reshape-final', 'compiler-regressions',
+             'two-device', 'cuda-packing', 'hidden', 'cpu-layout'):
+    log = (WORK / 'evidence' / f'{name}.log').read_text()
+    count = int(re.search(r'Ran (\d+) tests? in ', log).group(1))
+    match = re.search(r'OK \(skipped=(\d+)\)', log)
+    skipped = int(match.group(1)) if match else 0
+    assert re.search(r'\nOK(?: \(skipped=\d+\))?\s*$', log), name
+    results[name] = {'passed': count - skipped, 'skipped': skipped}
+failed = (WORK / 'evidence/local-before.log').read_bytes()
+assert b'FAILED (errors=560)' in failed
+OUT.mkdir()
+(OUT / 'release').mkdir()
+for name in ('build-record.json', 'commands.json', 'build.log', 'install.log'):
+    shutil.copyfile(WORK / 'release' / name, OUT / 'release' / name)
+for name in receipts:
+    shutil.copyfile(WORK / 'evidence' / (name + '.receipt.json'), OUT / (name + '.receipt.json'))
+    if name == 'local-before':
+        compressed = gzip.compress(failed, mtime=0)
+        assert gzip.decompress(compressed) == failed
+        (OUT / (name + '.log.gz')).write_bytes(compressed)
+    else:
+        shutil.copyfile(WORK / 'evidence' / (name + '.log'), OUT / (name + '.log'))
+dump(OUT / 'measured-inputs.json', manifest)
+index = {}
+for digest, measured in manifests.items():
+    if digest == final_hash:
+        index[digest] = {'file': 'measured-inputs.json'}
+        continue
+    delta = {p: h for p, h in measured.items() if manifest.get(p) != h}
+    removed = sorted(set(manifest) - set(measured))
+    name = 'inputs-delta-' + digest[:12] + '.json'
+    dump(OUT / name, {'replace': delta, 'remove': removed})
+    recovered = {p: h for p, h in manifest.items() if p not in removed} | delta
+    assert hashlib.sha256((json.dumps(recovered, indent=2, sort_keys=True) + '\n').encode()).hexdigest() == digest
+    index[digest] = {'base': 'measured-inputs.json', 'delta': name}
+dump(OUT / 'manifest-index.json', index)
+(OUT / 'revision.patch').write_bytes(subprocess.check_output(['git', 'diff', 'HEAD', '--', frontend, 'tests/test_compile_cuda_reshape.py']))
+for name in ('capture.py', 'validate.py', 'publish.py', 'env.sh', 'preflight.py', 'check_install.py', 'docs_example.py'):
+    shutil.copyfile(WORK / name, OUT / (name + '.txt'))
+rows = '\n'.join(f"| [{name}]({name}.log) | {result['passed']} passed; {result['skipped']} skipped |" for name, result in results.items())
+(OUT / 'README.md').write_text(f"""# Reshape local-constant validation revision
+
+These **development measurements** use `{source['commit']}` plus
+[the recorded Python/test revision](revision.patch), with source hash
+`{source['source_sha256']}`. They do not claim a clean-commit capture.
+The existing [release build helper](../../../../scripts/capture_depth_concat_build.py)
+built a fresh release wheel in an empty target. The canonical worktree-local
+CPython 3.12.14 environment, locked dependencies and local Cargo registry were
+reused. Installed Python bytes and native imports were verified before tests.
+See the [build record](release/build-record.json), [preflight](preflight.log),
+[runner](validate.py.txt) and individual command receipts.
+
+The new regression compares local and inline None, string, bytes, complex and
+Ellipsis constants against reference PyTorch for seven invalid argument forms.
+All four policies, early/late nodes and repeated calls are checked, with native
+execution and Python-body replay blocked. Local and inline native error messages
+must match. Unused or overwritten unsupported constants, scalar output leaves,
+invalid multiplication and otherwise valid reshape graphs still reject.
+
+| Check | Result |
+| --- | --- |
+{rows}
+
+Installed imports, Python source/install equality and the documentation example
+also passed. Ordinary GPU checks expose only physical GPU 0; context restoration
+checks expose 0,1. The H100 runtime is native/reference CUDA 13.0 with driver
+580.82.07 and PyTorch 2.13.0+cu130. The build records Rust 1.92.0 and installed
+nvcc 12.6.85 (unused; native kernels use driver JIT of embedded PTX). Receipts
+include physical UUIDs, utilization and memory snapshots, not GPU reservations.
+All environments, caches, builds and artifacts remain inside this worktree.
+This fix changes Python lowering only; Rust planners and CUDA kernels are unchanged.
+
+The [pre-fix log](local-before.log.gz) preserves all **560 errors**, losslessly
+compressed. Its decompressed SHA-256 matches the unchanged
+[receipt](local-before.receipt.json). That run used the committed frontend and
+previous clean native build with the same new regression test. It is not counted
+as passing. A single [input manifest](measured-inputs.json) and a verified delta
+retain both attempts; [manifest-index](manifest-index.json) maps receipt hashes.
+The [publisher](publish.py.txt) verifies source/build/import/command/log hashes.
+
+All previous evidence remains unchanged, including the
+[preceding clean capture](../postcommit-3d44687d/README.md), which does not validate
+this fix. **A fresh clean-commit capture is required after Burner commits this
+revision.** These non-scoring diagnostics do not change evaluators, workloads,
+managed progress, or the separate unadopted PR1970/PR1971 campaigns. Independent
+review and merge gates remain required.
+""")
+dump(OUT / 'audit.json', {'source': source, 'measurement_kind': 'precommit-diagnostic',
+     'checks': expected, 'results': results, 'installed_python_matches_source': True,
+     'installed_native_matches_build': True, 'extension_sha256': build['extension_sha256'],
+     'prior_inventories_unchanged': len(prior_inventories),
+     'clean_commit_capture': 'required after Burner commits this revision',
+     'manifest_count': len(manifests), 'full_manifests_published': 1})
+dump(OUT / 'inventory.json', {str(p.relative_to(OUT)): sha256(p) for p in OUT.rglob('*') if p.is_file() and p.name != 'inventory.json'})
+print(json.dumps(results, indent=2))
+print('Published', OUT)

@@ -1,0 +1,20 @@
+--- a/src/tensor_cuda_graph.rs
++++ b/src/tensor_cuda_graph.rs
+@@ -334,13 +334,13 @@
+                 }
+                 // Transfer the base first so the CUDA input retains the view.
+                 let gpu_base = base.try_copy_cpu_to_cuda(Device::Cuda(0)).unwrap();
+-                let gpu = if std::ptr::eq(source, &raw const base) {
++                let gpu = if std::ptr::eq(source, &base) {
+                     gpu_base
+-                } else if std::ptr::eq(source, &raw const transposed) {
++                } else if std::ptr::eq(source, &transposed) {
+                     gpu_base.t().unwrap()
+-                } else if std::ptr::eq(source, &raw const column) {
++                } else if std::ptr::eq(source, &column) {
+                     gpu_base.select_dimension(1, 1).unwrap()
+-                } else if std::ptr::eq(source, &raw const scalar) {
++                } else if std::ptr::eq(source, &scalar) {
+                     gpu_base
+                         .select_dimension(1, 1)
+                         .unwrap()

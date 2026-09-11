@@ -1,0 +1,10 @@
+imports 0
+python-imports 1
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/target/reshape-binding-review/run.py", line 9, in <module>
+    run('python-imports',python,'target/reshape-postcommit-1ad5fd62/check_install.py')
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/target/reshape-binding-review/run.py", line 7, in run
+    subprocess.run(capture+[name,*command],env={**os.environ,'CUDA_VISIBLE_DEVICES':visible},check=True)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/target/reshape-postcommit-1ad5fd62/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/bin/python', '/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/target/reshape-binding-review/capture.py', 'python-imports', '/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/bin/python', 'target/reshape-postcommit-1ad5fd62/check_install.py']' returned non-zero exit status 1.
