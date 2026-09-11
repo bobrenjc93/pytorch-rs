@@ -312,6 +312,7 @@ _OPCODE_FORMS = (
     _OpcodeForm("load_const", frozenset(("LOAD_CONST", "LOAD_SMALL_INT"))),
     _OpcodeForm("build_tuple", frozenset(("BUILD_TUPLE",))),
     _OpcodeForm("build_list", frozenset(("BUILD_LIST",))),
+    _OpcodeForm("list_extend", frozenset(("LIST_EXTEND",))),
     _OpcodeForm("binary", frozenset(("BINARY_ADD", "BINARY_MATRIX_MULTIPLY", "BINARY_MULTIPLY", "BINARY_OP", "INPLACE_ADD"))),
     _OpcodeForm("unary_neg", frozenset(("UNARY_NEGATIVE",))),
     _OpcodeForm("return", frozenset(("RETURN_VALUE", "RETURN_CONST"))),
@@ -1340,6 +1341,16 @@ def _binary_operator_symbol(instruction):
     return instruction.argrepr
 
 
+def _defer_binary(stack, program, instruction, state, symbol):
+    # Consume the operands without evaluating them, including user operators.
+    _pop(stack, program, instruction)
+    _pop(stack, program, instruction)
+    state.local_constant_error = state.local_constant_error or _trace.CompileTraceUnsupportedError(
+        f"torch.compile binary operator {symbol!r} is only retained for argument validation"
+    )
+    stack.append(_BytecodeConstant(_trace._RESHAPE_UNKNOWN_DIMENSION))
+
+
 def _handle_binary(recorder, locals, stack, program, instruction, state, active):
     del locals, active
     symbol = _binary_operator_symbol(instruction)
@@ -1356,6 +1367,14 @@ def _handle_binary(recorder, locals, stack, program, instruction, state, active)
         )
         stack.append(_BytecodeConstant(value))
         return
+    if (symbol in ("+", "*", "@") and len(stack) >= 2
+            and (all(isinstance(v, _BytecodeConstant) for v in stack[-2:])
+                 or any(isinstance(v, _BytecodeConstant)
+                        and v.value is _trace._RESHAPE_UNKNOWN_DIMENSION for v in stack[-2:]))):
+        # A surrounding expression must not turn an already opaque dimension
+        # into an immediate rejection (e.g. (k // 1) + 1 or (k // 1) * x).
+        _defer_binary(stack, program, instruction, state, symbol)
+        return
     if symbol == "*":
         right = _pop(stack, program, instruction)
         left = _pop(stack, program, instruction)
@@ -1366,6 +1385,13 @@ def _handle_binary(recorder, locals, stack, program, instruction, state, active)
         return
     if symbol == "+=":
         _unsupported_bytecode(program, instruction, "mutation")
+    if symbol in ("-", "/", "//", "%", "**", "<<", ">>", "&", "|", "^"):
+        # Do not evaluate unsupported expressions, even on apparently constant
+        # operands. Preserve their stack position so a later call can diagnose
+        # independently known binding/range/shape errors. The deferred error
+        # still rejects unused, overwritten and returned results.
+        _defer_binary(stack, program, instruction, state, symbol)
+        return
     _unsupported_bytecode(program, instruction, f"binary operator {symbol!r}")
 
 
@@ -1491,6 +1517,26 @@ def _handle_build_list(recorder, locals, stack, program, instruction, state, act
     stack.append(output)
 
 
+def _handle_list_extend(recorder, locals, stack, program, instruction, state, active):
+    del recorder, locals, active
+    values = _pop(stack, program, instruction)
+    depth = instruction.arg or 0
+    if not 0 < depth <= len(stack):
+        _unsupported_bytecode(program, instruction, "list extension stack")
+    target = _reshape_argument(stack[-depth])
+    if type(target) is not list:
+        _unsupported_bytecode(program, instruction, "list extension target")
+    # CPython emits BUILD_LIST 0 / LOAD_CONST / LIST_EXTEND for longer
+    # literals. Only inspect exact internal tuples/lists; never iterate a user
+    # object. This is validation-only, including empty and Tensor containers.
+    values = _reshape_argument(values)
+    items = values if type(values) in (tuple, list) else (_trace._RESHAPE_UNKNOWN_DIMENSION,)
+    stack[-depth] = _BytecodeConstant(target + list(items))
+    state.local_constant_error = state.local_constant_error or _trace.CompileTraceUnsupportedError(
+        "torch.compile list extension is only retained for argument validation"
+    )
+
+
 def _handle_noop(recorder, locals, stack, program, instruction, state, active):
     del recorder, locals, stack, program, instruction, state, active
     return None
@@ -1513,6 +1559,7 @@ _OPCODE_HANDLERS = {
     "load_const": _handle_load_const,
     "build_tuple": _handle_build_tuple,
     "build_list": _handle_build_list,
+    "list_extend": _handle_list_extend,
     "binary": _handle_binary,
     "unary_neg": _handle_unary_neg,
     "return": _handle_return,

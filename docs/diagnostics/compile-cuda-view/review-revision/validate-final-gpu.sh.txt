@@ -1,0 +1,10 @@
+set -eu
+source target/view-review-setup.sh
+capture() { .venv/bin/python target/view-review/capture.py "$@"; }
+capture review-regressions-current-source .venv/bin/python -m unittest -v tests.test_compile_cuda_view.ViewMetadataTests tests.test_compile_cuda_view.CompileCudaViewTests.test_unsupported_argument_expressions_preserve_public_errors tests.test_compile_cuda_view.CompileCudaViewTests.test_validation_only_lists_and_computed_integer_dimensions tests.test_compile_cuda_view.CompileCudaViewTests.test_public_binding_order_and_unsupported_forms
+capture native-verification-final .venv/bin/python .github/scripts/verify_native_extension.py
+capture compiler-current-source .venv/bin/python -m unittest -v tests/test_compile*.py tests/test_top_level_compile.py
+CUDA_VISIBLE_DEVICES=0,1 capture two-device .venv/bin/python -m unittest -v tests.test_compile_cuda_view.ViewDeviceTests tests.test_compile_cuda_reshape.ReshapeDeviceTests
+capture rust-graph cargo test --locked --offline --features python-bindings --lib cuda_graph -- --nocapture
+capture preflight .venv/bin/python docs/diagnostics/compile-cuda-view/preflight.py.txt
+capture guide-examples .venv/bin/python docs/diagnostics/compile-cuda-view/guide_examples.py.txt

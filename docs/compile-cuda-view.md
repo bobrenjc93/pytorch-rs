@@ -40,9 +40,12 @@ rejects `shape=`, and rejects invalid keyword combinations before unpacking
 integer dimensions. Invalid bindings/types and signed-64-bit dimension overflow
 raise `TypeError`; invalid inferred sizes, element counts and incompatible
 layouts raise `RuntimeError`. Known argument errors remain checked alongside
-nonconstant dimensions. Literal/local lists and bounded exact integer arithmetic
-are retained only for argument validation; even unused or overwritten values
-still reject capture. No user index conversion is invoked. Lists, tuple/int
+nonconstant dimensions. Known negative dimensions and repeated `-1` entries are
+validated before capture's exact-integer and rank restrictions. Literal/local
+lists (including CPython's list-extension form) and bounded exact integer
+arithmetic are retained only for argument validation; other unsupported binary
+expressions remain opaque and are never evaluated. Even unused or overwritten
+values still reject capture. No user index conversion is invoked. Lists, tuple/int
 subclasses, later boolean dimensions, symbolic/computed dimensions, scalar call
 inputs and dtype overloads (even same-dtype) remain unsupported capture. Eager
 view's broader supported argument forms are unchanged.
@@ -80,3 +83,8 @@ records the release rebuild and fresh validation of implementation commit
 `12ac70fd1e7ab039d9317866ddaf269ef0c2d484`. These are non-scoring diagnostics;
 scoring corpora, performance workloads, evaluator contracts and the separate
 PR1970/PR1971 campaigns are unchanged.
+
+The [review revision diagnostics](diagnostics/compile-cuda-view/review-revision/README.md)
+record the subsequent public-error precedence fixes and their development checks.
+The earlier clean capture remains pinned to `12ac70fd`; a fresh clean capture of
+this revision is required after Burner commits it.

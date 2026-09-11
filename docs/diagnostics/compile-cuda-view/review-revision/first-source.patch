@@ -1,0 +1,92 @@
+diff --git a/python/torch_rs/_compile_bytecode.py b/python/torch_rs/_compile_bytecode.py
+index 94393ef..b30b566 100644
+--- a/python/torch_rs/_compile_bytecode.py
++++ b/python/torch_rs/_compile_bytecode.py
+@@ -312,6 +312,7 @@ _OPCODE_FORMS = (
+     _OpcodeForm("load_const", frozenset(("LOAD_CONST", "LOAD_SMALL_INT"))),
+     _OpcodeForm("build_tuple", frozenset(("BUILD_TUPLE",))),
+     _OpcodeForm("build_list", frozenset(("BUILD_LIST",))),
++    _OpcodeForm("list_extend", frozenset(("LIST_EXTEND",))),
+     _OpcodeForm("binary", frozenset(("BINARY_ADD", "BINARY_MATRIX_MULTIPLY", "BINARY_MULTIPLY", "BINARY_OP", "INPLACE_ADD"))),
+     _OpcodeForm("unary_neg", frozenset(("UNARY_NEGATIVE",))),
+     _OpcodeForm("return", frozenset(("RETURN_VALUE", "RETURN_CONST"))),
+@@ -1366,6 +1367,18 @@ def _handle_binary(recorder, locals, stack, program, instruction, state, active)
+         return
+     if symbol == "+=":
+         _unsupported_bytecode(program, instruction, "mutation")
++    if symbol in ("-", "/", "//", "%", "**", "<<", ">>", "&", "|", "^"):
++        # Do not evaluate unsupported expressions, even on apparently constant
++        # operands. Preserve their stack position so a later call can diagnose
++        # independently known binding/range/shape errors. The deferred error
++        # still rejects unused, overwritten and returned results.
++        _pop(stack, program, instruction)
++        _pop(stack, program, instruction)
++        state.local_constant_error = state.local_constant_error or _trace.CompileTraceUnsupportedError(
++            f"torch.compile binary operator {symbol!r} is only retained for argument validation"
++        )
++        stack.append(_BytecodeConstant(_trace._RESHAPE_UNKNOWN_DIMENSION))
++        return
+     _unsupported_bytecode(program, instruction, f"binary operator {symbol!r}")
+ 
+ 
+@@ -1491,6 +1504,26 @@ def _handle_build_list(recorder, locals, stack, program, instruction, state, act
+     stack.append(output)
+ 
+ 
++def _handle_list_extend(recorder, locals, stack, program, instruction, state, active):
++    del recorder, locals, active
++    values = _pop(stack, program, instruction)
++    depth = instruction.arg or 0
++    if not 0 < depth <= len(stack):
++        _unsupported_bytecode(program, instruction, "list extension stack")
++    target = _reshape_argument(stack[-depth])
++    if type(target) is not list:
++        _unsupported_bytecode(program, instruction, "list extension target")
++    # CPython emits BUILD_LIST 0 / LOAD_CONST / LIST_EXTEND for longer
++    # literals. Only inspect exact internal tuples/lists; never iterate a user
++    # object. This is validation-only, including empty and Tensor containers.
++    values = _reshape_argument(values)
++    items = values if type(values) in (tuple, list) else (_trace._RESHAPE_UNKNOWN_DIMENSION,)
++    stack[-depth] = _BytecodeConstant(target + list(items))
++    state.local_constant_error = state.local_constant_error or _trace.CompileTraceUnsupportedError(
++        "torch.compile list extension is only retained for argument validation"
++    )
++
++
+ def _handle_noop(recorder, locals, stack, program, instruction, state, active):
+     del recorder, locals, stack, program, instruction, state, active
+     return None
+@@ -1513,6 +1546,7 @@ _OPCODE_HANDLERS = {
+     "load_const": _handle_load_const,
+     "build_tuple": _handle_build_tuple,
+     "build_list": _handle_build_list,
++    "list_extend": _handle_list_extend,
+     "binary": _handle_binary,
+     "unary_neg": _handle_unary_neg,
+     "return": _handle_return,
+diff --git a/python/torch_rs/_compile_trace.py b/python/torch_rs/_compile_trace.py
+index 4a72a1e..ae465e5 100644
+--- a/python/torch_rs/_compile_trace.py
++++ b/python/torch_rs/_compile_trace.py
+@@ -579,6 +579,21 @@ def _reshape_dimensions(shape, method="reshape"):
+     constant = True
+     for index, dimension in enumerate(shape):
+         constant = _validate_reshape_dimension(dimension, index, method) and constant
++    # Public unpacking/type/range errors precede shape validation. After that,
++    # known invalid dimensions and repeated inference are errors independently
++    # of opaque dimensions or the capture rank limit. Inspect exact ints only;
++    # do not convert bools, index objects or subclasses to admit a shape.
++    if not constant or len(shape) > 2:
++        inferred = False
++        for index, dimension in enumerate(shape):
++            if type(dimension) is not int:
++                continue
++            if dimension == -1:
++                if inferred:
++                    raise RuntimeError("only one dimension can be inferred")
++                inferred = True
++            elif dimension < 0:
++                raise RuntimeError(f"invalid shape dimension {dimension} at index {index}")
+     if not constant:
+         raise CompileTraceUnsupportedError(f"torch.compile {method} requires exact integer constants")
+     if len(shape) > 2:

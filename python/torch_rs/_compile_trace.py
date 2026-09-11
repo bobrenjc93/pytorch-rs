@@ -579,6 +579,21 @@ def _reshape_dimensions(shape, method="reshape"):
     constant = True
     for index, dimension in enumerate(shape):
         constant = _validate_reshape_dimension(dimension, index, method) and constant
+    # Public unpacking/type/range errors precede shape validation. After that,
+    # known invalid dimensions and repeated inference are errors independently
+    # of opaque dimensions or the capture rank limit. Inspect exact ints only;
+    # do not convert bools, index objects or subclasses to admit a shape.
+    if not constant or len(shape) > 2:
+        inferred = False
+        for index, dimension in enumerate(shape):
+            if type(dimension) is not int:
+                continue
+            if dimension == -1:
+                if inferred:
+                    raise RuntimeError("only one dimension can be inferred")
+                inferred = True
+            elif dimension < 0:
+                raise RuntimeError(f"invalid shape dimension {dimension} at index {index}")
     if not constant:
         raise CompileTraceUnsupportedError(f"torch.compile {method} requires exact integer constants")
     if len(shape) > 2:

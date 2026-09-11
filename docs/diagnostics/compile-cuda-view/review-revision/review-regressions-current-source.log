@@ -1,0 +1,13 @@
+test_alias_only_planner_and_binding_order_without_hardware (tests.test_compile_cuda_view.ViewMetadataTests.test_alias_only_planner_and_binding_order_without_hardware) ... ok
+test_exact_dimensions_and_no_index_conversion (tests.test_compile_cuda_view.ViewMetadataTests.test_exact_dimensions_and_no_index_conversion) ... ok
+test_known_shape_errors_before_capture_admission_without_hardware (tests.test_compile_cuda_view.ViewMetadataTests.test_known_shape_errors_before_capture_admission_without_hardware) ... ok
+test_shared_native_planner_without_hardware (tests.test_compile_cuda_view.ViewMetadataTests.test_shared_native_planner_without_hardware) ... ok
+test_unsupported_expression_validation_without_hardware (tests.test_compile_cuda_view.ViewMetadataTests.test_unsupported_expression_validation_without_hardware) ... ok
+test_unsupported_argument_expressions_preserve_public_errors (tests.test_compile_cuda_view.CompileCudaViewTests.test_unsupported_argument_expressions_preserve_public_errors) ... ok
+test_validation_only_lists_and_computed_integer_dimensions (tests.test_compile_cuda_view.CompileCudaViewTests.test_validation_only_lists_and_computed_integer_dimensions) ... ok
+test_public_binding_order_and_unsupported_forms (tests.test_compile_cuda_view.CompileCudaViewTests.test_public_binding_order_and_unsupported_forms) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.953s
+
+OK
