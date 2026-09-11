@@ -1,0 +1,34 @@
+   Compiling target-lexicon v0.13.5
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling crossbeam-utils v0.8.23
+   Compiling quote v1.0.47
+   Compiling crossbeam-epoch v0.9.21
+   Compiling libc v0.2.189
+   Compiling crossbeam-deque v0.8.8
+   Compiling heck v0.5.0
+   Compiling rayon-core v1.13.0
+   Compiling cfg-if v1.0.4
+   Compiling either v1.18.0
+   Compiling inventory v0.3.24
+   Compiling once_cell v1.21.4
+   Compiling libloading v0.8.9
+   Compiling pyo3-build-config v0.29.2
+   Compiling pyo3-ffi v0.29.2
+   Compiling pyo3 v0.29.2
+   Compiling syn v2.0.119
+   Compiling rayon v1.12.0
+   Compiling pyo3-macros-backend v0.29.2
+   Compiling pyo3-macros v0.29.2
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.18s
+  Executable unittests src/lib.rs (target/rust-tests/debug/deps/pytorch_rs-545e4fdb10cc861f)
+  Executable tests/autograd.rs (target/rust-tests/debug/deps/autograd-c7090ba32b58d520)
+  Executable tests/cuda_add.rs (target/rust-tests/debug/deps/cuda_add-5deb32d0f04f37a5)
+  Executable tests/cuda_contiguous.rs (target/rust-tests/debug/deps/cuda_contiguous-e347a8ffbedebebe)
+  Executable tests/cuda_matmul.rs (target/rust-tests/debug/deps/cuda_matmul-b08cb3cd9cb7cb2a)
+  Executable tests/cuda_mul_scalar.rs (target/rust-tests/debug/deps/cuda_mul_scalar-c7a5f748c3b6163d)
+  Executable tests/cuda_native_boundaries.rs (target/rust-tests/debug/deps/cuda_native_boundaries-d1989b833fa39cb2)
+  Executable tests/cuda_same_device_copy.rs (target/rust-tests/debug/deps/cuda_same_device_copy-432b5115cd74b76d)
+  Executable tests/cuda_sum_rows.rs (target/rust-tests/debug/deps/cuda_sum_rows-e7aedf248eab7b18)
+  Executable tests/tensor_baseline.rs (target/rust-tests/debug/deps/tensor_baseline-7971a89f517e13eb)

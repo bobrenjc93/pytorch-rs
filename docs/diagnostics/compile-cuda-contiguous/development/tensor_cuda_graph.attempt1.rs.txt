@@ -1,0 +1,183 @@
+//! Metadata planning for the existing CUDA capture operations. No allocation
+//! of tensor storage or kernel launch is allowed while constructing this plan.
+use super::{
+    ElementwiseLayout, MemoryFormat, Tensor, TensorError, elementwise_output_strides,
+    layout_is_contiguous, validated_layout,
+};
+
+#[derive(Clone, Copy)]
+pub(crate) enum Operation {
+    Contiguous(usize),
+    Neg(usize),
+    MulScalar(usize, f32),
+    Add(usize, usize),
+    Matmul(usize, usize),
+    SumRows(usize, bool),
+}
+
+#[derive(Clone)]
+pub(crate) struct Layout {
+    pub(crate) shape: Vec<usize>,
+    pub(crate) strides: Vec<usize>,
+    pub(crate) offset: usize,
+}
+
+impl Layout {
+    pub(crate) fn from_tensor(tensor: &Tensor) -> Self {
+        Self {
+            shape: tensor.shape().to_vec(),
+            strides: tensor.stride().to_vec(),
+            offset: tensor.storage_offset(),
+        }
+    }
+
+    pub(crate) fn is_contiguous(&self) -> Result<bool, TensorError> {
+        let (elements, _) = validated_layout(&self.shape)?;
+        Ok(layout_is_contiguous(&self.shape, &self.strides, elements))
+    }
+
+    fn elementwise(&self) -> ElementwiseLayout<'_> {
+        ElementwiseLayout {
+            shape: &self.shape,
+            strides: &self.strides,
+        }
+    }
+
+    pub(crate) fn matches(&self, tensor: &Tensor) -> bool {
+        self.shape == tensor.shape()
+            && self.strides == tensor.stride()
+            && self.offset == tensor.storage_offset()
+    }
+}
+
+impl Operation {
+    pub(crate) fn layout(self, values: &[Layout]) -> Result<Layout, TensorError> {
+        let get = |index| {
+            values
+                .get(index)
+                .ok_or(TensorError::IndexCalculationOverflow)
+        };
+        // Input admission allows views, but every arithmetic operand must
+        // independently satisfy its contiguous-only contract during planning.
+        let get_contiguous = |index| {
+            let layout = get(index)?;
+            if !layout.is_contiguous()? {
+                return Err(TensorError::UnsupportedCudaContiguous {
+                    reason: "CUDA graph arithmetic requires contiguous operands",
+                });
+            }
+            Ok(layout)
+        };
+        let shape = match self {
+            Self::Contiguous(input) => {
+                let input = get(input)?;
+                if input.is_contiguous()? {
+                    return Ok(input.clone());
+                }
+                if !(1..=2).contains(&input.shape.len()) || input.strides.contains(&0) {
+                    return Err(TensorError::UnsupportedCudaContiguous {
+                        reason: "packing requires positive-stride rank-1 or rank-2 inputs",
+                    });
+                }
+                input.shape.clone()
+            }
+            Self::Neg(input) | Self::MulScalar(input, _) => get_contiguous(input)?.shape.clone(),
+            Self::Add(left, right) => {
+                let (left, right) = (get_contiguous(left)?, get_contiguous(right)?);
+                if left.shape == right.shape {
+                    left.shape.clone()
+                } else {
+                    match (left.shape.as_slice(), right.shape.as_slice()) {
+                        ([_, columns], [n]) if columns == n => left.shape.clone(),
+                        ([n], [_, columns]) if columns == n => right.shape.clone(),
+                        _ => {
+                            return Err(TensorError::UnsupportedCudaAddition {
+                                reason: "inputs must have the same shape or shapes (M, N) and (N,)",
+                            });
+                        }
+                    }
+                }
+            }
+            Self::SumRows(input, keepdim) => {
+                let [rows, _] = get_contiguous(input)?.shape.as_slice() else {
+                    return Err(TensorError::UnsupportedCudaSum {
+                        reason: "input must be rank-2",
+                    });
+                };
+                if keepdim { vec![*rows, 1] } else { vec![*rows] }
+            }
+            Self::Matmul(left, right) => {
+                let (left, right) = (get_contiguous(left)?, get_contiguous(right)?);
+                let ([rows, inner], [other_inner, columns]) =
+                    (left.shape.as_slice(), right.shape.as_slice())
+                else {
+                    return Err(TensorError::UnsupportedCudaMatmul {
+                        reason: "operands must be rank-2 matrices",
+                    });
+                };
+                if inner != other_inner {
+                    return Err(TensorError::MatmulInnerDimensionMismatch {
+                        left: left.shape.clone(),
+                        right: right.shape.clone(),
+                    });
+                }
+                if [*rows, *inner, *columns]
+                    .iter()
+                    .any(|&n| i64::try_from(n).is_err())
+                {
+                    return Err(TensorError::IndexCalculationOverflow);
+                }
+                vec![*rows, *columns]
+            }
+        };
+        let (elements, canonical) = validated_layout(&shape)?;
+        elements
+            .checked_mul(4)
+            .filter(|&bytes| isize::try_from(bytes).is_ok())
+            .ok_or(TensorError::AllocationFailed { elements })?;
+        let strides = match self {
+            Self::MulScalar(input, _) => {
+                elementwise_output_strides(&shape, &[get(input)?.elementwise()], elements)?
+            }
+            Self::Add(left, right) if get(left)?.shape != get(right)?.shape => {
+                // Eager addition normalizes the matrix operand to the left.
+                let (left, right) = (get(left)?, get(right)?);
+                let operands = if left.shape.len() == 2 {
+                    [left.elementwise(), right.elementwise()]
+                } else {
+                    [right.elementwise(), left.elementwise()]
+                };
+                elementwise_output_strides(&shape, &operands, elements)?
+            }
+            _ => canonical,
+        };
+        Ok(Layout {
+            shape,
+            strides,
+            offset: 0,
+        })
+    }
+
+    pub(crate) fn execute(
+        self,
+        inputs: &[&Tensor],
+        outputs: &[Tensor],
+    ) -> Result<Tensor, TensorError> {
+        // Indices were checked for the entire plan before the first launch.
+        let get = |index: usize| {
+            if index < inputs.len() {
+                inputs[index]
+            } else {
+                &outputs[index - inputs.len()]
+            }
+        };
+        match self {
+            Self::Contiguous(input) => get(input).try_contiguous(MemoryFormat::Contiguous),
+            Self::Neg(input) => get(input).negate(),
+            Self::MulScalar(input, scalar) => get(input).mul_scalar(scalar),
+            Self::Add(left, right) => get(left).add(get(right)),
+            Self::Matmul(left, right) => get(left).matmul(get(right)),
+            Self::SumRows(input, keepdim) => get(input).sum_rank_two_dimension(1, keepdim),
+        }
+    }
+}

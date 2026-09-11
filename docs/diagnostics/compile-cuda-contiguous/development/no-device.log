@@ -1,0 +1,14 @@
+test_device_and_context_restored (tests.test_compile_cuda_contiguous.CompileContiguousDeviceTests.test_device_and_context_restored) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_alias_identity_metadata_and_mutations (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_alias_identity_metadata_and_mutations) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_argument_callable_global_and_cpu_boundaries (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_argument_callable_global_and_cpu_boundaries) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_blocked_reference_import_and_method_redispatch (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_blocked_reference_import_and_method_redispatch) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_dynamic_alias_pack_transition_and_static_guards (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_dynamic_alias_pack_transition_and_static_guards) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_malformed_ir_and_invalid_downstream_before_bridge_on_cache_hits (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_malformed_ir_and_invalid_downstream_before_bridge_on_cache_hits) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_raw_bits_copy_independence_and_lifetime (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_raw_bits_copy_independence_and_lifetime) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_seeded_views_cold_warm_cache_and_composition (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_seeded_views_cold_warm_cache_and_composition) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'
+test_bounded_metadata_and_cpu_separation (tests.test_compile_cuda_contiguous.ContiguousMetadataTests.test_bounded_metadata_and_cpu_separation) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.001s
+
+OK (skipped=8)

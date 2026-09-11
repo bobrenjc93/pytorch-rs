@@ -1,0 +1,27 @@
+import sys, os, subprocess, json, hashlib, datetime, time
+from pathlib import Path
+sys.path.insert(0, str(Path('scripts').resolve()))
+from evaluate_cuda_math import source_provenance
+name, *command = sys.argv[1:]
+root = Path.cwd()
+out = root/'target/evidence'
+assert not (out/f'{name}.log').exists()
+def gpu():
+    return subprocess.check_output(['nvidia-smi','--query-gpu=index,uuid,name,driver_version,compute_cap,utilization.gpu,memory.used,memory.total','--format=csv'],text=True)
+def now(): return datetime.datetime.now(datetime.timezone.utc).isoformat()
+record = {'command':command,'cwd':str(root),'started':now(),'source_before':source_provenance(),
+          'git_status_before':subprocess.check_output(['git','status','--porcelain'],text=True),
+          'gpu_before':gpu(),'environment':{k:v for k,v in os.environ.items() if k in ['CARGO_HOME','CARGO_TARGET_DIR','UV_CACHE_DIR','TMPDIR','XDG_CACHE_HOME','CUDA_CACHE_PATH','CUDA_VISIBLE_DEVICES','TORCH_RS_CUDART','PYTHONPYCACHEPREFIX','PYO3_PYTHON']}}
+record['native_sha256'] = {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
+                           for directory in (root/'python/torch_rs', root/'.venv/lib/python3.12/site-packages/torch_rs')
+                           for p in directory.glob('*.so')}
+record['test_sha256'] = {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
+                         for arg in command if arg.startswith('tests.')
+                         for p in [root/(arg.replace('.', '/')+'.py')] if p.is_file()}
+start=time.monotonic()
+with (out/f'{name}.log').open('w') as f:
+    result=subprocess.run(command,stdout=f,stderr=subprocess.STDOUT)
+record.update(ended=now(),seconds=time.monotonic()-start,exit_status=result.returncode,source_after=source_provenance(),gpu_after=gpu(),log_sha256=hashlib.sha256((out/f'{name}.log').read_bytes()).hexdigest())
+(out/f'{name}.receipt.json').write_text(json.dumps(record,indent=2)+'\n')
+print(name,result.returncode)
+sys.exit(result.returncode)

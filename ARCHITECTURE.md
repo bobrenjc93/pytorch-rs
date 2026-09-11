@@ -168,6 +168,17 @@ nodes can precede/follow matmul without fusion; a third tensor must be a guarded
 global capture because graphs still accept at most two positional inputs.
 See [scope and reproduction](docs/compile-cuda-matmul.md).
 
+Compiled parameterless `Tensor.contiguous()` routes through
+`src/python_compile_cuda_graph.rs` to native `Tensor::try_contiguous`, reusing
+PR1974's positive-stride rank-1/rank-2 packer. The frontend admits strided CUDA
+inputs but validates each arithmetic operand's contiguous layout separately.
+Both frontend and Rust planning validate the whole graph before execution;
+Rust layouts track offsets as well as shape/strides. Contiguous no-ops preserve
+metadata, storage and the original Python owner, including intermediate aliases,
+scalars, empties, singleton strides and higher ranks. Packs own fresh storage.
+Callable/global/device/gradient/cache guards remain live. See
+[compiled layout scope and validation](docs/compile-cuda-contiguous.md).
+
 Eager scalar multiplication routes `BinaryOperation::Multiply.apply_scalar` to
 `Tensor::mul_scalar`, shared scalar output-stride planning, and the native
 [src/cuda/mul_scalar.ptx](src/cuda/mul_scalar.ptx) 64-bit grid-stride kernel.

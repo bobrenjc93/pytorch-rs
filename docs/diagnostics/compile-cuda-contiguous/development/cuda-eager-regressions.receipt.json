@@ -1,0 +1,59 @@
+{
+  "command": [
+    ".venv/bin/python",
+    "-m",
+    "unittest",
+    "-v",
+    "tests.test_cuda_contiguous",
+    "tests.test_cuda_add",
+    "tests.test_cuda_neg",
+    "tests.test_cuda_mul_scalar",
+    "tests.test_cuda_matmul",
+    "tests.test_cuda_sum_rows",
+    "tests.test_cuda_same_device_copy"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666",
+  "started": "2026-09-11T04:54:42.153148+00:00",
+  "source_before": {
+    "commit": "22c4e1c4d32126b91ee9f5417842d245c0183fce",
+    "source_sha256": "f6d795328ffbf94c3014650bfbb682a9780b73f306eeadad037abf6e073c0259",
+    "production_diff_sha256": "42dd46b2b6024ebdc8134be43a89e0232856c67d63e9249dfa0a2e9792caf5da"
+  },
+  "git_status_before": " M ARCHITECTURE.md\n M FEATURES.md\n M docs/README.md\n M docs/supported-surface.md\n M python/torch_rs/__init__.py\n M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_neg.py\n?? docs/compile-cuda-contiguous.md\n?? tests/test_compile_cuda_contiguous.py\n",
+  "gpu_before": "index, uuid, name, driver_version, compute_cap, utilization.gpu [%], memory.used [MiB], memory.total [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 9.0, 0 %, 116 MiB, 97871 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 9.0, 0 %, 130 MiB, 97871 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 9.0, 0 %, 4 MiB, 97871 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 9.0, 0 %, 4 MiB, 97871 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 9.0, 0 %, 102 MiB, 97871 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 9.0, 0 %, 108 MiB, 97871 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 9.0, 0 %, 60 MiB, 97871 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 9.0, 0 %, 114 MiB, 97871 MiB\n",
+  "environment": {
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/target/uv-cache",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/target/cuda-cache",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/target/rust-tests",
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/target/local-cargo",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/target/tmp",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/target/xdg-cache",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "PYTHONPYCACHEPREFIX": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/target/pycache",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/bin/python"
+  },
+  "native_sha256": {
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/python/torch_rs/torch_rs.abi3.so": "8ea77b560d033412929e3e29e5b585a1e152896b51509fea651e7e7b9eae70ea",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "8ea77b560d033412929e3e29e5b585a1e152896b51509fea651e7e7b9eae70ea"
+  },
+  "test_sha256": {
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_cuda_contiguous.py": "021aea6960868a0b3e9a7638dccc957c46c724837bdcea5ebafeaca012f6174e",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_cuda_add.py": "3f3d159db8e9589484adeca8fd66b37abb19f8c8c0faa8211e4884c98cc314ab",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_cuda_neg.py": "a4cac0d9d68fef2ddf8343a7d0f6f01e4986b3919aa67e177d018b3475d361b6",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_cuda_mul_scalar.py": "3f884d6b96e05f492946ce0dc72727e2923cbe81a644132f4010275765eb4745",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_cuda_matmul.py": "3959d1423a8ee865f4cd878e96f89511734344036a4ac504b79464cd26c0a04d",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_cuda_sum_rows.py": "b447c5868c74129fe4444207117477852d553fcfa1a463fedeb9d909d32d2f5b",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/tests/test_cuda_same_device_copy.py": "f5903b497a7be46c999d84672f7f62419d1ef28740fbed0d36ef3223165d3355"
+  },
+  "ended": "2026-09-11T04:57:27.684380+00:00",
+  "seconds": 165.18668548669666,
+  "exit_status": 0,
+  "source_after": {
+    "commit": "22c4e1c4d32126b91ee9f5417842d245c0183fce",
+    "source_sha256": "f6d795328ffbf94c3014650bfbb682a9780b73f306eeadad037abf6e073c0259",
+    "production_diff_sha256": "42dd46b2b6024ebdc8134be43a89e0232856c67d63e9249dfa0a2e9792caf5da"
+  },
+  "gpu_after": "index, uuid, name, driver_version, compute_cap, utilization.gpu [%], memory.used [MiB], memory.total [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 9.0, 0 %, 116 MiB, 97871 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 9.0, 0 %, 130 MiB, 97871 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 9.0, 0 %, 4 MiB, 97871 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 9.0, 0 %, 4 MiB, 97871 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 9.0, 0 %, 102 MiB, 97871 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 9.0, 0 %, 108 MiB, 97871 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 9.0, 0 %, 60 MiB, 97871 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 9.0, 0 %, 114 MiB, 97871 MiB\n",
+  "log_sha256": "7bb43bce08fd7f1ffa154e4b342c5bc4138731350bbe7261e71597ba9b2de7f2"
+}
