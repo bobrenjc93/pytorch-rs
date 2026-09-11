@@ -24,6 +24,7 @@ artifacts are generated at merge time and are not source documentation.
 - [Repository README](../README.md): Install commands, first-success example, scope summary, and validation entry points.
 - [Architecture map](../ARCHITECTURE.md): Source map for the Rust core, Python bindings, wrappers, and test layout.
 - [Compiled CUDA matmul](compile-cuda-matmul.md): Exact capture scope, runnable example, and separate `torch.compile` timing reproduction.
+- [Compiled CUDA row sums](compile-cuda-sum-rows.md): Runnable example, constant reduction options, layout/device boundaries, and focused checks.
 - [CUDA mul/neg/add graph capture](compile-cuda-add.md): Public bounded eager compilation, device/cache guards, unsupported cases, and reproduction.
 - [Compiled CUDA scalar multiplication validation](compile-cuda-mul-scalar-validation.md): Guarded scalar grammar, independent diagnostics, and H100 checks.
 - [Compiled CUDA negation validation](compile-cuda-neg-validation.md): Integrated-commit results, provenance, and current neg/add diagnostic commands.
@@ -39,6 +40,7 @@ artifacts are generated at merge time and are not source documentation.
 
 ## Historical Validation Evidence
 
+- [Compiled CUDA row-sum validation](compile-cuda-sum-rows-validation.md): Commit-bound source captures, retained development attempts, and timing-artifact limitations.
 - [Matmul diagnostic index](diagnostics/composite-matmul-unflatten-l1/README.md): Current evidence and earlier source/composite captures, with their original identities and raw results.
 - [Matmul, unflatten and L1 integration history](composite-matmul-unflatten-l1-validation.md): Repair history, development validation and managed handoff notes.
 - [CUDA addition capture validation](compile-cuda-add-validation.md): Source validation history, baseline caveats, and composite correctness evidence; no performance score.

@@ -28,7 +28,9 @@ This follows the contiguous float32 reduction ordering in PyTorch 2.13's
 not widen to float64 or flush subnormals. Finite comparisons use the existing
 tolerances; NaN and infinity classifications are checked explicitly. The
 installed driver JITs PTX; production requires neither nvcc/NVRTC nor PyTorch,
-and performs no CPU value computation. Compiled reductions remain unsupported.
+and performs no CPU value computation. The bounded
+[compiled row-sum path](compile-cuda-sum-rows.md) reuses this kernel with
+constant scalar dimension and `keepdim` options.
 
 Contiguous offset views and contiguous singleton layouts are accepted. Outputs
 have fresh contiguous storage on the input device, offset zero, and shape
@@ -45,7 +47,9 @@ Completed output can be consumed by another stream after return; arbitrary
 external concurrent writes or public stream selection are outside this boundary.
 
 Full sums, dim=0/-2, multiple reduction dimensions, other ranks, noncontiguous
-inputs, other dtypes, autograd, and compiled reductions remain unsupported.
+inputs, other dtypes and autograd remain unsupported. Compiled capture has
+its own [argument and graph boundary](compile-cuda-sum-rows.md#supported-boundary);
+the eager one-item dimension sequences are not part of that capture grammar.
 Other CUDA reductions (including mean) retain their existing rejection paths.
 Existing CPU sum bindings, override dispatch, and CPU autograd are unchanged.
 
