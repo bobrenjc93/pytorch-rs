@@ -1,0 +1,4 @@
+The ordering-reproduction command used the current checkout Python source:
+PYTHONPATH="$PWD/python"
+It is a source-package diagnostic only. The final ordered-release checks below
+use the canonical installed wheel, without PYTHONPATH.

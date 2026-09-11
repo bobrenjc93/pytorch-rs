@@ -3,17 +3,70 @@ use super::{CoreTensor, DType, PyTensor, compile_trace_mul_scalar_value, tensor_
 use crate::tensor::cuda_graph::{Layout, Operation};
 use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyTuple;
+use pyo3::types::{PyInt, PyList, PyTuple};
 
 // Shape/stride declarations have already passed the frontend's whole-graph
 // checks. Recompute them natively too, before any storage allocation or launch.
 type Node<'py> = (
     String,
-    Vec<usize>,
     Bound<'py, PyAny>,
-    Vec<usize>,
-    Vec<usize>,
+    Bound<'py, PyAny>,
+    Bound<'py, PyAny>,
+    Bound<'py, PyAny>,
 );
+
+fn exact_indices(value: &Bound<'_, PyAny>) -> PyResult<Vec<usize>> {
+    if !value.is_exact_instance_of::<PyTuple>() && !value.is_exact_instance_of::<PyList>() {
+        return Err(PyTypeError::new_err(
+            "CUDA graph metadata requires tuple/list of exact integers",
+        ));
+    }
+    value
+        .try_iter()?
+        .map(|item| {
+            let item = item?;
+            if !item.is_exact_instance_of::<PyInt>() {
+                return Err(PyTypeError::new_err(
+                    "CUDA graph metadata requires exact integers",
+                ));
+            }
+            item.extract()
+        })
+        .collect()
+}
+
+fn parse_operation(
+    target: &str,
+    indices: &[usize],
+    payload: &Bound<'_, PyAny>,
+) -> PyResult<Operation> {
+    let operation = match (target, indices) {
+        ("mul_scalar", &[input]) => {
+            Operation::MulScalar(input, compile_trace_mul_scalar_value(payload)?)
+        }
+        ("sum", &[input]) => {
+            let options = payload.cast::<PyTuple>()?;
+            if options.len() != 2 {
+                return Err(PyNotImplementedError::new_err("invalid reduction options"));
+            }
+            Operation::SumRows(
+                input,
+                super::compile_trace_sum_options(&options.get_item(0)?, &options.get_item(1)?)?,
+            )
+        }
+        ("t", &[input]) if payload.is_none() => Operation::T(input),
+        ("contiguous", &[input]) if payload.is_none() => Operation::Contiguous(input),
+        ("neg", &[input]) if payload.is_none() => Operation::Neg(input),
+        ("add", &[left, right]) if payload.is_none() => Operation::Add(left, right),
+        ("matmul", &[left, right]) if payload.is_none() => Operation::Matmul(left, right),
+        _ => {
+            return Err(PyNotImplementedError::new_err(
+                "unsupported CUDA graph node",
+            ));
+        }
+    };
+    Ok(operation)
+}
 
 #[pyfunction(name = "_compile_trace_cuda_graph", signature = (inputs, nodes, /))]
 pub(super) fn execute(
@@ -55,30 +108,10 @@ pub(super) fn execute(
     let mut operations = Vec::with_capacity(nodes.len());
     let mut aliases = Vec::with_capacity(nodes.len());
     for (target, indices, payload, shape, strides) in nodes {
-        let operation = match (target.as_str(), indices.as_slice()) {
-            ("mul_scalar", &[input]) => {
-                Operation::MulScalar(input, compile_trace_mul_scalar_value(&payload)?)
-            }
-            ("sum", &[input]) => {
-                let options = payload.cast::<PyTuple>()?;
-                if options.len() != 2 {
-                    return Err(PyNotImplementedError::new_err("invalid reduction options"));
-                }
-                Operation::SumRows(
-                    input,
-                    super::compile_trace_sum_options(&options.get_item(0)?, &options.get_item(1)?)?,
-                )
-            }
-            ("contiguous", &[input]) if payload.is_none() => Operation::Contiguous(input),
-            ("neg", &[input]) if payload.is_none() => Operation::Neg(input),
-            ("add", &[left, right]) if payload.is_none() => Operation::Add(left, right),
-            ("matmul", &[left, right]) if payload.is_none() => Operation::Matmul(left, right),
-            _ => {
-                return Err(PyNotImplementedError::new_err(
-                    "unsupported CUDA graph node",
-                ));
-            }
-        };
+        let indices = exact_indices(&indices)?;
+        let shape = exact_indices(&shape)?;
+        let strides = exact_indices(&strides)?;
+        let operation = parse_operation(&target, &indices, &payload)?;
         let layout = operation
             .layout(&layouts)
             .map_err(|error| tensor_error(&error))?;
@@ -102,6 +135,7 @@ pub(super) fn execute(
     // Existing core operations synchronize even on launch errors and restore
     // the current device. No Python call or PyO3 crossing occurs between nodes.
     // Packing stays native; contiguous aliases preserve their original owner.
+    // T always wraps a fresh view object, even for unchanged rank-0/1 metadata.
     let mut outputs = Vec::with_capacity(operations.len());
     for (index, operation) in operations.into_iter().enumerate() {
         let output = operation
@@ -147,6 +181,79 @@ mod tests {
     use crate::{Device, cuda, tensor::cuda_graph::EXECUTIONS};
 
     #[test]
+    fn t_metadata_types_reject_before_any_native_operation() {
+        if cuda::device_count() == 0 {
+            eprintln!("skipping CUDA graph type checks: no CUDA device");
+            return;
+        }
+        Python::initialize();
+        Python::attach(|py| {
+            let base = CoreTensor::from_vec(vec![1.], [1, 1])
+                .unwrap()
+                .try_copy_cpu_to_cuda(Device::Cuda(0))
+                .unwrap();
+            let input = Py::new(py, PyTensor::new(base)).unwrap();
+            let inputs = PyTuple::new(py, [input]).unwrap();
+            let valid = (
+                "t".to_owned(),
+                PyTuple::new(py, [0]).unwrap().into_any(),
+                py.None().into_bound(py),
+                PyTuple::new(py, [1, 1]).unwrap().into_any(),
+                PyTuple::new(py, [1, 1]).unwrap().into_any(),
+            );
+            let mut bad = Vec::new();
+            for expr in [c"(True, 1)", c"(1.0, 1)", c"(1, False)"] {
+                let value = py.eval(expr, None, None).unwrap();
+                let mut shape = valid.clone();
+                shape.3 = value.clone();
+                bad.push(shape);
+                let mut stride = valid.clone();
+                stride.4 = value;
+                bad.push(stride);
+            }
+            for expr in [c"(False,)", c"(0.0,)", c"(99,)", c"()", c"(0, 0)"] {
+                let mut node = valid.clone();
+                node.1 = py.eval(expr, None, None).unwrap();
+                bad.push(node);
+            }
+            let mut payload = valid.clone();
+            payload.2 = py.eval(c"True", None, None).unwrap();
+            bad.push(payload);
+            for invalid in bad {
+                for nodes in [
+                    vec![invalid.clone(), valid.clone()],
+                    vec![valid.clone(), invalid],
+                ] {
+                    EXECUTIONS.with(|count| count.set(0));
+                    assert!(execute(&inputs, nodes).is_err());
+                    EXECUTIONS.with(|count| assert_eq!(count.get(), 0));
+                }
+            }
+            let outputs = execute(&inputs, vec![valid.clone(), valid]).unwrap();
+            assert!(!outputs[0].is(&outputs[1]));
+            assert!(!outputs[0].bind(py).is(inputs.get_item(0).unwrap()));
+            // The bridge must also reject a higher rank after an earlier valid node.
+            let rank3 = CoreTensor::from_vec(vec![1.], [1, 1, 1])
+                .unwrap()
+                .try_copy_cpu_to_cuda(Device::Cuda(0))
+                .unwrap();
+            let inputs = PyTuple::new(py, [Py::new(py, PyTensor::new(rank3)).unwrap()]).unwrap();
+            let node = |target: &str| {
+                (
+                    target.to_owned(),
+                    PyTuple::new(py, [0]).unwrap().into_any(),
+                    py.None().into_bound(py),
+                    PyTuple::new(py, [1, 1, 1]).unwrap().into_any(),
+                    PyTuple::new(py, [1, 1, 1]).unwrap().into_any(),
+                )
+            };
+            EXECUTIONS.with(|count| count.set(0));
+            assert!(execute(&inputs, vec![node("neg"), node("t")]).is_err());
+            EXECUTIONS.with(|count| assert_eq!(count.get(), 0));
+        });
+    }
+
+    #[test]
     fn invalid_late_nodes_execute_zero_native_operations() {
         if cuda::device_count() == 0 {
             eprintln!("skipping native CUDA graph launch accounting: no CUDA device");
@@ -164,10 +271,10 @@ mod tests {
                 |target: &str, indices: Vec<usize>, shape: Vec<usize>, strides: Vec<usize>| {
                     (
                         target.to_owned(),
-                        indices,
+                        PyTuple::new(py, indices).unwrap().into_any(),
                         py.None().into_bound(py),
-                        shape,
-                        strides,
+                        PyTuple::new(py, shape).unwrap().into_any(),
+                        PyTuple::new(py, strides).unwrap().into_any(),
                     )
                 };
             let bad = [

@@ -1,0 +1,53 @@
+   Compiling target-lexicon v0.13.5
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling crossbeam-utils v0.8.23
+   Compiling quote v1.0.47
+   Compiling crossbeam-epoch v0.9.21
+   Compiling crossbeam-deque v0.8.8
+   Compiling libc v0.2.189
+   Compiling rayon-core v1.13.0
+   Compiling heck v0.5.0
+    Checking inventory v0.3.24
+    Checking once_cell v1.21.4
+    Checking either v1.18.0
+    Checking cfg-if v1.0.4
+    Checking libloading v0.8.9
+   Compiling pyo3-build-config v0.29.2
+   Compiling syn v2.0.119
+    Checking rayon v1.12.0
+   Compiling pyo3-ffi v0.29.2
+   Compiling pyo3 v0.29.2
+   Compiling pyo3-macros-backend v0.29.2
+   Compiling pyo3-macros v0.29.2
+    Checking pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf)
+error[E0425]: cannot find value `f` in this scope
+   --> src/tensor_error.rs:474:20
+    |
+474 |             write!(f, "unsupported CUDA Tensor.t: {reason}")
+    |                    ^ not found in this scope
+
+error[E0004]: non-exhaustive patterns: `&TensorError::UnsupportedCudaTranspose { .. }` not covered
+   --> src/python_tensor_errors.rs:9:11
+    |
+  9 |     match error {
+    |           ^^^^^ pattern `&TensorError::UnsupportedCudaTranspose { .. }` not covered
+    |
+note: `TensorError` defined here
+   --> src/tensor_error.rs:8:10
+    |
+  8 | pub enum TensorError {
+    |          ^^^^^^^^^^^
+...
+126 |     UnsupportedCudaTranspose {
+    |     ------------------------ not covered
+    = note: the matched value is of type `&TensorError`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+    |
+ 64 ~         },
+ 65 +         &TensorError::UnsupportedCudaTranspose { .. } => todo!()
+    |
+
+Some errors have detailed explanations: E0004, E0425.
+For more information about an error, try `rustc --explain E0004`.
+error: could not compile `pytorch-rs` (lib) due to 2 previous errors

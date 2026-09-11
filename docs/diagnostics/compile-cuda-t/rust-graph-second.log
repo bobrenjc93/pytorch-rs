@@ -1,0 +1,6 @@
+   Compiling pyo3-ffi v0.29.2
+   Compiling pyo3 v0.29.2
+error: could not find native static library `python3.12`, perhaps an -L flag is missing?
+
+error: could not compile `pyo3-ffi` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

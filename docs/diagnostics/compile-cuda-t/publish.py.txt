@@ -1,0 +1,67 @@
+"""Publish this diagnostic's receipts; does not execute or modify evaluators."""
+import hashlib, json, shutil, subprocess, sys
+from pathlib import Path
+ROOT = Path.cwd()
+SRC = ROOT / 'target/compile-t'
+OUT = ROOT / 'docs/diagnostics/compile-cuda-t'
+OUT.mkdir(parents=True, exist_ok=False)
+sys.path.insert(0, str(ROOT / 'scripts'))
+from evaluate_cuda_math import source_provenance
+
+def sha(path): return hashlib.sha256(path.read_bytes()).hexdigest()
+def write(path, data): path.write_text(json.dumps(data, indent=2, sort_keys=True)+'\n')
+
+# Keep logs and immutable receipts from every attempt, including failed builds.
+for p in SRC.glob('*'):
+    if p.is_file() and (p.suffix in ('.log', '.txt') or p.name.endswith('.receipt.json')):
+        shutil.copyfile(p, OUT/p.name)
+for name in ('baseline-release', 'baseline-release-python312', 'development-release', 'development-release-second', 'release-final', 'release-ordered'):
+    destination = OUT/name
+    destination.mkdir()
+    for p in (SRC/name).iterdir():
+        if p.is_file() and p.suffix in ('.json', '.log'):
+            shutil.copyfile(p, destination/p.name)
+for name in ('capture.py', 'baseline.py', 'preflight.py', 'environment.sh', 'docs-example.py', 'publish.py'):
+    shutil.copyfile(SRC/name, OUT/(name+'.txt'))
+
+# Preserve each receipt's original manifest digest, while storing unchanged
+# source/test/tool hashes once. Reconstruction uses the original serializer.
+manifest_paths = list(SRC.glob('inputs-*.json'))
+manifests = {sha(p): json.loads(p.read_text()) for p in manifest_paths}
+base_digest = json.loads((SRC/'baseline-python312.receipt.json').read_text())['measured_inputs_sha256']
+base = manifests[base_digest]
+compact = {'serializer': 'json.dumps(files, indent=2, sort_keys=True) + "\\n"',
+           'base_sha256': base_digest, 'base_files': base, 'deltas': {}}
+for digest, manifest in manifests.items():
+    assert hashlib.sha256((json.dumps(manifest, indent=2, sort_keys=True)+'\n').encode()).hexdigest() == digest
+    if digest != base_digest:
+        compact['deltas'][digest] = {'changed': {p: h for p,h in manifest.items() if base.get(p) != h},
+                                    'removed': sorted(set(base) - set(manifest))}
+write(OUT/'input-manifests.json', compact)
+
+release = json.loads((OUT/'release-ordered/build-record.json').read_text())
+current = source_provenance()
+assert all(current[k] == release[k] for k in current)
+for p in (ROOT/'python/torch_rs').rglob('*.py'):
+    installed = ROOT/'.venv/lib/python3.12/site-packages'/p.relative_to(ROOT/'python')
+    assert p.read_bytes() == installed.read_bytes(), str(p)
+assert sha(Path(release['extension_path'])) == release['extension_sha256']
+assert sha(Path(release['source_extension_path'])) == release['extension_sha256']
+receipts = {}
+for p in OUT.glob('*.receipt.json'):
+    r = json.loads(p.read_text())
+    name = p.name.removesuffix('.receipt.json')
+    assert sha(OUT/(name+'.log')) == r['log_sha256'], name
+    assert r['measured_inputs_sha256'] in manifests
+    assert r['inputs_unchanged'] and r['source_before'] == r['source_after'], name
+    receipts[name] = {'exit_status': r['exit_status'], 'source': r['source_before'],
+                      'native': r['native_before'], 'measured_inputs_sha256': r['measured_inputs_sha256']}
+final_manifest = manifests[json.loads((SRC/'t-ordered.receipt.json').read_text())['measured_inputs_sha256']]
+rust_manifest = manifests[json.loads((SRC/'rust-bindings-final.receipt.json').read_text())['measured_inputs_sha256']]
+assert {p:h for p,h in final_manifest.items() if p.startswith('src/')} == {p:h for p,h in rust_manifest.items() if p.startswith('src/')}
+write(OUT/'audit.json', {'rust_test_sources_match_final': True, 'final_source': current, 'release_extension_sha256': release['extension_sha256'],
+                       'installed_python_matches_source': True, 'source_and_installed_native_match_release': True,
+                       'all_receipt_logs_and_input_manifests_verified': True, 'receipts': receipts,
+                       'clean_candidate_commit_capture': 'deferred: task prohibits commits; Burner owns delivery'})
+print(json.dumps(current, indent=2))
+print('native',release['extension_sha256'])

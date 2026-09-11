@@ -1,0 +1,61 @@
+📦 Including license file `LICENSE`
+🍹 Building a mixed python/rust project
+🐍 Found CPython 3.12 at /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/bin/python
+🔗 Found pyo3 bindings with abi3-py3.10 support
+📡 Using build options features from pyproject.toml
+   Compiling target-lexicon v0.13.5
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.47
+   Compiling crossbeam-utils v0.8.23
+   Compiling crossbeam-epoch v0.9.21
+   Compiling libc v0.2.189
+   Compiling crossbeam-deque v0.8.8
+   Compiling heck v0.5.0
+   Compiling rayon-core v1.13.0
+   Compiling cfg-if v1.0.4
+   Compiling either v1.18.0
+   Compiling inventory v0.3.24
+   Compiling once_cell v1.21.4
+   Compiling libloading v0.8.9
+   Compiling pyo3-build-config v0.29.2
+   Compiling syn v2.0.119
+   Compiling pyo3-ffi v0.29.2
+   Compiling pyo3 v0.29.2
+   Compiling rayon v1.12.0
+   Compiling pyo3-macros-backend v0.29.2
+   Compiling pyo3-macros v0.29.2
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf)
+error[E0425]: cannot find value `f` in this scope
+   --> src/tensor_error.rs:474:20
+    |
+474 |             write!(f, "unsupported CUDA Tensor.t: {reason}")
+    |                    ^ not found in this scope
+
+error[E0004]: non-exhaustive patterns: `&TensorError::UnsupportedCudaTranspose { .. }` not covered
+   --> src/python_tensor_errors.rs:9:11
+    |
+  9 |     match error {
+    |           ^^^^^ pattern `&TensorError::UnsupportedCudaTranspose { .. }` not covered
+    |
+note: `TensorError` defined here
+   --> src/tensor_error.rs:8:10
+    |
+  8 | pub enum TensorError {
+    |          ^^^^^^^^^^^
+...
+126 |     UnsupportedCudaTranspose {
+    |     ------------------------ not covered
+    = note: the matched value is of type `&TensorError`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+    |
+ 64 ~         },
+ 65 +         &TensorError::UnsupportedCudaTranspose { .. } => todo!()
+    |
+
+Some errors have detailed explanations: E0004, E0425.
+For more information about an error, try `rustc --explain E0004`.
+error: could not compile `pytorch-rs` (lib) due to 2 previous errors
+💥 maturin failed
+  Caused by: Failed to build a native library through cargo
+  Caused by: Cargo build finished with "exit status: 101": `env -u CARGO PYO3_BUILD_EXTENSION_MODULE="1" PYO3_CONFIG_FILE="/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/target/compile-t/development-release/build/maturin/pyo3-config-x86_64-unknown-linux-gnu-3.12-abi3.txt" PYO3_ENVIRONMENT_SIGNATURE="cpython-3.12-64bit" PYO3_PYTHON="/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/bin/python" PYTHON_SYS_EXECUTABLE="/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/bin/python" "cargo" "rustc" "--profile" "release" "--features" "extension-module" "--message-format" "json-render-diagnostics" "--locked" "--offline" "--manifest-path" "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/Cargo.toml" "--lib" "--crate-type" "cdylib" "--" "-C" "strip=symbols"`

@@ -1,0 +1,56 @@
+{
+  "command": [
+    ".venv/bin/python",
+    "-m",
+    "unittest",
+    "-v",
+    "tests.test_compile_cuda_t"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf",
+  "started_at": "2026-09-11T06:15:21.425690+00:00",
+  "source_before": {
+    "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+    "source_sha256": "ea8386ba5f7c60643fe01f19014942da330e15ffd02a81dddadb7454bc527fde",
+    "production_diff_sha256": "f60deed9d664a30405d5a87292cff0dd766e2f5b6ac5d51352f5d5ad7bfa5ff7"
+  },
+  "git_status_before": " M ARCHITECTURE.md\n M FEATURES.md\n M docs/README.md\n M docs/compile-cuda-contiguous.md\n M docs/supported-surface.md\n M python/torch_rs/__init__.py\n M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/python_tensor_errors.rs\n M src/tensor_cuda_graph.rs\n M src/tensor_error.rs\n?? docs/compile-cuda-t.md\n?? tests/test_compile_cuda_t.py\n",
+  "native_before": {
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7"
+  },
+  "gpu_before": "index, uuid, name, driver_version, compute_cap, utilization.gpu [%], memory.used [MiB], memory.total [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 9.0, 0 %, 116 MiB, 97871 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 9.0, 0 %, 130 MiB, 97871 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 9.0, 0 %, 4 MiB, 97871 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 9.0, 0 %, 4 MiB, 97871 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 9.0, 0 %, 102 MiB, 97871 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 9.0, 0 %, 108 MiB, 97871 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 9.0, 0 %, 60 MiB, 97871 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 9.0, 0 %, 114 MiB, 97871 MiB\n",
+  "measured_inputs_sha256": "b2557ef7029140e32a6b24a26925768549c623197fed9ed81ecd2d1548d15518",
+  "environment": {
+    "GIT_OPTIONAL_LOCKS": "0",
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/target/local-cargo",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/target/compile-t/rust-managed",
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/target/uv-cache",
+    "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/target/python",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/target/compile-t/tmp",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/target/compile-t/xdg",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/target/compile-t/cuda",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/target/compile-t/inductor",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/target/compile-t/triton",
+    "PYTHONPYCACHEPREFIX": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/target/compile-t/pycache",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/bin/python",
+    "VIRTUAL_ENV": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv"
+  },
+  "ended_at": "2026-09-11T06:15:58.601476+00:00",
+  "wall_seconds": 36.84102937113494,
+  "exit_status": 0,
+  "source_after": {
+    "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+    "source_sha256": "ea8386ba5f7c60643fe01f19014942da330e15ffd02a81dddadb7454bc527fde",
+    "production_diff_sha256": "f60deed9d664a30405d5a87292cff0dd766e2f5b6ac5d51352f5d5ad7bfa5ff7"
+  },
+  "git_status_after": " M ARCHITECTURE.md\n M FEATURES.md\n M docs/README.md\n M docs/compile-cuda-contiguous.md\n M docs/supported-surface.md\n M python/torch_rs/__init__.py\n M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/python_tensor_errors.rs\n M src/tensor_cuda_graph.rs\n M src/tensor_error.rs\n?? docs/compile-cuda-t.md\n?? tests/test_compile_cuda_t.py\n",
+  "gpu_after": "index, uuid, name, driver_version, compute_cap, utilization.gpu [%], memory.used [MiB], memory.total [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 9.0, 3 %, 2035 MiB, 97871 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 9.0, 0 %, 130 MiB, 97871 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 9.0, 0 %, 4 MiB, 97871 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 9.0, 0 %, 4 MiB, 97871 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 9.0, 0 %, 102 MiB, 97871 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 9.0, 0 %, 108 MiB, 97871 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 9.0, 0 %, 60 MiB, 97871 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 9.0, 0 %, 114 MiB, 97871 MiB\n",
+  "native_after": {
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7"
+  },
+  "inputs_unchanged": true,
+  "log_sha256": "326015d009266c7337d03a31a2654274b5d8ed1fb28957703f6053f1471e7c3f"
+}

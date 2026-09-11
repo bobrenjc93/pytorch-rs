@@ -1,0 +1,389 @@
+{
+  "all_receipt_logs_and_input_manifests_verified": true,
+  "clean_candidate_commit_capture": "deferred: task prohibits commits; Burner owns delivery",
+  "final_source": {
+    "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+    "production_diff_sha256": "318fe9c7365a7cd3b98fa45bd6527b7d8be08e3f2f0d823f9e4b985c9fb1d011",
+    "source_sha256": "7398e4f13c0878e303e0743da9f86f6685f06c907aa52cdd7b79c05f72deb546"
+  },
+  "installed_python_matches_source": true,
+  "receipts": {
+    "baseline": {
+      "exit_status": 1,
+      "measured_inputs_sha256": "19827ee4c917200eb34ab35b7c6e1abd172d6d55f722e648788b78568f985cfb",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "3f96fdebe985a8a891bed73adcc699c8d2b38163ead58bfbdfb8c0c7b1404a1f"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "source_sha256": "02647f45847695e0f386956541be69aca2a8c76f7ce05d0e5fa6734c46b56488"
+      }
+    },
+    "baseline-python312": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "19827ee4c917200eb34ab35b7c6e1abd172d6d55f722e648788b78568f985cfb",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "3f96fdebe985a8a891bed73adcc699c8d2b38163ead58bfbdfb8c0c7b1404a1f",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "3f96fdebe985a8a891bed73adcc699c8d2b38163ead58bfbdfb8c0c7b1404a1f"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "source_sha256": "02647f45847695e0f386956541be69aca2a8c76f7ce05d0e5fa6734c46b56488"
+      }
+    },
+    "clippy-bindings": {
+      "exit_status": 101,
+      "measured_inputs_sha256": "d37073af57259d4798839b6131a1996f025deed5e362c8d2ffd1f14c5fb7025a",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "6a837008c177d00e4371b60691da1c6ad6b5a0a5b8feb6cb9c4789862681fd6b",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "6a837008c177d00e4371b60691da1c6ad6b5a0a5b8feb6cb9c4789862681fd6b"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "428d13415e60bcbfbbfda1a284a07fc8cf006337de8d4f9904f9ce4d06e02f00",
+        "source_sha256": "6946c8342cd69ca8f864770b639fb2d40eed5b4fb98d8a34d8b4a0ad9ac1e217"
+      }
+    },
+    "clippy-final": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "b2557ef7029140e32a6b24a26925768549c623197fed9ed81ecd2d1548d15518",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "6a837008c177d00e4371b60691da1c6ad6b5a0a5b8feb6cb9c4789862681fd6b",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "6a837008c177d00e4371b60691da1c6ad6b5a0a5b8feb6cb9c4789862681fd6b"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "f60deed9d664a30405d5a87292cff0dd766e2f5b6ac5d51352f5d5ad7bfa5ff7",
+        "source_sha256": "ea8386ba5f7c60643fe01f19014942da330e15ffd02a81dddadb7454bc527fde"
+      }
+    },
+    "compiler-final": {
+      "exit_status": 1,
+      "measured_inputs_sha256": "b2557ef7029140e32a6b24a26925768549c623197fed9ed81ecd2d1548d15518",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "f60deed9d664a30405d5a87292cff0dd766e2f5b6ac5d51352f5d5ad7bfa5ff7",
+        "source_sha256": "ea8386ba5f7c60643fe01f19014942da330e15ffd02a81dddadb7454bc527fde"
+      }
+    },
+    "compiler-ordered": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "87db4f30586486826b7e146789e8a2e9c2b0a563a5da1d0515ddb687969aa962",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "318fe9c7365a7cd3b98fa45bd6527b7d8be08e3f2f0d823f9e4b985c9fb1d011",
+        "source_sha256": "7398e4f13c0878e303e0743da9f86f6685f06c907aa52cdd7b79c05f72deb546"
+      }
+    },
+    "compiler-regressions-first": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "d37073af57259d4798839b6131a1996f025deed5e362c8d2ffd1f14c5fb7025a",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "6a837008c177d00e4371b60691da1c6ad6b5a0a5b8feb6cb9c4789862681fd6b",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "6a837008c177d00e4371b60691da1c6ad6b5a0a5b8feb6cb9c4789862681fd6b"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "428d13415e60bcbfbbfda1a284a07fc8cf006337de8d4f9904f9ce4d06e02f00",
+        "source_sha256": "6946c8342cd69ca8f864770b639fb2d40eed5b4fb98d8a34d8b4a0ad9ac1e217"
+      }
+    },
+    "cpu-layout-final": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "b2557ef7029140e32a6b24a26925768549c623197fed9ed81ecd2d1548d15518",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "f60deed9d664a30405d5a87292cff0dd766e2f5b6ac5d51352f5d5ad7bfa5ff7",
+        "source_sha256": "ea8386ba5f7c60643fe01f19014942da330e15ffd02a81dddadb7454bc527fde"
+      }
+    },
+    "cpu-layout-first": {
+      "exit_status": 1,
+      "measured_inputs_sha256": "d37073af57259d4798839b6131a1996f025deed5e362c8d2ffd1f14c5fb7025a",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "6a837008c177d00e4371b60691da1c6ad6b5a0a5b8feb6cb9c4789862681fd6b",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "6a837008c177d00e4371b60691da1c6ad6b5a0a5b8feb6cb9c4789862681fd6b"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "428d13415e60bcbfbbfda1a284a07fc8cf006337de8d4f9904f9ce4d06e02f00",
+        "source_sha256": "6946c8342cd69ca8f864770b639fb2d40eed5b4fb98d8a34d8b4a0ad9ac1e217"
+      }
+    },
+    "cpu-layout-ordered": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "87db4f30586486826b7e146789e8a2e9c2b0a563a5da1d0515ddb687969aa962",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "318fe9c7365a7cd3b98fa45bd6527b7d8be08e3f2f0d823f9e4b985c9fb1d011",
+        "source_sha256": "7398e4f13c0878e303e0743da9f86f6685f06c907aa52cdd7b79c05f72deb546"
+      }
+    },
+    "docs-example": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "b2557ef7029140e32a6b24a26925768549c623197fed9ed81ecd2d1548d15518",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "f60deed9d664a30405d5a87292cff0dd766e2f5b6ac5d51352f5d5ad7bfa5ff7",
+        "source_sha256": "ea8386ba5f7c60643fe01f19014942da330e15ffd02a81dddadb7454bc527fde"
+      }
+    },
+    "eager-cuda": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "b2557ef7029140e32a6b24a26925768549c623197fed9ed81ecd2d1548d15518",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "f60deed9d664a30405d5a87292cff0dd766e2f5b6ac5d51352f5d5ad7bfa5ff7",
+        "source_sha256": "ea8386ba5f7c60643fe01f19014942da330e15ffd02a81dddadb7454bc527fde"
+      }
+    },
+    "formatting": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "b2557ef7029140e32a6b24a26925768549c623197fed9ed81ecd2d1548d15518",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "f60deed9d664a30405d5a87292cff0dd766e2f5b6ac5d51352f5d5ad7bfa5ff7",
+        "source_sha256": "ea8386ba5f7c60643fe01f19014942da330e15ffd02a81dddadb7454bc527fde"
+      }
+    },
+    "imports": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "b2557ef7029140e32a6b24a26925768549c623197fed9ed81ecd2d1548d15518",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "f60deed9d664a30405d5a87292cff0dd766e2f5b6ac5d51352f5d5ad7bfa5ff7",
+        "source_sha256": "ea8386ba5f7c60643fe01f19014942da330e15ffd02a81dddadb7454bc527fde"
+      }
+    },
+    "imports-ordered": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "87db4f30586486826b7e146789e8a2e9c2b0a563a5da1d0515ddb687969aa962",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "318fe9c7365a7cd3b98fa45bd6527b7d8be08e3f2f0d823f9e4b985c9fb1d011",
+        "source_sha256": "7398e4f13c0878e303e0743da9f86f6685f06c907aa52cdd7b79c05f72deb546"
+      }
+    },
+    "no-device": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "b2557ef7029140e32a6b24a26925768549c623197fed9ed81ecd2d1548d15518",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "f60deed9d664a30405d5a87292cff0dd766e2f5b6ac5d51352f5d5ad7bfa5ff7",
+        "source_sha256": "ea8386ba5f7c60643fe01f19014942da330e15ffd02a81dddadb7454bc527fde"
+      }
+    },
+    "no-device-ordered": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "87db4f30586486826b7e146789e8a2e9c2b0a563a5da1d0515ddb687969aa962",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "318fe9c7365a7cd3b98fa45bd6527b7d8be08e3f2f0d823f9e4b985c9fb1d011",
+        "source_sha256": "7398e4f13c0878e303e0743da9f86f6685f06c907aa52cdd7b79c05f72deb546"
+      }
+    },
+    "ordering-reproduction": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "87db4f30586486826b7e146789e8a2e9c2b0a563a5da1d0515ddb687969aa962",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "318fe9c7365a7cd3b98fa45bd6527b7d8be08e3f2f0d823f9e4b985c9fb1d011",
+        "source_sha256": "7398e4f13c0878e303e0743da9f86f6685f06c907aa52cdd7b79c05f72deb546"
+      }
+    },
+    "preflight": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "b2557ef7029140e32a6b24a26925768549c623197fed9ed81ecd2d1548d15518",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "f60deed9d664a30405d5a87292cff0dd766e2f5b6ac5d51352f5d5ad7bfa5ff7",
+        "source_sha256": "ea8386ba5f7c60643fe01f19014942da330e15ffd02a81dddadb7454bc527fde"
+      }
+    },
+    "rust-bindings-final": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "b2557ef7029140e32a6b24a26925768549c623197fed9ed81ecd2d1548d15518",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "6a837008c177d00e4371b60691da1c6ad6b5a0a5b8feb6cb9c4789862681fd6b",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "6a837008c177d00e4371b60691da1c6ad6b5a0a5b8feb6cb9c4789862681fd6b"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "f60deed9d664a30405d5a87292cff0dd766e2f5b6ac5d51352f5d5ad7bfa5ff7",
+        "source_sha256": "ea8386ba5f7c60643fe01f19014942da330e15ffd02a81dddadb7454bc527fde"
+      }
+    },
+    "rust-default": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "d37073af57259d4798839b6131a1996f025deed5e362c8d2ffd1f14c5fb7025a",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "6a837008c177d00e4371b60691da1c6ad6b5a0a5b8feb6cb9c4789862681fd6b",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "6a837008c177d00e4371b60691da1c6ad6b5a0a5b8feb6cb9c4789862681fd6b"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "428d13415e60bcbfbbfda1a284a07fc8cf006337de8d4f9904f9ce4d06e02f00",
+        "source_sha256": "6946c8342cd69ca8f864770b639fb2d40eed5b4fb98d8a34d8b4a0ad9ac1e217"
+      }
+    },
+    "rust-graph-first": {
+      "exit_status": 101,
+      "measured_inputs_sha256": "e539163dd5ccf9b9f5387e81cdc609c3245b5fe87cd09c2cf91855a44c80a430",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "3f96fdebe985a8a891bed73adcc699c8d2b38163ead58bfbdfb8c0c7b1404a1f",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "3f96fdebe985a8a891bed73adcc699c8d2b38163ead58bfbdfb8c0c7b1404a1f"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "0d8a8a160594d424ebc5beb150820b026454a1d4363d4aad6d3d03eef5861882",
+        "source_sha256": "019d054e38d61566263c17e91a8a0e236cce49727beb8fd69e371507d1f0c18d"
+      }
+    },
+    "rust-graph-second": {
+      "exit_status": 101,
+      "measured_inputs_sha256": "d37073af57259d4798839b6131a1996f025deed5e362c8d2ffd1f14c5fb7025a",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "3f96fdebe985a8a891bed73adcc699c8d2b38163ead58bfbdfb8c0c7b1404a1f"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "428d13415e60bcbfbbfda1a284a07fc8cf006337de8d4f9904f9ce4d06e02f00",
+        "source_sha256": "6946c8342cd69ca8f864770b639fb2d40eed5b4fb98d8a34d8b4a0ad9ac1e217"
+      }
+    },
+    "rust-graph-third": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "d37073af57259d4798839b6131a1996f025deed5e362c8d2ffd1f14c5fb7025a",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "3f96fdebe985a8a891bed73adcc699c8d2b38163ead58bfbdfb8c0c7b1404a1f"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "428d13415e60bcbfbbfda1a284a07fc8cf006337de8d4f9904f9ce4d06e02f00",
+        "source_sha256": "6946c8342cd69ca8f864770b639fb2d40eed5b4fb98d8a34d8b4a0ad9ac1e217"
+      }
+    },
+    "t-final": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "b2557ef7029140e32a6b24a26925768549c623197fed9ed81ecd2d1548d15518",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "f60deed9d664a30405d5a87292cff0dd766e2f5b6ac5d51352f5d5ad7bfa5ff7",
+        "source_sha256": "ea8386ba5f7c60643fe01f19014942da330e15ffd02a81dddadb7454bc527fde"
+      }
+    },
+    "t-first": {
+      "exit_status": 1,
+      "measured_inputs_sha256": "d37073af57259d4798839b6131a1996f025deed5e362c8d2ffd1f14c5fb7025a",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "6a837008c177d00e4371b60691da1c6ad6b5a0a5b8feb6cb9c4789862681fd6b",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "6a837008c177d00e4371b60691da1c6ad6b5a0a5b8feb6cb9c4789862681fd6b"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "428d13415e60bcbfbbfda1a284a07fc8cf006337de8d4f9904f9ce4d06e02f00",
+        "source_sha256": "6946c8342cd69ca8f864770b639fb2d40eed5b4fb98d8a34d8b4a0ad9ac1e217"
+      }
+    },
+    "t-ordered": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "87db4f30586486826b7e146789e8a2e9c2b0a563a5da1d0515ddb687969aa962",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "318fe9c7365a7cd3b98fa45bd6527b7d8be08e3f2f0d823f9e4b985c9fb1d011",
+        "source_sha256": "7398e4f13c0878e303e0743da9f86f6685f06c907aa52cdd7b79c05f72deb546"
+      }
+    },
+    "two-device": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "b2557ef7029140e32a6b24a26925768549c623197fed9ed81ecd2d1548d15518",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "f60deed9d664a30405d5a87292cff0dd766e2f5b6ac5d51352f5d5ad7bfa5ff7",
+        "source_sha256": "ea8386ba5f7c60643fe01f19014942da330e15ffd02a81dddadb7454bc527fde"
+      }
+    },
+    "two-device-ordered": {
+      "exit_status": 0,
+      "measured_inputs_sha256": "87db4f30586486826b7e146789e8a2e9c2b0a563a5da1d0515ddb687969aa962",
+      "native": {
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/python/torch_rs/torch_rs.abi3.so": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7"
+      },
+      "source": {
+        "commit": "19e6c31e4371cb34647d37b6badcae8f94acad38",
+        "production_diff_sha256": "318fe9c7365a7cd3b98fa45bd6527b7d8be08e3f2f0d823f9e4b985c9fb1d011",
+        "source_sha256": "7398e4f13c0878e303e0743da9f86f6685f06c907aa52cdd7b79c05f72deb546"
+      }
+    }
+  },
+  "release_extension_sha256": "4a46c3adde899f52f851a125efa54215e37bfa5857f6bf34793586b123076ef7",
+  "rust_test_sources_match_final": true,
+  "source_and_installed_native_match_release": true
+}

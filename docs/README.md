@@ -23,6 +23,7 @@ artifacts are generated at merge time and are not source documentation.
 - [Setup troubleshooting](troubleshooting.md): Short fixes for common environment, import, reference dependency, and stale wheel failures.
 - [Repository README](../README.md): Install commands, first-success example, scope summary, and validation entry points.
 - [Architecture map](../ARCHITECTURE.md): Source map for the Rust core, Python bindings, wrappers, and test layout.
+- [Compiled CUDA t views](compile-cuda-t.md): Bounded shared-storage transpose capture, packing composition and H100 diagnostics.
 - [Compiled CUDA contiguous](compile-cuda-contiguous.md): Parameterless native view packing, alias semantics and clean-commit H100 validation including review regressions.
 - [Compiled CUDA matmul](compile-cuda-matmul.md): Exact capture scope, runnable example, and separate `torch.compile` timing reproduction.
 - [Compiled CUDA row sums](compile-cuda-sum-rows.md): Runnable example, constant reduction options, layout/device boundaries, and focused checks.

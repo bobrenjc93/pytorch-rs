@@ -1,0 +1,17 @@
+   Compiling inventory v0.3.24
+   Compiling once_cell v1.21.4
+   Compiling either v1.18.0
+   Compiling cfg-if v1.0.4
+   Compiling crossbeam-utils v0.8.23
+   Compiling libc v0.2.189
+   Compiling libloading v0.8.9
+   Compiling crossbeam-epoch v0.9.21
+   Compiling crossbeam-deque v0.8.8
+   Compiling rayon-core v1.13.0
+   Compiling pyo3-ffi v0.29.2
+   Compiling rayon v1.12.0
+   Compiling pyo3 v0.29.2
+error: could not find native static library `python3.12`, perhaps an -L flag is missing?
+
+error: could not compile `pyo3-ffi` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
