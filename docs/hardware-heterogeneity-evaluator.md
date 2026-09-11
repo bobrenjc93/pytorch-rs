@@ -551,8 +551,8 @@ produce all six slots. Exit 0 means all reference trials are eligible; candidate
 support must be read from `accounting`, not the exit status. Portable accounting
 tests require no GPU; their hardware reference test skips clearly without CUDA.
 
-The [H100 capture](evaluation-data/cuda-dtypes-layout-views-v1-h100/README.md)
-records two-seed execution of all six cases against unchanged production code.
+The [clean-commit H100 capture](evaluation-data/cuda-dtypes-layout-views-v1-h100/postcommit-072e1c45/README.md)
+records two-seed execution of all six cases at `072e1c45e78b0e22a881d34807e842ce8f74b0f1`.
 It is denominator validation, not implementation impact or an overall score.
 Unsupported behavior is left for implementation planning after this denominator
 merges.
