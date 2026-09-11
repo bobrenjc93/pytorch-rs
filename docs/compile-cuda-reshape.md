@@ -79,8 +79,8 @@ CUDA_VISIBLE_DEVICES='' .venv/bin/python -m unittest -v tests.test_compile_cuda_
 ```
 
 Hardware-only cases skip clearly when the required devices are unavailable.
-The [latest clean-commit capture](diagnostics/compile-cuda-reshape/postcommit-73b74ec0/README.md)
-measures `73b74ec00a4608debc49ef0795231aa6298e68cb` with a fresh local environment
+The [latest clean-commit capture](diagnostics/compile-cuda-reshape/postcommit-93441a9f/README.md)
+measures `93441a9fc13e8124a507a34810f2c3d97f7e69f1` with a fresh local environment
 and release build, including all three reviews' argument-validation regressions.
 H100 differentials, compiler and CPU/layout regressions, two-device restoration,
 CUDA-hidden portability, Rust checks, Clippy and the example above passed;
@@ -93,8 +93,9 @@ preserves the fresh PR1977 baseline gap and failed attempts. The
 [local-constant review](diagnostics/compile-cuda-reshape/local-constant-review/README.md)
 retain their development failures and checks. Earlier clean captures at
 [`1ad5fd62`](diagnostics/compile-cuda-reshape/postcommit-1ad5fd62/README.md),
-[`7533cbbc`](diagnostics/compile-cuda-reshape/postcommit-7533cbbc/README.md) and
-[`3d44687d`](diagnostics/compile-cuda-reshape/postcommit-3d44687d/README.md) remain
+[`7533cbbc`](diagnostics/compile-cuda-reshape/postcommit-7533cbbc/README.md),
+[`3d44687d`](diagnostics/compile-cuda-reshape/postcommit-3d44687d/README.md) and
+[`73b74ec0`](diagnostics/compile-cuda-reshape/postcommit-73b74ec0/README.md) remain
 pinned to their original code and build identities.
 
 These graphlets are non-scoring diagnostics. Frozen38, performance workloads,

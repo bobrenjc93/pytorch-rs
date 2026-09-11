@@ -1,0 +1,38 @@
+{
+  "verified_at": "2026-09-11T10:46:57.452294+00:00",
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/bin/python",
+    "target/reshape-postcommit-93441a9f/prior-provenance.py"
+  ],
+  "script_sha256": "c78cb4b01b46f18b60bba886342abb2320982020b9a677eb5fdf5ee0f359cb3d",
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a",
+  "interpreter": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/target/root-docs-uv-python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+  "commit": "93441a9fc13e8124a507a34810f2c3d97f7e69f1",
+  "git_status": "",
+  "preceding_measured_commit": "73b74ec00a4608debc49ef0795231aa6298e68cb",
+  "preceding_build_record_sha256": "73434c479b1901baf445bba119e260dec8def38f84da81acffc0885ad00dc436",
+  "preceding_environment_script_exists": false,
+  "checks": {
+    "extension": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+      "expected_sha256": "f4544c90fa3701984bb083c1ba6ae744bcfd187ea8e28ffa1c3b238c52179eda",
+      "actual_sha256": "42f76b7be245ad699b4a5300018cd0de9ff32d48899db0da9f4aff78352354d7",
+      "matches": false
+    },
+    "wheel": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/target/reshape-postcommit-73b74ec0/release/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+      "expected_sha256": "df5e242fb0a445e4ad9cce98dc0bd8128de41fcdcde855c54932977f64383350",
+      "actual_sha256": null,
+      "matches": false
+    },
+    "interpreter": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/target/reshape-postcommit-73b74ec0/python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+      "expected_sha256": "f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526",
+      "actual_sha256": null,
+      "matches": false
+    }
+  },
+  "verification_passed": false,
+  "initial_verification_failure": "Sourcing the preceding env.sh failed because it was missing; the following native extension hash assertion failed.",
+  "action": "Preserve preceding records; regenerate a clean capture at the current commit."
+}

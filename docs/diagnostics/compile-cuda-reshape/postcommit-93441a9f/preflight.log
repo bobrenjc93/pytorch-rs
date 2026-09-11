@@ -1,0 +1,21 @@
+{
+  "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+  "python_executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/bin/python",
+  "interpreter": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/target/reshape-postcommit-93441a9f/python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+  "native_import": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+  "extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+  "reference": "2.13.0+cu130",
+  "reference_cuda": "13.0",
+  "native_runtime_library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+  "native_runtime": 13000,
+  "native_driver": 13000,
+  "gpu": "NVIDIA H100",
+  "capability": [
+    9,
+    0
+  ],
+  "visible_count": 1,
+  "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0\n",
+  "nvcc_used": false,
+  "kernel_compilation": "driver JIT embedded PTX"
+}

@@ -1,0 +1,184 @@
+"""Publish the deferred clean-commit capture; never rewrite historical evidence."""
+import hashlib, json, re, shutil, subprocess, sys
+from pathlib import Path
+ROOT=Path.cwd().resolve()
+WORK=ROOT/'target/reshape-postcommit-93441a9f'
+OUT=ROOT/'docs/diagnostics/compile-cuda-reshape/postcommit-93441a9f'
+PRIOR=OUT.parent
+COMMIT='93441a9fc13e8124a507a34810f2c3d97f7e69f1'
+sys.path.insert(0,str(ROOT/'scripts'))
+from evaluate_cuda_math import source_provenance, sha256
+
+def dump(path,value): path.write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
+def status(): return subprocess.check_output(['git','status','--porcelain'],text=True)
+assert status()=='' and not OUT.exists()
+source=source_provenance()
+assert source['commit']==COMMIT
+assert source['production_diff_sha256']==hashlib.sha256(b'').hexdigest()
+prior_inventory=json.loads((PRIOR/'inventory.json').read_text())
+for name,digest in prior_inventory.items(): assert sha256(PRIOR/name)==digest,name
+prior_inventory_hashes = {'.': sha256(PRIOR/'inventory.json')}
+for prior_name in ('postcommit-1ad5fd62', 'binding-review', 'postcommit-7533cbbc', 'validation-review', 'postcommit-3d44687d', 'local-constant-review', 'postcommit-73b74ec0'):
+ prior = PRIOR/prior_name
+ for name,digest in json.loads((prior/'inventory.json').read_text()).items():
+  assert sha256(prior/name)==digest,name
+ prior_inventory_hashes[prior_name] = sha256(prior/'inventory.json')
+build=json.loads((WORK/'release/build-record.json').read_text())
+assert all(build[k]==v for k,v in source.items())
+assert build['clean_checkout'] and build['measurement_kind']=='clean-code'
+assert build['git_status_before_build']=='' and build['source_unchanged_during_build']
+for field in ('extension_path','source_extension_path','wheel_path','interpreter_path'):
+ assert Path(build[field]).resolve().is_relative_to(ROOT),field
+for field in ('extension','wheel','interpreter'):
+ assert sha256(build[field+'_path'])==build[field+'_sha256'],field
+for command in build['commands']:
+ assert command['exit_status']==0
+ assert sha256(command['log'])==command['log_sha256']
+setup=json.loads((WORK/'setup-record.json').read_text())
+assert setup['commit']==COMMIT and setup['cwd']==str(ROOT)
+assert all(c['exit_status']==0 and c['git_status_after']=='' for c in setup['commands'])
+assert sha256(WORK/'setup.log')==setup['setup_log_sha256']
+expected={'preflight','imports','python-imports','reshape-final','compiler-regressions','two-device',
+          'cuda-packing','hidden','rust-final','rust-packing','cpu-layout','format','docs','clippy'}
+receipts={}
+for path in (WORK/'evidence').glob('*.receipt.json'):
+ name=path.name.removesuffix('.receipt.json');r=json.loads(path.read_text())
+ assert r['source_before']==r['source_after']==source,name
+ assert r['git_status_before']==r['git_status_after']=='',name
+ assert r['cwd']==str(ROOT) and r['inputs_unchanged'] and r['exit_status']==0,name
+ assert r['native_before']==r['native_after'] and set(r['native_before'].values())=={build['extension_sha256']},name
+ assert all(Path(p).is_relative_to(ROOT) for p in r['native_before']),name
+ assert r['command_files_before']==r['command_files_after'],name
+ assert all(sha256(p)==h for p,h in r['command_files_after'].items()),name
+ assert r['capture_script_sha256']==sha256(WORK/'capture.py'),name
+ assert r['log_sha256']==sha256(WORK/'evidence'/f'{name}.log'),name
+ for key,value in r['environment'].items():
+  if key.endswith(('_DIR','_HOME','_PATH','_PREFIX')) or key in ('PYO3_PYTHON','VIRTUAL_ENV','PYTHONPYCACHEPREFIX','TORCH_RS_CUDART'):
+   if value is not None: assert Path(value).resolve().is_relative_to(ROOT),(name,key,value)
+ receipts[name]=r
+assert set(receipts)==expected
+manifests=list((WORK/'evidence').glob('inputs-*.json'))
+assert len(manifests)==1
+manifest=json.loads(manifests[0].read_text())
+assert all(sha256(ROOT/name)==digest for name,digest in manifest.items())
+assert {r['measured_inputs_sha256'] for r in receipts.values()}=={sha256(manifests[0])}
+import torch_rs
+installed=Path(torch_rs.__file__).parent
+for path in (ROOT/'python/torch_rs').rglob('*.py'):
+ assert sha256(path)==sha256(installed/path.relative_to(ROOT/'python/torch_rs')),path
+assert sha256(torch_rs._C.__file__)==build['extension_sha256']
+preflight=json.loads((WORK/'evidence/preflight.log').read_text())
+assert preflight['native_runtime_library']==receipts['preflight']['environment']['TORCH_RS_CUDART']
+assert preflight['native_runtime']==13000 and preflight['visible_count']==1
+# Results are derived from the unchanged test-runner summaries.
+results={}
+for name in ('reshape-final','compiler-regressions','two-device','cuda-packing','hidden','cpu-layout'):
+ text=(WORK/'evidence'/f'{name}.log').read_text()
+ count=int(re.search(r'Ran (\d+) tests? in ',text).group(1))
+ skips=re.search(r'OK \(skipped=(\d+)\)',text)
+ skipped=int(skips.group(1)) if skips else 0
+ assert re.search(r'\nOK(?: \(skipped=\d+\))?\s*$',text),name
+ results[name]={'passed':count-skipped,'skipped':skipped}
+for name in ('rust-final','rust-packing'):
+ text=(WORK/'evidence'/f'{name}.log').read_text()
+ match=re.search(r'test result: ok\. (\d+) passed; 0 failed;',text)
+ assert match and 'skipping' not in text.lower(),name
+ results[name]={'passed':int(match.group(1)),'skipped':0}
+prior_check=json.loads((WORK/'prior-provenance.json').read_text())
+assert prior_check['commit']==COMMIT and prior_check['git_status']==''
+assert not prior_check['verification_passed']
+assert prior_check['script_sha256']==sha256(WORK/'prior-provenance.py.txt')
+assert prior_check['preceding_build_record_sha256']==sha256(PRIOR/'postcommit-73b74ec0/release/build-record.json')
+assert status()==''
+OUT.mkdir(parents=True)
+(OUT/'release').mkdir()
+for name in ('build-record.json','commands.json','build.log','install.log'):
+ shutil.copyfile(WORK/'release'/name,OUT/'release'/name)
+for name in receipts:
+ for suffix in ('.log','.receipt.json'):
+  shutil.copyfile(WORK/'evidence'/(name+suffix),OUT/(name+suffix))
+shutil.copyfile(manifests[0],OUT/'measured-inputs.json')
+for name in ('setup-record.json','setup.log','candidate-inspection.json','prior-provenance.json','prior-provenance.py.txt'):
+ shutil.copyfile(WORK/name,OUT/name)
+for source_name,dest in (('env.sh','environment.sh.txt'),('setup.py','setup.py.txt'),('capture.py','capture.py.txt'),
+ ('validate.py','validate.py.txt'),('preflight.py','preflight.py.txt'),('check_install.py','check-install.py.txt'),
+ ('docs_example.py','docs-example.py.txt'),('publish.py','publish.py.txt')):
+ shutil.copyfile(WORK/source_name,OUT/dest)
+rows=[]
+for name,label in [('reshape-final','Reshape H100 differentials and guards'),('compiler-regressions','Existing compiler / frozen corpus regressions'),
+ ('two-device','Context restoration / unused mixed-device captures'),('cuda-packing','CUDA packing regressions'),
+ ('hidden','CUDA-hidden portability'),('rust-final','Rust graph planning / prevalidation'),('rust-packing','Rust packing'),('cpu-layout','CPU layout / reference / docs')]:
+ result=results[name];summary=f"{result['passed']} passed"
+ if result['skipped']: summary+=f"; {result['skipped']} skipped"
+ rows.append(f'| {label} | {summary} | [{name}]({name}.log) |')
+readme=f'''# Clean-commit CUDA reshape capture
+
+Measured **`{COMMIT}`**, the committed implementation, using a fresh canonical
+worktree-local `.venv`, uv-managed CPython 3.12.14 installed inside this worktree,
+locked dev/reference dependencies, and an empty release build target. All build
+and check receipts record clean status before and after measurement. Artifacts
+and this documentation were published only after the measurements completed.
+
+| Check | Result | Log |
+| --- | --- | --- |
+'''+'\n'.join(rows)+'''
+| Clippy, formatting, installed imports and guide example | passed | [Clippy](clippy.log), [format](format.log), [imports](imports.log), [Python files](python-imports.log), [example](docs.log) |
+
+The [build record](release/build-record.json), [setup receipt](setup-record.json),
+[preflight](preflight.log) and [audit](audit.json) bind code, interpreter, wheel,
+native binary, installed Python files, commands and measured inputs. One
+[input manifest](measured-inputs.json) serves all check receipts. The
+[runner](validate.py.txt) preserves the committed task's requested checks;
+[capture](capture.py.txt) requires this clean commit and hashes command files.
+[Publication](publish.py.txt) verifies receipts before copying artifacts.
+
+H100 tests use physical GPU 0 (logical `cuda:0`); only restoration checks expose
+0,1. Every receipt includes UUID/index, utilization and memory snapshots before
+and after its command; those snapshots do not reserve hardware. The selected
+native/reference runtime is CUDA 13.0, driver 580.82.07, PyTorch 2.13.0+cu130,
+and H100 capability 9.0. Rust/Cargo 1.92.0 builds release with thin LTO, one
+codegen unit and `extension-module`. nvcc 12.6.85 is installed but unused:
+native kernels use driver-JIT embedded PTX. Rust checks pin the same local
+CUDA 13 runtime and print uncaptured hardware-test output. The uv cache was
+populated inside this worktree; Cargo used a copied local registry and an empty
+build target. All generated files, caches and environments stayed in this worktree.
+
+The seeded reshape checks cover view/pack layouts, raw bits, identity,
+mutation/lifetimes, cold/warm and static/dynamic behavior, composition, public
+binding rejection, cached metadata, method replacement and blocked body/reference
+replay. Review regressions for Tensor-valued arguments, known-invalid dimensions,
+mixed literal/local tuples and local nonnumeric constants pass across every
+supported policy, before early/late execution and on repeated rejected calls. Nonconstant shapes, mixed
+outputs, tuple helper/arithmetic operands, unused mixed tuples and unsupported
+locals (including overwritten locals) stay unsupported;
+the established output-leaf diagnostics are preserved.
+CUDA-hidden tests retain their hardware skips. These are non-scoring
+correctness diagnostics, not performance measurements or a coverage-score change.
+
+This refreshes the capture after the earlier local build directories were cleaned
+and the installed binary was rebuilt for the documentation commit. The
+[prior provenance check](prior-provenance.json) records the missing paths and
+binary mismatch; it is not a passing result. Code and harness inputs are unchanged
+since the [preceding clean capture](../postcommit-73b74ec0/README.md). The original
+[development bundle](../README.md), [first clean capture](../postcommit-1ad5fd62/README.md)
+and [earlier clean capture](../postcommit-3d44687d/README.md)
+remain pinned to their original code; their baseline, failures and build identities
+are intact. The [initial candidate inspection](candidate-inspection.json)
+verifies historical inventories and unchanged code, test and harness inputs.
+Implementation, dependencies, tests, workloads, evaluator definitions, hardware
+matrix, managed progress and Burner contracts are unchanged in this step.
+Independent review, evaluations and merge gates remain required; PR1970/PR1971
+remain separate unadopted campaigns.
+'''
+(OUT/'README.md').write_text(readme)
+dump(OUT/'audit.json',{'measured_commit':COMMIT,'source':source,'measurement_kind':'clean-code',
+ 'all_measurements_clean':True,'installed_python_matches_source':True,'installed_native_matches_build':True,
+ 'extension_sha256':build['extension_sha256'],'measured_inputs_sha256':sha256(manifests[0]),
+ 'one_shared_input_manifest':True,'checks':{k:r['exit_status'] for k,r in receipts.items()},'results':results,
+ 'historical_inventory_unchanged':True,'historical_inventory_sha256':sha256(PRIOR/'inventory.json'),
+ 'prior_inventory_sha256':prior_inventory_hashes,
+ 'runtime_library_sha256':sha256(preflight['native_runtime_library']),
+ 'publication_policy':'evidence/docs only, after clean measurements; no implementation or harness edits'})
+dump(OUT/'inventory.json',{str(p.relative_to(OUT)):sha256(p) for p in OUT.rglob('*') if p.is_file() and p.name!='inventory.json'})
+print(json.dumps(results,indent=2))
+print('Published clean-commit capture:',OUT)

@@ -1,0 +1,71 @@
+{
+  "commit": "93441a9fc13e8124a507a34810f2c3d97f7e69f1",
+  "base_commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_38d9746a",
+  "git_status": "",
+  "inspected_at": "2026-09-11T10:47:22.511565+00:00",
+  "candidate_diff_command": [
+    "git",
+    "diff",
+    "main...HEAD"
+  ],
+  "candidate_diff_sha256": "880159b6062c88a78998eab3ad91def51252a5a86a8c913a960ab3723d913407",
+  "candidate_changed_path_count": 457,
+  "nonhistorical_candidate_paths": {
+    "ARCHITECTURE.md": "2d2043c6f4f7a306ad27c89259f4d28e6f51bc02b956c228e118087298f75028",
+    "FEATURES.md": "9d0a5978c6107562826f4a908861521a11769051f8f05341e16ae1a717a37037",
+    "docs/README.md": "6931636737afbec0a92ebc4343507cf3317499feb2899bb8af57dc306564cdfc",
+    "docs/compile-cuda-contiguous.md": "4593489adc56be21b6b332f0a9317b37bc9a3151a2d04363ef560df9387d0c77",
+    "docs/compile-cuda-reshape.md": "cfb95f1030c79a69cc5f8876f362df80f8ed361e28a809b93f1c442d62263763",
+    "docs/compile-cuda-t.md": "66549da333718f966c607141763bb8df895379287bc56a14b435c8ce8a36847a",
+    "docs/supported-surface.md": "c18e6a47e812bfc039080ab33b94f721c1af7830fa9407628e3f0eb851e7a3d5",
+    "python/torch_rs/__init__.py": "6e71aebb37b61573185a76a54ea2a2a7a44a650dff830ebc299332ba855d9213",
+    "python/torch_rs/_compile_bytecode.py": "495329fcda0a8d0413858098e57a534d5d7d7f5facb7b24c6a383d0e1afb383d",
+    "python/torch_rs/_compile_trace.py": "d14e44a543f42fd91ac1ced3e2c02980add024f8ea99a4f84305b6ebe90a2638",
+    "src/python.rs": "e6d34ce597e04ba3d0a70418e764ac6f55f619412566aa953d7bea5431baa0a5",
+    "src/python_compile_cuda_graph.rs": "ad31361bebd5f238548a9b09bab8d1c220db031f2d7314c86023f86996b14bab",
+    "src/tensor.rs": "d5a7243662eb377ae9e741f8091ba15fb146f1d32859dc56a29e8d6bd977330e",
+    "src/tensor_cuda_graph.rs": "97f67384db9b5e0bd51cf07fd7c0b1cddd10b97729160f594fe9027f2443c66f",
+    "tests/test_compile_cuda_contiguous.py": "ddf7ee1d12cd2f25059948d602ef2ef0f29949f9535b761f21ae7ea15f5caeb1",
+    "tests/test_compile_cuda_reshape.py": "8d7bf41ac5e38a3116b689e651a41aa265ab9e8f09e76c78918f55fee1ee8178",
+    "tests/test_compile_cuda_t.py": "fabe009707684e5038109592e3565ece1542ad6d4e624a0462dac7de5b6dd623"
+  },
+  "historical_inventories": {
+    "docs/diagnostics/compile-cuda-reshape/inventory.json": {
+      "sha256": "fd3330e062f295ae7da730176ebbdc576da310c0b2d8532b6d04362bc01a5e8c",
+      "verified_entries": 92
+    },
+    "docs/diagnostics/compile-cuda-reshape/binding-review/inventory.json": {
+      "sha256": "ed30905c656cecc0c1f17c3b161c08175f008470adb29e478640be96866195f0",
+      "verified_entries": 48
+    },
+    "docs/diagnostics/compile-cuda-reshape/local-constant-review/inventory.json": {
+      "sha256": "c4488d2cb704e2823c1fb6a5ba2607ceeb0d4205669348e47962892cc9a06ab7",
+      "verified_entries": 43
+    },
+    "docs/diagnostics/compile-cuda-reshape/postcommit-1ad5fd62/inventory.json": {
+      "sha256": "3fd863ddce0f324bfa80a2a2a61a1f7b55c6ca4a43c07aae556d12b52c24685c",
+      "verified_entries": 46
+    },
+    "docs/diagnostics/compile-cuda-reshape/postcommit-3d44687d/inventory.json": {
+      "sha256": "3b1eefd037709535397b32e23c4cdbff53033df0e3606f06aa923608ff142fe2",
+      "verified_entries": 46
+    },
+    "docs/diagnostics/compile-cuda-reshape/postcommit-73b74ec0/inventory.json": {
+      "sha256": "92e9c1b16803d06857245e3ca86b57a1d6962e3ac792f2144e8e717c670b6e97",
+      "verified_entries": 46
+    },
+    "docs/diagnostics/compile-cuda-reshape/postcommit-7533cbbc/inventory.json": {
+      "sha256": "cfe4a1eacc0f4bc7abbae3ff30b103a2038c455122490470871d4fc61703bb3c",
+      "verified_entries": 46
+    },
+    "docs/diagnostics/compile-cuda-reshape/validation-review/inventory.json": {
+      "sha256": "e118c945068127ca781f8510915e7767d279ce0c97af6ddd7d89c9933d43365e",
+      "verified_entries": 65
+    }
+  },
+  "preceding_clean_inputs_match": 879,
+  "code_and_harness_unchanged_since": "73b74ec00a4608debc49ef0795231aa6298e68cb",
+  "outstanding_capture": "Regenerate clean evidence because prior build paths were removed and the installed native binary changed; see prior-provenance.json.",
+  "preservation": "Historical baseline, failed attempts and earlier clean captures remain unchanged; no performance workload or evaluator is rerun."
+}
