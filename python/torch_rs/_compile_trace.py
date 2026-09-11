@@ -1403,10 +1403,16 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled, de
             declared = operation.metadata
             if not _builtins.isinstance(declared, CompileTraceTensorMetadata):
                 raise CompileTraceUnsupportedError("torch.compile unary output metadata is malformed")
+            # Squeeze may change an intermediate rank on a dynamic cache hit.
+            # Validate the declaration against its captured input, independently
+            # of the concrete runtime result returned for native planning.
+            declared_expected = expected if declared_values is None else _unary_output_metadata(
+                declared_values[input_name], operation.target, grad_enabled=grad_enabled,
+            )
             if (
-                declared.device != expected.device
+                declared.device != declared_expected.device
                 or declared.storage_offset != 0
-                or len(declared.shape) != len(expected.shape)
+                or len(declared.shape) != len(declared_expected.shape)
             ):
                 raise CompileTraceUnsupportedError(
                     "torch.compile unary output requires matching CUDA device, rank and zero storage offset"
@@ -1438,10 +1444,14 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled, de
         declared = operation.metadata
         if not _builtins.isinstance(declared, CompileTraceTensorMetadata):
             raise CompileTraceUnsupportedError("torch.compile binary output metadata is malformed")
+        declared_expected = expected if declared_values is None else _binary_output_metadata(
+            declared_values[left_name], declared_values[right_name],
+            target=operation.target, grad_enabled=grad_enabled,
+        )
         if (
-            declared.device != expected.device
+            declared.device != declared_expected.device
             or declared.storage_offset != 0
-            or len(declared.shape) != len(expected.shape)
+            or len(declared.shape) != len(declared_expected.shape)
         ):
             raise CompileTraceUnsupportedError(
                 "torch.compile binary output requires matching CUDA device, rank and zero storage offset"

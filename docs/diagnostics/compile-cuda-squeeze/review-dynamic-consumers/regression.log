@@ -1,0 +1,35 @@
+test_consumer_declarations_and_runtime_ranks_are_independent (tests.test_compile_cuda_squeeze.SqueezeMetadataTests.test_consumer_declarations_and_runtime_ranks_are_independent) ... ok
+test_layouts_and_boundaries_without_hardware (tests.test_compile_cuda_squeeze.SqueezeMetadataTests.test_layouts_and_boundaries_without_hardware) ... ok
+test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ok
+test_dynamic_consumer_declarations_still_prevalidated (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_consumer_declarations_still_prevalidated) ... ERROR
+test_dynamic_consumers_keep_strided_arithmetic_unsupported (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_consumers_keep_strided_arithmetic_unsupported) ... ok
+
+======================================================================
+ERROR: test_dynamic_consumer_declarations_still_prevalidated (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_consumer_declarations_still_prevalidated)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_squeeze.py", line 235, in test_dynamic_consumer_declarations_still_prevalidated
+    compiled(x)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 444, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 860, in compiled_model
+    return _execute_native_eager_compile_graph(graph, args, _compile_trace)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 778, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1576, in execute_compile_trace_graph
+    _materialize_graph_output(
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1167, in _materialize_graph_output
+    _require_matching_metadata(
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1062, in _require_matching_metadata
+    raise ValueError(
+ValueError: torch.compile trace execution metadata mismatch for 'neg_2': shape expected (3, 7), got (7,); stride expected (7, 1), got (1,)
+
+----------------------------------------------------------------------
+Ran 5 tests in 8.335s
+
+FAILED (errors=1)

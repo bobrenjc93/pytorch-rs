@@ -1,0 +1,278 @@
+[
+  {
+    "expression": "-x.squeeze()",
+    "calls": [
+      {
+        "shape": [
+          1,
+          7
+        ],
+        "stride": [
+          7,
+          1
+        ],
+        "offset": 0,
+        "reference": "passed",
+        "native": "passed"
+      },
+      {
+        "shape": [
+          3,
+          7
+        ],
+        "stride": [
+          7,
+          1
+        ],
+        "offset": 0,
+        "reference": "passed",
+        "native": "CompileTraceUnsupportedError",
+        "message": "torch.compile unary output requires matching CUDA device, rank and zero storage offset"
+      },
+      {
+        "shape": [
+          1,
+          7
+        ],
+        "stride": [
+          7,
+          1
+        ],
+        "offset": 0,
+        "reference": "passed",
+        "native": "passed"
+      }
+    ],
+    "cached_graphs": 1
+  },
+  {
+    "expression": "x.squeeze().relu()",
+    "calls": [
+      {
+        "shape": [
+          1,
+          7
+        ],
+        "stride": [
+          7,
+          1
+        ],
+        "offset": 0,
+        "reference": "passed",
+        "native": "passed"
+      },
+      {
+        "shape": [
+          3,
+          7
+        ],
+        "stride": [
+          7,
+          1
+        ],
+        "offset": 0,
+        "reference": "passed",
+        "native": "CompileTraceUnsupportedError",
+        "message": "torch.compile unary output requires matching CUDA device, rank and zero storage offset"
+      },
+      {
+        "shape": [
+          1,
+          7
+        ],
+        "stride": [
+          7,
+          1
+        ],
+        "offset": 0,
+        "reference": "passed",
+        "native": "passed"
+      }
+    ],
+    "cached_graphs": 1
+  },
+  {
+    "expression": "x.squeeze() + x.squeeze()",
+    "calls": [
+      {
+        "shape": [
+          1,
+          7
+        ],
+        "stride": [
+          7,
+          1
+        ],
+        "offset": 0,
+        "reference": "passed",
+        "native": "passed"
+      },
+      {
+        "shape": [
+          3,
+          7
+        ],
+        "stride": [
+          7,
+          1
+        ],
+        "offset": 0,
+        "reference": "passed",
+        "native": "CompileTraceUnsupportedError",
+        "message": "torch.compile binary output requires matching CUDA device, rank and zero storage offset"
+      },
+      {
+        "shape": [
+          1,
+          7
+        ],
+        "stride": [
+          7,
+          1
+        ],
+        "offset": 0,
+        "reference": "passed",
+        "native": "passed"
+      }
+    ],
+    "cached_graphs": 1
+  },
+  {
+    "expression": "-x.squeeze().contiguous()",
+    "calls": [
+      {
+        "shape": [
+          1,
+          7
+        ],
+        "stride": [
+          7,
+          1
+        ],
+        "offset": 0,
+        "reference": "passed",
+        "native": "passed"
+      },
+      {
+        "shape": [
+          3,
+          7
+        ],
+        "stride": [
+          7,
+          1
+        ],
+        "offset": 0,
+        "reference": "passed",
+        "native": "CompileTraceUnsupportedError",
+        "message": "torch.compile unary output requires matching CUDA device, rank and zero storage offset"
+      },
+      {
+        "shape": [
+          1,
+          7
+        ],
+        "stride": [
+          7,
+          1
+        ],
+        "offset": 0,
+        "reference": "passed",
+        "native": "passed"
+      }
+    ],
+    "cached_graphs": 1
+  },
+  {
+    "expression": "x.squeeze().contiguous().relu()",
+    "calls": [
+      {
+        "shape": [
+          1,
+          7
+        ],
+        "stride": [
+          7,
+          1
+        ],
+        "offset": 0,
+        "reference": "passed",
+        "native": "passed"
+      },
+      {
+        "shape": [
+          3,
+          7
+        ],
+        "stride": [
+          7,
+          1
+        ],
+        "offset": 0,
+        "reference": "passed",
+        "native": "CompileTraceUnsupportedError",
+        "message": "torch.compile unary output requires matching CUDA device, rank and zero storage offset"
+      },
+      {
+        "shape": [
+          1,
+          7
+        ],
+        "stride": [
+          7,
+          1
+        ],
+        "offset": 0,
+        "reference": "passed",
+        "native": "passed"
+      }
+    ],
+    "cached_graphs": 1
+  },
+  {
+    "expression": "x.squeeze().contiguous() + x.squeeze().contiguous()",
+    "calls": [
+      {
+        "shape": [
+          1,
+          7
+        ],
+        "stride": [
+          7,
+          1
+        ],
+        "offset": 0,
+        "reference": "passed",
+        "native": "passed"
+      },
+      {
+        "shape": [
+          3,
+          7
+        ],
+        "stride": [
+          7,
+          1
+        ],
+        "offset": 0,
+        "reference": "passed",
+        "native": "CompileTraceUnsupportedError",
+        "message": "torch.compile binary output requires matching CUDA device, rank and zero storage offset"
+      },
+      {
+        "shape": [
+          1,
+          7
+        ],
+        "stride": [
+          7,
+          1
+        ],
+        "offset": 0,
+        "reference": "passed",
+        "native": "passed"
+      }
+    ],
+    "cached_graphs": 1
+  }
+]

@@ -1,0 +1,6 @@
+test_restoration_and_unused_input_capture_device_guards (tests.test_compile_cuda_squeeze.SqueezeDeviceTests.test_restoration_and_unused_input_capture_device_guards) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.312s
+
+OK

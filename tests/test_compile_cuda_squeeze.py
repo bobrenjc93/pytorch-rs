@@ -36,6 +36,28 @@ def composition(x, y):
 
 
 class SqueezeMetadataTests(unittest.TestCase):
+    def test_consumer_declarations_and_runtime_ranks_are_independent(self):
+        for expression in (lambda x: -x, lambda x: x.relu(), lambda x: x + x):
+            recorder = trace.CompileTraceRecorder()
+            x = recorder.input(shape=(1, 7), device='cuda:0').squeeze()
+            graph = recorder.finish(expression(x))
+            op = graph.operations[-1]
+            declared = {x.name: x.metadata}
+            for shape in ((), (7,), (3, 7), (0, 7)):
+                current = replace(x.metadata, shape=shape, stride=trace._contiguous_stride(shape))
+                expected = trace._expected_operation_metadata(
+                    op, {x.name: current}, grad_enabled=False, declared_values=declared,
+                )
+                self.assertEqual(expected.shape, shape)
+                self.assertEqual(expected.stride, current.stride)
+                if len(shape) != len(x.metadata.shape):
+                    bad = replace(op, metadata=expected)
+                    with self.assertRaises(trace.CompileTraceUnsupportedError) as caught:
+                        trace._expected_operation_metadata(
+                            bad, {x.name: current}, grad_enabled=False, declared_values=declared,
+                        )
+                    self.assertIs(type(caught.exception), trace.CompileTraceUnsupportedError)
+
     def test_layouts_and_boundaries_without_hardware(self):
         for shape, stride in (((), ()), ((1,), (19,)), ((7,), (3,)),
                               ((1, 7), (123, 3)), ((7, 1), (3, 99)),
@@ -153,6 +175,81 @@ class CompileCudaSqueezeTests(unittest.TestCase):
                 for a, b in zip(out, reference(*refs)):
                     self.assertEqual(metadata(a), metadata(b))
                     np.testing.assert_allclose(a.cpu().tolist(), b.cpu().numpy(), rtol=2e-5, atol=2e-5)
+
+    def test_dynamic_arithmetic_consumers_replan_ranks(self):
+        rng = np.random.default_rng(198003)
+        for packed in (False, True):
+            value = 'x.squeeze()' + ('.contiguous()' if packed else '')
+            for expression in (f'-{value}', f'{value}.relu()', f'{value} + {value}',
+                               f'(-{value} + {value}.relu()) * 0.5'):
+                fn = make_program('def program(x):\n    return ' + expression + '\n')
+                # All slices retain rank 2, strides (7, 1) and offset 0.
+                # Packing also admits surviving noncontiguous column strides.
+                shapes = [(1, 1), (3, 7), (1, 7), (0, 7), (1, 0), (1, 1)]
+                if packed:
+                    shapes[3:3] = [(3, 1), (0, 1)]
+                for sizes in (shapes, shapes[1:] + shapes[:1]):
+                    with self.subTest(packed=packed, expression=expression, sizes=sizes):
+                        torch._dynamo.reset()
+                        compiled, cache = compile_with_cache(fn, dynamic=True)
+                        reference = torch.compile(fn, backend='eager', fullgraph=True, dynamic=True)
+                        previous = None
+                        for rows, cols in sizes:
+                            data = rng.normal(size=(3, 7)).astype(np.float32)
+                            x = native.tensor(data).to('cuda:0')[:rows][:, :cols]
+                            y = torch.tensor(data, device='cuda:0')[:rows][:, :cols]
+                            self.assertEqual(metadata(x), metadata(y))
+                            expected = reference(y)
+                            for _ in range(2):
+                                with patch.object(trace, '_execute_operation', side_effect=AssertionError('Python node replay')):
+                                    if cache.graphs:
+                                        with patch.object(_compile_bytecode, 'lower_compile_graph', side_effect=AssertionError('cache miss')):
+                                            actual = call_without_python(compiled, {fn.__code__}, x)
+                                    else:
+                                        actual = call_without_python(compiled, {fn.__code__}, x)
+                                self.assertIsNot(actual, previous)
+                                self.assert_pair(actual, expected)
+                                previous = actual
+                        self.assertEqual(len(cache.graphs), 1)
+
+    def test_dynamic_consumer_declarations_still_prevalidated(self):
+        x = native.ones((3, 7)).to('cuda:0')
+        for expression in ('-a', 'a.relu()', 'a + a'):
+            fn = make_program('def program(x):\n    a = x.squeeze().contiguous()\n    return ' + expression + '\n')
+            compiled, cache = compile_with_cache(fn, dynamic=True)
+            compiled(x[:1])
+            key, graph = next(iter(cache.graphs.items()))
+            op = graph.operations[-1]
+            runtime_metadata = replace(op.metadata, shape=(3, 7), stride=(7, 1))
+            # Even a declaration matching the new runtime result must be
+            # rejected if it disagrees with the original captured inputs.
+            for bad, error in (
+                (replace(graph, operations=(*graph.operations[:-1], replace(op, metadata=runtime_metadata))),
+                 trace.CompileTraceUnsupportedError),
+                (replace(graph, output_metadata=runtime_metadata), ValueError),
+            ):
+                cache.graphs[key] = bad
+                with patch.object(_compile_bytecode, 'lower_compile_graph', side_effect=AssertionError('cache miss')), \
+                     patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('early native operation')), \
+                     patch.object(trace, '_execute_operation', side_effect=AssertionError('Python node replay')):
+                    with self.assertRaises(error) as caught:
+                        compiled(x)
+                    self.assertIs(type(caught.exception), error)
+            cache.graphs[key] = graph
+            self.assert_pair(compiled(x), fn(x))
+
+    def test_dynamic_consumers_keep_strided_arithmetic_unsupported(self):
+        x = native.ones((3, 7)).to('cuda:0')
+        for expression in ('-x.squeeze()', 'x.squeeze().relu()', 'x.squeeze() + x.squeeze()'):
+            fn = make_program('def program(x):\n    return ' + expression + '\n')
+            compiled, cache = compile_with_cache(fn, dynamic=True)
+            compiled(x[:1])
+            with patch.object(_compile_bytecode, 'lower_compile_graph', side_effect=AssertionError('cache miss')), \
+                 patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('early native operation')):
+                with self.assertRaises(trace.CompileTraceUnsupportedError) as caught:
+                    compiled(x[:, :1])
+                self.assertIs(type(caught.exception), trace.CompileTraceUnsupportedError)
+            self.assertEqual(len(cache.graphs), 1)
 
     def test_shared_raw_bits_mutation_and_storage_lifetime(self):
         bits = np.array([0, 0x80000000, 0x7f800001, 0xff800001, 0x7fc12345,

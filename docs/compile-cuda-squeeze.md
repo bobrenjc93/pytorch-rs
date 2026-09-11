@@ -32,6 +32,11 @@ replanning singleton removal as sizes change. Output rank can change within the
 rank-0/1/2 bound. Repeated references to a node retain identity; distinct squeeze
 nodes and separate invocations return distinct objects.
 
+Negation, ReLU and addition replan their output rank when squeezed dimensions
+disappear or reappear. Cached declarations are checked against the originally
+captured inputs separately from runtime planning. Surviving noncontiguous strides
+still require `contiguous()` before arithmetic.
+
 The native graph planner shares eager squeeze's layout calculation. Execution
 calls the checked native view primitive without a copy or kernel. Both planners
 validate the whole graph, including cached declarations and nested output metadata,
@@ -67,7 +72,11 @@ The [clean-commit capture](diagnostics/compile-cuda-squeeze/postcommit-e835f7f/R
 validates `e835f7f173af4ffc7783560d9b03709660fa3141` with a fresh release wheel,
 H100 differentials, the complete compiler sweep, two-device restoration and
 focused native/portable checks. The [development evidence](diagnostics/compile-cuda-squeeze/README.md)
-retains the exact-main baseline and initial failed attempt unchanged. Hardware
+retains the exact-main baseline and initial failed attempt unchanged. The
+[dynamic-consumer review revision](diagnostics/compile-cuda-squeeze/review-dynamic-consumers/README.md)
+records the reproduced cache-hit failure and validation of its fix. The earlier
+clean capture does not cover this revision; a fresh clean-commit capture remains
+required after Burner commits it. Hardware
 cases skip clearly when CUDA is unavailable. These are non-scoring diagnostics:
 the frozen 38-case corpus, performance workloads, evaluator and hardware contracts
 are unchanged. PR1970/PR1971 remain separate unadopted human-review campaigns;

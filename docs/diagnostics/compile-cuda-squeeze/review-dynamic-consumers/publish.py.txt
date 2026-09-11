@@ -1,0 +1,79 @@
+"""Publish measured review receipts without rewriting their provenance."""
+import hashlib
+import json
+from pathlib import Path
+import shutil
+import subprocess
+
+root = Path.cwd()
+work = root / 'target/squeeze-dynamic-review'
+out = root / 'docs/diagnostics/compile-cuda-squeeze/review-dynamic-consumers'
+
+def sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+def copy(source, name):
+    target = out / name
+    assert not target.exists(), target
+    shutil.copyfile(source, target)
+    return sha(target)
+
+historical = subprocess.check_output([
+    'git', 'ls-files', 'docs/diagnostics/compile-cuda-squeeze',
+], text=True).splitlines()
+for name in historical:
+    original = subprocess.check_output(['git', 'show', 'HEAD:' + name])
+    assert (root / name).read_bytes() == original, name
+
+files = {}
+for name in ('build-record.json', 'build.log', 'install.log'):
+    files[name] = copy(work / 'release' / name, name)
+for name in ('before-source.json', 'verification-final.json'):
+    files[name] = copy(work / name, name)
+for name in ('reproduce.py', 'verify.py', 'run_check.py', 'publish.py'):
+    files[name + '.txt'] = copy(work / name, name + '.txt')
+
+commands = []
+for receipt in sorted((work / 'checks').glob('*.json')):
+    command = json.loads(receipt.read_text())
+    name = receipt.stem + '.log'
+    files[name] = copy(receipt.with_suffix('.log'), name)
+    assert files[name] == command['log_sha256']
+    commands.append({'name': receipt.stem, 'log': name, **command})
+for name in ('squeeze-review-before', 'squeeze-review-regression-before'):
+    receipt = json.loads((root / 'target/checks' / (name + '.json')).read_text())
+    log = name + '.log'
+    files[log] = copy(root / 'target/checks' / log, log)
+    assert files[log] == receipt['log_sha256']
+    commands.append({'name': name, 'phase': 'before production fix', 'log': log, **receipt})
+
+assert json.loads((work / 'checks/compiler-sweep.json').read_text())['exit_code'] == 0
+before_probe = json.loads((root / 'target/checks/squeeze-review-before.log').read_text())
+after_probe = json.loads((work / 'checks/reproduced-after.log').read_text())
+assert len(before_probe) == len(after_probe) == 6
+for before, after in zip(before_probe, after_probe):
+    assert before['expression'] == after['expression']
+    assert before['calls'][1]['native'] == 'CompileTraceUnsupportedError'
+    assert after['cached_graphs'] == 1
+    assert len(after['calls']) == 3
+    assert all(c['native'] == c['reference'] == 'passed' for c in after['calls'])
+assert sha(work / 'environment.sh') == sha(root / 'docs/diagnostics/compile-cuda-squeeze/postcommit-e835f7f/environment.sh.txt')
+record = {
+    'measurement_kind': 'precommit-review-revision',
+    'clean_commit_capture_pending': True,
+    'before_source': 'before-source.json', 'final_verification': 'verification-final.json',
+    'build': 'build-record.json', 'commands': commands, 'files': files,
+    'environment_recipe': '../postcommit-e835f7f/environment.sh.txt',
+    'environment_recipe_sha256': sha(root / 'docs/diagnostics/compile-cuda-squeeze/postcommit-e835f7f/environment.sh.txt'),
+    'input_manifest': '../inputs.json',
+    'input_manifest_sha256': sha(root / 'docs/diagnostics/compile-cuda-squeeze/inputs.json'),
+    'historical_artifacts_verified_unchanged': historical,
+    'failure_notes': {
+        'squeeze-review-before': 'All six expressions rejected the vector-to-matrix transition; reference passed.',
+        'squeeze-review-regression-before': 'Initial added GPU regression failed with 16 rank-guard errors. Test order was subsequently expanded to start with both scalar and matrix captures.',
+        'regression': 'Initial rejection test expected CompileTraceUnsupportedError for malformed output metadata. Corrected to assert the established exact ValueError; operation declaration rejection still asserts exact CompileTraceUnsupportedError.',
+    },
+}
+assert not (out / 'validation.json').exists()
+(out / 'validation.json').write_text(json.dumps(record, indent=2) + '\n')
+print('Published', len(files), 'files and', len(commands), 'command receipts')

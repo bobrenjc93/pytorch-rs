@@ -1,0 +1,30 @@
+import hashlib, json, os, pathlib, subprocess, sys, time
+root = pathlib.Path.cwd()
+name, *command = sys.argv[1:]
+out = root / 'target/squeeze-dynamic-review/checks'
+out.mkdir(exist_ok=True)
+assert not (out / (name + '.json')).exists()
+def sha(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+def gpu():
+    return subprocess.check_output(['nvidia-smi', '--query-gpu=index,uuid,name,driver_version,utilization.gpu,memory.used', '--format=csv'], text=True)
+sys.path.insert(0, str(root / 'scripts'))
+from evaluate_cuda_math import source_provenance
+import torch_rs
+def provenance():
+    return {**source_provenance(),
+            'status': subprocess.check_output(['git', 'status', '--porcelain'], text=True),
+            'test_sha256': sha(root / 'tests/test_compile_cuda_squeeze.py'),
+            'package_path': torch_rs.__file__, 'native_path': torch_rs._C.__file__,
+            'native_sha256': sha(pathlib.Path(torch_rs._C.__file__))}
+record = {'command': command, 'cwd': str(root), 'visible_devices': os.environ.get('CUDA_VISIBLE_DEVICES'),
+          'before': provenance(), 'gpu_before': gpu(), 'started': time.time()}
+with (out / (name + '.log')).open('w') as log:
+    result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT)
+record.update(exit_code=result.returncode, ended=time.time(), gpu_after=gpu(),
+              after=provenance(), log_sha256=sha(out / (name + '.log')))
+assert record['before'] == record['after'], 'source changed during check'
+(out / (name + '.json')).write_text(json.dumps(record, indent=2) + '\n')
+print(name, result.returncode)
+print((out / (name + '.log')).read_text()[-5000:])
+sys.exit(result.returncode)
