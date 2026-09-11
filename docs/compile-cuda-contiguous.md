@@ -49,14 +49,71 @@ Hardware tests skip clearly without the required devices. Test-only Rust
 accounting verifies that malformed late native nodes execute zero operations;
 it is absent from release builds and does not change evaluator observers.
 
-## Worktree validation evidence
+## Clean-commit validation
+
+The deferred capture is complete at clean implementation commit
+`68766b43882081ab62c54925e94562297ecd5999`. Git status was empty
+before and after the release build and every measurement. This evidence and
+documentation were added afterward; implementation, dependencies, tests,
+harnesses and supported behavior are unchanged.
+
+The [release receipt](diagnostics/compile-cuda-contiguous/postcommit-68766b43/release/build-record.json),
+[measured input hashes](diagnostics/compile-cuda-contiguous/postcommit-68766b43/measured-inputs.json),
+[audit](diagnostics/compile-cuda-contiguous/postcommit-68766b43/audit.json) and [inventory](diagnostics/compile-cuda-contiguous/postcommit-68766b43/inventory.json)
+bind the commit, source, commands, installed package and native binary.
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Production source | `a2a2235d1b2f6b3db84f8ef15082b16c71cb699e38678e1ca194f85e9945c8b7` |
+| Production diff against measured commit (empty) | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| Native extension, installed and source package | `8ea77b560d033412929e3e29e5b585a1e152896b51509fea651e7e7b9eae70ea` |
+
+A fresh canonical worktree-local `.venv` was installed using locked dev/reference
+dependencies; its predecessor was preserved inside `target`. The unchanged
+repository build tool ran `maturin build --release --locked --offline` without
+`--allow-dirty`, using a fresh Cargo target. Local dependency caches were reused;
+CUDA JIT, Python and compiler diagnostic caches started fresh. All generated
+files stayed in this worktree. See [setup](diagnostics/compile-cuda-contiguous/postcommit-68766b43/setup.receipt.json) and
+[environment](diagnostics/compile-cuda-contiguous/postcommit-68766b43/environment.sh.txt) for exact commands and paths.
+
+[Preflight](diagnostics/compile-cuda-contiguous/postcommit-68766b43/preflight.log) records Python 3.12.13, NumPy 2.5.1,
+PyTorch 2.13.0+cu130, Rust/Cargo 1.92.0, NVIDIA H100, compute capability 9.0 and
+driver 580.82.07. Native runtime was explicitly selected from the new `.venv`'s
+`nvidia/cu13/lib/libcudart.so.13` (13000), matching reference CUDA 13.0.
+nvcc 12.6.85 was installed but unused: native kernels use driver-JIT PTX.
+Command receipts include physical UUID/index/utilization/memory snapshots.
+Ordinary GPU checks used mask `0`; only restoration used `0,1`.
+
+| Clean-commit check | Result | Raw log |
+| --- | --- | --- |
+| Rust graph planning and zero-native-execution negatives | 2 passed | [log](diagnostics/compile-cuda-contiguous/postcommit-68766b43/rust-graph.log) |
+| Rust CUDA packing integration | 1 passed | [log](diagnostics/compile-cuda-contiguous/postcommit-68766b43/rust-packing.log) |
+| Compiled layout differentials and guards | 9 passed; 1 expected skips | [log](diagnostics/compile-cuda-contiguous/postcommit-68766b43/compiled-contiguous.log) |
+| Two-device/context restoration | 3 passed | [log](diagnostics/compile-cuda-contiguous/postcommit-68766b43/two-device.log) |
+| Eager CUDA packing regressions | 6 passed; 1 expected skips | [log](diagnostics/compile-cuda-contiguous/postcommit-68766b43/cuda-packing.log) |
+| Existing CPU/CUDA compiler regressions | 189 passed; 7 expected skips | [log](diagnostics/compile-cuda-contiguous/postcommit-68766b43/compiler-regressions.log) |
+| CPU layout/reference regressions | 101 passed | [log](diagnostics/compile-cuda-contiguous/postcommit-68766b43/cpu-layout.log) |
+| Portability with CUDA hidden | 1 passed; 9 expected skips | [log](diagnostics/compile-cuda-contiguous/postcommit-68766b43/no-device.log) |
+
+The unchanged graphlets cover seeded transposes and offset/sliced views, exact
+alias metadata, scalar/empty/singleton/higher-rank aliases, raw signed-zero/NaN
+bits, nonmutation and copy/alias mutations, cold/warm execution, cache and
+callable/global guards, malformed IR, blocked PyTorch imports, and native
+composition. Skips receive no hardware correctness credit. Every capture and
+the provenance audit passed; earlier failed development attempts remain intact.
+Unrelated full Rust suites, Clippy and performance workloads were not repeated.
+These are non-scoring diagnostics, with no added frozen38 coverage or general
+compiler/performance claim. Independent review and normal Burner merge gates
+remain separate; PR1970/PR1971 and all evaluator/observer contracts are unchanged.
+
+## Preserved development validation
 
 Started from verified clean main `22c4e1c4d32126b91ee9f5417842d245c0183fce`.
 The [release receipt](diagnostics/compile-cuda-contiguous/development/release-hardened/build-record.json)
 binds the final uncommitted source and release wheel. **This is development
-evidence, not a clean implementation-commit capture.** Creating commits is
-prohibited in this task; Burner must perform the clean-commit recapture during
-its normal delivery workflow. No replacement PR or push was attempted.
+evidence, not a clean implementation-commit capture.** The implementation task
+prohibited creating commits and deferred the clean capture now reported above.
+Its original receipts, paths, results and failed attempts remain unchanged.
 
 | Final artifact | SHA-256 |
 | --- | --- |

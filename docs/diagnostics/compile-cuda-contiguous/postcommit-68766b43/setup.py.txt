@@ -1,0 +1,16 @@
+import json, os, subprocess
+from pathlib import Path
+root=Path.cwd().resolve()
+out=root/'target/contiguous-postcommit-68766b43'
+assert (root/'.venv').is_dir() and not (root/'.venv').is_symlink()
+previous=out/'previous-venv'
+assert not previous.exists()
+(root/'.venv').rename(previous)
+assert not (root/'.venv').exists()
+command=['uv','sync','--locked','--no-install-project','--group','dev','--group','reference','--python','/usr/bin/python3.12']
+record={'previous_venv_preserved_at':str(previous),'canonical_venv_absent_before_sync':True,'command':command,
+        'uv_and_cargo_cache':'reused existing worktree-local dependency caches',
+        'fresh_paths':{key:os.environ[key] for key in ('TMPDIR','XDG_CACHE_HOME','CUDA_CACHE_PATH','TORCHINDUCTOR_CACHE_DIR','TRITON_CACHE_DIR','CARGO_TARGET_DIR')}}
+(out/'setup-state.json').write_text(json.dumps(record,indent=2)+'\n')
+subprocess.run(command,check=True)
+assert (root/'.venv').is_dir() and not (root/'.venv').is_symlink()

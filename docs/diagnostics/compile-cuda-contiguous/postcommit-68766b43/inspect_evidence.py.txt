@@ -1,0 +1,28 @@
+import hashlib,json,subprocess
+from pathlib import Path
+root=Path.cwd()
+dev=root/'docs/diagnostics/compile-cuda-contiguous/development'
+manifest=json.loads((dev/'inventory.json').read_text())
+for name,digest in manifest.items():
+ assert hashlib.sha256((dev/name).read_bytes()).hexdigest()==digest,name
+changed=subprocess.check_output(['git','diff','--name-only','main...HEAD'],text=True).splitlines()
+records=[]
+for p in sorted(dev.rglob('*.json')):
+ r=json.loads(p.read_text())
+ if isinstance(r,dict) and ('source_before' in r or 'commit' in r):
+  source=r.get('source_before',r)
+  records.append({'artifact':str(p.relative_to(root)),'commit':source.get('commit'),
+                  'exit_status':r.get('exit_status'),'measurement_kind':r.get('measurement_kind'),
+                  'git_status':r.get('git_status_before',r.get('git_status_before_build'))})
+assert all(p.startswith('docs/diagnostics/compile-cuda-contiguous/development/') or p in {
+ 'ARCHITECTURE.md','FEATURES.md','docs/README.md','docs/compile-cuda-contiguous.md','docs/supported-surface.md',
+ 'python/torch_rs/__init__.py','python/torch_rs/_compile_bytecode.py','python/torch_rs/_compile_trace.py',
+ 'src/python_compile_cuda_graph.rs','src/tensor_cuda_graph.rs','tests/test_compile_cuda_contiguous.py','tests/test_compile_cuda_neg.py'} for p in changed)
+result={'base':subprocess.check_output(['git','rev-parse','main'],text=True).strip(),
+ 'candidate':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+ 'candidate_files':changed,'preserved_development_inventory_sha256':hashlib.sha256((dev/'inventory.json').read_bytes()).hexdigest(),
+ 'verified_development_artifacts':len(manifest),'measured_records':records,
+ 'required_capture':'clean implementation-commit build and focused correctness checks; previously deferred',
+ 'scope':'no performance benchmark or scoring-corpus expansion requested'}
+(root/'target/contiguous-postcommit-68766b43/candidate-inspection.json').write_text(json.dumps(result,indent=2)+'\n')
+print('Inspected complete candidate file set and verified',len(manifest),'development artifacts; clean capture outstanding')
