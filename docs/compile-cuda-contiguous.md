@@ -49,48 +49,64 @@ Hardware tests skip clearly without the required devices. Test-only Rust
 accounting verifies that malformed late native nodes execute zero operations;
 it is absent from release builds and does not change evaluator observers.
 
-## Review fixes and current validation
+## Clean-commit validation
 
-The three reproduced review findings are fixed: empty aliases are classified
-without canonical-stride construction; actual inputs and captures must share
-one CUDA device before executor selection; contiguous output declarations pass
-strict metadata validation before equality checks. Static and dynamic cache-hit
-regressions assert zero native bridge calls for malformed graphs.
+The deferred capture, including the three review fixes, is complete at
+`a3c5870bc56c97560061ffa68da6d6f253a3c644`. Git status was empty before and
+after the release build and every measurement. This evidence and documentation
+were added afterward; implementation, dependencies, tests and harnesses are unchanged.
 
-Validation of these uncommitted repairs is **development evidence**, based on
-`d148fcb78560756ba6bac38d098ffe40ddc05aca`. A fresh clean-commit capture is still
-required after Burner commits them; the earlier capture below does not validate
-this repaired source. No commit or delivery action was performed here.
+The [release receipt](diagnostics/compile-cuda-contiguous/postcommit-a3c5870b/release/build-record.json),
+[measured inputs](diagnostics/compile-cuda-contiguous/postcommit-a3c5870b/measured-inputs.json), [audit](diagnostics/compile-cuda-contiguous/postcommit-a3c5870b/audit.json)
+and [inventory](diagnostics/compile-cuda-contiguous/postcommit-a3c5870b/inventory.json) bind the commit, source, build,
+commands, installed package and native binary.
 
-The [release receipt](diagnostics/compile-cuda-contiguous/review-fixes/release-final/build-record.json),
-[audit](diagnostics/compile-cuda-contiguous/review-fixes/audit.json) and [inventory](diagnostics/compile-cuda-contiguous/review-fixes/inventory.json)
-record exact source/build/native hashes, commands and environment. Production
-source SHA-256 is `02647f45847695e0f386956541be69aca2a8c76f7ce05d0e5fa6734c46b56488`;
-installed/source-package native SHA-256 is
-`0aa957dad68e63d207d8945d25d51d4c4bb931dae303d10d53e063180725f3ce`.
-The canonical locked `.venv` was reused; the unchanged capture tool built a fresh
-release target with `--allow-dirty`, `--locked` and `--offline`. H100 checks used
-mask `0`, restoration alone used `0,1`, and CPU/portability checks hid CUDA.
-Runtime was local CUDA 13.0 with PyTorch 2.13.0+cu130; nvcc 12.6 was unused.
+| Artifact | SHA-256 |
+| --- | --- |
+| Production source | `02647f45847695e0f386956541be69aca2a8c76f7ce05d0e5fa6734c46b56488` |
+| Production diff against measured commit (empty) | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| Native extension, installed and source package | `0aa957dad68e63d207d8945d25d51d4c4bb931dae303d10d53e063180725f3ce` |
 
-| Repair validation | Result | Log |
+A fresh canonical worktree-local `.venv` used locked dev/reference dependencies;
+its predecessor was preserved inside `target`. The unchanged capture tool ran
+`maturin build --release --locked --offline` without `--allow-dirty`, in a fresh
+Cargo target. Local dependency caches were reused; CUDA JIT, Python and compiler
+caches started fresh. See [setup](diagnostics/compile-cuda-contiguous/postcommit-a3c5870b/setup.receipt.json),
+[environment](diagnostics/compile-cuda-contiguous/postcommit-a3c5870b/environment.sh.txt) and [preflight](diagnostics/compile-cuda-contiguous/postcommit-a3c5870b/preflight.log).
+The H100 driver was 580.82.07; native runtime was explicitly the local `.venv`'s
+CUDA 13.0 runtime (13000), with reference PyTorch 2.13.0+cu130. Python was 3.12.13,
+NumPy 2.5.1 and Rust/Cargo 1.92.0. nvcc 12.6.85 was installed but unused;
+native kernels use driver-JIT PTX. Receipts include physical UUID, utilization
+and memory snapshots. Ordinary GPU checks used mask `0`; restoration used `0,1`.
+
+| Clean-commit check | Result | Log |
 | --- | --- | --- |
-| Reproduced findings after fixes | 3 passed | [log](diagnostics/compile-cuda-contiguous/review-fixes/review-green.log) |
-| Compiled contiguous differentials and guards | 12 passed; 1 hardware skip | [log](diagnostics/compile-cuda-contiguous/review-fixes/compiled-contiguous.log) |
-| Existing CPU/CUDA compiler regressions | 189 passed; 7 hardware skips | [log](diagnostics/compile-cuda-contiguous/review-fixes/compiler-regressions.log) |
-| Device/context restoration | 3 passed | [log](diagnostics/compile-cuda-contiguous/review-fixes/two-device.log) |
-| CPU layout/reference regressions | 101 passed | [log](diagnostics/compile-cuda-contiguous/review-fixes/cpu-layout.log) |
-| Eager CUDA packing | 6 passed; 1 hardware skip | [log](diagnostics/compile-cuda-contiguous/review-fixes/cuda-packing.log) |
-| No-device portability | 1 passed; 12 hardware skips | [log](diagnostics/compile-cuda-contiguous/review-fixes/no-device.log) |
+| Compiled contiguous differentials and guards | 12 passed; 1 hardware skip | [log](diagnostics/compile-cuda-contiguous/postcommit-a3c5870b/compiled-contiguous.log) |
+| Existing CPU/CUDA compiler regressions | 189 passed; 7 hardware skips | [log](diagnostics/compile-cuda-contiguous/postcommit-a3c5870b/compiler-regressions.log) |
+| Device/context restoration | 3 passed | [log](diagnostics/compile-cuda-contiguous/postcommit-a3c5870b/two-device.log) |
+| Rust graph planning and zero-execution negatives | 3 passed | [log](diagnostics/compile-cuda-contiguous/postcommit-a3c5870b/rust-graph.log) |
+| Rust CUDA packing integration | 1 passed | [log](diagnostics/compile-cuda-contiguous/postcommit-a3c5870b/rust-packing.log) |
+| Eager CUDA packing | 6 passed; 1 hardware skip | [log](diagnostics/compile-cuda-contiguous/postcommit-a3c5870b/cuda-packing.log) |
+| CPU layout/reference regressions | 101 passed | [log](diagnostics/compile-cuda-contiguous/postcommit-a3c5870b/cpu-layout.log) |
+| No-device portability | 1 passed; 12 hardware skips | [log](diagnostics/compile-cuda-contiguous/postcommit-a3c5870b/no-device.log) |
 
-Rust graph planning/zero-execution checks (3 tests), CUDA packing integration
-(1 test), formatting, Clippy with Python bindings and warnings denied, and wheel
-provenance also passed. The [failing reproduction](diagnostics/compile-cuda-contiguous/review-fixes/review-red.log),
-original regression source and an import-formatting failure are preserved.
-The first reproduction also tried a transpose that the existing eager constructor
-rejects; the final differential uses supported empty aliases at dimensions
-`2**32` and `2**32 + 1`. No unsupported eager behavior was added. Prior raw
-captures remain unchanged; these diagnostics add no frozen-corpus coverage.
+The compiled checks include seeded packing and alias differentials, raw float
+bits, mutation semantics, cold/warm caches, blocked-PyTorch imports and all three
+review regressions: large empty aliases, mixed-device unused captures and strict
+contiguous declarations. Invalid cache hits execute zero native operations.
+Every capture, wheel verification and provenance audit passed. Unrelated full
+Rust suites, Clippy and performance workloads were not repeated. These are
+non-scoring diagnostics; the frozen38 denominator and independent review gates
+are unchanged. No required clean capture remains deferred.
+
+The earlier [review-fix development receipt](diagnostics/compile-cuda-contiguous/review-fixes/release-final/build-record.json)
+and [audit](diagnostics/compile-cuda-contiguous/review-fixes/audit.json) remain pinned
+to uncommitted repairs based on `d148fcb78560756ba6bac38d098ffe40ddc05aca`.
+Their [failing reproduction](diagnostics/compile-cuda-contiguous/review-fixes/review-red.log),
+original regression source and formatting failure are preserved unchanged.
+The initial reproduction also attempted a transpose rejected by the existing
+eager constructor; the final regression uses supported empty aliases at
+`2**32` and `2**32 + 1`. The clean capture above supersedes development validation.
 
 ## Prior clean-commit validation (before review fixes)
 
@@ -98,8 +114,7 @@ Implementation commit `68766b43882081ab62c54925e94562297ecd5999` was
 captured clean before independent review. Git status was empty before and after
 the release build and every measurement. The subsequent evidence-only commit
 `d148fcb78560756ba6bac38d098ffe40ddc05aca` added these records and
-documentation. This capture predates the repairs above; their clean recapture
-remains pending.
+documentation. This capture predates the repairs; their clean recapture is recorded above.
 
 The [release receipt](diagnostics/compile-cuda-contiguous/postcommit-68766b43/release/build-record.json),
 [measured input hashes](diagnostics/compile-cuda-contiguous/postcommit-68766b43/measured-inputs.json),

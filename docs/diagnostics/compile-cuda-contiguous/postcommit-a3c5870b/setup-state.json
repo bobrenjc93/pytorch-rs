@@ -1,0 +1,25 @@
+{
+  "previous_venv_preserved_at": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/target/contiguous-postcommit-a3c5870b/previous-venv",
+  "canonical_venv_absent_before_sync": true,
+  "command": [
+    "uv",
+    "sync",
+    "--locked",
+    "--no-install-project",
+    "--group",
+    "dev",
+    "--group",
+    "reference",
+    "--python",
+    "/usr/bin/python3.12"
+  ],
+  "uv_and_cargo_cache": "reused existing worktree-local dependency caches",
+  "fresh_paths": {
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/target/contiguous-postcommit-a3c5870b/tmp",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/target/contiguous-postcommit-a3c5870b/xdg-cache",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/target/contiguous-postcommit-a3c5870b/cuda-cache",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/target/contiguous-postcommit-a3c5870b/inductor-cache",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/target/contiguous-postcommit-a3c5870b/triton-cache",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/target/contiguous-postcommit-a3c5870b/rust-build"
+  }
+}
