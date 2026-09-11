@@ -58,8 +58,13 @@ Hardware-only tests skip clearly without the required devices. Rust test-only
 accounting checks zero native operations for malformed early/late nodes; it is
 absent from release builds and does not alter scoring observers.
 
-Source/build-bound evidence and retained failed attempts are recorded in the
-[development validation bundle](diagnostics/compile-cuda-t/README.md).
-The clean PR1975 baseline was freshly built and reproduced the missing capture.
-A clean implementation-commit capture remains for Burner after it commits this
-worktree; the implementation task prohibits creating commits or PRs.
+The [clean-commit capture](diagnostics/compile-cuda-t/postcommit-e01f1d0f/README.md)
+measured `e01f1d0f69dffa8018e1b333bb5ab642ce9fdcb9` with a fresh locked `.venv`
+and release build. H100 t/packing differentials, compiler regressions, strict
+metadata negatives, two-device restoration, focused Rust and CPU/docs checks
+passed. Source, installed imports, native binary and clean status are verified
+in its receipts. No required clean capture remains deferred.
+
+The [original development bundle](diagnostics/compile-cuda-t/README.md), including
+the fresh PR1975 baseline reproduction and failed attempts, remains unchanged.
+These diagnostics do not replace independent review or Burner merge gates.
