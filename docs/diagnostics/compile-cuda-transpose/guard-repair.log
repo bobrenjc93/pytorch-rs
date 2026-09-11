@@ -1,0 +1,6 @@
+test_guards_and_no_method_redispatch (tests.test_compile_cuda_transpose.CompileCudaTransposeTests.test_guards_and_no_method_redispatch) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.386s
+
+OK

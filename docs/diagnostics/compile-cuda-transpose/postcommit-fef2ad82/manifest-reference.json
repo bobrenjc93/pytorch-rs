@@ -1,0 +1,6 @@
+{
+  "commit": "fef2ad8258a09c6e3d2554d9477526500447fe27",
+  "file": "../measured-inputs.json",
+  "reason": "Freshly hashed inputs match the existing same-source manifest exactly; no duplicate manifest.",
+  "sha256": "fb3ea619cca55f4fad6e0102cf639eb5e9ef6bd81b9858dacd8466c4d925ce45"
+}

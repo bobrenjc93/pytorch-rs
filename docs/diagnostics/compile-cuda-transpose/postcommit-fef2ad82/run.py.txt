@@ -1,0 +1,22 @@
+"""Repeat the candidate's existing commands without altering test workloads."""
+import json, os, subprocess, sys
+from pathlib import Path
+work=Path('target/transpose-postcommit-fef2ad82')
+history=Path('docs/diagnostics/compile-cuda-transpose')
+commands=[
+ ('preflight-clean', [sys.executable, str(work/'preflight.py')], '0'),
+ ('imports', json.loads((history/'imports.receipt.json').read_text())['command'], '0'),
+ ('transpose', json.loads((history/'transpose-verified.receipt.json').read_text())['command'], '0'),
+ ('compiler-regressions', json.loads((history/'compiler-regressions.receipt.json').read_text())['command'], '0'),
+ ('two-device', json.loads((history/'two-device.receipt.json').read_text())['command'], '0,1'),
+ ('no-device', json.loads((history/'no-device.receipt.json').read_text())['command'], ''),
+ ('rust-graph', json.loads((history/'rust-final.receipt.json').read_text())['command'], '0'),
+ ('rust-packing', json.loads((history/'rust-packing.receipt.json').read_text())['command'], '0'),
+ ('cuda-packing', json.loads((history/'cuda-packing.receipt.json').read_text())['command'], '0'),
+ ('cpu-docs', json.loads((history/'cpu-final.receipt.json').read_text())['command'], '0'),
+ ('docs-example', [sys.executable, str(work/'docs-example.py')], '0'),
+]
+for name,command,mask in commands:
+ subprocess.run([sys.executable,str(work/'capture.py'),name,*command],check=True,
+                env={**os.environ,'CUDA_VISIBLE_DEVICES':mask})
+print('All clean-commit captures completed.')

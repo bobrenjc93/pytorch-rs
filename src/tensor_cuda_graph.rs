@@ -2,13 +2,15 @@
 //! of tensor storage or kernel launch is allowed while constructing this plan.
 use super::{
     ElementwiseLayout, MemoryFormat, Tensor, TensorError, element_count,
-    elementwise_output_strides, layout_is_contiguous, validated_layout,
+    elementwise_output_strides, layout_is_contiguous, normalize_transpose_dimension,
+    validated_layout,
 };
 
 #[derive(Clone, Copy)]
 pub(crate) enum Operation {
     Contiguous(usize),
     T(usize),
+    Transpose(usize, i64, i64),
     Neg(usize),
     MulScalar(usize, f32),
     Add(usize, usize),
@@ -69,6 +71,22 @@ impl Layout {
         Ok(output)
     }
 
+    fn transpose(&self, dim0: i64, dim1: i64) -> Result<Self, TensorError> {
+        if self.shape.len() > 2 {
+            return Err(TensorError::UnsupportedCudaTranspose {
+                reason: "compiled Tensor.transpose requires rank 0, 1 or 2",
+            });
+        }
+        let axis0 = normalize_transpose_dimension(dim0, self.shape.len())?;
+        let axis1 = normalize_transpose_dimension(dim1, self.shape.len())?;
+        let mut output = self.clone();
+        if !output.shape.is_empty() {
+            output.shape.swap(axis0, axis1);
+            output.strides.swap(axis0, axis1);
+        }
+        Ok(output)
+    }
+
     pub(crate) fn matches(&self, tensor: &Tensor) -> bool {
         self.shape == tensor.shape()
             && self.strides == tensor.stride()
@@ -88,6 +106,7 @@ impl Operation {
         let get_contiguous = |index| get(index)?.require_contiguous();
         let shape = match self {
             Self::T(input) => return get(input)?.t(),
+            Self::Transpose(input, dim0, dim1) => return get(input)?.transpose(dim0, dim1),
             Self::Contiguous(input) => {
                 let input = get(input)?;
                 if input.is_contiguous()? {
@@ -194,6 +213,7 @@ impl Operation {
         };
         match self {
             Self::T(input) => get(input).t(),
+            Self::Transpose(input, dim0, dim1) => get(input).transpose(dim0, dim1),
             Self::Contiguous(input) => get(input).try_contiguous(MemoryFormat::Contiguous),
             Self::Neg(input) => get(input).negate(),
             Self::MulScalar(input, scalar) => get(input).mul_scalar(scalar),
@@ -273,6 +293,56 @@ mod tests {
                     .unwrap()
                     .matches(&output)
             );
+        }
+    }
+
+    #[test]
+    fn transpose_axes_plan_and_execute_shared_storage() {
+        use crate::{Device, cuda};
+        for shape in [vec![], vec![7], vec![3, 7], vec![0, 1 << 32]] {
+            let (_, strides) = validated_layout(&shape).unwrap();
+            let input = Layout {
+                shape: shape.clone(),
+                strides,
+                offset: 3,
+            };
+            let rank = i64::try_from(shape.len().max(1)).unwrap();
+            for dim0 in -rank..rank {
+                for dim1 in -rank..rank {
+                    let op = Operation::Transpose(0, dim0, dim1);
+                    let output = op.layout(std::slice::from_ref(&input)).unwrap();
+                    assert_eq!(output.offset, 3);
+                    if cuda::device_count() != 0 {
+                        let tensor = Tensor::from_vec(
+                            vec![1.; element_count(&shape).unwrap()],
+                            shape.clone(),
+                        )
+                        .unwrap()
+                        .try_copy_cpu_to_cuda(Device::Cuda(0))
+                        .unwrap();
+                        let view = op.execute(&[&tensor], &[]).unwrap();
+                        assert!(std::sync::Arc::ptr_eq(&tensor.storage, &view.storage));
+                        assert_eq!(output.shape, view.shape());
+                        assert_eq!(output.strides, view.stride());
+                        assert_eq!(view.device(), tensor.device());
+                    }
+                }
+            }
+            for dim in [-rank - 1, rank, i64::MIN, i64::MAX] {
+                assert!(
+                    Operation::Transpose(0, dim, 0)
+                        .layout(std::slice::from_ref(&input))
+                        .is_err()
+                );
+                assert!(
+                    Operation::Transpose(0, 0, dim)
+                        .layout(std::slice::from_ref(&input))
+                        .is_err()
+                );
+            }
+        }
+        if cuda::device_count() == 0 {
+            eprintln!("skipping transpose CUDA storage assertions: no CUDA device");
         }
     }
 

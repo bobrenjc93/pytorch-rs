@@ -1,0 +1,16 @@
+import torch, torch_rs as native
+from torch_rs import _compile_trace as trace
+from unittest.mock import patch
+import json
+
+def f(x):
+    return x.transpose(0,1)
+x=native.tensor([[1.,2.,3.],[4.,5.,6.]]).to('cuda:0')
+y=torch.tensor([[1.,2.,3.],[4.,5.,6.]],device='cuda:0')
+assert x.transpose(0,1).cpu().tolist()==torch.compile(f,backend='eager',fullgraph=True)(y).cpu().tolist()
+with patch.object(trace._native,'_compile_trace_cuda_graph',side_effect=AssertionError('native execution')):
+    try: native.compile(f,backend='eager',fullgraph=True)(x)
+    except NotImplementedError as e: print('BASELINE GAP:',type(e).__name__,str(e))
+    else: raise AssertionError('baseline unexpectedly captured transpose')
+print('reference',torch.__version__,torch.version.cuda,torch.cuda.get_device_name())
+print('imports',native.__file__,native._C.__file__)

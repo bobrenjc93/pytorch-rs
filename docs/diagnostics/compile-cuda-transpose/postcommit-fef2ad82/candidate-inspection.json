@@ -1,0 +1,300 @@
+{
+  "commit": "fef2ad8258a09c6e3d2554d9477526500447fe27",
+  "base": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+  "git_status": "",
+  "candidate_diff_sha256": "2bb198d545e3ec76775a233af039494b997204329223c8eb960b4ec8d1572dba",
+  "candidate_files": {
+    "ARCHITECTURE.md": "59123c2e602ae1a3ab6aee2d02b1606e7d4b0254242081a7f35fd0325be5da47",
+    "FEATURES.md": "581c9b2675bfa379b46f21987bc5e98ae692ffe5e1bb93c060aa45ef82c8926d",
+    "docs/README.md": "9840f7e453a3b42d05bddc00e52cf910cc526195344aeac7fe76743acd6cf0aa",
+    "docs/compile-cuda-t.md": "aa0eaac9f90747e64288f4c6e0b81bd7c6bd4c571257d87dd14626a98debd325",
+    "docs/diagnostics/compile-cuda-transpose/README.md": "fc8f79099effd3c064bc28ee3cb9932ddef942507ede9ec01939b9b74613e13c",
+    "docs/diagnostics/compile-cuda-transpose/audit.json": "70d6b75526e18f59745ada7ab3fe451d90ff0d78b8b91a7d8e3e0436ea364d5a",
+    "docs/diagnostics/compile-cuda-transpose/baseline-gap.log": "ec8520333882e683238f49aab77dd1a947f4476aa03c43095f43d2f17e4e7887",
+    "docs/diagnostics/compile-cuda-transpose/baseline-gap.receipt.json": "31ffd6ee88640b7f62dfe8b2e879f2303104848337159e0a44f8cadde2e1e509",
+    "docs/diagnostics/compile-cuda-transpose/baseline.py.txt": "0bd281430153a650c101dbf94e00369dc02158674ed6919dc467286cbdbca435",
+    "docs/diagnostics/compile-cuda-transpose/baseline/build-record.json": "5aebbc4fe378829e8453f8a532b6726978acf50dc93b38ab977d1b88e649a36a",
+    "docs/diagnostics/compile-cuda-transpose/baseline/build.log": "9cb8b9263598b9024332b5fa2cfb7ac0a7d31d650ac305213eccf04632483800",
+    "docs/diagnostics/compile-cuda-transpose/baseline/commands.json": "5d3a51c49f1bef671deb96b2120e124b7ff979c5bac711afbe57b7f06d98530a",
+    "docs/diagnostics/compile-cuda-transpose/baseline/install.log": "82cf7ca801b190a8b4059e795b481a3094d864f83c9d6cd7383384167b07e21f",
+    "docs/diagnostics/compile-cuda-transpose/capture.py.txt": "0af765f281f24b9c0a1e649e2cb398af1393478f4c57cc5c174088a927c84325",
+    "docs/diagnostics/compile-cuda-transpose/clippy.log": "aa06aad04fc23a3897253d7c126a440316f7b0f1da077572656960c65886c7fb",
+    "docs/diagnostics/compile-cuda-transpose/clippy.receipt.json": "ae970ca7f2c4a7037d58835d12d50bf5d1cd1dbceaa5bfbef90f923fcb5489ff",
+    "docs/diagnostics/compile-cuda-transpose/compiler-regressions.log": "f9364038c1434fb5ff7410da31aef57433f530d6452c7bab7ae35b6f88c627bd",
+    "docs/diagnostics/compile-cuda-transpose/compiler-regressions.receipt.json": "5a7a3072e9f96eacc49f138ee31d84a4ee0e7657f09c75459f77e8a810625065",
+    "docs/diagnostics/compile-cuda-transpose/cpu-final.log": "480fa08a45dcebaac047533dc8e159deb573949ec23a03220dcb5bd2827ed506",
+    "docs/diagnostics/compile-cuda-transpose/cpu-final.receipt.json": "7ddb9a7c7befec7170a351da3cc1919e27f190325ff1493d544c896f07989318",
+    "docs/diagnostics/compile-cuda-transpose/cpu-layout-docs.log": "f8983f2a070675021e60faec948746429ec6f910497ed5ca6e2bbd5688a7d1f5",
+    "docs/diagnostics/compile-cuda-transpose/cpu-layout-docs.receipt.json": "62d793a211e7c706fc5c137e444bceed8bcead50e4c34a92ba623e34b37aa6c8",
+    "docs/diagnostics/compile-cuda-transpose/cuda-packing.log": "1f5b0ba8afb07e111e0d875a050cdfc8411771ce23ed066cd2606ccfd2ddc302",
+    "docs/diagnostics/compile-cuda-transpose/cuda-packing.receipt.json": "1b31f2e86e70bcda50202df22721ac069626581a9fe5e8b453aec19bab789d7d",
+    "docs/diagnostics/compile-cuda-transpose/development/build-record.json": "5efc9ef7aee326e74aa9abdea315a713ffc7af610375a5f6719e7ad462c464ba",
+    "docs/diagnostics/compile-cuda-transpose/development/build.log": "2a20c0287adba5474a6b7de87313964509fb3768c23b1399516d1bf15f2a106a",
+    "docs/diagnostics/compile-cuda-transpose/development/commands.json": "0e2c6036887a3886e261daf6688d3ee74716a0497d60ec636f1e1709d235dc49",
+    "docs/diagnostics/compile-cuda-transpose/development/install.log": "91ae93249d257ddd62aadca1e9eed3cdbada19eb23b20ddb7ba735afbd717f7c",
+    "docs/diagnostics/compile-cuda-transpose/docs-example.log": "653802c063000dcfb438b537e7172b1b9a50da400819fabed317186d2059b406",
+    "docs/diagnostics/compile-cuda-transpose/docs-example.py.txt": "423a23a449c861677a78f96f1facbaf04da8712a62b17bbc016ea88597b9a1f7",
+    "docs/diagnostics/compile-cuda-transpose/docs-example.receipt.json": "e398cff933cc25082f97167e540e32e21bdf7d2a80084112662368102ef4183c",
+    "docs/diagnostics/compile-cuda-transpose/docs-verified.log": "653802c063000dcfb438b537e7172b1b9a50da400819fabed317186d2059b406",
+    "docs/diagnostics/compile-cuda-transpose/docs-verified.receipt.json": "d512bfe82ac2ccdcd3c10d59aa8814d02a45c7f9fce611f443a07a911f786443",
+    "docs/diagnostics/compile-cuda-transpose/environment.sh.txt": "ceee9e083f7a6f6ecda53dfe143d844f08f11722d51d51e4a8dedd9b060dfa0c",
+    "docs/diagnostics/compile-cuda-transpose/final-build/build-record.json": "eccacf1441f8cea035cef55ade1a35b5cf455d9ed0d5031eb7f8e7d328480495",
+    "docs/diagnostics/compile-cuda-transpose/final-build/build.log": "304e9dd4f3e47d9c398e8245c53f449fa45613e76b098ec9f3af6b44034d6076",
+    "docs/diagnostics/compile-cuda-transpose/final-build/commands.json": "af659d71c36968999b036346d863b7dc7de4591118e38d1e3f3e7cbdda51ce32",
+    "docs/diagnostics/compile-cuda-transpose/final-build/install.log": "df1ed9745f231f1baaeb26e177aba3e7c47f8ef4a4943ca8ebc95f878fbd4a44",
+    "docs/diagnostics/compile-cuda-transpose/first-attempt.patch": "753c7bfa3115f88a44d70d0788246a2cced74d71b31deb191ab182fa72ef75f7",
+    "docs/diagnostics/compile-cuda-transpose/fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/diagnostics/compile-cuda-transpose/fmt.receipt.json": "e6d89e1a8bc1ce9d6a897994bad7db4b0fa2c2c42f3cdb5324bf715df8ba9f45",
+    "docs/diagnostics/compile-cuda-transpose/guard-failure.patch": "14917ebec9d803162b2dd059fadbc1eb5d142a4c1f23319370e4d3f0bd207136",
+    "docs/diagnostics/compile-cuda-transpose/guard-repair.log": "c7b24154a4d5705fd58f2977360a436d6bcb8afb9c1e30631b10878a71b0791c",
+    "docs/diagnostics/compile-cuda-transpose/guard-repair.receipt.json": "49797c3b536f98b90afdffa872d5209055f6b30e8ea071d1e9ecebff15f58fc0",
+    "docs/diagnostics/compile-cuda-transpose/imports.log": "3f41012f76458539c17d341ed047f5c65a7bdd8798fa403bca159190be650aea",
+    "docs/diagnostics/compile-cuda-transpose/imports.receipt.json": "f1ff9eb1540067972b0583493c2ef99477aa78a8d05ddb130c42fdbb747441b3",
+    "docs/diagnostics/compile-cuda-transpose/inputs-delta-108d6442e98d.json": "eb4b4dd967167065f61674b7f5e75e61d96c13152b33685127c2a8edbf224d66",
+    "docs/diagnostics/compile-cuda-transpose/inputs-delta-212dd99427fa.json": "c3ce2e4bad101737e49e942dfaaa330a2fd039e53cc3c4aaf53c1db26216af58",
+    "docs/diagnostics/compile-cuda-transpose/inputs-delta-85846792a636.json": "07da009c29261d264a20df10042f8818979bf9a270fd490be911d261d02e3abb",
+    "docs/diagnostics/compile-cuda-transpose/inventory.json": "090be87729119d7645567b6a493b15500a4c15182bf0079707681acc71f063bd",
+    "docs/diagnostics/compile-cuda-transpose/manifest-index.json": "5fc62215b57b3d673175f591561def4477c90948c21a53a05cdd1987cdc15a80",
+    "docs/diagnostics/compile-cuda-transpose/measured-inputs.json": "fb3ea619cca55f4fad6e0102cf639eb5e9ef6bd81b9858dacd8466c4d925ce45",
+    "docs/diagnostics/compile-cuda-transpose/no-device.log": "408fa27b8f23a987cf338e20ec569c890f87364c0c91757a2b968e4baf8ea9b9",
+    "docs/diagnostics/compile-cuda-transpose/no-device.receipt.json": "6cf9e1601f996f30832f88bed586e34583439a40bbdf6f0bc0ce36929b9767b4",
+    "docs/diagnostics/compile-cuda-transpose/preflight-final.log": "8fbe3577d93ae9fef37126ae69cee2b3184c7ab114235e580a558768f4f53ef8",
+    "docs/diagnostics/compile-cuda-transpose/preflight-final.receipt.json": "c1dd9e9d7d33cfef97d0310d322540d6696ab46fdbe84528b3b3c4f2f98aee4f",
+    "docs/diagnostics/compile-cuda-transpose/preflight-verified.log": "8fbe3577d93ae9fef37126ae69cee2b3184c7ab114235e580a558768f4f53ef8",
+    "docs/diagnostics/compile-cuda-transpose/preflight-verified.receipt.json": "d0fdac361a0d7df4b002ebf9ef356357bf97af1f99003e8313d2a0da3250e86c",
+    "docs/diagnostics/compile-cuda-transpose/preflight.log": "8fbe3577d93ae9fef37126ae69cee2b3184c7ab114235e580a558768f4f53ef8",
+    "docs/diagnostics/compile-cuda-transpose/preflight.py.txt": "cb923438eea3d9ca0bcdf536ff4c283008e3b647d5b11adc0720726e5dd918aa",
+    "docs/diagnostics/compile-cuda-transpose/preflight.receipt.json": "33c17bd002668273093046e006e7e4a4c92eae92fd65148363c4f53351119519",
+    "docs/diagnostics/compile-cuda-transpose/publish.py.txt": "46372919d24d89f482ebe982629578ed3d2542dc60b34e8dbd1e2b4940593cc0",
+    "docs/diagnostics/compile-cuda-transpose/rust-final.log": "37f9a4a6fbffabcbd804ae225ec69c58806b6d780a3fcb5181785aaacd16841d",
+    "docs/diagnostics/compile-cuda-transpose/rust-final.receipt.json": "1f92caae430e8054098354189097bc0b59d81bfba8cabdb9413d427815a8b0d9",
+    "docs/diagnostics/compile-cuda-transpose/rust-graph.log": "929745829e843e27c585ee215f3f95464fca4e88b8d8f09e34fd95cae1a2722f",
+    "docs/diagnostics/compile-cuda-transpose/rust-graph.receipt.json": "34f9536db720a71ef0e5667db4ea31ec7d2c2c18d09bde9bb3a3f695f18f6b01",
+    "docs/diagnostics/compile-cuda-transpose/rust-packing.log": "d07ea6bf846c5bf9fbda51495ea13e5b389a97091a458c68bcc96099acb14740",
+    "docs/diagnostics/compile-cuda-transpose/rust-packing.receipt.json": "bcd45538c37bb9ad842f5fa6c3dc5074de166e6376908a2775eafdac1070bf10",
+    "docs/diagnostics/compile-cuda-transpose/setup-commands.txt": "fd40e5d0390cdf42cd2ac1910edc0e7e2519e91367ecacbad798a9fd08591b18",
+    "docs/diagnostics/compile-cuda-transpose/setup.log": "b64d94288abd33f25804c9cbd317a38d6764b65ece4d6b15d2f0692c8f8b8043",
+    "docs/diagnostics/compile-cuda-transpose/transpose-final.log": "af6e3d0f3950a47cc32ff5db0da2df1b649ca04761d32cca78b57ec84fe34b4e",
+    "docs/diagnostics/compile-cuda-transpose/transpose-final.receipt.json": "29f372c941937d998357a1f08714e41857fb35ef1d740603f8d77f0c99762067",
+    "docs/diagnostics/compile-cuda-transpose/transpose-first.log": "3bc0f27f7e6253501076f6c7c572a589c4e9167deed360461f6c5a18bdeeae7d",
+    "docs/diagnostics/compile-cuda-transpose/transpose-first.receipt.json": "a677b3bb71a4f60a743a7920b235e10bb87614eb73eeb4788b83e49397b25e6d",
+    "docs/diagnostics/compile-cuda-transpose/transpose-verified.log": "18283f479eb97746d58c42f86821992ab60e56a8b54c0b5d66853e02c4e20cf7",
+    "docs/diagnostics/compile-cuda-transpose/transpose-verified.receipt.json": "d9187a89c030d6d4f826db2a4faa79846a2fef95dc86c93d4757ba598d743935",
+    "docs/diagnostics/compile-cuda-transpose/two-device.log": "401c8a026c58b5e5a0f5304e179208a461ce14d56d6c72495f19952390154c3a",
+    "docs/diagnostics/compile-cuda-transpose/two-device.receipt.json": "da6b83f737711a33b907c62072d986c10e1609d6522532c4401902ed6df6c9d9",
+    "docs/diagnostics/compile-cuda-transpose/verified-build/build-record.json": "e78fb4828cdd9bd77d225183654c0a7d55265e0d57d671f7ad02beb641f6aae5",
+    "docs/diagnostics/compile-cuda-transpose/verified-build/build.log": "d2d91598d5bcf78793ae7bb817c5e1c23a23a80b98b7e9284ab6d485faf0dc29",
+    "docs/diagnostics/compile-cuda-transpose/verified-build/commands.json": "f911244e726f91974ff3e35ff5d015ed8e2230509af6ca550a8bcf66611cb561",
+    "docs/diagnostics/compile-cuda-transpose/verified-build/install.log": "98177e1448638524480d6641a4944c20f29fe23c54a2ad5db2f895011ce304b4",
+    "docs/supported-surface.md": "51a8c2f6bbda83bf72cd2735cd4556cd156cacc3651d5c23a2f1140ae66a83bf",
+    "python/torch_rs/__init__.py": "16e3030eca431a0f219c7a10b059ed631eb163756fed8c5fe2e09072ac7d4427",
+    "python/torch_rs/_compile_bytecode.py": "ee6cc32f4bdca424d3b7b759fab7c42bf8d185a09103928e2dd20c1272831fec",
+    "python/torch_rs/_compile_trace.py": "f3cf5ff9ff0d877576a25971043ae43b8f858231c8e78a22dd657ba6ef08fc7b",
+    "src/python_compile_cuda_graph.rs": "9cc87042eae387427d05f0ac321b7cfda8e5f765e00a614469ef361d2013d838",
+    "src/tensor_cuda_graph.rs": "1ed37518e50d224d51795d428acb2397bc9662ff6db5466a1e9dd522ecc4a421",
+    "tests/test_compile_cuda_t.py": "1607002954d4832198a0d1e7b9075f11dd933105ae9d672ba5ab452a4d293343",
+    "tests/test_compile_cuda_transpose.py": "4fc717de583449d84f6f8169ff2e81b739ed47afa2441a05a51689cab92f985f"
+  },
+  "non_evidence_files": [
+    "ARCHITECTURE.md",
+    "FEATURES.md",
+    "docs/README.md",
+    "docs/compile-cuda-t.md",
+    "docs/supported-surface.md",
+    "python/torch_rs/__init__.py",
+    "python/torch_rs/_compile_bytecode.py",
+    "python/torch_rs/_compile_trace.py",
+    "src/python_compile_cuda_graph.rs",
+    "src/tensor_cuda_graph.rs",
+    "tests/test_compile_cuda_t.py",
+    "tests/test_compile_cuda_transpose.py"
+  ],
+  "existing_evidence_inventory_verified": true,
+  "existing_records": {
+    "baseline-gap.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": "",
+      "exit_status": 0,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "rust-graph.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": " M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_t.py\n?? tests/test_compile_cuda_transpose.py\n",
+      "exit_status": 0,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "cpu-layout-docs.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": " M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_t.py\n?? tests/test_compile_cuda_transpose.py\n",
+      "exit_status": 0,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "clippy.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": " M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_t.py\n?? tests/test_compile_cuda_transpose.py\n",
+      "exit_status": 0,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "preflight.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": " M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_t.py\n?? tests/test_compile_cuda_transpose.py\n",
+      "exit_status": 0,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "transpose-first.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": " M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_t.py\n?? tests/test_compile_cuda_transpose.py\n",
+      "exit_status": 1,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "docs-example.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": " M ARCHITECTURE.md\n M FEATURES.md\n M docs/README.md\n M docs/compile-cuda-t.md\n M docs/supported-surface.md\n M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_t.py\n?? docs/diagnostics/compile-cuda-transpose/\n?? tests/test_compile_cuda_transpose.py\n",
+      "exit_status": 0,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "preflight-final.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": " M ARCHITECTURE.md\n M FEATURES.md\n M docs/README.md\n M docs/compile-cuda-t.md\n M docs/supported-surface.md\n M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_t.py\n?? docs/diagnostics/compile-cuda-transpose/\n?? tests/test_compile_cuda_transpose.py\n",
+      "exit_status": 0,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "transpose-final.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": " M ARCHITECTURE.md\n M FEATURES.md\n M docs/README.md\n M docs/compile-cuda-t.md\n M docs/supported-surface.md\n M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_t.py\n?? docs/diagnostics/compile-cuda-transpose/\n?? tests/test_compile_cuda_transpose.py\n",
+      "exit_status": 1,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "guard-repair.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": " M ARCHITECTURE.md\n M FEATURES.md\n M docs/README.md\n M docs/compile-cuda-t.md\n M docs/supported-surface.md\n M python/torch_rs/__init__.py\n M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_t.py\n?? docs/diagnostics/compile-cuda-transpose/\n?? tests/test_compile_cuda_transpose.py\n",
+      "exit_status": 0,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "docs-verified.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": " M ARCHITECTURE.md\n M FEATURES.md\n M docs/README.md\n M docs/compile-cuda-t.md\n M docs/supported-surface.md\n M python/torch_rs/__init__.py\n M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_t.py\n?? docs/diagnostics/compile-cuda-transpose/\n?? tests/test_compile_cuda_transpose.py\n",
+      "exit_status": 0,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "preflight-verified.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": " M ARCHITECTURE.md\n M FEATURES.md\n M docs/README.md\n M docs/compile-cuda-t.md\n M docs/supported-surface.md\n M python/torch_rs/__init__.py\n M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_t.py\n?? docs/diagnostics/compile-cuda-transpose/\n?? tests/test_compile_cuda_transpose.py\n",
+      "exit_status": 0,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "transpose-verified.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": " M ARCHITECTURE.md\n M FEATURES.md\n M docs/README.md\n M docs/compile-cuda-t.md\n M docs/supported-surface.md\n M python/torch_rs/__init__.py\n M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_t.py\n?? docs/diagnostics/compile-cuda-transpose/\n?? tests/test_compile_cuda_transpose.py\n",
+      "exit_status": 0,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "compiler-regressions.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": " M ARCHITECTURE.md\n M FEATURES.md\n M docs/README.md\n M docs/compile-cuda-t.md\n M docs/supported-surface.md\n M python/torch_rs/__init__.py\n M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_t.py\n?? docs/diagnostics/compile-cuda-transpose/\n?? tests/test_compile_cuda_transpose.py\n",
+      "exit_status": 0,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "two-device.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": " M ARCHITECTURE.md\n M FEATURES.md\n M docs/README.md\n M docs/compile-cuda-t.md\n M docs/supported-surface.md\n M python/torch_rs/__init__.py\n M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_t.py\n?? docs/diagnostics/compile-cuda-transpose/\n?? tests/test_compile_cuda_transpose.py\n",
+      "exit_status": 0,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "no-device.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": " M ARCHITECTURE.md\n M FEATURES.md\n M docs/README.md\n M docs/compile-cuda-t.md\n M docs/supported-surface.md\n M python/torch_rs/__init__.py\n M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_t.py\n?? docs/diagnostics/compile-cuda-transpose/\n?? tests/test_compile_cuda_transpose.py\n",
+      "exit_status": 0,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "rust-final.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": " M ARCHITECTURE.md\n M FEATURES.md\n M docs/README.md\n M docs/compile-cuda-t.md\n M docs/supported-surface.md\n M python/torch_rs/__init__.py\n M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_t.py\n?? docs/diagnostics/compile-cuda-transpose/\n?? tests/test_compile_cuda_transpose.py\n",
+      "exit_status": 0,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "rust-packing.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": " M ARCHITECTURE.md\n M FEATURES.md\n M docs/README.md\n M docs/compile-cuda-t.md\n M docs/supported-surface.md\n M python/torch_rs/__init__.py\n M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_t.py\n?? docs/diagnostics/compile-cuda-transpose/\n?? tests/test_compile_cuda_transpose.py\n",
+      "exit_status": 0,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "cuda-packing.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": " M ARCHITECTURE.md\n M FEATURES.md\n M docs/README.md\n M docs/compile-cuda-t.md\n M docs/supported-surface.md\n M python/torch_rs/__init__.py\n M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_t.py\n?? docs/diagnostics/compile-cuda-transpose/\n?? tests/test_compile_cuda_transpose.py\n",
+      "exit_status": 0,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "cpu-final.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": " M ARCHITECTURE.md\n M FEATURES.md\n M docs/README.md\n M docs/compile-cuda-t.md\n M docs/supported-surface.md\n M python/torch_rs/__init__.py\n M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_t.py\n?? docs/diagnostics/compile-cuda-transpose/\n?? tests/test_compile_cuda_transpose.py\n",
+      "exit_status": 0,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "imports.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": " M ARCHITECTURE.md\n M FEATURES.md\n M docs/README.md\n M docs/compile-cuda-t.md\n M docs/supported-surface.md\n M python/torch_rs/__init__.py\n M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_t.py\n?? docs/diagnostics/compile-cuda-transpose/\n?? tests/test_compile_cuda_transpose.py\n",
+      "exit_status": 0,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "fmt.receipt.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "git_status": " M ARCHITECTURE.md\n M FEATURES.md\n M docs/README.md\n M docs/compile-cuda-t.md\n M docs/supported-surface.md\n M python/torch_rs/__init__.py\n M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compile_trace.py\n M src/python_compile_cuda_graph.rs\n M src/tensor_cuda_graph.rs\n M tests/test_compile_cuda_t.py\n?? docs/diagnostics/compile-cuda-transpose/\n?? tests/test_compile_cuda_transpose.py\n",
+      "exit_status": 0,
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc",
+      "kind": "development or baseline; retained unchanged"
+    },
+    "baseline/build-record.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "kind": "clean-code",
+      "clean": true,
+      "source_sha256": "5e3122694aec89628b7ab9f39e00387f2a45e63ad38d907323ac4c246e82daf6",
+      "extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so"
+    },
+    "development/build-record.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "kind": "precommit-diagnostic",
+      "clean": false,
+      "source_sha256": "4ed8b84eac70354b570a1114d6153d7b766301fbd4f51743d47b532b0d1c271a",
+      "extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so"
+    },
+    "final-build/build-record.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "kind": "precommit-diagnostic",
+      "clean": false,
+      "source_sha256": "bbbb82ed0691f863c0a521d7bff6f453ef3c8579a0b5f10ddcf263da16fa58b8",
+      "extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so"
+    },
+    "verified-build/build-record.json": {
+      "commit": "1ff6e6b3a57c69fec9f8b1292bf6ed30e00dec0b",
+      "kind": "precommit-diagnostic",
+      "clean": false,
+      "source_sha256": "62de92bd7993ea90fa434aaaf109dd1e407553c66c74b7e12ea753f66e4cb895",
+      "extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so"
+    }
+  },
+  "task_required_capture": "fresh clean-commit release build, bounded H100 transpose/composition and relevant regressions",
+  "historical_policy": "Preserve baseline, development failures and unrelated evidence unchanged; publish fresh clean-commit capture separately."
+}

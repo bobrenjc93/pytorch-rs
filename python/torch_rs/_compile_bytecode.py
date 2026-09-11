@@ -140,6 +140,7 @@ class _OpcodeForm:
 
 
 _METHOD_TARGETS = {
+    "transpose": _MethodTarget("view", "transpose", 2, "Tensor.transpose"),
     "t": _MethodTarget("unary", "t", 0, "Tensor.t"),
     "contiguous": _MethodTarget("unary", "contiguous", 0, "Tensor.contiguous"),
     "sum": _MethodTarget("reduction", "sum", 1, "Tensor.sum"),
@@ -1079,6 +1080,21 @@ def _lower_function_body(
 
 
 def _record_method_call(recorder, method, args, program, instruction, names=()):
+    if method.name == "transpose":
+        positional = len(args) - len(names)
+        if positional > 2:
+            raise TypeError("transpose() requires dim0 and dim1")
+        options = dict(zip(("dim0", "dim1"), args[:positional]))
+        for name, value in zip(names, args[positional:]):
+            if name not in ("dim0", "dim1") or name in options:
+                raise TypeError(f"transpose() invalid or duplicate argument {name!r}")
+            options[name] = value
+        if len(options) != 2:
+            raise TypeError("transpose() missing dim0 or dim1")
+        if any(not isinstance(value, _BytecodeConstant) for value in options.values()):
+            _unsupported_bytecode(program, instruction, "Tensor.transpose requires constant axes")
+        return recorder.record_transpose(method.receiver, options["dim0"].value,
+                                         options["dim1"].value)
     if method.name == "sum":
         positional = len(args) - len(names)
         if positional > 2:

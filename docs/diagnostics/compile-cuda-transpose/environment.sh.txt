@@ -1,0 +1,14 @@
+export UV_CACHE_DIR="$PWD/target/transpose/uv"
+export UV_PYTHON_INSTALL_DIR="$PWD/target/transpose/python"
+export CARGO_HOME="$PWD/target/transpose/cargo"
+export CARGO_TARGET_DIR="$PWD/target/transpose/build"
+export TMPDIR="$PWD/target/transpose/tmp"
+export XDG_CACHE_HOME="$PWD/target/transpose/cache"
+export CUDA_CACHE_PATH="$PWD/target/transpose/cuda"
+export TORCHINDUCTOR_CACHE_DIR="$PWD/target/transpose/inductor"
+export TRITON_CACHE_DIR="$PWD/target/transpose/triton"
+export PYTHONPYCACHEPREFIX="$PWD/target/transpose/pycache"
+export CUDA_VISIBLE_DEVICES=0
+export VIRTUAL_ENV="$PWD/.venv"
+export PYO3_PYTHON="$PWD/.venv/bin/python"
+export GIT_OPTIONAL_LOCKS=0

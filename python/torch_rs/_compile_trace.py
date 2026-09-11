@@ -155,6 +155,7 @@ class CompileTraceOperation:
     metadata: CompileTraceTensorMetadata
     scalar: object = None
     reduction: tuple[int, bool] | None = None
+    axes: tuple[int, int] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,6 +188,7 @@ class CompileTraceGraph:
 
 _SUPPORTED_UNARY_METHODS = (
     "Tensor.t (CUDA, parameterless, rank <= 2)",
+    "Tensor.transpose (CUDA, constant integer axes, rank <= 2)",
     "Tensor.contiguous (CUDA, parameterless)",
     "Tensor.neg",
     "Tensor.negative",
@@ -544,6 +546,46 @@ def _t_output_metadata(metadata):
         shape=metadata.shape[::-1], stride=metadata.stride[::-1],
         dtype=metadata.dtype, device=metadata.device, requires_grad=False,
         storage_offset=metadata.storage_offset,
+    )
+
+
+def _transpose_axes(axes, rank):
+    if type(axes) is not tuple or len(axes) != 2:
+        raise CompileTraceUnsupportedError("torch.compile malformed transpose axes")
+    # Match public binding: type-check both arguments before converting either
+    # integer or validating dimensions (e.g. transpose(2, True) is TypeError).
+    for name, axis in zip(("dim0", "dim1"), axes):
+        if type(axis) is not int:
+            # Index-like objects and integer subclasses may be valid eager
+            # arguments, but capture deliberately accepts exact constants only.
+            if hasattr(type(axis), "__index__") and type(axis) is not bool:
+                raise CompileTraceUnsupportedError("torch.compile transpose requires exact integer constants")
+            raise TypeError(f"transpose(): argument '{name}' must be int, not {type(axis).__name__}")
+    for axis in axes:
+        if not -(2**63) <= axis < 2**63:
+            raise ValueError("Overflow when unpacking long long")
+    effective_rank = max(rank, 1)
+    normalized = []
+    for axis in axes:
+        if not -effective_rank <= axis < effective_rank:
+            raise IndexError(f"Dimension out of range (expected to be in range of "
+                             f"[{-effective_rank}, {effective_rank - 1}], but got {axis})")
+        normalized.append(axis % effective_rank)
+    return tuple(normalized)
+
+
+def _transpose_output_metadata(metadata, axes):
+    _validate_cuda_metadata(metadata, require_contiguous=False)
+    if metadata.device.type != "cuda" or len(metadata.shape) > 2:
+        raise CompileTraceUnsupportedError("torch.compile Tensor.transpose requires CUDA rank 0, 1 or 2")
+    dim0, dim1 = _transpose_axes(axes, len(metadata.shape))
+    shape, stride = list(metadata.shape), list(metadata.stride)
+    if shape:
+        shape[dim0], shape[dim1] = shape[dim1], shape[dim0]
+        stride[dim0], stride[dim1] = stride[dim1], stride[dim0]
+    return CompileTraceTensorMetadata(
+        shape=tuple(shape), stride=tuple(stride), dtype=metadata.dtype,
+        device=metadata.device, requires_grad=False, storage_offset=metadata.storage_offset,
     )
 
 
@@ -1089,6 +1131,8 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled, de
     # Validate the complete node before any graph operation can execute, even
     # for graphs built manually or modified with dataclasses.replace().
     _validate_metadata_types(operation.metadata)
+    if operation.target != "transpose" and operation.axes is not None:
+        raise CompileTraceUnsupportedError("torch.compile non-transpose node has axes")
     if operation.op == "call_reduction":
         if (operation.target != "sum" or len(operation.inputs) != 1
                 or operation.scalar is not None or type(operation.reduction) is not tuple
@@ -1126,11 +1170,15 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled, de
         return expected
     if operation.scalar is not None:
         raise CompileTraceUnsupportedError("torch.compile non-scalar operation has a scalar payload")
-    if operation.target in ("contiguous", "t"):
+    if operation.target in ("contiguous", "t", "transpose"):
         if len(operation.inputs) != 1:
             raise CompileTraceUnsupportedError(f"torch.compile {operation.target} requires one input")
         name = operation.inputs[0]
-        infer = _t_output_metadata if operation.target == "t" else _contiguous_output_metadata
+        if operation.target == "transpose":
+            def infer(metadata):
+                return _transpose_output_metadata(metadata, operation.axes)
+        else:
+            infer = _t_output_metadata if operation.target == "t" else _contiguous_output_metadata
         expected = infer(metadata_values[name])
         declared = operation.metadata
         if not _builtins.isinstance(declared, CompileTraceTensorMetadata):
@@ -1216,6 +1264,8 @@ def execute_compile_trace_graph(graph, *inputs):
             "torch.compile trace execution expected CompileTraceGraph, "
             f"got {_type_name(graph)}"
         )
+    if type(graph.dynamic) is not bool:
+        raise CompileTraceUnsupportedError("torch.compile malformed dynamic policy")
     if len(graph.inputs) not in (1, 2):
         raise CompileTraceUnsupportedError(
             "torch.compile trace execution currently supports one or two "
@@ -1274,6 +1324,11 @@ def execute_compile_trace_graph(graph, *inputs):
     # dynamic cache hit may have individually valid inputs whose shapes no
     # longer agree at an addition later in the graph.
     for operation in graph.operations:
+        if (type(operation) is not CompileTraceOperation
+                or any(type(field) is not str for field in (operation.name, operation.op, operation.target))
+                or type(operation.inputs) is not tuple
+                or any(type(name) is not str for name in operation.inputs)):
+            raise CompileTraceUnsupportedError("torch.compile malformed operation field types")
         if operation.name in metadata_values:
             raise CompileTraceUnsupportedError(
                 "torch.compile trace execution encountered duplicate value "
@@ -1311,7 +1366,7 @@ def execute_compile_trace_graph(graph, *inputs):
             )
         metadata_values[operation.name] = expected_metadata
 
-    if (len(graph.operations) > 1 or any(op.target in ("contiguous", "t") for op in graph.operations)) and all(
+    if (len(graph.operations) > 1 or any(op.target in ("contiguous", "t", "transpose") for op in graph.operations)) and all(
         metadata.device.type == "cuda" for metadata in metadata_values.values()
     ):
         # Validate the output tree too before the native bridge can launch.
@@ -1328,7 +1383,8 @@ def execute_compile_trace_graph(graph, *inputs):
         indices = {name: index for index, name in enumerate(metadata_values)}
         nodes = [
             (operation.target, tuple(indices[name] for name in operation.inputs),
-             operation.reduction if operation.op == "call_reduction" else operation.scalar,
+             operation.axes if operation.target == "transpose" else (
+                 operation.reduction if operation.op == "call_reduction" else operation.scalar),
              metadata_values[operation.name].shape,
              metadata_values[operation.name].stride)
             for operation in graph.operations
@@ -1398,6 +1454,9 @@ class CompileTraceTensorProxy:
 
     def dim(self):
         return len(self.metadata.shape)
+
+    def transpose(self, dim0, dim1):
+        return self._recorder.record_transpose(self, dim0, dim1)
 
     def t(self):
         return self._recorder.record_unary("t", self)
@@ -1642,6 +1701,18 @@ class CompileTraceRecorder:
             metadata=metadata,
         )
         self._operations.append(operation)
+        return CompileTraceTensorProxy(self, name, metadata)
+
+    def record_transpose(self, input, dim0, dim1):
+        self._ensure_open()
+        self._require_owned_proxy(input)
+        axes = (dim0, dim1)
+        metadata = _transpose_output_metadata(input.metadata, axes)
+        name = self._next_operation_name("transpose")
+        self._operations.append(CompileTraceOperation(
+            name=name, op="call_method", target="transpose", inputs=(input.name,),
+            metadata=metadata, axes=axes,
+        ))
         return CompileTraceTensorProxy(self, name, metadata)
 
     def record_reduction(self, input, dim, keepdim):

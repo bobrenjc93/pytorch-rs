@@ -1,0 +1,10 @@
+Inspected all 90 candidate paths; 26 existing receipts/build records; historical inventory verified.
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc/target/transpose-postcommit-fef2ad82/preflight.py", line 2, in <module>
+    import torch, torch_rs
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc/.venv/lib/python3.12/site-packages/torch/__init__.py", line 35, in <module>
+    from typing_extensions import (
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_594ab1bc/.venv/lib/python3.12/site-packages/typing_extensions.py", line 1154, in <module>
+    _TAKES_MODULE = "module" in inspect.signature(typing._type_check).parameters
+                                ^^^^^^^^^^^^^^^^^
+AttributeError: module 'inspect' has no attribute 'signature'
