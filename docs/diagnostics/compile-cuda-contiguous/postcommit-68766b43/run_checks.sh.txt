@@ -1,0 +1,18 @@
+set -e
+. target/contiguous-postcommit-68766b43/environment.sh
+.venv/bin/python - <<'PY'
+import time
+from pathlib import Path
+while not Path('target/contiguous-postcommit-68766b43/release/build-record.json').exists():
+    time.sleep(1)
+PY
+.venv/bin/python target/contiguous-postcommit-68766b43/capture.py preflight .venv/bin/python target/contiguous-postcommit-68766b43/preflight.py
+.venv/bin/python target/contiguous-postcommit-68766b43/capture.py verify-wheel .venv/bin/python .github/scripts/verify_native_extension.py
+.venv/bin/python target/contiguous-postcommit-68766b43/capture.py compiled-contiguous .venv/bin/python -m unittest -v tests.test_compile_cuda_contiguous
+CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python target/contiguous-postcommit-68766b43/capture.py two-device .venv/bin/python -m unittest -v tests.test_compile_cuda_contiguous.CompileContiguousDeviceTests tests.test_compile_cuda_graph.CudaGraphDeviceTests tests.test_cuda_contiguous.ContiguousDeviceGuardTests
+.venv/bin/python target/contiguous-postcommit-68766b43/capture.py rust-graph cargo test --locked --offline --lib --features python-bindings cuda_graph -- --nocapture
+.venv/bin/python target/contiguous-postcommit-68766b43/capture.py rust-packing cargo test --locked --offline --test cuda_contiguous -- --nocapture
+.venv/bin/python target/contiguous-postcommit-68766b43/capture.py cuda-packing .venv/bin/python -m unittest -v tests.test_cuda_contiguous
+.venv/bin/python target/contiguous-postcommit-68766b43/capture.py compiler-regressions .venv/bin/python -m unittest -v tests.test_compile_cuda_boundary tests.test_compile_cuda_graph tests.test_compile_cuda_neg tests.test_compile_cuda_mul_scalar tests.test_compile_cuda_matmul tests.test_compile_cuda_sum_rows tests.test_compile_cuda_trailing_vector tests.test_compile_sum_lowering tests.test_compile_static_analysis tests.test_top_level_compile tests.test_compile_corpus tests.test_compile_tanh_composition
+CUDA_VISIBLE_DEVICES='' .venv/bin/python target/contiguous-postcommit-68766b43/capture.py cpu-layout .venv/bin/python -m unittest -v tests.test_contiguous_reference tests.test_reshape tests.test_reshape_reference tests.test_view tests.test_view_reference tests.test_clone_channels_last tests.test_clone_channels_last_reference tests.test_transpose tests.test_transpose_reference
+CUDA_VISIBLE_DEVICES='' .venv/bin/python target/contiguous-postcommit-68766b43/capture.py no-device .venv/bin/python -m unittest -v tests.test_compile_cuda_contiguous

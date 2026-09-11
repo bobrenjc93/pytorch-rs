@@ -186,6 +186,7 @@ class CompileTraceGraph:
 
 
 _SUPPORTED_UNARY_METHODS = (
+    "Tensor.contiguous (CUDA, parameterless)",
     "Tensor.neg",
     "Tensor.negative",
     "Tensor.abs",
@@ -199,7 +200,8 @@ _SUPPORTED_VALUE_UNARY_TARGETS = frozenset(("neg", "abs", "relu", "square"))
 _SUPPORTED_ALIAS_UNARY_TARGETS = frozenset(("detach",))
 _SUPPORTED_IDENTITY_UNARY_TARGETS = frozenset(("float",))
 _SUPPORTED_UNARY_TARGETS = (
-    _SUPPORTED_VALUE_UNARY_TARGETS
+    frozenset(("contiguous",))
+    | _SUPPORTED_VALUE_UNARY_TARGETS
     | _SUPPORTED_ALIAS_UNARY_TARGETS
     | _SUPPORTED_IDENTITY_UNARY_TARGETS
 )
@@ -533,7 +535,25 @@ def _grad_enabled():
     return _native._compile_trace_grad_enabled()
 
 
+def _contiguous_output_metadata(metadata):
+    if metadata.device.type != "cuda":
+        raise CompileTraceUnsupportedError("torch.compile contiguous only supports CUDA")
+    _validate_cuda_metadata(metadata, require_contiguous=False)
+    if _layout_is_contiguous(metadata.shape, metadata.stride):
+        return metadata
+    if len(metadata.shape) not in (1, 2) or any(s == 0 for s in metadata.stride):
+        raise CompileTraceUnsupportedError(
+            "torch.compile contiguous packing requires positive-stride rank-1 or rank-2 inputs"
+        )
+    return CompileTraceTensorMetadata(
+        shape=metadata.shape, stride=_contiguous_stride(metadata.shape),
+        dtype=metadata.dtype, device=metadata.device, requires_grad=False, storage_offset=0,
+    )
+
+
 def _unary_output_metadata(input_metadata, target, *, grad_enabled=None):
+    if target == "contiguous":
+        return _contiguous_output_metadata(input_metadata)
     if input_metadata.device.type == "cuda" and target == "neg":
         _validate_cuda_metadata(input_metadata)
     if target in _SUPPORTED_ALIAS_UNARY_TARGETS:
@@ -704,7 +724,7 @@ def _require_native_tensor(value, value_name):
         )
 
 
-def _validate_cuda_metadata(metadata):
+def _validate_cuda_metadata(metadata, *, require_contiguous=True):
     if metadata.device.type != "cuda":
         return
     if metadata.device.index is None:
@@ -713,7 +733,18 @@ def _validate_cuda_metadata(metadata):
         raise CompileTraceUnsupportedError("torch.compile trace CUDA only supports float32")
     if metadata.requires_grad:
         raise CompileTraceUnsupportedError("torch.compile trace CUDA gradients are unsupported")
-    if not _layout_is_contiguous(metadata.shape, metadata.stride):
+    import sys
+    if (type(metadata.requires_grad) is not bool
+            or type(metadata.shape) is not tuple or type(metadata.stride) is not tuple
+            or len(metadata.shape) != len(metadata.stride)
+            or any(type(n) is not int or n < 0 or n > sys.maxsize
+                   for n in (*metadata.shape, *metadata.stride))
+            or type(metadata.storage_offset) is not int
+            or not 0 <= metadata.storage_offset <= sys.maxsize):
+        raise CompileTraceUnsupportedError("torch.compile malformed CUDA layout metadata")
+    if _element_count(metadata.shape) > sys.maxsize // 4:
+        raise CompileTraceUnsupportedError("torch.compile CUDA layout exceeds storage limits")
+    if require_contiguous and not _layout_is_contiguous(metadata.shape, metadata.stride):
         raise CompileTraceUnsupportedError("torch.compile trace CUDA requires contiguous layout")
 
 
@@ -730,7 +761,7 @@ def _metadata_from_native_tensor(tensor):
         requires_grad=_normalize_requires_grad(requires_grad),
         storage_offset=offset if device.type == "cuda" else None,
     )
-    _validate_cuda_metadata(metadata)
+    _validate_cuda_metadata(metadata, require_contiguous=False)
     return metadata
 
 
@@ -862,6 +893,7 @@ def _materialize_graph_output(
                 "torch.compile trace execution graph output metadata is "
                 "malformed"
             )
+        _validate_cuda_metadata(metadata_spec, require_contiguous=False)
         expected_metadata = metadata_spec
         if dynamic:
             if metadata_values is None or output_spec not in metadata_values:
@@ -993,7 +1025,7 @@ def _execute_operation(operation, values):
     return _native._compile_trace_binary(left, right, operation.target)
 
 
-def _expected_operation_metadata(operation, metadata_values, *, grad_enabled):
+def _expected_operation_metadata(operation, metadata_values, *, grad_enabled, declared_values=None):
     # Validate the complete node before any graph operation can execute, even
     # for graphs built manually or modified with dataclasses.replace().
     if operation.op == "call_reduction":
@@ -1033,6 +1065,21 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled):
         return expected
     if operation.scalar is not None:
         raise CompileTraceUnsupportedError("torch.compile non-scalar operation has a scalar payload")
+    if operation.target == "contiguous":
+        if len(operation.inputs) != 1:
+            raise CompileTraceUnsupportedError("torch.compile contiguous requires one input")
+        name = operation.inputs[0]
+        expected = _contiguous_output_metadata(metadata_values[name])
+        declared = operation.metadata
+        if not _builtins.isinstance(declared, CompileTraceTensorMetadata):
+            raise CompileTraceUnsupportedError("torch.compile malformed contiguous output metadata")
+        _validate_cuda_metadata(declared)
+        # Dynamic sizes may change whether this is an alias or a pack. Check
+        # the stored declaration against its original input independently.
+        declared_input = metadata_values[name] if declared_values is None else declared_values[name]
+        if declared != _contiguous_output_metadata(declared_input):
+            raise CompileTraceUnsupportedError("torch.compile malformed contiguous output metadata")
+        return expected
     if operation.target in _SUPPORTED_UNARY_TARGETS:
         if len(operation.inputs) != 1:
             raise CompileTraceUnsupportedError(
@@ -1152,7 +1199,15 @@ def execute_compile_trace_graph(graph, *inputs):
         )
         values[graph_input.name] = input
         metadata_values[graph_input.name] = input_metadata
+    # Include unused captures and inputs: they must not divert a CUDA graph
+    # into the per-operation executor, even when a cached graph was modified.
+    devices = {metadata.device for metadata in metadata_values.values()}
+    if any(device.type == "cuda" for device in devices) and len(devices) != 1:
+        raise CompileTraceUnsupportedError(
+            "torch.compile trace CUDA requires matching devices for all inputs and captures"
+        )
     grad_enabled = _grad_enabled()
+    declared_values = {item.name: item.metadata for item in (*graph.captures, *graph.inputs)}
     # Validate every operation before launching any work. In particular a
     # dynamic cache hit may have individually valid inputs whose shapes no
     # longer agree at an addition later in the graph.
@@ -1172,7 +1227,19 @@ def execute_compile_trace_graph(graph, *inputs):
             operation,
             metadata_values,
             grad_enabled=grad_enabled,
+            declared_values=declared_values,
         )
+        if graph.dynamic and expected_metadata.device.type == "cuda":
+            # Runtime sizes may differ, but the cached declarations must still
+            # form a valid graph for their recorded inputs. Never let dynamic
+            # replanning conceal a malformed downstream shape or stride.
+            declared_expected = _expected_operation_metadata(
+                operation, declared_values, grad_enabled=grad_enabled,
+            )
+            _require_matching_metadata(
+                declared_expected, operation.metadata, value_name=operation.name,
+            )
+        declared_values[operation.name] = operation.metadata
         if not graph.dynamic:
             _require_matching_metadata(
                 expected_metadata,
@@ -1182,11 +1249,15 @@ def execute_compile_trace_graph(graph, *inputs):
             )
         metadata_values[operation.name] = expected_metadata
 
-    if len(graph.operations) > 1 and all(
+    if (len(graph.operations) > 1 or any(op.target == "contiguous" for op in graph.operations)) and all(
         metadata.device.type == "cuda" for metadata in metadata_values.values()
     ):
         # Validate the output tree too before the native bridge can launch.
         # Reuse the materializer's structural/metadata checks without tensors.
+        _materialize_graph_output(
+            graph.output, graph.output_metadata, declared_values,
+            value_name="output", metadata_only=True,
+        )
         _materialize_graph_output(
             graph.output, graph.output_metadata, metadata_values,
             value_name="output", dynamic=graph.dynamic,
@@ -1265,6 +1336,9 @@ class CompileTraceTensorProxy:
 
     def dim(self):
         return len(self.metadata.shape)
+
+    def contiguous(self):
+        return self._recorder.record_unary("contiguous", self)
 
     def neg(self):
         return self._recorder.record_unary("neg", self)

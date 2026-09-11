@@ -1,0 +1,99 @@
+from pathlib import Path
+import hashlib, json, subprocess, sys
+root=Path.cwd(); sys.path.insert(0,str(root/'scripts'))
+from evaluate_cuda_math import source_provenance
+build=json.loads((root/'target/release-hardened/build-record.json').read_text())
+source=source_provenance()
+assert all(build[k]==v for k,v in source.items())
+assert not build['clean_checkout'] and build['measurement_kind']=='precommit-diagnostic'
+for key in ('extension_path','source_extension_path'):
+ p=Path(build[key]);assert p.resolve().is_relative_to(root)
+ assert hashlib.sha256(p.read_bytes()).hexdigest()==build['extension_sha256']
+installed=Path(build['extension_path']).parent
+for p in (root/'python/torch_rs').rglob('*.py'):
+ relative=p.relative_to(root/'python/torch_rs')
+ assert p.read_bytes()==(installed/relative).read_bytes(), relative
+names=['verify-hardened-wheel','dynamic-declaration-negative-final','contiguous-hardened',
+       'two-device-hardened','compiler-regressions-hardened','no-device-final','cpu-layout-hardened',
+       'clippy-hardened','clippy-default-hardened','rust-bindings-hardened','rust-default-hardened','formatting-final']
+for name in names:
+ record=json.loads((root/f'target/evidence/{name}.receipt.json').read_text())
+ assert record['exit_status']==0,(name,record['exit_status'])
+ assert record['source_before']==record['source_after']==source,name
+ assert hashlib.sha256((root/f'target/evidence/{name}.log').read_bytes()).hexdigest()==record['log_sha256']
+ for filename, expected in record['test_sha256'].items():
+  assert hashlib.sha256(Path(filename).read_bytes()).hexdigest()==expected
+ for digest in record['native_sha256'].values(): assert digest==build['extension_sha256']
+eager=json.loads((root/'target/evidence/cuda-eager-regressions.receipt.json').read_text())
+assert eager['exit_status']==0
+assert eager['source_before']==eager['source_after']
+assert set(eager['native_sha256'].values())=={build['extension_sha256']}
+subprocess.run(['git','diff','--exit-code','HEAD','--','scripts','Cargo.lock','uv.lock','README.md',
+ 'docs/burner-evaluation-history.json','docs/burner-evaluation-progress.svg','docs/benchmark-data',
+ 'tests/test_compile_corpus.py','tests/test_torch_compile_coverage_evaluator.py'],check=True)
+subprocess.run(['git','diff','--check'],check=True)
+result={'status':'passed','source':source,'native_sha256':build['extension_sha256'],
+ 'checks':names,'installed_python_matches_checkout':True,'eager_regressions_same_native_binary':True,
+ 'protected_tracked_files_unchanged':True,'clean_commit_capture':'deferred: Burner owns committing/delivery'}
+(root/'target/evidence/audit.json').write_text(json.dumps(result,indent=2)+'\n')
+report=f'''
+## Worktree validation evidence
+
+Started from verified clean main `22c4e1c4d32126b91ee9f5417842d245c0183fce`.
+The [release receipt](diagnostics/compile-cuda-contiguous/development/release-hardened/build-record.json)
+binds the final uncommitted source and release wheel. **This is development
+evidence, not a clean implementation-commit capture.** Creating commits is
+prohibited in this task; Burner must perform the clean-commit recapture during
+its normal delivery workflow. No replacement PR or push was attempted.
+
+| Final artifact | SHA-256 |
+| --- | --- |
+| Production source | `{source['source_sha256']}` |
+| Production diff against base | `{source['production_diff_sha256']}` |
+| Native extension (installed and source package) | `{build['extension_sha256']}` |
+
+The initially absent canonical `.venv` was installed with locked dev/reference
+dependencies. The unchanged build tool used `maturin build --release --locked
+--offline` in a fresh worktree-local Cargo target, with thin LTO and one codegen
+unit. Dependency and CUDA JIT caches stayed local; the final capture reused the
+CUDA cache from earlier diagnostics. All generated files stayed in this worktree.
+[Preflight](diagnostics/compile-cuda-contiguous/development/preflight.log) records
+Python 3.12.13, NumPy 2.5.1, PyTorch 2.13.0+cu130, Rust/Cargo 1.92.0, NVIDIA H100,
+driver 580.82.07 and compute capability 9.0. Native runtime was explicitly the
+local `.venv`'s `nvidia/cu13/lib/libcudart.so.13` (13000), matching reference CUDA
+13.0. nvcc 12.6.85 was installed but unused; native kernels use driver-JIT PTX.
+Per-command receipts retain physical UUID/index/utilization/memory snapshots.
+Ordinary GPU work used `CUDA_VISIBLE_DEVICES=0`; only restoration used `0,1`.
+
+| Check | Result | Log |
+| --- | --- | --- |
+| Rust default, CUDA hidden | 392 passed; hardware cases return early | [log](diagnostics/compile-cuda-contiguous/development/rust-default-hardened.log) |
+| Rust Python bindings, GPU 0 | 406 passed, including zero-native-execution negatives | [log](diagnostics/compile-cuda-contiguous/development/rust-bindings-hardened.log) |
+| New compiled layout graphlets, GPU 0 | 9 passed; 1 two-device skip | [log](diagnostics/compile-cuda-contiguous/development/contiguous-hardened.log) |
+| Device/context restoration, GPUs 0/1 | 3 passed | [log](diagnostics/compile-cuda-contiguous/development/two-device-hardened.log) |
+| Existing CPU/CUDA compiler regressions | 189 passed; 7 two-device skips | [log](diagnostics/compile-cuda-contiguous/development/compiler-regressions-hardened.log) |
+| Existing eager CUDA regressions | 55 passed; 10 two-device skips | [log](diagnostics/compile-cuda-contiguous/development/cuda-eager-regressions.log) |
+| CPU layout/reference and documentation checks | 113 passed | [log](diagnostics/compile-cuda-contiguous/development/cpu-layout-hardened.log) |
+| Hardware-test portability, CUDA hidden | 1 metadata test passed; 9 hardware skips | [log](diagnostics/compile-cuda-contiguous/development/no-device-final.log) |
+
+Formatting, Clippy with warnings denied (default and Python bindings), and
+installed-wheel provenance passed. The [audit](diagnostics/compile-cuda-contiguous/development/audit.json)
+checks final source/test/native hashes and installed Python source identity.
+Eager CUDA checks preceded the last frontend hardening and used the identical
+native binary; compiler checks were repeated afterward. The
+[inventory](diagnostics/compile-cuda-contiguous/development/inventory.json),
+[source manifest](diagnostics/compile-cuda-contiguous/development/source-files.json),
+[environment](diagnostics/compile-cuda-contiguous/development/environment.sh.txt)
+and per-command receipts provide exact reproduction inputs and commands.
+
+Earlier attempts are preserved in the same bundle: Rust type inference and
+Clippy length failures, missing method-guard registration, a dtype rejected
+earlier than the first test expected, an incorrectly named CPU test module,
+and an existing negation test's changed guard-error ordering. The separately
+reproduced dynamic-declaration negative initially reached a blocked native
+hook; the final check rejects it before native execution. No failed result
+was converted into a pass or removed. Evaluators, fixed cases/weights,
+benchmark evidence and Burner-managed progress remain unchanged.
+'''
+with (root/'docs/compile-cuda-contiguous.md').open('a') as f:f.write(report)
+print('audit passed')

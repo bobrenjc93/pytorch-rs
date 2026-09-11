@@ -1,0 +1,22 @@
+set -e
+. target/environment.sh
+.venv/bin/python - <<'PY'
+from pathlib import Path
+import time
+while not Path('target/evidence/cuda-eager-regressions.receipt.json').exists():
+    time.sleep(1)
+PY
+git diff HEAD -- src python > target/evidence/before-hardening.patch
+python3 target/final_hardening.py
+cargo fmt --all
+.venv/bin/python scripts/capture_depth_concat_build.py --allow-dirty --output target/release-hardened > target/evidence/build-hardened.log 2>&1
+.venv/bin/python target/capture.py verify-hardened-wheel .venv/bin/python .github/scripts/verify_native_extension.py
+.venv/bin/python target/capture.py dynamic-declaration-negative-final .venv/bin/python -c "exec(open('target/reproduce_hardening.py').read())"
+.venv/bin/python target/capture.py contiguous-hardened .venv/bin/python -m unittest -v tests.test_compile_cuda_contiguous
+CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python target/capture.py two-device-hardened .venv/bin/python -m unittest -v tests.test_compile_cuda_contiguous.CompileContiguousDeviceTests tests.test_compile_cuda_graph.CudaGraphDeviceTests tests.test_cuda_contiguous.ContiguousDeviceGuardTests
+.venv/bin/python target/capture.py compiler-regressions-hardened .venv/bin/python -m unittest -v tests.test_compile_cuda_boundary tests.test_compile_cuda_graph tests.test_compile_cuda_neg tests.test_compile_cuda_mul_scalar tests.test_compile_cuda_matmul tests.test_compile_cuda_sum_rows tests.test_compile_cuda_trailing_vector tests.test_compile_sum_lowering tests.test_compile_static_analysis tests.test_top_level_compile tests.test_compile_corpus tests.test_compile_tanh_composition
+CUDA_VISIBLE_DEVICES='' .venv/bin/python target/capture.py no-device-final .venv/bin/python -m unittest -v tests.test_compile_cuda_contiguous
+.venv/bin/python target/capture.py clippy-hardened cargo clippy --locked --offline --all-targets --features python-bindings -- -D warnings
+.venv/bin/python target/capture.py rust-bindings-hardened cargo test --locked --offline --features python-bindings --all-targets
+CUDA_VISIBLE_DEVICES='' .venv/bin/python target/capture.py rust-default-hardened cargo test --locked --offline --all-targets
+.venv/bin/python target/capture.py formatting-final cargo fmt --check

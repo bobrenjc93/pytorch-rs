@@ -136,7 +136,7 @@ class CompileCudaNegTests(Comparison, unittest.TestCase):
         self.assertEqual(len(cache.graphs), len(views))
         graph = next(iter(cache.graphs.values()))
         for x, field in ((views[1](base), "storage_offset"), (base, "shape"),
-                         (views[0](base).t(), "contiguous")):
+                         (views[0](base).t(), "stride")):
             with self.assertRaisesRegex((ValueError, NotImplementedError), field):
                 graph.forward(x)
         for graph in cache.graphs.values():

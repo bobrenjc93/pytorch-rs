@@ -1,0 +1,33 @@
+{
+  "status": "passed",
+  "measured_commit": "a3c5870bc56c97560061ffa68da6d6f253a3c644",
+  "source": {
+    "commit": "a3c5870bc56c97560061ffa68da6d6f253a3c644",
+    "source_sha256": "02647f45847695e0f386956541be69aca2a8c76f7ce05d0e5fa6734c46b56488",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "extension_sha256": "0aa957dad68e63d207d8945d25d51d4c4bb931dae303d10d53e063180725f3ce",
+  "wheel_sha256": "b046d9ba8ddd432066dc1e07e5ed5a2c99bcf30a6f058ea821a4685eeb122c0d",
+  "measured_inputs_sha256": "19827ee4c917200eb34ab35b7c6e1abd172d6d55f722e648788b78568f985cfb",
+  "canonical_venv": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv",
+  "runtime": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+  "runtime_sha256": "96c42e418cec19054186b9429c321603cc190bf26a18104e19408117a2a817b0",
+  "runtime_version": 13000,
+  "checks": [
+    "setup",
+    "release-build",
+    "preflight",
+    "verify-wheel",
+    "compiled-contiguous",
+    "two-device",
+    "rust-graph",
+    "rust-packing",
+    "cuda-packing",
+    "compiler-regressions",
+    "cpu-layout",
+    "no-device"
+  ],
+  "clean_before_and_after_each_command": true,
+  "historical_development_artifacts_unchanged": true,
+  "installed_python_and_wheel_native_match_checkout": true
+}

@@ -1,0 +1,394 @@
+"""Non-scoring CUDA layout graphlets; no additions to the frozen compiler corpus."""
+import ctypes
+from dataclasses import replace
+import subprocess
+import sys
+import unittest
+from unittest.mock import patch
+
+import numpy as np
+import torch_rs as native
+from torch_rs import _compile_bytecode, _compile_trace as trace
+from tests.test_compile_cuda_boundary import compile_with_cache
+from tests.test_compile_cuda_mul_scalar import call_without_python, make_program, POLICIES
+from tests.test_cuda_add import available, torch
+from tests.test_cuda_contiguous import metadata, read_bits, write_bits
+
+
+def pack(x):
+    return x.contiguous()
+
+
+def composed(x):
+    y = x.contiguous()
+    z = -y
+    return [y, (y.contiguous(), x), z.contiguous(), y + z]
+
+
+class ContiguousMetadataTests(unittest.TestCase):
+    def test_bounded_metadata_and_cpu_separation(self):
+        for options in ({'device': 'cpu'}, {'device': 'cuda:0', 'requires_grad': True},
+                        {'device': 'cuda:0', 'dtype': trace.CompileTraceDType('torch.float64')},
+                        {'device': 'cuda:0', 'shape': (2, 3, 4), 'stride': (4, 8, 1)},
+                        {'device': 'cuda:0', 'shape': (3,), 'stride': (0,)}):
+            recorder = trace.CompileTraceRecorder()
+            with self.assertRaises(NotImplementedError):
+                x = recorder.input(**({'shape': (3, 7)} | options))
+                x.contiguous()
+            self.assertEqual(recorder._operations, [])
+        m = trace.CompileTraceTensorMetadata((3, 7), (1, 3), trace.float32, 'cuda:0', False, 2)
+        for change in ({'requires_grad': 0}, {'stride': (1,)}, {'stride': (-1, 3)}, {'shape': (True, 7)},
+                       {'storage_offset': None}, {'storage_offset': -1},
+                       {'shape': (sys.maxsize, 7)}):
+            with self.assertRaises(NotImplementedError):
+                trace._contiguous_output_metadata(replace(m, **change))
+
+
+@unittest.skipUnless(available('0'), 'requires real CUDA with CUDA_VISIBLE_DEVICES=0')
+class CompileCudaContiguousTests(unittest.TestCase):
+    def assert_pair(self, actual, expected):
+        self.assertEqual(metadata(actual), metadata(expected))
+        np.testing.assert_array_equal(read_bits(actual), read_bits(expected))
+
+    def test_seeded_views_cold_warm_cache_and_composition(self):
+        rng = np.random.default_rng(197422)
+        shapes = [(3, 7), (17, 31), (257, 263), (1031, 1033)]
+        shapes += [tuple(map(int, rng.integers(3, 65, 2))) for _ in range(3)]
+        views = (lambda x: x.t(), lambda x: x[1:][:, 1:-1],
+                 lambda x: x[1:][:, 1:-1].t(), lambda x: x.select(1, 1)[1:])
+        for shape in shapes:
+            for view in views:
+                for fullgraph, dynamic in POLICIES:
+                    torch._dynamo.reset()
+                    fn = pack if shape[0] > 100 else composed
+                    compiled, cache = compile_with_cache(fn, fullgraph, dynamic)
+                    reference = torch.compile(fn, backend='eager', fullgraph=fullgraph, dynamic=dynamic)
+                    for iteration in range(2):
+                        data = rng.normal(size=shape).astype(np.float32)
+                        a, b = native.tensor(data).to('cuda:0'), torch.tensor(data, device='cuda:0')
+                        x, y = view(a), view(b)
+                        before = metadata(x)
+                        expected = reference(y)
+                        with patch.object(trace, '_execute_operation', side_effect=AssertionError('Python node execution')):
+                            if iteration:
+                                with patch.object(_compile_bytecode, 'lower_compile_graph', side_effect=AssertionError('cache miss')):
+                                    actual = call_without_python(compiled, {fn.__code__}, x)
+                            else:
+                                actual = call_without_python(compiled, {fn.__code__}, x)
+                        if fn is composed:
+                            self.assertIs(actual[0], actual[1][0])
+                            self.assertIs(actual[1][1], x)
+                            for aa, bb in ((actual[0], expected[0]), (actual[2], expected[2]), (actual[3], expected[3])):
+                                self.assert_pair(aa, bb)
+                            actual, expected = actual[0], expected[0]
+                        self.assert_pair(actual, expected)
+                        self.assertEqual(metadata(x), before)
+                        np.testing.assert_array_equal(read_bits(a), data.ravel().view(np.uint32))
+                        self.assertNotEqual(actual.data_ptr(), x.data_ptr())
+                        self.assertEqual(len(cache.graphs), 1)
+
+    def test_pack_composes_with_matmul_scalar_and_row_sum(self):
+        source = ("def program(x, y):\n    a = x.contiguous()\n"
+                  "    b = y.contiguous()\n    p = (a @ b) * 0.5\n"
+                  "    return p.sum(1), p.contiguous()\n")
+        fn = make_program(source)
+        reference_fn = make_program(source, torch)
+        rng = np.random.default_rng(197423)
+        for dynamic in (False, True):
+            torch._dynamo.reset()
+            compiled, _ = compile_with_cache(fn, dynamic=dynamic)
+            reference = torch.compile(reference_fn, backend='eager', fullgraph=True, dynamic=dynamic)
+            for _ in range(2):
+                values = [rng.normal(size=shape).astype(np.float32) for shape in ((7, 5), (3, 7))]
+                args = [native.tensor(v).to('cuda:0').t() for v in values]
+                refs = [torch.tensor(v, device='cuda:0').t() for v in values]
+                actual = call_without_python(compiled, {fn.__code__}, *args)
+                expected = reference(*refs)
+                for a, b in zip(actual, expected):
+                    self.assertEqual(metadata(a), metadata(b))
+                    np.testing.assert_allclose(np.array(a.cpu().tolist()), b.cpu().numpy(), rtol=2e-5, atol=2e-5)
+
+    def test_alias_identity_metadata_and_mutations(self):
+        data = np.arange(35, dtype=np.float32).reshape(5, 7)
+        views = (lambda x: x, lambda x: x[2:], lambda x: x.select(0, 2),
+                 lambda x: x[2:3][:, 2:3].t(), lambda x: x[1:2].t(),
+                 lambda x: x.select(0, 1).select(0, 2), lambda x: x[5:5][:, 7:7].t(),
+                 lambda x: x[:, 7:7], lambda x: x.select(1, 2)[5:5],
+                 lambda x: x.reshape(1, 5, 7), lambda x: x.reshape(1, 5, 7).transpose(0, 1))
+        for view in views:
+            for fn in (pack, composed):
+                torch._dynamo.reset()
+                compiled, _ = compile_with_cache(fn)
+                reference = torch.compile(fn, backend='eager', fullgraph=True)
+                a, b = native.tensor(data).to('cuda:0'), torch.tensor(data, device='cuda:0')
+                x, y = view(a), view(b)
+                for _ in range(2):
+                    result, expected = compiled(x), reference(y)
+                    if fn is composed:
+                        self.assertIs(result[0], result[1][0])
+                        result, expected = result[0], expected[0]
+                    self.assertIs(result, x)
+                    self.assertIs(expected, y)
+                    self.assert_pair(result, expected)
+                changed = np.full(35, -9, dtype=np.float32).view(np.uint32)
+                write_bits(a, changed); write_bits(b, changed)
+                self.assert_pair(result, expected)
+                if result.numel():
+                    changed = np.full(result.numel(), 42, dtype=np.float32).view(np.uint32)
+                    write_bits(result, changed); write_bits(expected, changed)
+                    self.assert_pair(a, b)
+
+    def test_raw_bits_copy_independence_and_lifetime(self):
+        bits = np.array([0, 0x80000000, 0x7f800001, 0xff800001, 0x7fc12345,
+                         0xffc54321, 1, 0x80000001, 0x7f800000, 0xff800000,
+                         0x3f800000, 0xbf800000], dtype=np.uint32)
+        for view in (lambda x: x.t(), lambda x: x[:, 1:3], lambda x: x.select(1, 1)):
+            torch._dynamo.reset()
+            compiled, _ = compile_with_cache(pack)
+            ref = torch.compile(pack, backend='eager', fullgraph=True)
+            a, b = native.zeros((3, 4), device='cuda:0'), torch.zeros((3, 4), device='cuda:0')
+            write_bits(a, bits); write_bits(b, bits)
+            x, y = view(a), view(b)
+            results = [compiled(x), compiled(x)]
+            expected = ref(y)
+            self.assertNotEqual(results[0].data_ptr(), results[1].data_ptr())
+            for result in results:
+                self.assert_pair(result, expected)
+                self.assertNotEqual(result.data_ptr(), x.data_ptr())
+            write_bits(results[0], np.full(results[0].numel(), 0x80000000, dtype=np.uint32))
+            np.testing.assert_array_equal(read_bits(a), bits)
+            write_bits(a, np.zeros(12, dtype=np.uint32))
+            self.assert_pair(results[1], expected)
+            del a, x
+            self.assert_pair(results[1], expected)
+
+    def test_empty_alias_without_representable_canonical_strides(self):
+        for dimension in (2**32, 2**32 + 1):
+            x = native.empty((dimension, 0, dimension)).to('cuda:0').transpose(0, 1)
+            y = torch.empty((dimension, 0, dimension), device='cuda:0').transpose(0, 1)
+            self.assertIs(x.contiguous(), x)
+            for fullgraph, dynamic in POLICIES:
+                with self.subTest(dimension=dimension, fullgraph=fullgraph, dynamic=dynamic):
+                    torch._dynamo.reset()
+                    compiled, cache = compile_with_cache(pack, fullgraph, dynamic)
+                    reference = torch.compile(pack, backend='eager', fullgraph=fullgraph, dynamic=dynamic)
+                    for warm in (False, True):
+                        expected = reference(y)
+                        if warm:
+                            with patch.object(_compile_bytecode, 'lower_compile_graph', side_effect=AssertionError('cache miss')):
+                                actual = call_without_python(compiled, {pack.__code__}, x)
+                        else:
+                            actual = call_without_python(compiled, {pack.__code__}, x)
+                        self.assertIs(actual, x)
+                        self.assertIs(expected, y)
+                        self.assertEqual(metadata(actual), metadata(expected))
+                    self.assertEqual(len(cache.graphs), 1)
+
+    def test_mixed_device_unused_capture_rejected_before_native_execution(self):
+        fn = make_program('def program(x):\n    y = -x\n    return y.contiguous()\n')
+        x = native.ones((3, 7)).to('cuda:0')
+        cpu = native.ones((3, 7))
+        capture = trace.CompileTraceCapture('unused_cpu', cpu, trace._metadata_from_native_tensor(cpu))
+        for dynamic in (False, True):
+            with self.subTest(dynamic=dynamic):
+                compiled, cache = compile_with_cache(fn, dynamic=dynamic)
+                compiled(x)
+                key, graph = next(iter(cache.graphs.items()))
+                cache.graphs[key] = replace(graph, captures=(*graph.captures, capture))
+                with patch.object(_compile_bytecode, 'lower_compile_graph', side_effect=AssertionError('cache miss')), \
+                     patch.object(trace._native, '_compile_trace_cuda_graph', wraps=trace._native._compile_trace_cuda_graph) as graph_calls, \
+                     patch.object(trace._native, '_compile_trace_unary', wraps=trace._native._compile_trace_unary) as unary_calls:
+                    with self.assertRaises(NotImplementedError):
+                        compiled(x)
+                    graph_calls.assert_not_called()
+                    unary_calls.assert_not_called()
+                cache.graphs[key] = graph
+                self.assertEqual(compiled(x).cpu().tolist(), [[-1.] * 7] * 3)
+
+    def test_strict_contiguous_declarations_before_native_execution(self):
+        x = native.ones((3, 7)).to('cuda:0').t()
+        for dynamic in (False, True):
+            compiled, cache = compile_with_cache(pack, dynamic=dynamic)
+            compiled(x)
+            key, graph = next(iter(cache.graphs.items()))
+            node = graph.operations[0]
+            for change in ({'shape': (7.0, 3)}, {'stride': (3, True)},
+                           {'storage_offset': 0.0}, {'requires_grad': 0}):
+                with self.subTest(dynamic=dynamic, change=change):
+                    invalid = replace(node, metadata=replace(node.metadata, **change))
+                    cache.graphs[key] = replace(graph, operations=(invalid,))
+                    with patch.object(_compile_bytecode, 'lower_compile_graph', side_effect=AssertionError('cache miss')), \
+                         patch.object(trace._native, '_compile_trace_cuda_graph', wraps=trace._native._compile_trace_cuda_graph) as launches:
+                        with self.assertRaises(NotImplementedError):
+                            compiled(x)
+                        launches.assert_not_called()
+            cache.graphs[key] = graph
+            self.assertEqual(compiled(x).cpu().tolist(), [[1.] * 3] * 7)
+
+    def test_dynamic_alias_pack_transition_and_static_guards(self):
+        a = native.tensor(np.arange(35, dtype=np.float32).reshape(5, 7)).to('cuda:0')
+        compiled, cache = compile_with_cache(pack, dynamic=True)
+        column = a.select(1, 2)
+        for view in (column[:1], column, column[:0], column[:1]):
+            out = compiled(view)
+            self.assertEqual(out.cpu().tolist(), view.cpu().tolist())
+            self.assertEqual(out is view, view.is_contiguous())
+        self.assertEqual(len(cache.graphs), 1)
+        compiled, cache = compile_with_cache(pack, dynamic=False)
+        compiled(a.t())
+        graph = next(iter(cache.graphs.values()))
+        for wrong in (a, a[1:].t(), a[:, 1:].t(), a.cpu().t()):
+            with patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('early launch')):
+                with self.assertRaises((ValueError, NotImplementedError)):
+                    graph.forward(wrong)
+
+    def test_malformed_ir_and_invalid_downstream_before_bridge_on_cache_hits(self):
+        a = native.ones((3, 7)).to('cuda:0').t()
+        for dynamic in (False, True):
+            compiled, cache = compile_with_cache(composed, dynamic=dynamic)
+            compiled(a)
+            key, graph = next(iter(cache.graphs.items()))
+            node = graph.operations[0]
+            changes = [{'inputs': ()}, {'inputs': ('missing',)}, {'inputs': (graph.inputs[0].name,) * 2},
+                       {'scalar': 1}, {'reduction': (1, False)}, {'op': 'other'}, {'target': 'reshape'},
+                       {'metadata': None}]
+            changes += [{'metadata': replace(node.metadata, **c)} for c in (
+                {'stride': (1, 7)}, {'shape': (21,), 'stride': (1,)}, {'storage_offset': 1},
+                {'device': 'cuda:1'}, {'requires_grad': True},
+                {'dtype': trace.CompileTraceDType('torch.float64')})]
+            bad = [replace(graph, operations=(replace(node, **c), *graph.operations[1:])) for c in changes]
+            bad += [replace(graph, output='missing'), replace(graph, output_metadata=None)]
+            for change in ({'shape': (8, 3)}, {'stride': (1, 7)}, {'storage_offset': 1},
+                           {'device': 'cuda:1'}, {'requires_grad': True}, {'requires_grad': 0},
+                           {'dtype': trace.CompileTraceDType('torch.float64')}):
+                leaves = graph.output_metadata.elements
+                output_metadata = replace(graph.output_metadata, elements=(replace(leaves[0], **change), *leaves[1:]))
+                bad.append(replace(graph, output_metadata=output_metadata))
+            # A plausible same-rank declaration is still malformed when it
+            # contradicts the recorded operands, even with dynamic=True.
+            for index, operation in enumerate(graph.operations[1:], 1):
+                invalid = replace(operation, metadata=replace(operation.metadata, shape=(8, 3), stride=(3, 1)))
+                bad.append(replace(graph, operations=(*graph.operations[:index], invalid, *graph.operations[index+1:])))
+            # Each arithmetic kind must reject the original noncontiguous input
+            # even after an earlier valid pack node, including on a cache hit.
+            for expression in ('-x', 'x * 2', 'y + x', 'x + y', 'x @ y', 'y @ x', 'x.sum(1)'):
+                fn = make_program(f'def program(x):\n    y = x.contiguous()\n    return {expression}\n')
+                with patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('early launch')):
+                    with self.assertRaises(NotImplementedError):
+                        compile_with_cache(fn, dynamic=dynamic)[0](a)
+            with patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('early launch')):
+                for invalid in bad:
+                    cache.graphs[key] = invalid
+                    with self.assertRaises((ValueError, NotImplementedError)):
+                        compiled(a)
+            cache.graphs[key] = graph
+            self.assertEqual(compiled(a)[0].cpu().tolist(), [[1.] * 3] * 7)
+        bridge = trace._native._compile_trace_cuda_graph
+        first = ('contiguous', (0,), None, (7, 3), (3, 1))
+        for last in (('contiguous', (1,), 1, (7, 3), (3, 1)),
+                     ('contiguous', (1,), None, (7, 3), (1, 7)),
+                     ('neg', (0,), None, (7, 3), (3, 1)),
+                     ('contiguous', (99,), None, (7, 3), (3, 1))):
+            with self.assertRaises((NotImplementedError, ValueError, RuntimeError)):
+                bridge((a,), [first, last])
+
+    def test_argument_callable_global_and_cpu_boundaries(self):
+        a = native.ones((3, 7)).to('cuda:0').t()
+        for expr in ('x.contiguous(1)', 'x.contiguous(memory_format=None)',
+                     'x.contiguous(memory_format=m.contiguous_format)', 'x.contiguous(foo=True)',
+                     'x.contiguous().reshape(-1)'):
+            fn = make_program(f'def program(x):\n    return {expr}\n')
+            with self.assertRaises(NotImplementedError):
+                compile_with_cache(fn)[0](a)
+        compiled, cache = compile_with_cache(pack)
+        compiled(a)
+        for cold in (False, True):
+            wrapper = compile_with_cache(pack)[0] if cold else compiled
+            reject = lambda x: (_ for _ in ()).throw(AssertionError('redispatch'))
+            for replacement in (reject, property(reject)):
+                with patch.object(native.Tensor, 'contiguous', replacement):
+                    with self.assertRaises(NotImplementedError):
+                        wrapper(a)
+        with self.assertRaises(NotImplementedError):
+            compiled(a.cpu())
+        self.assertEqual(len(cache.graphs), 1)
+        with self.assertRaises(NotImplementedError):
+            compiled(native.ones((2, 3, 4)).to('cuda:0').transpose(0, 1))
+        fn = make_program('def program(x):\n    return x.contiguous() + bias.contiguous()\n', bias=a)
+        compiled, cache = compile_with_cache(fn)
+        self.assertEqual(compiled(a).cpu().tolist(), [[2.] * 3] * 7)
+        fn.__globals__['bias'] = native.full((3, 7), 3.).to('cuda:0').t()
+        self.assertEqual(compiled(a).cpu().tolist(), [[4.] * 3] * 7)
+        fn.__globals__['bias'] = a.cpu()
+        with self.assertRaises(NotImplementedError):
+            compiled(a)
+        fn = make_program('def program(x):\n    return x.contiguous()\n')
+        compiled, _ = compile_with_cache(fn, limit=1)
+        compiled(a)
+        with self.assertRaises(NotImplementedError):
+            compiled(a.t())
+
+    def test_blocked_reference_import_and_method_redispatch(self):
+        script = '''
+import sys
+class BlockTorch:
+    def find_spec(self, fullname, *args):
+        if fullname == 'torch' or fullname.startswith('torch.'):
+            raise AssertionError('production imported PyTorch')
+sys.meta_path.insert(0, BlockTorch())
+import torch_rs as n
+from torch_rs import _compile_trace as t
+from unittest.mock import patch
+def f(x):
+    y = x.contiguous()
+    return y, y.contiguous(), -y
+compiled = n.compile(f, backend='eager', fullgraph=True)
+x = n.tensor([[1., 2., 3.], [4., 5., 6.]]).to('cuda:0').t()
+def reject(frame, event, arg):
+    if event == 'call' and frame.f_code is f.__code__:
+        raise AssertionError('Python body replay')
+sys.setprofile(reject)
+for i in range(3):
+    out = compiled(x)
+    assert out[0] is out[1]
+    assert out[0].cpu().tolist() == [[1., 4.], [2., 5.], [3., 6.]]
+assert 'torch' not in sys.modules
+'''
+        result = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        compiled, cache = compile_with_cache(pack)
+        a = native.ones((3, 7)).to('cuda:0').t()
+        compiled(a)
+        graph = next(iter(cache.graphs.values()))
+        with patch.object(native.Tensor, 'contiguous', side_effect=AssertionError('Tensor redispatch')):
+            self.assertEqual(graph.forward(a).cpu().tolist(), [[1.] * 3] * 7)
+
+
+@unittest.skipUnless(available('0,1'), 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1')
+class CompileContiguousDeviceTests(unittest.TestCase):
+    def test_device_and_context_restored(self):
+        driver = ctypes.CDLL('libcuda.so.1')
+        driver.cuCtxGetCurrent.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+        def context():
+            pointer = ctypes.c_void_p()
+            self.assertEqual(driver.cuCtxGetCurrent(ctypes.byref(pointer)), 0)
+            return pointer.value
+        previous = torch.cuda.current_device()
+        try:
+            compiled, _ = compile_with_cache(composed)
+            for ordinal in (0, 1):
+                a = native.ones((3, 7)).to(f'cuda:{ordinal}').t()
+                torch.cuda.set_device(1 - ordinal)
+                torch.empty(1, device=f'cuda:{1-ordinal}')
+                before = context()
+                for _ in range(2):
+                    out = compiled(a)
+                    self.assertEqual(out[0].cpu().tolist(), [[1.] * 3] * 7)
+                    self.assertEqual(str(out[0].device), f'cuda:{ordinal}')
+                    self.assertEqual(torch.cuda.current_device(), 1 - ordinal)
+                    self.assertEqual(context(), before)
+                with self.assertRaises(NotImplementedError):
+                    compile_with_cache(pack)[0](a.reshape(7, 1, 3))
+                self.assertEqual(context(), before)
+        finally:
+            torch.cuda.set_device(previous)

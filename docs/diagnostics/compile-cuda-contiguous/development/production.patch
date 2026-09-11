@@ -1,0 +1,590 @@
+diff --git a/python/torch_rs/__init__.py b/python/torch_rs/__init__.py
+index a097d8d..04019d9 100644
+--- a/python/torch_rs/__init__.py
++++ b/python/torch_rs/__init__.py
+@@ -327,6 +327,7 @@ _COMPILE_H100_CUDA_SKIPPED_OPS = _builtins.frozenset(
+     }
+ )
+ _COMPILE_TENSOR_METHOD_GUARD_NAMES = (
++    "contiguous",
+     "__abs__",
+     "__add__",
+     "matmul",
+diff --git a/python/torch_rs/_compile_bytecode.py b/python/torch_rs/_compile_bytecode.py
+index 76b8b7d..c7255da 100644
+--- a/python/torch_rs/_compile_bytecode.py
++++ b/python/torch_rs/_compile_bytecode.py
+@@ -140,6 +140,7 @@ class _OpcodeForm:
+ 
+ 
+ _METHOD_TARGETS = {
++    "contiguous": _MethodTarget("unary", "contiguous", 0, "Tensor.contiguous"),
+     "sum": _MethodTarget("reduction", "sum", 1, "Tensor.sum"),
+     "neg": _MethodTarget("unary", "neg", 0, "Tensor.neg"),
+     "negative": _MethodTarget("unary", "neg", 0, "Tensor.negative"),
+@@ -666,7 +667,7 @@ def prepare_compile_cache_request(
+     all_metadatas = (*input_metadatas, *(d.metadata for d in global_tensor_dependencies))
+     if any(m.device.type == "cuda" for m in all_metadatas):
+         for metadata in all_metadatas:
+-            _trace._validate_cuda_metadata(metadata)
++            _trace._validate_cuda_metadata(metadata, require_contiguous=False)
+             if metadata.device != all_metadatas[0].device:
+                 raise _trace.CompileTraceUnsupportedError(
+                     "torch.compile trace CUDA inputs and captures require matching devices"
+diff --git a/python/torch_rs/_compile_trace.py b/python/torch_rs/_compile_trace.py
+index 7b23587..523e841 100644
+--- a/python/torch_rs/_compile_trace.py
++++ b/python/torch_rs/_compile_trace.py
+@@ -186,6 +186,7 @@ class CompileTraceGraph:
+ 
+ 
+ _SUPPORTED_UNARY_METHODS = (
++    "Tensor.contiguous (CUDA, parameterless)",
+     "Tensor.neg",
+     "Tensor.negative",
+     "Tensor.abs",
+@@ -199,7 +200,8 @@ _SUPPORTED_VALUE_UNARY_TARGETS = frozenset(("neg", "abs", "relu", "square"))
+ _SUPPORTED_ALIAS_UNARY_TARGETS = frozenset(("detach",))
+ _SUPPORTED_IDENTITY_UNARY_TARGETS = frozenset(("float",))
+ _SUPPORTED_UNARY_TARGETS = (
+-    _SUPPORTED_VALUE_UNARY_TARGETS
++    frozenset(("contiguous",))
++    | _SUPPORTED_VALUE_UNARY_TARGETS
+     | _SUPPORTED_ALIAS_UNARY_TARGETS
+     | _SUPPORTED_IDENTITY_UNARY_TARGETS
+ )
+@@ -533,7 +535,25 @@ def _grad_enabled():
+     return _native._compile_trace_grad_enabled()
+ 
+ 
++def _contiguous_output_metadata(metadata):
++    if metadata.device.type != "cuda":
++        raise CompileTraceUnsupportedError("torch.compile contiguous only supports CUDA")
++    _validate_cuda_metadata(metadata, require_contiguous=False)
++    if _layout_is_contiguous(metadata.shape, metadata.stride):
++        return metadata
++    if len(metadata.shape) not in (1, 2) or any(s == 0 for s in metadata.stride):
++        raise CompileTraceUnsupportedError(
++            "torch.compile contiguous packing requires positive-stride rank-1 or rank-2 inputs"
++        )
++    return CompileTraceTensorMetadata(
++        shape=metadata.shape, stride=_contiguous_stride(metadata.shape),
++        dtype=metadata.dtype, device=metadata.device, requires_grad=False, storage_offset=0,
++    )
++
++
+ def _unary_output_metadata(input_metadata, target, *, grad_enabled=None):
++    if target == "contiguous":
++        return _contiguous_output_metadata(input_metadata)
+     if input_metadata.device.type == "cuda" and target == "neg":
+         _validate_cuda_metadata(input_metadata)
+     if target in _SUPPORTED_ALIAS_UNARY_TARGETS:
+@@ -704,7 +724,7 @@ def _require_native_tensor(value, value_name):
+         )
+ 
+ 
+-def _validate_cuda_metadata(metadata):
++def _validate_cuda_metadata(metadata, *, require_contiguous=True):
+     if metadata.device.type != "cuda":
+         return
+     if metadata.device.index is None:
+@@ -713,7 +733,18 @@ def _validate_cuda_metadata(metadata):
+         raise CompileTraceUnsupportedError("torch.compile trace CUDA only supports float32")
+     if metadata.requires_grad:
+         raise CompileTraceUnsupportedError("torch.compile trace CUDA gradients are unsupported")
+-    if not _layout_is_contiguous(metadata.shape, metadata.stride):
++    import sys
++    if (type(metadata.requires_grad) is not bool
++            or type(metadata.shape) is not tuple or type(metadata.stride) is not tuple
++            or len(metadata.shape) != len(metadata.stride)
++            or any(type(n) is not int or n < 0 or n > sys.maxsize
++                   for n in (*metadata.shape, *metadata.stride))
++            or type(metadata.storage_offset) is not int
++            or not 0 <= metadata.storage_offset <= sys.maxsize):
++        raise CompileTraceUnsupportedError("torch.compile malformed CUDA layout metadata")
++    if _element_count(metadata.shape) > sys.maxsize // 4:
++        raise CompileTraceUnsupportedError("torch.compile CUDA layout exceeds storage limits")
++    if require_contiguous and not _layout_is_contiguous(metadata.shape, metadata.stride):
+         raise CompileTraceUnsupportedError("torch.compile trace CUDA requires contiguous layout")
+ 
+ 
+@@ -730,7 +761,7 @@ def _metadata_from_native_tensor(tensor):
+         requires_grad=_normalize_requires_grad(requires_grad),
+         storage_offset=offset if device.type == "cuda" else None,
+     )
+-    _validate_cuda_metadata(metadata)
++    _validate_cuda_metadata(metadata, require_contiguous=False)
+     return metadata
+ 
+ 
+@@ -862,6 +893,7 @@ def _materialize_graph_output(
+                 "torch.compile trace execution graph output metadata is "
+                 "malformed"
+             )
++        _validate_cuda_metadata(metadata_spec, require_contiguous=False)
+         expected_metadata = metadata_spec
+         if dynamic:
+             if metadata_values is None or output_spec not in metadata_values:
+@@ -993,7 +1025,7 @@ def _execute_operation(operation, values):
+     return _native._compile_trace_binary(left, right, operation.target)
+ 
+ 
+-def _expected_operation_metadata(operation, metadata_values, *, grad_enabled):
++def _expected_operation_metadata(operation, metadata_values, *, grad_enabled, declared_values=None):
+     # Validate the complete node before any graph operation can execute, even
+     # for graphs built manually or modified with dataclasses.replace().
+     if operation.op == "call_reduction":
+@@ -1033,6 +1065,17 @@ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled):
+         return expected
+     if operation.scalar is not None:
+         raise CompileTraceUnsupportedError("torch.compile non-scalar operation has a scalar payload")
++    if operation.target == "contiguous":
++        if len(operation.inputs) != 1:
++            raise CompileTraceUnsupportedError("torch.compile contiguous requires one input")
++        name = operation.inputs[0]
++        expected = _contiguous_output_metadata(metadata_values[name])
++        # Dynamic sizes may change whether this is an alias or a pack. Check
++        # the stored declaration against its original input independently.
++        declared_input = metadata_values[name] if declared_values is None else declared_values[name]
++        if operation.metadata != _contiguous_output_metadata(declared_input):
++            raise CompileTraceUnsupportedError("torch.compile malformed contiguous output metadata")
++        return expected
+     if operation.target in _SUPPORTED_UNARY_TARGETS:
+         if len(operation.inputs) != 1:
+             raise CompileTraceUnsupportedError(
+@@ -1153,6 +1196,7 @@ def execute_compile_trace_graph(graph, *inputs):
+         values[graph_input.name] = input
+         metadata_values[graph_input.name] = input_metadata
+     grad_enabled = _grad_enabled()
++    declared_values = {item.name: item.metadata for item in (*graph.captures, *graph.inputs)}
+     # Validate every operation before launching any work. In particular a
+     # dynamic cache hit may have individually valid inputs whose shapes no
+     # longer agree at an addition later in the graph.
+@@ -1172,7 +1216,19 @@ def execute_compile_trace_graph(graph, *inputs):
+             operation,
+             metadata_values,
+             grad_enabled=grad_enabled,
++            declared_values=declared_values,
+         )
++        if graph.dynamic and expected_metadata.device.type == "cuda":
++            # Runtime sizes may differ, but the cached declarations must still
++            # form a valid graph for their recorded inputs. Never let dynamic
++            # replanning conceal a malformed downstream shape or stride.
++            declared_expected = _expected_operation_metadata(
++                operation, declared_values, grad_enabled=grad_enabled,
++            )
++            _require_matching_metadata(
++                declared_expected, operation.metadata, value_name=operation.name,
++            )
++        declared_values[operation.name] = operation.metadata
+         if not graph.dynamic:
+             _require_matching_metadata(
+                 expected_metadata,
+@@ -1182,11 +1238,15 @@ def execute_compile_trace_graph(graph, *inputs):
+             )
+         metadata_values[operation.name] = expected_metadata
+ 
+-    if len(graph.operations) > 1 and all(
++    if (len(graph.operations) > 1 or any(op.target == "contiguous" for op in graph.operations)) and all(
+         metadata.device.type == "cuda" for metadata in metadata_values.values()
+     ):
+         # Validate the output tree too before the native bridge can launch.
+         # Reuse the materializer's structural/metadata checks without tensors.
++        _materialize_graph_output(
++            graph.output, graph.output_metadata, declared_values,
++            value_name="output", metadata_only=True,
++        )
+         _materialize_graph_output(
+             graph.output, graph.output_metadata, metadata_values,
+             value_name="output", dynamic=graph.dynamic,
+@@ -1266,6 +1326,9 @@ class CompileTraceTensorProxy:
+     def dim(self):
+         return len(self.metadata.shape)
+ 
++    def contiguous(self):
++        return self._recorder.record_unary("contiguous", self)
++
+     def neg(self):
+         return self._recorder.record_unary("neg", self)
+ 
+diff --git a/src/python_compile_cuda_graph.rs b/src/python_compile_cuda_graph.rs
+index 059538c..35d7d30 100644
+--- a/src/python_compile_cuda_graph.rs
++++ b/src/python_compile_cuda_graph.rs
+@@ -19,7 +19,7 @@ type Node<'py> = (
+ pub(super) fn execute(
+     inputs: &Bound<'_, PyTuple>,
+     nodes: Vec<Node<'_>>,
+-) -> PyResult<Vec<PyTensor>> {
++) -> PyResult<Vec<Py<PyTensor>>> {
+     let mut owners = Vec::with_capacity(inputs.len());
+     for input in inputs.iter() {
+         if !input.is_exact_instance_of::<PyTensor>() {
+@@ -42,10 +42,9 @@ pub(super) fn execute(
+             || input.device() != first.device()
+             || input.dtype() != DType::Float32
+             || input.requires_grad()
+-            || !input.is_contiguous()
+         {
+             return Err(PyNotImplementedError::new_err(
+-                "CUDA graph requires contiguous same-device CUDA float32 inputs without gradients",
++                "CUDA graph requires same-device CUDA float32 inputs without gradients",
+             ));
+         }
+     }
+@@ -54,6 +53,7 @@ pub(super) fn execute(
+         .map(|tensor| Layout::from_tensor(tensor))
+         .collect();
+     let mut operations = Vec::with_capacity(nodes.len());
++    let mut aliases = Vec::with_capacity(nodes.len());
+     for (target, indices, payload, shape, strides) in nodes {
+         let operation = match (target.as_str(), indices.as_slice()) {
+             ("mul_scalar", &[input]) => {
+@@ -69,6 +69,7 @@ pub(super) fn execute(
+                     super::compile_trace_sum_options(&options.get_item(0)?, &options.get_item(1)?)?,
+                 )
+             }
++            ("contiguous", &[input]) if payload.is_none() => Operation::Contiguous(input),
+             ("neg", &[input]) if payload.is_none() => Operation::Neg(input),
+             ("add", &[left, right]) if payload.is_none() => Operation::Add(left, right),
+             ("matmul", &[left, right]) if payload.is_none() => Operation::Matmul(left, right),
+@@ -84,13 +85,23 @@ pub(super) fn execute(
+         if layout.shape != shape || layout.strides != strides {
+             return Err(PyValueError::new_err("CUDA graph output metadata mismatch"));
+         }
++        aliases.push(match operation {
++            Operation::Contiguous(input)
++                if layouts[input]
++                    .is_contiguous()
++                    .map_err(|error| tensor_error(&error))? =>
++            {
++                Some(input)
++            }
++            _ => None,
++        });
+         layouts.push(layout);
+         operations.push(operation);
+     }
+     // Retain all input borrows and every intermediate, including unused nodes.
+     // Existing core operations synchronize even on launch errors and restore
+-    // the current device. No tensor clone/copy, Python call, or PyO3 crossing is
+-    // performed between nodes. Every call still allocates fresh result storage.
++    // the current device. No Python call or PyO3 crossing occurs between nodes.
++    // Packing stays native; contiguous aliases preserve their original owner.
+     let mut outputs = Vec::with_capacity(operations.len());
+     for (index, operation) in operations.into_iter().enumerate() {
+         let output = operation
+@@ -100,7 +111,6 @@ pub(super) fn execute(
+             || output.device() != first.device()
+             || output.dtype() != DType::Float32
+             || output.requires_grad()
+-            || output.storage_offset() != 0
+         {
+             return Err(PyRuntimeError::new_err(
+                 "CUDA graph native result metadata mismatch",
+@@ -108,5 +118,91 @@ pub(super) fn execute(
+         }
+         outputs.push(output);
+     }
+-    Ok(outputs.into_iter().map(PyTensor::new).collect())
++    drop(tensors);
++    drop(guards);
++    wrap_outputs(inputs.py(), owners, outputs, aliases)
++}
++
++fn wrap_outputs<'py>(
++    py: Python<'py>,
++    owners: Vec<Bound<'py, PyTensor>>,
++    outputs: Vec<CoreTensor>,
++    aliases: Vec<Option<usize>>,
++) -> PyResult<Vec<Py<PyTensor>>> {
++    let input_count = owners.len();
++    let mut objects: Vec<Py<PyTensor>> = owners.into_iter().map(Bound::unbind).collect();
++    for (output, alias) in outputs.into_iter().zip(aliases) {
++        let object = match alias {
++            Some(input) => objects[input].clone_ref(py),
++            None => Py::new(py, PyTensor::new(output))?,
++        };
++        objects.push(object);
++    }
++    Ok(objects.drain(input_count..).collect())
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use crate::{Device, cuda, tensor::cuda_graph::EXECUTIONS};
++
++    #[test]
++    fn invalid_late_nodes_execute_zero_native_operations() {
++        if cuda::device_count() == 0 {
++            eprintln!("skipping native CUDA graph launch accounting: no CUDA device");
++            return;
++        }
++        Python::initialize();
++        Python::attach(|py| {
++            let base = CoreTensor::from_vec(vec![1.; 21], [3, 7])
++                .unwrap()
++                .try_copy_cpu_to_cuda(Device::Cuda(0))
++                .unwrap();
++            let input = Py::new(py, PyTensor::new(base.transpose(0, 1).unwrap())).unwrap();
++            let inputs = PyTuple::new(py, [input]).unwrap();
++            let node =
++                |target: &str, indices: Vec<usize>, shape: Vec<usize>, strides: Vec<usize>| {
++                    (
++                        target.to_owned(),
++                        indices,
++                        py.None().into_bound(py),
++                        shape,
++                        strides,
++                    )
++                };
++            let bad = [
++                node("neg", vec![0], vec![7, 3], vec![3, 1]),
++                node("mul_scalar", vec![0], vec![7, 3], vec![3, 1]),
++                node("sum", vec![0], vec![7], vec![1]),
++                node("add", vec![1, 0], vec![7, 3], vec![3, 1]),
++                node("matmul", vec![1, 0], vec![7, 3], vec![3, 1]),
++                node("contiguous", vec![99], vec![7, 3], vec![3, 1]),
++                node("contiguous", vec![1], vec![7, 3], vec![1, 7]),
++                node("contiguous", vec![0, 1], vec![7, 3], vec![3, 1]),
++                node("relu", vec![1], vec![7, 3], vec![3, 1]),
++            ];
++            for last in bad {
++                EXECUTIONS.with(|count| count.set(0));
++                assert!(
++                    execute(
++                        &inputs,
++                        vec![node("contiguous", vec![0], vec![7, 3], vec![3, 1]), last]
++                    )
++                    .is_err()
++                );
++                EXECUTIONS.with(|count| assert_eq!(count.get(), 0));
++            }
++            EXECUTIONS.with(|count| count.set(0));
++            let outputs = execute(
++                &inputs,
++                vec![
++                    node("contiguous", vec![0], vec![7, 3], vec![3, 1]),
++                    node("contiguous", vec![1], vec![7, 3], vec![3, 1]),
++                ],
++            )
++            .unwrap();
++            EXECUTIONS.with(|count| assert_eq!(count.get(), 2));
++            assert!(outputs[0].is(&outputs[1]));
++        });
++    }
+ }
+diff --git a/src/tensor_cuda_graph.rs b/src/tensor_cuda_graph.rs
+index f31f16a..15c1d99 100644
+--- a/src/tensor_cuda_graph.rs
++++ b/src/tensor_cuda_graph.rs
+@@ -1,9 +1,13 @@
+ //! Metadata planning for the existing CUDA capture operations. No allocation
+ //! of tensor storage or kernel launch is allowed while constructing this plan.
+-use super::{ElementwiseLayout, Tensor, TensorError, elementwise_output_strides, validated_layout};
++use super::{
++    ElementwiseLayout, MemoryFormat, Tensor, TensorError, elementwise_output_strides,
++    layout_is_contiguous, validated_layout,
++};
+ 
+ #[derive(Clone, Copy)]
+ pub(crate) enum Operation {
++    Contiguous(usize),
+     Neg(usize),
+     MulScalar(usize, f32),
+     Add(usize, usize),
+@@ -11,9 +15,11 @@ pub(crate) enum Operation {
+     SumRows(usize, bool),
+ }
+ 
++#[derive(Clone)]
+ pub(crate) struct Layout {
+     pub(crate) shape: Vec<usize>,
+     pub(crate) strides: Vec<usize>,
++    pub(crate) offset: usize,
+ }
+ 
+ impl Layout {
+@@ -21,9 +27,24 @@ impl Layout {
+         Self {
+             shape: tensor.shape().to_vec(),
+             strides: tensor.stride().to_vec(),
++            offset: tensor.storage_offset(),
+         }
+     }
+ 
++    pub(crate) fn is_contiguous(&self) -> Result<bool, TensorError> {
++        let (elements, _) = validated_layout(&self.shape)?;
++        Ok(layout_is_contiguous(&self.shape, &self.strides, elements))
++    }
++
++    fn require_contiguous(&self) -> Result<&Self, TensorError> {
++        if !self.is_contiguous()? {
++            return Err(TensorError::UnsupportedCudaContiguous {
++                reason: "CUDA graph arithmetic requires contiguous operands",
++            });
++        }
++        Ok(self)
++    }
++
+     fn elementwise(&self) -> ElementwiseLayout<'_> {
+         ElementwiseLayout {
+             shape: &self.shape,
+@@ -32,21 +53,38 @@ impl Layout {
+     }
+ 
+     pub(crate) fn matches(&self, tensor: &Tensor) -> bool {
+-        self.shape == tensor.shape() && self.strides == tensor.stride()
++        self.shape == tensor.shape()
++            && self.strides == tensor.stride()
++            && self.offset == tensor.storage_offset()
+     }
+ }
+ 
+ impl Operation {
+     pub(crate) fn layout(self, values: &[Layout]) -> Result<Layout, TensorError> {
+-        let get = |index| {
++        let get = |index: usize| {
+             values
+                 .get(index)
+                 .ok_or(TensorError::IndexCalculationOverflow)
+         };
++        // Input admission allows views, but every arithmetic operand must
++        // independently satisfy its contiguous-only contract during planning.
++        let get_contiguous = |index| get(index)?.require_contiguous();
+         let shape = match self {
+-            Self::Neg(input) | Self::MulScalar(input, _) => get(input)?.shape.clone(),
++            Self::Contiguous(input) => {
++                let input = get(input)?;
++                if input.is_contiguous()? {
++                    return Ok(input.clone());
++                }
++                if !(1..=2).contains(&input.shape.len()) || input.strides.contains(&0) {
++                    return Err(TensorError::UnsupportedCudaContiguous {
++                        reason: "packing requires positive-stride rank-1 or rank-2 inputs",
++                    });
++                }
++                input.shape.clone()
++            }
++            Self::Neg(input) | Self::MulScalar(input, _) => get_contiguous(input)?.shape.clone(),
+             Self::Add(left, right) => {
+-                let (left, right) = (get(left)?, get(right)?);
++                let (left, right) = (get_contiguous(left)?, get_contiguous(right)?);
+                 if left.shape == right.shape {
+                     left.shape.clone()
+                 } else {
+@@ -62,7 +100,7 @@ impl Operation {
+                 }
+             }
+             Self::SumRows(input, keepdim) => {
+-                let [rows, _] = get(input)?.shape.as_slice() else {
++                let [rows, _] = get_contiguous(input)?.shape.as_slice() else {
+                     return Err(TensorError::UnsupportedCudaSum {
+                         reason: "input must be rank-2",
+                     });
+@@ -70,7 +108,7 @@ impl Operation {
+                 if keepdim { vec![*rows, 1] } else { vec![*rows] }
+             }
+             Self::Matmul(left, right) => {
+-                let (left, right) = (get(left)?, get(right)?);
++                let (left, right) = (get_contiguous(left)?, get_contiguous(right)?);
+                 let ([rows, inner], [other_inner, columns]) =
+                     (left.shape.as_slice(), right.shape.as_slice())
+                 else {
+@@ -114,7 +152,11 @@ impl Operation {
+             }
+             _ => canonical,
+         };
+-        Ok(Layout { shape, strides })
++        Ok(Layout {
++            shape,
++            strides,
++            offset: 0,
++        })
+     }
+ 
+     pub(crate) fn execute(
+@@ -122,6 +164,8 @@ impl Operation {
+         inputs: &[&Tensor],
+         outputs: &[Tensor],
+     ) -> Result<Tensor, TensorError> {
++        #[cfg(test)]
++        EXECUTIONS.with(|count| count.set(count.get() + 1));
+         // Indices were checked for the entire plan before the first launch.
+         let get = |index: usize| {
+             if index < inputs.len() {
+@@ -131,6 +175,7 @@ impl Operation {
+             }
+         };
+         match self {
++            Self::Contiguous(input) => get(input).try_contiguous(MemoryFormat::Contiguous),
+             Self::Neg(input) => get(input).negate(),
+             Self::MulScalar(input, scalar) => get(input).mul_scalar(scalar),
+             Self::Add(left, right) => get(left).add(get(right)),
+@@ -139,3 +184,65 @@ impl Operation {
+         }
+     }
+ }
++
++// Test-only, thread-local accounting: absent from release builds and unrelated
++// to evaluator observers. Counts entry even if a native operation later fails.
++#[cfg(test)]
++thread_local! {
++    pub(crate) static EXECUTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn packing_and_arithmetic_plan_layouts_independently() {
++        let mut values = vec![Layout {
++            shape: vec![7, 3],
++            strides: vec![1, 9],
++            offset: 11,
++        }];
++        for op in [
++            Operation::Neg(0),
++            Operation::MulScalar(0, 2.),
++            Operation::Add(0, 0),
++            Operation::Matmul(0, 0),
++            Operation::SumRows(0, false),
++        ] {
++            assert!(op.layout(&values).is_err());
++        }
++        let packed = Operation::Contiguous(0).layout(&values).unwrap();
++        assert_eq!(packed.strides, [3, 1]);
++        assert_eq!(packed.offset, 0);
++        values.push(packed);
++        assert!(Operation::Neg(1).layout(&values).is_ok());
++        assert!(Operation::Contiguous(2).layout(&values).is_err());
++        for (shape, strides) in [(vec![2, 3, 4], vec![4, 8, 1]), (vec![3], vec![0])] {
++            assert!(
++                Operation::Contiguous(0)
++                    .layout(&[Layout {
++                        shape,
++                        strides,
++                        offset: 0
++                    }])
++                    .is_err()
++            );
++        }
++        for (shape, strides) in [
++            (vec![], vec![]),
++            (vec![0, 3], vec![1, 7]),
++            (vec![1, 3, 1], vec![99, 1, 8]),
++        ] {
++            let input = Layout {
++                shape: shape.clone(),
++                strides: strides.clone(),
++                offset: 13,
++            };
++            let alias = Operation::Contiguous(0).layout(&[input]).unwrap();
++            assert_eq!(alias.shape, shape);
++            assert_eq!(alias.strides, strides);
++            assert_eq!(alias.offset, 13);
++        }
++    }
++}

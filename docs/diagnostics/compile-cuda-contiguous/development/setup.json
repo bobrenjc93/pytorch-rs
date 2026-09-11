@@ -1,0 +1,10 @@
+{
+  "base_commit": "22c4e1c4d32126b91ee9f5417842d245c0183fce",
+  "initial_git_status": "clean",
+  "initial_venv": "absent",
+  "setup_command": "UV_CACHE_DIR=\"$PWD/target/uv-cache\" UV_PYTHON_INSTALL_DIR=\"$PWD/target/python\" TMPDIR=\"$PWD/target/tmp\" XDG_CACHE_HOME=\"$PWD/target/xdg-cache\" uv sync --locked --no-install-project --group dev --group reference --python /usr/bin/python3.12",
+  "cargo_cache": "read-only copy of /home/bobren/.cargo/registry into worktree target/local-cargo/registry",
+  "fresh_release_target": "target/release-hardened/build",
+  "clean_commit_capture": "deferred to Burner: task prohibits creating commits",
+  "failed_attempts": "all build/test/check failures retained; first __init__.py snapshot equals base commit"
+}

@@ -228,10 +228,19 @@ including unary `-`, `Tensor.neg()`/`negative()`, scalar/empty/offset inputs,
 self-addition, chains, and global captures. Negation allocates fresh contiguous
 CUDA storage with offset zero.
 CUDA metadata and caches guard the actual device ordinal and storage offset.
-Other CUDA unary operations, closures, broader broadcasting, gradients, mixed devices, and other layouts
-remain unsupported. This is bounded graph capture under explicit
+Other CUDA unary operations except parameterless `contiguous()`, closures, broader
+broadcasting, gradients and mixed devices remain unsupported. Arithmetic still
+requires contiguous operands. This is bounded graph capture under explicit
 `backend="eager"` and the existing fullgraph options, with no new fusion or
 CUDA performance claim. See [scope and differential diagnostics](docs/compile-cuda-add.md).
+
+[Compiled CUDA `Tensor.contiguous()`](docs/compile-cuda-contiguous.md) accepts
+parameterless calls under the same eager/fullgraph policies. It preserves
+already-contiguous object/storage identity and exact metadata at every supported
+rank, or packs positive-stride rank-1/rank-2 views into independent same-device
+float32 storage with canonical strides and offset zero. Arguments, formats,
+CPU capture, higher-rank packing and gradients are excluded. Non-scoring
+H100 graphlets verify these semantics; the frozen compiler denominator is unchanged.
 
 [Compiled CUDA rank-2 matmul](docs/compile-cuda-matmul.md) captures `@`, positional
 `Tensor.matmul`/`Tensor.__matmul__`, and positional top-level `torch.matmul`

@@ -1,0 +1,87 @@
+"""Audit captured provenance without changing implementation or workloads."""
+import ctypes, hashlib, importlib.metadata, json, os, subprocess, sys, zipfile
+from pathlib import Path
+ROOT=Path.cwd().resolve()
+OUT=ROOT/'target/contiguous-postcommit-a3c5870b'
+COMMIT='a3c5870bc56c97560061ffa68da6d6f253a3c644'
+sys.path.insert(0,str(ROOT/'scripts'))
+from evaluate_cuda_math import source_provenance
+
+def sha(path): return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+source=source_provenance()
+assert source['commit']==COMMIT
+assert source['production_diff_sha256']==hashlib.sha256(b'').hexdigest()
+assert subprocess.check_output(['git','status','--porcelain'],text=True)==''
+manifest=json.loads((OUT/'measured-inputs.json').read_text())
+for path,digest in manifest.items(): assert sha(ROOT/path)==digest,path
+build=json.loads((OUT/'release/build-record.json').read_text())
+for key,value in source.items(): assert build[key]==value,key
+assert build['clean_checkout'] and build['measurement_kind']=='clean-code'
+assert build['git_status_before_build']=='' and build['source_unchanged_during_build']
+assert '--release' in build['build_command'] and '--locked' in build['build_command'] and '--offline' in build['build_command']
+for key in ('extension_path','source_extension_path','wheel_path'):
+    path=Path(build[key]).resolve()
+    assert path.is_relative_to(ROOT),path
+    expected=build['wheel_sha256'] if key=='wheel_path' else build['extension_sha256']
+    assert sha(path)==expected,key
+for command in build['commands']:
+    assert command['exit_status']==0
+    assert sha(command['log'])==command['log_sha256']
+assert sha(ROOT/'uv.lock')==build['uv_lock_sha256']
+assert {d.metadata['Name']:d.version for d in importlib.metadata.distributions()}==build['dependencies']
+import numpy,torch,torch_rs
+assert Path(sys.prefix).resolve()==ROOT/'.venv'
+assert Path(sys.executable)==ROOT/'.venv/bin/python'
+assert not (ROOT/'.venv').is_symlink()
+for module in (numpy,torch,torch_rs,torch_rs._C):
+    assert Path(module.__file__).resolve().is_relative_to(ROOT/'.venv'),module.__file__
+assert sha(torch_rs._C.__file__)==build['extension_sha256']
+installed=Path(torch_rs.__file__).parent
+for path in (ROOT/'python/torch_rs').rglob('*.py'):
+    assert sha(path)==sha(installed/path.relative_to(ROOT/'python/torch_rs')),path
+with zipfile.ZipFile(build['wheel_path']) as wheel:
+    extension=Path(build['extension_path'])
+    assert hashlib.sha256(wheel.read('torch_rs/'+extension.name)).hexdigest()==build['extension_sha256']
+assert torch.__version__=='2.13.0+cu130' and torch.version.cuda=='13.0'
+assert torch.cuda.is_available() and torch.cuda.device_count()==1
+assert torch_rs.cuda.device_count()==1
+runtime=Path(os.environ['TORCH_RS_CUDART']).resolve()
+assert runtime.is_relative_to(ROOT/'.venv')
+version=ctypes.c_int()
+assert ctypes.CDLL(str(runtime)).cudaRuntimeGetVersion(ctypes.byref(version))==0
+assert version.value==13000
+names=['setup','release-build','preflight','verify-wheel','compiled-contiguous','two-device',
+       'rust-graph','rust-packing','cuda-packing','compiler-regressions','cpu-layout','no-device']
+for name in names:
+    record=json.loads((OUT/f'{name}.receipt.json').read_text())
+    assert record['source_before']==record['source_after']==source,name
+    assert record['git_status_before']==record['git_status_after']=='',name
+    assert record['exit_status']==0 and record['inputs_unchanged'],name
+    assert record['measured_inputs_sha256']==sha(OUT/'measured-inputs.json')
+    assert record['log_sha256']==sha(OUT/f'{name}.log')
+    assert record['cwd']==str(ROOT)
+    for key in ('CARGO_HOME','CARGO_TARGET_DIR','UV_CACHE_DIR','TMPDIR','XDG_CACHE_HOME','CUDA_CACHE_PATH','TORCHINDUCTOR_CACHE_DIR','TRITON_CACHE_DIR','PYTHONPYCACHEPREFIX'):
+        assert Path(record['environment'][key]).resolve().is_relative_to(ROOT),(name,key)
+    expected_mask='0,1' if name=='two-device' else '' if name in ('cpu-layout','no-device') else '0'
+    assert record['environment']['CUDA_VISIBLE_DEVICES']==expected_mask,name
+    if name not in ('setup','release-build'):
+        assert len(record['native_before'])==len(record['native_after'])==2,name
+        assert all(digest==build['extension_sha256'] for digest in record['native_before'].values()),name
+        assert record['native_before']==record['native_after'],name
+for name in ('rust-graph','rust-packing'):
+    log=(OUT/f'{name}.log').read_text()
+    assert 'skipping' not in log.lower(),name
+    assert 'test result: ok.' in log,name
+for phase in ('development', 'postcommit-68766b43', 'review-fixes'):
+    old=ROOT/'docs/diagnostics/compile-cuda-contiguous'/phase
+    for path,digest in json.loads((old/'inventory.json').read_text()).items():
+        assert sha(old/path)==digest,(phase,path)
+result={'status':'passed','measured_commit':COMMIT,'source':source,
+        'extension_sha256':build['extension_sha256'],'wheel_sha256':build['wheel_sha256'],
+        'measured_inputs_sha256':sha(OUT/'measured-inputs.json'),'canonical_venv':str(ROOT/'.venv'),
+        'runtime':str(runtime),'runtime_sha256':sha(runtime),'runtime_version':version.value,
+        'checks':names,'clean_before_and_after_each_command':True,
+        'historical_development_artifacts_unchanged':True,
+        'installed_python_and_wheel_native_match_checkout':True}
+(OUT/'audit.json').write_text(json.dumps(result,indent=2)+'\n')
+print(json.dumps(result,indent=2))

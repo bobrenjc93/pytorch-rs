@@ -1,9 +1,13 @@
 //! Metadata planning for the existing CUDA capture operations. No allocation
 //! of tensor storage or kernel launch is allowed while constructing this plan.
-use super::{ElementwiseLayout, Tensor, TensorError, elementwise_output_strides, validated_layout};
+use super::{
+    ElementwiseLayout, MemoryFormat, Tensor, TensorError, element_count,
+    elementwise_output_strides, layout_is_contiguous, validated_layout,
+};
 
 #[derive(Clone, Copy)]
 pub(crate) enum Operation {
+    Contiguous(usize),
     Neg(usize),
     MulScalar(usize, f32),
     Add(usize, usize),
@@ -11,9 +15,11 @@ pub(crate) enum Operation {
     SumRows(usize, bool),
 }
 
+#[derive(Clone)]
 pub(crate) struct Layout {
     pub(crate) shape: Vec<usize>,
     pub(crate) strides: Vec<usize>,
+    pub(crate) offset: usize,
 }
 
 impl Layout {
@@ -21,7 +27,24 @@ impl Layout {
         Self {
             shape: tensor.shape().to_vec(),
             strides: tensor.stride().to_vec(),
+            offset: tensor.storage_offset(),
         }
+    }
+
+    pub(crate) fn is_contiguous(&self) -> Result<bool, TensorError> {
+        // Classify the existing layout without constructing materialized
+        // strides: an empty alias can have no representable canonical layout.
+        let elements = element_count(&self.shape)?;
+        Ok(layout_is_contiguous(&self.shape, &self.strides, elements))
+    }
+
+    fn require_contiguous(&self) -> Result<&Self, TensorError> {
+        if !self.is_contiguous()? {
+            return Err(TensorError::UnsupportedCudaContiguous {
+                reason: "CUDA graph arithmetic requires contiguous operands",
+            });
+        }
+        Ok(self)
     }
 
     fn elementwise(&self) -> ElementwiseLayout<'_> {
@@ -32,21 +55,38 @@ impl Layout {
     }
 
     pub(crate) fn matches(&self, tensor: &Tensor) -> bool {
-        self.shape == tensor.shape() && self.strides == tensor.stride()
+        self.shape == tensor.shape()
+            && self.strides == tensor.stride()
+            && self.offset == tensor.storage_offset()
     }
 }
 
 impl Operation {
     pub(crate) fn layout(self, values: &[Layout]) -> Result<Layout, TensorError> {
-        let get = |index| {
+        let get = |index: usize| {
             values
                 .get(index)
                 .ok_or(TensorError::IndexCalculationOverflow)
         };
+        // Input admission allows views, but every arithmetic operand must
+        // independently satisfy its contiguous-only contract during planning.
+        let get_contiguous = |index| get(index)?.require_contiguous();
         let shape = match self {
-            Self::Neg(input) | Self::MulScalar(input, _) => get(input)?.shape.clone(),
+            Self::Contiguous(input) => {
+                let input = get(input)?;
+                if input.is_contiguous()? {
+                    return Ok(input.clone());
+                }
+                if !(1..=2).contains(&input.shape.len()) || input.strides.contains(&0) {
+                    return Err(TensorError::UnsupportedCudaContiguous {
+                        reason: "packing requires positive-stride rank-1 or rank-2 inputs",
+                    });
+                }
+                input.shape.clone()
+            }
+            Self::Neg(input) | Self::MulScalar(input, _) => get_contiguous(input)?.shape.clone(),
             Self::Add(left, right) => {
-                let (left, right) = (get(left)?, get(right)?);
+                let (left, right) = (get_contiguous(left)?, get_contiguous(right)?);
                 if left.shape == right.shape {
                     left.shape.clone()
                 } else {
@@ -62,7 +102,7 @@ impl Operation {
                 }
             }
             Self::SumRows(input, keepdim) => {
-                let [rows, _] = get(input)?.shape.as_slice() else {
+                let [rows, _] = get_contiguous(input)?.shape.as_slice() else {
                     return Err(TensorError::UnsupportedCudaSum {
                         reason: "input must be rank-2",
                     });
@@ -70,7 +110,7 @@ impl Operation {
                 if keepdim { vec![*rows, 1] } else { vec![*rows] }
             }
             Self::Matmul(left, right) => {
-                let (left, right) = (get(left)?, get(right)?);
+                let (left, right) = (get_contiguous(left)?, get_contiguous(right)?);
                 let ([rows, inner], [other_inner, columns]) =
                     (left.shape.as_slice(), right.shape.as_slice())
                 else {
@@ -114,7 +154,11 @@ impl Operation {
             }
             _ => canonical,
         };
-        Ok(Layout { shape, strides })
+        Ok(Layout {
+            shape,
+            strides,
+            offset: 0,
+        })
     }
 
     pub(crate) fn execute(
@@ -122,6 +166,8 @@ impl Operation {
         inputs: &[&Tensor],
         outputs: &[Tensor],
     ) -> Result<Tensor, TensorError> {
+        #[cfg(test)]
+        EXECUTIONS.with(|count| count.set(count.get() + 1));
         // Indices were checked for the entire plan before the first launch.
         let get = |index: usize| {
             if index < inputs.len() {
@@ -131,11 +177,94 @@ impl Operation {
             }
         };
         match self {
+            Self::Contiguous(input) => get(input).try_contiguous(MemoryFormat::Contiguous),
             Self::Neg(input) => get(input).negate(),
             Self::MulScalar(input, scalar) => get(input).mul_scalar(scalar),
             Self::Add(left, right) => get(left).add(get(right)),
             Self::Matmul(left, right) => get(left).matmul(get(right)),
             Self::SumRows(input, keepdim) => get(input).sum_rank_two_dimension(1, keepdim),
+        }
+    }
+}
+
+// Test-only, thread-local accounting: absent from release builds and unrelated
+// to evaluator observers. Counts entry even if a native operation later fails.
+#[cfg(test)]
+thread_local! {
+    pub(crate) static EXECUTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_alias_does_not_require_canonical_strides() {
+        let dimension = 1_usize << (usize::BITS / 2);
+        let input = Layout {
+            shape: vec![0, dimension, dimension],
+            strides: vec![dimension, dimension, 1],
+            offset: 13,
+        };
+        assert!(validated_layout(&input.shape).is_err());
+        assert!(input.is_contiguous().unwrap());
+        let alias = Operation::Contiguous(0)
+            .layout(std::slice::from_ref(&input))
+            .unwrap();
+        assert_eq!(alias.shape, input.shape);
+        assert_eq!(alias.strides, input.strides);
+        assert_eq!(alias.offset, input.offset);
+        // Materializing arithmetic must still reject the overflowing layout.
+        assert!(Operation::Neg(0).layout(&[input]).is_err());
+    }
+
+    #[test]
+    fn packing_and_arithmetic_plan_layouts_independently() {
+        let mut values = vec![Layout {
+            shape: vec![7, 3],
+            strides: vec![1, 9],
+            offset: 11,
+        }];
+        for op in [
+            Operation::Neg(0),
+            Operation::MulScalar(0, 2.),
+            Operation::Add(0, 0),
+            Operation::Matmul(0, 0),
+            Operation::SumRows(0, false),
+        ] {
+            assert!(op.layout(&values).is_err());
+        }
+        let packed = Operation::Contiguous(0).layout(&values).unwrap();
+        assert_eq!(packed.strides, [3, 1]);
+        assert_eq!(packed.offset, 0);
+        values.push(packed);
+        assert!(Operation::Neg(1).layout(&values).is_ok());
+        assert!(Operation::Contiguous(2).layout(&values).is_err());
+        for (shape, strides) in [(vec![2, 3, 4], vec![4, 8, 1]), (vec![3], vec![0])] {
+            assert!(
+                Operation::Contiguous(0)
+                    .layout(&[Layout {
+                        shape,
+                        strides,
+                        offset: 0
+                    }])
+                    .is_err()
+            );
+        }
+        for (shape, strides) in [
+            (vec![], vec![]),
+            (vec![0, 3], vec![1, 7]),
+            (vec![1, 3, 1], vec![99, 1, 8]),
+        ] {
+            let input = Layout {
+                shape: shape.clone(),
+                strides: strides.clone(),
+                offset: 13,
+            };
+            let alias = Operation::Contiguous(0).layout(&[input]).unwrap();
+            assert_eq!(alias.shape, shape);
+            assert_eq!(alias.strides, strides);
+            assert_eq!(alias.offset, 13);
         }
     }
 }

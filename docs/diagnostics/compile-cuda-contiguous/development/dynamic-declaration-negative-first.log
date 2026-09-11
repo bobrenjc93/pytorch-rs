@@ -1,0 +1,24 @@
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "<string>", line 14, in <module>
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch_rs/__init__.py", line 439, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch_rs/__init__.py", line 855, in compiled_model
+    return _execute_native_eager_compile_graph(graph, args, _compile_trace)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch_rs/__init__.py", line 773, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch_rs/_compile_trace.py", line 1251, in execute_compile_trace_graph
+    outputs = _native._compile_trace_cuda_graph(tuple(values.values()), nodes)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/unittest/mock.py", line 1198, in _execute_mock_call
+    raise effect
+AssertionError: malformed dynamic declaration reached native execution

@@ -1,0 +1,17 @@
+test_device_and_context_restored (tests.test_compile_cuda_contiguous.CompileContiguousDeviceTests.test_device_and_context_restored) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_alias_identity_metadata_and_mutations (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_alias_identity_metadata_and_mutations) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ok
+test_argument_callable_global_and_cpu_boundaries (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_argument_callable_global_and_cpu_boundaries) ... ok
+test_blocked_reference_import_and_method_redispatch (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_blocked_reference_import_and_method_redispatch) ... ok
+test_dynamic_alias_pack_transition_and_static_guards (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_dynamic_alias_pack_transition_and_static_guards) ... ok
+test_malformed_ir_and_invalid_downstream_before_bridge_on_cache_hits (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_malformed_ir_and_invalid_downstream_before_bridge_on_cache_hits) ... ok
+test_pack_composes_with_matmul_scalar_and_row_sum (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_pack_composes_with_matmul_scalar_and_row_sum) ... ok
+test_raw_bits_copy_independence_and_lifetime (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_raw_bits_copy_independence_and_lifetime) ... ok
+test_seeded_views_cold_warm_cache_and_composition (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_seeded_views_cold_warm_cache_and_composition) ... ok
+test_bounded_metadata_and_cpu_separation (tests.test_compile_cuda_contiguous.ContiguousMetadataTests.test_bounded_metadata_and_cpu_separation) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 19.422s
+
+OK (skipped=1)

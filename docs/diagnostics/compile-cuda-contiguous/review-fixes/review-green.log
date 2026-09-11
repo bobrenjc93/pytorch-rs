@@ -1,0 +1,10 @@
+test_empty_alias_without_representable_canonical_strides (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_empty_alias_without_representable_canonical_strides) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_37b39666/.venv/lib64/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ok
+test_mixed_device_unused_capture_rejected_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_mixed_device_unused_capture_rejected_before_native_execution) ... ok
+test_strict_contiguous_declarations_before_native_execution (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_strict_contiguous_declarations_before_native_execution) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 2.768s
+
+OK

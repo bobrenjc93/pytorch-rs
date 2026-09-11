@@ -140,6 +140,7 @@ class _OpcodeForm:
 
 
 _METHOD_TARGETS = {
+    "contiguous": _MethodTarget("unary", "contiguous", 0, "Tensor.contiguous"),
     "sum": _MethodTarget("reduction", "sum", 1, "Tensor.sum"),
     "neg": _MethodTarget("unary", "neg", 0, "Tensor.neg"),
     "negative": _MethodTarget("unary", "neg", 0, "Tensor.negative"),
@@ -666,7 +667,7 @@ def prepare_compile_cache_request(
     all_metadatas = (*input_metadatas, *(d.metadata for d in global_tensor_dependencies))
     if any(m.device.type == "cuda" for m in all_metadatas):
         for metadata in all_metadatas:
-            _trace._validate_cuda_metadata(metadata)
+            _trace._validate_cuda_metadata(metadata, require_contiguous=False)
             if metadata.device != all_metadatas[0].device:
                 raise _trace.CompileTraceUnsupportedError(
                     "torch.compile trace CUDA inputs and captures require matching devices"

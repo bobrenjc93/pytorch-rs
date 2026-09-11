@@ -1,0 +1,8 @@
+test_device_and_context_restored (tests.test_compile_cuda_contiguous.CompileContiguousDeviceTests.test_device_and_context_restored) ... ok
+test_composed_restoration_and_mixed_devices (tests.test_compile_cuda_graph.CudaGraphDeviceTests.test_composed_restoration_and_mixed_devices) ... ok
+test_device_and_driver_context_restoration (tests.test_cuda_contiguous.ContiguousDeviceGuardTests.test_device_and_driver_context_restoration) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.575s
+
+OK

@@ -1,0 +1,114 @@
+"""Publish byte-identical measurement records after all clean captures finish."""
+import hashlib,json,re,shutil,subprocess
+from pathlib import Path
+ROOT=Path.cwd().resolve(); OUT=ROOT/'target/contiguous-postcommit-68766b43'
+DEST=ROOT/'docs/diagnostics/compile-cuda-contiguous/postcommit-68766b43'
+assert subprocess.check_output(['git','status','--porcelain'],text=True)==''
+audit=json.loads((OUT/'audit.json').read_text())
+assert audit['status']=='passed'
+receipt=json.loads((OUT/'evidence-audit.receipt.json').read_text())
+assert receipt['exit_status']==0 and receipt['git_status_before']==receipt['git_status_after']==''
+assert not DEST.exists()
+DEST.mkdir()
+for path in OUT.iterdir():
+    if path.is_file():
+        name=path.name+'.txt' if path.suffix in ('.py','.sh') else path.name
+        shutil.copyfile(path,DEST/name)
+(DEST/'release').mkdir()
+for name in ('build-record.json','commands.json','build.log','install.log'):
+    shutil.copyfile(OUT/'release'/name,DEST/'release'/name)
+# Verify copies against their actual capture locations before creating inventory.
+for path in DEST.rglob('*'):
+    if not path.is_file(): continue
+    relative=path.relative_to(DEST)
+    original=OUT/relative
+    if relative.suffix=='.txt': original=OUT/str(relative)[:-4]
+    assert path.read_bytes()==original.read_bytes(),relative
+inventory={str(p.relative_to(DEST)):hashlib.sha256(p.read_bytes()).hexdigest() for p in DEST.rglob('*') if p.is_file()}
+(DEST/'inventory.json').write_text(json.dumps(inventory,indent=2,sort_keys=True)+'\n')
+
+def result(name):
+    log=(OUT/f'{name}.log').read_text()
+    ran=int(re.search(r'Ran (\d+) tests?',log).group(1))
+    skipped=re.search(r'OK \(skipped=(\d+)\)',log)
+    skipped=int(skipped.group(1)) if skipped else 0
+    assert '\nOK' in log
+    return f'{ran-skipped} passed'+(f'; {skipped} expected skips' if skipped else '')
+link='diagnostics/compile-cuda-contiguous/postcommit-68766b43'
+source=audit['source']
+new=f'''## Clean-commit validation
+
+The deferred capture is complete at clean implementation commit
+`{audit['measured_commit']}`. Git status was empty
+before and after the release build and every measurement. This evidence and
+documentation were added afterward; implementation, dependencies, tests,
+harnesses and supported behavior are unchanged.
+
+The [release receipt]({link}/release/build-record.json),
+[measured input hashes]({link}/measured-inputs.json),
+[audit]({link}/audit.json) and [inventory]({link}/inventory.json)
+bind the commit, source, commands, installed package and native binary.
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Production source | `{source['source_sha256']}` |
+| Production diff against measured commit (empty) | `{source['production_diff_sha256']}` |
+| Native extension, installed and source package | `{audit['extension_sha256']}` |
+
+A fresh canonical worktree-local `.venv` was installed using locked dev/reference
+dependencies; its predecessor was preserved inside `target`. The unchanged
+repository build tool ran `maturin build --release --locked --offline` without
+`--allow-dirty`, using a fresh Cargo target. Local dependency caches were reused;
+CUDA JIT, Python and compiler diagnostic caches started fresh. All generated
+files stayed in this worktree. See [setup]({link}/setup.receipt.json) and
+[environment]({link}/environment.sh.txt) for exact commands and paths.
+
+[Preflight]({link}/preflight.log) records Python 3.12.13, NumPy 2.5.1,
+PyTorch 2.13.0+cu130, Rust/Cargo 1.92.0, NVIDIA H100, compute capability 9.0 and
+driver 580.82.07. Native runtime was explicitly selected from the new `.venv`'s
+`nvidia/cu13/lib/libcudart.so.13` (13000), matching reference CUDA 13.0.
+nvcc 12.6.85 was installed but unused: native kernels use driver-JIT PTX.
+Command receipts include physical UUID/index/utilization/memory snapshots.
+Ordinary GPU checks used mask `0`; only restoration used `0,1`.
+
+| Clean-commit check | Result | Raw log |
+| --- | --- | --- |
+| Rust graph planning and zero-native-execution negatives | 2 passed | [log]({link}/rust-graph.log) |
+| Rust CUDA packing integration | 1 passed | [log]({link}/rust-packing.log) |
+| Compiled layout differentials and guards | {result('compiled-contiguous')} | [log]({link}/compiled-contiguous.log) |
+| Two-device/context restoration | {result('two-device')} | [log]({link}/two-device.log) |
+| Eager CUDA packing regressions | {result('cuda-packing')} | [log]({link}/cuda-packing.log) |
+| Existing CPU/CUDA compiler regressions | {result('compiler-regressions')} | [log]({link}/compiler-regressions.log) |
+| CPU layout/reference regressions | {result('cpu-layout')} | [log]({link}/cpu-layout.log) |
+| Portability with CUDA hidden | {result('no-device')} | [log]({link}/no-device.log) |
+
+The unchanged graphlets cover seeded transposes and offset/sliced views, exact
+alias metadata, scalar/empty/singleton/higher-rank aliases, raw signed-zero/NaN
+bits, nonmutation and copy/alias mutations, cold/warm execution, cache and
+callable/global guards, malformed IR, blocked PyTorch imports, and native
+composition. Skips receive no hardware correctness credit. Every capture and
+the provenance audit passed; earlier failed development attempts remain intact.
+Unrelated full Rust suites, Clippy and performance workloads were not repeated.
+These are non-scoring diagnostics, with no added frozen38 coverage or general
+compiler/performance claim. Independent review and normal Burner merge gates
+remain separate; PR1970/PR1971 and all evaluator/observer contracts are unchanged.
+
+'''
+p=ROOT/'docs/compile-cuda-contiguous.md'
+text=p.read_text()
+needle='## Worktree validation evidence\n\n'
+assert needle in text
+text=text.replace(needle,new+'## Preserved development validation\n\n',1)
+old='''evidence, not a clean implementation-commit capture.** Creating commits is
+prohibited in this task; Burner must perform the clean-commit recapture during
+its normal delivery workflow. No replacement PR or push was attempted.'''
+replacement='''evidence, not a clean implementation-commit capture.** The implementation task
+prohibited creating commits and deferred the clean capture now reported above.
+Its original receipts, paths, results and failed attempts remain unchanged.'''
+assert old in text
+p.write_text(text.replace(old,replacement,1))
+p=ROOT/'docs/README.md'
+text=p.read_text();old='Parameterless native view packing, alias semantics, bounded compiler checks and H100 evidence.'
+assert old in text
+p.write_text(text.replace(old,'Parameterless native view packing, alias semantics and clean-commit H100 evidence.',1))
+print('Published',len(inventory),'raw artifacts at',DEST)

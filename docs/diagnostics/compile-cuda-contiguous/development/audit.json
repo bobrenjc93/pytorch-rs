@@ -1,0 +1,27 @@
+{
+  "status": "passed",
+  "source": {
+    "commit": "22c4e1c4d32126b91ee9f5417842d245c0183fce",
+    "source_sha256": "a2a2235d1b2f6b3db84f8ef15082b16c71cb699e38678e1ca194f85e9945c8b7",
+    "production_diff_sha256": "7587bcf9d55fa0df27dddda026be5c3ef7488fb2e0739f8d64f115f8593a1c44"
+  },
+  "native_sha256": "8ea77b560d033412929e3e29e5b585a1e152896b51509fea651e7e7b9eae70ea",
+  "checks": [
+    "verify-hardened-wheel",
+    "dynamic-declaration-negative-final",
+    "contiguous-hardened",
+    "two-device-hardened",
+    "compiler-regressions-hardened",
+    "no-device-final",
+    "cpu-layout-hardened",
+    "clippy-hardened",
+    "clippy-default-hardened",
+    "rust-bindings-hardened",
+    "rust-default-hardened",
+    "formatting-final"
+  ],
+  "installed_python_matches_checkout": true,
+  "eager_regressions_same_native_binary": true,
+  "protected_tracked_files_unchanged": true,
+  "clean_commit_capture": "deferred: Burner owns committing/delivery"
+}

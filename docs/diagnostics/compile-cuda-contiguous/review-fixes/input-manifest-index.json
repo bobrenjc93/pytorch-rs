@@ -1,0 +1,21 @@
+{
+  "review-red.inputs.json": "inputs/1df3169b725ce31a954b8b7a01671c42788718a8c14ccfdf1faa23b36966e8f1.json",
+  "preflight.inputs.json": "inputs/677cbe26c505d7ec7f9872c2756bc728acec6ee2ac828c67201122ac2ed793ac.json",
+  "release-build.inputs.json": "inputs/677cbe26c505d7ec7f9872c2756bc728acec6ee2ac828c67201122ac2ed793ac.json",
+  "formatting.inputs.json": "inputs/677cbe26c505d7ec7f9872c2756bc728acec6ee2ac828c67201122ac2ed793ac.json",
+  "rust-graph.inputs.json": "inputs/677cbe26c505d7ec7f9872c2756bc728acec6ee2ac828c67201122ac2ed793ac.json",
+  "formatting-final.inputs.json": "inputs/19827ee4c917200eb34ab35b7c6e1abd172d6d55f722e648788b78568f985cfb.json",
+  "rust-graph-final.inputs.json": "inputs/19827ee4c917200eb34ab35b7c6e1abd172d6d55f722e648788b78568f985cfb.json",
+  "release-final.inputs.json": "inputs/19827ee4c917200eb34ab35b7c6e1abd172d6d55f722e648788b78568f985cfb.json",
+  "clippy.inputs.json": "inputs/19827ee4c917200eb34ab35b7c6e1abd172d6d55f722e648788b78568f985cfb.json",
+  "review-green.inputs.json": "inputs/19827ee4c917200eb34ab35b7c6e1abd172d6d55f722e648788b78568f985cfb.json",
+  "verify-wheel.inputs.json": "inputs/19827ee4c917200eb34ab35b7c6e1abd172d6d55f722e648788b78568f985cfb.json",
+  "compiled-contiguous.inputs.json": "inputs/19827ee4c917200eb34ab35b7c6e1abd172d6d55f722e648788b78568f985cfb.json",
+  "compiler-regressions.inputs.json": "inputs/19827ee4c917200eb34ab35b7c6e1abd172d6d55f722e648788b78568f985cfb.json",
+  "two-device.inputs.json": "inputs/19827ee4c917200eb34ab35b7c6e1abd172d6d55f722e648788b78568f985cfb.json",
+  "cuda-packing.inputs.json": "inputs/19827ee4c917200eb34ab35b7c6e1abd172d6d55f722e648788b78568f985cfb.json",
+  "rust-packing.inputs.json": "inputs/19827ee4c917200eb34ab35b7c6e1abd172d6d55f722e648788b78568f985cfb.json",
+  "cpu-layout.inputs.json": "inputs/19827ee4c917200eb34ab35b7c6e1abd172d6d55f722e648788b78568f985cfb.json",
+  "no-device.inputs.json": "inputs/19827ee4c917200eb34ab35b7c6e1abd172d6d55f722e648788b78568f985cfb.json",
+  "evidence-audit.inputs.json": "inputs/19827ee4c917200eb34ab35b7c6e1abd172d6d55f722e648788b78568f985cfb.json"
+}
