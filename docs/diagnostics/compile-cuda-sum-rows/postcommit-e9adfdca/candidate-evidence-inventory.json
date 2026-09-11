@@ -1,0 +1,489 @@
+{
+  "head": "e9adfdca71626190a17e36544af97b1066499bbe",
+  "status": "",
+  "changed_files": [
+    "docs/compile-cuda-sum-rows.md",
+    "docs/diagnostics/compile-cuda-sum-rows/development/artifact-sha256.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/build-final.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/build-record.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/build.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/clippy-default-final.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/clippy-final.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/clippy.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/compiler-regressions.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/compiler-release-gpu-after.csv",
+    "docs/diagnostics/compile-cuda-sum-rows/development/compiler-release-gpu-before.csv",
+    "docs/diagnostics/compile-cuda-sum-rows/development/compiler-release.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/compiler-release.receipt.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/cuda-compiler-regressions.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/cuda-compiler-release-gpu-after.csv",
+    "docs/diagnostics/compile-cuda-sum-rows/development/cuda-compiler-release-gpu-before.csv",
+    "docs/diagnostics/compile-cuda-sum-rows/development/cuda-compiler-release.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/cuda-compiler-release.receipt.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/env.sh.txt",
+    "docs/diagnostics/compile-cuda-sum-rows/development/final-build-record.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/final-sequence.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/fmt-final.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/fmt.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/focused-attempt1.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/focused-attempt2.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/focused-attempt3.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/focused-attempt4.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/focused-attempt5.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/focused-complete.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/focused-debug.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/focused-final.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/focused-release-gpu-after.csv",
+    "docs/diagnostics/compile-cuda-sum-rows/development/focused-release-gpu-before.csv",
+    "docs/diagnostics/compile-cuda-sum-rows/development/focused-release.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/focused-release.receipt.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/frozen38-release-gpu-after.csv",
+    "docs/diagnostics/compile-cuda-sum-rows/development/frozen38-release-gpu-before.csv",
+    "docs/diagnostics/compile-cuda-sum-rows/development/frozen38-release.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/frozen38-release.receipt.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/frozen38.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/frozen38.stderr.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/gpu-after-correctness.csv",
+    "docs/diagnostics/compile-cuda-sum-rows/development/gpu-before.csv",
+    "docs/diagnostics/compile-cuda-sum-rows/development/hardware-compilation-final.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/hardware-compilation.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/hardware-compilation.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/hardware-release-gpu-after.csv",
+    "docs/diagnostics/compile-cuda-sum-rows/development/hardware-release-gpu-before.csv",
+    "docs/diagnostics/compile-cuda-sum-rows/development/hardware-release.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/hardware-release.receipt.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/nvcc.txt",
+    "docs/diagnostics/compile-cuda-sum-rows/development/performance-fresh-gpu-after.csv",
+    "docs/diagnostics/compile-cuda-sum-rows/development/performance-fresh-gpu-before.csv",
+    "docs/diagnostics/compile-cuda-sum-rows/development/performance-fresh.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/performance-fresh.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/performance-fresh.receipt.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/performance-reused-gpu-after.csv",
+    "docs/diagnostics/compile-cuda-sum-rows/development/performance-reused-gpu-before.csv",
+    "docs/diagnostics/compile-cuda-sum-rows/development/performance-reused.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/performance-reused.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/performance-reused.receipt.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/performance-sequence.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/production.patch",
+    "docs/diagnostics/compile-cuda-sum-rows/development/provenance-audit.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/provenance.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/python3.10-release.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/python3.10.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/python3.11-release.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/python3.11.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/python3.12-base-missing-dependency.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/python3.12-release.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/python3.13-release.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/python3.13.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/python3.14-release.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/python314-attempt1.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/python314-attempt2.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/python314-final.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/run_final.py.txt",
+    "docs/diagnostics/compile-cuda-sum-rows/development/run_performance.py.txt",
+    "docs/diagnostics/compile-cuda-sum-rows/development/runtime-python3.10.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/runtime-python3.11.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/runtime-python3.12.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/runtime-python3.13.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/runtime-python3.14.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/runtime_receipt.py.txt",
+    "docs/diagnostics/compile-cuda-sum-rows/development/rust-bindings-final.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/rust-default-final.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/rust-tests.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/source-files.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/two-device-release-gpu-after.csv",
+    "docs/diagnostics/compile-cuda-sum-rows/development/two-device-release-gpu-before.csv",
+    "docs/diagnostics/compile-cuda-sum-rows/development/two-device-release.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/two-device-release.receipt.json",
+    "docs/diagnostics/compile-cuda-sum-rows/development/two-device.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/wheel-build.log",
+    "docs/diagnostics/compile-cuda-sum-rows/development/wheel-install.log",
+    "docs/supported-surface.md",
+    "python/torch_rs/__init__.py",
+    "python/torch_rs/_compile_bytecode.py",
+    "python/torch_rs/_compile_trace.py",
+    "scripts/evaluate_cuda_compilation.py",
+    "src/python.rs",
+    "src/python_compile_cuda_graph.rs",
+    "src/tensor_cuda_graph.rs",
+    "tests/test_compile_cuda_sum_rows.py",
+    "tests/test_compile_sum_lowering.py",
+    "tests/test_cuda_compilation_evaluator.py",
+    "tests/test_cuda_sum_rows.py"
+  ],
+  "development_manifest_verified": 94,
+  "development_json_inventory": {
+    "focused-release.receipt.json": {
+      "bytes": 923,
+      "keys": [
+        "command",
+        "environment_overrides",
+        "started_unix",
+        "finished_unix",
+        "exit_code",
+        "source",
+        "source_unchanged",
+        "extension_sha256",
+        "log_sha256"
+      ]
+    },
+    "two-device-release.receipt.json": {
+      "bytes": 848,
+      "keys": [
+        "command",
+        "environment_overrides",
+        "started_unix",
+        "finished_unix",
+        "exit_code",
+        "source",
+        "source_unchanged",
+        "extension_sha256",
+        "log_sha256"
+      ]
+    },
+    "compiler-release.receipt.json": {
+      "bytes": 942,
+      "keys": [
+        "command",
+        "environment_overrides",
+        "started_unix",
+        "finished_unix",
+        "exit_code",
+        "source",
+        "source_unchanged",
+        "extension_sha256",
+        "log_sha256"
+      ]
+    },
+    "cuda-compiler-release.receipt.json": {
+      "bytes": 984,
+      "keys": [
+        "command",
+        "environment_overrides",
+        "started_unix",
+        "finished_unix",
+        "exit_code",
+        "source",
+        "source_unchanged",
+        "extension_sha256",
+        "log_sha256"
+      ]
+    },
+    "hardware-release.receipt.json": {
+      "bytes": 1034,
+      "keys": [
+        "command",
+        "environment_overrides",
+        "started_unix",
+        "finished_unix",
+        "exit_code",
+        "source",
+        "source_unchanged",
+        "extension_sha256",
+        "log_sha256"
+      ]
+    },
+    "frozen38-release.receipt.json": {
+      "bytes": 758,
+      "keys": [
+        "command",
+        "environment_overrides",
+        "started_unix",
+        "finished_unix",
+        "exit_code",
+        "source",
+        "source_unchanged",
+        "extension_sha256",
+        "log_sha256"
+      ]
+    },
+    "performance-fresh.receipt.json": {
+      "bytes": 1227,
+      "keys": [
+        "command",
+        "started_unix",
+        "finished_unix",
+        "exit_code",
+        "source",
+        "source_unchanged",
+        "extension_sha256",
+        "caches"
+      ]
+    },
+    "performance-reused.receipt.json": {
+      "bytes": 1228,
+      "keys": [
+        "command",
+        "started_unix",
+        "finished_unix",
+        "exit_code",
+        "source",
+        "source_unchanged",
+        "extension_sha256",
+        "caches"
+      ]
+    },
+    "build-record.json": {
+      "bytes": 964,
+      "keys": [
+        "commit",
+        "source_sha256",
+        "production_diff_sha256",
+        "extension_sha256",
+        "build_command",
+        "rustc",
+        "cargo",
+        "nvcc",
+        "stage",
+        "python",
+        "executable",
+        "base_prefix"
+      ]
+    },
+    "final-build-record.json": {
+      "bytes": 1150,
+      "keys": [
+        "commit",
+        "source_sha256",
+        "production_diff_sha256",
+        "extension_sha256",
+        "build_command",
+        "rustc",
+        "cargo",
+        "nvcc",
+        "stage",
+        "python",
+        "executable",
+        "base_prefix",
+        "wheel_sha256"
+      ]
+    },
+    "hardware-compilation.json": {
+      "bytes": 731207,
+      "keys": [
+        "evaluator_version",
+        "case_set_version",
+        "backend",
+        "capability",
+        "started_at",
+        "finished_at",
+        "scope",
+        "source",
+        "source_unchanged_during_run",
+        "file_sha256",
+        "build_record",
+        "build_record_error",
+        "seeds",
+        "compile_options",
+        "CUDA_VISIBLE_DEVICES",
+        "gpu_inventory",
+        "trials",
+        "accounting"
+      ]
+    },
+    "hardware-compilation-final.json": {
+      "bytes": 731456,
+      "keys": [
+        "evaluator_version",
+        "case_set_version",
+        "backend",
+        "capability",
+        "started_at",
+        "finished_at",
+        "scope",
+        "source",
+        "source_unchanged_during_run",
+        "file_sha256",
+        "build_record",
+        "build_record_error",
+        "seeds",
+        "compile_options",
+        "CUDA_VISIBLE_DEVICES",
+        "gpu_inventory",
+        "trials",
+        "accounting"
+      ]
+    },
+    "frozen38.json": {
+      "bytes": 3841,
+      "keys": [
+        "evidence",
+        "score",
+        "suggestions",
+        "summary"
+      ]
+    },
+    "performance-fresh.json": {
+      "bytes": 570409,
+      "keys": [
+        "aggregates",
+        "environment",
+        "schema_version",
+        "torch_rs_cuda_driver_probe",
+        "torch_rs_cuda_pointwise_kernel",
+        "torch_rs_cuda_runtime_roundtrip",
+        "workload_results"
+      ]
+    },
+    "performance-reused.json": {
+      "bytes": 568966,
+      "keys": [
+        "aggregates",
+        "environment",
+        "schema_version",
+        "torch_rs_cuda_driver_probe",
+        "torch_rs_cuda_pointwise_kernel",
+        "torch_rs_cuda_runtime_roundtrip",
+        "workload_results"
+      ]
+    },
+    "runtime-python3.12.json": {
+      "bytes": 1098,
+      "keys": [
+        "python",
+        "executable",
+        "prefix",
+        "base_prefix",
+        "package",
+        "extension",
+        "cuda_libraries",
+        "cuda_runtimes",
+        "loaded_torch"
+      ]
+    },
+    "runtime-python3.10.json": {
+      "bytes": 1008,
+      "keys": [
+        "python",
+        "executable",
+        "prefix",
+        "base_prefix",
+        "package",
+        "extension",
+        "cuda_libraries",
+        "cuda_runtimes",
+        "loaded_torch"
+      ]
+    },
+    "runtime-python3.11.json": {
+      "bytes": 1008,
+      "keys": [
+        "python",
+        "executable",
+        "prefix",
+        "base_prefix",
+        "package",
+        "extension",
+        "cuda_libraries",
+        "cuda_runtimes",
+        "loaded_torch"
+      ]
+    },
+    "runtime-python3.13.json": {
+      "bytes": 1008,
+      "keys": [
+        "python",
+        "executable",
+        "prefix",
+        "base_prefix",
+        "package",
+        "extension",
+        "cuda_libraries",
+        "cuda_runtimes",
+        "loaded_torch"
+      ]
+    },
+    "runtime-python3.14.json": {
+      "bytes": 995,
+      "keys": [
+        "python",
+        "executable",
+        "prefix",
+        "base_prefix",
+        "package",
+        "extension",
+        "cuda_libraries",
+        "cuda_runtimes",
+        "loaded_torch"
+      ]
+    },
+    "source-files.json": {
+      "bytes": 90730,
+      "keys": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "pyproject.toml",
+        "python/torch_rs/__future__.py",
+        "python/torch_rs/__init__.py",
+        "python/torch_rs/_compile_bytecode.py",
+        "python/torch_rs/_compile_trace.py",
+        "python/torch_rs/_compiler_state.py",
+        "python/torch_rs/_cuda_benchmark_tensor.py",
+        "python/torch_rs/_cuda_buffer.py",
+        "python/torch_rs/_cuda_driver_probe.py",
+        "python/torch_rs/_cuda_pointwise_kernel.py",
+        "python/torch_rs/_cuda_pointwise_reduce_workload.py",
+        "python/torch_rs/_cuda_public_storage.py",
+        "python/torch_rs/_cuda_runtime_ownership.py",
+        "python/torch_rs/_cuda_runtime_roundtrip.py",
+        "python/torch_rs/_diagnostics.py",
+        "python/torch_rs/_jit_internal.py",
+        "python/torch_rs/_serialization_state.py",
+        "python/torch_rs/_tensor.py",
+        "python/torch_rs/accelerator/__init__.py",
+        "python/torch_rs/accelerator/memory.py",
+        "python/torch_rs/autograd/__init__.py",
+        "python/torch_rs/autograd/grad_mode.py",
+        "python/torch_rs/backends/__init__.py"
+      ]
+    },
+    "provenance-audit.json": {
+      "bytes": 5938,
+      "keys": [
+        "stage",
+        "parent_commit",
+        "production_patch_sha256",
+        "source_files_sha256",
+        "installed_python_files_checked",
+        "installed_python_mismatches",
+        "source_extension_sha256",
+        "installed_extension_sha256",
+        "frozen_contracts",
+        "environment",
+        "performance-fresh",
+        "performance-reused"
+      ]
+    },
+    "artifact-sha256.json": {
+      "bytes": 9073,
+      "keys": [
+        "build-final.log",
+        "build-record.json",
+        "build.log",
+        "clippy-default-final.log",
+        "clippy-final.log",
+        "clippy.log",
+        "compiler-regressions.log",
+        "compiler-release-gpu-after.csv",
+        "compiler-release-gpu-before.csv",
+        "compiler-release.log",
+        "compiler-release.receipt.json",
+        "cuda-compiler-regressions.log",
+        "cuda-compiler-release-gpu-after.csv",
+        "cuda-compiler-release-gpu-before.csv",
+        "cuda-compiler-release.log",
+        "cuda-compiler-release.receipt.json",
+        "env.sh.txt",
+        "final-build-record.json",
+        "final-sequence.log",
+        "fmt-final.log",
+        "fmt.log",
+        "focused-attempt1.log",
+        "focused-attempt2.log",
+        "focused-attempt3.log",
+        "focused-attempt4.log"
+      ]
+    }
+  },
+  "classification": "Existing artifacts explicitly development-only; clean-commit required captures outstanding."
+}

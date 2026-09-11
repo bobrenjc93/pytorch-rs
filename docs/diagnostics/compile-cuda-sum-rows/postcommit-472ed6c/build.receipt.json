@@ -1,0 +1,60 @@
+{
+  "after": {
+    "commit": "472ed6c26404176686a0cde6cb32b0722979be84",
+    "production": {
+      "commit": "472ed6c26404176686a0cde6cb32b0722979be84",
+      "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_sha256": "2bec769fadb89e9e0f58e4a3356f26439637b49b1cf3a80b285fe6a985330d6d"
+    },
+    "source_files_sha256": "0dc718e3cd5752bbb651551c162cdc95c538377aa8486948defa8470b3568856",
+    "status": "",
+    "tree": "befac5592545f372b9f4fb83bb63c2bfb0a33282"
+  },
+  "before": {
+    "commit": "472ed6c26404176686a0cde6cb32b0722979be84",
+    "production": {
+      "commit": "472ed6c26404176686a0cde6cb32b0722979be84",
+      "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_sha256": "2bec769fadb89e9e0f58e4a3356f26439637b49b1cf3a80b285fe6a985330d6d"
+    },
+    "source_files_sha256": "0dc718e3cd5752bbb651551c162cdc95c538377aa8486948defa8470b3568856",
+    "status": "",
+    "tree": "befac5592545f372b9f4fb83bb63c2bfb0a33282"
+  },
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv/bin/maturin",
+    "build",
+    "--offline",
+    "--release",
+    "--locked",
+    "--interpreter",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv/bin/python",
+    "--out",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-472ed6c/wheels"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa",
+  "environment": {
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/root-row-sum-docs-check/cargo",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-472ed6c/build",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-472ed6c/cuda-cache",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv/bin/python",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONNOUSERSITE": "1",
+    "PYTHONPATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/python:/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa",
+    "RUSTC": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustc",
+    "RUSTDOC": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustdoc",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-472ed6c/tmp",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-472ed6c/inductor",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-472ed6c/triton",
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-472ed6c/uv-cache",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-472ed6c/cache"
+  },
+  "error": null,
+  "exit_code": 0,
+  "finished_unix": 1789086695.4141014,
+  "source_unchanged": true,
+  "started_unix": 1789086647.8749504,
+  "stderr_sha256": "551c9b9eefbe71d87660f0c3ff3c48fe89e06fee4ad6e1cebe3f0cf370c98b69",
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

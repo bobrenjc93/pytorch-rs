@@ -1,0 +1,20 @@
+[
+  {
+    "existed": true,
+    "files": {
+      "abc1ef92dd5c211d/libtorch_rs_private_pointwise.so": "641d1b16b654cc6e2024df1e26c90b505fee74909a1a5b930d6c466d2dcf1548",
+      "abc1ef92dd5c211d/torch_rs_private_pointwise.cu": "22c19cfe066dc5ec5ef73e350a8c5ee6bf8aa5509f97b0df17e72aa7d7ef7139"
+    },
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/torch_rs_private_cuda_pointwise",
+    "preserved_at": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-e9adfdca/preserved-torch_rs_private_cuda_pointwise"
+  },
+  {
+    "existed": true,
+    "files": {
+      "008df4c027d70965/libtorch_rs_private_pointwise_reduce.so": "ec55113b12e4bf20b9ac06b450207e0f3b9219936613e62a90c02c8a9b03488f",
+      "008df4c027d70965/torch_rs_private_pointwise_reduce.cu": "b1622c1a55f76a6048825cdc97d5438fb10b6873e811a7acd847822b7628cef7"
+    },
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/torch_rs_private_cuda_pointwise_reduce",
+    "preserved_at": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-e9adfdca/preserved-torch_rs_private_cuda_pointwise_reduce"
+  }
+]

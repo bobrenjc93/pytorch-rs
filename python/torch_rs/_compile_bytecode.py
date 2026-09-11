@@ -28,6 +28,11 @@ class _BytecodeConstant:
 
 
 @dataclass(frozen=True, slots=True)
+class _BytecodeKeywordNames:
+    names: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class _BytecodeFunction:
     function: object
     name: str
@@ -135,6 +140,7 @@ class _OpcodeForm:
 
 
 _METHOD_TARGETS = {
+    "sum": _MethodTarget("reduction", "sum", 1, "Tensor.sum"),
     "neg": _MethodTarget("unary", "neg", 0, "Tensor.neg"),
     "negative": _MethodTarget("unary", "neg", 0, "Tensor.negative"),
     "__neg__": _MethodTarget("unary", "neg", 0, "Tensor.__neg__"),
@@ -274,11 +280,8 @@ _OPCODE_FORMS = (
         _contains_jump,
         "control flow",
     ),
-    _OpcodeForm(
-        "unsupported",
-        frozenset(("CALL_FUNCTION_KW", "CALL_KW", "CALL_METHOD_KW", "KW_NAMES")),
-        reason="keyword arguments",
-    ),
+    _OpcodeForm("keyword_names", frozenset(("KW_NAMES",))),
+    _OpcodeForm("call_kw", frozenset(("CALL_FUNCTION_KW", "CALL_KW", "CALL_METHOD_KW"))),
     _OpcodeForm(
         "local_load",
         frozenset(("LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_FAST_BORROW")),
@@ -1052,6 +1055,10 @@ def _lower_function_body(
     if instructions is None:
         instructions = _dis.get_instructions(code)
     for instruction in instructions:
+        if instruction.opname == "KW_NAMES":
+            # 3.11/3.12 hide KW_NAMES.argval; 3.10 and 3.13/3.14 instead
+            # push a LOAD_CONST tuple consumed by their keyword call opcode.
+            instruction = instruction._replace(argval=code.co_consts[instruction.arg])
         output = _lower_instruction(
             recorder,
             locals,
@@ -1069,7 +1076,25 @@ def _lower_function_body(
     )
 
 
-def _record_method_call(recorder, method, args, program, instruction):
+def _record_method_call(recorder, method, args, program, instruction, names=()):
+    if method.name == "sum":
+        positional = len(args) - len(names)
+        if positional > 2:
+            _unsupported_bytecode(program, instruction, "Tensor.sum argument count")
+        options = dict(zip(("dim", "keepdim"), args[:positional]))
+        for name, value in zip(names, args[positional:]):
+            if name not in ("dim", "keepdim") or name in options:
+                _unsupported_bytecode(program, instruction, "Tensor.sum keyword arguments")
+            options[name] = value
+        if "dim" not in options:
+            _unsupported_bytecode(program, instruction, "Tensor.sum requires constant dim=1")
+        options.setdefault("keepdim", _BytecodeConstant(False))
+        if any(not isinstance(v, _BytecodeConstant) for v in options.values()):
+            _unsupported_bytecode(program, instruction, "Tensor.sum requires constant options")
+        return recorder.record_reduction(method.receiver, options["dim"].value,
+                                         options["keepdim"].value)
+    if names:
+        _unsupported_bytecode(program, instruction, "keyword arguments")
     method_target = _METHOD_TARGETS.get(method.name)
     if method_target is None:
         _trace._unsupported_operation(f"Tensor.{method.name}")
@@ -1150,9 +1175,16 @@ def _record_function_call(
 def _handle_call(recorder, locals, stack, program, instruction, state, active):
     del locals
     argument_count = instruction.arg or 0
+    names = ()
+    if stack and isinstance(stack[-1], _BytecodeKeywordNames):
+        names = stack.pop().names
+    if len(names) > argument_count:
+        _unsupported_bytecode(program, instruction, "keyword argument count")
     args = [_pop(stack, program, instruction) for _ in range(argument_count)]
     args.reverse()
     callable_value = _pop(stack, program, instruction)
+    if names and not isinstance(callable_value, _BytecodeMethod):
+        _unsupported_bytecode(program, instruction, "keyword arguments")
     if _builtins.isinstance(callable_value, _BytecodeBuiltin):
         if len(args) != 2:
             _unsupported_bytecode(program, instruction, "native binary argument count")
@@ -1170,6 +1202,7 @@ def _handle_call(recorder, locals, stack, program, instruction, state, active):
                 tuple(args),
                 program,
                 instruction,
+                names,
             )
         )
         return
@@ -1187,6 +1220,26 @@ def _handle_call(recorder, locals, stack, program, instruction, state, active):
         )
         return
     _unsupported_bytecode(program, instruction, "function calls")
+
+
+def _keyword_names(value, program, instruction):
+    if (type(value) is not tuple or not value
+            or any(type(name) is not str for name in value)
+            or len(set(value)) != len(value)):
+        _unsupported_bytecode(program, instruction, "keyword names")
+    return _BytecodeKeywordNames(value)
+
+
+def _handle_keyword_names(recorder, locals, stack, program, instruction, state, active):
+    stack.append(_keyword_names(instruction.argval, program, instruction))
+
+
+def _handle_call_kw(recorder, locals, stack, program, instruction, state, active):
+    value = _pop(stack, program, instruction)
+    if not isinstance(value, _BytecodeConstant):
+        _unsupported_bytecode(program, instruction, "non-constant keyword names")
+    stack.append(_keyword_names(value.value, program, instruction))
+    return _handle_call(recorder, locals, stack, program, instruction, state, active)
 
 
 def _record_binary_add(recorder, stack, program, instruction, target="add"):
@@ -1365,6 +1418,8 @@ _OPCODE_HANDLERS = {
     "load_global": _handle_load_global,
     "load_method": _handle_load_method,
     "call": _handle_call,
+    "call_kw": _handle_call_kw,
+    "keyword_names": _handle_keyword_names,
     "precall": _handle_noop,
     "push_null": _handle_noop,
     "load_const": _handle_load_const,

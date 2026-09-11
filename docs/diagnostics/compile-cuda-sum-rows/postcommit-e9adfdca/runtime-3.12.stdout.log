@@ -1,0 +1,20 @@
+{
+  "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv/bin/python",
+  "prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv",
+  "base_prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum/python312",
+  "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/python/torch_rs/__init__.py",
+  "extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/python/torch_rs/torch_rs.abi3.so",
+  "cuda_libraries": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "/usr/lib64/libcuda.so.580.82.07"
+  ],
+  "cuda_runtimes": [
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+      "version": 13000,
+      "status": 0
+    }
+  ],
+  "loaded_torch": []
+}

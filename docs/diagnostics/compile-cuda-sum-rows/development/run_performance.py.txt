@@ -1,0 +1,34 @@
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+root=Path.cwd()
+out=root/'target/row-sum'
+while not (out/'logs/frozen38-release.receipt.json').exists():
+    time.sleep(2)
+sys.path.insert(0, str(root/'scripts'))
+from evaluate_cuda_math import source_provenance, sha256
+cache=root/'target/torch_rs_private_cuda_pointwise'
+if cache.exists():
+    cache.rename(out/'private-cache-before-performance')
+env={**os.environ, 'CUDA_CACHE_PATH':str(out/'perf-cuda-cache'),
+     'TORCHINDUCTOR_CACHE_DIR':str(out/'perf-inductor-cache'),
+     'TRITON_CACHE_DIR':str(out/'perf-triton-cache')}
+for phase in ('fresh','reused'):
+    name='performance-'+phase
+    cmd=[sys.executable, 'scripts/benchmark_compile_cuda.py', '--include-unprepared-comparison', '--output', str(out/(name+'.json'))]
+    before=source_provenance()
+    started=time.time()
+    snapshot=['nvidia-smi','--query-gpu=index,uuid,name,driver_version,compute_cap,utilization.gpu,memory.used','--format=csv']
+    (out/'logs'/(name+'-gpu-before.csv')).write_bytes(subprocess.check_output(snapshot))
+    with (out/'logs'/(name+'.log')).open('w') as log:
+        result=subprocess.run(cmd,env=env,stdout=log,stderr=subprocess.STDOUT)
+    (out/'logs'/(name+'-gpu-after.csv')).write_bytes(subprocess.check_output(snapshot))
+    record={'command':cmd,'started_unix':started,'finished_unix':time.time(),
+            'exit_code':result.returncode,'source':before,'source_unchanged':before==source_provenance(),
+            'extension_sha256':sha256('python/torch_rs/torch_rs.abi3.so'),
+            'caches':{k:env[k] for k in ('CUDA_CACHE_PATH','TORCHINDUCTOR_CACHE_DIR','TRITON_CACHE_DIR')}}
+    (out/'logs'/(name+'.receipt.json')).write_text(json.dumps(record,indent=2)+'\n')
+    print(name,result.returncode,flush=True)

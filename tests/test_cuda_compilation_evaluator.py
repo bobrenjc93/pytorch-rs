@@ -301,6 +301,23 @@ class IsolationTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "extension builtin"):
             e.CompileObserver(e.negation, e.negation, e.negation, lambda x: x)
 
+    def test_frozen_observer_rejects_counterfeit_and_unadopted_reduction_hooks(self):
+        case = next(c for c in e.corpus()["cases"] if c["operation"] == "sum")
+        self.assertEqual(e.native_hook(case), "_compile_trace_unary")
+        def counterfeit(*args):
+            raise AssertionError("must never execute")
+        counterfeit.__name__ = "_compile_trace_reduction"
+        with self.assertRaisesRegex(RuntimeError, "extension builtin"):
+            e.CompileObserver(e.row_sum, e.row_sum, e.row_sum, counterfeit)
+        fixture = AccountingTests()
+        fixture.setUp()
+        for trial in fixture.trials:
+            if trial["case_id"] == case["id"]:
+                trial["candidate"]["compile_evidence"][0]["hook"] = "_compile_trace_reduction"
+        score = fixture.score()
+        self.assertEqual(score["passed"], 5)
+        self.assertEqual(next(c for c in score["cases"] if c["case_id"] == case["id"])["credit"], 0)
+
     def test_crash_timeout_invalid_json_and_missing_python(self):
         case = e.corpus()["cases"][0]
         for error in (FileNotFoundError("missing"), subprocess.TimeoutExpired("worker", 1)):
@@ -371,10 +388,30 @@ class HardwareTests(unittest.TestCase):
                         self.assertTrue(e.valid_execution(ref, case, seed, "reference"), ref)
                         self.assertNotEqual(ref["pid"], cand.get("pid"))
                         if case["operation"] == "sum":
+                            # The native reduction works, but the frozen scoring
+                            # observer still watches the old unary entry point.
+                            # Adoption of the reduction observer is a separate
+                            # campaign; this implementation must not earn that
+                            # slot through an evaluator edit in the same PR.
+                            self.assertEqual(cand["status"], "failed", cand)
+                            self.assertEqual(cand["error"], "invalid execution or compilation evidence")
                             self.assertFalse(e.valid_execution(cand, case, seed, "candidate"))
-                            self.assertIn("not support", cand.get("error", ""))
+                            self.assertEqual(cand["blocked_imports"], [])
+                            self.assertEqual(cand["loaded_torch_modules"], [])
+                            self.assertEqual(cand["original_body_attempts"], 0)
+                            self.assertEqual(cand["compile_evidence"], [
+                                {"phase": phase, "lowered_targets": targets,
+                                 "executor_calls": 1, "native_returns": 0,
+                                 "hook": "_compile_trace_unary"}
+                                for phase, targets in (("initial", [["sum"]]), ("changed", []))
+                            ])
                         else:
                             self.assertTrue(e.valid_execution(cand, case, seed, "candidate"), cand)
-                            for r, c in zip(ref["executions"], cand["executions"]):
-                                for expected, actual in zip(r["output"]["values"], c["output"]["values"]):
-                                    self.assertLessEqual(abs(expected - actual), 1e-6 + 1e-5 * abs(expected))
+                        self.assertEqual(len(cand["executions"]), 2, cand)
+                        for r, c in zip(ref["executions"], cand["executions"]):
+                            self.assertEqual(c["seed"], r["seed"])
+                            self.assertEqual(c["inputs"], c["inputs_after"])
+                            self.assertEqual(c["output"]["shape"], r["output"]["shape"])
+                            self.assertEqual(len(c["output"]["values"]), len(r["output"]["values"]))
+                            for expected, actual in zip(r["output"]["values"], c["output"]["values"]):
+                                self.assertLessEqual(abs(expected - actual), 1e-6 + 1e-5 * abs(expected))

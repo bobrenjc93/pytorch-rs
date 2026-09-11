@@ -1,0 +1,20 @@
+{
+  "python": "3.10.21 (main, Sep  1 2026, 14:16:49) [Clang 22.1.3 ]",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-472ed6c/interpreters/cpython-3.10-linux-x86_64-gnu/bin/python3.10",
+  "prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-472ed6c/interpreters/cpython-3.10-linux-x86_64-gnu",
+  "base_prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-472ed6c/interpreters/cpython-3.10-linux-x86_64-gnu",
+  "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/python/torch_rs/__init__.py",
+  "extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/python/torch_rs/torch_rs.abi3.so",
+  "cuda_libraries": [
+    "/usr/lib64/libcuda.so.580.82.07",
+    "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcudart.so.13.0.96"
+  ],
+  "cuda_runtimes": [
+    {
+      "path": "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcudart.so.13.0.96",
+      "version": 13000,
+      "status": 0
+    }
+  ],
+  "loaded_torch": []
+}

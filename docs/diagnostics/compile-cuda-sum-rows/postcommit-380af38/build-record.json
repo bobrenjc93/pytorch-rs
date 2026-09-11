@@ -1,0 +1,28 @@
+{
+  "build_command": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv/bin/maturin build --offline --release --locked --interpreter /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv/bin/python --out /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/wheels",
+  "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)",
+  "clean_snapshot": {
+    "commit": "380af38d9d8b8936569c23b2e77cc0ff970b98d0",
+    "production": {
+      "commit": "380af38d9d8b8936569c23b2e77cc0ff970b98d0",
+      "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_sha256": "2bec769fadb89e9e0f58e4a3356f26439637b49b1cf3a80b285fe6a985330d6d"
+    },
+    "source_files_sha256": "f888546337e1c4728891dafc7536ee5d6d52b301e2914fd6ce464f0f72ada598",
+    "status": "",
+    "tree": "1d487d678c2ec2fb300aff96996170e02deda7c5"
+  },
+  "commit": "380af38d9d8b8936569c23b2e77cc0ff970b98d0",
+  "dirty": false,
+  "extension_sha256": "c6e5a5793af2024c3363f2a946c5a6765280d8e8f29babce6553a4de73fc7832",
+  "fresh_cargo_target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/build",
+  "fresh_cargo_target_initially_absent": true,
+  "installed_extension_sha256": "c6e5a5793af2024c3363f2a946c5a6765280d8e8f29babce6553a4de73fc7832",
+  "nvcc": "unused for native reduction; driver-JIT PTX; host nvcc recorded separately",
+  "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "python_sources_matched": 59,
+  "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+  "source_sha256": "2bec769fadb89e9e0f58e4a3356f26439637b49b1cf3a80b285fe6a985330d6d",
+  "wheel": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+  "wheel_sha256": "244c9247b3a3d8dd123d3e058e758edc93797a5eba29f2070b82ca90b7eb7475"
+}

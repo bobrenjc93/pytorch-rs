@@ -8,6 +8,7 @@ pub(crate) enum Operation {
     MulScalar(usize, f32),
     Add(usize, usize),
     Matmul(usize, usize),
+    SumRows(usize, bool),
 }
 
 pub(crate) struct Layout {
@@ -59,6 +60,14 @@ impl Operation {
                         }
                     }
                 }
+            }
+            Self::SumRows(input, keepdim) => {
+                let [rows, _] = get(input)?.shape.as_slice() else {
+                    return Err(TensorError::UnsupportedCudaSum {
+                        reason: "input must be rank-2",
+                    });
+                };
+                if keepdim { vec![*rows, 1] } else { vec![*rows] }
             }
             Self::Matmul(left, right) => {
                 let (left, right) = (get(left)?, get(right)?);
@@ -126,6 +135,7 @@ impl Operation {
             Self::MulScalar(input, scalar) => get(input).mul_scalar(scalar),
             Self::Add(left, right) => get(left).add(get(right)),
             Self::Matmul(left, right) => get(left).matmul(get(right)),
+            Self::SumRows(input, keepdim) => get(input).sum_rank_two_dimension(1, keepdim),
         }
     }
 }

@@ -1,0 +1,25 @@
+test_rejections_and_live_method_mutation (tests.test_compile_cuda_sum_rows.CompileCudaSumTests.test_rejections_and_live_method_mutation) ... ERROR
+test_stream_completion_and_independent_output (tests.test_compile_cuda_sum_rows.CompileCudaSumTests.test_stream_completion_and_independent_output) ... ERROR
+
+======================================================================
+ERROR: test_rejections_and_live_method_mutation (tests.test_compile_cuda_sum_rows.CompileCudaSumTests.test_rejections_and_live_method_mutation)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/tests/test_compile_cuda_sum_rows.py", line 106, in test_rejections_and_live_method_mutation
+    x = native.ones((4, 17), device='cuda:0')
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: ones(): device 'cuda:0' is not supported; only 'cpu' is implemented
+
+======================================================================
+ERROR: test_stream_completion_and_independent_output (tests.test_compile_cuda_sum_rows.CompileCudaSumTests.test_stream_completion_and_independent_output)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/tests/test_compile_cuda_sum_rows.py", line 126, in test_stream_completion_and_independent_output
+    x = native.full((5, 521), 0.25, device='cuda:0')
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: full(): device 'cuda:0' is not supported; only 'cpu' is implemented
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+FAILED (errors=2)

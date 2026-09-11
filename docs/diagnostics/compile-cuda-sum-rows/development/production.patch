@@ -1,0 +1,408 @@
+diff --git a/python/torch_rs/__init__.py b/python/torch_rs/__init__.py
+index 4ddc8dc..a097d8d 100644
+--- a/python/torch_rs/__init__.py
++++ b/python/torch_rs/__init__.py
+@@ -348,6 +348,7 @@ _COMPILE_TENSOR_METHOD_GUARD_NAMES = (
+     "requires_grad",
+     "relu",
+     "square",
++    "sum",
+ )
+ _COMPILE_TENSOR_METHOD_GUARD_MISSING = globals().get(
+     "_COMPILE_TENSOR_METHOD_GUARD_MISSING",
+diff --git a/python/torch_rs/_compile_bytecode.py b/python/torch_rs/_compile_bytecode.py
+index f490770..76b8b7d 100644
+--- a/python/torch_rs/_compile_bytecode.py
++++ b/python/torch_rs/_compile_bytecode.py
+@@ -27,6 +27,11 @@ class _BytecodeConstant:
+     value: object
+ 
+ 
++@dataclass(frozen=True, slots=True)
++class _BytecodeKeywordNames:
++    names: tuple[str, ...]
++
++
+ @dataclass(frozen=True, slots=True)
+ class _BytecodeFunction:
+     function: object
+@@ -135,6 +140,7 @@ class _OpcodeForm:
+ 
+ 
+ _METHOD_TARGETS = {
++    "sum": _MethodTarget("reduction", "sum", 1, "Tensor.sum"),
+     "neg": _MethodTarget("unary", "neg", 0, "Tensor.neg"),
+     "negative": _MethodTarget("unary", "neg", 0, "Tensor.negative"),
+     "__neg__": _MethodTarget("unary", "neg", 0, "Tensor.__neg__"),
+@@ -274,11 +280,8 @@ _OPCODE_FORMS = (
+         _contains_jump,
+         "control flow",
+     ),
+-    _OpcodeForm(
+-        "unsupported",
+-        frozenset(("CALL_FUNCTION_KW", "CALL_KW", "CALL_METHOD_KW", "KW_NAMES")),
+-        reason="keyword arguments",
+-    ),
++    _OpcodeForm("keyword_names", frozenset(("KW_NAMES",))),
++    _OpcodeForm("call_kw", frozenset(("CALL_FUNCTION_KW", "CALL_KW", "CALL_METHOD_KW"))),
+     _OpcodeForm(
+         "local_load",
+         frozenset(("LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_FAST_BORROW")),
+@@ -1052,6 +1055,10 @@ def _lower_function_body(
+     if instructions is None:
+         instructions = _dis.get_instructions(code)
+     for instruction in instructions:
++        if instruction.opname == "KW_NAMES":
++            # 3.11/3.12 hide KW_NAMES.argval; 3.10 and 3.13/3.14 instead
++            # push a LOAD_CONST tuple consumed by their keyword call opcode.
++            instruction = instruction._replace(argval=code.co_consts[instruction.arg])
+         output = _lower_instruction(
+             recorder,
+             locals,
+@@ -1069,7 +1076,25 @@ def _lower_function_body(
+     )
+ 
+ 
+-def _record_method_call(recorder, method, args, program, instruction):
++def _record_method_call(recorder, method, args, program, instruction, names=()):
++    if method.name == "sum":
++        positional = len(args) - len(names)
++        if positional > 2:
++            _unsupported_bytecode(program, instruction, "Tensor.sum argument count")
++        options = dict(zip(("dim", "keepdim"), args[:positional]))
++        for name, value in zip(names, args[positional:]):
++            if name not in ("dim", "keepdim") or name in options:
++                _unsupported_bytecode(program, instruction, "Tensor.sum keyword arguments")
++            options[name] = value
++        if "dim" not in options:
++            _unsupported_bytecode(program, instruction, "Tensor.sum requires constant dim=1")
++        options.setdefault("keepdim", _BytecodeConstant(False))
++        if any(not isinstance(v, _BytecodeConstant) for v in options.values()):
++            _unsupported_bytecode(program, instruction, "Tensor.sum requires constant options")
++        return recorder.record_reduction(method.receiver, options["dim"].value,
++                                         options["keepdim"].value)
++    if names:
++        _unsupported_bytecode(program, instruction, "keyword arguments")
+     method_target = _METHOD_TARGETS.get(method.name)
+     if method_target is None:
+         _trace._unsupported_operation(f"Tensor.{method.name}")
+@@ -1150,9 +1175,16 @@ def _record_function_call(
+ def _handle_call(recorder, locals, stack, program, instruction, state, active):
+     del locals
+     argument_count = instruction.arg or 0
++    names = ()
++    if stack and isinstance(stack[-1], _BytecodeKeywordNames):
++        names = stack.pop().names
++    if len(names) > argument_count:
++        _unsupported_bytecode(program, instruction, "keyword argument count")
+     args = [_pop(stack, program, instruction) for _ in range(argument_count)]
+     args.reverse()
+     callable_value = _pop(stack, program, instruction)
++    if names and not isinstance(callable_value, _BytecodeMethod):
++        _unsupported_bytecode(program, instruction, "keyword arguments")
+     if _builtins.isinstance(callable_value, _BytecodeBuiltin):
+         if len(args) != 2:
+             _unsupported_bytecode(program, instruction, "native binary argument count")
+@@ -1170,6 +1202,7 @@ def _handle_call(recorder, locals, stack, program, instruction, state, active):
+                 tuple(args),
+                 program,
+                 instruction,
++                names,
+             )
+         )
+         return
+@@ -1189,6 +1222,26 @@ def _handle_call(recorder, locals, stack, program, instruction, state, active):
+     _unsupported_bytecode(program, instruction, "function calls")
+ 
+ 
++def _keyword_names(value, program, instruction):
++    if (type(value) is not tuple or not value
++            or any(type(name) is not str for name in value)
++            or len(set(value)) != len(value)):
++        _unsupported_bytecode(program, instruction, "keyword names")
++    return _BytecodeKeywordNames(value)
++
++
++def _handle_keyword_names(recorder, locals, stack, program, instruction, state, active):
++    stack.append(_keyword_names(instruction.argval, program, instruction))
++
++
++def _handle_call_kw(recorder, locals, stack, program, instruction, state, active):
++    value = _pop(stack, program, instruction)
++    if not isinstance(value, _BytecodeConstant):
++        _unsupported_bytecode(program, instruction, "non-constant keyword names")
++    stack.append(_keyword_names(value.value, program, instruction))
++    return _handle_call(recorder, locals, stack, program, instruction, state, active)
++
++
+ def _record_binary_add(recorder, stack, program, instruction, target="add"):
+     right = _require_tensor(
+         _pop(stack, program, instruction),
+@@ -1365,6 +1418,8 @@ _OPCODE_HANDLERS = {
+     "load_global": _handle_load_global,
+     "load_method": _handle_load_method,
+     "call": _handle_call,
++    "call_kw": _handle_call_kw,
++    "keyword_names": _handle_keyword_names,
+     "precall": _handle_noop,
+     "push_null": _handle_noop,
+     "load_const": _handle_load_const,
+diff --git a/python/torch_rs/_compile_trace.py b/python/torch_rs/_compile_trace.py
+index 2480165..7b23587 100644
+--- a/python/torch_rs/_compile_trace.py
++++ b/python/torch_rs/_compile_trace.py
+@@ -154,6 +154,7 @@ class CompileTraceOperation:
+     inputs: tuple[str, ...]
+     metadata: CompileTraceTensorMetadata
+     scalar: object = None
++    reduction: tuple[int, bool] | None = None
+ 
+ 
+ @dataclass(frozen=True, slots=True)
+@@ -213,7 +214,8 @@ _SUPPORTED_OPERATION_TARGETS = (
+     _SUPPORTED_UNARY_TARGETS | _SUPPORTED_BINARY_TARGETS | _SUPPORTED_SCALAR_TARGETS
+ )
+ _SUPPORTED_OPERATION_DESCRIPTION = ", ".join(
+-    (*_SUPPORTED_UNARY_METHODS, *_SUPPORTED_BINARY_METHODS, "Tensor.mul (CUDA scalar)")
++    (*_SUPPORTED_UNARY_METHODS, *_SUPPORTED_BINARY_METHODS,
++     "Tensor.mul (CUDA scalar)", "Tensor.sum (CUDA rank-two rows)")
+ )
+ 
+ 
+@@ -639,6 +641,22 @@ def _normalize_mul_scalar(value):
+     return _native._compile_trace_mul_scalar_value(value)
+ 
+ 
++def _reduction_output_metadata(input_metadata, dim, keepdim):
++    if type(dim) is not int or dim not in (1, -1) or type(keepdim) is not bool:
++        raise CompileTraceUnsupportedError("torch.compile sum requires constant dim=1 or -1 and boolean keepdim")
++    if input_metadata.device.type != "cuda" or len(input_metadata.shape) != 2:
++        raise CompileTraceUnsupportedError("torch.compile sum requires rank-2 CUDA inputs")
++    _validate_cuda_metadata(input_metadata)
++    shape = (input_metadata.shape[0], 1) if keepdim else (input_metadata.shape[0],)
++    import sys
++    if shape[0] > sys.maxsize // 4:
++        raise OverflowError("torch.compile sum output exceeds native storage limits")
++    return CompileTraceTensorMetadata(
++        shape=shape, stride=_contiguous_stride(shape), dtype=float32,
++        device=input_metadata.device, requires_grad=False, storage_offset=0,
++    )
++
++
+ def _scalar_output_metadata(input_metadata):
+     if input_metadata.device.type != "cuda":
+         raise CompileTraceUnsupportedError(
+@@ -919,6 +937,10 @@ def _materialize_graph_output(
+ 
+ 
+ def _execute_operation(operation, values):
++    if operation.op == "call_reduction":
++        return _native._compile_trace_reduction(
++            values[operation.inputs[0]], operation.target, *operation.reduction
++        )
+     if operation.op != "call_method":
+         raise CompileTraceUnsupportedError(
+             "torch.compile trace execution only supports recorded Tensor "
+@@ -974,7 +996,23 @@ def _execute_operation(operation, values):
+ def _expected_operation_metadata(operation, metadata_values, *, grad_enabled):
+     # Validate the complete node before any graph operation can execute, even
+     # for graphs built manually or modified with dataclasses.replace().
+-    if operation.op != "call_method":
++    if operation.op == "call_reduction":
++        if (operation.target != "sum" or len(operation.inputs) != 1
++                or operation.scalar is not None or type(operation.reduction) is not tuple
++                or len(operation.reduction) != 2):
++            raise CompileTraceUnsupportedError("torch.compile malformed reduction node")
++        expected = _reduction_output_metadata(
++            metadata_values[operation.inputs[0]], *operation.reduction
++        )
++        declared = operation.metadata
++        if (not isinstance(declared, CompileTraceTensorMetadata)
++                or declared.device != expected.device or declared.storage_offset != 0
++                or len(declared.shape) != len(expected.shape)
++                or (operation.reduction[1] and declared.shape[1] != 1)):
++            raise CompileTraceUnsupportedError("torch.compile malformed reduction metadata")
++        _validate_cuda_metadata(declared)
++        return expected
++    if operation.op != "call_method" or operation.reduction is not None:
+         raise CompileTraceUnsupportedError("torch.compile trace requires call_method nodes")
+     if operation.target in _SUPPORTED_SCALAR_TARGETS:
+         if len(operation.inputs) != 1:
+@@ -1157,7 +1195,8 @@ def execute_compile_trace_graph(graph, *inputs):
+         indices = {name: index for index, name in enumerate(metadata_values)}
+         nodes = [
+             (operation.target, tuple(indices[name] for name in operation.inputs),
+-             operation.scalar, metadata_values[operation.name].shape,
++             operation.reduction if operation.op == "call_reduction" else operation.scalar,
++             metadata_values[operation.name].shape,
+              metadata_values[operation.name].stride)
+             for operation in graph.operations
+         ]
+@@ -1288,6 +1327,9 @@ class CompileTraceTensorProxy:
+             )
+         return self._recorder.record_binary("add", self, other, "Tensor.add")
+ 
++    def sum(self, dim, keepdim=False):
++        return self._recorder.record_reduction(self, dim, keepdim)
++
+     def matmul(self, other):
+         return self._recorder.record_binary("matmul", self, other, "Tensor.matmul")
+ 
+@@ -1463,6 +1505,17 @@ class CompileTraceRecorder:
+         self._operations.append(operation)
+         return CompileTraceTensorProxy(self, name, metadata)
+ 
++    def record_reduction(self, input, dim, keepdim):
++        self._ensure_open()
++        self._require_owned_proxy(input)
++        metadata = _reduction_output_metadata(input.metadata, dim, keepdim)
++        name = self._next_operation_name("sum")
++        self._operations.append(CompileTraceOperation(
++            name=name, op="call_reduction", target="sum", inputs=(input.name,),
++            metadata=metadata, reduction=(1, keepdim),
++        ))
++        return CompileTraceTensorProxy(self, name, metadata)
++
+     def record_scalar(self, target, input, scalar):
+         self._ensure_open()
+         if target not in _SUPPORTED_SCALAR_TARGETS:
+diff --git a/src/python.rs b/src/python.rs
+index a259171..e9073c9 100644
+--- a/src/python.rs
++++ b/src/python.rs
+@@ -9786,6 +9786,50 @@ fn compile_trace_mul_scalar_value(scalar: &Bound<'_, PyAny>) -> PyResult<f32> {
+     parse_top_level_mul_scalar(scalar)
+ }
+ 
++// Exact constant options only: never invoke Python numeric/bool conversions.
++fn compile_trace_sum_options(dim: &Bound<'_, PyAny>, keepdim: &Bound<'_, PyAny>) -> PyResult<bool> {
++    if !dim.is_exact_instance_of::<PyInt>()
++        || !keepdim.is_exact_instance_of::<PyBool>()
++        || !matches!(dim.extract::<i64>(), Ok(1 | -1))
++    {
++        return Err(PyNotImplementedError::new_err(
++            "torch.compile sum requires constant dim=1 or -1 and boolean keepdim",
++        ));
++    }
++    keepdim.extract()
++}
++
++#[pyfunction(name = "_compile_trace_reduction", signature = (input, target, dim, keepdim, /))]
++fn compile_trace_reduction(
++    input: &Bound<'_, PyAny>,
++    target: &str,
++    dim: &Bound<'_, PyAny>,
++    keepdim: &Bound<'_, PyAny>,
++) -> PyResult<PyTensor> {
++    if !input.is_exact_instance_of::<PyTensor>() {
++        return Err(PyTypeError::new_err(
++            "reduction requires exact native Tensor",
++        ));
++    }
++    if target != "sum" {
++        return Err(PyNotImplementedError::new_err(
++            "unsupported reduction target",
++        ));
++    }
++    let keepdim = compile_trace_sum_options(dim, keepdim)?;
++    let tensor = input.cast::<PyTensor>()?.try_borrow()?;
++    if !tensor.inner.is_cuda() {
++        return Err(PyNotImplementedError::new_err(
++            "torch.compile sum requires CUDA",
++        ));
++    }
++    tensor
++        .inner
++        .sum_rank_two_dimension(1, keepdim)
++        .map(PyTensor::new)
++        .map_err(|error| tensor_error(&error))
++}
++
+ #[pyfunction(name = "_compile_trace_scalar", signature = (input, scalar, target, /))]
+ fn compile_trace_scalar(
+     input: &Bound<'_, PyAny>,
+@@ -25931,6 +25975,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
+     module.add_function(wrap_pyfunction!(compile_trace_unary, module)?)?;
+     module.add_function(wrap_pyfunction!(compile_trace_binary, module)?)?;
+     module.add_function(wrap_pyfunction!(compile_trace_scalar, module)?)?;
++    module.add_function(wrap_pyfunction!(compile_trace_reduction, module)?)?;
+     module.add_function(wrap_pyfunction!(compile_cuda_graph::execute, module)?)?;
+     module.add_function(wrap_pyfunction!(compile_trace_mul_scalar_value, module)?)?;
+     let exports = module.getattr("__all__")?;
+@@ -25942,6 +25987,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
+         "_compile_trace_unary",
+         "_compile_trace_binary",
+         "_compile_trace_scalar",
++        "_compile_trace_reduction",
+         "_compile_trace_cuda_graph",
+         "_compile_trace_mul_scalar_value",
+     ] {
+diff --git a/src/python_compile_cuda_graph.rs b/src/python_compile_cuda_graph.rs
+index 5a8f0b6..059538c 100644
+--- a/src/python_compile_cuda_graph.rs
++++ b/src/python_compile_cuda_graph.rs
+@@ -54,14 +54,24 @@ pub(super) fn execute(
+         .map(|tensor| Layout::from_tensor(tensor))
+         .collect();
+     let mut operations = Vec::with_capacity(nodes.len());
+-    for (target, indices, scalar, shape, strides) in nodes {
++    for (target, indices, payload, shape, strides) in nodes {
+         let operation = match (target.as_str(), indices.as_slice()) {
+             ("mul_scalar", &[input]) => {
+-                Operation::MulScalar(input, compile_trace_mul_scalar_value(&scalar)?)
++                Operation::MulScalar(input, compile_trace_mul_scalar_value(&payload)?)
+             }
+-            ("neg", &[input]) if scalar.is_none() => Operation::Neg(input),
+-            ("add", &[left, right]) if scalar.is_none() => Operation::Add(left, right),
+-            ("matmul", &[left, right]) if scalar.is_none() => Operation::Matmul(left, right),
++            ("sum", &[input]) => {
++                let options = payload.cast::<PyTuple>()?;
++                if options.len() != 2 {
++                    return Err(PyNotImplementedError::new_err("invalid reduction options"));
++                }
++                Operation::SumRows(
++                    input,
++                    super::compile_trace_sum_options(&options.get_item(0)?, &options.get_item(1)?)?,
++                )
++            }
++            ("neg", &[input]) if payload.is_none() => Operation::Neg(input),
++            ("add", &[left, right]) if payload.is_none() => Operation::Add(left, right),
++            ("matmul", &[left, right]) if payload.is_none() => Operation::Matmul(left, right),
+             _ => {
+                 return Err(PyNotImplementedError::new_err(
+                     "unsupported CUDA graph node",
+diff --git a/src/tensor_cuda_graph.rs b/src/tensor_cuda_graph.rs
+index f388a83..f31f16a 100644
+--- a/src/tensor_cuda_graph.rs
++++ b/src/tensor_cuda_graph.rs
+@@ -8,6 +8,7 @@ pub(crate) enum Operation {
+     MulScalar(usize, f32),
+     Add(usize, usize),
+     Matmul(usize, usize),
++    SumRows(usize, bool),
+ }
+ 
+ pub(crate) struct Layout {
+@@ -60,6 +61,14 @@ impl Operation {
+                     }
+                 }
+             }
++            Self::SumRows(input, keepdim) => {
++                let [rows, _] = get(input)?.shape.as_slice() else {
++                    return Err(TensorError::UnsupportedCudaSum {
++                        reason: "input must be rank-2",
++                    });
++                };
++                if keepdim { vec![*rows, 1] } else { vec![*rows] }
++            }
+             Self::Matmul(left, right) => {
+                 let (left, right) = (get(left)?, get(right)?);
+                 let ([rows, inner], [other_inner, columns]) =
+@@ -126,6 +135,7 @@ impl Operation {
+             Self::MulScalar(input, scalar) => get(input).mul_scalar(scalar),
+             Self::Add(left, right) => get(left).add(get(right)),
+             Self::Matmul(left, right) => get(left).matmul(get(right)),
++            Self::SumRows(input, keepdim) => get(input).sum_rank_two_dimension(1, keepdim),
+         }
+     }
+ }

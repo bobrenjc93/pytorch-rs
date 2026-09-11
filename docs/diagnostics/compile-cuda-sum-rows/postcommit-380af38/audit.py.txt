@@ -1,0 +1,111 @@
+"""Verify measured receipts and stage a summary without modifying reports."""
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+root = Path.cwd()
+out = root / 'target/row-sum-postcommit-380af38'
+commit = '380af38d9d8b8936569c23b2e77cc0ff970b98d0'
+sys.path.insert(0, str(root/'scripts'))
+import evaluate_cuda_compilation as evaluator
+from evaluate_cuda_math import sha256
+
+def read(name):
+    return json.loads((out/name).read_text())
+
+def git(*args):
+    return subprocess.check_output(['git',*args]).decode().strip()
+
+assert git('rev-parse','HEAD') == commit and not git('status','--porcelain')
+initial, final = read('clean-snapshot.json'), read('final-clean-snapshot.json')
+assert initial == final
+build = read('build-record.json')
+assert build['commit'] == commit and build['dirty'] is False
+assert build['extension_sha256'] == sha256(root/'python/torch_rs/torch_rs.abi3.so')
+assert build['extension_sha256'] == build['installed_extension_sha256']
+assert build['production_diff_sha256'] == hashlib.sha256(b'').hexdigest()
+assert sha256(build['wheel']) == build['wheel_sha256']
+checks = {}
+for path in out.glob('*.receipt.json'):
+    receipt=json.loads(path.read_text())
+    assert receipt['exit_code'] == 0, path
+    assert receipt['before'] == receipt['after'] == initial, path
+    assert receipt['source_unchanged'], path
+    name = path.name.removesuffix('.receipt.json')
+    for stream in ('stdout','stderr'):
+        assert receipt[stream+'_sha256'] == sha256(out/f'{name}.{stream}.log'), path
+    checks[name]={'exit_code':receipt['exit_code'],'source_unchanged':True,
+                  'elapsed_seconds':receipt['finished_unix']-receipt['started_unix']}
+hardware={}
+for name in ('hardware-1','hardware-2'):
+    result=read(name+'.json')
+    assert result['source']['commit']==commit and result['source_unchanged_during_run']
+    assert result['accounting']==evaluator.account(evaluator.corpus(), result['seeds'], result['trials'], build, result['source'])
+    assert result['accounting']['denominator']==6
+    paths=[]
+    for trial in result['trials']:
+        for role in ('reference','candidate'):
+            row=trial[role]
+            for field in ('executable','package'):
+                path=Path(row[field]).resolve()
+                assert path.is_relative_to(root), (name,field,path)
+                paths.append(str(path))
+            if role=='candidate':
+                path=Path(row['extension']['path']).resolve()
+                assert path.is_relative_to(root)
+                assert row['extension']['sha256']==build['extension_sha256']
+    hardware[name]={'seeds':result['seeds'],'accounting':result['accounting'],
+                    'verified_local_paths':sorted(set(paths))}
+    assert result['accounting']['passed']==5, 'Unexpected frozen-observer accounting; preserve reports for review'
+    sum_case = next(c for c in result['accounting']['cases'] if c['case_id']=='cuda_f32_compile_sum_rows')
+    assert sum_case['credit']==0
+    for trial in result['trials']:
+        if trial['case_id']=='cuda_f32_compile_sum_rows':
+            candidate=trial['candidate']
+            assert candidate['status']=='failed' and candidate['error']=='invalid execution or compilation evidence'
+            assert candidate['original_body_attempts']==0 and not candidate['loaded_torch_modules'] and not candidate['blocked_imports']
+            assert len(candidate['executions'])==2
+            for ref, native in zip(trial['reference']['executions'],candidate['executions']):
+                assert ref['output']['shape']==native['output']['shape']
+                assert len(ref['output']['values'])==len(native['output']['values'])
+                assert all(abs(a-b)<=1e-6+1e-5*abs(a) for a,b in zip(ref['output']['values'],native['output']['values']))
+frozen=read('frozen38.stdout.log')
+assert '38/38' in frozen['summary'] and frozen['score']==100.0
+performance={}
+for name in ('performance-fresh','performance-reused'):
+    result=read(name+'.json')
+    assert result['aggregates']['workload_count']==4
+    assert result['environment']['samples']==17 and result['environment']['warmups']==5 and result['environment']['repeats']==3
+    assert result['aggregates']['common_success_shape_count']==4
+    performance[name]=result['aggregates']
+    for field in ('python_executable',):
+        assert Path(result['environment'][field]).resolve().is_relative_to(root)
+    assert result['environment']['git']['head']==commit
+    assert result['environment']['git']['status_short']=='' and result['environment']['git']['diff_stat']==''
+runtime={}
+for minor in ('3.10','3.11','3.12','3.13','3.14'):
+    result=read(f'runtime-{minor}.stdout.log')
+    for field in ('executable','prefix','base_prefix','package','extension'):
+        assert Path(result[field]).resolve().is_relative_to(root),(minor,field)
+    assert result['loaded_torch']==[]
+    runtime[minor]=result
+frozen_paths=['docs/hardware-heterogeneity-matrix-v1.json','tests/test_compile_corpus.py',
+              'scripts/evaluate_torch_compile_coverage.py','scripts/benchmark_compile_cuda.py',
+              'scripts/evaluate_cuda_math.py','python/torch_rs/_cuda_pointwise_kernel.py',
+              'python/torch_rs/_cuda_pointwise_reduce_workload.py']
+contracts={p:{'sha256':sha256(root/p),'base_sha256':hashlib.sha256(subprocess.check_output(['git','show','main:'+p])).hexdigest()} for p in frozen_paths}
+assert all(v['sha256']==v['base_sha256'] for v in contracts.values())
+base_observer=subprocess.check_output(['git','show','main:scripts/evaluate_cuda_compilation.py']).decode()
+assert base_observer==(root/'scripts/evaluate_cuda_compilation.py').read_text()
+helper=out/'runtime_receipt.py'
+assert sha256(helper)==sha256(root/'docs/diagnostics/compile-cuda-sum-rows/development/runtime_receipt.py.txt')
+summary={'measured_commit':commit,'clean_through_all_captures':True,'build':build,
+         'base_commit':git('rev-parse','main'),'checks':checks,'hardware':hardware,
+         'frozen_compile':frozen,'private_performance':performance,'runtime':runtime,
+         'frozen_contracts':contracts,'observer_contract':'byte-for-byte main baseline; row-sum slot remains zero',
+         'runtime_helper_sha256':sha256(helper),
+         'scope':'Evidence only; not independent review, branch approval, or merge gates.'}
+(out/'audit.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
+print('Verified clean-commit receipts, local paths, fixed denominators, and unchanged frozen contracts.')

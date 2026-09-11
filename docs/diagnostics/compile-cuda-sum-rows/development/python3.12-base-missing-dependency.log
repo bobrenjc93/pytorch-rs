@@ -1,0 +1,23 @@
+test_compile_sum_lowering (unittest.loader._FailedTest.test_compile_sum_lowering) ... ERROR
+
+======================================================================
+ERROR: test_compile_sum_lowering (unittest.loader._FailedTest.test_compile_sum_lowering)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_compile_sum_lowering
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum/python312/lib/python3.12/unittest/loader.py", line 137, in loadTestsFromName
+    module = __import__(module_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/tests/test_compile_sum_lowering.py", line 6, in <module>
+    import torch_rs as native
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/python/torch_rs/__init__.py", line 1362, in <module>
+    from . import accelerator as accelerator
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/python/torch_rs/accelerator/__init__.py", line 5, in <module>
+    from typing_extensions import deprecated as _deprecated
+ModuleNotFoundError: No module named 'typing_extensions'
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (errors=1)

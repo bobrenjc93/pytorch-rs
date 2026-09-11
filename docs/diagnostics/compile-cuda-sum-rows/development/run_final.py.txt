@@ -1,0 +1,45 @@
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+root = Path.cwd()
+out = root / 'target/row-sum'
+sys.path.insert(0, str(root / 'scripts'))
+from evaluate_cuda_math import source_provenance, sha256
+receipt = {**source_provenance(), 'extension_sha256': sha256('python/torch_rs/torch_rs.abi3.so'),
+    'build_command': 'maturin build --offline --release --locked --interpreter .venv/bin/python --out target/row-sum/wheels',
+    'rustc': subprocess.check_output([os.environ['RUSTC'], '--version'], text=True).strip(),
+    'cargo': subprocess.check_output([os.environ['ROW_SUM_CARGO'], '--version'], text=True).strip(),
+    'nvcc': 'unused for native reduction; driver-JIT PTX',
+    'stage': 'development dirty worktree; Burner must recapture clean implementation commit',
+    'python': sys.version, 'executable': sys.executable, 'base_prefix': sys.base_prefix,
+    'wheel_sha256': {p.name:sha256(p) for p in (out/'wheels').glob('*.whl')}}
+(out/'final-build-record.json').write_text(json.dumps(receipt, indent=2)+'\n')
+py = sys.executable
+commands = [
+ ('focused-release', [py, '-m', 'unittest', '-v', 'tests.test_compile_sum_lowering', 'tests.test_compile_cuda_sum_rows', 'tests.test_cuda_sum_rows.CudaSumRowsTests.test_unsupported_boundaries_and_compiled_reductions'], {}),
+ ('two-device-release', [py, '-m', 'unittest', '-v', 'tests.test_compile_cuda_sum_rows.CompileCudaSumDeviceTests'], {'CUDA_VISIBLE_DEVICES':'0,1'}),
+ ('compiler-release', [py, '-m', 'unittest', '-v', 'tests.test_compile_corpus', 'tests.test_top_level_compile', 'tests.test_compile_static_analysis', 'tests.test_compile_tanh_composition', 'tests.test_cuda_compilation_evaluator'], {}),
+ ('cuda-compiler-release', [py, '-m', 'unittest', '-v', 'tests.test_compile_cuda_boundary', 'tests.test_compile_cuda_graph', 'tests.test_compile_cuda_neg', 'tests.test_compile_cuda_mul_scalar', 'tests.test_compile_cuda_trailing_vector', 'tests.test_compile_cuda_matmul'], {}),
+ ('hardware-release', [py, 'scripts/evaluate_cuda_compilation.py', '--build-record', str(out/'final-build-record.json'), '--output', str(out/'hardware-compilation-final.json')], {}),
+ ('frozen38-release', [py, 'scripts/evaluate_torch_compile_coverage.py'], {}),
+]
+for name, cmd, overrides in commands:
+    before = source_provenance()
+    started = time.time()
+    snapshot = ['nvidia-smi', '--query-gpu=index,uuid,name,driver_version,compute_cap,utilization.gpu,memory.used', '--format=csv']
+    (out/'logs'/f'{name}-gpu-before.csv').write_bytes(subprocess.check_output(snapshot))
+    with (out/'logs'/f'{name}.log').open('w') as log:
+        result = subprocess.run(cmd, env={**os.environ, **overrides}, stdout=log, stderr=subprocess.STDOUT)
+    (out/'logs'/f'{name}-gpu-after.csv').write_bytes(subprocess.check_output(snapshot))
+    record = {'command':cmd, 'environment_overrides':overrides, 'started_unix':started,
+              'finished_unix':time.time(), 'exit_code':result.returncode,
+              'source':before, 'source_unchanged':before==source_provenance(),
+              'extension_sha256':sha256('python/torch_rs/torch_rs.abi3.so'),
+              'log_sha256':sha256(out/'logs'/f'{name}.log')}
+    (out/'logs'/f'{name}.receipt.json').write_text(json.dumps(record, indent=2)+'\n')
+    print(name, result.returncode, flush=True)

@@ -1,0 +1,20 @@
+import ctypes
+import json
+from pathlib import Path
+import sys
+import torch_rs
+import torch_rs.torch_rs as extension
+x = torch_rs.ones((2,3)).to('cuda:0')
+paths = sorted({line.split()[-1] for line in Path('/proc/self/maps').read_text().splitlines()
+                if any(name in line for name in ('libcudart', 'libcuda.so', 'libnvidia-ptxjitcompiler'))})
+runtimes=[]
+for path in paths:
+    if 'libcudart' in path:
+        runtime = ctypes.CDLL(path)
+        version = ctypes.c_int()
+        status = runtime.cudaRuntimeGetVersion(ctypes.byref(version))
+        runtimes.append(dict(path=path, version=version.value, status=status))
+print(json.dumps(dict(python=sys.version, executable=sys.executable, prefix=sys.prefix,
+                     base_prefix=sys.base_prefix, package=torch_rs.__file__, extension=extension.__file__,
+                     cuda_libraries=paths, cuda_runtimes=runtimes,
+                     loaded_torch=[n for n in sys.modules if n=='torch' or n.startswith('torch.')]),indent=2))

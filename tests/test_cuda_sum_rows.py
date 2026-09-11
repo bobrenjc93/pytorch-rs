@@ -211,7 +211,9 @@ class CudaSumRowsTests(Comparison, unittest.TestCase):
             with self.assertRaises(TypeError):
                 native.sum(x, dim=1, dtype=dtype)
         for fullgraph in (False, True):
-            for program in (lambda a: a.sum(1), lambda a: native.sum(a, dim=-1, keepdim=True)):
+            compiled = native.compile(lambda a: a.sum(1), backend="eager", fullgraph=fullgraph)
+            self.assertEqual(compiled(x).cpu().tolist(), [5.] * 3)
+            for program in (lambda a: a.sum(0), lambda a: native.sum(a, dim=-1, keepdim=True)):
                 compiled = native.compile(program, backend="eager", fullgraph=fullgraph)
                 with self.assertRaises(NotImplementedError):
                     compiled(x)

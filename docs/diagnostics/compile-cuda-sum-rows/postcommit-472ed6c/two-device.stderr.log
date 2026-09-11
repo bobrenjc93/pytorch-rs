@@ -1,0 +1,6 @@
+test_current_device_restored_for_single_and_composed_reductions (tests.test_compile_cuda_sum_rows.CompileCudaSumDeviceTests.test_current_device_restored_for_single_and_composed_reductions) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.584s
+
+OK

@@ -154,6 +154,7 @@ class CompileTraceOperation:
     inputs: tuple[str, ...]
     metadata: CompileTraceTensorMetadata
     scalar: object = None
+    reduction: tuple[int, bool] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,7 +214,8 @@ _SUPPORTED_OPERATION_TARGETS = (
     _SUPPORTED_UNARY_TARGETS | _SUPPORTED_BINARY_TARGETS | _SUPPORTED_SCALAR_TARGETS
 )
 _SUPPORTED_OPERATION_DESCRIPTION = ", ".join(
-    (*_SUPPORTED_UNARY_METHODS, *_SUPPORTED_BINARY_METHODS, "Tensor.mul (CUDA scalar)")
+    (*_SUPPORTED_UNARY_METHODS, *_SUPPORTED_BINARY_METHODS,
+     "Tensor.mul (CUDA scalar)", "Tensor.sum (CUDA rank-two rows)")
 )
 
 
@@ -639,6 +641,22 @@ def _normalize_mul_scalar(value):
     return _native._compile_trace_mul_scalar_value(value)
 
 
+def _reduction_output_metadata(input_metadata, dim, keepdim):
+    if type(dim) is not int or dim not in (1, -1) or type(keepdim) is not bool:
+        raise CompileTraceUnsupportedError("torch.compile sum requires constant dim=1 or -1 and boolean keepdim")
+    if input_metadata.device.type != "cuda" or len(input_metadata.shape) != 2:
+        raise CompileTraceUnsupportedError("torch.compile sum requires rank-2 CUDA inputs")
+    _validate_cuda_metadata(input_metadata)
+    shape = (input_metadata.shape[0], 1) if keepdim else (input_metadata.shape[0],)
+    import sys
+    if shape[0] > sys.maxsize // 4:
+        raise OverflowError("torch.compile sum output exceeds native storage limits")
+    return CompileTraceTensorMetadata(
+        shape=shape, stride=_contiguous_stride(shape), dtype=float32,
+        device=input_metadata.device, requires_grad=False, storage_offset=0,
+    )
+
+
 def _scalar_output_metadata(input_metadata):
     if input_metadata.device.type != "cuda":
         raise CompileTraceUnsupportedError(
@@ -919,6 +937,10 @@ def _materialize_graph_output(
 
 
 def _execute_operation(operation, values):
+    if operation.op == "call_reduction":
+        return _native._compile_trace_reduction(
+            values[operation.inputs[0]], operation.target, *operation.reduction
+        )
     if operation.op != "call_method":
         raise CompileTraceUnsupportedError(
             "torch.compile trace execution only supports recorded Tensor "
@@ -974,7 +996,23 @@ def _execute_operation(operation, values):
 def _expected_operation_metadata(operation, metadata_values, *, grad_enabled):
     # Validate the complete node before any graph operation can execute, even
     # for graphs built manually or modified with dataclasses.replace().
-    if operation.op != "call_method":
+    if operation.op == "call_reduction":
+        if (operation.target != "sum" or len(operation.inputs) != 1
+                or operation.scalar is not None or type(operation.reduction) is not tuple
+                or len(operation.reduction) != 2):
+            raise CompileTraceUnsupportedError("torch.compile malformed reduction node")
+        expected = _reduction_output_metadata(
+            metadata_values[operation.inputs[0]], *operation.reduction
+        )
+        declared = operation.metadata
+        if (not isinstance(declared, CompileTraceTensorMetadata)
+                or declared.device != expected.device or declared.storage_offset != 0
+                or len(declared.shape) != len(expected.shape)
+                or (operation.reduction[1] and declared.shape[1] != 1)):
+            raise CompileTraceUnsupportedError("torch.compile malformed reduction metadata")
+        _validate_cuda_metadata(declared)
+        return expected
+    if operation.op != "call_method" or operation.reduction is not None:
         raise CompileTraceUnsupportedError("torch.compile trace requires call_method nodes")
     if operation.target in _SUPPORTED_SCALAR_TARGETS:
         if len(operation.inputs) != 1:
@@ -1157,7 +1195,8 @@ def execute_compile_trace_graph(graph, *inputs):
         indices = {name: index for index, name in enumerate(metadata_values)}
         nodes = [
             (operation.target, tuple(indices[name] for name in operation.inputs),
-             operation.scalar, metadata_values[operation.name].shape,
+             operation.reduction if operation.op == "call_reduction" else operation.scalar,
+             metadata_values[operation.name].shape,
              metadata_values[operation.name].stride)
             for operation in graph.operations
         ]
@@ -1287,6 +1326,9 @@ class CompileTraceTensorProxy:
                 "torch.compile trace Tensor.add only supports alpha=1"
             )
         return self._recorder.record_binary("add", self, other, "Tensor.add")
+
+    def sum(self, dim, keepdim=False):
+        return self._recorder.record_reduction(self, dim, keepdim)
 
     def matmul(self, other):
         return self._recorder.record_binary("matmul", self, other, "Tensor.matmul")
@@ -1461,6 +1503,17 @@ class CompileTraceRecorder:
             metadata=metadata,
         )
         self._operations.append(operation)
+        return CompileTraceTensorProxy(self, name, metadata)
+
+    def record_reduction(self, input, dim, keepdim):
+        self._ensure_open()
+        self._require_owned_proxy(input)
+        metadata = _reduction_output_metadata(input.metadata, dim, keepdim)
+        name = self._next_operation_name("sum")
+        self._operations.append(CompileTraceOperation(
+            name=name, op="call_reduction", target="sum", inputs=(input.name,),
+            metadata=metadata, reduction=(1, keepdim),
+        ))
         return CompileTraceTensorProxy(self, name, metadata)
 
     def record_scalar(self, target, input, scalar):

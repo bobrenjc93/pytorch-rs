@@ -1,0 +1,17 @@
+{
+  "commit": "563d55960332a9a09c5825da22e4212c053ce374",
+  "source_sha256": "2bec769fadb89e9e0f58e4a3356f26439637b49b1cf3a80b285fe6a985330d6d",
+  "production_diff_sha256": "3348e63e14039c91287dce86bf5e8920473933f0f74bffd615025cac3bb8b349",
+  "extension_sha256": "5751461a9ddf2447bdb0a3a51086bd5cef70bc263dc41a372dc12db764e5f5b5",
+  "build_command": "maturin build --offline --release --locked --interpreter .venv/bin/python --out target/row-sum/wheels",
+  "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+  "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)",
+  "nvcc": "unused for native reduction; driver-JIT PTX",
+  "stage": "development dirty worktree; Burner must recapture clean implementation commit",
+  "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv/bin/python",
+  "base_prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum/python312",
+  "wheel_sha256": {
+    "torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl": "a79138defd4073767c596a79e81c7db04f341edd4326b0d84e92d4e7593fd7b2"
+  }
+}

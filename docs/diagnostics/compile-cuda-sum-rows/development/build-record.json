@@ -1,0 +1,14 @@
+{
+  "commit": "563d55960332a9a09c5825da22e4212c053ce374",
+  "source_sha256": "435f744c120205e67ad2bb667a5f41e0cf26fdb2eda173f0e4acdc9ee4632134",
+  "production_diff_sha256": "ef69f1644d61ddaedb12724a44f27975fb49ddd1a9cf884a20d507e9a24f244c",
+  "extension_sha256": "7c62c948602db611ddfcfbac412ed637198c9f06dcd336d49e224b7a38ab75b1",
+  "build_command": "cargo build --offline --locked --release --features extension-module",
+  "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+  "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)",
+  "nvcc": "unused; existing row-sum PTX uses driver JIT",
+  "stage": "development dirty worktree; final clean-commit recapture belongs to Burner",
+  "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv/bin/python",
+  "base_prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum/python312"
+}

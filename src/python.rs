@@ -9786,6 +9786,50 @@ fn compile_trace_mul_scalar_value(scalar: &Bound<'_, PyAny>) -> PyResult<f32> {
     parse_top_level_mul_scalar(scalar)
 }
 
+// Exact constant options only: never invoke Python numeric/bool conversions.
+fn compile_trace_sum_options(dim: &Bound<'_, PyAny>, keepdim: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if !dim.is_exact_instance_of::<PyInt>()
+        || !keepdim.is_exact_instance_of::<PyBool>()
+        || !matches!(dim.extract::<i64>(), Ok(1 | -1))
+    {
+        return Err(PyNotImplementedError::new_err(
+            "torch.compile sum requires constant dim=1 or -1 and boolean keepdim",
+        ));
+    }
+    keepdim.extract()
+}
+
+#[pyfunction(name = "_compile_trace_reduction", signature = (input, target, dim, keepdim, /))]
+fn compile_trace_reduction(
+    input: &Bound<'_, PyAny>,
+    target: &str,
+    dim: &Bound<'_, PyAny>,
+    keepdim: &Bound<'_, PyAny>,
+) -> PyResult<PyTensor> {
+    if !input.is_exact_instance_of::<PyTensor>() {
+        return Err(PyTypeError::new_err(
+            "reduction requires exact native Tensor",
+        ));
+    }
+    if target != "sum" {
+        return Err(PyNotImplementedError::new_err(
+            "unsupported reduction target",
+        ));
+    }
+    let keepdim = compile_trace_sum_options(dim, keepdim)?;
+    let tensor = input.cast::<PyTensor>()?.try_borrow()?;
+    if !tensor.inner.is_cuda() {
+        return Err(PyNotImplementedError::new_err(
+            "torch.compile sum requires CUDA",
+        ));
+    }
+    tensor
+        .inner
+        .sum_rank_two_dimension(1, keepdim)
+        .map(PyTensor::new)
+        .map_err(|error| tensor_error(&error))
+}
+
 #[pyfunction(name = "_compile_trace_scalar", signature = (input, scalar, target, /))]
 fn compile_trace_scalar(
     input: &Bound<'_, PyAny>,
@@ -25931,6 +25975,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
     module.add_function(wrap_pyfunction!(compile_trace_unary, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_binary, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_scalar, module)?)?;
+    module.add_function(wrap_pyfunction!(compile_trace_reduction, module)?)?;
     module.add_function(wrap_pyfunction!(compile_cuda_graph::execute, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_mul_scalar_value, module)?)?;
     let exports = module.getattr("__all__")?;
@@ -25942,6 +25987,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
         "_compile_trace_unary",
         "_compile_trace_binary",
         "_compile_trace_scalar",
+        "_compile_trace_reduction",
         "_compile_trace_cuda_graph",
         "_compile_trace_mul_scalar_value",
     ] {
