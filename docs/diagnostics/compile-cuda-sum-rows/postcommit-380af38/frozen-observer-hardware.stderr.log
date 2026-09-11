@@ -1,0 +1,6 @@
+test_all_reference_and_candidate_cases_at_two_seeds (tests.test_cuda_compilation_evaluator.HardwareTests.test_all_reference_and_candidate_cases_at_two_seeds) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 105.496s
+
+OK

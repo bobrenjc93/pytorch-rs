@@ -1,0 +1,724 @@
+{
+  "base_commit": "563d55960332a9a09c5825da22e4212c053ce374",
+  "build": {
+    "build_command": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv/bin/maturin build --offline --release --locked --interpreter /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv/bin/python --out /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/wheels",
+    "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)",
+    "clean_snapshot": {
+      "commit": "380af38d9d8b8936569c23b2e77cc0ff970b98d0",
+      "production": {
+        "commit": "380af38d9d8b8936569c23b2e77cc0ff970b98d0",
+        "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "source_sha256": "2bec769fadb89e9e0f58e4a3356f26439637b49b1cf3a80b285fe6a985330d6d"
+      },
+      "source_files_sha256": "f888546337e1c4728891dafc7536ee5d6d52b301e2914fd6ce464f0f72ada598",
+      "status": "",
+      "tree": "1d487d678c2ec2fb300aff96996170e02deda7c5"
+    },
+    "commit": "380af38d9d8b8936569c23b2e77cc0ff970b98d0",
+    "dirty": false,
+    "extension_sha256": "c6e5a5793af2024c3363f2a946c5a6765280d8e8f29babce6553a4de73fc7832",
+    "fresh_cargo_target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/build",
+    "fresh_cargo_target_initially_absent": true,
+    "installed_extension_sha256": "c6e5a5793af2024c3363f2a946c5a6765280d8e8f29babce6553a4de73fc7832",
+    "nvcc": "unused for native reduction; driver-JIT PTX; host nvcc recorded separately",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "python_sources_matched": 59,
+    "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+    "source_sha256": "2bec769fadb89e9e0f58e4a3356f26439637b49b1cf3a80b285fe6a985330d6d",
+    "wheel": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "wheel_sha256": "244c9247b3a3d8dd123d3e058e758edc93797a5eba29f2070b82ca90b7eb7475"
+  },
+  "checks": {
+    "build": {
+      "elapsed_seconds": 45.986445903778076,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "frozen-observer-hardware": {
+      "elapsed_seconds": 106.290194272995,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "frozen38": {
+      "elapsed_seconds": 11.476136684417725,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "hardware-1": {
+      "elapsed_seconds": 102.14384269714355,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "hardware-2": {
+      "elapsed_seconds": 102.49818778038025,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "held-out": {
+      "elapsed_seconds": 12.983367443084717,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "install": {
+      "elapsed_seconds": 0.47788190841674805,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "installed-provenance": {
+      "elapsed_seconds": 0.5901010036468506,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "nvcc": {
+      "elapsed_seconds": 0.2721848487854004,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "observer-controls": {
+      "elapsed_seconds": 10.355146169662476,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "performance-fresh": {
+      "elapsed_seconds": 20.317010164260864,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "performance-reused": {
+      "elapsed_seconds": 16.29550075531006,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "preflight": {
+      "elapsed_seconds": 3.5934431552886963,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "python-3.10": {
+      "elapsed_seconds": 1.2438347339630127,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "python-3.11": {
+      "elapsed_seconds": 1.2373394966125488,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "python-3.13": {
+      "elapsed_seconds": 1.2179758548736572,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "python-3.14": {
+      "elapsed_seconds": 1.3538036346435547,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "runtime-3.10": {
+      "elapsed_seconds": 1.0047435760498047,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "runtime-3.11": {
+      "elapsed_seconds": 1.0977909564971924,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "runtime-3.12": {
+      "elapsed_seconds": 1.0924129486083984,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "runtime-3.13": {
+      "elapsed_seconds": 1.0517048835754395,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "runtime-3.14": {
+      "elapsed_seconds": 1.0957839488983154,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    "two-device": {
+      "elapsed_seconds": 4.2775139808654785,
+      "exit_code": 0,
+      "source_unchanged": true
+    }
+  },
+  "clean_through_all_captures": true,
+  "frozen_compile": {
+    "evidence": [
+      "torch_compile_program_coverage_evaluator_v9 executed corpus torch_compile_corpus_v13 with category weights summing to 100.",
+      "Reference PyTorch 2.13.0 from /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv/lib/python3.12/site-packages/torch/__init__.py compiled and ran all 38 selected eligible cases before scoring.",
+      "torch_rs from /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/python/torch_rs/__init__.py ran in a subprocess with installed PyTorch imports blocked and native lowerer/executor calls instrumented.",
+      "Public cases: cpu_float32_unary_abs_neg, cpu_float32_self_add, cpu_float32_abs_neg_reordered, cpu_float32_repeated_unary_chain, cpu_float32_add_unary_composition, cpu_float32_inference_relu_no_grad, cpu_float32_detach_alias_view, cpu_float32_float_identity_view, cpu_float32_training_unary_neg_abs_add, cpu_float32_decomposition_square_scalar, cpu_float32_custom_function_unary, cpu_float32_requires_grad_branch_unary, cpu_float32_dynamic_true_shape_stride_unary, cpu_float32_fullgraph_false_no_break_unary, cpu_float32_matrix_vector_add, cpu_float32_matrix_vector_add_method, cpu_float32_tensor_scalar_add, cpu_float32_scalar_tensor_add, cpu_float32_global_buffer_add, cpu_float32_tuple_list_output_pytree, cpu_float32_recompile_guard_unary_metadata, cpu_float32_recompile_guard_binary_metadata, cpu_float32_recompile_limit_reset. Held-out cases: cpu_float32_heldout_broadcast_chain, cpu_float32_heldout_scalar_left_broadcast, cpu_float32_heldout_global_weight_unary_add, cpu_float32_heldout_training_broadcast_neg_abs_add, cpu_float32_heldout_inference_relu_broadcast_no_grad, cpu_float32_heldout_detach_alias_view, cpu_float32_heldout_float_identity_rank3_view, cpu_float32_heldout_list_tuple_output_pytree, cpu_float32_heldout_decomposition_square_noncontiguous, cpu_float32_heldout_custom_function_binary, cpu_float32_heldout_requires_grad_branch_binary, cpu_float32_heldout_dynamic_false_binary, cpu_float32_heldout_fullgraph_false_no_break_binary, cpu_float32_heldout_guard_unary_metadata, cpu_float32_heldout_guard_binary_metadata.",
+      "tensor_arithmetic weight 12: 5/5 eligible passed; broadcasting weight 8: 6/6 eligible passed; modules_parameters_buffers weight 8: 2/2 eligible passed; inference weight 6: 2/2 eligible passed; training_autograd weight 8: 2/2 eligible passed; python_control_flow weight 8: 2/2 eligible passed; graph_breaks_fullgraph weight 8: 2/2 eligible passed; dynamic_shapes_symbolics weight 8: 2/2 eligible passed; mutation_aliasing_views weight 8: 2/2 eligible passed; containers_pytrees weight 6: 2/2 eligible passed; decompositions weight 6: 2/2 eligible passed; custom_functions weight 6: 2/2 eligible passed; recompilation_guards weight 4: 5/5 eligible passed; dtype_device_transitions weight 4: 2/2 eligible passed",
+      "Recompilation guards validated: unary_shape_stride_requires_grad_guards, binary_argument_metadata_guards, requires_grad_branch_unary_cache, bounded_limit_then_reset, heldout_requires_grad_branch_binary_cache, heldout_unary_rank3_metadata_mix, heldout_binary_broadcast_metadata_mix."
+    ],
+    "score": 100.0,
+    "suggestions": [
+      "Keep any quick screen as a strict subset of this corpus; run the default full evaluator for final scoring."
+    ],
+    "summary": "torch.compile coverage parity is 100.0/100 from 38/38 reference-eligible full corpus cases. Covered categories: tensor_arithmetic, broadcasting, modules_parameters_buffers, inference, training_autograd, python_control_flow, graph_breaks_fullgraph, dynamic_shapes_symbolics, mutation_aliasing_views, containers_pytrees, decompositions, custom_functions, recompilation_guards, dtype_device_transitions; all other weighted categories remain zero-credit until they have passing reference-compilable torch_rs cases."
+  },
+  "frozen_contracts": {
+    "docs/hardware-heterogeneity-matrix-v1.json": {
+      "base_sha256": "9691ee4f03715ab0eb737195bad264a13d12069f4e15e5db9eedbd812c8b7ffc",
+      "sha256": "9691ee4f03715ab0eb737195bad264a13d12069f4e15e5db9eedbd812c8b7ffc"
+    },
+    "python/torch_rs/_cuda_pointwise_kernel.py": {
+      "base_sha256": "267d861e29ebf4c65006d1159c53db28780a5a64ddd815a4e56765f38105e724",
+      "sha256": "267d861e29ebf4c65006d1159c53db28780a5a64ddd815a4e56765f38105e724"
+    },
+    "python/torch_rs/_cuda_pointwise_reduce_workload.py": {
+      "base_sha256": "9d9e5d2fb7dcd391f8b7a28a4b3362e555b5447382e1e154384b3796503c1e29",
+      "sha256": "9d9e5d2fb7dcd391f8b7a28a4b3362e555b5447382e1e154384b3796503c1e29"
+    },
+    "scripts/benchmark_compile_cuda.py": {
+      "base_sha256": "a1401b964e58a01a6bacc8bb941b7de37021c2a7861c3ef901a2fc8a5c784959",
+      "sha256": "a1401b964e58a01a6bacc8bb941b7de37021c2a7861c3ef901a2fc8a5c784959"
+    },
+    "scripts/evaluate_cuda_math.py": {
+      "base_sha256": "29a97d07bad0d82c261e28aa880de68cdf46df0731d5ff0aa9802ec5bb8e605b",
+      "sha256": "29a97d07bad0d82c261e28aa880de68cdf46df0731d5ff0aa9802ec5bb8e605b"
+    },
+    "scripts/evaluate_torch_compile_coverage.py": {
+      "base_sha256": "7dd5607216116c29a53405abe61be8a9ab6253e89ddee32b5f1a1de4cb19a9c3",
+      "sha256": "7dd5607216116c29a53405abe61be8a9ab6253e89ddee32b5f1a1de4cb19a9c3"
+    },
+    "tests/test_compile_corpus.py": {
+      "base_sha256": "3821efb12c45c38fcb70c42fc625fb188ff5ab5511ed438c775728cae3e500c8",
+      "sha256": "3821efb12c45c38fcb70c42fc625fb188ff5ab5511ed438c775728cae3e500c8"
+    }
+  },
+  "hardware": {
+    "hardware-1": {
+      "accounting": {
+        "cases": [
+          {
+            "case_id": "cuda_f32_compile_add_same_shape",
+            "credit": 1,
+            "trials": [
+              {
+                "credit": 1,
+                "reason": "passed",
+                "reference_eligible": true,
+                "seed": 6029585457145424764
+              },
+              {
+                "credit": 1,
+                "reason": "passed",
+                "reference_eligible": true,
+                "seed": 3746966417343885870
+              }
+            ]
+          },
+          {
+            "case_id": "cuda_f32_compile_add_trailing_vector",
+            "credit": 1,
+            "trials": [
+              {
+                "credit": 1,
+                "reason": "passed",
+                "reference_eligible": true,
+                "seed": 6029585457145424764
+              },
+              {
+                "credit": 1,
+                "reason": "passed",
+                "reference_eligible": true,
+                "seed": 3746966417343885870
+              }
+            ]
+          },
+          {
+            "case_id": "cuda_f32_compile_neg",
+            "credit": 1,
+            "trials": [
+              {
+                "credit": 1,
+                "reason": "passed",
+                "reference_eligible": true,
+                "seed": 6029585457145424764
+              },
+              {
+                "credit": 1,
+                "reason": "passed",
+                "reference_eligible": true,
+                "seed": 3746966417343885870
+              }
+            ]
+          },
+          {
+            "case_id": "cuda_f32_compile_mul_scalar",
+            "credit": 1,
+            "trials": [
+              {
+                "credit": 1,
+                "reason": "passed",
+                "reference_eligible": true,
+                "seed": 6029585457145424764
+              },
+              {
+                "credit": 1,
+                "reason": "passed",
+                "reference_eligible": true,
+                "seed": 3746966417343885870
+              }
+            ]
+          },
+          {
+            "case_id": "cuda_f32_compile_sum_rows",
+            "credit": 0,
+            "trials": [
+              {
+                "credit": 0,
+                "reason": "candidate_missing_failed_unsupported_or_invalid",
+                "reference_eligible": true,
+                "seed": 6029585457145424764
+              },
+              {
+                "credit": 0,
+                "reason": "candidate_missing_failed_unsupported_or_invalid",
+                "reference_eligible": true,
+                "seed": 3746966417343885870
+              }
+            ]
+          },
+          {
+            "case_id": "cuda_f32_compile_matmul",
+            "credit": 1,
+            "trials": [
+              {
+                "credit": 1,
+                "reason": "passed",
+                "reference_eligible": true,
+                "seed": 6029585457145424764
+              },
+              {
+                "credit": 1,
+                "reason": "passed",
+                "reference_eligible": true,
+                "seed": 3746966417343885870
+              }
+            ]
+          }
+        ],
+        "denominator": 6,
+        "fraction": 0.8333333333333334,
+        "passed": 5
+      },
+      "seeds": [
+        6029585457145424764,
+        3746966417343885870
+      ],
+      "verified_local_paths": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv/lib/python3.12/site-packages/torch/__init__.py",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/python/torch_rs/__init__.py",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/interpreters/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12"
+      ]
+    },
+    "hardware-2": {
+      "accounting": {
+        "cases": [
+          {
+            "case_id": "cuda_f32_compile_add_same_shape",
+            "credit": 1,
+            "trials": [
+              {
+                "credit": 1,
+                "reason": "passed",
+                "reference_eligible": true,
+                "seed": 2377763515611782021
+              },
+              {
+                "credit": 1,
+                "reason": "passed",
+                "reference_eligible": true,
+                "seed": 385647285228949986
+              }
+            ]
+          },
+          {
+            "case_id": "cuda_f32_compile_add_trailing_vector",
+            "credit": 1,
+            "trials": [
+              {
+                "credit": 1,
+                "reason": "passed",
+                "reference_eligible": true,
+                "seed": 2377763515611782021
+              },
+              {
+                "credit": 1,
+                "reason": "passed",
+                "reference_eligible": true,
+                "seed": 385647285228949986
+              }
+            ]
+          },
+          {
+            "case_id": "cuda_f32_compile_neg",
+            "credit": 1,
+            "trials": [
+              {
+                "credit": 1,
+                "reason": "passed",
+                "reference_eligible": true,
+                "seed": 2377763515611782021
+              },
+              {
+                "credit": 1,
+                "reason": "passed",
+                "reference_eligible": true,
+                "seed": 385647285228949986
+              }
+            ]
+          },
+          {
+            "case_id": "cuda_f32_compile_mul_scalar",
+            "credit": 1,
+            "trials": [
+              {
+                "credit": 1,
+                "reason": "passed",
+                "reference_eligible": true,
+                "seed": 2377763515611782021
+              },
+              {
+                "credit": 1,
+                "reason": "passed",
+                "reference_eligible": true,
+                "seed": 385647285228949986
+              }
+            ]
+          },
+          {
+            "case_id": "cuda_f32_compile_sum_rows",
+            "credit": 0,
+            "trials": [
+              {
+                "credit": 0,
+                "reason": "candidate_missing_failed_unsupported_or_invalid",
+                "reference_eligible": true,
+                "seed": 2377763515611782021
+              },
+              {
+                "credit": 0,
+                "reason": "candidate_missing_failed_unsupported_or_invalid",
+                "reference_eligible": true,
+                "seed": 385647285228949986
+              }
+            ]
+          },
+          {
+            "case_id": "cuda_f32_compile_matmul",
+            "credit": 1,
+            "trials": [
+              {
+                "credit": 1,
+                "reason": "passed",
+                "reference_eligible": true,
+                "seed": 2377763515611782021
+              },
+              {
+                "credit": 1,
+                "reason": "passed",
+                "reference_eligible": true,
+                "seed": 385647285228949986
+              }
+            ]
+          }
+        ],
+        "denominator": 6,
+        "fraction": 0.8333333333333334,
+        "passed": 5
+      },
+      "seeds": [
+        2377763515611782021,
+        385647285228949986
+      ],
+      "verified_local_paths": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv/lib/python3.12/site-packages/torch/__init__.py",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/python/torch_rs/__init__.py",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/interpreters/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12"
+      ]
+    }
+  },
+  "measured_commit": "380af38d9d8b8936569c23b2e77cc0ff970b98d0",
+  "observer_contract": "byte-for-byte main baseline; row-sum slot remains zero",
+  "private_performance": {
+    "performance-fresh": {
+      "common_success_geomean_speed_ratio": 1.2833239570884851,
+      "common_success_shape_count": 4,
+      "common_success_weight": 1.0,
+      "coverage_adjusted_capped_speed_ratio": 1.0,
+      "coverage_adjusted_overall_percent": 100.0,
+      "denominator_weight": 1.0,
+      "full_matrix_weight": 1.0,
+      "per_workload": [
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "square_256x256",
+          "pytorch_cold_first_call_us": 3215367.688,
+          "pytorch_steady_median_us": 41.849666666666664,
+          "shape": [
+            256,
+            256
+          ],
+          "steady_speed_ratio": 1.157304302938682,
+          "torch_rs_cold_first_call_us": 210.078,
+          "torch_rs_steady_median_us": 36.16133333333334,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "square_1024x1024",
+          "pytorch_cold_first_call_us": 834964.304,
+          "pytorch_steady_median_us": 47.595333333333336,
+          "shape": [
+            1024,
+            1024
+          ],
+          "steady_speed_ratio": 1.3148608578742842,
+          "torch_rs_cold_first_call_us": 181.644,
+          "torch_rs_steady_median_us": 36.198,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "tall_4096x256",
+          "pytorch_cold_first_call_us": 969832.227,
+          "pytorch_steady_median_us": 52.152,
+          "shape": [
+            4096,
+            256
+          ],
+          "steady_speed_ratio": 1.4059921997160265,
+          "torch_rs_cold_first_call_us": 157.619,
+          "torch_rs_steady_median_us": 37.092666666666666,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "wide_256x4096",
+          "pytorch_cold_first_call_us": 424901.434,
+          "pytorch_steady_median_us": 44.701,
+          "shape": [
+            256,
+            4096
+          ],
+          "steady_speed_ratio": 1.267753828701078,
+          "torch_rs_cold_first_call_us": 160.282,
+          "torch_rs_steady_median_us": 35.26,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        }
+      ],
+      "torch_rs_cuda_compile_score_percent": 100.0,
+      "workload_count": 4,
+      "zero_credit_cell_count": 0,
+      "zero_credit_unsupported_cell_count": 0,
+      "zero_credit_weight": 0
+    },
+    "performance-reused": {
+      "common_success_geomean_speed_ratio": 1.222468036806113,
+      "common_success_shape_count": 4,
+      "common_success_weight": 1.0,
+      "coverage_adjusted_capped_speed_ratio": 1.0,
+      "coverage_adjusted_overall_percent": 100.0,
+      "denominator_weight": 1.0,
+      "full_matrix_weight": 1.0,
+      "per_workload": [
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "square_256x256",
+          "pytorch_cold_first_call_us": 1945938.018,
+          "pytorch_steady_median_us": 41.763333333333335,
+          "shape": [
+            256,
+            256
+          ],
+          "steady_speed_ratio": 1.1955380827878397,
+          "torch_rs_cold_first_call_us": 125.42,
+          "torch_rs_steady_median_us": 34.93266666666666,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "square_1024x1024",
+          "pytorch_cold_first_call_us": 42290.959,
+          "pytorch_steady_median_us": 43.93966666666667,
+          "shape": [
+            1024,
+            1024
+          ],
+          "steady_speed_ratio": 1.0654881705828625,
+          "torch_rs_cold_first_call_us": 163.127,
+          "torch_rs_steady_median_us": 41.239,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "tall_4096x256",
+          "pytorch_cold_first_call_us": 41036.702,
+          "pytorch_steady_median_us": 53.851333333333336,
+          "shape": [
+            4096,
+            256
+          ],
+          "steady_speed_ratio": 1.4342507102272728,
+          "torch_rs_cold_first_call_us": 156.416,
+          "torch_rs_steady_median_us": 37.54666666666667,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        },
+        {
+          "candidate_status": "ok",
+          "capped_steady_speed_ratio": 1.0,
+          "eligible_cuda_compile_evidence": true,
+          "name": "wide_256x4096",
+          "pytorch_cold_first_call_us": 41337.497,
+          "pytorch_steady_median_us": 42.808,
+          "shape": [
+            256,
+            4096
+          ],
+          "steady_speed_ratio": 1.2223988425551358,
+          "torch_rs_cold_first_call_us": 160.183,
+          "torch_rs_steady_median_us": 35.019666666666666,
+          "weight": 0.25,
+          "weighted_score_contribution_percent": 25.0
+        }
+      ],
+      "torch_rs_cuda_compile_score_percent": 100.0,
+      "workload_count": 4,
+      "zero_credit_cell_count": 0,
+      "zero_credit_unsupported_cell_count": 0,
+      "zero_credit_weight": 0
+    }
+  },
+  "runtime": {
+    "3.10": {
+      "base_prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/interpreters/cpython-3.10-linux-x86_64-gnu",
+      "cuda_libraries": [
+        "/usr/lib64/libcuda.so.580.82.07",
+        "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcudart.so.13.0.96"
+      ],
+      "cuda_runtimes": [
+        {
+          "path": "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcudart.so.13.0.96",
+          "status": 0,
+          "version": 13000
+        }
+      ],
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/interpreters/cpython-3.10-linux-x86_64-gnu/bin/python3.10",
+      "extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/python/torch_rs/torch_rs.abi3.so",
+      "loaded_torch": [],
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/python/torch_rs/__init__.py",
+      "prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/interpreters/cpython-3.10-linux-x86_64-gnu",
+      "python": "3.10.21 (main, Sep  1 2026, 14:16:49) [Clang 22.1.3 ]"
+    },
+    "3.11": {
+      "base_prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/interpreters/cpython-3.11.16-linux-x86_64-gnu",
+      "cuda_libraries": [
+        "/usr/lib64/libcuda.so.580.82.07",
+        "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcudart.so.13.0.96"
+      ],
+      "cuda_runtimes": [
+        {
+          "path": "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcudart.so.13.0.96",
+          "status": 0,
+          "version": 13000
+        }
+      ],
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/interpreters/cpython-3.11-linux-x86_64-gnu/bin/python3.11",
+      "extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/python/torch_rs/torch_rs.abi3.so",
+      "loaded_torch": [],
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/python/torch_rs/__init__.py",
+      "prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/interpreters/cpython-3.11.16-linux-x86_64-gnu",
+      "python": "3.11.16 (main, Sep  1 2026, 14:18:37) [Clang 22.1.3 ]"
+    },
+    "3.12": {
+      "base_prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/interpreters/cpython-3.12.14-linux-x86_64-gnu",
+      "cuda_libraries": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+        "/usr/lib64/libcuda.so.580.82.07"
+      ],
+      "cuda_runtimes": [
+        {
+          "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+          "status": 0,
+          "version": 13000
+        }
+      ],
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv/bin/python",
+      "extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/python/torch_rs/torch_rs.abi3.so",
+      "loaded_torch": [],
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/python/torch_rs/__init__.py",
+      "prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/.venv",
+      "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]"
+    },
+    "3.13": {
+      "base_prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/interpreters/cpython-3.13.15-linux-x86_64-gnu",
+      "cuda_libraries": [
+        "/usr/lib64/libcuda.so.580.82.07",
+        "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcudart.so.13.0.96"
+      ],
+      "cuda_runtimes": [
+        {
+          "path": "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcudart.so.13.0.96",
+          "status": 0,
+          "version": 13000
+        }
+      ],
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/interpreters/cpython-3.13-linux-x86_64-gnu/bin/python3.13",
+      "extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/python/torch_rs/torch_rs.abi3.so",
+      "loaded_torch": [],
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/python/torch_rs/__init__.py",
+      "prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/interpreters/cpython-3.13.15-linux-x86_64-gnu",
+      "python": "3.13.15 (main, Sep  1 2026, 14:18:08) [Clang 22.1.3 ]"
+    },
+    "3.14": {
+      "base_prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/interpreters/cpython-3.14.7-linux-x86_64-gnu",
+      "cuda_libraries": [
+        "/usr/lib64/libcuda.so.580.82.07",
+        "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcudart.so.13.0.96"
+      ],
+      "cuda_runtimes": [
+        {
+          "path": "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcudart.so.13.0.96",
+          "status": 0,
+          "version": 13000
+        }
+      ],
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/interpreters/cpython-3.14-linux-x86_64-gnu/bin/python3.14",
+      "extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/python/torch_rs/torch_rs.abi3.so",
+      "loaded_torch": [],
+      "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/python/torch_rs/__init__.py",
+      "prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/interpreters/cpython-3.14.7-linux-x86_64-gnu",
+      "python": "3.14.7 (main, Sep  1 2026, 14:18:09) [Clang 22.1.3 ]"
+    }
+  },
+  "runtime_helper_sha256": "6e8a8a22259884f9f3fefbb42510c2a2316187745774d0856ff30ae8038a01ae",
+  "scope": "Evidence only; not independent review, branch approval, or merge gates."
+}

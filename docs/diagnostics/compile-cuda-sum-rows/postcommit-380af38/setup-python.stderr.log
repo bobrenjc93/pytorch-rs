@@ -1,0 +1,17 @@
+Downloading cpython-3.12.14-linux-x86_64-gnu (download) (32.6MiB)
+Downloading cpython-3.10.21-linux-x86_64-gnu (download) (27.9MiB)
+Downloading cpython-3.14.7-linux-x86_64-gnu (download) (34.3MiB)
+Downloading cpython-3.13.15-linux-x86_64-gnu (download) (33.2MiB)
+Downloading cpython-3.11.16-linux-x86_64-gnu (download) (29.4MiB)
+ Downloaded cpython-3.12.14-linux-x86_64-gnu (download)
+ Downloaded cpython-3.10.21-linux-x86_64-gnu (download)
+ Downloaded cpython-3.11.16-linux-x86_64-gnu (download)
+ Downloaded cpython-3.13.15-linux-x86_64-gnu (download)
+ Downloaded cpython-3.14.7-linux-x86_64-gnu (download)
+Installed 5 versions in 2.11s
+ + cpython-3.10.21-linux-x86_64-gnu (python3.10)
+ + cpython-3.11.16-linux-x86_64-gnu (python3.11)
+ + cpython-3.12.14-linux-x86_64-gnu (python3.12)
+ + cpython-3.13.15-linux-x86_64-gnu (python3.13)
+ + cpython-3.14.7-linux-x86_64-gnu (python3.14)
+warning: `/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/bin` is not on your PATH. To use installed Python executables, run `export PATH="/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/row-sum-postcommit-380af38/bin:$PATH"` or `uv python update-shell`.

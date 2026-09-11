@@ -38,9 +38,9 @@ capability independently of that score.
 
 Earlier captures below used the adapted reduction observer and retain their
 original implementation and harness identities. Their 6/6 results are not
-current canonical-observer scores. Fresh clean-commit captures using the
-restored observer remain a delivery prerequisite; no such new result is
-claimed here yet. Programs, seed policy, input distribution, tolerances,
+current canonical-observer scores. The fresh clean-commit captures below
+use the restored observer and record 5/6 with zero row-sum credit.
+Programs, seed policy, input distribution, tolerances,
 compile options, denominator, weights, the 38-case compiler corpus and the
 four-workload private performance suite are unchanged. Negative controls still
 reject Python forwarding, counterfeit hooks, body execution, re-lowering,
@@ -54,6 +54,71 @@ corrected to require that rejection; the rerun passed all six cases at both
 seeds without production or evaluator changes. These were dirty local checks,
 not the deferred clean capture. The initial failure output was truncated and
 its complete raw log was not archived; it is not represented as a passing run.
+
+## Clean canonical-observer capture (380af38)
+
+Fresh measurements use clean commit `380af38d9d8b8936569c23b2e77cc0ff970b98d0`.
+The scoring evaluator matches `main` byte-for-byte. The native implementation
+is unchanged from the earlier captures, but those captures used a different
+observer and are preserved only under their original identities.
+
+The release ABI3 extension was rebuilt with the committed, locked tooling in
+an initially absent local Cargo target. Worktree-local Python 3.10–3.14
+interpreters were installed; existing local Python dependencies and the Cargo
+registry cache were reused. All 23 build/measurement receipts record an empty
+Git status and unchanged source hashes before and after execution. Installed
+Python sources and the installed/source native extensions matched the build
+used by evaluator workers. The [build receipt](diagnostics/compile-cuda-sum-rows/postcommit-380af38/build-record.json),
+[setup record](diagnostics/compile-cuda-sum-rows/postcommit-380af38/setup.json),
+[provenance audit](diagnostics/compile-cuda-sum-rows/postcommit-380af38/audit.json),
+[source hashes](diagnostics/compile-cuda-sum-rows/postcommit-380af38/source-files.json)
+and [artifact hashes](diagnostics/compile-cuda-sum-rows/postcommit-380af38/artifact-sha256.json)
+bind the capture to this worktree and commit.
+
+| Check | Result | Raw evidence |
+| --- | --- | --- |
+| Held-out reduction/boundary tests | 14 tests; one expected two-device skip | [log](diagnostics/compile-cuda-sum-rows/postcommit-380af38/held-out.stderr.log) |
+| GPU0/GPU1 restoration | One test passed | [log](diagnostics/compile-cuda-sum-rows/postcommit-380af38/two-device.stderr.log) |
+| Python 3.10–3.14 lowering/native execution | Six tests passed per version; 3.12 included above | [3.10](diagnostics/compile-cuda-sum-rows/postcommit-380af38/python-3.10.stderr.log), [3.11](diagnostics/compile-cuda-sum-rows/postcommit-380af38/python-3.11.stderr.log), [3.13](diagnostics/compile-cuda-sum-rows/postcommit-380af38/python-3.13.stderr.log), [3.14](diagnostics/compile-cuda-sum-rows/postcommit-380af38/python-3.14.stderr.log) |
+| Observer/accounting negative controls | 17 tests passed | [log](diagnostics/compile-cuda-sum-rows/postcommit-380af38/observer-controls.stderr.log) |
+| Frozen-observer hardware regression | Passed all six cases at both test seeds, requiring row-sum rejection and correct outputs | [log](diagnostics/compile-cuda-sum-rows/postcommit-380af38/frozen-observer-hardware.stderr.log) |
+| Canonical hardware compilation, capture 1 | 5/6; row-sum slot zero on both evaluator-selected seeds | [report](diagnostics/compile-cuda-sum-rows/postcommit-380af38/hardware-1.json) |
+| Canonical hardware compilation, capture 2 | 5/6; row-sum slot zero on both evaluator-selected seeds | [report](diagnostics/compile-cuda-sum-rows/postcommit-380af38/hardware-2.json) |
+| Frozen compiler corpus | 38/38 | [report](diagnostics/compile-cuda-sum-rows/postcommit-380af38/frozen38.stdout.log) |
+| Private CUDA performance, fresh caches | 4/4; 1.2833x common-success ratio, 100.00% capped result | [report](diagnostics/compile-cuda-sum-rows/postcommit-380af38/performance-fresh.json) |
+| Private CUDA performance, reused caches | 4/4; 1.2225x common-success ratio, 100.00% capped result | [report](diagnostics/compile-cuda-sum-rows/postcommit-380af38/performance-reused.json) |
+
+Capture 1 selected seeds `6029585457145424764`, `3746966417343885870`;
+capture 2 selected `2377763515611782021`, `385647285228949986`. The four
+row-sum candidate trials retain status `failed` and error `invalid execution
+or compilation evidence`. Their initial and changed-input outputs match the
+reference, but the frozen observer records zero native returns from its old
+unary hook. These outcomes remain zero in the unchanged six-case denominator.
+The existing five cases pass. No observer adaptation or score increase is
+adopted by this capture.
+
+Both private kernel caches and the first run's CUDA/Inductor/Triton caches
+were initially absent; the second run reused them. The four-workload suite
+retained five warmups, 17 samples, three repetitions and equal weights.
+All reported slow results, warnings and rejected outcomes remain. Timing
+artifacts contain summary statistics, cold/factory accounting and checksums,
+not individual latency samples; their medians and distributions cannot be
+reconstructed from those summaries. These timings do not measure the new
+generic row-sum graph or establish universal compilation/performance parity.
+
+The host was NVIDIA H100 with driver 580.82.07. Ordinary runs used GPU0;
+only restoration used GPU0/GPU1. Rust 1.92.0 built the extension; native row
+sums use driver-JIT PTX, while the private kernels used nvcc 12.6.85. Main
+workers used local PyTorch 2.13.0+cu130 and CUDA runtime 13.0; standalone
+Python checks recorded the read-only system CUDA 13.0.96 runtime and no
+PyTorch imports. Interpreter/import/build/cache paths resolve inside this
+worktree; system compiler/driver/runtime paths are identified separately.
+
+All build and capture commands exited successfully; this does not turn the
+four rejected row-sum trials into passes. Historical evidence and documented
+development failures remain unchanged. The deferred canonical-observer
+capture is complete; separate observer-campaign review, independent candidate
+review and Burner's ordinary ten no-regression gates remain delivery steps.
 
 ## Clean implementation-commit capture
 

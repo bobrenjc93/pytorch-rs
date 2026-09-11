@@ -1,0 +1,10 @@
+[
+  {
+    "existed": false,
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/torch_rs_private_cuda_pointwise"
+  },
+  {
+    "existed": false,
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_468d83fa/target/torch_rs_private_cuda_pointwise_reduce"
+  }
+]
