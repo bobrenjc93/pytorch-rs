@@ -1122,7 +1122,7 @@ def _record_method_call(recorder, method, args, program, instruction, names=()):
         positional_args = values[:positional]
         kwargs = dict(zip(names, values[positional:]))
         binder = _trace._bind_view_shape if method.name == "view" else _trace._bind_reshape_shape
-        shape = binder(positional_args, kwargs)
+        shape = binder(positional_args, kwargs, method.receiver.metadata)
         return recorder._record_shape(method.receiver, shape, method.name)
     if method.name == "transpose":
         positional = len(args) - len(names)
@@ -1396,9 +1396,23 @@ def _handle_binary(recorder, locals, stack, program, instruction, state, active)
 
 
 def _handle_unary_neg(recorder, locals, stack, program, instruction, state, active):
-    del locals, state, active
+    del locals, active
+    operand = _pop(stack, program, instruction)
+    if not isinstance(operand, _trace.CompileTraceTensorProxy):
+        # As with bounded binary arithmetic, retain exact integer values only
+        # for public error validation. Never invoke a user __neg__ conversion,
+        # and keep the rejection even if the computed result is discarded.
+        value = _trace._RESHAPE_UNKNOWN_DIMENSION
+        if (isinstance(operand, _BytecodeConstant) and type(operand.value) is int
+                and -(2**63) <= operand.value < 2**63):
+            value = -operand.value
+        state.local_constant_error = state.local_constant_error or _trace.CompileTraceUnsupportedError(
+            "torch.compile computed unary values are only retained for argument validation"
+        )
+        stack.append(_BytecodeConstant(value))
+        return
     input = _require_tensor(
-        _pop(stack, program, instruction),
+        operand,
         program,
         instruction,
         "operand",

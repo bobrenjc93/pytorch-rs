@@ -1,6 +1,7 @@
 """Alias-only CUDA view capture: public differentials and fail-closed planning."""
 import ctypes
 from dataclasses import replace
+import dis
 import gc
 import subprocess
 import sys
@@ -124,6 +125,10 @@ class ViewMetadataTests(unittest.TestCase):
                                      ('(2**63, k//1)', TypeError),
                                      ('(2**63, (k//1)+1)', TypeError),
                                      ('(2**63, (k//1)*x)', TypeError),
+                                     ('(2**63, -k)', TypeError),
+                                     ('(-2, -k)', RuntimeError),
+                                     ('(0, True)', RuntimeError),
+                                     ('((2,1,1))', RuntimeError),
                                      ('(-2, True)', RuntimeError),
                                      ('((-1,-1,1))', RuntimeError)):
             fn = make_program(f'def program(x):\n    k = 1\n    a = -x\n    return a.view{expression}\n')
@@ -132,6 +137,47 @@ class ViewMetadataTests(unittest.TestCase):
                 with self.assertRaises(expected) as caught:
                     _compile_bytecode.lower_compile_graph(fn, (metadata,))
                 self.assertIs(type(caught.exception), expected)
+
+        class Poison:
+            def __neg__(self):
+                raise AssertionError('user negation')
+            def __index__(self):
+                raise AssertionError('user conversion')
+        fn = make_program('def program(x):\n    return -x\n')
+        instruction = next(i for i in dis.get_instructions(fn) if i.opname == 'UNARY_NEGATIVE')
+        state = _compile_bytecode._LoweringState(fn)
+        stack = [_compile_bytecode._BytecodeConstant(Poison())]
+        _compile_bytecode._handle_unary_neg(None, {}, stack, fn, instruction, state, ())
+        self.assertIs(stack[0].value, trace._RESHAPE_UNKNOWN_DIMENSION)
+        self.assertIsInstance(state.local_constant_error, trace.CompileTraceUnsupportedError)
+
+    def test_known_element_counts_before_capture_admission_without_hardware(self):
+        for method in ('view', 'reshape'):
+            for size, shape, message in ((1, (0, True), 'invalid for input of size 1'),
+                                         (1, (2, 1, 1), 'invalid for input of size 1'),
+                                         (0, (0, -1, 1), 'ambiguous'),
+                                         (0, (-1, False), 'ambiguous')):
+                recorder = trace.CompileTraceRecorder()
+                x = recorder.input(shape=(size,), device='cuda:0')
+                with self.subTest(method=method, size=size, shape=shape):
+                    with self.assertRaisesRegex(RuntimeError, message) as caught:
+                        getattr(x, method)(shape)
+                    self.assertIs(type(caught.exception), RuntimeError)
+                    self.assertEqual(recorder._operations, [])
+            for size, shape in ((1, (1, True)), (1, (1, 1, 1)),
+                                (0, (0, True)), (0, (0, 1, 1))):
+                x = trace.CompileTraceRecorder().input(shape=(size,), device='cuda:0')
+                with self.assertRaises(trace.CompileTraceUnsupportedError):
+                    getattr(x, method)(shape)
+        for planner in (trace._native._compile_trace_cuda_view_metadata,
+                        trace._native._compile_trace_cuda_reshape_metadata):
+            with self.assertRaisesRegex(RuntimeError, 'invalid for input of size 1') as caught:
+                planner((1,), (1,), 0, (2, 1, 1))
+            self.assertIs(type(caught.exception), RuntimeError)
+            with self.assertRaises(NotImplementedError):
+                planner((1,), (1,), 0, (1, 1, 1))
+            with self.assertRaises(TypeError):
+                planner((1,), (1,), 0, (0, True))
 
 
 
@@ -451,6 +497,12 @@ class CompileCudaViewTests(unittest.TestCase):
             ('(2**63, (k//1)+k)', TypeError, 'overflows signed int64'),
             ('(2**63, (k//1)*x)', TypeError, 'overflows signed int64'),
             ('(2**63, k+1.0)', TypeError, 'overflows signed int64'),
+            ('(2**63, -k)', TypeError, 'overflows signed int64'),
+            ('(-k, 2**63)', TypeError, 'overflows signed int64'),
+            ('(2**63, -(k//1))', TypeError, 'overflows signed int64'),
+            ('(2**63, -(-k)+1)', TypeError, 'overflows signed int64'),
+            ('(0, -k)', RuntimeError, 'invalid for input of size 1'),
+            ('(-2, -k)', RuntimeError, 'invalid shape dimension -2'),
             ('(-2, k//1)', RuntimeError, 'invalid shape dimension -2'),
             ('(-2, True)', RuntimeError, 'invalid shape dimension -2'),
             ('(size=(-2, True))', RuntimeError, 'invalid shape dimension -2'),
@@ -480,7 +532,8 @@ class CompileCudaViewTests(unittest.TestCase):
         # even if discarded. This includes division by zero and enormous shifts.
         for expression in ('k//1', 'k/1', 'k%1', 'k**1', 'k<<1', 'k>>1',
                            'k&1', 'k|1', 'k^1', 'k//0', 'k<<2**63', '[1,2,3]', '[*x]',
-                           '(k//1)+1', '(k//1)*x', '(k//1)@x', 'k+1.0'):
+                           '(k//1)+1', '(k//1)*x', '(k//1)@x', 'k+1.0',
+                           '-k', '-(-k)', '-(k//1)', '-(k//1)+1'):
             for body in (f'return x.view({expression})',
                          f'd = {expression}\n    return x',
                          f'd = {expression}\n    d = x\n    return d'):
@@ -490,6 +543,47 @@ class CompileCudaViewTests(unittest.TestCase):
                          patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('native execution')), \
                          patch.object(trace, '_execute_operation', side_effect=AssertionError('Python execution')):
                         compiled, cache = compile_with_cache(fn, fullgraph, dynamic)
+                        with self.assertRaises(trace.CompileTraceUnsupportedError):
+                            call_without_python(compiled, {fn.__code__}, x)
+                        self.assertFalse(cache.graphs)
+
+    def test_known_element_count_errors_before_unsupported_capture(self):
+        invalid = ((1, '(0, True)'), (1, '(1, False)'), (1, '(-1, False)'),
+                   (1, '((2, 1, 1))'), (1, '(size=(2, 1, 1))'),
+                   (0, '((0, -1, 1))'), (0, '(size=(0, -1, 1))'),
+                   (0, '((-1, 0, True))'), (6, '((4, -1, True))'))
+        for size, expression in invalid:
+            x, y = native.ones((size,)).to('cuda:0'), torch.ones((size,), device='cuda:0')
+            for prefix in ('a = x', 'a = -x'):
+                fn = make_program(f'def program(x):\n    {prefix}\n    return a.view{expression}\n')
+                with self.assertRaises(RuntimeError) as native_error:
+                    fn(x)
+                with self.assertRaises(RuntimeError) as reference_error:
+                    fn(y)
+                self.assertIs(type(native_error.exception), RuntimeError)
+                self.assertIs(type(reference_error.exception), RuntimeError)
+                self.assertEqual(str(native_error.exception), str(reference_error.exception))
+                for fullgraph, dynamic in POLICIES:
+                    compiled, cache = compile_with_cache(fn, fullgraph, dynamic)
+                    for attempt in range(2):
+                        with self.subTest(size=size, expression=expression, prefix=prefix, policy=(fullgraph, dynamic), attempt=attempt), \
+                             patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('native execution')), \
+                             patch.object(trace, '_execute_operation', side_effect=AssertionError('Python execution')):
+                            with self.assertRaises(RuntimeError) as caught:
+                                call_without_python(compiled, {fn.__code__}, x)
+                            self.assertIs(type(caught.exception), RuntimeError)
+                            self.assertEqual(str(caught.exception), str(reference_error.exception))
+                            self.assertFalse(cache.graphs)
+        for size, shape in ((1, (1, True)), (1, (1, 1, 1)), (0, (0, True)),
+                            (0, (0, 1, 1)), (6, (2, -1, True))):
+            x, y = native.ones((size,)).to('cuda:0'), torch.ones((size,), device='cuda:0')
+            for expression in (f'({shape!r})', f'(size={shape!r})'):
+                fn = make_program(f'def program(x):\n    return x.view{expression}\n')
+                self.assert_pair(fn(x), fn(y))
+                for fullgraph, dynamic in POLICIES:
+                    compiled, cache = compile_with_cache(fn, fullgraph, dynamic)
+                    with self.subTest(valid_out_of_scope=expression, size=size, policy=(fullgraph, dynamic)), \
+                         patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('native execution')):
                         with self.assertRaises(trace.CompileTraceUnsupportedError):
                             call_without_python(compiled, {fn.__code__}, x)
                         self.assertFalse(cache.graphs)

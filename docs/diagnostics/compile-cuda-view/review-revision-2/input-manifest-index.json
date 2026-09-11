@@ -1,0 +1,16 @@
+{
+  "0f35e9e0b9bacf419db011b961d5e87772738b869335c456426adf11f5bf31c5": {
+    "remove": [],
+    "replace": {
+      "python/torch_rs/_compile_bytecode.py": "88703a8b2497ec4abdd26c14f0cb5d8ec6c80a3182ea5c75c73235bab212db10",
+      "python/torch_rs/_compile_trace.py": "e389a5369635853b70834914b228c7b5b4ca18d74e0c5f1111fd1e4cfe57bab6",
+      "src/python_compile_cuda_graph.rs": "fc0d886052f77323262d4b4edb76188ff82b800a51a89a4e792d5a5e436abab8",
+      "src/tensor_cuda_graph.rs": "c22f45c20e63997686a7f49a9a0b9a6da37fe1085d021f98e8927128d3a2e059",
+      "tests/test_compile_cuda_view.py": "86fa7ab0621987574ab40f88e365f86e3f6affb0fab755e06c7a9b562ee963b7"
+    }
+  },
+  "52cd63ee1435eaf02cb17948a847bdb09118e118ca20ace67d3410c3b08c5fe9": {
+    "key": "52cd63ee1435eaf02cb17948a847bdb09118e118ca20ace67d3410c3b08c5fe9",
+    "reuse": "../review-revision/input-manifest-deltas.json"
+  }
+}

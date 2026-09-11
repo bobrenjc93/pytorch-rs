@@ -570,7 +570,7 @@ def _validate_reshape_dimension(dimension, index, method="reshape"):
     return True
 
 
-def _reshape_dimensions(shape, method="reshape"):
+def _reshape_dimensions(shape, method="reshape", metadata=None):
     if type(shape) is not tuple:
         raise CompileTraceUnsupportedError(f"torch.compile {method} requires an exact flat tuple")
     # PyTorch's schema checks the first dimension, then unpacks in order.
@@ -584,6 +584,23 @@ def _reshape_dimensions(shape, method="reshape"):
     # of opaque dimensions or the capture rank limit. Inspect exact ints only;
     # do not convert bools, index objects or subclasses to admit a shape.
     if not constant or len(shape) > 2:
+        if (metadata is not None and metadata.device.type == "cuda"
+                and len(metadata.shape) <= 2
+                and all(type(dimension) in (int, bool) for dimension in shape)):
+            _validate_cuda_metadata(metadata, require_contiguous=False)
+            # Exact later bools have known eager values without calling a user
+            # conversion. Normalize solely for validation, never for capture.
+            # The native resolver diagnoses count/ambiguous-inference errors
+            # before its rank limit; valid out-of-scope shapes still reject.
+            requested = tuple(1 if d is True else 0 if d is False else d for d in shape)
+            planner = (_native._compile_trace_cuda_view_metadata if method == "view"
+                       else _native._compile_trace_cuda_reshape_metadata)
+            try:
+                planner(metadata.shape, metadata.stride, metadata.storage_offset, requested)
+            except NotImplementedError:
+                # Keep the frontend's capture rejection for valid higher ranks
+                # or unsupported layouts, while propagating public errors.
+                pass
         inferred = False
         for index, dimension in enumerate(shape):
             if type(dimension) is not int:
@@ -614,7 +631,7 @@ def _validate_reshape_binding(args, kwargs):
             raise TypeError(f"reshape() got an unexpected keyword argument '{name}'")
 
 
-def _bind_reshape_shape(args, kwargs):
+def _bind_reshape_shape(args, kwargs, metadata=None):
     if not args and "shape" not in kwargs:
         raise TypeError('reshape() missing 1 required positional arguments: "shape"')
     first = args[0] if args else kwargs["shape"]
@@ -637,10 +654,10 @@ def _bind_reshape_shape(args, kwargs):
     if shape and type(shape[0]) is not int:
         _validate_reshape_dimension(shape[0], 0)
     _validate_reshape_binding(args, kwargs)
-    return _reshape_dimensions(shape)
+    return _reshape_dimensions(shape, metadata=metadata)
 
 
-def _bind_view_shape(args, kwargs):
+def _bind_view_shape(args, kwargs, metadata=None):
     # Unlike reshape(shape=...), view's overloaded parser rejects call
     # structure before unpacking dimensions. Never invoke either dtype overload
     # or user conversion methods while inspecting this bounded shape form.
@@ -673,7 +690,7 @@ def _bind_view_shape(args, kwargs):
         raise TypeError("view(): argument 'size' must be tuple of ints")
     else:
         shape = args
-    return _reshape_dimensions(shape, "view")
+    return _reshape_dimensions(shape, "view", metadata)
 
 
 def _view_output_metadata(metadata, shape):
@@ -685,7 +702,7 @@ def _reshape_output_metadata(metadata, shape):
 
 
 def _shape_output_metadata(metadata, shape, method):
-    shape = _reshape_dimensions(shape, method)
+    shape = _reshape_dimensions(shape, method, metadata)
     _validate_cuda_metadata(metadata, require_contiguous=False)
     if metadata.device.type != "cuda" or len(metadata.shape) > 2:
         raise CompileTraceUnsupportedError(f"torch.compile Tensor.{method} requires CUDA rank 0, 1 or 2")
@@ -1615,10 +1632,10 @@ class CompileTraceTensorProxy:
         return len(self.metadata.shape)
 
     def view(self, *args, **kwargs):
-        return self._recorder.record_view(self, _bind_view_shape(args, kwargs))
+        return self._recorder.record_view(self, _bind_view_shape(args, kwargs, self.metadata))
 
     def reshape(self, *args, **kwargs):
-        return self._recorder.record_reshape(self, _bind_reshape_shape(args, kwargs))
+        return self._recorder.record_reshape(self, _bind_reshape_shape(args, kwargs, self.metadata))
 
     def transpose(self, dim0, dim1):
         return self._recorder.record_transpose(self, dim0, dim1)

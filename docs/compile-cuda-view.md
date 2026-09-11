@@ -41,10 +41,13 @@ integer dimensions. Invalid bindings/types and signed-64-bit dimension overflow
 raise `TypeError`; invalid inferred sizes, element counts and incompatible
 layouts raise `RuntimeError`. Known argument errors remain checked alongside
 nonconstant dimensions. Known negative dimensions and repeated `-1` entries are
-validated before capture's exact-integer and rank restrictions. Literal/local
+validated before capture's exact-integer and rank restrictions. Determinable
+element-count and ambiguous-inference errors also use the native checked
+resolver before those restrictions, including exact later booleans and higher
+output ranks; valid out-of-scope shapes still reject capture. Literal/local
 lists (including CPython's list-extension form) and bounded exact integer
-arithmetic are retained only for argument validation; other unsupported binary
-expressions remain opaque and are never evaluated. Even unused or overwritten
+arithmetic and integer negation are retained only for argument validation; other
+unsupported binary expressions remain opaque and are never evaluated. Even unused or overwritten
 values still reject capture. No user index conversion is invoked. Lists, tuple/int
 subclasses, later boolean dimensions, symbolic/computed dimensions, scalar call
 inputs and dtype overloads (even same-dtype) remain unsupported capture. Eager
@@ -88,3 +91,8 @@ The [review revision diagnostics](diagnostics/compile-cuda-view/review-revision/
 record the subsequent public-error precedence fixes and their development checks.
 The earlier `12ac70fd` capture remains unchanged; the clean capture above
 measures the committed review revision.
+
+The [second review revision](diagnostics/compile-cuda-view/review-revision-2/README.md)
+records unary-expression and element-count validation fixes. Its fresh clean
+capture is required after Burner commits the revision; prior captures stay pinned
+to their original source identities.

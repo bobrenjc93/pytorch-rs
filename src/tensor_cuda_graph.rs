@@ -117,6 +117,10 @@ impl Layout {
         Ok(output)
     }
 
+    pub(crate) fn validate_requested_shape(&self, requested: &[i64]) -> Result<(), TensorError> {
+        Tensor::resolve_reshape_shape(requested, element_count(&self.shape)?).map(|_| ())
+    }
+
     fn reshape(&self, requested: Shape, alias_only: bool) -> Result<Self, TensorError> {
         if self.shape.len() > 2 || self.shape.len() != self.strides.len() {
             return Err(TensorError::UnsupportedCudaContiguous {
@@ -309,6 +313,32 @@ thread_local! {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shape_count_validation_does_not_admit_higher_rank_operations() {
+        let scalar = Layout {
+            shape: vec![],
+            strides: vec![],
+            offset: 7,
+        };
+        assert!(matches!(
+            scalar.validate_requested_shape(&[2, 1, 1]),
+            Err(TensorError::ReshapeElementCountMismatch { .. })
+        ));
+        let empty = Layout {
+            shape: vec![0],
+            strides: vec![1],
+            offset: 9,
+        };
+        assert!(matches!(
+            empty.validate_requested_shape(&[0, -1, 1]),
+            Err(TensorError::ReshapeAmbiguousZeroElements { .. })
+        ));
+        for (input, requested) in [(&scalar, [1, 1, 1]), (&empty, [0, 1, 1])] {
+            input.validate_requested_shape(&requested).unwrap();
+            assert!(Shape::new(&requested).is_err());
+        }
+    }
 
     #[test]
     fn reshape_plans_shared_views_and_device_packs() {

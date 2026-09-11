@@ -1,0 +1,9 @@
+set -eu
+source target/view-review2/env.sh
+capture() { .venv/bin/python target/view-review2/capture.py "$@"; }
+capture native-verification .venv/bin/python .github/scripts/verify_native_extension.py
+capture preflight .venv/bin/python docs/diagnostics/compile-cuda-view/preflight.py.txt
+capture compiler-current-source .venv/bin/python -m unittest -v tests/test_compile*.py tests/test_top_level_compile.py
+CUDA_VISIBLE_DEVICES=0,1 capture two-device .venv/bin/python -m unittest -v tests.test_compile_cuda_view.ViewDeviceTests tests.test_compile_cuda_reshape.ReshapeDeviceTests
+capture rust-storage cargo test --locked --offline --test cuda_contiguous --test cuda_native_boundaries -- --nocapture
+capture guide-examples .venv/bin/python docs/diagnostics/compile-cuda-view/guide_examples.py.txt

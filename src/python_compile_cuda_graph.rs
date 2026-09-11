@@ -35,14 +35,14 @@ fn exact_indices(value: &Bound<'_, PyAny>) -> PyResult<Vec<usize>> {
         .collect()
 }
 
-fn exact_shape(payload: &Bound<'_, PyAny>) -> PyResult<Shape> {
+fn exact_shape_dimensions(payload: &Bound<'_, PyAny>) -> PyResult<Vec<i64>> {
     if !payload.is_exact_instance_of::<PyTuple>() {
         return Err(PyTypeError::new_err(
             "shape payload requires an exact tuple",
         ));
     }
     let dimensions = payload.cast::<PyTuple>()?;
-    let requested = dimensions
+    dimensions
         .iter()
         .map(|dim| {
             if !dim.is_exact_instance_of::<PyInt>() {
@@ -53,7 +53,11 @@ fn exact_shape(payload: &Bound<'_, PyAny>) -> PyResult<Shape> {
             dim.extract::<i64>()
                 .map_err(|_| PyTypeError::new_err("shape dimension overflow"))
         })
-        .collect::<PyResult<Vec<_>>>()?;
+        .collect()
+}
+
+fn exact_shape(payload: &Bound<'_, PyAny>) -> PyResult<Shape> {
+    let requested = exact_shape_dimensions(payload)?;
     Shape::new(&requested).map_err(|error| tensor_error(&error))
 }
 
@@ -95,7 +99,15 @@ fn shape_metadata(
         strides: exact_indices(strides)?,
         offset: offset.extract()?,
     };
-    let requested = exact_shape(requested)?;
+    let dimensions = exact_shape_dimensions(requested)?;
+    if dimensions.len() > 2 && input.shape.len() <= 2 {
+        // Error validation does not admit higher-rank operations. Use eager's
+        // checked resolver before applying the unchanged graph rank bound.
+        input
+            .validate_requested_shape(&dimensions)
+            .map_err(|error| tensor_error(&error))?;
+    }
+    let requested = Shape::new(&dimensions).map_err(|error| tensor_error(&error))?;
     let operation = if alias_only {
         Operation::View(0, requested)
     } else {
