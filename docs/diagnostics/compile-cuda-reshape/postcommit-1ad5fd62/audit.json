@@ -1,0 +1,69 @@
+{
+  "all_measurements_clean": true,
+  "checks": {
+    "clippy": 0,
+    "compiler-regressions": 0,
+    "cpu-layout": 0,
+    "cuda-packing": 0,
+    "docs": 0,
+    "format": 0,
+    "hidden": 0,
+    "imports": 0,
+    "preflight": 0,
+    "python-imports": 0,
+    "reshape-final": 0,
+    "rust-final": 0,
+    "rust-packing": 0,
+    "two-device": 0
+  },
+  "extension_sha256": "b1402bc8c1510243090626715da87421337bed4e31458f16ecbefbe75bcc9297",
+  "historical_inventory_sha256": "fd3330e062f295ae7da730176ebbdc576da310c0b2d8532b6d04362bc01a5e8c",
+  "historical_inventory_unchanged": true,
+  "installed_native_matches_build": true,
+  "installed_python_matches_source": true,
+  "measured_commit": "1ad5fd620be0c0fb93638ee5061c9e1b2577cc35",
+  "measured_inputs_sha256": "6e35d91d63504af40083cf0683424f9f8c6f44fa8feb4babf8c9f6a760f7d36d",
+  "measurement_kind": "clean-code",
+  "one_shared_input_manifest": true,
+  "publication_policy": "evidence/docs only, after clean measurements; no implementation or harness edits",
+  "results": {
+    "compiler-regressions": {
+      "passed": 222,
+      "skipped": 10
+    },
+    "cpu-layout": {
+      "passed": 132,
+      "skipped": 0
+    },
+    "cuda-packing": {
+      "passed": 6,
+      "skipped": 1
+    },
+    "hidden": {
+      "passed": 2,
+      "skipped": 9
+    },
+    "reshape-final": {
+      "passed": 10,
+      "skipped": 1
+    },
+    "rust-final": {
+      "passed": 9,
+      "skipped": 0
+    },
+    "rust-packing": {
+      "passed": 1,
+      "skipped": 0
+    },
+    "two-device": {
+      "passed": 4,
+      "skipped": 0
+    }
+  },
+  "runtime_library_sha256": "96c42e418cec19054186b9429c321603cc190bf26a18104e19408117a2a817b0",
+  "source": {
+    "commit": "1ad5fd620be0c0fb93638ee5061c9e1b2577cc35",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source_sha256": "47f994869fcea5d443fc0d705d61385afb1960e4fe3632b5165a26f023ed17c1"
+  }
+}

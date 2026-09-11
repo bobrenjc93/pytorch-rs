@@ -1,0 +1,33 @@
+"""Run unchanged checks with source/native/input/command receipts."""
+import os, subprocess, sys
+from pathlib import Path
+ROOT=Path.cwd()
+python=str(ROOT/'.venv/bin/python')
+capture=[python, str(ROOT/'target/reshape-postcommit-1ad5fd62/capture.py')]
+def run(name,*args,visible='0'):
+    subprocess.run(capture+[name,*args],env={**os.environ,'CUDA_VISIBLE_DEVICES':visible},check=True)
+run('preflight',python,'target/reshape-postcommit-1ad5fd62/preflight.py')
+run('imports',python,'.github/scripts/verify_native_extension.py')
+run('python-imports',python,'target/reshape-postcommit-1ad5fd62/check_install.py')
+run('reshape-final',python,'-m','unittest','-v','tests.test_compile_cuda_reshape')
+run('compiler-regressions',python,'-m','unittest','-v',*[f'tests.{n}' for n in (
+    'test_compile_cuda_transpose','test_compile_cuda_t','test_compile_cuda_contiguous',
+    'test_compile_cuda_boundary','test_compile_cuda_graph','test_compile_cuda_neg',
+    'test_compile_cuda_mul_scalar','test_compile_cuda_matmul','test_compile_cuda_sum_rows',
+    'test_compile_cuda_trailing_vector','test_compile_sum_lowering','test_compile_static_analysis',
+    'test_top_level_compile','test_compile_corpus','test_compile_tanh_composition')])
+run('two-device',python,'-m','unittest','-v','tests.test_compile_cuda_reshape.ReshapeDeviceTests',
+    'tests.test_compile_cuda_transpose.TransposeDeviceTests', 'tests.test_compile_cuda_t.CompileTDeviceTests',
+    'tests.test_compile_cuda_contiguous.CompileContiguousDeviceTests',visible='0,1')
+run('cuda-packing',python,'-m','unittest','-v','tests.test_cuda_contiguous')
+run('hidden',python,'-m','unittest','-v','tests.test_compile_cuda_reshape',visible='')
+run('rust-final','cargo','test','--locked','--features','python-bindings','--lib','cuda_graph','--','--nocapture')
+run('rust-packing','cargo','test','--locked','--test','cuda_contiguous','--','--nocapture')
+run('cpu-layout',python,'-m','unittest','-v',*[f'tests.{n}' for n in (
+    'test_contiguous_reference','test_reshape','test_reshape_reference','test_view','test_view_reference',
+    'test_clone_channels_last','test_clone_channels_last_reference','test_transpose',
+    'test_transpose_reference','test_transpose_backward','test_tensor_t_method','test_tensor_t_method_reference',
+    'test_tensor_t','test_tensor_t_reference','test_readme_quickstart')])
+run('format','cargo','fmt','--check')
+run('docs',python,'target/reshape-postcommit-1ad5fd62/docs_example.py')
+run('clippy','cargo','clippy','--locked','--all-targets','--features','python-bindings','--','-D','warnings')

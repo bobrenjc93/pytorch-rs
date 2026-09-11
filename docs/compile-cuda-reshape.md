@@ -76,8 +76,11 @@ CUDA_VISIBLE_DEVICES='' .venv/bin/python -m unittest -v tests.test_compile_cuda_
 Hardware-only cases skip clearly when the required devices are unavailable.
 The [development capture](diagnostics/compile-cuda-reshape/README.md) records the
 fresh PR1977 baseline gap, installed release builds, failures and final checks.
-A fresh clean-commit capture remains pending Burner's delivery commit; this
-implementation agent does not commit or publish PRs. These graphlets are
+The separate [clean-commit capture](diagnostics/compile-cuda-reshape/postcommit-1ad5fd62/README.md)
+measures `1ad5fd620be0c0fb93638ee5061c9e1b2577cc35` with a fresh local environment
+and release build. H100 differentials, compiler and CPU/layout regressions,
+two-device restoration, CUDA-hidden portability, Rust checks, Clippy and the
+example above passed; hardware skips remain recorded. These graphlets are
 non-scoring diagnostics. Frozen38, performance workloads, evaluator definitions,
 observer/hardware contracts and the separate unadopted PR1970/PR1971 campaigns
 are unchanged.

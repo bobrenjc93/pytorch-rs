@@ -1,0 +1,251 @@
+{
+  "commit": "1ad5fd620be0c0fb93638ee5061c9e1b2577cc35",
+  "source": {
+    "commit": "1ad5fd620be0c0fb93638ee5061c9e1b2577cc35",
+    "source_sha256": "47f994869fcea5d443fc0d705d61385afb1960e4fe3632b5165a26f023ed17c1",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "candidate_diff_paths": [
+    "ARCHITECTURE.md",
+    "FEATURES.md",
+    "docs/README.md",
+    "docs/compile-cuda-contiguous.md",
+    "docs/compile-cuda-reshape.md",
+    "docs/compile-cuda-t.md",
+    "docs/diagnostics/compile-cuda-reshape/README.md",
+    "docs/diagnostics/compile-cuda-reshape/audit.json",
+    "docs/diagnostics/compile-cuda-reshape/baseline-gap.log",
+    "docs/diagnostics/compile-cuda-reshape/baseline-gap.py.txt",
+    "docs/diagnostics/compile-cuda-reshape/baseline-gap.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/baseline/build-record.json",
+    "docs/diagnostics/compile-cuda-reshape/baseline/build.log",
+    "docs/diagnostics/compile-cuda-reshape/baseline/commands.json",
+    "docs/diagnostics/compile-cuda-reshape/baseline/install.log",
+    "docs/diagnostics/compile-cuda-reshape/capture-initial.py.txt",
+    "docs/diagnostics/compile-cuda-reshape/capture.py.txt",
+    "docs/diagnostics/compile-cuda-reshape/check-install.py.txt",
+    "docs/diagnostics/compile-cuda-reshape/clippy-final.log",
+    "docs/diagnostics/compile-cuda-reshape/clippy-final.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/clippy-first.log",
+    "docs/diagnostics/compile-cuda-reshape/clippy-first.patch",
+    "docs/diagnostics/compile-cuda-reshape/clippy-first.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/clippy-second.log",
+    "docs/diagnostics/compile-cuda-reshape/clippy-second.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/compiler-regressions-final.log",
+    "docs/diagnostics/compile-cuda-reshape/compiler-regressions-final.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/compiler-regressions.log",
+    "docs/diagnostics/compile-cuda-reshape/compiler-regressions.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/cpu-layout.log",
+    "docs/diagnostics/compile-cuda-reshape/cpu-layout.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/cuda-packing.log",
+    "docs/diagnostics/compile-cuda-reshape/cuda-packing.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/development/build-record.json",
+    "docs/diagnostics/compile-cuda-reshape/development/build.log",
+    "docs/diagnostics/compile-cuda-reshape/development/commands.json",
+    "docs/diagnostics/compile-cuda-reshape/development/install.log",
+    "docs/diagnostics/compile-cuda-reshape/docs-example.py.txt",
+    "docs/diagnostics/compile-cuda-reshape/docs.log",
+    "docs/diagnostics/compile-cuda-reshape/docs.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/environment.sh.txt",
+    "docs/diagnostics/compile-cuda-reshape/final-build/build-record.json",
+    "docs/diagnostics/compile-cuda-reshape/final-build/build.log",
+    "docs/diagnostics/compile-cuda-reshape/final-build/commands.json",
+    "docs/diagnostics/compile-cuda-reshape/final-build/install.log",
+    "docs/diagnostics/compile-cuda-reshape/first-source-from-baseline.patch",
+    "docs/diagnostics/compile-cuda-reshape/first-test-fixture.patch",
+    "docs/diagnostics/compile-cuda-reshape/format.log",
+    "docs/diagnostics/compile-cuda-reshape/format.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/hidden.log",
+    "docs/diagnostics/compile-cuda-reshape/hidden.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/imports-baseline.log",
+    "docs/diagnostics/compile-cuda-reshape/imports-baseline.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/imports.log",
+    "docs/diagnostics/compile-cuda-reshape/imports.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/inputs-delta-422c816aea12.json",
+    "docs/diagnostics/compile-cuda-reshape/inputs-delta-73930f80f1f2.json",
+    "docs/diagnostics/compile-cuda-reshape/inputs-delta-95a79b77d3b4.json",
+    "docs/diagnostics/compile-cuda-reshape/inputs-delta-ba7639376f1b.json",
+    "docs/diagnostics/compile-cuda-reshape/inputs-delta-fb3ea619cca5.json",
+    "docs/diagnostics/compile-cuda-reshape/inventory.json",
+    "docs/diagnostics/compile-cuda-reshape/manifest-index.json",
+    "docs/diagnostics/compile-cuda-reshape/measured-inputs.json",
+    "docs/diagnostics/compile-cuda-reshape/old-boundaries.patch",
+    "docs/diagnostics/compile-cuda-reshape/preflight.log",
+    "docs/diagnostics/compile-cuda-reshape/preflight.py.txt",
+    "docs/diagnostics/compile-cuda-reshape/preflight.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/publish.py.txt",
+    "docs/diagnostics/compile-cuda-reshape/python-imports.log",
+    "docs/diagnostics/compile-cuda-reshape/python-imports.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/reshape-final.log",
+    "docs/diagnostics/compile-cuda-reshape/reshape-final.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/reshape-first.log",
+    "docs/diagnostics/compile-cuda-reshape/reshape-first.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/reshape-second.log",
+    "docs/diagnostics/compile-cuda-reshape/reshape-second.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/resume.py.txt",
+    "docs/diagnostics/compile-cuda-reshape/rust-final.log",
+    "docs/diagnostics/compile-cuda-reshape/rust-final.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/rust-first.log",
+    "docs/diagnostics/compile-cuda-reshape/rust-first.patch",
+    "docs/diagnostics/compile-cuda-reshape/rust-first.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/rust-packing-runtime-pinned.log",
+    "docs/diagnostics/compile-cuda-reshape/rust-packing-runtime-pinned.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/rust-packing.log",
+    "docs/diagnostics/compile-cuda-reshape/rust-packing.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/rust-runtime-pinned.log",
+    "docs/diagnostics/compile-cuda-reshape/rust-runtime-pinned.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/rust-second.log",
+    "docs/diagnostics/compile-cuda-reshape/rust-second.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/setup-commands.txt",
+    "docs/diagnostics/compile-cuda-reshape/setup.log",
+    "docs/diagnostics/compile-cuda-reshape/two-device.log",
+    "docs/diagnostics/compile-cuda-reshape/two-device.receipt.json",
+    "docs/diagnostics/compile-cuda-reshape/validate.py.txt",
+    "docs/diagnostics/compile-cuda-reshape/verified-build/build-record.json",
+    "docs/diagnostics/compile-cuda-reshape/verified-build/build.log",
+    "docs/diagnostics/compile-cuda-reshape/verified-build/commands.json",
+    "docs/diagnostics/compile-cuda-reshape/verified-build/install.log",
+    "docs/supported-surface.md",
+    "python/torch_rs/__init__.py",
+    "python/torch_rs/_compile_bytecode.py",
+    "python/torch_rs/_compile_trace.py",
+    "src/python.rs",
+    "src/python_compile_cuda_graph.rs",
+    "src/tensor.rs",
+    "src/tensor_cuda_graph.rs",
+    "tests/test_compile_cuda_contiguous.py",
+    "tests/test_compile_cuda_reshape.py",
+    "tests/test_compile_cuda_t.py"
+  ],
+  "historical_inventory_entries_verified": 92,
+  "historical_manifests_verified": 6,
+  "historical_checks": {
+    "baseline-gap": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": true,
+      "exit_status": 0
+    },
+    "imports-baseline": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": true,
+      "exit_status": 0
+    },
+    "reshape-first": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 1
+    },
+    "clippy-first": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 0
+    },
+    "rust-first": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 101
+    },
+    "rust-second": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 0
+    },
+    "reshape-second": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 0
+    },
+    "clippy-second": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 101
+    },
+    "clippy-final": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 0
+    },
+    "preflight": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 0
+    },
+    "imports": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 0
+    },
+    "python-imports": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 0
+    },
+    "reshape-final": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 0
+    },
+    "compiler-regressions": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 1
+    },
+    "two-device": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 0
+    },
+    "cuda-packing": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 0
+    },
+    "hidden": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 0
+    },
+    "rust-final": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 0
+    },
+    "rust-packing": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 0
+    },
+    "cpu-layout": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 0
+    },
+    "format": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 0
+    },
+    "docs": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 0
+    },
+    "rust-runtime-pinned": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 0
+    },
+    "rust-packing-runtime-pinned": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 0
+    },
+    "compiler-regressions-final": {
+      "commit": "7ee52792de45df190efecf0e5812c2416e4f96ea",
+      "clean": false,
+      "exit_status": 0
+    }
+  },
+  "committed_inputs_match_final_development_manifest": true,
+  "classification": "existing bundle remains development/baseline evidence; separate task-required clean-commit capture outstanding"
+}
