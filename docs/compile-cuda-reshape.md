@@ -79,27 +79,22 @@ CUDA_VISIBLE_DEVICES='' .venv/bin/python -m unittest -v tests.test_compile_cuda_
 ```
 
 Hardware-only cases skip clearly when the required devices are unavailable.
-The [preceding clean-commit capture](diagnostics/compile-cuda-reshape/postcommit-3d44687d/README.md)
-measures `3d44687d186bcc0f4d3a003676b5719353c80ab4` with a fresh local environment
-and release build, including both reviews' argument-validation regressions.
+The [latest clean-commit capture](diagnostics/compile-cuda-reshape/postcommit-73b74ec0/README.md)
+measures `73b74ec00a4608debc49ef0795231aa6298e68cb` with a fresh local environment
+and release build, including all three reviews' argument-validation regressions.
 H100 differentials, compiler and CPU/layout regressions, two-device restoration,
 CUDA-hidden portability, Rust checks, Clippy and the example above passed;
 hardware skips remain recorded.
 
-The [local-constant review](diagnostics/compile-cuda-reshape/local-constant-review/README.md)
-records the current fix's development checks and preserves the failing
-reproduction. H100 reshape/compiler, CPU/layout, packing, two-device,
-CUDA-hidden and example checks passed after a fresh release build. The preceding
-clean capture does not validate this fix; a fresh clean-commit capture remains
-required after Burner commits this revision.
-
 The [original development capture](diagnostics/compile-cuda-reshape/README.md)
 preserves the fresh PR1977 baseline gap and failed attempts. The
-[binding review](diagnostics/compile-cuda-reshape/binding-review/README.md) and
-[partial-argument review](diagnostics/compile-cuda-reshape/validation-review/README.md)
+[binding review](diagnostics/compile-cuda-reshape/binding-review/README.md),
+[partial-argument review](diagnostics/compile-cuda-reshape/validation-review/README.md) and
+[local-constant review](diagnostics/compile-cuda-reshape/local-constant-review/README.md)
 retain their development failures and checks. Earlier clean captures at
-[`1ad5fd62`](diagnostics/compile-cuda-reshape/postcommit-1ad5fd62/README.md) and
-[`7533cbbc`](diagnostics/compile-cuda-reshape/postcommit-7533cbbc/README.md) remain
+[`1ad5fd62`](diagnostics/compile-cuda-reshape/postcommit-1ad5fd62/README.md),
+[`7533cbbc`](diagnostics/compile-cuda-reshape/postcommit-7533cbbc/README.md) and
+[`3d44687d`](diagnostics/compile-cuda-reshape/postcommit-3d44687d/README.md) remain
 pinned to their original code and build identities.
 
 These graphlets are non-scoring diagnostics. Frozen38, performance workloads,
