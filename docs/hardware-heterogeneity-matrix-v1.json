@@ -150,7 +150,74 @@
     },
     {
       "id": "dtypes_layout_views",
-      "weight": 15
+      "weight": 15,
+      "case_sets": [
+        {
+          "version": "cuda_dtypes_layout_views_v1",
+          "backend": "cuda_nvidia",
+          "device": "cuda:0",
+          "case_aggregation": "equal_fraction_fixed_denominator",
+          "input_distribution": "Python random.Random(seed); float32 uniform(-2, 2) rounded to IEEE float32; float64 uniform(-2, 2) without narrowing; int64 signed integers with magnitude in [2**53, 2**60).",
+          "seed_policy": "At least two distinct nonnegative evaluator-selected seeds; all observations and mutations must pass for case credit.",
+          "comparison": "Exact values, dtype, shape, strides, offset, native device pointers, bidirectional aliasing or copy independence, and source preservation.",
+          "cases": [
+            {
+              "id": "cuda_f64_device_roundtrip",
+              "operation": "device_roundtrip",
+              "dtype": "float64",
+              "shape": [
+                7,
+                13
+              ]
+            },
+            {
+              "id": "cuda_i64_device_roundtrip",
+              "operation": "device_roundtrip",
+              "dtype": "int64",
+              "shape": [
+                7,
+                13
+              ]
+            },
+            {
+              "id": "cuda_f32_transpose_alias",
+              "operation": "transpose_alias",
+              "dtype": "float32",
+              "shape": [
+                7,
+                13
+              ]
+            },
+            {
+              "id": "cuda_f32_offset_slice_alias",
+              "operation": "offset_slice_alias",
+              "dtype": "float32",
+              "shape": [
+                7,
+                13
+              ]
+            },
+            {
+              "id": "cuda_f32_transposed_contiguous",
+              "operation": "transposed_contiguous",
+              "dtype": "float32",
+              "shape": [
+                7,
+                13
+              ]
+            },
+            {
+              "id": "cuda_f32_transposed_reshape_copy",
+              "operation": "transposed_reshape_copy",
+              "dtype": "float32",
+              "shape": [
+                7,
+                13
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "math_reductions_linalg",

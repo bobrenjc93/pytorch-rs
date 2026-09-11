@@ -489,3 +489,70 @@ execution evidence, actual environment and clean statuses. Original source
 captures remain unchanged. This is bounded accounting of existing capability,
 not a new compiler feature or an automatic overall-score increase. Evidence-only
 publication, independent review and managed merge gates remain Burner-owned.
+
+## Fixed CUDA dtype, layout and view denominator
+
+`cuda_dtypes_layout_views_v1` fixes six equally weighted cases in the existing
+CUDA `dtypes_layout_views` capability (weight 15). All backend weights,
+capability weights, and previous case sets are preserved. Every case starts
+with a `(7, 13)` tensor, without gradients.
+
+| Case ID | Public behavior | Output shape, strides, offset |
+| --- | --- | --- |
+| `cuda_f64_device_roundtrip` | CPU float64 `.to("cuda:0")`, then both `.cpu()` and `.to("cpu")` | `(7, 13)`, `(13, 1)`, 0 |
+| `cuda_i64_device_roundtrip` | The same roundtrip with int64 | `(7, 13)`, `(13, 1)`, 0 |
+| `cuda_f32_transpose_alias` | CUDA float32 `.transpose(0, 1)` shares storage | `(13, 7)`, `(1, 13)`, 0 |
+| `cuda_f32_offset_slice_alias` | CUDA float32 `[:, 1:12]` shares storage | `(7, 11)`, `(13, 1)`, 1 |
+| `cuda_f32_transposed_contiguous` | CUDA float32 `.transpose(0, 1).contiguous()` copies | `(13, 7)`, `(7, 1)`, 0 |
+| `cuda_f32_transposed_reshape_copy` | CUDA float32 `.transpose(0, 1).reshape(91)` requires a copy | `(91,)`, `(1,)`, 0 |
+
+The separate runner is `scripts/evaluate_cuda_dtypes_layout_views.py`. It reuses
+the existing math evaluator's import blocker, source/runtime provenance and
+CUDA driver inspection, and the transfer evaluator's float32 storage inspection
+and fixture initializer; those helpers are unchanged. Reference and candidate
+operations run in separate isolated Python processes for every case and seed.
+No compilation evaluator is imported or modified.
+
+Inputs come from evaluator-owned `random.Random(seed)`: float32 values are
+uniform in `[-2, 2]`, rounded to float32; float64 uses unrounded double precision
+samples; int64 uses randomly signed magnitudes in `[2**53, 2**60)`. Thus dtype
+labels alone cannot satisfy precision checks. The four float32 fixtures use
+public rank-one CUDA allocation, driver initialization, and a contiguous reshape;
+the driver never implements an evaluated view, materialization or roundtrip.
+
+The independent oracle checks exact logical values, dtype, shape, strides,
+storage offset and device. Driver pointer attributes must identify unmanaged
+CUDA device-0 storage. Source snapshots must survive the operation unchanged.
+Mutations from base to output and output to base verify aliasing in both
+directions, or independence for copies. Both downloaded CPU copies must remain
+independent of the original CPU source, of each other, and of device mutations.
+All checks and seeds belong to their original case slot.
+
+Run a fresh locked release extension build into an empty worktree-local Cargo
+target, extract the wheel's native extension into `python/torch_rs`, and record
+its hash with `evaluate_cuda_math.source_provenance()`, the exact build command,
+Rust/Cargo versions, profile and compiler selection. Supply that receipt as
+`--build-record` (the required keys are `commit`, `source_sha256`,
+`extension_sha256`, `build_command`, `rustc`, `cargo`, and `nvcc`). Then run:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python -B scripts/evaluate_cuda_dtypes_layout_views.py \
+  --build-record path/inside/worktree/build-record.json \
+  --output path/inside/worktree/results.json
+```
+
+Omitting `--seed` selects and records two independent random evaluator seeds.
+Explicit replay requires at least two distinct nonnegative seeds, each supplied
+with `--seed`. The report binds production source, evaluator, matrix, reused
+helpers and extension hashes, and records the selected runtimes per worker.
+Missing, skipped, unsupported, forwarded, malformed, duplicate or unbound
+results retain zero-credit slots. Missing or malformed build receipts still
+produce all six slots. Exit 0 means all reference trials are eligible; candidate
+support must be read from `accounting`, not the exit status. Portable accounting
+tests require no GPU; their hardware reference test skips clearly without CUDA.
+
+The [clean-commit H100 capture](evaluation-data/cuda-dtypes-layout-views-v1-h100/postcommit-072e1c45/README.md)
+records two-seed execution of all six cases at `072e1c45e78b0e22a881d34807e842ce8f74b0f1`.
+It is denominator validation, not implementation impact or an overall score.
+Unsupported behavior is left for implementation planning after this denominator
+merges.

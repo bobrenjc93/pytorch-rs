@@ -1,0 +1,74 @@
+[
+  {
+    "label": "dependency-check",
+    "command": [
+      "uv",
+      "pip",
+      "check",
+      "--python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd/.venv/bin/python"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd",
+    "started_at": "2026-09-11T02:04:43.468720+00:00",
+    "finished_at": "2026-09-11T02:04:43.521605+00:00",
+    "elapsed_seconds": 0.052905346266925335,
+    "exit_code": 0,
+    "git_status_before": "",
+    "git_status_after": ""
+  },
+  {
+    "label": "build",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd/.venv/bin/maturin",
+      "build",
+      "--release",
+      "--locked",
+      "--out",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd/target/dtypes-postcommit-072e1c45/wheels"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd",
+    "started_at": "2026-09-11T02:04:43.666290+00:00",
+    "finished_at": "2026-09-11T02:05:30.306219+00:00",
+    "elapsed_seconds": 46.63995431084186,
+    "exit_code": 0,
+    "git_status_before": "",
+    "git_status_after": ""
+  },
+  {
+    "label": "evaluator",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd/.venv/bin/python",
+      "-B",
+      "scripts/evaluate_cuda_dtypes_layout_views.py",
+      "--build-record",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd/target/dtypes-postcommit-072e1c45/build-record.json",
+      "--output",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd/target/dtypes-postcommit-072e1c45/results.json"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd",
+    "started_at": "2026-09-11T02:05:30.826869+00:00",
+    "finished_at": "2026-09-11T02:06:17.197319+00:00",
+    "elapsed_seconds": 46.37047724891454,
+    "exit_code": 0,
+    "git_status_before": "",
+    "git_status_after": ""
+  },
+  {
+    "label": "accounting-tests",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd/.venv/bin/python",
+      "-B",
+      "-m",
+      "unittest",
+      "tests.test_cuda_dtypes_layout_views_evaluator.AccountingTests",
+      "tests.test_cuda_dtypes_layout_views_evaluator.IsolationTests"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd",
+    "started_at": "2026-09-11T02:06:17.484865+00:00",
+    "finished_at": "2026-09-11T02:06:18.311382+00:00",
+    "elapsed_seconds": 0.8265516879037023,
+    "exit_code": 0,
+    "git_status_before": "",
+    "git_status_after": ""
+  }
+]
