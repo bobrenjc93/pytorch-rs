@@ -912,6 +912,7 @@ def _materialize_graph_output(
     dynamic=False,
     metadata_values=None,
     memo=None,
+    metadata_memo=None,
     metadata_only=False,
 ):
     if _builtins.isinstance(output_spec, _builtins.str):
@@ -960,7 +961,30 @@ def _materialize_graph_output(
         )
 
     output_spec_id = _builtins.id(output_spec)
+    if metadata_memo is None:
+        metadata_memo = set()
+    metadata_pair = (output_spec_id, _builtins.id(metadata_spec))
+    if metadata_pair in metadata_memo and output_spec_id in memo:
+        return memo[output_spec_id]
+    metadata_memo.add(metadata_pair)
+
+    # Reuse output objects, but validate each distinct metadata declaration.
+    # Identity keys keep equal-valued malformed fields (such as True/1) apart.
     if output_spec_id in memo:
+        for index, (child_output, child_metadata) in enumerate(
+            zip(output_spec.elements, metadata_spec.elements)
+        ):
+            _materialize_graph_output(
+                child_output,
+                child_metadata,
+                values,
+                value_name=f"{value_name}[{index}]",
+                dynamic=dynamic,
+                metadata_values=metadata_values,
+                memo=memo,
+                metadata_memo=metadata_memo,
+                metadata_only=metadata_only,
+            )
         return memo[output_spec_id]
 
     if output_spec.kind == "list":
@@ -975,6 +999,7 @@ def _materialize_graph_output(
                 dynamic=dynamic,
                 metadata_values=metadata_values,
                 memo=memo,
+                metadata_memo=metadata_memo,
                 metadata_only=metadata_only,
             )
             for index, (child_output, child_metadata) in enumerate(
@@ -992,6 +1017,7 @@ def _materialize_graph_output(
             dynamic=dynamic,
             metadata_values=metadata_values,
             memo=memo,
+            metadata_memo=metadata_memo,
             metadata_only=metadata_only,
         )
         for index, (child_output, child_metadata) in enumerate(

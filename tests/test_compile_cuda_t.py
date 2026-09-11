@@ -229,6 +229,62 @@ class CompileCudaTTests(unittest.TestCase):
             cache.graphs[key] = graph
             self.assertEqual(compiled(x).cpu().tolist(), [[-1.]])
 
+    def test_repeated_containers_validate_each_metadata_pair_on_cache_hits(self):
+        def replace_leaf(spec, change):
+            if isinstance(spec, trace.CompileTraceTensorMetadata):
+                return replace(spec, **change)
+            return replace(spec, elements=tuple(replace_leaf(child, change) for child in spec.elements))
+
+        def leaf(value):
+            while isinstance(value, (tuple, list)):
+                value = value[0]
+            return value
+
+        x = native.ones((1, 1)).to('cuda:0')
+        for expression in ('[x.t()]', '(x.t(),)', '([x.t()],)', '[(x.t(),)]'):
+            fn = make_program(f'def program(x):\n    y = {expression}\n    return y, y\n')
+            for dynamic in (False, True):
+                with self.subTest(expression=expression, dynamic=dynamic):
+                    torch._dynamo.reset()
+                    compiled, cache = compile_with_cache(fn, dynamic=dynamic)
+                    reference = torch.compile(fn, backend='eager', fullgraph=True, dynamic=dynamic)
+                    actual, expected = compiled(x), reference(torch.ones((1, 1), device='cuda:0'))
+                    self.assertIs(actual[0], actual[1])
+                    self.assertIs(expected[0], expected[1])
+                    self.assertIsNot(leaf(actual), x)
+                    self.assert_pair(leaf(actual), leaf(expected))
+                    key, graph = next(iter(cache.graphs.items()))
+                    self.assertIs(graph.output.elements[0], graph.output.elements[1])
+                    first, second = graph.output_metadata.elements
+
+                    # An equal, independently constructed metadata tree must
+                    # still preserve the returned container and tensor aliases.
+                    equivalent = replace_leaf(second, {})
+                    self.assertIsNot(equivalent, first)
+                    metadata = replace(graph.output_metadata, elements=(first, equivalent))
+                    cache.graphs[key] = replace(graph, output_metadata=metadata)
+                    with patch.object(_compile_bytecode, 'lower_compile_graph', side_effect=AssertionError('cache miss')):
+                        actual = compiled(x)
+                    self.assertIs(actual[0], actual[1])
+                    self.assertIs(leaf(actual[0]), leaf(actual[1]))
+
+                    for change in ({'shape': (True, 1)}, {'shape': (1., 1)},
+                                   {'stride': (True, 1)}, {'storage_offset': 0.},
+                                   {'requires_grad': 0}, {'device': 'cuda:1'}):
+                        invalid = replace_leaf(second, change)
+                        metadata = replace(graph.output_metadata, elements=(first, invalid))
+                        cache.graphs[key] = replace(graph, output_metadata=metadata)
+                        with patch.object(_compile_bytecode, 'lower_compile_graph', side_effect=AssertionError('cache miss')), \
+                             patch.object(trace._native, '_compile_trace_cuda_graph', wraps=trace._native._compile_trace_cuda_graph) as native_calls, \
+                             patch.object(trace, '_execute_operation', side_effect=AssertionError('Python operation')):
+                            with self.assertRaises((ValueError, NotImplementedError)):
+                                compiled(x)
+                            native_calls.assert_not_called()
+                    cache.graphs[key] = graph
+                    actual = compiled(x)
+                    self.assertIs(actual[0], actual[1])
+                    self.assertEqual(leaf(actual).cpu().tolist(), [[1.]])
+
     def test_strided_arithmetic_and_public_scope_remain_rejected(self):
         x = native.ones((3, 7)).to('cuda:0')
         expressions = ('-a', 'a * 2', 'a + a', 'a @ a', 'a.sum(1)',

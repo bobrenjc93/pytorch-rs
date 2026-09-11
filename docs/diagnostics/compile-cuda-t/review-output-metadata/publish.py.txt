@@ -1,0 +1,91 @@
+"""Audit review-repair diagnostics using existing repository provenance helpers."""
+import hashlib, json, shutil, subprocess, sys, zipfile
+from pathlib import Path
+ROOT = Path.cwd().resolve()
+SRC = ROOT/'target/t-review-output-metadata'
+OUT = ROOT/'docs/diagnostics/compile-cuda-t/review-output-metadata'
+sys.path.insert(0, str(ROOT/'scripts'))
+from evaluate_cuda_math import source_provenance
+
+def sha(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+def encoded(value): return (json.dumps(value, indent=2, sort_keys=True)+'\n').encode()
+def write(p, value): p.write_bytes(encoded(value))
+
+source = source_provenance()
+assert source['commit'] == '48d88b94c328336517c261653d131994c874452a'
+release = json.loads((SRC/'release/build-record.json').read_text())
+assert all(source[k] == release[k] for k in source)
+assert not release['clean_checkout'] and release['measurement_kind'] == 'precommit-diagnostic'
+for key in ('extension_path', 'source_extension_path', 'wheel_path', 'interpreter_path'):
+    assert Path(release[key]).resolve().is_relative_to(ROOT), key
+assert sha(release['extension_path']) == sha(release['source_extension_path']) == release['extension_sha256']
+assert sha(release['wheel_path']) == release['wheel_sha256']
+with zipfile.ZipFile(release['wheel_path']) as wheel:
+    member, = [p for p in wheel.namelist() if p.endswith('.so')]
+    assert hashlib.sha256(wheel.read(member)).hexdigest() == release['extension_sha256']
+installed_files = 0
+for path in (ROOT/'python/torch_rs').rglob('*.py'):
+    installed = ROOT/'.venv/lib/python3.12/site-packages'/path.relative_to(ROOT/'python')
+    assert path.read_bytes() == installed.read_bytes(), path
+    installed_files += 1
+manifests = {sha(p): json.loads(p.read_text()) for p in SRC.glob('inputs-*.json')}
+receipts = {}
+final_manifest_hash = None
+red_manifest_hash = None
+for path in sorted(SRC.glob('*.receipt.json')):
+    record = json.loads(path.read_text())
+    name = path.name.removesuffix('.receipt.json')
+    is_red = name == 'repeated-output-red'
+    assert record['exit_status'] == (1 if is_red else 0), name
+    assert record['source_before'] == record['source_after'], name
+    if not is_red:
+        assert record['source_before'] == source, name
+        final_manifest_hash = record['measured_inputs_sha256']
+    else:
+        assert record['source_before']['source_sha256'] == '7398e4f13c0878e303e0743da9f86f6685f06c907aa52cdd7b79c05f72deb546'
+        red_manifest_hash = record['measured_inputs_sha256']
+    assert record['git_status_before'] == record['git_status_after'], name
+    assert record['inputs_unchanged'] and record['measured_inputs_sha256'] in manifests, name
+    assert record['cwd'] == str(ROOT) and sha(SRC/(name+'.log')) == record['log_sha256'], name
+    for native_paths in (record['native_before'], record['native_after']):
+        assert len(native_paths) == 2
+        assert all(Path(p).resolve().is_relative_to(ROOT) for p in native_paths), name
+        assert set(native_paths.values()) == {release['extension_sha256']}, name
+    receipts[name] = sha(path)
+assert set(receipts) == {'repeated-output-red', 'release-build', 'imports', 'preflight',
+                        'compiled-t', 'compiler-regressions', 'no-device', 'docs'}
+final_manifest = manifests[final_manifest_hash]
+for path, digest in final_manifest.items(): assert sha(ROOT/path) == digest, path
+red_manifest = manifests[red_manifest_hash]
+assert red_manifest.keys() == final_manifest.keys()
+red_delta = {p: digest for p, digest in red_manifest.items() if final_manifest[p] != digest}
+assert set(red_delta) == {'python/torch_rs/_compile_trace.py'}
+assert hashlib.sha256(encoded(final_manifest | red_delta)).hexdigest() == red_manifest_hash
+for command in release['commands']:
+    assert command['exit_status'] == 0 and sha(command['log']) == command['log_sha256']
+for old in (ROOT/'docs/diagnostics/compile-cuda-t', ROOT/'docs/diagnostics/compile-cuda-t/postcommit-e01f1d0f'):
+    for p, digest in json.loads((old/'inventory.json').read_text()).items():
+        assert sha(old/p) == digest, p
+write(SRC/'audit.json', {'source': source, 'measurement_kind': 'precommit-diagnostic',
+      'release_native_sha256': release['extension_sha256'],
+      'wheel_and_installed_and_source_native_match': True,
+      'installed_python_matches_source': True, 'installed_python_files': installed_files,
+      'final_measured_inputs_sha256': final_manifest_hash,
+      'red_measured_inputs_sha256': red_manifest_hash,
+      'all_final_measured_inputs_match_current_source': True,
+      'failed_reproduction_preserved': True, 'command_receipt_sha256': receipts,
+      'earlier_evidence_inventories_unchanged': True,
+      'clean_repair_capture': 'pending Burner implementation commit; prior clean evidence predates this repair'})
+OUT.mkdir(parents=True, exist_ok=False)
+for p in SRC.iterdir():
+    if p.is_file() and p.suffix in ('.log', '.json') and not p.name.startswith('inputs-'):
+        shutil.copyfile(p, OUT/p.name)
+write(OUT/'measured-inputs.json', final_manifest)
+write(OUT/'red-inputs-delta.json', red_delta)
+for name in ('environment.sh', 'capture.py', 'preflight.py', 'publish.py'):
+    shutil.copyfile(SRC/name, OUT/(name+'.txt'))
+(OUT/'release').mkdir()
+for p in (SRC/'release').iterdir():
+    if p.is_file() and p.suffix in ('.log', '.json'):
+        shutil.copyfile(p, OUT/'release'/p.name)
+print('Review-repair evidence audit passed:', OUT)

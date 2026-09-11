@@ -34,8 +34,9 @@ apply. Static captures guard shape/stride/offset; dynamic captures allow size
 changes while retaining rank/stride/offset guards and replanning each operation.
 Both planners validate the entire graph before execution. Metadata field types
 are checked before equality, including early/late nodes, cached declarations
-and output leaves. All actual inputs and captures, including unused captures,
-must be on the same CUDA device.
+and output leaves. Repeated output containers retain identity while each distinct
+output/metadata pairing is validated. All actual inputs and captures, including
+unused captures, must be on the same CUDA device.
 
 Arguments, rank >2, CPU capture, other dtypes, gradients, general
 transpose/permute/reshape, `.T`/`.mT`, top-level `torch.t` and new backends remain
@@ -58,12 +59,18 @@ Hardware-only tests skip clearly without the required devices. Rust test-only
 accounting checks zero native operations for malformed early/late nodes; it is
 absent from release builds and does not alter scoring observers.
 
-The [clean-commit capture](diagnostics/compile-cuda-t/postcommit-e01f1d0f/README.md)
+The [initial clean-commit capture](diagnostics/compile-cuda-t/postcommit-e01f1d0f/README.md)
 measured `e01f1d0f69dffa8018e1b333bb5ab642ce9fdcb9` with a fresh locked `.venv`
 and release build. H100 t/packing differentials, compiler regressions, strict
 metadata negatives, two-device restoration, focused Rust and CPU/docs checks
 passed. Source, installed imports, native binary and clean status are verified
-in its receipts. No required clean capture remains deferred.
+in its receipts. It predates the repeated-output metadata repair.
+
+The [review-repair diagnostics](diagnostics/compile-cuda-t/review-output-metadata/README.md)
+preserve the failing reproduction and fresh release-build validation of that
+repair, including static/dynamic cache-hit rejection before native execution.
+These are source-bound development measurements; a fresh clean-code capture
+remains required after Burner commits the repair.
 
 The [original development bundle](diagnostics/compile-cuda-t/README.md), including
 the fresh PR1975 baseline reproduction and failed attempts, remains unchanged.

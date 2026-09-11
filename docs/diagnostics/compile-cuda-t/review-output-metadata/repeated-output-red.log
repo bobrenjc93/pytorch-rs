@@ -1,0 +1,88 @@
+test_repeated_containers_validate_each_metadata_pair_on_cache_hits (tests.test_compile_cuda_t.CompileCudaTTests.test_repeated_containers_validate_each_metadata_pair_on_cache_hits) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+
+  test_repeated_containers_validate_each_metadata_pair_on_cache_hits (tests.test_compile_cuda_t.CompileCudaTTests.test_repeated_containers_validate_each_metadata_pair_on_cache_hits) (expression='[x.t()]', dynamic=False) ... FAIL
+  test_repeated_containers_validate_each_metadata_pair_on_cache_hits (tests.test_compile_cuda_t.CompileCudaTTests.test_repeated_containers_validate_each_metadata_pair_on_cache_hits) (expression='[x.t()]', dynamic=True) ... FAIL
+  test_repeated_containers_validate_each_metadata_pair_on_cache_hits (tests.test_compile_cuda_t.CompileCudaTTests.test_repeated_containers_validate_each_metadata_pair_on_cache_hits) (expression='(x.t(),)', dynamic=False) ... FAIL
+  test_repeated_containers_validate_each_metadata_pair_on_cache_hits (tests.test_compile_cuda_t.CompileCudaTTests.test_repeated_containers_validate_each_metadata_pair_on_cache_hits) (expression='(x.t(),)', dynamic=True) ... FAIL
+  test_repeated_containers_validate_each_metadata_pair_on_cache_hits (tests.test_compile_cuda_t.CompileCudaTTests.test_repeated_containers_validate_each_metadata_pair_on_cache_hits) (expression='([x.t()],)', dynamic=False) ... FAIL
+  test_repeated_containers_validate_each_metadata_pair_on_cache_hits (tests.test_compile_cuda_t.CompileCudaTTests.test_repeated_containers_validate_each_metadata_pair_on_cache_hits) (expression='([x.t()],)', dynamic=True) ... FAIL
+  test_repeated_containers_validate_each_metadata_pair_on_cache_hits (tests.test_compile_cuda_t.CompileCudaTTests.test_repeated_containers_validate_each_metadata_pair_on_cache_hits) (expression='[(x.t(),)]', dynamic=False) ... FAIL
+  test_repeated_containers_validate_each_metadata_pair_on_cache_hits (tests.test_compile_cuda_t.CompileCudaTTests.test_repeated_containers_validate_each_metadata_pair_on_cache_hits) (expression='[(x.t(),)]', dynamic=True) ... FAIL
+
+======================================================================
+FAIL: test_repeated_containers_validate_each_metadata_pair_on_cache_hits (tests.test_compile_cuda_t.CompileCudaTTests.test_repeated_containers_validate_each_metadata_pair_on_cache_hits) (expression='[x.t()]', dynamic=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/tests/test_compile_cuda_t.py", line 280, in test_repeated_containers_validate_each_metadata_pair_on_cache_hits
+    with self.assertRaises((ValueError, NotImplementedError)):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: (<class 'ValueError'>, <class 'NotImplementedError'>) not raised
+
+======================================================================
+FAIL: test_repeated_containers_validate_each_metadata_pair_on_cache_hits (tests.test_compile_cuda_t.CompileCudaTTests.test_repeated_containers_validate_each_metadata_pair_on_cache_hits) (expression='[x.t()]', dynamic=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/tests/test_compile_cuda_t.py", line 280, in test_repeated_containers_validate_each_metadata_pair_on_cache_hits
+    with self.assertRaises((ValueError, NotImplementedError)):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: (<class 'ValueError'>, <class 'NotImplementedError'>) not raised
+
+======================================================================
+FAIL: test_repeated_containers_validate_each_metadata_pair_on_cache_hits (tests.test_compile_cuda_t.CompileCudaTTests.test_repeated_containers_validate_each_metadata_pair_on_cache_hits) (expression='(x.t(),)', dynamic=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/tests/test_compile_cuda_t.py", line 280, in test_repeated_containers_validate_each_metadata_pair_on_cache_hits
+    with self.assertRaises((ValueError, NotImplementedError)):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: (<class 'ValueError'>, <class 'NotImplementedError'>) not raised
+
+======================================================================
+FAIL: test_repeated_containers_validate_each_metadata_pair_on_cache_hits (tests.test_compile_cuda_t.CompileCudaTTests.test_repeated_containers_validate_each_metadata_pair_on_cache_hits) (expression='(x.t(),)', dynamic=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/tests/test_compile_cuda_t.py", line 280, in test_repeated_containers_validate_each_metadata_pair_on_cache_hits
+    with self.assertRaises((ValueError, NotImplementedError)):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: (<class 'ValueError'>, <class 'NotImplementedError'>) not raised
+
+======================================================================
+FAIL: test_repeated_containers_validate_each_metadata_pair_on_cache_hits (tests.test_compile_cuda_t.CompileCudaTTests.test_repeated_containers_validate_each_metadata_pair_on_cache_hits) (expression='([x.t()],)', dynamic=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/tests/test_compile_cuda_t.py", line 280, in test_repeated_containers_validate_each_metadata_pair_on_cache_hits
+    with self.assertRaises((ValueError, NotImplementedError)):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: (<class 'ValueError'>, <class 'NotImplementedError'>) not raised
+
+======================================================================
+FAIL: test_repeated_containers_validate_each_metadata_pair_on_cache_hits (tests.test_compile_cuda_t.CompileCudaTTests.test_repeated_containers_validate_each_metadata_pair_on_cache_hits) (expression='([x.t()],)', dynamic=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/tests/test_compile_cuda_t.py", line 280, in test_repeated_containers_validate_each_metadata_pair_on_cache_hits
+    with self.assertRaises((ValueError, NotImplementedError)):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: (<class 'ValueError'>, <class 'NotImplementedError'>) not raised
+
+======================================================================
+FAIL: test_repeated_containers_validate_each_metadata_pair_on_cache_hits (tests.test_compile_cuda_t.CompileCudaTTests.test_repeated_containers_validate_each_metadata_pair_on_cache_hits) (expression='[(x.t(),)]', dynamic=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/tests/test_compile_cuda_t.py", line 280, in test_repeated_containers_validate_each_metadata_pair_on_cache_hits
+    with self.assertRaises((ValueError, NotImplementedError)):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: (<class 'ValueError'>, <class 'NotImplementedError'>) not raised
+
+======================================================================
+FAIL: test_repeated_containers_validate_each_metadata_pair_on_cache_hits (tests.test_compile_cuda_t.CompileCudaTTests.test_repeated_containers_validate_each_metadata_pair_on_cache_hits) (expression='[(x.t(),)]', dynamic=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_d034beaf/tests/test_compile_cuda_t.py", line 280, in test_repeated_containers_validate_each_metadata_pair_on_cache_hits
+    with self.assertRaises((ValueError, NotImplementedError)):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: (<class 'ValueError'>, <class 'NotImplementedError'>) not raised
+
+----------------------------------------------------------------------
+Ran 1 test in 5.709s
+
+FAILED (failures=8)
