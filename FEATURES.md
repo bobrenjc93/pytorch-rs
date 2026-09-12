@@ -228,11 +228,11 @@ The generic eager compiler also captures unmarked one- and two-input native
 CUDA float32 negation/ReLU/addition graphs with equal addition operand shapes or
 exactly `(M,N)` and `(N,)` in either order, using contiguous layouts,
 including unary `-`, `Tensor.neg()`/`negative()`/`relu()`, positional native-module
-and imported-alias `add(x, y)`/`neg(x)`/`negative(x)`, scalar/empty/offset inputs,
+and imported-alias `add(x, y)`/`neg(x)`/`negative(x)`/`relu(x)`, scalar/empty/offset inputs,
 self-addition, chains, and global captures. Negation and ReLU allocate fresh contiguous
 CUDA storage with offset zero.
 CUDA metadata and caches guard the actual device ordinal and storage offset.
-Other CUDA unary operations except `Tensor.relu()`, parameterless `contiguous()` and bounded `t()`/`transpose()`/`reshape()`/`view()`, closures, broader
+Other CUDA unary operations except the documented negation/ReLU calls, parameterless `contiguous()` and bounded `t()`/`transpose()`/`reshape()`/`view()`, closures, broader
 broadcasting, gradients and mixed devices remain unsupported. Arithmetic still
 requires contiguous operands. This is bounded graph capture under explicit
 `backend="eager"` and the existing fullgraph options, with no new fusion or

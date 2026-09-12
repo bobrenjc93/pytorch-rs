@@ -1,0 +1,33 @@
+--- final
++++ test-module-relu-focused.py.txt
+@@ -315,30 +315,7 @@
+                     self.exact_error(trace.CompileTraceUnsupportedError, lambda: failed(x))
+                     self.assertEqual(empty.graphs, {})
+             self.compare(failed(x), tx.relu())
+-            saved = bindings.pop(field)
+-            try:
+-                self.exact_error(trace.CompileTraceUnsupportedError, lambda: limited(x))
+-                self.assertEqual(len(one.graphs), 1)
+-            finally:
+-                bindings[field] = saved
+             self.compare(limited(x), tx.relu())
+-        fn = expression('m.relu(x)')
+-        f, cache = compile_with_cache(fn, limit=1)
+-        self.compare(f(x), tx.relu())
+-        fake_module = types.ModuleType('torch_rs')
+-        fake_module.__dict__.update(vars(native))
+-        for module in (fake_module, types.SimpleNamespace(relu=genuine_relu), Hostile()):
+-            with patch.dict(fn.__globals__, {'m': module}):
+-                self.exact_error(trace.CompileTraceUnsupportedError, lambda: f(x))
+-        self.compare(f(x), tx.relu())
+-        self.assertEqual(len(cache.graphs), 1)
+-        # A canonical unary substitution in either direction follows identity.
+-        fn = expression('m.neg(x)')
+-        f, cache = compile_with_cache(fn)
+-        self.compare(f(x), -tx)
+-        with patch.object(native, 'neg', genuine_relu):
+-            self.compare(f(x), tx.relu())
+-        self.assertEqual(len(cache.graphs), 2)
+         # Identical code with separate global dictionaries never shares bindings.
+         first = expression('r(x)')
+         second = types.FunctionType(first.__code__, {**first.__globals__, 'r': native.neg})

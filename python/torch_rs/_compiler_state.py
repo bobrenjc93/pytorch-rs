@@ -9,7 +9,11 @@ import weakref
 from .torch_rs import (
     _VariableFunctionsClass as native_function_owner,
     _exchange_enable_guard_collectives as exchange_enable_guard_collectives,
+    relu as native_relu,
 )
+
+# ReLU is a PyO3 module function, not a member of native_function_owner.
+# Retain it here too, before either writable public/native export can change.
 
 
 default_backend = "inductor"

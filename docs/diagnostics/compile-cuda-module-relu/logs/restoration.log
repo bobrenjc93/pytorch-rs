@@ -1,0 +1,9 @@
+test_restoration_success_rejection_unused_inputs_and_lifetime (tests.test_compile_cuda_module_relu.ModuleReluDeviceTests.test_restoration_success_rejection_unused_inputs_and_lifetime) ... ok
+test_context_captures_mixed_devices_and_restoration (tests.test_compile_cuda_relu.CompileCudaReluDeviceTests.test_context_captures_mixed_devices_and_restoration) ... ok
+test_restoration_success_rejection_unused_input_and_lifetime (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticDeviceTests.test_restoration_success_rejection_unused_input_and_lifetime) ... ok
+test_same_and_other_device_restoration (tests.test_cuda_relu.CudaReluDeviceTests.test_same_and_other_device_restoration) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 7.530s
+
+OK

@@ -1,0 +1,70 @@
+"""Install only a verified existing interpreter into an absent local destination."""
+from datetime import datetime, timezone
+import hashlib
+import json
+import re
+import sys
+import os
+from pathlib import Path
+import stat
+import subprocess
+
+source = Path('/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-squeeze/target/uv-python/cpython-3.12.14-linux-x86_64-gnu')
+root = Path.cwd().resolve()
+destination = root / 'target/uv-python/cpython-3.12.14-linux-x86_64-gnu'
+expected = 'f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526'
+def sha(raw):
+    return hashlib.sha256(raw).hexdigest()
+def inventory(folder):
+    result = {}
+    for p in sorted(folder.rglob('*')):
+        key = p.relative_to(folder).as_posix()
+        info = p.lstat()
+        if p.is_symlink():
+            target = os.readlink(p)
+            assert not os.path.isabs(target)
+            assert (p.parent/target).resolve().is_relative_to(folder.resolve())
+            result[key] = ['symlink', target]
+        elif p.is_file():
+            result[key] = ['file', stat.S_IMODE(info.st_mode), info.st_size, sha(p.read_bytes())]
+        elif p.is_dir():
+            result[key] = ['directory', stat.S_IMODE(info.st_mode)]
+        else:
+            raise AssertionError('unexpected installation entry ' + key)
+    return result
+assert len(sys.argv) == 2 and re.fullmatch(r'[0-9a-f]{40}', sys.argv[1])
+head = sys.argv[1]
+merge = json.loads(Path('/tmp/pytorch-rs-compiler-recovery.3UB6mU/merge-1982-verified.json').read_text())
+assert merge['verified'] and merge['main'] == head and merge['allTenBaselinesPromoted']
+assert root.is_dir() and source.is_dir()
+assert head == 'b74c2051b823518cc09d5a29f8237a3de9863516'
+assert not destination.exists() and not destination.is_symlink()
+assert not (root/'.venv').exists()
+assert subprocess.check_output(['git','-C',str(root),'rev-parse','HEAD'],text=True).strip() == head
+assert subprocess.check_output(['git','-C',str(root),'status','--porcelain'],text=True) == ''
+assert sha((source/'bin/python3.12').read_bytes()) == expected
+before = inventory(source)
+assert sha(json.dumps(before,sort_keys=True).encode()) == '519ae888f6f47836a48399b7eff35b28582673e893a08261bd5e2758f9a4f265'
+subprocess.run(['mkdir','-p',str(destination.parent)],check=True)
+# Bulk installation copy of a complete relocatable binary distribution.
+# No existing destination or global executable/configuration is overwritten.
+subprocess.run(['cp','-a','--reflink=auto',str(source),str(destination)],check=True)
+assert inventory(source) == before == inventory(destination)
+assert sha((destination/'bin/python3.12').read_bytes()) == expected
+command = [str(destination/'bin/python3.12'),'-I','-B','-c',
+    'import json,sys,sysconfig; print(json.dumps(dict(version=sys.version,executable=sys.executable,base_prefix=sys.base_prefix,stdlib=sysconfig.get_path("stdlib"),include=sysconfig.get_path("include"))))']
+identity = json.loads(subprocess.check_output(command,text=True))
+assert identity['version'].startswith('3.12.14')
+for key in ('executable','base_prefix','stdlib','include'):
+    assert Path(identity[key]).resolve().is_relative_to(destination.resolve()), (key,identity[key])
+assert inventory(source) == before == inventory(destination)
+print(json.dumps({'verified':True,'checkedAt':datetime.now(timezone.utc).isoformat(),
+    'source':str(source),'destination':str(destination),
+    'sourcePreserved':True,'destinationWasAbsent':True,'entireInstallationByteAndLinkIdentical':True,
+    'installationManifestSha256':sha(json.dumps(before,sort_keys=True).encode()),
+    'entries':len(before),'files':sum(v[0]=='file' for v in before.values()),
+    'symlinks':sum(v[0]=='symlink' for v in before.values()),
+    'bytes':sum(v[2] for v in before.values() if v[0]=='file'),
+    'interpreterSha256':expected,'identity':identity,
+    'toolchainCacheReusedOnly':True,'projectEnvironmentCopied':False,'nativeWheelCopied':False,
+    'globalSettingsChanged':False},indent=2))

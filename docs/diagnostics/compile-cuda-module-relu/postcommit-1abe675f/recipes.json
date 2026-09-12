@@ -1,0 +1,23 @@
+{
+  "unchanged_recipes": {
+    "env.sh": {
+      "path": "../recipes/env.sh.txt",
+      "sha256": "c05e51fb3d474eb42a862e2e494218ed092b576537fb14d8a9532644cc792deb"
+    },
+    "compiler-sweep.py": {
+      "path": "../recipes/compiler-sweep.py.txt",
+      "sha256": "308f9f91fc58014611f69cab3124e36483ea0378307095ff5f362b89620af977"
+    },
+    "environment.py": {
+      "path": "../recipes/environment.py.txt",
+      "sha256": "3e11fbc13e8e17819b69f68b9d212b7289aa5a944cd867ea2e68fd1d84bba22e"
+    },
+    "docs-example.py": {
+      "path": "../recipes/docs-example.py.txt",
+      "sha256": "19e9d712b0aacab5a83d15c998e796d45b0b0e2b6163ab1e45b04d6128b2184f"
+    }
+  },
+  "source_runner": "../recipes/run.py.txt",
+  "source_runner_sha256": "7c009f5aebdc73ae0877faa08edb2f85ea6e02cd58552e81d14acb032f692950",
+  "recorder_adaptation": "Separate output directory; assert clean implementation commit before/after each command; add UTC timestamps and recorder digest. Workloads/assertions unchanged."
+}

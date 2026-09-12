@@ -1,0 +1,23 @@
+{
+  "stage": "evidence publication retry",
+  "error": "Publisher scanned an empty JSON output left by the failed audit; corrected to select only the 16 named command receipts.",
+  "source_recipe_sha256": "e3e5fe5004675166c234da7e179e2892dd594ec4afdcdfa6c64fec2e96f69438",
+  "partial_artifact_sha256": {
+    "logs/build.log": "0d4e33fd6ee926f8cdbd9d63182ab2a3a0ce75002b307d2e69af8fde36f941a6",
+    "logs/clippy-bindings.log": "a13905646e2aed93ec6ea9ed6ac91490a4e01f91af0215c3965279a910612149",
+    "logs/clippy-default.log": "99f71393b9903dca098310bb446022a4bdee195ea9996f351a787195555210a6",
+    "logs/compiler-complete.log.gz": "43ffd6d56d7e0ba6eb047cbb678a067dcb720548d249710863969a5fe6b053dd",
+    "logs/docs-example.log": "71c3a679f6df2dc5588d12a15c4e062b3bbf9b059aeefaaa931b8acbc1c396d8",
+    "logs/docs-smoke-published.log": "ea5030ffc0a78df928afc054b2a518dac1c4094a190369fba4e76c50719607f0",
+    "logs/environment.log": "1e0970e51ab932fbd6d61ee33ab679ef183060ea372e4333728ea2ee5d82ffe5",
+    "logs/focused-initial.log": "39cd59cbaae9822a13a1dbc3343dbc819a215043750d16177e0a7a9f372ed5f9",
+    "logs/formatting.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "logs/hidden-final.log.gz": "72973dafb0b953977faf38f46389885fb5c6c7636167724cc82bf385630eb727",
+    "logs/native-import.log": "a19b0752950e5debc9859f6669b12ea90e139ba087a92be8653621db186d1bf2",
+    "logs/preflight.log": "28f91281159d6d0a9a2901a2b50559d8633663a6bdfc45d6f4236db61c648bb4",
+    "logs/restoration.log": "c74446b040d26a3a57645711d5f5bcd6d98086c6c2613e8d63018a9dae87a610",
+    "logs/rust-bindings.log": "22da82be9f9443aeed8cd1830b2ddf6facb4358318f2adacaf2211448d44f640",
+    "logs/rust-default.log.gz": "bc915946db7b13e962ab80e59f3c405adc236a828f9a78a4073ab2e2f4e5e855",
+    "logs/rust-hidden.log": "87b3ca4dcb4d88c34311c9f49a9bad18ecde04540cf794c9a840352755d1ab7b"
+  }
+}

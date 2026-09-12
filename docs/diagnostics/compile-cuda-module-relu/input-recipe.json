@@ -1,0 +1,43 @@
+{
+  "test": "tests/test_compile_cuda_module_relu.py",
+  "test_sha256": "5dbb7a2a3b245de7d1d0671d4f6c71feac22e9453444e7e40a10e294e93e4869",
+  "baseline_probe_sha256": "06f27f9ae4a909a7173a1fe16c10de7f172bd8ef9408b963d5db979c8c8674b3",
+  "baseline_seed": 198301,
+  "inductor_spelling_matrix_seed": 198301,
+  "generated_composition_seed": 198305,
+  "policies": [
+    [
+      true,
+      null
+    ],
+    [
+      true,
+      false
+    ],
+    [
+      true,
+      true
+    ],
+    [
+      false,
+      null
+    ]
+  ],
+  "matrix_shapes": [
+    [],
+    [
+      7
+    ],
+    [
+      3,
+      5
+    ],
+    [
+      0
+    ]
+  ],
+  "spelling_cells": 32,
+  "policy_spelling_cells": 128,
+  "comparison": "metadata and non-NaN bits versus eager reference; zero-tolerance numerical comparison versus Inductor; raw-buffer IEEE comparisons",
+  "other_inputs": "Deterministic generators, views, exact constants and EDGE_BITS in source-bound test and dependency manifests; no scoring corpus changes"
+}

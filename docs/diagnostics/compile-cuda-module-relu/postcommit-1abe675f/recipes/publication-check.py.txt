@@ -1,0 +1,36 @@
+"""Record documentation-only validation after clean-code measurements finish."""
+from datetime import datetime, timezone
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+root=Path.cwd().resolve()
+folder=root/'docs/diagnostics/compile-cuda-module-relu/postcommit-1abe675f'
+sha=lambda raw:hashlib.sha256(raw).hexdigest()
+head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+assert head=='1abe675fc47215afba609f54716353730237c710'
+changed=set(subprocess.check_output(['git','diff','--name-only'],text=True).splitlines())
+assert changed=={'docs/compile-cuda-add.md'},changed
+command=[str(root/'.venv/bin/python'),'-m','unittest','-v','tests.test_readme_quickstart']
+started=datetime.now(timezone.utc).isoformat()
+status=subprocess.check_output(['git','status','--porcelain'],text=True)
+result=subprocess.run(command,text=True,capture_output=True)
+raw=(result.stdout+result.stderr).encode()
+(folder/'logs/publication-docs.log').write_bytes(raw)
+for target in re.findall(r'\]\(([^)]+)\)',(folder/'README.md').read_text()):
+ if not target.startswith(('https:','http:','#')):
+  assert (folder/target.split('#')[0]).is_file(),target
+record=dict(command=command,cwd=str(root),measured_code_commit=head,
+ scope='Documentation-only publication check after clean-commit capture; not a clean-checkout measurement',
+ started_at=started,finished_at=datetime.now(timezone.utc).isoformat(),
+ git_status_before=status,git_status_after=subprocess.check_output(['git','status','--porcelain'],text=True),
+ documentation_sha256={str(p.relative_to(root)):sha(p.read_bytes()) for p in (root/'docs/compile-cuda-add.md',folder/'README.md')},
+ exit_code=result.returncode,log_sha256=sha(raw),published_log='logs/publication-docs.log',
+ evidence_links_resolve=True)
+(folder/'publication-docs.json').write_text(json.dumps(record,indent=2)+'\n')
+print(raw.decode()[-500:])
+raise SystemExit(result.returncode)

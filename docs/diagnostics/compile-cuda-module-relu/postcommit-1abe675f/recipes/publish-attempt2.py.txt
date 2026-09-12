@@ -1,0 +1,82 @@
+"""Publish a separate clean-commit capture, reusing committed source manifests."""
+import gzip
+import hashlib
+import json
+from pathlib import Path
+import re
+
+root=Path.cwd().resolve()
+src=root/'target/relu-postcommit'
+prior=root/'docs/diagnostics/compile-cuda-module-relu'
+out=prior/'postcommit-1abe675f'
+sha=lambda raw:hashlib.sha256(raw).hexdigest()
+def write(name, raw):
+ p=out/name
+ p.parent.mkdir(parents=True, exist_ok=True)
+ assert not p.exists(),p
+ p.write_bytes(raw)
+def dump(name,value): write(name,(json.dumps(value,indent=2)+'\n').encode())
+assert not out.exists()
+commands={}
+for path in sorted(src.glob('*.json')):
+ record=json.loads(path.read_text())
+ if 'command' not in record: continue
+ name=path.stem
+ assert record['git_status_before']==record['git_status_after']==''
+ assert record['measured_code_commit']=='1abe675fc47215afba609f54716353730237c710'
+ raw=(src/(name+'.log')).read_bytes()
+ assert sha(raw)==record['log_sha256']
+ compressed=len(raw)>16000
+ published='logs/'+name+'.log'+('.gz' if compressed else '')
+ write(published,gzip.compress(raw,mtime=0) if compressed else raw)
+ record['published_log']=published
+ record['original_receipt_sha256']=sha(path.read_bytes())
+ text=raw.decode()
+ result=re.search(r'Ran (\d+) tests? in ([\d.]+)s\s+\n(OK(?: \(skipped=(\d+)\))?|FAILED[^\n]*)',text)
+ if result:
+  total=int(result[1]); skipped=int(result[4] or 0)
+  record['test_summary']=dict(run=total,skipped=skipped,status=result[3],passed=total-skipped if record['exit_code']==0 else None)
+ rust=re.findall(r'test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored;',text)
+ if rust: record['test_summary']=dict(passed=sum(int(v[0]) for v in rust),failed=sum(int(v[1]) for v in rust),ignored=sum(int(v[2]) for v in rust))
+ commands[name]=record
+assert len(commands)==16, commands.keys()
+assert all(v['exit_code']==0 for v in commands.values())
+dump('commands.json',commands)
+# Test/source input bytes are exactly those already recorded in development.
+states=json.loads((prior/'input-manifests.json').read_text())
+keys={v['source_manifest_sha256'] for v in commands.values()}
+assert len(keys)==1
+key,=keys
+variant=states['variants'][key]
+inputs={k:v for k,v in states['base'].items() if k not in variant['removed']}; inputs.update(variant['changed'])
+assert sha(json.dumps(inputs,sort_keys=True).encode())==key
+assert all(sha((root/name).read_bytes())==digest for name,digest in inputs.items())
+dump('inputs.json',dict(manifest='../input-manifests.json',manifest_file_sha256=sha((prior/'input-manifests.json').read_bytes()),variant_sha256=key,
+ input_recipe='../input-recipe.json',input_recipe_sha256=sha((prior/'input-recipe.json').read_bytes()),unchanged_from_final_development_inputs=True))
+build_folder=root/'target/cuda-add-diagnostic/module-relu-postcommit-1abe675f'
+build=json.loads((build_folder/'build-record.json').read_text())
+files=build.pop('source_files')
+base_raw=gzip.decompress((prior/'build-source-base.json.gz').read_bytes())
+base=json.loads(base_raw)
+build['base_source_manifest']='../build-source-base.json.gz'
+build['base_source_manifest_sha256']=sha(base_raw)
+build['source_delta_from_base']=dict(changed={k:v for k,v in files.items() if base.get(k)!=v},removed=sorted(set(base)-set(files)))
+build['original_record_sha256']=sha((build_folder/'build-record.json').read_bytes())
+for log in ('build.log','dependency_setup.log'):
+ raw=(build_folder/log).read_bytes(); name='logs/export-'+log
+ write(name,raw); build.setdefault('logs',{})[name]=sha(raw)
+dump('build.json',build)
+# Preserve exact output bytes from the actual preflight, rather than assigning
+# provenance to any earlier development measurements.
+write('preflight.json',(src/'preflight.log').read_bytes())
+for name in ('run.py','preflight.py','replay.py','publish.py','audit.py','report.py','publication-check.py'):
+ write('recipes/'+name+'.txt',(src/name).read_bytes())
+dump('recipes.json',dict(unchanged_recipes={name:dict(path='../recipes/'+name+'.txt',sha256=sha((src/name).read_bytes()))
+ for name in ('env.sh','compiler-sweep.py','environment.py','docs-example.py')},
+ source_runner='../recipes/run.py.txt',source_runner_sha256=sha((prior/'recipes/run.py.txt').read_bytes()),
+ recorder_adaptation='Separate output directory; assert clean implementation commit before/after each command; add UTC timestamps and recorder digest. Workloads/assertions unchanged.'))
+print(json.dumps({name:v.get('test_summary',dict(exit_code=v['exit_code'])) for name,v in commands.items()},indent=2))
+
+write('publication-attempt1.json',(src/'publication-attempt1.json').read_bytes())
+write('recipes/publish-initial.py.txt',(src/'publish-initial.py').read_bytes())
+write('logs/publication-attempt1-audit.stderr',(src/'verification-before-docs.stderr').read_bytes())

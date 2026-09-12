@@ -1,0 +1,21 @@
+"""Replay the committed validation commands for a clean-commit capture."""
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+records=json.loads(Path('docs/diagnostics/compile-cuda-module-relu/commands.json').read_text())
+for label in ('native-import','preflight','environment','focused-initial','restoration','hidden-final',
+              'rust-default','rust-bindings','rust-hidden','formatting','clippy-default','clippy-bindings',
+              'compiler-complete','docs-example','docs-smoke-published'):
+ if label=='native-import':
+  command=['.venv/bin/python','.github/scripts/verify_native_extension.py']; mask='0'
+ elif label=='preflight':
+  command=['.venv/bin/python','target/relu-postcommit/preflight.py']; mask='0'
+ else:
+  record=records[label]
+  command=[s.replace('target/relu-validation/','target/relu-postcommit/') for s in record['command']]
+  mask=record['environment']['CUDA_VISIBLE_DEVICES']
+ print('Starting '+label,flush=True)
+ subprocess.run([sys.executable,'target/relu-postcommit/run.py',label,*command],
+                env={**os.environ,'CUDA_VISIBLE_DEVICES':mask},check=True)

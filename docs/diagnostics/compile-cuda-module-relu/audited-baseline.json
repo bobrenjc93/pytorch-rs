@@ -1,0 +1,1559 @@
+{
+  "verified": true,
+  "checkedAt": "2026-09-12T04:40:15.608150+00:00",
+  "base": "b74c2051b823518cc09d5a29f8237a3de9863516",
+  "priorMergeAudit": "/tmp/pytorch-rs-compiler-recovery.3UB6mU/merge-1982-verified.json",
+  "worktree": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu",
+  "sourceSha256": "863f34503222146b4d356d4ebf7ecba404eddd3b448f8b4e3e5c9b04a5796e0d",
+  "buildRecordSha256": "a98447addf5d2c0b99527e6d418c38d846512218fdc64cc75bb67c48fe6576c9",
+  "build": {
+    "commit": "b74c2051b823518cc09d5a29f8237a3de9863516",
+    "source_sha256": "863f34503222146b4d356d4ebf7ecba404eddd3b448f8b4e3e5c9b04a5796e0d",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "git_status_before_build": "",
+    "clean_checkout": true,
+    "measurement_kind": "clean-code",
+    "build_command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/.venv/bin/maturin",
+      "build",
+      "--release",
+      "--locked",
+      "--offline",
+      "--out",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/target/release/wheels"
+    ],
+    "commands": [
+      {
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/.venv/bin/maturin",
+          "build",
+          "--release",
+          "--locked",
+          "--offline",
+          "--out",
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/target/release/wheels"
+        ],
+        "started_at": "2026-09-12T04:37:38.643377+00:00",
+        "ended_at": "2026-09-12T04:38:25.889252+00:00",
+        "wall_seconds": 47.24588685948402,
+        "exit_status": 0,
+        "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/target/release/build.log",
+        "log_sha256": "ec4a7e561761bea2cd916e0e61d60e989781f613ae7d1f6d5d0876f9bced74e5"
+      },
+      {
+        "command": [
+          "uv",
+          "pip",
+          "install",
+          "--python",
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/.venv/bin/python",
+          "--force-reinstall",
+          "--no-deps",
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/target/release/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl"
+        ],
+        "started_at": "2026-09-12T04:38:25.890512+00:00",
+        "ended_at": "2026-09-12T04:38:26.024399+00:00",
+        "wall_seconds": 0.13391165155917406,
+        "exit_status": 0,
+        "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/target/release/install.log",
+        "log_sha256": "bd3a02de77e83b2afacd6083e3269e59e8e81c72d7ec291d2b96504d468b8c0f"
+      }
+    ],
+    "source_unchanged_during_build": true,
+    "extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+    "extension_sha256": "7e1448500e4c5f3c81c44fe765e722de35b0b4aee0a8f6ab36ca299254ee8ceb",
+    "source_extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/python/torch_rs/torch_rs.abi3.so",
+    "wheel_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/target/release/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "wheel_sha256": "e67ede1ce04704958b50a8a48dcc978b10828dd9af1d09f8f5ced534e9e87701",
+    "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+    "python_executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/.venv/bin/python",
+    "interpreter_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+    "interpreter_sha256": "f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526",
+    "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)\nbinary: rustc\ncommit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234\ncommit-date: 2025-12-08\nhost: x86_64-unknown-linux-gnu\nrelease: 1.92.0\nLLVM version: 21.1.3\n",
+    "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)\n",
+    "rustc_path": "/home/bobren/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/rustc",
+    "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0\n",
+    "nvcc_used": false,
+    "cuda_compilation": "driver JIT of embedded PTX",
+    "profile": {
+      "name": "release",
+      "lto": "thin",
+      "codegen_units": 1,
+      "features": [
+        "extension-module"
+      ]
+    },
+    "uv_lock_sha256": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced",
+    "dependencies": {
+      "cuda-toolkit": "13.0.3.0",
+      "typing_extensions": "4.16.0",
+      "MarkupSafe": "3.0.3",
+      "nvidia-cufile": "1.15.1.6",
+      "filelock": "3.32.2",
+      "Jinja2": "3.1.6",
+      "cuda-pathfinder": "1.6.0",
+      "nvidia-nvtx": "13.0.85",
+      "maturin": "1.14.1",
+      "fsspec": "2026.7.0",
+      "mpmath": "1.3.0",
+      "nvidia-cuda-runtime": "13.0.96",
+      "nvidia-cusparse": "12.6.3.3",
+      "cuda-bindings": "13.3.1",
+      "nvidia-cuda-cupti": "13.0.85",
+      "nvidia-nvjitlink": "13.3.33",
+      "nvidia-curand": "10.4.0.35",
+      "nvidia-cusparselt-cu13": "0.8.1",
+      "nvidia-nccl-cu13": "2.29.7",
+      "nvidia-cuda-nvrtc": "13.0.88",
+      "setuptools": "84.0.0",
+      "networkx": "3.6.1",
+      "numpy": "2.5.1",
+      "sympy": "1.14.0",
+      "nvidia-cufft": "12.0.0.61",
+      "nvidia-cusolver": "12.0.4.66",
+      "nvidia-cublas": "13.1.1.3",
+      "nvidia-cudnn-cu13": "9.20.0.48",
+      "nvidia-nvshmem-cu13": "3.4.5",
+      "triton": "3.7.1",
+      "torch": "2.13.0",
+      "torch-rs": "0.1.0"
+    },
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/target/local-cargo",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/target/release/build",
+      "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/.venv/bin/python",
+      "VIRTUAL_ENV": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/.venv",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/target/tmp",
+      "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/target/xdg-cache",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/target/cuda-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/target/uv-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+      "RUSTFLAGS": null,
+      "CARGO_BUILD_RUSTFLAGS": null
+    },
+    "cache_state": "empty build target; populated local Cargo registry and locked .venv; offline build",
+    "rustc_sha256": "028fd60b0e0add5505c661cd3ccde91393d615c8729bd95d94ab1e91409b36a1"
+  },
+  "probe": {
+    "verified_baseline_gap": true,
+    "commit": "b74c2051b823518cc09d5a29f8237a3de9863516",
+    "source_provenance": {
+      "commit": "b74c2051b823518cc09d5a29f8237a3de9863516",
+      "source_sha256": "863f34503222146b4d356d4ebf7ecba404eddd3b448f8b4e3e5c9b04a5796e0d",
+      "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "genuine_relu_is_native_module_function": true,
+    "variable_function_owner_contains_relu": false,
+    "probe_sha256": "06f27f9ae4a909a7173a1fe16c10de7f172bd8ef9408b963d5db979c8c8674b3",
+    "metadata_helper_sha256": "021aea6960868a0b3e9a7638dccc957c46c724837bdcea5ebafeaca012f6174e",
+    "native_extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+    "native_extension_sha256": "7e1448500e4c5f3c81c44fe765e722de35b0b4aee0a8f6ab36ca299254ee8ceb",
+    "reference": "2.13.0+cu130",
+    "gpu": "NVIDIA H100",
+    "cases": [
+      {
+        "name": "module_relu",
+        "expression": "m.relu(x)",
+        "arity": 1,
+        "shape": [],
+        "expected_gap": true,
+        "input_sha256": [
+          "b1f2a18496b5e842f6bde02fa5755016c013eeeb24f549e096bf9172d4430091"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          }
+        ]
+      },
+      {
+        "name": "module_relu",
+        "expression": "m.relu(x)",
+        "arity": 1,
+        "shape": [
+          7
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "bc6c3138e340fd9568f9f4e5ea15d9dcc941848b56f9451235f5b02574d73916"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          }
+        ]
+      },
+      {
+        "name": "module_relu",
+        "expression": "m.relu(x)",
+        "arity": 1,
+        "shape": [
+          3,
+          5
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "bcf15b8d5495b0f614eece3e850595414facedb4166b7012d4ad5254411d6c6a"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          }
+        ]
+      },
+      {
+        "name": "module_relu",
+        "expression": "m.relu(x)",
+        "arity": 1,
+        "shape": [
+          0
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          }
+        ]
+      },
+      {
+        "name": "imported_relu",
+        "expression": "relu_alias(x)",
+        "arity": 1,
+        "shape": [],
+        "expected_gap": true,
+        "input_sha256": [
+          "accdb4bb2acbc6f54c90bfd9199701013573082c919461ac70872e410a4bd44d"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          }
+        ]
+      },
+      {
+        "name": "imported_relu",
+        "expression": "relu_alias(x)",
+        "arity": 1,
+        "shape": [
+          7
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "60454bf4c1ee680100fb5c512a43568e13b5aeb4f8deb81050244fb966af9086"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          }
+        ]
+      },
+      {
+        "name": "imported_relu",
+        "expression": "relu_alias(x)",
+        "arity": 1,
+        "shape": [
+          3,
+          5
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "fc997a26a77c0e21c2a33b5f233794f8567c62e72970f82628dd564c452de081"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          }
+        ]
+      },
+      {
+        "name": "imported_relu",
+        "expression": "relu_alias(x)",
+        "arity": 1,
+        "shape": [
+          0
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          }
+        ]
+      },
+      {
+        "name": "module_relu_after_add",
+        "expression": "m.relu(x + y)",
+        "arity": 2,
+        "shape": [],
+        "expected_gap": true,
+        "input_sha256": [
+          "adc6bd4662754f47b88b5564159334cc4077e337f512fa8ce6e6511c259d0b25",
+          "6a8e259d5cfb5822c30440a36c344da8f749269d606006aecf7e0bbd2188015c"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          }
+        ]
+      },
+      {
+        "name": "module_relu_after_add",
+        "expression": "m.relu(x + y)",
+        "arity": 2,
+        "shape": [
+          7
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "7d89963b03a1493a56a91cffceb75f168ff32badbcf0b50f24ed651641fd4193",
+          "3b686ddca171a1216a0de2dbff19d46efb7e51f37c8f8d25e2bf0ece568756c5"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          }
+        ]
+      },
+      {
+        "name": "module_relu_after_add",
+        "expression": "m.relu(x + y)",
+        "arity": 2,
+        "shape": [
+          3,
+          5
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "80160057d1cc4f375f9e55c12fcf61bca19236fbce47f8953aa9a24ab9751393",
+          "da4eb060a4e330f8191f4333be7e4dbc592adb24c3f872a62c46a75a18ac1233"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          }
+        ]
+      },
+      {
+        "name": "module_relu_after_add",
+        "expression": "m.relu(x + y)",
+        "arity": 2,
+        "shape": [
+          0
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          }
+        ]
+      },
+      {
+        "name": "imported_relu_after_add",
+        "expression": "relu_alias(x + y)",
+        "arity": 2,
+        "shape": [],
+        "expected_gap": true,
+        "input_sha256": [
+          "e00e5eb9444182f352323374ef4e08ebcb784725fdd4fd612d7730540b3e0c8c",
+          "c34fde18c1b8ec18aa9dd952cdbbcce00cf0505358e6cfcce5a6fe795e1d019b"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          }
+        ]
+      },
+      {
+        "name": "imported_relu_after_add",
+        "expression": "relu_alias(x + y)",
+        "arity": 2,
+        "shape": [
+          7
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "fd7d3e4b93e066f9aab160ebaa8f2584cb27519cd1766e5f544dbfcf0472fe6d",
+          "3069adc1f044f1ef335f80200cc6524d1bd895ed437e7ae4530ba3f185816ccd"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          }
+        ]
+      },
+      {
+        "name": "imported_relu_after_add",
+        "expression": "relu_alias(x + y)",
+        "arity": 2,
+        "shape": [
+          3,
+          5
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "77e9668c5cb98c09c28ee76c061e0ab5fcae56bef38e0e535dade9384cfa3f5a",
+          "a346e59136fd49bc0d4f5c87f5b83651ec124c46c6a8852f7649865c96ca4fb4"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          }
+        ]
+      },
+      {
+        "name": "imported_relu_after_add",
+        "expression": "relu_alias(x + y)",
+        "arity": 2,
+        "shape": [
+          0
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          }
+        ]
+      },
+      {
+        "name": "module_relu_before_neg",
+        "expression": "-m.relu(x)",
+        "arity": 1,
+        "shape": [],
+        "expected_gap": true,
+        "input_sha256": [
+          "15c0ebbda8272f659b165b77bb5c9889e405d7bf0e01e130fd45644c81cb0957"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          }
+        ]
+      },
+      {
+        "name": "module_relu_before_neg",
+        "expression": "-m.relu(x)",
+        "arity": 1,
+        "shape": [
+          7
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "d7fa539bad3683c9bdc119c19a3279bc124ad8decbd165fa0201b76f1fa9043b"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          }
+        ]
+      },
+      {
+        "name": "module_relu_before_neg",
+        "expression": "-m.relu(x)",
+        "arity": 1,
+        "shape": [
+          3,
+          5
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "d88388d2993a2aee21e6cd70e8e8d3dbd659707d1d4383b8639d517eeee32f17"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          }
+        ]
+      },
+      {
+        "name": "module_relu_before_neg",
+        "expression": "-m.relu(x)",
+        "arity": 1,
+        "shape": [
+          0
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          }
+        ]
+      },
+      {
+        "name": "imported_relu_before_neg",
+        "expression": "-relu_alias(x)",
+        "arity": 1,
+        "shape": [],
+        "expected_gap": true,
+        "input_sha256": [
+          "628a4e0575aa77ecf3078bd45900f5380eb14b642d60308ddc93a015850f0732"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          }
+        ]
+      },
+      {
+        "name": "imported_relu_before_neg",
+        "expression": "-relu_alias(x)",
+        "arity": 1,
+        "shape": [
+          7
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "dc899e109e71ea99a37f8bcd99628970125c71aca7bd94d15c7a9e4267de66e3"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          }
+        ]
+      },
+      {
+        "name": "imported_relu_before_neg",
+        "expression": "-relu_alias(x)",
+        "arity": 1,
+        "shape": [
+          3,
+          5
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "edb6da9ba26a76d246049f95e81bb39a1c4c268ae07b238e55381d29d263f217"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          }
+        ]
+      },
+      {
+        "name": "imported_relu_before_neg",
+        "expression": "-relu_alias(x)",
+        "arity": 1,
+        "shape": [
+          0
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          }
+        ]
+      },
+      {
+        "name": "nested_module_relu",
+        "expression": "m.relu(m.relu(x))",
+        "arity": 1,
+        "shape": [],
+        "expected_gap": true,
+        "input_sha256": [
+          "4f9666bffd029360e6e44ae8be3ab0690dd7a2032737723fa16e3d757b4d4a6c"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          }
+        ]
+      },
+      {
+        "name": "nested_module_relu",
+        "expression": "m.relu(m.relu(x))",
+        "arity": 1,
+        "shape": [
+          7
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "2003fad1178e21ea0fb051f0067ed076ef81a51e1d6199053f6dd577624afaee"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          }
+        ]
+      },
+      {
+        "name": "nested_module_relu",
+        "expression": "m.relu(m.relu(x))",
+        "arity": 1,
+        "shape": [
+          3,
+          5
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "f1c3d1688cd434c9e1621cde58e31ee28087d593dbb0c467cd51602866e8dfc1"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          }
+        ]
+      },
+      {
+        "name": "nested_module_relu",
+        "expression": "m.relu(m.relu(x))",
+        "arity": 1,
+        "shape": [
+          0
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support module attribute access in 'program': LOAD_ATTR"
+            }
+          }
+        ]
+      },
+      {
+        "name": "nested_imported_relu",
+        "expression": "relu_alias(relu_alias(x))",
+        "arity": 1,
+        "shape": [],
+        "expected_gap": true,
+        "input_sha256": [
+          "ca60ae75597973fcca3f22e23f970db85eae1c3450c8b55ceaad0106c4a9761f"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          }
+        ]
+      },
+      {
+        "name": "nested_imported_relu",
+        "expression": "relu_alias(relu_alias(x))",
+        "arity": 1,
+        "shape": [
+          7
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "c5eee8db286c3ff5a1833316243c4c251602f018d6e0ed1875ab3feedc75a109"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          }
+        ]
+      },
+      {
+        "name": "nested_imported_relu",
+        "expression": "relu_alias(relu_alias(x))",
+        "arity": 1,
+        "shape": [
+          3,
+          5
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "8fa08e5c9f77a00ec001b094b7154e76bc8c58fc55e25dcf8b8d363d224fcdbf"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          }
+        ]
+      },
+      {
+        "name": "nested_imported_relu",
+        "expression": "relu_alias(relu_alias(x))",
+        "arity": 1,
+        "shape": [
+          0
+        ],
+        "expected_gap": true,
+        "input_sha256": [
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          },
+          {
+            "call": "repeat",
+            "unsupported": {
+              "type": "CompileTraceUnsupportedError",
+              "message": "torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL"
+            }
+          }
+        ]
+      },
+      {
+        "name": "existing_method_relu",
+        "expression": "x.relu()",
+        "arity": 1,
+        "shape": [],
+        "expected_gap": false,
+        "input_sha256": [
+          "33f0e750dcfc67848dd7d044a172a7b67480761bceaebd217740da6bfb0ff5c8"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "passed": true
+          },
+          {
+            "call": "repeat",
+            "passed": true
+          }
+        ]
+      },
+      {
+        "name": "existing_method_relu",
+        "expression": "x.relu()",
+        "arity": 1,
+        "shape": [
+          7
+        ],
+        "expected_gap": false,
+        "input_sha256": [
+          "9fee1adec87b173cd85d1bbbfc8e3d1f110ae75839cca793249c98cb72d5d5fb"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "passed": true
+          },
+          {
+            "call": "repeat",
+            "passed": true
+          }
+        ]
+      },
+      {
+        "name": "existing_method_relu",
+        "expression": "x.relu()",
+        "arity": 1,
+        "shape": [
+          3,
+          5
+        ],
+        "expected_gap": false,
+        "input_sha256": [
+          "2d4ecd611aeba0b8f8bc16bed33d33d43c5d11e999d773bf340a353de46cef2f"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "passed": true
+          },
+          {
+            "call": "repeat",
+            "passed": true
+          }
+        ]
+      },
+      {
+        "name": "existing_method_relu",
+        "expression": "x.relu()",
+        "arity": 1,
+        "shape": [
+          0
+        ],
+        "expected_gap": false,
+        "input_sha256": [
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "passed": true
+          },
+          {
+            "call": "repeat",
+            "passed": true
+          }
+        ]
+      },
+      {
+        "name": "existing_module_add",
+        "expression": "m.add(x, y)",
+        "arity": 2,
+        "shape": [],
+        "expected_gap": false,
+        "input_sha256": [
+          "966aa2c265ee778f627ea8d8ad46c4572ffdc04e01923e6b2407016a77ec20f9",
+          "69c8cfc6e6640bde2f07e7c4162504435e5dec328adc4500d3fb3780de9d09b1"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "passed": true
+          },
+          {
+            "call": "repeat",
+            "passed": true
+          }
+        ]
+      },
+      {
+        "name": "existing_module_add",
+        "expression": "m.add(x, y)",
+        "arity": 2,
+        "shape": [
+          7
+        ],
+        "expected_gap": false,
+        "input_sha256": [
+          "47db75d9cd0b94e787bd3d6f1e08b994922c78b2513411296e9b4a06672a5990",
+          "040b4b8dfb7dd8754ad75abfd9d55cea9f97cd6a55e7c839eed36ef019c729ca"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "passed": true
+          },
+          {
+            "call": "repeat",
+            "passed": true
+          }
+        ]
+      },
+      {
+        "name": "existing_module_add",
+        "expression": "m.add(x, y)",
+        "arity": 2,
+        "shape": [
+          3,
+          5
+        ],
+        "expected_gap": false,
+        "input_sha256": [
+          "5e57afc8159d75b128c7904c27fedea32986b9c59d4a330ce3a26c0182daa9be",
+          "511c910d9228b49bbc4b6f78a4c2901f01b2cd1f2fde308a92ce5667b6588397"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "passed": true
+          },
+          {
+            "call": "repeat",
+            "passed": true
+          }
+        ]
+      },
+      {
+        "name": "existing_module_add",
+        "expression": "m.add(x, y)",
+        "arity": 2,
+        "shape": [
+          0
+        ],
+        "expected_gap": false,
+        "input_sha256": [
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "passed": true
+          },
+          {
+            "call": "repeat",
+            "passed": true
+          }
+        ]
+      },
+      {
+        "name": "existing_module_mul",
+        "expression": "m.mul(x, -2)",
+        "arity": 1,
+        "shape": [],
+        "expected_gap": false,
+        "input_sha256": [
+          "2f90de89a933bd8118953f22550293198c812014b434e29d79bcdea4cb34c56a"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "passed": true
+          },
+          {
+            "call": "repeat",
+            "passed": true
+          }
+        ]
+      },
+      {
+        "name": "existing_module_mul",
+        "expression": "m.mul(x, -2)",
+        "arity": 1,
+        "shape": [
+          7
+        ],
+        "expected_gap": false,
+        "input_sha256": [
+          "fa9fded2a0a9120a9936516333b281231268c3256277d0e28686f40147a080e4"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "passed": true
+          },
+          {
+            "call": "repeat",
+            "passed": true
+          }
+        ]
+      },
+      {
+        "name": "existing_module_mul",
+        "expression": "m.mul(x, -2)",
+        "arity": 1,
+        "shape": [
+          3,
+          5
+        ],
+        "expected_gap": false,
+        "input_sha256": [
+          "4908d6b2542ab908fed5a9ecc08982b71f529895ee4d1f07832505d5ae8136e1"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "passed": true
+          },
+          {
+            "call": "repeat",
+            "passed": true
+          }
+        ]
+      },
+      {
+        "name": "existing_module_mul",
+        "expression": "m.mul(x, -2)",
+        "arity": 1,
+        "shape": [
+          0
+        ],
+        "expected_gap": false,
+        "input_sha256": [
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ],
+        "native_eager_passed": true,
+        "reference_inductor_cold_and_repeat_passed": true,
+        "original_native_program_body_not_executed": true,
+        "native_calls": [
+          {
+            "call": "cold",
+            "passed": true
+          },
+          {
+            "call": "repeat",
+            "passed": true
+          }
+        ]
+      }
+    ],
+    "unrelated_rebindings": [
+      {
+        "attribute": "relu",
+        "expression": "m.mul(x, -2)",
+        "existing_module_program_preserved": true,
+        "replacement_callback_calls": 0
+      },
+      {
+        "attribute": "relu",
+        "expression": "m.add(x, x)",
+        "existing_module_program_preserved": true,
+        "replacement_callback_calls": 0
+      },
+      {
+        "attribute": "relu",
+        "expression": "m.neg(x)",
+        "existing_module_program_preserved": true,
+        "replacement_callback_calls": 0
+      }
+    ],
+    "gap_cases": 32,
+    "existing_positive_cases": 12,
+    "reference_compile_backend": "inductor",
+    "native_compile_backend": "eager",
+    "native_backend_note": "Native CUDA graph capture/execution; original program body forbidden",
+    "cuda_performance_measured": false,
+    "scores_changed": false,
+    "physical_gpu_snapshot_after": "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 0 %, 653 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 0 %, 4 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 0 %, 4 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 0 %, 4 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 0 %, 4 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 0 %, 4 MiB\n",
+    "gpu_snapshot_is_not_reservation": true
+  },
+  "preflight": {
+    "root_preflight": true,
+    "commit": "b74c2051b823518cc09d5a29f8237a3de9863516",
+    "source_sha256": "863f34503222146b4d356d4ebf7ecba404eddd3b448f8b4e3e5c9b04a5796e0d",
+    "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+    "python_executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/.venv/bin/python",
+    "interpreter": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+    "native_import": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+    "extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+    "extension_sha256": "7e1448500e4c5f3c81c44fe765e722de35b0b4aee0a8f6ab36ca299254ee8ceb",
+    "reference": "2.13.0+cu130",
+    "reference_cuda": "13.0",
+    "native_runtime_library": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "native_runtime": 13000,
+    "native_driver": 13000,
+    "runtime_sha256": "96c42e418cec19054186b9429c321603cc190bf26a18104e19408117a2a817b0",
+    "gpu": "NVIDIA H100",
+    "capability": [
+      9,
+      0
+    ],
+    "visible_count": 1,
+    "physical_gpu_snapshot": "0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 0 %, 4 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 0 %, 4 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 0 %, 4 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 0 %, 4 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 0 %, 4 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 0 %, 4 MiB\n",
+    "gpu_snapshot_is_not_reservation": true,
+    "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0\n",
+    "nvcc_used": false,
+    "kernel_compilation": "driver JIT embedded PTX"
+  },
+  "receipt": {
+    "recordedAt": "2026-09-12 04:40:11 UTC",
+    "exitCode": 0,
+    "sessionId": 35340,
+    "preflightPassed": true,
+    "repositoryUnchanged": true,
+    "scoresChanged": false,
+    "head": "b74c2051b823518cc09d5a29f8237a3de9863516",
+    "outputSha256": "a3a1a644c9e0c65a4317d6290536e5e54a77fe88a2a8e47f6b1db8c57899b531",
+    "preparationSha256": "54afd1524e8df651d3e7d5b7a7d7dfc2405222344006d6cfcf995feb2ee4ba0a",
+    "probeSha256": "06f27f9ae4a909a7173a1fe16c10de7f172bd8ef9408b963d5db979c8c8674b3",
+    "referenceBackend": "inductor",
+    "nativeBackend": "eager",
+    "gapCases": 32,
+    "existingPositiveCases": 12,
+    "unrelatedRebindingControls": 3,
+    "interpreterBootstrapSha256": "8bc6dd3e8e502e8cbcf7311547a929bcaf0fd255e2b02306d5e07f7a8c5a6635",
+    "interpreterBootstrapHelperSha256": "d8a1271994248c1e3c4feaa80669121fb085f66695ddaf0fa998662da7bfefe2"
+  },
+  "interpreterBootstrap": {
+    "verified": true,
+    "checkedAt": "2026-09-12T04:34:39.319289+00:00",
+    "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-squeeze/target/uv-python/cpython-3.12.14-linux-x86_64-gnu",
+    "destination": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/target/uv-python/cpython-3.12.14-linux-x86_64-gnu",
+    "sourcePreserved": true,
+    "destinationWasAbsent": true,
+    "entireInstallationByteAndLinkIdentical": true,
+    "installationManifestSha256": "519ae888f6f47836a48399b7eff35b28582673e893a08261bd5e2758f9a4f265",
+    "entries": 4927,
+    "files": 3665,
+    "symlinks": 1048,
+    "bytes": 102563177,
+    "interpreterSha256": "f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526",
+    "identity": {
+      "version": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+      "base_prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/target/uv-python/cpython-3.12.14-linux-x86_64-gnu",
+      "stdlib": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12",
+      "include": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-module-relu/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/include/python3.12"
+    },
+    "toolchainCacheReusedOnly": true,
+    "projectEnvironmentCopied": false,
+    "nativeWheelCopied": false,
+    "globalSettingsChanged": false
+  },
+  "gapCaseCount": 32,
+  "existingPositiveCases": 12,
+  "unrelatedRebindingControls": 3,
+  "referenceInductorVerified": true,
+  "generalCompileParityClaimed": false,
+  "baselineScoresUnchanged": true,
+  "implementationNotStarted": true
+}

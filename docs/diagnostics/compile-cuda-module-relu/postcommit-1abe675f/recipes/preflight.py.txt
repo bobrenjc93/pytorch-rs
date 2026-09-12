@@ -1,0 +1,59 @@
+"""Verify the committed export, local interpreter and installed release inputs."""
+import gzip
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import sysconfig
+import zipfile
+
+root=Path.cwd().resolve()
+sha=lambda raw:hashlib.sha256(raw).hexdigest()
+head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+assert head=='1abe675fc47215afba609f54716353730237c710'
+assert subprocess.check_output(['git','status','--porcelain'],text=True)==''
+record=json.loads((root/'target/cuda-add-diagnostic/module-relu-postcommit-1abe675f/build-record.json').read_text())
+assert record['measured_code_commit']==head and record['source_matches_commit']
+assert record['origin_status']=='' and record['source_kind']=='clean commit export'
+for key in ('source_root','wheel','installed_package','installed_native','build_target'):
+ assert Path(record[key]).resolve().is_relative_to(root), (key,record[key])
+files=record['source_files']
+assert all(sha((root/name).read_bytes())==digest for name,digest in files.items())
+assert all(sha((Path(record['source_root'])/name).read_bytes())==digest for name,digest in files.items())
+assert sha(Path(record['wheel']).read_bytes())==record['wheel_sha256']
+assert sha(Path(record['installed_native']).read_bytes())==record['installed_native_sha256']
+with zipfile.ZipFile(record['wheel']) as wheel:
+ for name,digest in files.items():
+  if name.startswith('python/') and name.endswith('.py'):
+   member=name.removeprefix('python/')
+   assert sha(wheel.read(member))==digest
+   assert sha((root/'.venv/lib/python3.12/site-packages'/member).read_bytes())==digest
+# Reuse the recorded inventory function, without rerunning any installation/copy.
+recipe=(root/'docs/diagnostics/compile-cuda-module-relu/recipes/bootstrap.py.txt').read_text()
+namespace={}
+exec(compile(recipe.split('assert len(sys.argv)')[0], 'recorded-inventory-functions', 'exec'),namespace)
+interpreter=root/'target/uv-python/cpython-3.12.14-linux-x86_64-gnu'
+manifest=namespace['inventory'](interpreter)
+inventory_sha=sha(json.dumps(manifest,sort_keys=True).encode())
+assert inventory_sha=='519ae888f6f47836a48399b7eff35b28582673e893a08261bd5e2758f9a4f265'
+assert namespace['inventory'](namespace['source'])==manifest
+assert sha((interpreter/'bin/python3.12').read_bytes())=='f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526'
+assert Path(sys.prefix).resolve()==root/'.venv'
+assert Path(sys.base_prefix).resolve()==interpreter
+for path in (sys.executable, sysconfig.get_path('stdlib'), sysconfig.get_path('include')):
+ assert Path(path).resolve().is_relative_to(root), path
+previous=root/'docs/diagnostics/compile-cuda-module-relu'
+verified=json.loads((previous/'verification.json').read_text())
+for name,digest in verified['artifact_sha256'].items():
+ assert sha((previous/name).read_bytes())==digest,name
+sys.path.insert(0,str(root))
+from scripts.evaluate_cuda_math import source_provenance
+print(json.dumps(dict(verified=True,measured_code_commit=head,git_status='',
+ source_provenance=source_provenance(),build_record_sha256=sha((root/'target/cuda-add-diagnostic/module-relu-postcommit-1abe675f/build-record.json').read_bytes()),
+ executable=sys.executable,python_prefix=sys.prefix,base_prefix=sys.base_prefix,
+ interpreter_manifest_sha256=inventory_sha,interpreter_source_and_destination_still_identical=True,
+ installation_reused_from_verified_worktree_local_bootstrap=True,dependency_lock_unchanged=True,
+ source_export_and_installed_python_native_match=True,all_prior_development_artifacts_unchanged=True,
+ cache_state='Fresh per-export native build target; warm worktree Cargo/uv, Python and CUDA/Inductor/Triton caches. No performance measurement.'),indent=2))

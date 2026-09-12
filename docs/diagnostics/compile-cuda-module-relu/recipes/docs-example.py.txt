@@ -1,0 +1,8 @@
+from pathlib import Path
+import hashlib
+import json
+source = Path('docs/cuda-relu.md').read_bytes()
+example = source.decode().split('```python\n', 1)[1].split('```', 1)[0]
+exec(compile(example, 'docs/cuda-relu.md', 'exec'))
+print(json.dumps({'passed': True, 'documentation_sha256': hashlib.sha256(source).hexdigest(),
+                  'example_sha256': hashlib.sha256(example.encode()).hexdigest()}))

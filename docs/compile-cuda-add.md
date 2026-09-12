@@ -35,9 +35,9 @@ Top-level calls require an immutable native callable identity; unsupported repla
 
 Unary `-`, zero-argument `.neg()`, `.negative()` and `.relu()` compose arbitrarily with
 operator `+` and positional `.add(tensor)`. Positional `torch_rs.add(x, y)`,
-`torch_rs.neg(x)` and `torch_rs.negative(x)` also capture, including module
+`torch_rs.neg(x)`, `torch_rs.negative(x)` and `torch_rs.relu(x)` also capture, including module
 aliases, direct imported aliases and calls inside supported same-module helpers.
-These spellings reuse the existing add/neg nodes and native kernels. This syntax supports
+These spellings reuse the existing add/neg/ReLU nodes and native kernels. This syntax supports
 equal-shape addition and exactly `(M, N)+(N,)` in either operand order,
 self-addition, chains, scalar tensors, empty tensors, and contiguous views with
 nonzero offsets. Exact same-module helpers, live global tensor captures, and
@@ -74,9 +74,10 @@ Function calls accept only the stated positional Tensor arguments: no `alpha`,
 `out`, keywords, scalar addition or extra/missing arguments.
 
 ReLU uses [native CUDA compare/select](cuda-relu.md), preserving NaN payloads
-and clamping negative zero to positive zero. Its method capture accepts any
-contiguous rank already admitted by negation. Top-level `torch.relu` and
-functional ReLU capture remain unsupported.
+and clamping negative zero to positive zero. Method and positional top-level
+ReLU capture accept any contiguous rank already admitted by negation. Python
+wrappers such as `nn.functional.relu`, inplace and keyword/out forms remain
+unsupported.
 
 ## Metadata and cache contract
 
@@ -101,7 +102,7 @@ the same snapshots. Changed values specialize subject to `recompile_limit`,
 and unsupported replacements reject. Every call checks current input and capture
 devices and layouts.
 Module guards retain the legacy `mul`/`multiply`/`matmul` snapshots and guard
-new `add`/`neg`/`negative` fields only at loads that use them. Unused new fields
+new `add`/`neg`/`negative`/`relu` fields only at loads that use them. Unused new fields
 do not invalidate warm graphs or spend `recompile_limit`, even when rebound
 or deleted. Direct imported aliases guard their own binding and survive
 unrelated public-attribute mutations. Replacing a used binding with another
@@ -112,7 +113,11 @@ multiple fields and helper loads in the same namespace.
 The immutable callable owner is retained during package initialization. The lazy
 frontend never resolves identities through the writable native owner export;
 replacing or deleting that export before the first compile does not authorize
-counterfeit callables or invoke their hooks.
+counterfeit callables or invoke their hooks. ReLU is a PyO3 module function,
+not an arithmetic-owner member. Its genuine identity is also retained during
+package initialization, before callers can replace or delete public `relu` or
+native `_C.relu`. Genuine retained imports survive those unrelated changes;
+fake replacements cannot become trusted during the first frontend import.
 Rebinding a global creates a specialization or hits the existing recompile
 limit; an incompatible device transition is rejected. Rejected calls leave the
 graph cache unchanged. A new graph is published only after successful native
@@ -241,3 +246,15 @@ See [validation history](compile-cuda-add-validation.md) for source validation
 results, known baseline Python factory-order and boolean-buffer failures, and
 composite evidence provenance. Those historical results are separate from the
 usage and reproduction contract above.
+
+## Public ReLU function-call validation
+
+[Clean-commit ReLU evidence](diagnostics/compile-cuda-module-relu/postcommit-1abe675f/README.md)
+records release validation at `1abe675fc47215afba609f54716353730237c710`.
+The [baseline and development evidence](diagnostics/compile-cuda-module-relu/README.md),
+including the unchanged exact-main 32-gap probe, remain preserved.
+Run `CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest -v tests.test_compile_cuda_module_relu`;
+use an empty device mask for frontend/CPU checks and `0,1` only for
+`ModuleReluDeviceTests`. Startup subprocesses mutate both exports before the
+first frontend import; reference differentials cover all four policies,
+compositions, dynamic squeeze ranks, cache recovery and output lifetimes.
