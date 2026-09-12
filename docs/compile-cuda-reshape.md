@@ -101,7 +101,12 @@ closes all 96 rejections without changing that classification. No performance
 or general compiler/Inductor/training parity is claimed.
 
 Hardware-only cases skip clearly when the required devices are unavailable.
-The [latest clean-commit capture](diagnostics/compile-cuda-reshape/postcommit-93441a9f/README.md)
+The [top-level clean-commit capture](diagnostics/compile-cuda-module-reshape/postcommit-32977e5b/README.md)
+measures `32977e5dbab09e4b069dad921286d31697ecadb5` with a fresh source-bound
+release wheel, the frozen 144-cell replay, all four policies, the complete compiler
+selection and device/portability checks.
+
+The [earlier method-only capture](diagnostics/compile-cuda-reshape/postcommit-93441a9f/README.md)
 measures `93441a9fc13e8124a507a34810f2c3d97f7e69f1` with a fresh local environment
 and release build, including all three reviews' argument-validation regressions.
 H100 differentials, compiler and CPU/layout regressions, two-device restoration,

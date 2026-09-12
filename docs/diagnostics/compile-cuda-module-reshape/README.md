@@ -82,7 +82,8 @@ before its sweep subprocess (earlier sweep modules do not import it); both sourc
 versions are retained. Positive
 positional tuple/list coverage is explicit in the new test module.
 
-Burner owns the implementation commit, independent review, draft delivery and
-fresh merge gates. A separate clean-commit capture must run after that managed
-commit exists; this uncommitted development capture does not stand in for it.
-No branch, commit, push or PR was created by this implementation session.
+The separate [clean-commit capture](postcommit-32977e5b/README.md) measures
+`32977e5dbab09e4b069dad921286d31697ecadb5` after Burner's managed implementation
+commit. These development measurements remain pinned to their original source
+and build identities. Burner owns independent review, draft delivery and fresh
+merge gates. No branch, commit, push or PR was created by this implementation session.

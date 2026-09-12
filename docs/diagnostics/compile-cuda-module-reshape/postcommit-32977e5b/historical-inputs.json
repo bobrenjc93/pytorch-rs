@@ -1,0 +1,9 @@
+{
+  "baseline_commit": "6772c3405a8bc2baf70ca80106a27a390b19e9a0",
+  "baseline_log": "../logs/baseline.log.gz",
+  "baseline_raw_sha256": "b5aea5d200389178ac916dcd15ec6e8d34ad7438bcc9681901be897dabd1ecb7",
+  "frozen_manifest": "../frozen-manifest.json",
+  "frozen_manifest_sha256": "e7f3dc198139f3244c80f9a0744f323ae262e1f6509a425c7ee602c863987252",
+  "bootstrap_recipe": "../recipes/bootstrap.py.gz",
+  "historical_records_unchanged": true
+}
