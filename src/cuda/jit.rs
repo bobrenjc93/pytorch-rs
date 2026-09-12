@@ -281,5 +281,15 @@ mod tests {
         };
         let kernel = Kernel::compile(&graph, 0).unwrap();
         assert!(kernel.ptx.contains("torch_rs_pointwise"));
+        assert_eq!(kernel.source, graph.source().unwrap());
+        assert!(kernel.version.0 >= 12);
+        assert!(
+            kernel
+                .options
+                .iter()
+                .any(|x| x.starts_with("--gpu-architecture=compute_"))
+        );
+        assert!(kernel.options.contains(&"--ftz=false".into()));
+        assert!(!kernel.options.contains(&"--use_fast_math".into()));
     }
 }

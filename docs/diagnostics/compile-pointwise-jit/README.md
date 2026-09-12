@@ -1,5 +1,13 @@
 # Native default pointwise JIT validation
 
+**Refresh required after review fixes.** The fixes to Rust feature gating,
+contraction/negation and globals admission change implementation beyond the
+measured commit below. These existing reports and generated-code provenance are
+preserved verbatim, but do not measure the repaired candidate. Burner must
+repeat both clean-commit gates and `capture.py` after committing the fixes;
+dirty development checks cannot substitute for that capture. See the
+[review-fix validation](review-fixes.md) for the new regression checks.
+
 Base: `76738b39fd6884ffd43b4dff2f5292257a1c6e6b`. The baseline ran from that
 clean committed checkout before any source edits. Fresh post-commit coverage,
 CUDA-performance and generated-code captures measured clean implementation
@@ -8,7 +16,7 @@ commands report `valid: true`, `diagnostic: false`, with no infrastructure error
 No evaluator, corpus, tolerance, denominator or managed progress artifact was
 changed. See the [implementation contract](../../compile-pointwise-jit.md).
 
-| Unchanged public-default-compile-v2 gate | Clean baseline | Clean candidate |
+| Unchanged public-default-compile-v2 gate | Clean baseline | Candidate at `5b93c983` (refresh pending) |
 | --- | ---: | ---: |
 | Weighted coverage | 0% (0/112 cells) | 6% (4/112 cells) |
 | Weighted CUDA performance | 0% (0/56 cells) | 12% (4/56 cells) |
@@ -179,5 +187,5 @@ Driver disk-code caching was disabled for both implementations in the new
 candidate gates, while the historical baseline did not set that flag. Neither
 result is a cold-cache speed comparison between builds. Inductor/Triton worker
 caches were separately fresh in every run. Dependency/native build caches may
-be warm, as recorded in each setup receipt. All measurement preceded these
-evidence-only edits; no implementation or harness changed after the measured commit.
+be warm, as recorded in each setup receipt. The review fixes now require a new
+committed capture, as described above.

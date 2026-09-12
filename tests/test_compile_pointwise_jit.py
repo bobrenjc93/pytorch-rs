@@ -7,6 +7,7 @@ import os
 import random
 import subprocess
 import sys
+import types
 import unittest
 import weakref
 from unittest.mock import patch
@@ -34,6 +35,37 @@ def cache(compiled):
 
 def kernel(compiled):
     return next(iter(cache(compiled).graphs.values()))[1]
+
+
+def custom_globals_program(source):
+    effects = []
+    class Globals(dict):
+        def __contains__(self, key):
+            effects.append(('contains', key))
+            return super().__contains__(key)
+        def __getitem__(self, key):
+            effects.append(('getitem', key))
+            return super().__getitem__(key)
+    namespace = Globals(scale=0.713)
+    exec(source, namespace)
+    fn = dict.__getitem__(namespace, 'f')
+    effects.clear()
+    return fn, effects
+
+
+def custom_closure_program():
+    effects = []
+    class Closure(tuple):
+        def __bool__(self):
+            effects.append('closure truthiness')
+            return True
+        def __iter__(self):
+            effects.append('closure iteration')
+            return super().__iter__()
+    scale = 0.713
+    def fn(x):
+        return x * scale
+    return types.FunctionType(fn.__code__, fn.__globals__, closure=Closure(fn.__closure__)), effects
 
 
 class Admission(unittest.TestCase):
@@ -83,6 +115,21 @@ class Admission(unittest.TestCase):
                 bridge._pointwise_source(nodes, output, 1)
         with self.assertRaises(TypeError):
             bridge._pointwise_source((("input", True, 0, 0),), 0, 1)
+
+    def test_custom_globals_rejected_without_lookup_hooks(self):
+        for expression in ('x.sum() + scale', 'x * scale', '-x'):
+            fn, effects = custom_globals_program('def f(x):\n return ' + expression)
+            for _ in range(2):
+                with self.subTest(expression=expression), self.assertRaisesRegex(
+                        NotImplementedError, 'globals must be an exact dict'):
+                    lower(fn)
+                self.assertEqual(effects, [])
+
+    def test_custom_closure_rejected_without_container_hooks(self):
+        fn, effects = custom_closure_program()
+        with self.assertRaisesRegex(NotImplementedError, 'closure must be an exact tuple'):
+            lower(fn)
+        self.assertEqual(effects, [])
 
     def test_positional_operator_spellings_and_integer_bytecode(self):
         fn = program('def f(x, y):\n a = b = fw.add(x, y)\n return fw.subtract(a, -3).mul(2) + b.__rsub__(0.713)')
@@ -316,6 +363,63 @@ class Hardware(unittest.TestCase):
         native.compiler.reset()
         del compiled, x
         gc.collect()
+
+    def test_two_product_contraction_overflow_and_cancellation(self):
+        left = [2e38, -2e38, 1e38, -1e38, 16777216., -16777216., 0., -0.]
+        right = [1e38, -1e38, 2e38, -2e38, 16777215., -16777215., -0., 0.]
+        for expression in ('x * 2.0 - y * 2.0', 'x * 2.0 + y * -2.0',
+                           'y * 2.0 - x * 2.0', 'y * -2.0 + x * 2.0',
+                           'y * -3.713 + x * 1.137', 'x * 1.137 + y * -3.713',
+                           'x * 1.0000001192092896 - y * 1.0000001192092896',
+                           'x * y - y * y'):
+            source = 'def f(x, y):\n return ' + expression
+            fn, ref_fn = program(source), program(source, self.torch)
+            compiled, reference = native.compile(fn), self.torch.compile(ref_fn)
+            for values in ((left, right), (right, left)):
+                args = [self.upload(v, (len(v),)) for v in values]
+                refs = [self.upload(v, (len(v),), self.torch) for v in values]
+                with self.subTest(expression=expression, values=values):
+                    self.compare(self.without_replay(fn, compiled, args), reference(*refs), exact=True)
+            self.assertIn('fmaf(', kernel(compiled).source)
+            self.assertIn('fma.rn.f32', kernel(compiled).ptx)
+
+    def test_negated_product_underflow_and_exact_zero_signs(self):
+        left = [1e-38, -1e-38, 1e-38, -1e-38, 0., -0., 0., -0.]
+        right = [1e-38, 1e-38, -1e-38, -1e-38, 1., 1., -1., -1.]
+        args = [self.upload(v, (8,)) for v in (left, right)]
+        refs = [self.upload(v, (8,), self.torch) for v in (left, right)]
+        for body in ('return -(x * y)', 'a = x * y\n return -a',
+                     'a = x * y\n return -a + a', 'return -(x * 1e-38)'):
+            source = 'def f(x, y):\n ' + body
+            fn, ref_fn = program(source), program(source, self.torch)
+            compiled, reference = native.compile(fn), self.torch.compile(ref_fn)
+            with self.subTest(body=body):
+                expected = reference(*refs)
+                self.compare(self.without_replay(fn, compiled, args), expected, exact=True)
+                self.assertIn('fmaf(', kernel(compiled).source)
+                if body == 'return -(x * y)':
+                    self.assertEqual(expected.signbit().tolist(),
+                                     [True, False, False, True, False, False, False, False])
+                    self.assertTrue(self.torch.equal(expected.signbit()[:4], ref_fn(*refs).signbit()[:4]))
+
+    def test_public_compile_rejects_custom_globals_before_codegen(self):
+        x = self.upload([1., 2.], (2,))
+        for expression in ('x.sum() + scale', 'x * scale', '-x'):
+            fn, effects = custom_globals_program('def f(x):\n return ' + expression)
+            compiled = native.compile(fn)
+            for _ in range(2):
+                with patch.object(bridge, '_pointwise_compile', side_effect=AssertionError('codegen')):
+                    with self.assertRaisesRegex(NotImplementedError, 'globals must be an exact dict'):
+                        compiled(x)
+                self.assertEqual(effects, [])
+                self.assertFalse(cache(compiled).graphs)
+        fn, effects = custom_closure_program()
+        compiled = native.compile(fn)
+        for _ in range(2):
+            with self.assertRaisesRegex(NotImplementedError, 'closure must be an exact tuple'):
+                compiled(x)
+            self.assertEqual(effects, [])
+            self.assertFalse(cache(compiled).graphs)
 
     def test_closure_and_function_tensor_lifetimes(self):
         fw, scale = native, 0.7

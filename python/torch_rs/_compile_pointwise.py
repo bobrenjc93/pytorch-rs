@@ -78,12 +78,25 @@ class Program:
     dependencies: tuple
 
 
+def validate_signature_containers(model):
+    # Function attributes permit container subclasses. Check their exact types
+    # before emptiness so admission and warm guards never invoke user hooks.
+    defaults, kwdefaults = model.__defaults__, model.__kwdefaults__
+    if defaults is not None and (type(defaults) is not tuple or len(defaults)):
+        unsupported("function defaults must be absent or an empty exact tuple")
+    if kwdefaults is not None and (type(kwdefaults) is not dict or len(kwdefaults)):
+        unsupported("keyword defaults must be absent or an empty exact dict")
+    if model.__closure__ is not None and type(model.__closure__) is not tuple:
+        unsupported("closure must be an exact tuple")
+
+
 def analyze(model, arity):
     if type(model) is not types.FunctionType or arity not in (1, 2):
         unsupported("expected an exact Python function and one or two inputs")
+    validate_signature_containers(model)
     code = model.__code__
     if (code.co_argcount != arity or code.co_kwonlyargcount or code.co_flags & (0x04 | 0x08 | 0x20 | 0x80 | 0x200)
-            or model.__defaults__ or model.__kwdefaults__ or code.co_cellvars
+            or code.co_cellvars
             or getattr(code, "co_exceptiontable", b"")):
         unsupported("requires a straight-line function with one or two positional tensor inputs")
     instructions = tuple(dis.get_instructions(code))
@@ -115,13 +128,18 @@ def binding(value):
 
 
 def resolve(model, program):
+    # FunctionType permits a dict subclass as globals. Never invoke its lookup
+    # hooks, including on a warm call or before rejecting a later graph node.
+    globals_ = model.__globals__
+    if type(globals_) is not dict:
+        unsupported("function globals must be an exact dict")
     values, keys = {}, []
     closure = dict(zip(program.code.co_freevars, model.__closure__ or ()))
     for kind, name in program.dependencies:
         if kind == "LOAD_GLOBAL":
-            if name not in model.__globals__:
+            if name not in globals_:
                 unsupported("unbound global: " + name)
-            value = model.__globals__[name]
+            value = globals_[name]
         else:
             try:
                 value = closure[name].cell_contents
@@ -256,7 +274,8 @@ def implementation(model, recompile_limit):
         with cache.lock:
             if program is None or program.code is not model.__code__:
                 program = analyze(model, len(args))
-            if model.__defaults__ or model.__kwdefaults__ or program.code.co_argcount != len(args):
+            validate_signature_containers(model)
+            if program.code.co_argcount != len(args):
                 unsupported("function signature changed")
             bindings, values = resolve(model, program)
             key = (program.code, bindings, metadata)

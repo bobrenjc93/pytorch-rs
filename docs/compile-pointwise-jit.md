@@ -24,8 +24,12 @@ add/subtract/multiply (tensor/tensor or tensor/scalar in either order), and
 unary negation/ReLU/sin/cos. Operator syntax, positional Tensor methods, and
 positional native top-level functions are accepted. Exact bool/int/float
 constants may be literal, module-global, or closure values; native operator
-and package bindings may also be captured. Integers must fit the native scalar
-range `[-2**63, 2**64-1]`; float32 overflow rounds to signed infinity. Graphs
+and package bindings may also be captured. Function globals must be an exact
+`dict`; custom globals mappings are rejected before any lookup hooks can execute,
+including on repeated calls. Signature defaults must be absent or empty exact
+containers, and closures must use an exact tuple; container subclasses are
+rejected before truthiness or iteration hooks can execute. Integers must fit the native scalar range
+`[-2**63, 2**64-1]`; float32 overflow rounds to signed infinity. Graphs
 are bounded to 4096 nodes and 16384 bytecode instructions. Return one computed Tensor.
 Scalars and empty tensor shapes and contiguous views with storage offsets are
 supported. Outputs have fresh storage and canonical contiguous strides;
@@ -51,17 +55,27 @@ fast math is not enabled. Arithmetic explicitly allows FMA contraction
 (`--fmad=true`) to match default Inductor, including cancellation and overflow
 cases where CUDA eager's separately rounded operations differ. SSA variables
 retain expression dependencies and reuse through native compiler optimization.
-A local single-use multiply/add-subtract rule emits explicit `fmaf` so toolkit
-strength reduction cannot lose the intended contraction. Float constants are rounded to float32 once and
-encoded by their IEEE bits, including negative zero and non-finite values.
+A local multiply/add-subtract rule emits explicit `fmaf` so toolkit
+strength reduction cannot lose the intended contraction. For two eligible
+products, contraction selects the left product, rounding the other first;
+addition with a negative coefficient on the left normalizes subtraction from
+the positive product first. Negated products use `fmaf(-a, b, +0)`, and those
+factor uses are accounted for before selecting subsequent contractions.
+The complete IR is validated before dead expressions are removed; only live
+consumers constrain contraction, so an unused local cannot change rounding of
+the returned expression. Invalid unused operations remain rejected.
+Float constants are rounded to float32 once and encoded by their IEEE bits,
+including negative zero and non-finite values.
 Integer constants follow default Inductor's Python binary64-to-float32
 normalization; large integers at rounding boundaries can differ by one float32
 ULP from eager's direct integer conversion.
-The zero-sign contract follows default PyTorch 2.13 Inductor: negation uses
-`0 - x`, so negating positive zero produces positive zero; ReLU preserves
-negative zero. CUDA eager differs in these two cases (negative and positive
-zero respectively). Tests assert those differences explicitly as well as
-checking all other eager/reference values. Finite libdevice results retain
+The zero-sign contract follows default PyTorch 2.13 Inductor: standalone negation
+uses `0 - x`, so negating positive zero produces positive zero; ReLU preserves
+negative zero. Contracted negation of a nonzero positive product that underflows
+produces negative zero; an exactly zero product produces positive zero. CUDA
+eager differs for standalone positive-zero negation and negative-zero ReLU.
+Tests assert those differences explicitly as well as checking all other
+eager/reference values. Finite libdevice results retain
 gradual underflow; some reference compositions flush subnormals. Finite values
 are compared with numerical tolerances, and zero signs are checked wherever
 both results are zero.
@@ -104,5 +118,7 @@ The unchanged [public-default compiler gates](torch-compile-default-evaluator.md
 remain the scoring authority with all 112 coverage and 56 CUDA performance
 cells. These focused tests do not change their denominator. Unsupported
 categories remain zero. The [post-commit evidence](diagnostics/compile-pointwise-jit/README.md)
-records fresh clean-commit coverage and CUDA-performance captures, alongside
-the unchanged source-bound baseline and original development failures.
+records clean-commit coverage and CUDA-performance captures for the implementation
+before the review fixes, alongside the unchanged source-bound baseline and
+original development failures. Fresh captures are required after Burner commits
+the review fixes; the development validation does not replace them.
