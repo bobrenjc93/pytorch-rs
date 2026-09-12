@@ -1,0 +1,38 @@
+"""Non-scoring development command receipt; all outputs stay in this worktree."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+root = Path.cwd().resolve()
+out = root / 'target/relu-validation'
+label, *command = sys.argv[1:]
+assert label.replace('-', '').isalnum()
+log = out / (label + '.log')
+assert not log.exists(), log
+sha = lambda raw: hashlib.sha256(raw).hexdigest()
+paths = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z']).decode().split('\0')[:-1]
+files = {p: sha((root/p).read_bytes()) for p in paths if (root/p).is_file() and
+         (p.startswith(('src/', 'python/', 'tests/')) or p in ('Cargo.toml', 'Cargo.lock', 'pyproject.toml', 'uv.lock', 'rust-toolchain.toml'))}
+manifest = json.dumps(files, sort_keys=True).encode()
+key = sha(manifest)
+folder = out/'manifests'; folder.mkdir(exist_ok=True)
+(folder/(key+'.json')).write_bytes(manifest)
+def gpu():
+    return subprocess.check_output(['nvidia-smi', '--query-gpu=index,uuid,name,driver_version,utilization.gpu,memory.used', '--format=csv'], text=True)
+record = dict(command=command, cwd=str(root), base_commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+              source_manifest_sha256=key, environment={k:v for k,v in os.environ.items() if k.startswith(('UV_', 'CARGO_', 'CUDA_', 'TORCH', 'TRITON_', 'PYO3_', 'RAYON_', 'OMP_')) or k in ('LD_LIBRARY_PATH', 'TMPDIR', 'XDG_CACHE_HOME')},
+              gpu_before=gpu(), snapshot_is_not_reservation=True)
+extensions = list((root/'.venv/lib/python3.12/site-packages/torch_rs').glob('*.so'))
+record['native_extensions'] = {str(p.relative_to(root)):sha(p.read_bytes()) for p in extensions}
+start = time.time()
+with log.open('w') as output:
+    result = subprocess.run(command, stdout=output, stderr=subprocess.STDOUT)
+record.update(exit_code=result.returncode, elapsed_seconds=time.time()-start, gpu_after=gpu(), log_sha256=sha(log.read_bytes()))
+assert all(sha((root/p).read_bytes()) == digest for p,digest in files.items()), 'source changed during run'
+(out/(label+'.json')).write_text(json.dumps(record, indent=2)+'\n')
+print(label, result.returncode, log.read_text()[-2500:], flush=True)
+raise SystemExit(result.returncode)

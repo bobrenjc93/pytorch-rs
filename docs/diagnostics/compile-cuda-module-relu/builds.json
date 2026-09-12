@@ -1,0 +1,74 @@
+{
+  "baseline": {
+    "source_root": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c953da64/target/cuda-add-diagnostic/module-relu-baseline/source",
+    "source_manifest_sha256": "cbcb44b474af6fb675e9a478cb471620ef872453cc6ce488ee012b1432c12771",
+    "base_commit": "b74c2051b823518cc09d5a29f8237a3de9863516",
+    "measured_code_commit": "b74c2051b823518cc09d5a29f8237a3de9863516",
+    "source_kind": "clean commit export",
+    "origin_status": "",
+    "origin_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source_matches_commit": true,
+    "durations_seconds": {
+      "dependency_setup": 0.05844388250261545,
+      "build": 47.7665188210085,
+      "wheel_install": 0.14339922089129686
+    },
+    "build_cache": "empty per-export Cargo target; shared worktree Cargo/uv download caches warm",
+    "profile": "release, thin LTO, codegen-units=1, extension-module, locked dependencies",
+    "wheel": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c953da64/target/cuda-add-diagnostic/module-relu-baseline/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "wheel_sha256": "c28ef2bf01d06cc2642e660b087541acd220d7c7e3ac1945fe10e5c211bb45db",
+    "installed_package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c953da64/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+    "installed_native": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c953da64/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+    "installed_native_sha256": "34e97af3fd5149e734f6e0afe0fbd1572e8829432ed31a8ab092f073261f97db",
+    "build_target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c953da64/target/cuda-add-diagnostic/module-relu-baseline/build",
+    "source_delta_from_base": {
+      "changed": {},
+      "removed": []
+    },
+    "original_record_sha256": "83b8c7381ec0a275f2841901ae4be66342875137140351dbbb0c1251743373af",
+    "build_recipe": ".venv/bin/python scripts/build_cuda_add_diagnostic.py --name module-relu-baseline --revision HEAD",
+    "logs": {
+      "logs/build-baseline-dependency_setup.log": "dc200bac66ed5c829448024a07a063ec51a6cb784674cfe76452dd7213b72f70",
+      "logs/build-baseline-build.log": "6a3f831a9ece67a14ba71a111efda8979c9e790bf0cdb91e92b0b96fafa070e7"
+    }
+  },
+  "development": {
+    "source_root": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c953da64/target/cuda-add-diagnostic/module-relu-development/source",
+    "source_manifest_sha256": "efc24eb3883b1c0086a7c3e6838557214a2359124db2adfd85fd53675222323e",
+    "base_commit": "b74c2051b823518cc09d5a29f8237a3de9863516",
+    "measured_code_commit": null,
+    "source_kind": "immutable current-source export; uncommitted overlay, not exact HEAD",
+    "origin_status": " M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compiler_state.py\n M tests/test_compile_cuda_module_arithmetic.py\n M tests/test_compile_cuda_relu.py\n?? tests/test_compile_cuda_module_relu.py\n",
+    "origin_patch_sha256": "75d5f65326f2a7b7961e1ceeb0d74c165e3d5fc072ae33ea159a5446bea5d3ce",
+    "source_matches_commit": false,
+    "durations_seconds": {
+      "dependency_setup": 0.018708796240389347,
+      "build": 47.081696754321456,
+      "wheel_install": 0.14012760389596224
+    },
+    "build_cache": "empty per-export Cargo target; shared worktree Cargo/uv download caches warm",
+    "profile": "release, thin LTO, codegen-units=1, extension-module, locked dependencies",
+    "wheel": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c953da64/target/cuda-add-diagnostic/module-relu-development/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "wheel_sha256": "ff456a77bc88daadc0333a9a8aacc543543e9608fdd0b563e3fdbd576f36071f",
+    "installed_package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c953da64/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+    "installed_native": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c953da64/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+    "installed_native_sha256": "34e97af3fd5149e734f6e0afe0fbd1572e8829432ed31a8ab092f073261f97db",
+    "build_target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c953da64/target/cuda-add-diagnostic/module-relu-development/build",
+    "source_delta_from_base": {
+      "changed": {
+        "python/torch_rs/_compile_bytecode.py": "e01a558a27dbaec25b7faf0bca00809ed8dae5b154921993e499029d869d89eb",
+        "python/torch_rs/_compiler_state.py": "32dd742526e55d129c788642d6865e5aeb02bbe2e106ce6367b70a95170cd735",
+        "tests/test_compile_cuda_module_arithmetic.py": "44862a1a7a5710b66bb745e86d96ef8bbc9724d59bf94e69ed14cce6d8a95035",
+        "tests/test_compile_cuda_module_relu.py": "fdbf13d4964aae0b9d80aa7c58e37d9e664cce54e7cd8bab4f9603aec7c77ae1",
+        "tests/test_compile_cuda_relu.py": "8a6e957ed9272db1e85e1ff90dc746109d052972b35fcfb2065bfdcc79e8a924"
+      },
+      "removed": []
+    },
+    "original_record_sha256": "a6d23df66b68ce43da2e801d1f0aa77cc8d4b67d747a452ca0c394875dd511dc",
+    "build_recipe": ".venv/bin/python scripts/build_cuda_add_diagnostic.py --name module-relu-development",
+    "logs": {
+      "logs/build-development-dependency_setup.log": "129e1608e7d6493a82270727f3359e8e54acd6fc946a1a861ad39a97a5fc1dd4",
+      "logs/build-development-build.log": "aa3dc7b139affc77be1ba2df66bb5d3310fc6bd332434c098478c7d3ebd7de05"
+    }
+  }
+}

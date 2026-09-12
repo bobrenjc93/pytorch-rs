@@ -1,0 +1,28 @@
+test_hostile_namespaces_and_deleted_fields_without_callbacks (tests.test_compile_cuda_module_relu.ModuleReluFrontendTests.test_hostile_namespaces_and_deleted_fields_without_callbacks) ... ok
+test_identity_registry_arity_and_unchanged_cpu_boundary (tests.test_compile_cuda_module_relu.ModuleReluFrontendTests.test_identity_registry_arity_and_unchanged_cpu_boundary) ... ok
+test_startup_before_frontend_import (tests.test_compile_cuda_module_relu.ModuleReluFrontendTests.test_startup_before_frontend_import) ... 
+  test_startup_before_frontend_import (tests.test_compile_cuda_module_relu.ModuleReluFrontendTests.test_startup_before_frontend_import) (mutation='deleted') ... FAIL
+test_exported_owner_rebinding_cannot_supply_callable_identities (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticFrontendTests.test_exported_owner_rebinding_cannot_supply_callable_identities) ... ok
+test_identity_arity_registry_and_cpu_boundary_without_gpu (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticFrontendTests.test_identity_arity_registry_and_cpu_boundary_without_gpu) ... ok
+test_module_and_direct_guards_do_not_invoke_callbacks (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticFrontendTests.test_module_and_direct_guards_do_not_invoke_callbacks) ... ok
+test_native_planner_rejects_declarations_without_device (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticFrontendTests.test_native_planner_rejects_declarations_without_device) ... ok
+test_owner_rebinding_before_first_frontend_import (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticFrontendTests.test_owner_rebinding_before_first_frontend_import) ... ok
+
+======================================================================
+FAIL: test_startup_before_frontend_import (tests.test_compile_cuda_module_relu.ModuleReluFrontendTests.test_startup_before_frontend_import) (mutation='deleted')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c953da64/tests/test_compile_cuda_module_relu.py", line 127, in startup
+    test.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+AssertionError: 1 != 0 : Traceback (most recent call last):
+  File "<string>", line 50, in <module>
+  File "<frozen importlib._bootstrap>", line 1412, in _handle_fromlist
+  File "<string>", line 28, in <lambda>
+  File "<string>", line 19, in __getattribute__
+AssertionError: attribute callback
+
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.417s
+
+FAILED (failures=1)

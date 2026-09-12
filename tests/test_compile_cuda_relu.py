@@ -260,7 +260,7 @@ class CompileCudaReluTests(Comparison, unittest.TestCase):
                     with self.assertRaises(NotImplementedError):
                         wrapper(x)
         for expression in ('x.relu(1)', 'x.relu(inplace=False)', 'x.relu(input=x)',
-                           'm.relu(x)', 'x.relu_()', 'x.relu().abs()'):
+                           'm.relu(x, out=None)', 'x.relu_()', 'x.relu().abs()'):
             program = make_program(f'def program(x):\n    return {expression}\n')
             wrapper, rejected_cache = compile_with_cache(program)
             with patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('early execution')):

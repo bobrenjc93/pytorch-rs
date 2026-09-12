@@ -11,14 +11,17 @@ aliases share this behavior; both have real H100 differential coverage.
 import torch_rs as torch
 
 def activate(x):
-    return (x * 0.5).relu().sum(1)
+    return torch.relu(x * 0.5).sum(1)
 
 compiled = torch.compile(activate, backend="eager", fullgraph=True)
 x = torch.tensor([[-2., 4.], [6., -8.]]).to("cuda:0")
 assert compiled(x).cpu().tolist() == [2., 3.]
 ```
 
-Only zero-argument `Tensor.relu()` is captured. It composes with negation,
+Zero-argument `Tensor.relu()` and positional `torch_rs.relu(x)` are captured,
+including genuine direct imports (`from torch_rs import relu as activate`) and
+supported same-module helpers. [Trusted callable guards](compile-cuda-add.md#metadata-and-cache-contract)
+retain native ReLU identity during package initialization. These calls compose with negation,
 scalar multiplication, addition/bias, matmul, row sums and the existing bounded
 transpose/contiguous/reshape paths. Packing and view capture keep their existing
 rank limits; ReLU itself has no additional rank limit. CPU behavior and ReLU

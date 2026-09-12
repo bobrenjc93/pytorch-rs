@@ -198,7 +198,7 @@ class ModuleArithmeticFrontendTests(ExactErrors, unittest.TestCase):
             self.exact_error(trace.CompileTraceUnsupportedError,
                              lambda: bytecode.prepare_compile_cache_request(fn, metadata))
         fn = expression('n(x)', 1)
-        for value in (Hostile(), property(Hostile.fail), native.relu):
+        for value in (Hostile(), property(Hostile.fail), native.abs):
             fn.__globals__['n'] = value
             self.exact_error(trace.CompileTraceUnsupportedError,
                              lambda: bytecode.prepare_compile_cache_request(fn, metadata))

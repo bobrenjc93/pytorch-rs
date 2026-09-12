@@ -1,0 +1,96 @@
+"""Publish compact non-scoring development receipts without replacing old evidence."""
+import gzip
+import hashlib
+import json
+from pathlib import Path
+import re
+import shutil
+import subprocess
+
+root = Path.cwd()
+src = root/'target/relu-validation'
+out = root/'docs/diagnostics/compile-cuda-module-relu'
+sha = lambda raw: hashlib.sha256(raw).hexdigest()
+def write(name, data):
+    path=out/name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    assert not path.exists(), path
+    path.write_bytes(data)
+def dump(name, obj): write(name, (json.dumps(obj, indent=2)+'\n').encode())
+receipts = {}
+for path in sorted(src.glob('*.json')):
+    record = json.loads(path.read_text())
+    if 'command' not in record: continue
+    name = path.stem
+    raw = (src/(name+'.log')).read_bytes()
+    assert sha(raw) == record['log_sha256']
+    compressed = len(raw) > 16000 and name != 'compiler-complete'
+    published = 'logs/'+name+'.log'+('.gz' if compressed else '')
+    write(published, gzip.compress(raw, mtime=0) if compressed else raw)
+    record['published_log'] = published
+    record['original_receipt_sha256'] = sha(path.read_bytes())
+    text=raw.decode()
+    summary=re.search(r'Ran (\d+) tests? in ([\d.]+)s\s+\n(OK(?: \(skipped=(\d+)\))?|FAILED[^\n]*)',text)
+    if summary:
+        total=int(summary[1]); skips=int(summary[4] or 0)
+        record['test_summary'] = dict(run=total, skipped=skips, status=summary[3],
+                                      passed=total-skips if record['exit_code']==0 else None)
+    rust=re.findall(r'test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored;', text)
+    if rust:
+        record['test_summary'] = dict(passed=sum(int(v[0]) for v in rust), failed=sum(int(v[1]) for v in rust), ignored=sum(int(v[2]) for v in rust))
+    receipts[name]=record
+assert receipts['compiler-complete']['exit_code'] == 0
+assert receipts['hidden-final']['exit_code'] == 0
+assert receipts['docs-smoke-final']['exit_code'] == 0
+dump('commands.json', receipts)
+base_key=receipts['baseline']['source_manifest_sha256']
+base=json.loads((src/'manifests'/(base_key+'.json')).read_text())
+variants={}
+for path in sorted((src/'manifests').glob('*.json')):
+    data=json.loads(path.read_text()); key=sha(json.dumps(data,sort_keys=True).encode())
+    assert key==path.stem
+    variants[key]=dict(changed={k:v for k,v in data.items() if base.get(k)!=v},removed=sorted(set(base)-set(data)))
+dump('input-manifests.json',dict(base_sha256=base_key,base=base,variants=variants))
+builds={}
+base_build=json.loads((root/'target/cuda-add-diagnostic/module-relu-baseline/build-record.json').read_text())
+base_files=base_build['source_files']
+raw=json.dumps(base_files,sort_keys=True).encode()
+assert sha(raw)==base_build['source_manifest_sha256']
+write('build-source-base.json.gz',gzip.compress(raw,mtime=0))
+for label in ('baseline','development'):
+    folder=root/('target/cuda-add-diagnostic/module-relu-'+label)
+    record=json.loads((folder/'build-record.json').read_text())
+    files=record.pop('source_files')
+    record['source_delta_from_base']=dict(changed={k:v for k,v in files.items() if base_files.get(k)!=v},removed=sorted(set(base_files)-set(files)))
+    record['original_record_sha256']=sha((folder/'build-record.json').read_bytes())
+    record['build_recipe']='.venv/bin/python scripts/build_cuda_add_diagnostic.py --name module-relu-'+label+(' --revision HEAD' if label=='baseline' else '')
+    for log in ('dependency_setup.log','build.log'):
+        raw=(folder/log).read_bytes(); name='logs/build-'+label+'-'+log
+        write(name,raw)
+        record.setdefault('logs',{})[name]=sha(raw)
+    builds[label]=record
+dump('builds.json',builds)
+for name in ('audited-baseline.json','bootstrap.json'):
+    write(name,(src/name).read_bytes())
+# Keep baseline outcome bytes exactly, not a reserialized JSON report.
+write('baseline.json',(src/'baseline.log').read_bytes())
+write('production-source.json',(src/'final-production.json').read_bytes())
+for name in ('probe-baseline.py','bootstrap.py','env.sh','run.py','compiler-sweep.py','environment.py','docs-example.py','publish.py','verify.py'):
+    write('recipes/'+name+'.txt',(src/name).read_bytes())
+# Retain failed/earlier fixture source without duplicating its unchanged body.
+final=(root/'tests/test_compile_cuda_module_relu.py').read_text()
+import difflib
+for name in ('test-module-relu-initial.py.txt','test-module-relu-focused.py.txt'):
+    original=(src/name).read_text()
+    delta=''.join(difflib.unified_diff(final.splitlines(True),original.splitlines(True),fromfile='final',tofile=name))
+    write('recipes/'+name+'.patch',delta.encode())
+    assert original
+write('logs/dependencies.log',(src/'dependencies.log').read_bytes())
+dump('input-recipe.json',dict(test='tests/test_compile_cuda_module_relu.py',test_sha256=sha(final.encode()),
+    baseline_probe_sha256=sha((src/'probe-baseline.py').read_bytes()),baseline_seed=198301,
+    inductor_spelling_matrix_seed=198301,generated_composition_seed=198305,
+    policies=[[True,None],[True,False],[True,True],[False,None]],
+    matrix_shapes=[[],[7],[3,5],[0]],spelling_cells=32,policy_spelling_cells=128,
+    comparison='metadata and non-NaN bits versus eager reference; zero-tolerance numerical comparison versus Inductor; raw-buffer IEEE comparisons',
+    other_inputs='Deterministic generators, views, exact constants and EDGE_BITS in source-bound test and dependency manifests; no scoring corpus changes'))
+print(json.dumps({name:r.get('test_summary',{'exit_code':r['exit_code']}) for name,r in receipts.items()},indent=2))
