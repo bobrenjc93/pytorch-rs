@@ -486,7 +486,10 @@ pub(super) fn source(graph: &Graph) -> String {
             Expr::Node(Node::Relu(a)) => format!("(v{a} < 0.0f ? 0.0f : v{a})"),
             Expr::Node(Node::Sin(a)) => {
                 if constant[a] {
-                    format!("sinf(v{a})")
+                    // Reference constant folding rounds a high-precision unary
+                    // result to f32. Keep both input and output materialization
+                    // boundaries; sinf's allowed ULP error can amplify later.
+                    format!("(float)sin((double)v{a})")
                 } else {
                     // Match runtime reference sine's input FTZ boundary without
                     // approximate range reduction or flushing other arithmetic.
@@ -495,6 +498,7 @@ pub(super) fn source(graph: &Graph) -> String {
                     )
                 }
             }
+            Expr::Node(Node::Cos(a)) if constant[a] => format!("(float)cos((double)v{a})"),
             Expr::Node(Node::Cos(a)) => format!("cosf(v{a})"),
             Expr::Flip(a) | Expr::SignedDouble(a) => format!("(-v{a})"),
             Expr::SelfSub(a) => format!("__fsub_rn(v{a}, v{a})"),

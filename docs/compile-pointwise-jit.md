@@ -25,7 +25,8 @@ unary negation/ReLU/sin/cos. Operator syntax, positional Tensor methods, and
 positional native top-level functions are accepted. Exact bool/int/float
 constants may be literal, module-global, or closure values; native operator
 and package bindings may also be captured. Function globals must be an exact
-`dict`; custom globals mappings are rejected before any lookup hooks can execute,
+`dict` with exact string keys; custom globals mappings and keys are rejected
+before any lookup hooks can execute,
 including on repeated calls. Scalar admission uses type identity, and the complete
 constant pool is validated before disassembly can format any constants. Rejected
 objects cannot execute metaclass equality or representation callbacks. Signature
@@ -53,7 +54,11 @@ constructs typed SSA nodes with float32 tensor values and scalar kinds.
 C from operator rules, retaining intermediates.
 `cuda/jit.rs` compiles it with NVRTC and loads the resulting PTX through the
 existing native driver. No fixed expression, shape, name, or corpus recognizer
-is involved. Accurate libdevice `sinf`/`cosf` and `--ftz=false` are used;
+is involved. Runtime trigonometry uses accurate libdevice `sinf`/`cosf`;
+constant-only sine/cosine use double-precision libdevice evaluation between
+float32 input and output boundaries, matching reference constant evaluation.
+This avoids amplifying single-precision library rounding errors in later
+cancellation. `--ftz=false` is used;
 fast math is not enabled. Arithmetic explicitly allows FMA contraction
 (`--fmad=true`) to match default Inductor, including cancellation and overflow
 cases where CUDA eager's separately rounded operations differ. SSA variables
@@ -134,7 +139,10 @@ Passing the same Tensor for both parameters shares its input expression;
 distinct tensors, even equal-valued tensors or views sharing storage, keep
 separate expressions. Only this identity relationship is cached, so fresh
 tensors reuse the same specialization. Captured scalars are initially constant
-specializations. A changed finite captured float becomes a runtime float32
+specializations. Static captured-float guards equate positive and negative
+zero: a cache hit retains the sign captured by that graph, while a new graph
+uses the current value. Literal zeros and promoted runtime parameters retain
+their actual sign. A changed finite captured float becomes a runtime float32
 kernel parameter, matching the reference's warm-call materialization boundary.
 Promotion is per binding, persists when earlier float values return, and is
 cleared by reset. Integer and Boolean bindings retain their scalar kinds.
@@ -171,8 +179,9 @@ remain the scoring authority with all 112 coverage and 56 CUDA performance
 cells. These focused tests do not change their denominator. Unsupported
 categories remain zero. The [post-commit evidence](diagnostics/compile-pointwise-jit/README.md)
 records fresh clean-commit coverage, CUDA-performance and generated-code captures
-for `f745c45c`, including shared-product rounding, runtime-sine boundaries and
-warm captured-scalar promotion, alongside the unchanged source-bound baseline
+for `f745c45c`, before the current globals-key, static signed-zero guard and
+constant-unary precision repairs, alongside the unchanged source-bound baseline
 and original failures.
-[Repair validation](diagnostics/compile-pointwise-jit/review-boundaries.md) records
+Fresh campaign captures await Burner's next clean implementation commit.
+[Repair validation](diagnostics/compile-pointwise-jit/review-static-guards.md) records
 the development checks separately from these clean campaign measurements.

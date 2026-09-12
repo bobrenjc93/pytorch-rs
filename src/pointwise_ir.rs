@@ -140,7 +140,7 @@ mod tests {
             output: 6,
         };
         let constant = graph.source().unwrap();
-        assert!(constant.contains("sinf("));
+        assert!(constant.contains("(float)sin((double)"));
         assert!(!constant.contains("0x7f800000u"));
         graph.nodes[3] = Node::RuntimeScalar(0, false);
         assert!(graph.source().unwrap().contains("0x7f800000u"));

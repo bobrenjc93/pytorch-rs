@@ -131,8 +131,10 @@ def analyze(model, arity):
 
 def binding(value):
     if is_scalar(value):
-        # Guard Python scalar type and full value, even if two values round to the same f32.
-        key = struct.pack("=d", value) if type(value) is float else value
+        # Static float guards equate signed zeros, retaining the first graph's
+        # sign. Keep the actual value for new graphs and runtime parameters;
+        # literal scalar bits and distinct nonzero float values remain intact.
+        key = struct.pack("=d", 0.0 if value == 0.0 else value) if type(value) is float else value
         return (type(value), key), value
     if value is _ROOT:
         # Attribute identities are checked when resolving this guard on every call.
@@ -152,6 +154,10 @@ def resolve(model, program):
     globals_ = model.__globals__
     if type(globals_) is not dict:
         unsupported("function globals must be an exact dict")
+    # Even exact dict lookup can call a colliding key's equality hook. Iteration
+    # does not hash or compare keys; validate all keys before any lookup.
+    if any(type(key) is not str for key in globals_):
+        unsupported("function globals keys must be exact strings")
     values, keys = {}, []
     closure = dict(zip(program.code.co_freevars, model.__closure__ or ()))
     for kind, name in program.dependencies:
