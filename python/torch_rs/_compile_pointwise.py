@@ -176,7 +176,7 @@ def resolve(model, program):
     return tuple(keys), values
 
 
-def runtime_bindings(program, bindings, values, graphs):
+def runtime_bindings(program, bindings, values, graphs, *, promote=True):
     """Promote changed captured floats using successful, reset-owned history."""
     previous = [key[1] for key in graphs if key[0] is program.code]
     keys, resolved, scalars = list(bindings), dict(values), []
@@ -186,7 +186,7 @@ def runtime_bindings(program, bindings, values, graphs):
             continue
         observations = [keys_[position] for keys_ in previous]
         dynamic = any(key[0] == "runtime_float" for key in observations)
-        if not dynamic and math.isfinite(value):
+        if promote and not dynamic and math.isfinite(value):
             # Exact builtins only: numeric comparison matches the reference's
             # promotion history, including equal signed zeros and int/float
             # transitions. Booleans do not participate in scalar dynamism.
@@ -337,20 +337,33 @@ def implementation(model, recompile_limit):
         if any(m[4] == "cpu" for m in metadata):
             raise NotImplementedError(_ROOT._COMPILE_UNSUPPORTED_MESSAGE)
         _native._pointwise_validate_inputs(args)
+        # Contiguous input offsets are launch-time addresses, not compiler
+        # specialization guards. Inductor reuses a static scalar specialization
+        # across them. Bounds are still checked above and by native execution.
+        guard_metadata = tuple(m[:5] for m in metadata)
         with cache.lock:
             if program is None or program.code is not model.__code__:
                 program = analyze(model, len(args))
             validate_signature_containers(model)
             if program.code.co_argcount != len(args):
                 unsupported("function signature changed")
-            bindings, values = resolve(model, program)
-            bindings, values, scalars = runtime_bindings(program, bindings, values, cache.graphs)
+            static_bindings, static_values = resolve(model, program)
+            # Persistent runtime promotion takes precedence over old static
+            # entries. Discover new promotion only after the full guard misses:
+            # a nonfinite specialization must not invalidate a prior static hit.
+            bindings, values, scalars = runtime_bindings(
+                program, static_bindings, static_values, cache.graphs, promote=False)
             # Object identity, not equal values or shared storage, determines
             # whether two parameters denote the same expression. Retain only
             # the relationship so fresh tensors can reuse graphs and code.
             input_ids = (0, 0) if len(args) == 2 and args[0] is args[1] else tuple(range(len(args)))
-            key = (program.code, bindings, metadata, input_ids)
+            key = (program.code, bindings, guard_metadata, input_ids)
             executor = cache.graphs.get(key)
+            if executor is None:
+                bindings, values, scalars = runtime_bindings(
+                    program, static_bindings, static_values, cache.graphs)
+                key = (program.code, bindings, guard_metadata, input_ids)
+                executor = cache.graphs.get(key)
             if executor is None:
                 if len(cache.graphs) >= recompile_limit:
                     unsupported(f"hit recompile_limit={recompile_limit}")

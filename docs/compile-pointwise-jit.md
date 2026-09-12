@@ -83,6 +83,13 @@ and signed doubling follow the reference's normalization. Negated products use
 `fmaf(-a, b, +0)`.
 Uncontracted operations use explicit round-to-nearest CUDA intrinsics so NVRTC
 cannot choose a different contraction after strength reduction.
+Subtraction of positive scalar zero becomes transparent only during contraction
+and emission, after expression identity checks. Thus `(a-0.0)-a` can retain an
+FMA residual while `a-a` shares one rounded value. Addition of zero and
+subtraction of negative zero keep their separate rounding boundaries.
+Late factor discovery tracks exact sign flips through zero subtraction and
+retains contraction priority for nested signed products; two sign-flipped
+candidates retain their left-to-right order.
 The complete IR is validated before unused expressions are removed; an unused
 local cannot change rounding of the returned expression. Invalid unused
 operations remain rejected.
@@ -133,8 +140,10 @@ The private kernel object exposes generated source/PTX, compiler version,
 options and device for regression evidence.
 
 Each wrapper caches validated graphs and compiled modules, never tensor data,
-results or input pointers. Shape/stride/offset/dtype/device/gradient, live
+results or input pointers. Shape/stride/dtype/device/gradient, live
 scalar/function bindings, and repeated-input object relationships are guarded.
+Contiguous storage offsets are read from the current inputs at launch and
+bounds-checked on every call; they do not require separate specializations.
 Passing the same Tensor for both parameters shares its input expression;
 distinct tensors, even equal-valued tensors or views sharing storage, keep
 separate expressions. Only this identity relationship is cached, so fresh
@@ -146,6 +155,10 @@ their actual sign. A changed finite captured float becomes a runtime float32
 kernel parameter, matching the reference's warm-call materialization boundary.
 Promotion is per binding, persists when earlier float values return, and is
 cleared by reset. Integer and Boolean bindings retain their scalar kinds.
+Existing runtime promotions are applied before the complete graph-cache guard
+is checked; new promotion is discovered only on a cache miss. Returning to a
+cached finite specialization after an infinity/NaN-only interlude retains that
+specialization, while shape misses still consult the full binding history.
 At most 64 runtime scalar parameters are supported. Their current values are
 passed by value at launch and are never retained in graph or code cache keys.
 The binding regressions keep both wrappers alive across changes without
@@ -179,8 +192,8 @@ remain the scoring authority with all 112 coverage and 56 CUDA performance
 cells. These focused tests do not change their denominator. Unsupported
 categories remain zero. The [post-commit evidence](diagnostics/compile-pointwise-jit/README.md)
 records fresh clean-commit coverage, CUDA-performance and generated-code captures
-for `5fc75c41`, including globals-key admission, static signed-zero guards and
-constant-unary precision, alongside the unchanged source-bound baseline and
-original failures.
-[Repair validation](diagnostics/compile-pointwise-jit/review-static-guards.md) records
+for `5fc75c41`, before the current scalar-zero contraction and nonfinite-cache
+repair, alongside the unchanged source-bound baseline and original failures.
+Fresh campaign captures await Burner's next clean implementation commit.
+[Repair validation](diagnostics/compile-pointwise-jit/review-zero-boundaries.md) records
 the development checks separately from these clean campaign measurements.

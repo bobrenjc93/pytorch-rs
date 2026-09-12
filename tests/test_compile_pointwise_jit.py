@@ -68,9 +68,26 @@ def custom_closure_program():
     return types.FunctionType(fn.__code__, fn.__globals__, closure=Closure(fn.__closure__)), effects
 
 
+def two_device_reservation():
+    # Visible device ordinals are remapped to 0 and 1 inside the process, even
+    # when the caller reserves another physical pair or selects GPU UUIDs.
+    selected = tuple(part.strip() for part in os.environ.get('CUDA_VISIBLE_DEVICES', '').split(','))
+    return len(selected) == 2 and len(set(selected)) == 2 and all(part and part != '-1' for part in selected)
+
+
 class Admission(unittest.TestCase):
     def tearDown(self):
         native.compiler.reset()
+
+    def test_two_device_reservation_accepts_explicit_distinct_pairs(self):
+        for mask, expected in (('0,1', True), ('6,7', True), ('GPU-a,GPU-b', True),
+                               ('', False), ('0', False), ('0,1,2', False),
+                               ('0,0', False), ('0,', False), (',1', False), ('-1,1', False)):
+            with self.subTest(mask=mask), patch.dict(os.environ, CUDA_VISIBLE_DEVICES=mask):
+                self.assertEqual(two_device_reservation(), expected)
+        with patch.dict(os.environ):
+            os.environ.pop('CUDA_VISIBLE_DEVICES', None)
+            self.assertFalse(two_device_reservation())
 
     def test_typed_ir_retains_reused_nodes_and_rounds_constants(self):
         fn = program('def f(x, y):\n a = fw.sin(x)\n b = a * a\n return (b - y.cos()) + 0.10000000000001')
@@ -471,7 +488,7 @@ assert 'torch' not in sys.modules
                                 capture_output=True, text=True, timeout=90)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    @unittest.skipUnless(os.environ.get('CUDA_VISIBLE_DEVICES') == '0,1', 'requires explicit two-device reservation')
+    @unittest.skipUnless(two_device_reservation(), 'requires explicit two-device reservation')
     def test_two_device_restoration_and_module_ownership(self):
         torch = self.torch
         if torch.cuda.device_count() < 2:

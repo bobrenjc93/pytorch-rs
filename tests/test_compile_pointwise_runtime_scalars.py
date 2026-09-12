@@ -8,7 +8,7 @@ from unittest import mock
 import torch_rs as native
 from torch_rs import _compile_pointwise as frontend
 from torch_rs import torch_rs as bridge
-from tests.test_compile_pointwise_jit import available, cache, program
+from tests.test_compile_pointwise_jit import available, cache, program, two_device_reservation
 
 
 class RuntimeScalarAdmission(unittest.TestCase):
@@ -191,7 +191,7 @@ class RuntimeScalarHardware(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'scalar arity'):
             kernel.run((empty,), ())
 
-    @unittest.skipUnless(os.environ.get('CUDA_VISIBLE_DEVICES') == '0,1',
+    @unittest.skipUnless(two_device_reservation(),
                          'requires explicit two-device validation')
     def test_runtime_parameters_restore_current_device(self):
         if self.torch.cuda.device_count() < 2:

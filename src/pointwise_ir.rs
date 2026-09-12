@@ -101,6 +101,42 @@ impl Graph {
 mod tests {
     use super::*;
     #[test]
+    fn scalar_zero_subtraction_exposes_factors_after_identity_checks() {
+        let mut graph = Graph {
+            inputs: 1,
+            nodes: vec![
+                Node::Input(0),
+                Node::Constant(1.137_f64.to_bits()),
+                Node::Mul(0, 1),
+                Node::Constant(0),
+                Node::Sub(2, 3),
+                Node::Sub(4, 2),
+            ],
+            output: 5,
+        };
+        let source = graph.source().unwrap();
+        assert_eq!(source.matches("fmaf(").count(), 1);
+        assert!(source.contains("fmaf(v0,"));
+        assert!(!source.contains("fmaf(-v0,"));
+        // Addition of zero retains the opposite contraction orientation.
+        graph.nodes[4] = Node::Add(2, 3);
+        assert!(graph.source().unwrap().contains("fmaf(-v0,"));
+        // Repeated identical expressions still share their rounded value.
+        graph.nodes[4] = Node::Sub(2, 3);
+        graph.nodes[5] = Node::Sub(4, 4);
+        let source = graph.source().unwrap();
+        assert!(!source.contains("fmaf("));
+        assert!(source.contains("__fsub_rn("));
+        // Signed doubling keeps the left contraction in both orientations,
+        // even when its zero-subtracted form is the right operand.
+        graph.nodes[1] = Node::Constant((-2.0_f64).to_bits());
+        for operands in [(4, 2), (2, 4)] {
+            graph.nodes[5] = Node::Sub(operands.0, operands.1);
+            assert!(graph.source().unwrap().contains("fmaf(-v0,"));
+        }
+    }
+
+    #[test]
     fn shared_signed_double_keeps_one_rounded_consumer() {
         let mut graph = Graph {
             inputs: 1,

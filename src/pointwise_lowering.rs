@@ -23,6 +23,13 @@ enum Expr {
     SignedDouble(usize),
 }
 
+#[derive(Clone, Copy)]
+struct ContractionProduct {
+    factors: (usize, usize),
+    negative: bool,
+    direct: bool,
+}
+
 #[derive(Default)]
 struct Lowering {
     nodes: Vec<Expr>,
@@ -57,6 +64,49 @@ impl Lowering {
             Expr::Node(Node::Mul(a, b)) => Some((a, b)),
             _ => None,
         }
+    }
+
+    fn subtracts_scalar_zero(&self, id: usize) -> Option<usize> {
+        match self.nodes[id] {
+            Expr::Node(Node::Sub(a, b))
+                if self.constant(b).is_some_and(|value| value.to_bits() == 0) =>
+            {
+                Some(a)
+            }
+            _ => None,
+        }
+    }
+
+    fn contraction_product(&self, mut id: usize) -> Option<ContractionProduct> {
+        // Decode only exact sign flips and scalar +0 subtraction, after
+        // expression identity checks. Neither addition of zero nor tensor-zero
+        // provenance is transparent here.
+        let (mut negative, mut flipped) = (false, false);
+        let (mut outer_zero, mut inner_zero) = (false, false);
+        loop {
+            if let Some(value) = self.subtracts_scalar_zero(id) {
+                if flipped {
+                    inner_zero = true;
+                } else {
+                    outer_zero = true;
+                }
+                id = value;
+            } else if let Expr::Flip(value) = self.nodes[id] {
+                negative = !negative;
+                flipped = true;
+                id = value;
+            } else {
+                break;
+            }
+        }
+        self.product(id).map(|factors| ContractionProduct {
+            factors,
+            negative,
+            // Cancelled flips expose the original positive product. A single
+            // effective flip over a zero-subtracted expression retains its
+            // fallback priority; leading zero subtraction alone exposes it.
+            direct: !negative || (outer_zero && !inner_zero),
+        })
     }
 
     fn float_operand(&mut self, id: usize) -> usize {
@@ -237,38 +287,33 @@ impl Lowering {
     }
 
     fn contract(&self, a: usize, b: usize, subtract: bool) -> Option<String> {
-        // Prefer direct products over a sign-flipped rounded product. If no
-        // direct product exists, the flipped product can still contract. This
-        // keeps signed doubling from imposing rounding on every consumer.
-        if let Some((x, y)) = self.product(a) {
-            return Some(format!(
-                "fmaf(v{x}, v{y}, {}v{b})",
-                if subtract { "-" } else { "" }
-            ));
-        }
-        if let Some((x, y)) = self.product(b) {
-            return Some(format!(
-                "fmaf({}v{x}, v{y}, v{a})",
-                if subtract { "-" } else { "" }
-            ));
-        }
-        if let Expr::Flip(product) = self.nodes[a]
-            && let Some((x, y)) = self.product(product)
-        {
-            return Some(format!(
-                "fmaf(-v{x}, v{y}, {}v{b})",
-                if subtract { "-" } else { "" }
-            ));
-        }
-        if let Expr::Flip(product) = self.nodes[b]
-            && let Some((x, y)) = self.product(product)
-        {
-            return Some(format!(
-                "fmaf({}v{x}, v{y}, v{a})",
-                if subtract { "" } else { "-" }
-            ));
-        }
-        None
+        let left = self.contraction_product(a);
+        let right = self.contraction_product(b);
+        // Prefer direct products, preserving left-to-right order when both
+        // candidates are sign-flipped even if only the right is zero-wrapped.
+        let preferred_left = left.filter(|product| {
+            product.direct || (product.negative && right.is_some_and(|other| other.negative))
+        });
+        let (product, on_right) = preferred_left
+            .map(|product| (product, false))
+            .or_else(|| {
+                right
+                    .filter(|product| product.direct)
+                    .map(|product| (product, true))
+            })
+            .or_else(|| left.map(|product| (product, false)))
+            .or_else(|| right.map(|product| (product, true)))?;
+        let (x, y) = product.factors;
+        let addend = if on_right { a } else { b };
+        Some(format!(
+            "fmaf({}v{x}, v{y}, {}v{addend})",
+            if product.negative ^ (on_right && subtract) {
+                "-"
+            } else {
+                ""
+            },
+            if subtract && !on_right { "-" } else { "" }
+        ))
     }
 
     fn operands(&self, id: usize) -> Vec<usize> {
@@ -475,6 +520,9 @@ pub(super) fn source(graph: &Graph) -> String {
             Expr::Node(Node::Add(a, b)) => lower
                 .contract(a, b, false)
                 .unwrap_or_else(|| format!("__fadd_rn(v{a}, v{b})")),
+            Expr::Node(Node::Sub(a, _)) if lower.subtracts_scalar_zero(id).is_some() => {
+                format!("v{a}")
+            }
             Expr::Node(Node::Sub(a, b)) => lower
                 .contract(a, b, true)
                 .unwrap_or_else(|| format!("__fsub_rn(v{a}, v{b})")),

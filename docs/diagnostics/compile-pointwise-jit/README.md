@@ -3,7 +3,11 @@
 Fresh coverage, CUDA-performance and generated-code captures measure clean
 implementation commit `5fc75c41e501ce4a4b5bf3195ae07764c43e67e4` on 2026-09-12,
 including callback-free globals-key admission, static captured-zero guards and
-constant-only trigonometric precision. Both unchanged
+constant-only trigonometric precision. These captures precede the current
+scalar-zero contraction and nonfinite-cache repair and do not measure it.
+[Development validation](review-zero-boundaries.md) records the repair;
+fresh campaign captures require Burner's next clean implementation commit.
+Both unchanged
 public-default-compile-v2 scoring commands report
 `valid: true`, `diagnostic: false`, with no infrastructure error. The clean
 baseline remains pinned to campaign base
@@ -24,7 +28,7 @@ remain zero. The uncapped ratio describes only those four cells; the baseline
 has no common successes, so its ratio is null. These are fixed-corpus results,
 not general Inductor parity.
 
-## Current committed evidence
+## Latest clean capture (preceding the current repair)
 
 - [Coverage](postcommit-5fc75c/candidate-coverage.json.gz) and
   [CUDA performance](postcommit-5fc75c/candidate-cuda-perf.json.gz) are
