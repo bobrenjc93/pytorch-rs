@@ -1,58 +1,50 @@
 # Native default pointwise JIT validation
 
-**Refresh required after the second numerical review fixes.** The reports below
-measure `60abd863` and remain unchanged, but do not measure the revised expression
-deduplication, repeated-input guards, sign normalization and shared-product
-contraction. Burner must repeat the unchanged clean-commit gates and `capture.py`
-after committing these fixes. See [round-two validation](review-round2.md) for
-the development regressions and retained failures; no new score is claimed.
-
 Fresh coverage, CUDA-performance and generated-code captures measure clean
-implementation commit `60abd863d2fa8f2352be48bfe505adff345ac50f`, including the first review fixes,
+implementation commit `53c10058ab5df8edd3ee0f3e2b34e3da3becc028`, including both rounds of review fixes,
 on 2026-09-12. Both unchanged public-default-compile-v2 scoring commands report
 `valid: true`, `diagnostic: false`, with no infrastructure error. The clean
 baseline remains pinned to campaign base
 `76738b39fd6884ffd43b4dff2f5292257a1c6e6b`, verified as the merge base with main.
 See the [implementation contract](../../compile-pointwise-jit.md).
 
-| Unchanged public-default-compile-v2 gate | Clean baseline | Candidate `60abd863` (refresh pending) |
+| Unchanged public-default-compile-v2 gate | Clean baseline | Clean candidate `53c10058` |
 | --- | ---: | ---: |
 | Weighted coverage | 0% (0/112 cells) | 6% (4/112 cells) |
 | Weighted CUDA performance | 0% (0/56 cells) | 12% (4/56 cells) |
-| CUDA-performance common-success geometric mean, reference/candidate | null | 2.093486504225413 |
+| CUDA-performance common-success geometric mean, reference/candidate | null | 2.3009015801283264 |
 
-At `60abd863`, the measured gains over the baseline are 6 percentage points
+The measured gains over the baseline are 6 percentage points
 of weighted coverage and 12 points of weighted CUDA
 performance. Only the two arithmetic programs in both CUDA variants pass;
 all other cells remain zero. Successful performance cells each reach the cap
 of one, accounting for the arithmetic category's 12% weight. The uncapped ratio
 describes only those four cells; the baseline has no common successes, so its
 ratio is null. These are fixed-corpus results, not general Inductor parity.
-The first review fixes left the earlier candidate's weighted scores unchanged.
-The second review fixes have not yet received a clean-commit measurement.
+The review fixes leave the earlier candidate's weighted scores unchanged.
 
-## Committed evidence before the second review fixes
+## Current committed evidence
 
-- [Coverage](postcommit-60abd/candidate-coverage.json.gz) and
-  [CUDA performance](postcommit-60abd/candidate-cuda-perf.json.gz) are
+- [Coverage](postcommit-53c100/candidate-coverage.json.gz) and
+  [CUDA performance](postcommit-53c100/candidate-cuda-perf.json.gz) are
   byte-preserving gzip copies of complete evaluator reports. They preserve
   all 112 coverage and 56 performance cells, both CUDA implementation orders,
   five warmups, 17 samples, one host thread, symmetric synchronization,
   changed-input checks, cold costs, unsupported outcomes and slow results.
   Every reference program passed in all five reference workers.
-- The [receipt](postcommit-60abd/postcommit.json) records commands, environment,
+- The [receipt](postcommit-53c100/postcommit.json) records commands, environment,
   setup timestamps, cache state, source/build/wheel identities and verification.
-  [Logs](postcommit-60abd/postcommit-logs.json.gz) retain both gate/build outputs,
+  [Logs](postcommit-53c100/postcommit-logs.json.gz) retain both gate/build outputs,
   all ten workers, the focused checks, and the verification scripts. Raw output
   observations and wheels remain at verified worktree-local paths in the reports.
-  All 123 baseline source hashes were verified against its commit; all 128
+  All 123 baseline source hashes were verified against its commit; all 129
   candidate source hashes, wheel/native/interpreter identities, worker logs and
   raw-observation hashes were verified locally. Evaluator/corpus hashes, category
   weights, tolerances and denominators match the baseline.
-- [Generated CUDA](postcommit-60abd/kernel.cu),
-  [PTX](postcommit-60abd/kernel.ptx.gz),
-  [provenance](postcommit-60abd/provenance.json) and
-  [source manifest](postcommit-60abd/source-manifest.json.gz) were freshly
+- [Generated CUDA](postcommit-53c100/kernel.cu),
+  [PTX](postcommit-53c100/kernel.ptx.gz),
+  [provenance](postcommit-53c100/provenance.json) and
+  [source manifest](postcommit-53c100/source-manifest.json.gz) were freshly
   captured with the existing [capture.py](capture.py) from the exact installed
   evaluation wheel. The provenance field named `base_commit` identifies the
   measured candidate commit. An independent ordinary public function exercises
@@ -60,10 +52,11 @@ The second review fixes have not yet received a clean-commit measurement.
   two graph entries. The capture asserts that installed PyTorch was not imported.
   This establishes code-generation provenance, not a separate timing score.
 
-The fresh committed wheel passed all three pointwise regression modules:
-21 tests with one explicit two-device skip under `CUDA_VISIBLE_DEVICES=0`.
+The fresh committed wheel passed all four pointwise regression modules:
+27 tests with one explicit two-device skip under `CUDA_VISIBLE_DEVICES=0`.
 This includes both operator-added liveness/signature modules, overflow and
-signed-zero regressions, generated expression trees, guards, cache/reset,
+signed-zero regressions, repeated expressions/input identities, sign normalization,
+shared products, generated expression trees, guards, cache/reset,
 concurrency, lifetimes and no-body/no-eager/no-PyTorch execution checks. The
 checkout remained clean throughout both gates and these checks.
 
@@ -90,19 +83,30 @@ All earlier measured artifacts remain byte-for-byte unchanged:
   before review fixes. They do not measure the current candidate.
 - [Original development diagnostic](candidate-diagnostic.json.gz): explicitly
   unscored dirty-source evidence, including original observations.
-- [Review-fix validation](review-fixes.md) and [bundle](review-fixes.json.gz):
-  development regressions and original failures. Their implementation and
-  regression-source hashes match the now-committed code. The exhaustive
-  selection covered 69 compiler files and 805 cases; Rust all-target suites
-  passed 401 default / 428 bindings tests, alongside Clippy, documentation and
-  separate two-device checks. Unrelated full suites were not repeated here.
+- [First-review coverage](postcommit-60abd/candidate-coverage.json.gz),
+  [CUDA performance](postcommit-60abd/candidate-cuda-perf.json.gz),
+  [receipt](postcommit-60abd/postcommit.json),
+  [logs](postcommit-60abd/postcommit-logs.json.gz) and
+  [codegen provenance](postcommit-60abd/provenance.json): clean `60abd863`,
+  before the second numerical review fixes. These reports also record 6%/12%;
+  their timings do not measure the current revision.
+- [First-review validation](review-fixes.md) and [bundle](review-fixes.json.gz):
+  development regressions and original failures before the second review fixes.
+  Its exhaustive selection covered 69 compiler files and 805 cases.
+- [Second-review validation](review-round2.md) and [bundle](review-round2.json.gz):
+  the original 24 failing subcases, before/after numerical probes and final checks.
+  All 124 implementation-source hashes and four regression-module hashes match
+  this committed revision. It records 404 default / 431 bindings Rust tests,
+  96 backend/entrypoint checks, Clippy, documentation and separate two-device
+  checks. This remains unscored development evidence. Unrelated full suites were
+  not repeated during this evidence refresh.
 - Original author [inventory](validation.json), [logs](logs.json.gz) and
   [IEEE probes](initial-ieee-probes.json.gz) retain the initial validation,
   failures and subsequent repairs at their original source identities.
 
 Historical paths identify the original captures and may no longer contain the
-original installed build. The `postcommit-60abd` reports apply only to that
-revision; the second review fixes require a new capture. No failed measurement was overwritten or promoted
+original installed build. Current-candidate credit uses only the fresh
+`postcommit-53c100` reports. No failed measurement was overwritten or promoted
 as a score. This evidence step does not approve the branch or replace review.
 
 ## Reproduce
@@ -114,19 +118,22 @@ the wrapper supplies `VIRTUAL_ENV` to maturin. The wrapper sets local
 the evaluation virtual environment, builds a release wheel and installs it.
 
 ```bash
+unset CONDA_PREFIX
+mkdir -p target/tmp target/xdg-cache target/default-compile-eval/cuda-cache
+export PYTHONDONTWRITEBYTECODE=1
 export TMPDIR="$PWD/target/tmp"
 export XDG_CACHE_HOME="$PWD/target/xdg-cache"
 export CUDA_CACHE_PATH="$PWD/target/default-compile-eval/cuda-cache"
 export CUDA_CACHE_DISABLE=1 UV_SYSTEM_CERTS=true HTTPS_PROXY=http://fwdproxy:8080
 CUDA_VISIBLE_DEVICES=0 bash scripts/evaluate_torch_compile_default.sh \
-  --metric coverage --output target/postcommit-60abd/coverage.json
+  --metric coverage --output target/postcommit-53c100/coverage.json
 CUDA_VISIBLE_DEVICES=0 bash scripts/evaluate_torch_compile_default.sh \
-  --metric cuda-perf --output target/postcommit-60abd/cuda-perf.json
+  --metric cuda-perf --output target/postcommit-53c100/cuda-perf.json
 ```
 
 Choose new output paths when reproducing; the evaluator refuses to overwrite
-evidence. The [receipt](postcommit-60abd/postcommit.json) records the exact
-codegen and three-module unittest commands using
+evidence. The [receipt](postcommit-53c100/postcommit.json) records the exact
+codegen and four-module unittest commands using
 `target/default-compile-eval/venv/bin/python`, with dedicated local
 Inductor/Triton test caches. The unchanged
 [gate documentation](../../torch-compile-default-evaluator.md) defines scoring.
@@ -135,6 +142,5 @@ Driver disk-code caching was disabled symmetrically for both implementations
 in these candidate gates; the historical baseline did not set that flag.
 These results are not cold-cache speed comparisons between builds. Worker
 Inductor/Triton caches start separately fresh; dependency/native build caches
-may be warm, as recorded in setup receipts. The `60abd863` post-commit capture
-changed only evidence and its documentation; the subsequent numerical fixes
-are documented separately above.
+may be warm, as recorded in setup receipts. No implementation, dependency,
+test, evaluator, corpus or managed progress artifact changed in this step.

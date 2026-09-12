@@ -63,8 +63,9 @@ The recorded `nvcc` 12.6 is queried for provenance and does not generate the JIT
 Initial Clippy complaints about exact floating-constant comparisons are retained;
 the final implementation compares coefficient bits exactly.
 
-All earlier measurements and failure bundles remain unchanged. The `60abd863`
-clean campaign reports predate these fixes and cannot score the revised source.
-After Burner commits the implementation, repeat the unchanged coverage and
-CUDA-performance gates and `capture.py` using the [documented workflow](README.md).
-The worker does not create commits or manufacture clean-source measurements.
+Burner committed these fixes as `53c10058`. The subsequent
+[post-commit capture](README.md) supplies fresh clean coverage/performance reports,
+generated-code evidence and all four pointwise regression modules. The earlier
+`60abd863` campaign measurements and this unscored development bundle remain
+unchanged at their original source identities. Current-candidate scores use
+only the new committed measurements.
