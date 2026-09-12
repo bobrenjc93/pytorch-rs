@@ -26,12 +26,12 @@ artifacts are generated at merge time and are not source documentation.
 - [Compiled CUDA squeeze](compile-cuda-squeeze.md): Method and one-argument module/imported singleton removal, shared-storage wrappers and H100 validation.
 - [Compiled CUDA view](compile-cuda-view.md): Alias-only constant shapes, strict stride compatibility and H100 validation.
 - [Compiled CUDA reshape](compile-cuda-reshape.md): Constant rank-0/1/2 shapes, native alias-or-pack semantics and H100 validation.
-- [Compiled CUDA transpose views](compile-cuda-t.md): Bounded `t()`/constant-axis `transpose()` capture, packing composition and H100 validation.
+- [Compiled CUDA transpose views](compile-cuda-t.md): Method and one-argument module/imported `t`, constant-axis method `transpose` capture, packing composition and H100 validation.
 - [Compiled CUDA contiguous](compile-cuda-contiguous.md): Parameterless native view packing, alias semantics and clean-commit H100 validation including review regressions.
 - [Compiled CUDA matmul](compile-cuda-matmul.md): Exact capture scope, runnable example, and separate `torch.compile` timing reproduction.
 - [Compiled CUDA row sums](compile-cuda-sum-rows.md): Runnable example, constant reduction options, layout/device boundaries, and focused checks.
 - [CUDA mul/neg/add graph capture](compile-cuda-add.md): Public bounded eager compilation, device/cache guards, unsupported cases, and reproduction.
-  Includes positional module/imported add/neg/ReLU/squeeze calls with precise binding guards.
+  Includes positional module/imported add/neg/ReLU/squeeze/t calls with precise binding guards.
 - [Compiled CUDA scalar multiplication validation](compile-cuda-mul-scalar-validation.md): Guarded scalar grammar, independent diagnostics, and H100 checks.
 - [Compiled CUDA negation validation](compile-cuda-neg-validation.md): Integrated-commit results, provenance, and current neg/add diagnostic commands.
 - [CUDA scalar multiplication validation](cuda-mul-scalar-validation.md): General eager float32 kernel, conversion/layout boundaries, and H100 evidence.

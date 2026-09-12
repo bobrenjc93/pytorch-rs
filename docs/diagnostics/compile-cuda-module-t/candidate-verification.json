@@ -1,0 +1,9 @@
+{
+  "same_44_inputs_expressions_shapes_and_recipes": true,
+  "all_native_cold_and_repeated_calls_pass": true,
+  "closed_baseline_gaps": 32,
+  "existing_positive_controls": 12,
+  "unrelated_rebinding_controls": 3,
+  "baseline_unchanged": true,
+  "performance_measured": false
+}

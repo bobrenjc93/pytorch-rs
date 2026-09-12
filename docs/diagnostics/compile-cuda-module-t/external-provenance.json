@@ -1,0 +1,32 @@
+{
+  "probe-compiled-cuda-module-t.py": {
+    "source": "/tmp/pytorch-rs-compiler-recovery.3UB6mU/probe-compiled-cuda-module-t.py",
+    "sha256": "fecd393d78b70d7cba9dbfe7993fb94d7bf0c51057fd9a53018770291c79fc24",
+    "bytes": 9487
+  },
+  "compiled-cuda-module-t-baseline-verified.json": {
+    "source": "/tmp/pytorch-rs-compiler-recovery.3UB6mU/compiled-cuda-module-t-baseline-verified.json",
+    "sha256": "bdb5f97639d123376fde70c3925ad69120f7fc1a0da48854e63c3d89a87d50f1",
+    "bytes": 57407
+  },
+  "compiled-cuda-module-t-baseline-probe.json": {
+    "source": "/tmp/pytorch-rs-compiler-recovery.3UB6mU/compiled-cuda-module-t-baseline-probe.json",
+    "sha256": "22587abacce4015efe9af37f841b230e5baa977b629b24306549ed54b7fde6ac",
+    "bytes": 41567
+  },
+  "compiled-cuda-module-t-baseline-output.log": {
+    "source": "/tmp/pytorch-rs-compiler-recovery.3UB6mU/compiled-cuda-module-t-baseline-output.log",
+    "sha256": "d8138bab076ae839d774dfe9f84bf240c1830972f28bd0d5a24779bbdfde7d25",
+    "bytes": 47599
+  },
+  "compiled-cuda-module-t-baseline-receipt.json": {
+    "source": "/tmp/pytorch-rs-compiler-recovery.3UB6mU/compiled-cuda-module-t-baseline-receipt.json",
+    "sha256": "eb8fa771eaba50fa1a732259b6ee960f4ccc4fdbf2ab85fa2f7f0da7a5ac1994",
+    "bytes": 1095
+  },
+  "prepare-compiled-cuda-module-t-probe.sh": {
+    "source": "/tmp/pytorch-rs-compiler-recovery.3UB6mU/prepare-compiled-cuda-module-t-probe.sh",
+    "sha256": "1b916ed19d6ba0c0bbfa66346d24693f22c470ea9ead605b1b7e87c033468e25",
+    "bytes": 2665
+  }
+}

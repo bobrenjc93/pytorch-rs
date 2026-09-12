@@ -11,9 +11,10 @@ from .torch_rs import (
     _exchange_enable_guard_collectives as exchange_enable_guard_collectives,
     relu as native_relu,
     squeeze as native_squeeze,
+    t as native_t,
 )
 
-# ReLU and squeeze are PyO3 module functions, not native_function_owner members.
+# ReLU, squeeze and t are PyO3 module functions, not native_function_owner members.
 # Retain them here too, before either writable public/native export can change.
 
 

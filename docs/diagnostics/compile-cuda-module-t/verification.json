@@ -1,0 +1,14 @@
+{
+  "production_matches_development_build": true,
+  "native_matches_development_build": true,
+  "base_commit": "9b9236bff0a7d6209da9ed75463151a603e248be",
+  "candidate_commit": null,
+  "clean_candidate_commit_capture": "pending Burner managed implementation commit; agent is forbidden to commit",
+  "final_test_sha256": "469b354fcf4ea73ba796b686c539ee1923ec0682b5e1a1d683bab73685e5d713",
+  "resources": [
+    "gpu",
+    "cpu-heavy"
+  ],
+  "scores_changed": false,
+  "performance_measured": false
+}
