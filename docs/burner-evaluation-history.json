@@ -11305,6 +11305,26 @@
         "eval_d4c0b71e": 97,
         "eval_b7f2a91c": 5.6
       }
+    },
+    {
+      "key": "pr:1981",
+      "recordedAt": "2026-09-12T00:44:20.191Z",
+      "label": "PR #1981",
+      "kind": "leaf",
+      "prNumber": 1981,
+      "title": "Compile no-argument CUDA Tensor.squeeze with fresh shared-storage views",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 98,
+        "eval_39340456": 94,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96,
+        "eval_a61c0e71": 100,
+        "eval_6f98c42d": 100,
+        "eval_d4c0b71e": 97,
+        "eval_b7f2a91c": 5.6
+      }
     }
   ]
 }

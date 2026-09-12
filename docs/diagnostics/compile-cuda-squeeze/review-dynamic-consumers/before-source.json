@@ -1,0 +1,8 @@
+{
+  "commit": "d5d9869591832a9809477a12d932fa8463286f9a",
+  "source_sha256": "30c8a7ad78fa3e1e8a87b59446a6fa2d759d18c5d66be1b77d5655a993acb4e3",
+  "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "package_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+  "extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+  "extension_sha256": "f492541e80297882996e1ab9474b92c942c074c66d5af71ff31fad3dfffcc070"
+}

@@ -2504,15 +2504,7 @@ impl Tensor {
         remove: impl Fn(usize, usize) -> bool,
         node: AutogradNode,
     ) -> Result<Self, TensorError> {
-        let mut shape = try_result_vector(self.shape.len(), self.elements)?;
-        let mut strides = try_result_vector(self.strides.len(), self.elements)?;
-        for (axis, (&dimension, &stride)) in self.shape.iter().zip(self.strides.iter()).enumerate()
-        {
-            if !remove(axis, dimension) {
-                shape.push(dimension);
-                strides.push(stride);
-            }
-        }
+        let (shape, strides) = squeeze_layout(&self.shape, &self.strides, self.elements, remove)?;
         let mut output = Self {
             storage: Arc::clone(&self.storage),
             shape,
@@ -9294,6 +9286,24 @@ fn element_count_in_axis_order(
             .checked_mul(shape[dimension])
             .ok_or(TensorError::ElementCountOverflow)
     })
+}
+
+// Shared eager/graph metadata calculation: preserve surviving strides verbatim.
+fn squeeze_layout(
+    input_shape: &[usize],
+    input_strides: &[usize],
+    elements: usize,
+    remove: impl Fn(usize, usize) -> bool,
+) -> Result<(Vec<usize>, Vec<usize>), TensorError> {
+    let mut shape = try_result_vector(input_shape.len(), elements)?;
+    let mut strides = try_result_vector(input_strides.len(), elements)?;
+    for (axis, (&dimension, &stride)) in input_shape.iter().zip(input_strides).enumerate() {
+        if !remove(axis, dimension) {
+            shape.push(dimension);
+            strides.push(stride);
+        }
+    }
+    Ok((shape, strides))
 }
 
 fn validated_layout(shape: &[usize]) -> Result<(usize, Vec<usize>), TensorError> {

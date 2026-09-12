@@ -1,0 +1,30 @@
+{
+  "commit": "f8f8244c2cfa81e255c1814d1bd101c5d846b03d",
+  "source_sha256": "c1e4a430878fcbd08e0b290d06bcda020ddbbe9d850854ec6c228e1d15489472",
+  "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "git_status": "",
+  "measurement_kind": "clean-code",
+  "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/bin/python",
+  "interpreter_realpath": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+  "interpreter_sha256": "f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526",
+  "package_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+  "extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+  "extension_sha256": "f492541e80297882996e1ab9474b92c942c074c66d5af71ff31fad3dfffcc070",
+  "installed_python_matches_source": true,
+  "build_record": "build-record.json",
+  "build_record_sha256": "b5465d6ecfeaad654cbfe563585e5cfcd9a6b7b7853e5893089a984210aa7d15",
+  "input_manifest": "../inputs.json",
+  "input_manifest_sha256": "a5680a85937283784520055e64b3dd5282fd516530b40c4120cfb571a00a49ea",
+  "input_override_manifest": "../review-dynamic-consumers/verification-final.json",
+  "input_override_manifest_sha256": "ea56b3b62b6282d8ae3786967d3f6133de31ae2e6a755af232ba0da7886477f9",
+  "all_reused_input_hashes_match": true,
+  "compiler_module_count": 57,
+  "runtime": {
+    "native_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "native_sha256": "96c42e418cec19054186b9429c321603cc190bf26a18104e19408117a2a817b0",
+    "native_version": 13000,
+    "reference_version": "2.13.0+cu130",
+    "reference_cuda": "13.0"
+  }
+}

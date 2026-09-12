@@ -1,0 +1,22 @@
+test_compositions_all_policies (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_compositions_all_policies) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ok
+test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) ... ok
+test_dynamic_consumer_declarations_still_prevalidated (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_consumer_declarations_still_prevalidated) ... ok
+test_dynamic_consumers_keep_strided_arithmetic_unsupported (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_consumers_keep_strided_arithmetic_unsupported) ... ok
+test_dynamic_singletons_disappear_and_reappear (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_singletons_disappear_and_reappear) ... ok
+test_reference_import_is_not_needed (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_reference_import_is_not_needed) ... ok
+test_repeated_output_metadata_is_prevalidated (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_repeated_output_metadata_is_prevalidated) ... ok
+test_scalar_vector_and_empty_constructors (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_scalar_vector_and_empty_constructors) ... ok
+test_scope_and_method_identity_guards_without_user_hooks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_scope_and_method_identity_guards_without_user_hooks) ... ok
+test_seeded_layouts_fresh_wrappers_and_nested_identity (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_seeded_layouts_fresh_wrappers_and_nested_identity) ... ok
+test_shared_raw_bits_mutation_and_storage_lifetime (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_shared_raw_bits_mutation_and_storage_lifetime) ... ok
+test_whole_graph_validation_on_cache_hits (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_whole_graph_validation_on_cache_hits) ... ok
+test_restoration_and_unused_input_capture_device_guards (tests.test_compile_cuda_squeeze.SqueezeDeviceTests.test_restoration_and_unused_input_capture_device_guards) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_consumer_declarations_and_runtime_ranks_are_independent (tests.test_compile_cuda_squeeze.SqueezeMetadataTests.test_consumer_declarations_and_runtime_ranks_are_independent) ... ok
+test_layouts_and_boundaries_without_hardware (tests.test_compile_cuda_squeeze.SqueezeMetadataTests.test_layouts_and_boundaries_without_hardware) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 24.516s
+
+OK (skipped=1)

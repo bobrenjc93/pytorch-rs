@@ -32,6 +32,8 @@ Arguments (including explicit default memory formats), CPU capture of this
 method, noncontiguous rank >2, zero-stride packing, other dtypes and gradients
 remain unsupported. [Bounded `Tensor.t()` capture](compile-cuda-t.md) can now
 create rank-0/1/2 views inside a graph before packing.
+[No-argument squeeze](compile-cuda-squeeze.md) removes singleton axes with fresh
+shared-storage wrappers and preserves surviving strides before packing.
 [Constant-shape rank-0/1/2 reshape](compile-cuda-reshape.md) shares the native
 alias-or-pack planner; [compiled view](compile-cuda-view.md) requires compatible
 strides and never packs. Broader reshape/view grammar, new backends, training,

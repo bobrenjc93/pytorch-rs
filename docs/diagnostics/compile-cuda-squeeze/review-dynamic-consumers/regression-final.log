@@ -1,0 +1,12 @@
+test_consumer_declarations_and_runtime_ranks_are_independent (tests.test_compile_cuda_squeeze.SqueezeMetadataTests.test_consumer_declarations_and_runtime_ranks_are_independent) ... ok
+test_layouts_and_boundaries_without_hardware (tests.test_compile_cuda_squeeze.SqueezeMetadataTests.test_layouts_and_boundaries_without_hardware) ... ok
+test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ok
+test_dynamic_consumer_declarations_still_prevalidated (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_consumer_declarations_still_prevalidated) ... ok
+test_dynamic_consumers_keep_strided_arithmetic_unsupported (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_consumers_keep_strided_arithmetic_unsupported) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 8.786s
+
+OK

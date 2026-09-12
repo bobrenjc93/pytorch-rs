@@ -327,6 +327,7 @@ _COMPILE_H100_CUDA_SKIPPED_OPS = _builtins.frozenset(
     }
 )
 _COMPILE_TENSOR_METHOD_GUARD_NAMES = (
+    "squeeze",
     "view",
     "reshape",
     "transpose",

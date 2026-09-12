@@ -162,6 +162,7 @@ fn parse_operation(
                 axes.get_item(1)?.extract()?,
             )
         }
+        ("squeeze", &[input]) if payload.is_none() => Operation::Squeeze(input),
         ("t", &[input]) if payload.is_none() => Operation::T(input),
         ("contiguous", &[input]) if payload.is_none() => Operation::Contiguous(input),
         ("neg", &[input]) if payload.is_none() => Operation::Neg(input),
@@ -244,7 +245,7 @@ pub(super) fn execute(
     // Existing core operations synchronize even on launch errors and restore
     // the current device. No Python call or PyO3 crossing occurs between nodes.
     // Packing stays native; contiguous aliases preserve their original owner.
-    // T, Transpose, Reshape and View always wrap fresh objects, even for unchanged metadata.
+    // Squeeze, T, Transpose, Reshape and View always wrap fresh objects.
     let mut outputs = Vec::with_capacity(operations.len());
     for (index, operation) in operations.into_iter().enumerate() {
         let output = operation
@@ -541,6 +542,75 @@ mod tests {
                 ] {
                     EXECUTIONS.with(|count| count.set(0));
                     assert!(execute(&inputs, nodes).is_err());
+                    EXECUTIONS.with(|count| assert_eq!(count.get(), 0));
+                }
+            }
+            let outputs = execute(&inputs, vec![valid.clone(), valid]).unwrap();
+            assert!(!outputs[0].is(&outputs[1]));
+            assert!(!outputs[0].bind(py).is(inputs.get_item(0).unwrap()));
+        });
+    }
+
+    #[test]
+    fn squeeze_prevalidates_payload_arity_and_metadata_before_any_operation() {
+        if cuda::device_count() == 0 {
+            eprintln!("skipping CUDA squeeze graph accounting: no CUDA device");
+            return;
+        }
+        Python::initialize();
+        Python::attach(|py| {
+            let tensor = CoreTensor::from_vec(vec![1.; 7], [1, 7])
+                .unwrap()
+                .try_copy_cpu_to_cuda(Device::Cuda(0))
+                .unwrap();
+            let inputs = PyTuple::new(py, [Py::new(py, PyTensor::new(tensor)).unwrap()]).unwrap();
+            let valid = (
+                "squeeze".to_owned(),
+                PyTuple::new(py, [0]).unwrap().into_any(),
+                py.None().into_bound(py),
+                PyTuple::new(py, [7]).unwrap().into_any(),
+                PyTuple::new(py, [1]).unwrap().into_any(),
+            );
+            let mut bad = Vec::new();
+            for expr in [c"0", c"()", c"(0,)", c"[]", c"False", c"{}"] {
+                let mut node = valid.clone();
+                node.2 = py.eval(expr, None, None).unwrap();
+                bad.push((node, py.get_type::<PyNotImplementedError>()));
+            }
+            for expr in [c"()", c"(0, 0)"] {
+                let mut node = valid.clone();
+                node.1 = py.eval(expr, None, None).unwrap();
+                bad.push((node, py.get_type::<PyNotImplementedError>()));
+            }
+            for expr in [c"(True,)", c"(1.0,)"] {
+                for field in [1, 3, 4] {
+                    let mut node = valid.clone();
+                    let value = py.eval(expr, None, None).unwrap();
+                    match field {
+                        1 => node.1 = value,
+                        3 => node.3 = value,
+                        _ => node.4 = value,
+                    }
+                    bad.push((node, py.get_type::<PyTypeError>()));
+                }
+            }
+            for field in [3, 4] {
+                let mut node = valid.clone();
+                if field == 3 {
+                    node.3 = PyTuple::new(py, [1, 7]).unwrap().into_any();
+                } else {
+                    node.4 = PyTuple::new(py, [2]).unwrap().into_any();
+                }
+                bad.push((node, py.get_type::<PyValueError>()));
+            }
+            for (invalid, exception) in bad {
+                for nodes in [
+                    vec![invalid.clone(), valid.clone()],
+                    vec![valid.clone(), invalid],
+                ] {
+                    EXECUTIONS.with(|count| count.set(0));
+                    let error = execute(&inputs, nodes).unwrap_err();
+                    assert!(error.get_type(py).is(&exception));
                     EXECUTIONS.with(|count| assert_eq!(count.get(), 0));
                 }
             }

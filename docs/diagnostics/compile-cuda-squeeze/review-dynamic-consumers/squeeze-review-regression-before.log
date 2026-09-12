@@ -1,0 +1,440 @@
+test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+
+  test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=False, expression='-x.squeeze()', sizes=[(1, 1), (3, 7), (1, 7), (0, 7), (1, 0), (1, 1)]) ... ERROR
+  test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=False, expression='-x.squeeze()', sizes=[(1, 1), (1, 0), (0, 7), (1, 7), (3, 7), (1, 1)]) ... ERROR
+  test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=False, expression='x.squeeze().relu()', sizes=[(1, 1), (3, 7), (1, 7), (0, 7), (1, 0), (1, 1)]) ... ERROR
+  test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=False, expression='x.squeeze().relu()', sizes=[(1, 1), (1, 0), (0, 7), (1, 7), (3, 7), (1, 1)]) ... ERROR
+  test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=False, expression='x.squeeze() + x.squeeze()', sizes=[(1, 1), (3, 7), (1, 7), (0, 7), (1, 0), (1, 1)]) ... ERROR
+  test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=False, expression='x.squeeze() + x.squeeze()', sizes=[(1, 1), (1, 0), (0, 7), (1, 7), (3, 7), (1, 1)]) ... ERROR
+  test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=False, expression='(-x.squeeze() + x.squeeze().relu()) * 0.5', sizes=[(1, 1), (3, 7), (1, 7), (0, 7), (1, 0), (1, 1)]) ... ERROR
+  test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=False, expression='(-x.squeeze() + x.squeeze().relu()) * 0.5', sizes=[(1, 1), (1, 0), (0, 7), (1, 7), (3, 7), (1, 1)]) ... ERROR
+  test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=True, expression='-x.squeeze().contiguous()', sizes=[(1, 1), (3, 7), (1, 7), (3, 1), (0, 1), (0, 7), (1, 0), (1, 1)]) ... ERROR
+  test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=True, expression='-x.squeeze().contiguous()', sizes=[(1, 1), (1, 0), (0, 7), (0, 1), (3, 1), (1, 7), (3, 7), (1, 1)]) ... ERROR
+  test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=True, expression='x.squeeze().contiguous().relu()', sizes=[(1, 1), (3, 7), (1, 7), (3, 1), (0, 1), (0, 7), (1, 0), (1, 1)]) ... ERROR
+  test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=True, expression='x.squeeze().contiguous().relu()', sizes=[(1, 1), (1, 0), (0, 7), (0, 1), (3, 1), (1, 7), (3, 7), (1, 1)]) ... ERROR
+  test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=True, expression='x.squeeze().contiguous() + x.squeeze().contiguous()', sizes=[(1, 1), (3, 7), (1, 7), (3, 1), (0, 1), (0, 7), (1, 0), (1, 1)]) ... ERROR
+  test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=True, expression='x.squeeze().contiguous() + x.squeeze().contiguous()', sizes=[(1, 1), (1, 0), (0, 7), (0, 1), (3, 1), (1, 7), (3, 7), (1, 1)]) ... ERROR
+  test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=True, expression='(-x.squeeze().contiguous() + x.squeeze().contiguous().relu()) * 0.5', sizes=[(1, 1), (3, 7), (1, 7), (3, 1), (0, 1), (0, 7), (1, 0), (1, 1)]) ... ERROR
+  test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=True, expression='(-x.squeeze().contiguous() + x.squeeze().contiguous().relu()) * 0.5', sizes=[(1, 1), (1, 0), (0, 7), (0, 1), (3, 1), (1, 7), (3, 7), (1, 1)]) ... ERROR
+
+======================================================================
+ERROR: test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=False, expression='-x.squeeze()', sizes=[(1, 1), (3, 7), (1, 7), (0, 7), (1, 0), (1, 1)])
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_squeeze.py", line 185, in test_dynamic_arithmetic_consumers_replan_ranks
+    actual = call_without_python(compiled, {fn.__code__}, x)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 444, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 860, in compiled_model
+    return _execute_native_eager_compile_graph(graph, args, _compile_trace)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 778, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1535, in execute_compile_trace_graph
+    expected_metadata = _expected_operation_metadata(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1411, in _expected_operation_metadata
+    raise CompileTraceUnsupportedError(
+torch_rs._compile_trace.CompileTraceUnsupportedError: torch.compile unary output requires matching CUDA device, rank and zero storage offset
+
+======================================================================
+ERROR: test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=False, expression='-x.squeeze()', sizes=[(1, 1), (1, 0), (0, 7), (1, 7), (3, 7), (1, 1)])
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_squeeze.py", line 185, in test_dynamic_arithmetic_consumers_replan_ranks
+    actual = call_without_python(compiled, {fn.__code__}, x)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 444, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 860, in compiled_model
+    return _execute_native_eager_compile_graph(graph, args, _compile_trace)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 778, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1535, in execute_compile_trace_graph
+    expected_metadata = _expected_operation_metadata(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1411, in _expected_operation_metadata
+    raise CompileTraceUnsupportedError(
+torch_rs._compile_trace.CompileTraceUnsupportedError: torch.compile unary output requires matching CUDA device, rank and zero storage offset
+
+======================================================================
+ERROR: test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=False, expression='x.squeeze().relu()', sizes=[(1, 1), (3, 7), (1, 7), (0, 7), (1, 0), (1, 1)])
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_squeeze.py", line 185, in test_dynamic_arithmetic_consumers_replan_ranks
+    actual = call_without_python(compiled, {fn.__code__}, x)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 444, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 860, in compiled_model
+    return _execute_native_eager_compile_graph(graph, args, _compile_trace)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 778, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1535, in execute_compile_trace_graph
+    expected_metadata = _expected_operation_metadata(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1411, in _expected_operation_metadata
+    raise CompileTraceUnsupportedError(
+torch_rs._compile_trace.CompileTraceUnsupportedError: torch.compile unary output requires matching CUDA device, rank and zero storage offset
+
+======================================================================
+ERROR: test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=False, expression='x.squeeze().relu()', sizes=[(1, 1), (1, 0), (0, 7), (1, 7), (3, 7), (1, 1)])
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_squeeze.py", line 185, in test_dynamic_arithmetic_consumers_replan_ranks
+    actual = call_without_python(compiled, {fn.__code__}, x)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 444, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 860, in compiled_model
+    return _execute_native_eager_compile_graph(graph, args, _compile_trace)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 778, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1535, in execute_compile_trace_graph
+    expected_metadata = _expected_operation_metadata(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1411, in _expected_operation_metadata
+    raise CompileTraceUnsupportedError(
+torch_rs._compile_trace.CompileTraceUnsupportedError: torch.compile unary output requires matching CUDA device, rank and zero storage offset
+
+======================================================================
+ERROR: test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=False, expression='x.squeeze() + x.squeeze()', sizes=[(1, 1), (3, 7), (1, 7), (0, 7), (1, 0), (1, 1)])
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_squeeze.py", line 185, in test_dynamic_arithmetic_consumers_replan_ranks
+    actual = call_without_python(compiled, {fn.__code__}, x)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 444, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 860, in compiled_model
+    return _execute_native_eager_compile_graph(graph, args, _compile_trace)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 778, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1535, in execute_compile_trace_graph
+    expected_metadata = _expected_operation_metadata(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1446, in _expected_operation_metadata
+    raise CompileTraceUnsupportedError(
+torch_rs._compile_trace.CompileTraceUnsupportedError: torch.compile binary output requires matching CUDA device, rank and zero storage offset
+
+======================================================================
+ERROR: test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=False, expression='x.squeeze() + x.squeeze()', sizes=[(1, 1), (1, 0), (0, 7), (1, 7), (3, 7), (1, 1)])
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_squeeze.py", line 185, in test_dynamic_arithmetic_consumers_replan_ranks
+    actual = call_without_python(compiled, {fn.__code__}, x)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 444, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 860, in compiled_model
+    return _execute_native_eager_compile_graph(graph, args, _compile_trace)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 778, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1535, in execute_compile_trace_graph
+    expected_metadata = _expected_operation_metadata(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1446, in _expected_operation_metadata
+    raise CompileTraceUnsupportedError(
+torch_rs._compile_trace.CompileTraceUnsupportedError: torch.compile binary output requires matching CUDA device, rank and zero storage offset
+
+======================================================================
+ERROR: test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=False, expression='(-x.squeeze() + x.squeeze().relu()) * 0.5', sizes=[(1, 1), (3, 7), (1, 7), (0, 7), (1, 0), (1, 1)])
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_squeeze.py", line 185, in test_dynamic_arithmetic_consumers_replan_ranks
+    actual = call_without_python(compiled, {fn.__code__}, x)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 444, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 860, in compiled_model
+    return _execute_native_eager_compile_graph(graph, args, _compile_trace)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 778, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1535, in execute_compile_trace_graph
+    expected_metadata = _expected_operation_metadata(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1411, in _expected_operation_metadata
+    raise CompileTraceUnsupportedError(
+torch_rs._compile_trace.CompileTraceUnsupportedError: torch.compile unary output requires matching CUDA device, rank and zero storage offset
+
+======================================================================
+ERROR: test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=False, expression='(-x.squeeze() + x.squeeze().relu()) * 0.5', sizes=[(1, 1), (1, 0), (0, 7), (1, 7), (3, 7), (1, 1)])
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_squeeze.py", line 185, in test_dynamic_arithmetic_consumers_replan_ranks
+    actual = call_without_python(compiled, {fn.__code__}, x)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 444, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 860, in compiled_model
+    return _execute_native_eager_compile_graph(graph, args, _compile_trace)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 778, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1535, in execute_compile_trace_graph
+    expected_metadata = _expected_operation_metadata(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1411, in _expected_operation_metadata
+    raise CompileTraceUnsupportedError(
+torch_rs._compile_trace.CompileTraceUnsupportedError: torch.compile unary output requires matching CUDA device, rank and zero storage offset
+
+======================================================================
+ERROR: test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=True, expression='-x.squeeze().contiguous()', sizes=[(1, 1), (3, 7), (1, 7), (3, 1), (0, 1), (0, 7), (1, 0), (1, 1)])
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_squeeze.py", line 185, in test_dynamic_arithmetic_consumers_replan_ranks
+    actual = call_without_python(compiled, {fn.__code__}, x)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 444, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 860, in compiled_model
+    return _execute_native_eager_compile_graph(graph, args, _compile_trace)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 778, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1535, in execute_compile_trace_graph
+    expected_metadata = _expected_operation_metadata(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1411, in _expected_operation_metadata
+    raise CompileTraceUnsupportedError(
+torch_rs._compile_trace.CompileTraceUnsupportedError: torch.compile unary output requires matching CUDA device, rank and zero storage offset
+
+======================================================================
+ERROR: test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=True, expression='-x.squeeze().contiguous()', sizes=[(1, 1), (1, 0), (0, 7), (0, 1), (3, 1), (1, 7), (3, 7), (1, 1)])
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_squeeze.py", line 185, in test_dynamic_arithmetic_consumers_replan_ranks
+    actual = call_without_python(compiled, {fn.__code__}, x)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 444, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 860, in compiled_model
+    return _execute_native_eager_compile_graph(graph, args, _compile_trace)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 778, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1535, in execute_compile_trace_graph
+    expected_metadata = _expected_operation_metadata(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1411, in _expected_operation_metadata
+    raise CompileTraceUnsupportedError(
+torch_rs._compile_trace.CompileTraceUnsupportedError: torch.compile unary output requires matching CUDA device, rank and zero storage offset
+
+======================================================================
+ERROR: test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=True, expression='x.squeeze().contiguous().relu()', sizes=[(1, 1), (3, 7), (1, 7), (3, 1), (0, 1), (0, 7), (1, 0), (1, 1)])
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_squeeze.py", line 185, in test_dynamic_arithmetic_consumers_replan_ranks
+    actual = call_without_python(compiled, {fn.__code__}, x)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 444, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 860, in compiled_model
+    return _execute_native_eager_compile_graph(graph, args, _compile_trace)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 778, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1535, in execute_compile_trace_graph
+    expected_metadata = _expected_operation_metadata(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1411, in _expected_operation_metadata
+    raise CompileTraceUnsupportedError(
+torch_rs._compile_trace.CompileTraceUnsupportedError: torch.compile unary output requires matching CUDA device, rank and zero storage offset
+
+======================================================================
+ERROR: test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=True, expression='x.squeeze().contiguous().relu()', sizes=[(1, 1), (1, 0), (0, 7), (0, 1), (3, 1), (1, 7), (3, 7), (1, 1)])
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_squeeze.py", line 185, in test_dynamic_arithmetic_consumers_replan_ranks
+    actual = call_without_python(compiled, {fn.__code__}, x)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 444, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 860, in compiled_model
+    return _execute_native_eager_compile_graph(graph, args, _compile_trace)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 778, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1535, in execute_compile_trace_graph
+    expected_metadata = _expected_operation_metadata(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1411, in _expected_operation_metadata
+    raise CompileTraceUnsupportedError(
+torch_rs._compile_trace.CompileTraceUnsupportedError: torch.compile unary output requires matching CUDA device, rank and zero storage offset
+
+======================================================================
+ERROR: test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=True, expression='x.squeeze().contiguous() + x.squeeze().contiguous()', sizes=[(1, 1), (3, 7), (1, 7), (3, 1), (0, 1), (0, 7), (1, 0), (1, 1)])
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_squeeze.py", line 185, in test_dynamic_arithmetic_consumers_replan_ranks
+    actual = call_without_python(compiled, {fn.__code__}, x)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 444, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 860, in compiled_model
+    return _execute_native_eager_compile_graph(graph, args, _compile_trace)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 778, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1535, in execute_compile_trace_graph
+    expected_metadata = _expected_operation_metadata(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1446, in _expected_operation_metadata
+    raise CompileTraceUnsupportedError(
+torch_rs._compile_trace.CompileTraceUnsupportedError: torch.compile binary output requires matching CUDA device, rank and zero storage offset
+
+======================================================================
+ERROR: test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=True, expression='x.squeeze().contiguous() + x.squeeze().contiguous()', sizes=[(1, 1), (1, 0), (0, 7), (0, 1), (3, 1), (1, 7), (3, 7), (1, 1)])
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_squeeze.py", line 185, in test_dynamic_arithmetic_consumers_replan_ranks
+    actual = call_without_python(compiled, {fn.__code__}, x)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 444, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 860, in compiled_model
+    return _execute_native_eager_compile_graph(graph, args, _compile_trace)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 778, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1535, in execute_compile_trace_graph
+    expected_metadata = _expected_operation_metadata(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1446, in _expected_operation_metadata
+    raise CompileTraceUnsupportedError(
+torch_rs._compile_trace.CompileTraceUnsupportedError: torch.compile binary output requires matching CUDA device, rank and zero storage offset
+
+======================================================================
+ERROR: test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=True, expression='(-x.squeeze().contiguous() + x.squeeze().contiguous().relu()) * 0.5', sizes=[(1, 1), (3, 7), (1, 7), (3, 1), (0, 1), (0, 7), (1, 0), (1, 1)])
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_squeeze.py", line 185, in test_dynamic_arithmetic_consumers_replan_ranks
+    actual = call_without_python(compiled, {fn.__code__}, x)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 444, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 860, in compiled_model
+    return _execute_native_eager_compile_graph(graph, args, _compile_trace)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 778, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1535, in execute_compile_trace_graph
+    expected_metadata = _expected_operation_metadata(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1411, in _expected_operation_metadata
+    raise CompileTraceUnsupportedError(
+torch_rs._compile_trace.CompileTraceUnsupportedError: torch.compile unary output requires matching CUDA device, rank and zero storage offset
+
+======================================================================
+ERROR: test_dynamic_arithmetic_consumers_replan_ranks (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_dynamic_arithmetic_consumers_replan_ranks) (packed=True, expression='(-x.squeeze().contiguous() + x.squeeze().contiguous().relu()) * 0.5', sizes=[(1, 1), (1, 0), (0, 7), (0, 1), (3, 1), (1, 7), (3, 7), (1, 1)])
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_squeeze.py", line 185, in test_dynamic_arithmetic_consumers_replan_ranks
+    actual = call_without_python(compiled, {fn.__code__}, x)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/tests/test_compile_cuda_mul_scalar.py", line 72, in call_without_python
+    return compiled(*args)
+           ^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 444, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 860, in compiled_model
+    return _execute_native_eager_compile_graph(graph, args, _compile_trace)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 778, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1535, in execute_compile_trace_graph
+    expected_metadata = _expected_operation_metadata(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1411, in _expected_operation_metadata
+    raise CompileTraceUnsupportedError(
+torch_rs._compile_trace.CompileTraceUnsupportedError: torch.compile unary output requires matching CUDA device, rank and zero storage offset
+
+----------------------------------------------------------------------
+Ran 1 test in 6.420s
+
+FAILED (errors=16)

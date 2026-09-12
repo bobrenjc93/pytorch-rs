@@ -1,0 +1,22 @@
+{
+  "phase": "evidence/documentation publication, after clean-code measurements",
+  "measured_code_commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/bin/python",
+    "-m",
+    "unittest",
+    "-v",
+    "tests.test_readme_quickstart"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0",
+  "started_at": "2026-09-11T23:32:07.942670+00:00",
+  "status_before": " M docs/compile-cuda-squeeze.md\n?? docs/diagnostics/compile-cuda-squeeze/postcommit-e835f7f/\n",
+  "guide_sha256": "5b675119ba6070166e1d93b255c08e1b733e64bcb0ec8d4d1ef5d189e660ff14",
+  "capture_json_sha256": "145a4500584c017b84fb02f55b6f67fa383f5c75747d785982d79152e19bf4ad",
+  "historical_artifacts_unchanged": true,
+  "implementation_dependencies_tests_harnesses_unchanged": true,
+  "ended_at": "2026-09-11T23:32:08.189029+00:00",
+  "exit_status": 0,
+  "log_sha256": "65e35d91bf4757216050d01dc216617bd1314a9ffbcbff5a34ee29eaba75c191",
+  "status_after": " M docs/compile-cuda-squeeze.md\n?? docs/diagnostics/compile-cuda-squeeze/postcommit-e835f7f/\n"
+}

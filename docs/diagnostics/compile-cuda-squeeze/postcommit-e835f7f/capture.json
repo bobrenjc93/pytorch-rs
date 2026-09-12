@@ -1,0 +1,669 @@
+{
+  "measurement_kind": "fresh clean implementation commit; no scoring or performance claims",
+  "measured_commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+  "worktree": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0",
+  "source_sha256": "30c8a7ad78fa3e1e8a87b59446a6fa2d759d18c5d66be1b77d5655a993acb4e3",
+  "native_extension_sha256": "f492541e80297882996e1ab9474b92c942c074c66d5af71ff31fad3dfffcc070",
+  "input_manifest": "../inputs.json",
+  "input_manifest_sha256": "a5680a85937283784520055e64b3dd5282fd516530b40c4120cfb571a00a49ea",
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": "0",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/postcommit-e835f7f/rust-tests",
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/uv-cache",
+    "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/uv-python",
+    "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/uv-python-bin",
+    "UV_PROJECT_ENVIRONMENT": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/tmp",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/xdg-cache",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/cuda-cache",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/inductor-cache",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/target/triton-cache",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0/.venv/bin/python",
+    "RUSTUP_TOOLCHAIN": "1.92.0"
+  },
+  "commands": [
+    {
+      "command": [
+        "/bin/bash",
+        "target/postcommit-e835f7f/setup.sh"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0",
+      "before": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "started_at": "2026-09-11T23:22:12.887097+00:00",
+      "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "ended_at": "2026-09-11T23:22:14.450675+00:00",
+      "elapsed_seconds": 1.419199132360518,
+      "exit_status": 0,
+      "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "log_sha256": "5f04426eff1f99d102686796c01500fb063c17477580661fa47a3259f4bd22df",
+      "after": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "name": "setup",
+      "log": "setup.log",
+      "result_summary": [],
+      "environment_overrides": {}
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "scripts/capture_depth_concat_build.py",
+        "--output",
+        "target/postcommit-e835f7f/release"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0",
+      "before": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "started_at": "2026-09-11T23:22:14.929260+00:00",
+      "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "ended_at": "2026-09-11T23:23:03.765643+00:00",
+      "elapsed_seconds": 48.690996104851365,
+      "exit_status": 0,
+      "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "name": "build",
+      "log": "build.log",
+      "result_summary": [],
+      "environment_overrides": {}
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        ".github/scripts/verify_native_extension.py"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0",
+      "before": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "started_at": "2026-09-11T23:23:46.721196+00:00",
+      "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "ended_at": "2026-09-11T23:23:47.017701+00:00",
+      "elapsed_seconds": 0.1498854784294963,
+      "exit_status": 0,
+      "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "log_sha256": "1d242f902f69d615d9637db6ca22cb85f1842316376d9777b652348422ded68c",
+      "after": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "name": "verify-wheel",
+      "log": "verify-wheel.log",
+      "result_summary": [],
+      "environment_overrides": {}
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "target/postcommit-e835f7f/verify.py",
+        "before"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0",
+      "before": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "started_at": "2026-09-11T23:23:47.449592+00:00",
+      "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "ended_at": "2026-09-11T23:23:51.725557+00:00",
+      "elapsed_seconds": 4.131439450196922,
+      "exit_status": 0,
+      "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "log_sha256": "c9ed19f93d975d939250581b0db049d51baf00e12706af40bf987b55a2631fa8",
+      "after": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "name": "verify-before",
+      "log": "verify-before.log",
+      "result_summary": [],
+      "environment_overrides": {}
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_compile_cuda_squeeze",
+        "tests.test_squeeze",
+        "tests.test_squeeze_reference"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0",
+      "before": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "started_at": "2026-09-11T23:23:48.295977+00:00",
+      "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "ended_at": "2026-09-11T23:23:51.751652+00:00",
+      "elapsed_seconds": 3.2753504952415824,
+      "exit_status": 0,
+      "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "log_sha256": "180d1acafbf179b2ceb9398587381d2807bcbf3a4be77b44bb6def4dc2491cb7",
+      "after": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "name": "portable-cpu",
+      "log": "portable-cpu.log",
+      "result_summary": [
+        "Ran 19 tests in 0.123s",
+        "OK (skipped=10)"
+      ],
+      "environment_overrides": {
+        "CUDA_VISIBLE_DEVICES": ""
+      }
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_compile_cuda_squeeze"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0",
+      "before": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "started_at": "2026-09-11T23:23:52.202814+00:00",
+      "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "ended_at": "2026-09-11T23:24:17.074695+00:00",
+      "elapsed_seconds": 24.664699144661427,
+      "exit_status": 0,
+      "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "log_sha256": "b80a4d17df0594dacc7f935b821cc420928526ab0467dae27c21da490ae02f85",
+      "after": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "name": "focused-h100",
+      "log": "focused-h100.log",
+      "result_summary": [
+        "Ran 11 tests in 20.867s",
+        "OK (skipped=1)"
+      ],
+      "environment_overrides": {}
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--test",
+        "tensor_baseline",
+        "squeeze"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0",
+      "before": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "started_at": "2026-09-11T23:23:52.217344+00:00",
+      "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "ended_at": "2026-09-11T23:23:57.135410+00:00",
+      "elapsed_seconds": 4.721986496821046,
+      "exit_status": 0,
+      "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "log_sha256": "ca2aec70af986c2181398e947fefa242e4fd9b0dcf733673d9b233e4017da082",
+      "after": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "name": "rust-eager",
+      "log": "rust-eager.log",
+      "result_summary": [
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 99 filtered out; finished in 0.00s"
+      ],
+      "environment_overrides": {
+        "CUDA_VISIBLE_DEVICES": ""
+      }
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--test",
+        "autograd",
+        "transformations_record_inverse_gradient_mappings"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0",
+      "before": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "started_at": "2026-09-11T23:23:57.574192+00:00",
+      "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "ended_at": "2026-09-11T23:23:58.969574+00:00",
+      "elapsed_seconds": 1.2510194163769484,
+      "exit_status": 0,
+      "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "log_sha256": "58f7104a8fccb66c588a369cfe1145339d766717999d58c2d3d0dd59d1b4114d",
+      "after": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "name": "rust-view-autograd",
+      "log": "rust-view-autograd.log",
+      "result_summary": [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 91 filtered out; finished in 0.00s"
+      ],
+      "environment_overrides": {
+        "CUDA_VISIBLE_DEVICES": ""
+      }
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--test",
+        "autograd",
+        "no_grad_views_preserve_requires_grad_without_recording_history"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0",
+      "before": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "started_at": "2026-09-11T23:23:59.508636+00:00",
+      "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "ended_at": "2026-09-11T23:23:59.832145+00:00",
+      "elapsed_seconds": 0.033663070760667324,
+      "exit_status": 0,
+      "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 135 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "log_sha256": "9a71816468efd9427f8790b40a82c7318d00491e299e37e3f1389594ebea8660",
+      "after": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "name": "rust-no-grad",
+      "log": "rust-no-grad.log",
+      "result_summary": [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 91 filtered out; finished in 0.00s"
+      ],
+      "environment_overrides": {
+        "CUDA_VISIBLE_DEVICES": ""
+      }
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "python-bindings",
+        "--lib",
+        "cuda_graph"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0",
+      "before": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "started_at": "2026-09-11T23:24:00.591641+00:00",
+      "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 741 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "ended_at": "2026-09-11T23:24:16.094268+00:00",
+      "elapsed_seconds": 15.263748520053923,
+      "exit_status": 0,
+      "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 927 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "log_sha256": "e7d76e39b650c0962b7c9f33ec6e22fb61e07e5f13fa48f81296e8ac9387637b",
+      "after": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "name": "rust-planner-portable",
+      "log": "rust-planner-portable.log",
+      "result_summary": [
+        "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 192 filtered out; finished in 0.25s"
+      ],
+      "environment_overrides": {
+        "CUDA_VISIBLE_DEVICES": ""
+      }
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_compile*.py"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0",
+      "before": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "started_at": "2026-09-11T23:24:17.482261+00:00",
+      "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "ended_at": "2026-09-11T23:31:00.261121+00:00",
+      "elapsed_seconds": 402.6422764407471,
+      "exit_status": 0,
+      "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 4 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "log_sha256": "1849a897bebddd27ca521765a3ac29dbfad778a13ac17a054afda01c03c296cb",
+      "after": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "name": "compiler",
+      "log": "compiler.log",
+      "result_summary": [
+        "Ran 599 tests in 390.582s",
+        "OK (skipped=14)"
+      ],
+      "environment_overrides": {}
+    },
+    {
+      "command": [
+        "cargo",
+        "fmt",
+        "--check"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0",
+      "before": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "started_at": "2026-09-11T23:24:36.256712+00:00",
+      "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 639 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 767 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "ended_at": "2026-09-11T23:24:36.959222+00:00",
+      "elapsed_seconds": 0.567915752530098,
+      "exit_status": 0,
+      "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 639 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 767 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "name": "fmt",
+      "log": "fmt.log",
+      "result_summary": [],
+      "environment_overrides": {}
+    },
+    {
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--all-targets",
+        "--features",
+        "python-bindings",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0",
+      "before": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "started_at": "2026-09-11T23:24:37.368277+00:00",
+      "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 639 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 767 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "ended_at": "2026-09-11T23:24:47.545324+00:00",
+      "elapsed_seconds": 10.040098246186972,
+      "exit_status": 0,
+      "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 639 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "log_sha256": "ad4222366b73e139f85d4b206171104036fec4bbfe3bf0c29686811e03178040",
+      "after": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "name": "clippy",
+      "log": "clippy.log",
+      "result_summary": [],
+      "environment_overrides": {}
+    },
+    {
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0",
+      "before": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "started_at": "2026-09-11T23:24:47.963012+00:00",
+      "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 639 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "ended_at": "2026-09-11T23:24:50.897190+00:00",
+      "elapsed_seconds": 2.7945616254583,
+      "exit_status": 0,
+      "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 639 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "log_sha256": "725eea5c2ae9977832bd7503a3bd62dda496fd9adf473410412f5c4d0c8e1f70",
+      "after": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "name": "clippy-default",
+      "log": "clippy-default.log",
+      "result_summary": [],
+      "environment_overrides": {}
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_top_level_compile"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0",
+      "before": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "started_at": "2026-09-11T23:31:00.772074+00:00",
+      "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "ended_at": "2026-09-11T23:31:01.439278+00:00",
+      "elapsed_seconds": 0.5277191670611501,
+      "exit_status": 0,
+      "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "log_sha256": "342e3cf8af18f34bd640f98903febace88f57c36598a6d8cf68bf0c161eb42c1",
+      "after": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "name": "top-level-compile",
+      "log": "top-level-compile.log",
+      "result_summary": [
+        "Ran 49 tests in 0.383s",
+        "OK"
+      ],
+      "environment_overrides": {}
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_compile_cuda_squeeze.SqueezeDeviceTests"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0",
+      "before": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "started_at": "2026-09-11T23:31:21.633428+00:00",
+      "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "ended_at": "2026-09-11T23:31:25.761330+00:00",
+      "elapsed_seconds": 3.9806589484214783,
+      "exit_status": 0,
+      "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "log_sha256": "4a6cc9ca89fa3d40072a0a0e3e50d99b8e40c8f743a512b952db862d1de516fe",
+      "after": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "name": "two-device",
+      "log": "two-device.log",
+      "result_summary": [
+        "Ran 1 test in 0.538s",
+        "OK"
+      ],
+      "environment_overrides": {
+        "CUDA_VISIBLE_DEVICES": "0,1"
+      }
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--features",
+        "python-bindings",
+        "--lib",
+        "cuda_graph"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0",
+      "before": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "started_at": "2026-09-11T23:31:26.184106+00:00",
+      "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "ended_at": "2026-09-11T23:31:26.909891+00:00",
+      "elapsed_seconds": 0.5908414404839277,
+      "exit_status": 0,
+      "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 3 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "log_sha256": "7871a216e5a60e2f5a0d1745894532502e7785bd49ae73eef1b7135b8e430d0c",
+      "after": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "name": "rust-graph-h100",
+      "log": "rust-graph-h100.log",
+      "result_summary": [
+        "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 192 filtered out; finished in 0.39s"
+      ],
+      "environment_overrides": {}
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "target/postcommit-e835f7f/guides.py"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0",
+      "before": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "started_at": "2026-09-11T23:31:27.321668+00:00",
+      "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "ended_at": "2026-09-11T23:31:28.065106+00:00",
+      "elapsed_seconds": 0.5994208883494139,
+      "exit_status": 0,
+      "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 1 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "log_sha256": "bec9f3550ef3004fced55b79988c65d2be256cf8b6d8e48c58db871870eece5d",
+      "after": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "name": "guide-examples",
+      "log": "guide-examples.log",
+      "result_summary": [],
+      "environment_overrides": {}
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "target/postcommit-e835f7f/verify.py",
+        "after"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0",
+      "before": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "started_at": "2026-09-11T23:31:28.484048+00:00",
+      "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "ended_at": "2026-09-11T23:31:32.411299+00:00",
+      "elapsed_seconds": 3.7921052454039454,
+      "exit_status": 0,
+      "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+      "log_sha256": "c9ed19f93d975d939250581b0db049d51baf00e12706af40bf987b55a2631fa8",
+      "after": {
+        "commit": "e835f7f173af4ffc7783560d9b03709660fa3141",
+        "git_status": "",
+        "tree": "02aa9b85354af7c8930ed168c6dfab7a2d6b2b53"
+      },
+      "name": "verify-after",
+      "log": "verify-after.log",
+      "result_summary": [],
+      "environment_overrides": {}
+    }
+  ],
+  "build_record": "build-record.json",
+  "verification": "verification.json",
+  "cache_state": "Recreated canonical .venv from locked dependencies; reused local managed CPython 3.12.14, uv and Cargo download caches; empty release build and Rust test targets. Existing local CUDA/Inductor caches reused.",
+  "scope": "Existing seeded differentials and unchanged compiler sweep, no new workload or denominator.",
+  "historical_artifact_hashes": {
+    "docs/diagnostics/compile-cuda-squeeze/README.md": "32c5ef529a07f34a742f24e9a3f679b5168dd22f26b9697035d74e21c509e517",
+    "docs/diagnostics/compile-cuda-squeeze/initial-failure.log": "12baf50d3306e66d8254e99de561e1e4de0762661681ad463ae5303760afdec1",
+    "docs/diagnostics/compile-cuda-squeeze/validation.json": "c84c5824d9e61d755b290f71096649c3fd669cd5a26d2c3d61748e2bf0de61d7",
+    "docs/diagnostics/compile-cuda-squeeze/inputs.json": "a5680a85937283784520055e64b3dd5282fd516530b40c4120cfb571a00a49ea",
+    "docs/diagnostics/compile-cuda-squeeze/baseline-probe.py.txt": "2b142b7f0b43de97ce3214988a37f12a3f40cd1ca501068ac958389b6385dd74"
+  },
+  "candidate_diff_against_main_sha256": "c15d9cc07f483874de7a32242c26e4884363b6d6330516b1c8b29a850fbfb404",
+  "all_measurements_clean": true,
+  "gpu_resource": "gpu; ordinary CUDA_VISIBLE_DEVICES=0, restoration only 0,1",
+  "gpu_snapshots_are_not_reservations": true
+}

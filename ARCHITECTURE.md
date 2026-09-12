@@ -200,6 +200,13 @@ the resulting layout normally. Frontend declarations and native shape/stride
 fields reject bool/float substitutions before equality or execution. See the
 [compiled transpose guide](docs/compile-cuda-t.md) for scope and non-scoring diagnostics.
 
+CUDA parameterless `Tensor.squeeze()` uses the unary-method registry and a
+bounded rank-0/1/2 `Operation::Squeeze`. Native eager and whole-graph planning share
+`squeeze_layout` in `src/tensor.rs`, which drops only singleton shape/stride pairs.
+Execution calls `Tensor::squeeze` and wraps each node freshly without storage
+allocation or kernels, preserving offsets and ownership even for empty or
+unchanged layouts. See [compiled squeeze](docs/compile-cuda-squeeze.md).
+
 CUDA `Tensor.reshape` adds a separate requested-shape IR payload. The metadata-only
 bridge and whole-graph planner both call eager reshape's checked shape resolver
 and shared view-stride planner in `src/tensor.rs`; no Python stride algorithm is

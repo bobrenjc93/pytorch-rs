@@ -1,0 +1,20 @@
+   Compiling crossbeam-utils v0.8.23
+   Compiling crossbeam-epoch v0.9.21
+   Compiling crossbeam-deque v0.8.8
+   Compiling rayon-core v1.13.0
+   Compiling cfg-if v1.0.4
+   Compiling either v1.18.0
+   Compiling libloading v0.8.9
+   Compiling rayon v1.12.0
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_59ecd9f0)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.70s
+     Running tests/tensor_baseline.rs (target/postcommit-e835f7f/rust-tests/debug/deps/tensor_baseline-1f3bc301430510b8)
+
+running 4 tests
+test squeeze_is_a_metadata_only_shared_storage_view ... ok
+test squeeze_handles_scalars_empty_tensors_dimensions_and_high_ranks ... ok
+test squeeze_preserves_non_contiguous_layouts_offsets_lifetimes_and_consumers ... ok
+test squeeze_reports_pytorch_compatible_dimension_errors ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 99 filtered out; finished in 0.00s
+

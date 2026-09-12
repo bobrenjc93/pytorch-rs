@@ -1,0 +1,35 @@
+import json
+import numpy as np
+import torch
+import torch_rs as native
+from tests.test_compile_cuda_boundary import compile_with_cache
+from tests.test_compile_cuda_mul_scalar import make_program
+from tests.test_cuda_contiguous import metadata
+
+results = []
+for expression in ('-x.squeeze()', 'x.squeeze().relu()', 'x.squeeze() + x.squeeze()',
+                   '-x.squeeze().contiguous()', 'x.squeeze().contiguous().relu()',
+                   'x.squeeze().contiguous() + x.squeeze().contiguous()'):
+    fn = make_program('def program(x):\n    return ' + expression + '\n')
+    compiled, cache = compile_with_cache(fn, dynamic=True)
+    torch._dynamo.reset()
+    reference = torch.compile(fn, backend='eager', fullgraph=True, dynamic=True)
+    data = np.arange(-10, 11, dtype=np.float32).reshape(3, 7)
+    x, y = native.tensor(data).to('cuda:0'), torch.tensor(data, device='cuda:0')
+    row = {'expression': expression, 'calls': []}
+    for a, b in ((x[:1], y[:1]), (x, y), (x[:1], y[:1])):
+        assert metadata(a) == metadata(b)
+        expected = reference(b)
+        call = {'shape': a.shape, 'stride': a.stride(), 'offset': a.storage_offset(),
+                'reference': 'passed'}
+        try:
+            actual = compiled(a)
+            assert metadata(actual) == metadata(expected)
+            np.testing.assert_array_equal(actual.cpu().tolist(), expected.cpu().numpy())
+            call['native'] = 'passed'
+        except Exception as error:
+            call.update(native=type(error).__name__, message=str(error))
+        row['calls'].append(call)
+    row['cached_graphs'] = len(cache.graphs)
+    results.append(row)
+print(json.dumps(results, indent=2))
