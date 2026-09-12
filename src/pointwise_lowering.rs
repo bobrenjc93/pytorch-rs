@@ -7,6 +7,12 @@ use std::fmt::Write;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum Expr {
     Node(Node),
+    // Equality established before sign rewriting requires one rounded value.
+    // A subtraction introduced by normalization must not acquire this rule.
+    SelfSub(usize),
+    // A tensor filled by a scalar simplification, distinct from a Python scalar
+    // operand. Subsequent tensor multiplication still has IEEE float semantics.
+    Splat(u32),
     // Exact sign-bit inversion, unlike the language's positive-zero subtraction.
     Flip(usize),
 }
@@ -34,7 +40,8 @@ impl Lowering {
 
     fn constant(&self, id: usize) -> Option<f32> {
         match self.nodes[id] {
-            Expr::Node(Node::Constant(bits)) => Some(f32::from_bits(bits)),
+            Expr::Node(Node::Constant(bits) | Node::Integer(bits)) => Some(f32::from_bits(bits)),
+            Expr::Node(Node::Boolean(value)) => Some(f32::from(u8::from(value))),
             _ => None,
         }
     }
@@ -43,6 +50,32 @@ impl Lowering {
         match self.nodes[id] {
             Expr::Node(Node::Mul(a, b)) => Some((a, b)),
             _ => None,
+        }
+    }
+
+    fn scalar_zero(&self, id: usize) -> bool {
+        matches!(
+            self.nodes[id],
+            Expr::Node(Node::Integer(0) | Node::Boolean(false))
+        )
+    }
+
+    fn float_operand(&mut self, id: usize) -> usize {
+        match self.nodes[id] {
+            Expr::Node(Node::Boolean(value)) => {
+                self.node(Node::Constant(f32::from(u8::from(value)).to_bits()))
+            }
+            Expr::Node(Node::Integer(bits)) => self.node(Node::Constant(bits)),
+            _ => id,
+        }
+    }
+
+    fn float_operands(&mut self, node: Node) -> Node {
+        match node {
+            Node::Add(a, b) => Node::Add(self.float_operand(a), self.float_operand(b)),
+            Node::Sub(a, b) => Node::Sub(self.float_operand(a), self.float_operand(b)),
+            Node::Mul(a, b) => Node::Mul(self.float_operand(a), self.float_operand(b)),
+            other => other,
         }
     }
 
@@ -66,7 +99,18 @@ impl Lowering {
     }
 
     fn normalize(&mut self, node: Node) -> usize {
+        if let Node::Mul(a, b) = node
+            && (self.scalar_zero(a) || self.scalar_zero(b))
+        {
+            return self.intern(Expr::Splat(0));
+        }
+        // Scalar-kind simplifications precede ordinary float32 promotion and
+        // expression sharing. A promoted True must then agree with 1.0.
+        let node = self.float_operands(node);
         match node {
+            // Only integer zero needs a different arithmetic rule after scalar
+            // conversion. Other integers share the converted float expression.
+            Node::Integer(bits) if bits != 0 => return self.node(Node::Constant(bits)),
             Node::Mul(a, b) => {
                 let coefficient = self
                     .constant(b)
@@ -79,9 +123,8 @@ impl Lowering {
                     if scalar.to_bits() == (-1.0_f32).to_bits() {
                         return self.intern(Expr::Flip(value));
                     }
-                    // The target's signed doubling combines to -(x+x), which
-                    // rounds before its consumers. Positive doubling remains a
-                    // product eligible for FMA; don't let NVRTC decide this.
+                    // Keep signed doubling's preferred rounded form, but retain
+                    // its factors for consumers without another FMA candidate.
                     if scalar.to_bits() == (-2.0_f32).to_bits() {
                         let two = self.node(Node::Constant(2.0_f32.to_bits()));
                         let product = self.node(if reversed {
@@ -93,7 +136,14 @@ impl Lowering {
                     }
                 }
             }
+            Node::Sub(a, b) if a == b => return self.intern(Expr::SelfSub(a)),
             Node::Add(a, b) => {
+                if matches!(self.nodes[a], Expr::Splat(0)) {
+                    return b;
+                }
+                if matches!(self.nodes[b], Expr::Splat(0)) {
+                    return a;
+                }
                 if let Some(positive) = self.positive(b) {
                     return self.node(Node::Sub(a, positive));
                 }
@@ -109,12 +159,15 @@ impl Lowering {
                 }
             }
             Node::Neg(a) => {
+                if let Expr::Splat(bits) = self.nodes[a] {
+                    return self.intern(Expr::Splat(bits ^ 0x8000_0000));
+                }
                 let value = match self.nodes[a] {
                     Expr::Node(Node::Sub(left, right)) if left != right => {
                         Some(self.node(Node::Sub(right, left)))
                     }
                     Expr::Node(Node::Neg(value)) | Expr::Flip(value) => Some(value),
-                    Expr::Node(_) => None,
+                    Expr::Node(_) | Expr::SelfSub(_) | Expr::Splat(_) => None,
                 };
                 if let Some(value) = value {
                     // 0-(a-b) = (b-a)+0, including IEEE zero signs.
@@ -128,19 +181,38 @@ impl Lowering {
     }
 
     fn contract(&self, a: usize, b: usize, subtract: bool) -> Option<String> {
-        // Equal expressions share a rounded value. A self-subtraction must not
-        // become fma(x,y,-round(x*y)); infinity-infinity still produces NaN.
-        if subtract && a == b {
-            return None;
-        }
+        // Prefer direct products over a sign-flipped rounded product. If no
+        // direct product exists, the flipped product can still contract. This
+        // keeps signed doubling from imposing rounding on every consumer.
         if let Some((x, y)) = self.product(a) {
             return Some(format!(
                 "fmaf(v{x}, v{y}, {}v{b})",
                 if subtract { "-" } else { "" }
             ));
         }
-        self.product(b)
-            .map(|(x, y)| format!("fmaf({}v{x}, v{y}, v{a})", if subtract { "-" } else { "" }))
+        if let Some((x, y)) = self.product(b) {
+            return Some(format!(
+                "fmaf({}v{x}, v{y}, v{a})",
+                if subtract { "-" } else { "" }
+            ));
+        }
+        if let Expr::Flip(product) = self.nodes[a]
+            && let Some((x, y)) = self.product(product)
+        {
+            return Some(format!(
+                "fmaf(-v{x}, v{y}, {}v{b})",
+                if subtract { "-" } else { "" }
+            ));
+        }
+        if let Expr::Flip(product) = self.nodes[b]
+            && let Some((x, y)) = self.product(product)
+        {
+            return Some(format!(
+                "fmaf({}v{x}, v{y}, v{a})",
+                if subtract { "" } else { "-" }
+            ));
+        }
+        None
     }
 
     fn operands(&self, id: usize) -> Vec<usize> {
@@ -149,8 +221,13 @@ impl Lowering {
             Expr::Node(Node::Neg(a)) => {
                 self.product(a).map_or_else(|| vec![a], |(x, y)| vec![x, y])
             }
-            Expr::Node(Node::Relu(a) | Node::Sin(a) | Node::Cos(a)) | Expr::Flip(a) => vec![a],
-            Expr::Node(Node::Input(_) | Node::Constant(_)) => vec![],
+            Expr::Node(Node::Relu(a) | Node::Sin(a) | Node::Cos(a))
+            | Expr::Flip(a)
+            | Expr::SelfSub(a) => vec![a],
+            Expr::Node(
+                Node::Input(_) | Node::Constant(_) | Node::Boolean(_) | Node::Integer(_),
+            )
+            | Expr::Splat(_) => vec![],
         }
     }
 }
@@ -162,6 +239,8 @@ pub(super) fn source(graph: &Graph) -> String {
         let node = match *node {
             Node::Input(i) => Node::Input(i),
             Node::Constant(bits) => Node::Constant(bits),
+            Node::Boolean(value) => Node::Boolean(value),
+            Node::Integer(bits) => Node::Integer(bits),
             Node::Add(a, b) => Node::Add(mapped[a], mapped[b]),
             Node::Sub(a, b) => Node::Sub(mapped[a], mapped[b]),
             Node::Mul(a, b) => Node::Mul(mapped[a], mapped[b]),
@@ -195,7 +274,10 @@ pub(super) fn source(graph: &Graph) -> String {
         }
         let expression = match *node {
             Expr::Node(Node::Input(i)) => format!("x{i}[i]"),
-            Expr::Node(Node::Constant(bits)) => format!("__uint_as_float(0x{bits:08x}u)"),
+            Expr::Node(Node::Constant(bits) | Node::Integer(bits)) | Expr::Splat(bits) => {
+                format!("__uint_as_float(0x{bits:08x}u)")
+            }
+            Expr::Node(Node::Boolean(value)) => if value { "1.0f" } else { "0.0f" }.into(),
             Expr::Node(Node::Add(a, b)) => lower
                 .contract(a, b, false)
                 .unwrap_or_else(|| format!("__fadd_rn(v{a}, v{b})")),
@@ -211,6 +293,7 @@ pub(super) fn source(graph: &Graph) -> String {
             Expr::Node(Node::Sin(a)) => format!("sinf(v{a})"),
             Expr::Node(Node::Cos(a)) => format!("cosf(v{a})"),
             Expr::Flip(a) => format!("(-v{a})"),
+            Expr::SelfSub(a) => format!("__fsub_rn(v{a}, v{a})"),
         };
         writeln!(source, "const float v{id} = {expression};").unwrap();
     }

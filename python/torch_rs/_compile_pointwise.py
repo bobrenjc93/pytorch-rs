@@ -39,8 +39,14 @@ def unsupported(reason):
     raise NotImplementedError("torch.compile native CUDA pointwise: " + reason)
 
 
+def is_scalar(value):
+    kind = type(value)
+    # Equality against a type can execute a user-defined metaclass callback.
+    return kind is bool or kind is int or kind is float
+
+
 def scalar_bits(value):
-    if type(value) not in (bool, int, float):
+    if not is_scalar(value):
         unsupported("constants must be exact bool/int/float values")
     if type(value) is int and not -(1 << 63) <= value < (1 << 64):
         unsupported("integer scalar is outside native scalar range")
@@ -99,6 +105,12 @@ def analyze(model, arity):
             or code.co_cellvars
             or getattr(code, "co_exceptiontable", b"")):
         unsupported("requires a straight-line function with one or two positional tensor inputs")
+    # dis formats co_consts with repr, before yielding even a LOAD_CONST.
+    # Admit the entire pool first; None and exact strings also hold compiler
+    # metadata (implicit returns and docstrings), but cannot be scalar operands.
+    for constant in code.co_consts:
+        if constant is not None and type(constant) is not str:
+            scalar_bits(constant)
     instructions = tuple(dis.get_instructions(code))
     if len(instructions) > 16384:
         unsupported("function exceeds pointwise instruction limit")
@@ -111,7 +123,7 @@ def analyze(model, arity):
 
 
 def binding(value):
-    if type(value) in (bool, int, float):
+    if is_scalar(value):
         # Guard Python scalar type and full value, even if two values round to the same f32.
         key = struct.pack("=d", value) if type(value) is float else value
         return (type(value), key), value
@@ -162,8 +174,10 @@ def lower(program, values, arity, input_ids=None):
         if isinstance(obj, Value):
             return obj
         bits = scalar_bits(obj)
-        nodes.append(("constant", 0, 0, bits))
-        return Value(len(nodes) - 1, False)
+        boolean = type(obj) is bool
+        kind = "boolean" if boolean else "integer" if type(obj) is int else "constant"
+        nodes.append((kind, 0, 0, int(obj) if boolean else bits))
+        return Value(len(nodes) - 1, False, "bool" if boolean else "float32")
 
     def emit(op, operands):
         args = [value(arg) for arg in operands]

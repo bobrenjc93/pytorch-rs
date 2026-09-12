@@ -26,8 +26,10 @@ positional native top-level functions are accepted. Exact bool/int/float
 constants may be literal, module-global, or closure values; native operator
 and package bindings may also be captured. Function globals must be an exact
 `dict`; custom globals mappings are rejected before any lookup hooks can execute,
-including on repeated calls. Signature defaults must be absent or empty exact
-containers, and closures must use an exact tuple; container subclasses are
+including on repeated calls. Scalar admission uses type identity, and the complete
+constant pool is validated before disassembly can format any constants. Rejected
+objects cannot execute metaclass equality or representation callbacks. Signature
+defaults must be absent or empty exact containers, and closures must use an exact tuple; container subclasses are
 rejected before truthiness or iteration hooks can execute. Integers must fit the native scalar range
 `[-2**63, 2**64-1]`; float32 overflow rounds to signed infinity. Graphs
 are bounded to 4096 nodes and 16384 bytecode instructions. Return one computed Tensor.
@@ -46,8 +48,8 @@ explicit `backend="eager"` capture implementation remain separate.
 ## Lowering, arithmetic, and ownership
 
 `_compile_pointwise.py` statically admits CPython straight-line bytecode and
-constructs typed float32 SSA nodes. `pointwise_ir.rs` independently validates
-node topology; `pointwise_lowering.rs` canonicalizes expressions and emits CUDA
+constructs typed SSA nodes with float32 tensor values and scalar kinds.
+`pointwise_ir.rs` independently validates node topology; `pointwise_lowering.rs` canonicalizes expressions and emits CUDA
 C from operator rules, retaining intermediates.
 `cuda/jit.rs` compiles it with NVRTC and loads the resulting PTX through the
 existing native driver. No fixed expression, shape, name, or corpus recognizer
@@ -57,11 +59,15 @@ fast math is not enabled. Arithmetic explicitly allows FMA contraction
 cases where CUDA eager's separately rounded operations differ. SSA variables
 retain expression dependencies and reuse through native compiler optimization.
 Numerical lowering shares identical ordered expressions before selecting
-explicit `fmaf` operations for each consumer. Self-subtraction uses the shared
-rounded value: finite values produce positive zero, while infinities and NaNs
+explicit `fmaf` operations for each consumer. Self-subtraction established before
+sign rewriting uses the shared rounded value: finite values produce positive zero, while infinities and NaNs
 produce NaN. Products may contract at multiple consumers while retaining their
 rounded value for other uses. Operand order is retained, including for
 commutative operators, to match the reference's expression deduplication.
+Subtraction introduced by sign normalization retains its contraction eligibility
+even when the normalized operands coincide. Sign-flipped products retain their
+factors: direct products take contraction priority, but an otherwise unpaired
+signed product can still contract rather than prematurely overflowing.
 Sign normalization precedes contraction: `-(a-b)` becomes `(b-a)+0`, products
 with negative coefficients in sums become subtraction, and unit multipliers
 and signed doubling follow the reference's normalization. Negated products use
@@ -71,6 +77,13 @@ cannot choose a different contraction after strength reduction.
 The complete IR is validated before unused expressions are removed; an unused
 local cannot change rounding of the returned expression. Invalid unused
 operations remain rejected.
+Boolean, integer and floating scalars retain distinct IR kinds until their
+operator-specific rules and float32 promotion have run. Boolean `False` and
+integer zero multiplication produce a known positive-zero tensor, including
+for non-finite inputs; floating zero multiplication retains IEEE NaN and zero
+signs. The resulting constant tensor is distinct from a scalar operand, so
+further tensor multiplication still has float semantics. Constant-zero addition
+and negation follow default Inductor's simplifications and observable zero signs.
 Float constants are rounded to float32 once and encoded by their IEEE bits,
 including negative zero and non-finite values.
 Integer constants follow default Inductor's Python binary64-to-float32
@@ -79,9 +92,10 @@ ULP from eager's direct integer conversion.
 The zero-sign contract follows default PyTorch 2.13 Inductor: standalone negation
 uses `0 - x`, so negating positive zero produces positive zero; ReLU preserves
 negative zero. Contracted negation of a nonzero positive product that underflows
-produces negative zero; an exactly zero product produces positive zero. CUDA
-eager differs for standalone positive-zero negation and negative-zero ReLU.
-Tests assert those differences explicitly as well as checking all other
+produces negative zero; an exactly zero floating product produces positive zero.
+Negating a known zero tensor from Boolean or integer multiplication instead folds
+to negative zero. CUDA eager also differs for standalone positive-zero negation
+and negative-zero ReLU. Tests assert those differences and check the covered
 eager/reference values. Finite libdevice results retain
 gradual underflow; some reference compositions flush subnormals. Finite values
 are compared with numerical tolerances, and zero signs are checked wherever
@@ -129,7 +143,8 @@ The unchanged [public-default compiler gates](torch-compile-default-evaluator.md
 remain the scoring authority with all 112 coverage and 56 CUDA performance
 cells. These focused tests do not change their denominator. Unsupported
 categories remain zero. The [post-commit evidence](diagnostics/compile-pointwise-jit/README.md)
-records fresh clean-commit coverage, CUDA-performance and generated-code captures
-for `53c10058`, including both rounds of review fixes, alongside the unchanged
-source-bound baseline and original development failures. Development validation
-remains separate from these committed measurements.
+records clean-commit coverage, CUDA-performance and generated-code captures
+for `53c10058`, before the third review fixes, alongside the unchanged source-bound
+baseline and original development failures. Fresh captures are required after
+Burner commits the scalar-admission and sign-provenance fixes; development
+validation does not replace those committed measurements.

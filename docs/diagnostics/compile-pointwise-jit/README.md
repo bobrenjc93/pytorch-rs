@@ -1,6 +1,12 @@
 # Native default pointwise JIT validation
 
-Fresh coverage, CUDA-performance and generated-code captures measure clean
+**Refresh required after the third review fixes.** The reports below measure
+`53c10058` and remain unchanged. They predate the scalar-type, callback-admission
+and sign-provenance fixes. Burner must repeat the unchanged clean-commit gates
+and `capture.py` after committing those changes. See [round-three validation](review-round3.md)
+for the new regression evidence and original failures; no revised score is claimed.
+
+The preceding coverage, CUDA-performance and generated-code captures measure clean
 implementation commit `53c10058ab5df8edd3ee0f3e2b34e3da3becc028`, including both rounds of review fixes,
 on 2026-09-12. Both unchanged public-default-compile-v2 scoring commands report
 `valid: true`, `diagnostic: false`, with no infrastructure error. The clean
@@ -8,22 +14,23 @@ baseline remains pinned to campaign base
 `76738b39fd6884ffd43b4dff2f5292257a1c6e6b`, verified as the merge base with main.
 See the [implementation contract](../../compile-pointwise-jit.md).
 
-| Unchanged public-default-compile-v2 gate | Clean baseline | Clean candidate `53c10058` |
+| Unchanged public-default-compile-v2 gate | Clean baseline | Candidate `53c10058` (refresh pending) |
 | --- | ---: | ---: |
 | Weighted coverage | 0% (0/112 cells) | 6% (4/112 cells) |
 | Weighted CUDA performance | 0% (0/56 cells) | 12% (4/56 cells) |
 | CUDA-performance common-success geometric mean, reference/candidate | null | 2.3009015801283264 |
 
-The measured gains over the baseline are 6 percentage points
+At `53c10058`, the measured gains over the baseline are 6 percentage points
 of weighted coverage and 12 points of weighted CUDA
 performance. Only the two arithmetic programs in both CUDA variants pass;
 all other cells remain zero. Successful performance cells each reach the cap
 of one, accounting for the arithmetic category's 12% weight. The uncapped ratio
 describes only those four cells; the baseline has no common successes, so its
 ratio is null. These are fixed-corpus results, not general Inductor parity.
-The review fixes leave the earlier candidate's weighted scores unchanged.
+The first two review rounds left the weighted scores unchanged. The third
+review fixes have not yet received a clean-commit measurement.
 
-## Current committed evidence
+## Committed evidence before the third review fixes
 
 - [Coverage](postcommit-53c100/candidate-coverage.json.gz) and
   [CUDA performance](postcommit-53c100/candidate-cuda-perf.json.gz) are
@@ -52,7 +59,7 @@ The review fixes leave the earlier candidate's weighted scores unchanged.
   two graph entries. The capture asserts that installed PyTorch was not imported.
   This establishes code-generation provenance, not a separate timing score.
 
-The fresh committed wheel passed all four pointwise regression modules:
+The `53c10058` wheel passed all four pointwise regression modules:
 27 tests with one explicit two-device skip under `CUDA_VISIBLE_DEVICES=0`.
 This includes both operator-added liveness/signature modules, overflow and
 signed-zero regressions, repeated expressions/input identities, sign normalization,
@@ -95,8 +102,8 @@ All earlier measured artifacts remain byte-for-byte unchanged:
   Its exhaustive selection covered 69 compiler files and 805 cases.
 - [Second-review validation](review-round2.md) and [bundle](review-round2.json.gz):
   the original 24 failing subcases, before/after numerical probes and final checks.
-  All 124 implementation-source hashes and four regression-module hashes match
-  this committed revision. It records 404 default / 431 bindings Rust tests,
+  At `53c10058`, all 124 implementation-source hashes and four regression-module
+  hashes matched that committed revision. It records 404 default / 431 bindings Rust tests,
   96 backend/entrypoint checks, Clippy, documentation and separate two-device
   checks. This remains unscored development evidence. Unrelated full suites were
   not repeated during this evidence refresh.
@@ -105,8 +112,8 @@ All earlier measured artifacts remain byte-for-byte unchanged:
   failures and subsequent repairs at their original source identities.
 
 Historical paths identify the original captures and may no longer contain the
-original installed build. Current-candidate credit uses only the fresh
-`postcommit-53c100` reports. No failed measurement was overwritten or promoted
+original installed build. The `postcommit-53c100` reports apply only to that
+revision; the third review fixes require a fresh capture. No failed measurement was overwritten or promoted
 as a score. This evidence step does not approve the branch or replace review.
 
 ## Reproduce
@@ -142,5 +149,6 @@ Driver disk-code caching was disabled symmetrically for both implementations
 in these candidate gates; the historical baseline did not set that flag.
 These results are not cold-cache speed comparisons between builds. Worker
 Inductor/Triton caches start separately fresh; dependency/native build caches
-may be warm, as recorded in setup receipts. No implementation, dependency,
-test, evaluator, corpus or managed progress artifact changed in this step.
+may be warm, as recorded in setup receipts. The `53c10058` post-commit refresh
+changed only evidence and its documentation. Subsequent review fixes and their
+validation are documented separately above.

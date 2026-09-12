@@ -37,6 +37,8 @@ fn graph(nodes: &Bound<'_, PyTuple>, output: usize, arity: usize) -> PyResult<Gr
         let node = match (op.as_str(), a, b, bits) {
             ("input", a, 0, 0) => Node::Input(a),
             ("constant", 0, 0, bits) => Node::Constant(bits),
+            ("boolean", 0, 0, bits @ 0..=1) => Node::Boolean(bits != 0),
+            ("integer", 0, 0, bits) => Node::Integer(bits),
             ("add", a, b, 0) => Node::Add(a, b),
             ("sub", a, b, 0) => Node::Sub(a, b),
             ("mul", a, b, 0) => Node::Mul(a, b),

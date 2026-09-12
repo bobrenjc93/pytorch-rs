@@ -7,6 +7,9 @@ mod lowering;
 pub(crate) enum Node {
     Input(usize),
     Constant(u32),
+    Boolean(bool),
+    // Python integer normalized to float32, with its scalar kind retained.
+    Integer(u32),
     Add(usize, usize),
     Sub(usize, usize),
     Mul(usize, usize),
@@ -47,7 +50,7 @@ impl Graph {
             tensor.push(match *node {
                 Node::Input(id) if id < self.inputs => true,
                 Node::Input(_) => return Err(invalid("invalid input index")),
-                Node::Constant(_) => false,
+                Node::Constant(_) | Node::Boolean(_) | Node::Integer(_) => false,
                 Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b) => {
                     let (a, b) = (operand(a)?, operand(b)?);
                     if !a && !b {
@@ -80,6 +83,47 @@ impl Graph {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn boolean_multiplication_is_distinct_from_float_zero() {
+        let mut graph = Graph {
+            inputs: 1,
+            nodes: vec![Node::Input(0), Node::Boolean(false), Node::Mul(0, 1)],
+            output: 2,
+        };
+        let source = graph.source().unwrap();
+        assert!(source.contains("0x00000000u"));
+        assert!(!source.contains("x0[i]"));
+        graph.nodes[1] = Node::Integer(0);
+        assert_eq!(graph.source().unwrap(), source);
+        graph.nodes[1] = Node::Constant(0);
+        assert!(graph.source().unwrap().contains("__fmul_rn("));
+        graph.nodes[1] = Node::Boolean(true);
+        let source = graph.source().unwrap();
+        assert!(source.contains("x0[i]"));
+        assert!(!source.contains("__fmul_rn("));
+    }
+
+    #[test]
+    fn sign_rewrites_do_not_acquire_shared_subtraction_semantics() {
+        let mut graph = Graph {
+            inputs: 1,
+            nodes: vec![
+                Node::Input(0),
+                Node::Constant(2.0_f32.to_bits()),
+                Node::Mul(0, 1),
+                Node::Constant((-2.0_f32).to_bits()),
+                Node::Mul(0, 3),
+                Node::Add(2, 4),
+            ],
+            output: 5,
+        };
+        assert!(graph.source().unwrap().contains("fmaf("));
+        graph.nodes[5] = Node::Sub(2, 2);
+        let source = graph.source().unwrap();
+        assert!(!source.contains("fmaf("));
+        assert!(source.contains("__fsub_rn(v2, v2)"));
+    }
+
     #[test]
     fn contracts_left_product_when_both_operands_are_products() {
         let mut graph = Graph {
