@@ -1,0 +1,16 @@
+import ast, hashlib, json, os, stat, subprocess
+from pathlib import Path
+root=Path.cwd()
+source=root/'target/uv-python/cpython-3.12.14-linux-x86_64-gnu'
+# Reuse the committed complete-inventory algorithm; do not run bootstrap/copy side effects.
+tree=ast.parse((root/'docs/diagnostics/compile-cuda-module-transpose/recipes/bootstrap.py.txt').read_text())
+functions=[n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name in ('sha','inventory')]
+exec(compile(ast.Module(body=functions,type_ignores=[]), '<committed inventory>', 'exec'))
+files=inventory(source)
+manifest=sha(json.dumps(files,sort_keys=True).encode())
+assert manifest=='519ae888f6f47836a48399b7eff35b28582673e893a08261bd5e2758f9a4f265',manifest
+assert sha((source/'bin/python3.12').read_bytes())=='f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526'
+identity=json.loads(subprocess.check_output([str(source/'bin/python3.12'),'-I','-B','-c','import sys,sysconfig,json; print(json.dumps(dict(version=sys.version,executable=sys.executable,base_prefix=sys.base_prefix,stdlib=sysconfig.get_path("stdlib"),include=sysconfig.get_path("include"))))'],text=True))
+for key in ('executable','base_prefix','stdlib','include'): assert Path(identity[key]).resolve().is_relative_to(source)
+assert inventory(source)==files
+print(json.dumps(dict(interpreter=identity,manifest_sha256=manifest,entries=len(files),complete_inventory_verified=True,existing_worktree_local_interpreter_reused=True,interpreter_copied=False,environment_copied=False),indent=2))

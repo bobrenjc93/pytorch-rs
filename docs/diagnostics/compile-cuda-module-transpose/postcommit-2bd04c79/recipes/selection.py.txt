@@ -1,0 +1,11 @@
+"""Partition the complete, unchanged compiler unittest selection for this capture."""
+import json, pathlib, subprocess, sys
+root = pathlib.Path.cwd()
+all_modules = sorted({'tests.' + p.stem for p in (root/'tests').glob('test_compile*.py')} | {'tests.test_top_level_compile'})
+focus = ['tests.test_compile_cuda_module_transpose']
+remaining = [name for name in all_modules if name not in focus]
+assert set(focus).isdisjoint(remaining) and sorted(focus + remaining) == all_modules
+selection = dict(all_modules=all_modules, focused=focus, remaining=remaining, module_count=len(all_modules), runner='unittest -v; unchanged tests in two fresh processes; no performance measurement')
+print(json.dumps(selection, indent=2), flush=True)
+selected = {'focused': focus, 'remaining': remaining}[sys.argv[1]]
+sys.exit(subprocess.call([sys.executable, '-m', 'unittest', '-v', *selected]))

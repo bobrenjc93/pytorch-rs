@@ -84,8 +84,10 @@ PR1970/PR1971 campaigns are unchanged.
 preserves the unchanged 96-gap exact-main probe and fresh source-bound checks.
 The former negative `m.transpose(x, 0, 1)` fixture now uses
 `m.transpose(x, 0, dim1=1)`, retaining its unsupported-binding purpose; the new
-module suite supplies explicit positive coverage. Clean-commit capture and
-independent review remain Burner delivery gates.
+module suite supplies explicit positive coverage. The
+[clean-commit capture](diagnostics/compile-cuda-module-transpose/postcommit-2bd04c79/README.md)
+records the fresh release build and complete compiler checks on `2bd04c79`.
+Independent review and fresh merge gates remain Burner delivery requirements.
 
 Use the [locked contributor setup](../CONTRIBUTING.md), then run:
 
