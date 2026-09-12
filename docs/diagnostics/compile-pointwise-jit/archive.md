@@ -53,8 +53,21 @@ preserve 30 original failing subcases, intermediate failures, numerical probes,
 and final checks. The 124 implementation-source and six regression-module hashes
 match implementation `dbd1a0f6`. The record includes 406 default / 433 bindings
 Rust tests, 96 backend/entrypoint checks, Clippy, documentation, and separate
-two-device checks. These dirty-source development runs are unscored; the clean
-`dbd1a0f6` measurements are linked from the current evidence index.
+two-device checks. These dirty-source development runs are unscored. The clean
+`dbd1a0f6` capture predates the composed constant-tensor fix:
+
+- [Coverage](postcommit-dbd1a0/candidate-coverage.json.gz),
+  [CUDA performance](postcommit-dbd1a0/candidate-cuda-perf.json.gz),
+  [receipt](postcommit-dbd1a0/postcommit.json), [logs](postcommit-dbd1a0/postcommit-logs.json.gz),
+  and [codegen provenance](postcommit-dbd1a0/provenance.json).
+
+## Composed constant-tensor repair
+
+[Development validation](review-constant-tensors.md) and its
+[bundle](review-constant-tensors.json.gz) preserve the 48 originally failing
+subcases, numerical probes, generated code and final checks. These dirty-source
+runs remain unscored; clean `0c836a49` measurements are linked from the current
+evidence index.
 
 Temporary worktree paths in these captures may no longer contain the original
 build or raw observations after cleanup. Checked-in reports, manifests, generated

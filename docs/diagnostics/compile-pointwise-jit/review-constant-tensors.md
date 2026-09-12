@@ -33,7 +33,9 @@ inside the worktree. These are semantic checks with reusable reference caches,
 not timing measurements.
 
 This is unscored dirty-source development evidence based on `1ba5ebcf`.
-The `dbd1a0f6` campaign reports predate this fix. After Burner commits it,
-repeat the unchanged gates and `capture.py` using the
-[documented workflow](README.md). No evaluator, tolerance, denominator or
-managed progress artifact changed. Independent review remains required.
+Burner committed the fix as `0c836a49`. The subsequent [post-commit capture](README.md)
+supplies fresh clean coverage/performance reports, generated-code evidence and
+all six pointwise regression modules. The earlier `dbd1a0f6` campaign reports
+and this development bundle retain their original source identities. No
+evaluator, tolerance, denominator or managed progress artifact changed.
+Independent review remains required.
