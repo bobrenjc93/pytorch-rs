@@ -7,7 +7,7 @@ use crate::{
 use pyo3::{
     exceptions::{PyNotImplementedError, PyTypeError, PyValueError},
     prelude::*,
-    types::{PyInt, PyString, PyTuple},
+    types::{PyFloat, PyInt, PyString, PyTuple},
 };
 
 type Payload = (String, usize, usize, u64);
@@ -36,6 +36,7 @@ fn graph(nodes: &Bound<'_, PyTuple>, output: usize, arity: usize) -> PyResult<Gr
         let (op, a, b, bits): Payload = tuple.extract()?;
         let node = match (op.as_str(), a, b, bits) {
             ("input", a, 0, 0) => Node::Input(a),
+            ("scalar", a, negative @ 0..=1, 0) => Node::RuntimeScalar(a, negative != 0),
             ("constant", 0, 0, bits) => Node::Constant(bits),
             ("boolean", 0, 0, bits @ 0..=1) => Node::Boolean(bits != 0),
             ("integer", 0, 0, bits) => Node::Integer(bits),
@@ -126,14 +127,45 @@ pub(super) struct Compiled {
 }
 #[pymethods]
 impl Compiled {
-    fn run(&self, inputs: &Bound<'_, PyTuple>) -> PyResult<PyTensor> {
+    #[pyo3(signature = (inputs, scalars=None))]
+    fn run(
+        &self,
+        inputs: &Bound<'_, PyTuple>,
+        scalars: Option<&Bound<'_, PyTuple>>,
+    ) -> PyResult<PyTensor> {
+        // Exact types are checked before conversion; no user float hooks run.
+        let values = scalars.map_or_else(
+            || Ok(Vec::new()),
+            |scalars| {
+                if !scalars.is_exact_instance_of::<PyTuple>() {
+                    return Err(PyTypeError::new_err("expected an exact scalar tuple"));
+                }
+                scalars
+                    .iter()
+                    .map(|value| {
+                        if !value.is_exact_instance_of::<PyFloat>() {
+                            return Err(PyTypeError::new_err(
+                                "runtime scalars must be exact floats",
+                            ));
+                        }
+                        // The graph's runtime scalar boundary is float32 materialization.
+                        #[allow(clippy::cast_possible_truncation)]
+                        let value = value.extract::<f64>()? as f32;
+                        Ok(value)
+                    })
+                    .collect::<PyResult<Vec<_>>>()
+            },
+        )?;
+        self.kernel
+            .validate_scalars(&values)
+            .map_err(|e| tensor_error(&e))?;
         if inputs.len() != self.arity {
             return Err(PyValueError::new_err(
                 "pointwise input arity guard mismatch",
             ));
         }
         with_inputs(inputs, |tensors| {
-            CoreTensor::pointwise_jit(tensors, &self.kernel)
+            CoreTensor::pointwise_jit(tensors, &self.kernel, &values)
                 .map(PyTensor::new)
                 .map_err(|e| tensor_error(&e))
         })

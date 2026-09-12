@@ -1,8 +1,12 @@
 # Native default pointwise JIT validation
 
-Fresh coverage, CUDA-performance and generated-code captures measure clean
+The latest clean coverage, CUDA-performance and generated-code captures measure
 implementation commit `40a57b36eeae1447aaf729dd2d23ad16768660ae` on 2026-09-12,
-including the constant-folding precision and zero-origin repair. Both unchanged
+including the constant-folding precision and zero-origin repair. They predate
+the current shared-product, runtime-sine and warm-scalar repairs and do not
+measure those changes. [Development validation](review-boundaries.md) records
+the new repair checks; fresh campaign captures require Burner's next clean
+implementation commit. Both unchanged
 public-default-compile-v2 scoring commands report
 `valid: true`, `diagnostic: false`, with no infrastructure error. The clean
 baseline remains pinned to campaign base
@@ -23,7 +27,7 @@ remain zero. The uncapped ratio describes only those four cells; the baseline
 has no common successes, so its ratio is null. These are fixed-corpus results,
 not general Inductor parity.
 
-## Current committed evidence
+## Latest clean capture (preceding the current repair)
 
 - [Coverage](postcommit-40a57b/candidate-coverage.json.gz) and
   [CUDA performance](postcommit-40a57b/candidate-cuda-perf.json.gz) are

@@ -39,7 +39,12 @@ impl Tensor {
         Ok(device)
     }
 
-    pub(crate) fn pointwise_jit(inputs: &[&Self], kernel: &Kernel) -> Result<Self, TensorError> {
+    pub(crate) fn pointwise_jit(
+        inputs: &[&Self],
+        kernel: &Kernel,
+        scalars: &[f32],
+    ) -> Result<Self, TensorError> {
+        kernel.validate_scalars(scalars)?;
         let device = Self::validate_pointwise_inputs(inputs)?;
         if device != kernel.device {
             return Err(invalid("kernel device guard mismatch"));
@@ -54,6 +59,7 @@ impl Tensor {
             second.offset,
             first.elements,
             kernel,
+            scalars,
         )?;
         Ok(Self {
             storage: Arc::new(storage),
@@ -99,7 +105,7 @@ mod tests {
             output: 1,
         };
         let kernel = Kernel::compile(&graph, 0).unwrap();
-        let output = Tensor::pointwise_jit(&[&input], &kernel).unwrap();
+        let output = Tensor::pointwise_jit(&[&input], &kernel, &[]).unwrap();
         assert!(!input.shares_storage_with(&output));
         assert_eq!(
             output.try_copy_cuda_to_cpu().unwrap().try_to_vec().unwrap(),
@@ -109,7 +115,7 @@ mod tests {
         input.shape = vec![0];
         input.strides = vec![1];
         input.offset = usize::MAX;
-        let empty = Tensor::pointwise_jit(&[&input], &kernel).unwrap();
+        let empty = Tensor::pointwise_jit(&[&input], &kernel, &[]).unwrap();
         assert!(!input.shares_storage_with(&empty));
         assert_eq!(empty.shape(), &[0]);
     }

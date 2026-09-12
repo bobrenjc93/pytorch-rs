@@ -27,19 +27,12 @@ class ConstantHardware(unittest.TestCase):
         native.compiler.reset()
         self.torch.compiler.reset()
 
-    def check(self, source, scalars=(0, False), graph_count=None, fresh_reference=False):
+    def check(self, source, scalars=(0, False), graph_count=None):
         fn, ref_fn = program(source, scale=0), program(source, scale=0)
         compiled, reference = native.compile(fn), self.torch.compile(ref_fn)
         values = [-0., 0., 1., -1., 1e-38, float('inf'), -float('inf'), float('nan')]
         for scalar in scalars:
             fn.__globals__['scale'] = ref_fn.__globals__['scale'] = scalar
-            if fresh_reference:
-                # A warm reference can promote changed floats to runtime scalar
-                # tensors. Test our static binding guard against the reference's
-                # constant-specialized graph for each value, retaining native
-                # cold/warm cache transitions throughout.
-                self.torch.compiler.reset()
-                reference = self.torch.compile(ref_fn)
             for data in (values, values[::-1]):
                 x = native.tensor(data).to('cuda:0')
                 tx = self.torch.tensor(data, device='cuda:0')
@@ -64,10 +57,9 @@ class ConstantHardware(unittest.TestCase):
         self.assertEqual(len(cache(compiled).graphs),
                          len({type(s) for s in scalars}) if graph_count is None else graph_count)
 
-    def test_captured_values_with_same_float32_bits_have_distinct_guards(self):
+    def test_changed_float_binding_becomes_a_runtime_scalar(self):
         self.check('def f(x):\n return ((x*0)+scale)-16777216.0',
-                   scalars=(16777216.0, 16777217.0, 16777216.0), graph_count=2,
-                   fresh_reference=True)
+                   scalars=(16777216.0, 16777217.0, 16777216.0, 16777218.0), graph_count=2)
 
     def test_constant_precision_cancellation_overflow_and_literal_rounding(self):
         for body in ('((x*scale)+16777216.0)+1.0-16777216.0',

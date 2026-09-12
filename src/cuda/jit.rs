@@ -137,6 +137,7 @@ impl Nvrtc {
 
 pub(crate) struct Kernel {
     pub(crate) device: usize,
+    scalar_count: usize,
     context: usize,
     module: usize,
     function: usize,
@@ -196,6 +197,7 @@ impl Kernel {
         }
         Ok(Self {
             device,
+            scalar_count: graph.scalar_count(),
             context,
             module: module as usize,
             function: function as usize,
@@ -205,6 +207,12 @@ impl Kernel {
             options,
         })
     }
+    pub(crate) fn validate_scalars(&self, scalars: &[f32]) -> Result<(), TensorError> {
+        if scalars.len() != self.scalar_count {
+            return Err(invalid("pointwise runtime scalar arity mismatch"));
+        }
+        Ok(())
+    }
     /// Pointers must reference count live contiguous float32 elements on this
     /// device. Output must be disjoint. Synchronize before releasing owners.
     pub(crate) unsafe fn launch(
@@ -213,17 +221,27 @@ impl Kernel {
         mut x1: u64,
         mut output: u64,
         mut count: u64,
+        scalars: &[f32],
     ) -> Result<(), TensorError> {
+        self.validate_scalars(scalars)?;
         if current_context()? != self.context {
             return Err(invalid("generated kernel context mismatch"));
         }
         let driver = driver()?;
-        let mut args = [
+        let mut args = vec![
             (&raw mut x0).cast(),
             (&raw mut x1).cast(),
             (&raw mut output).cast(),
             (&raw mut count).cast(),
         ];
+        // Driver arguments reference stable host values until cuLaunchKernel
+        // has copied them. No scalar device buffer or cached value is retained.
+        let mut scalar_values = scalars.to_vec();
+        args.extend(
+            scalar_values
+                .iter_mut()
+                .map(|value| std::ptr::from_mut(value).cast()),
+        );
         let blocks = u32::try_from(count.div_ceil(256).min(65535)).unwrap();
         // SAFETY: caller holds all checked storage through legacy-stream completion.
         driver.check(

@@ -217,6 +217,7 @@ impl Storage {
         other_offset: usize,
         elements: usize,
         kernel: &crate::cuda::jit::Kernel,
+        scalars: &[f32],
     ) -> Result<Self, TensorError> {
         match (&self.payload, &other.payload) {
             (StoragePayload::CudaFloat32(left), StoragePayload::CudaFloat32(right)) => Ok(Self {
@@ -226,6 +227,7 @@ impl Storage {
                     other_offset,
                     elements,
                     kernel,
+                    scalars,
                 )?),
             }),
             _ => Err(crate::pointwise_ir::invalid("expected CUDA storage")),

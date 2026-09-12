@@ -67,7 +67,11 @@ commutative operators, to match the reference's expression deduplication.
 Subtraction introduced by sign normalization retains its contraction eligibility
 even when the normalized operands coincide. Sign-flipped products retain their
 factors: direct products take contraction priority, but an otherwise unpaired
-signed product can still contract rather than prematurely overflowing.
+signed product can still contract rather than prematurely overflowing. Shared
+negative doubling retains its rounded value for earlier addition consumers;
+the last live consumer and subtraction consumers can expose its factors.
+Consumer ordering is determined from live, deduplicated expressions before
+sign normalization, including elimination of multiplication by one.
 Sign normalization precedes contraction: `-(a-b)` becomes `(b-a)+0`, products
 with negative coefficients in sums become subtraction, and unit multipliers
 and signed doubling follow the reference's normalization. Negated products use
@@ -108,10 +112,12 @@ produces negative zero; an exactly zero floating product produces positive zero.
 Negating a known zero tensor from Boolean or integer multiplication instead folds
 to negative zero. CUDA eager also differs for standalone positive-zero negation
 and negative-zero ReLU. Tests assert those differences and check the covered
-eager/reference values. Finite libdevice results retain
-gradual underflow; some reference compositions flush subnormals. Finite values
-are compared with numerical tolerances, and zero signs are checked wherever
-both results are zero.
+eager/reference values. Runtime sine flushes subnormal inputs to signed zero
+before accurate libdevice evaluation, matching the reference boundary even
+when subsequent arithmetic amplifies the result. Constant-only sine expressions
+retain gradual underflow, as does other native arithmetic; no global fast-math
+or flush-to-zero option is enabled. Regression tests include amplified
+subnormal values and exact zero-sign assertions.
 
 NVRTC is discovered by ordinary shared-library names (`libnvrtc.so.13`,
 `libnvrtc.so.12`, `libnvrtc.so`) or an explicit `TORCH_RS_NVRTC` override.
@@ -127,11 +133,15 @@ scalar/function bindings, and repeated-input object relationships are guarded.
 Passing the same Tensor for both parameters shares its input expression;
 distinct tensors, even equal-valued tensors or views sharing storage, keep
 separate expressions. Only this identity relationship is cached, so fresh
-tensors reuse the same specialization. Captured scalars remain statically
-specialized by their full value. Inductor may instead promote changed floating
-bindings to runtime scalar tensors and change their rounding boundaries; the
-binding regression compares each native specialization with a fresh constant-
-specialized reference, not Inductor's adaptive warm-call strategy.
+tensors reuse the same specialization. Captured scalars are initially constant
+specializations. A changed finite captured float becomes a runtime float32
+kernel parameter, matching the reference's warm-call materialization boundary.
+Promotion is per binding, persists when earlier float values return, and is
+cleared by reset. Integer and Boolean bindings retain their scalar kinds.
+At most 64 runtime scalar parameters are supported. Their current values are
+passed by value at launch and are never retained in graph or code cache keys.
+The binding regressions keep both wrappers alive across changes without
+resetting the reference.
 A changed shape creates a graph cache
 entry but reuses code for the same expression and device. Failed admission,
 compilation or execution does not consume a cache slot. `recompile_limit`
@@ -161,7 +171,9 @@ remain the scoring authority with all 112 coverage and 56 CUDA performance
 cells. These focused tests do not change their denominator. Unsupported
 categories remain zero. The [post-commit evidence](diagnostics/compile-pointwise-jit/README.md)
 records fresh clean-commit coverage, CUDA-performance and generated-code captures
-for `40a57b36`, including the constant-folding precision and zero-origin repair,
-alongside the unchanged source-bound baseline and original failures.
-[Repair validation](diagnostics/compile-pointwise-jit/review-folding.md) records
-the development checks separately from these clean campaign measurements.
+for `40a57b36`, before the current shared-product, runtime-sine and warm-scalar
+repairs, alongside the unchanged source-bound baseline and original failures.
+These captures do not measure the latest implementation; fresh campaign
+captures await Burner's next clean commit.
+[Repair validation](diagnostics/compile-pointwise-jit/review-boundaries.md) records
+the development checks separately from clean campaign measurements.

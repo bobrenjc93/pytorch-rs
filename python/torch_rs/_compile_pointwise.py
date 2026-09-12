@@ -6,6 +6,7 @@ kernel. It deliberately has no graph breaks or eager fallback.
 """
 from dataclasses import dataclass
 import dis
+import math
 import struct
 import sys
 import types
@@ -61,6 +62,12 @@ class Value:
     index: int
     tensor: bool = True
     dtype: str = "float32"
+
+
+@dataclass(frozen=True)
+class RuntimeScalar:
+    index: int
+    negative: bool = False
 
 
 @dataclass(frozen=True)
@@ -163,14 +170,49 @@ def resolve(model, program):
     return tuple(keys), values
 
 
+def runtime_bindings(program, bindings, values, graphs):
+    """Promote changed captured floats using successful, reset-owned history."""
+    previous = [key[1] for key in graphs if key[0] is program.code]
+    keys, resolved, scalars = list(bindings), dict(values), []
+    for position, dependency in enumerate(program.dependencies):
+        value = values[dependency]
+        if type(value) is not float:
+            continue
+        observations = [keys_[position] for keys_ in previous]
+        dynamic = any(key[0] == "runtime_float" for key in observations)
+        if not dynamic and math.isfinite(value):
+            # Exact builtins only: numeric comparison matches the reference's
+            # promotion history, including equal signed zeros and int/float
+            # transitions. Booleans do not participate in scalar dynamism.
+            dynamic = any(
+                (kind is float and struct.unpack("=d", prior)[0] != value)
+                or (kind is int and prior != value)
+                for kind, prior, *unused in observations
+            )
+        if dynamic:
+            if len(scalars) >= 64:
+                unsupported("at most 64 runtime scalar bindings are supported")
+            resolved[dependency] = RuntimeScalar(len(scalars))
+            scalars.append(value)
+            keys[position] = ("runtime_float",)
+    return tuple(keys), resolved, tuple(scalars)
+
+
 def lower(program, values, arity, input_ids=None):
     if input_ids is None:
         input_ids = tuple(range(arity))
     nodes = [("input", i, 0, 0) for i in input_ids]
+    runtime = sorted(value.index for value in values.values() if type(value) is RuntimeScalar)
+    nodes.extend(("scalar", index, 0, 0) for index in runtime)
     locals_ = dict(zip(program.code.co_varnames, (Value(i) for i in range(arity))))
     stack = []
 
     def value(obj):
+        if type(obj) is RuntimeScalar:
+            if not obj.negative:
+                return Value(arity + obj.index, False)
+            nodes.append(("scalar", obj.index, 1, 0))
+            return Value(len(nodes) - 1, False)
         if isinstance(obj, Value):
             return obj
         bits = scalar_bits(obj)
@@ -227,7 +269,9 @@ def lower(program, values, arity, input_ids=None):
                 unsupported("unsupported attribute: " + str(arg))
         elif op == "UNARY_NEGATIVE":
             operand = stack.pop()
-            if isinstance(operand, Value):
+            if type(operand) is RuntimeScalar:
+                stack.append(RuntimeScalar(operand.index, not operand.negative))
+            elif isinstance(operand, Value):
                 stack.append(emit("neg", [operand]))
             else:
                 scalar_bits(operand)
@@ -294,6 +338,7 @@ def implementation(model, recompile_limit):
             if program.code.co_argcount != len(args):
                 unsupported("function signature changed")
             bindings, values = resolve(model, program)
+            bindings, values, scalars = runtime_bindings(program, bindings, values, cache.graphs)
             # Object identity, not equal values or shared storage, determines
             # whether two parameters denote the same expression. Retain only
             # the relationship so fresh tensors can reuse graphs and code.
@@ -311,10 +356,10 @@ def implementation(model, recompile_limit):
                                  if entry[0] == code_key), None)
                 if executor is None:
                     executor = (code_key, _native._pointwise_compile(args, graph.nodes, graph.output))
-                result = executor[1].run(args)
+                result = executor[1].run(args, scalars)
                 cache.graphs[key] = executor
             else:
-                result = executor[1].run(args)
+                result = executor[1].run(args, scalars)
             return result
 
     compiled._torch_rs_pointwise_cache = cache

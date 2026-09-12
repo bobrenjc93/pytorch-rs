@@ -6,6 +6,8 @@ mod lowering;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Node {
     Input(usize),
+    // A captured float promoted after its binding changes; sign is scalar negation.
+    RuntimeScalar(usize, bool),
     Constant(u64),
     Boolean(bool),
     // Python integer normalized to binary64, with its scalar kind retained.
@@ -34,6 +36,17 @@ pub(crate) fn invalid(message: impl Into<String>) -> TensorError {
 }
 
 impl Graph {
+    pub(crate) fn scalar_count(&self) -> usize {
+        self.nodes
+            .iter()
+            .filter_map(|node| match node {
+                Node::RuntimeScalar(index, _) => Some(index + 1),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0)
+    }
+
     pub(crate) fn validate(&self) -> Result<(), TensorError> {
         if !(1..=2).contains(&self.inputs) || self.nodes.len() > 4096 {
             return Err(invalid("expected one or two inputs and at most 4096 nodes"));
@@ -50,6 +63,10 @@ impl Graph {
             tensor.push(match *node {
                 Node::Input(id) if id < self.inputs => true,
                 Node::Input(_) => return Err(invalid("invalid input index")),
+                Node::RuntimeScalar(index, _) if index < 64 => false,
+                Node::RuntimeScalar(_, _) => {
+                    return Err(invalid("at most 64 runtime scalar bindings are supported"));
+                }
                 Node::Constant(_) | Node::Boolean(_) | Node::Integer(_) => false,
                 Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b) => {
                     let (a, b) = (operand(a)?, operand(b)?);
@@ -83,6 +100,100 @@ impl Graph {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn shared_signed_double_keeps_one_rounded_consumer() {
+        let mut graph = Graph {
+            inputs: 1,
+            nodes: vec![
+                Node::Input(0),
+                Node::Constant((-2.0_f64).to_bits()),
+                Node::Mul(0, 1),
+                Node::Add(0, 2),
+                Node::Sub(3, 2),
+            ],
+            output: 4,
+        };
+        let source = graph.source().unwrap();
+        assert_eq!(source.matches("fmaf(").count(), 1);
+        assert!(source.contains("__fadd_rn("));
+        assert!(source.contains("__fmul_rn("));
+        // A dead consumer cannot make the product shared in emitted code.
+        graph.output = 3;
+        let source = graph.source().unwrap();
+        assert_eq!(source.matches("fmaf(").count(), 1);
+        assert!(!source.contains("__fadd_rn("));
+    }
+
+    #[test]
+    fn sine_flushes_only_runtime_dependencies() {
+        let mut graph = Graph {
+            inputs: 1,
+            nodes: vec![
+                Node::Input(0),
+                Node::Integer(0),
+                Node::Mul(0, 1),
+                Node::Constant(1e-38_f64.to_bits()),
+                Node::Add(2, 3),
+                Node::Relu(4),
+                Node::Sin(5),
+            ],
+            output: 6,
+        };
+        let constant = graph.source().unwrap();
+        assert!(constant.contains("sinf("));
+        assert!(!constant.contains("0x7f800000u"));
+        graph.nodes[3] = Node::RuntimeScalar(0, false);
+        assert!(graph.source().unwrap().contains("0x7f800000u"));
+        graph.nodes[6] = Node::Sin(0);
+        let runtime = graph.source().unwrap();
+        assert!(runtime.contains("0x7f800000u"));
+        assert!(!runtime.contains("__sinf("));
+    }
+
+    #[test]
+    fn runtime_scalars_are_parameters_and_stop_constant_folding() {
+        let graph = Graph {
+            inputs: 1,
+            nodes: vec![
+                Node::Input(0),
+                Node::Integer(0),
+                Node::Mul(0, 1),
+                Node::RuntimeScalar(0, false),
+                Node::Add(2, 3),
+                Node::Constant(16_777_216.0_f64.to_bits()),
+                Node::Sub(4, 5),
+            ],
+            output: 6,
+        };
+        let source = graph.source().unwrap();
+        assert!(source.contains("float s0"));
+        assert!(source.contains("= s0;"));
+        assert!(source.contains("__fsub_rn"));
+        assert_eq!(graph.scalar_count(), 1);
+        let mut invalid = graph.clone();
+        invalid.nodes[3] = Node::RuntimeScalar(64, false);
+        assert!(invalid.validate().is_err());
+        invalid.nodes[3] = Node::RuntimeScalar(0, false);
+        invalid.output = 3;
+        assert!(invalid.validate().is_err());
+    }
+
+    #[test]
+    fn runtime_scalar_negation_preserves_the_sign_bit() {
+        let graph = Graph {
+            inputs: 1,
+            nodes: vec![
+                Node::Input(0),
+                Node::RuntimeScalar(0, true),
+                Node::Add(0, 1),
+            ],
+            output: 2,
+        };
+        let source = graph.source().unwrap();
+        assert!(source.contains("= -s0;"));
+        assert!(!source.contains("__fsub_rn(0.0f"));
+    }
+
     #[test]
     fn constant_tensors_fold_before_float32_materialization() {
         for (left, increment, expected) in [

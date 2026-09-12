@@ -554,7 +554,9 @@ impl CudaFloat32Storage {
         other_offset: usize,
         elements: usize,
         kernel: &jit::Kernel,
+        scalars: &[f32],
     ) -> Result<Self, TensorError> {
+        kernel.validate_scalars(scalars)?;
         if self.device_index != other.device_index || self.device_index != kernel.device {
             return Err(crate::pointwise_ir::invalid("mixed CUDA JIT devices"));
         }
@@ -569,7 +571,7 @@ impl CudaFloat32Storage {
             let right = (other.data_ptr + other_offset * 4) as u64;
             // SAFETY: both checked contiguous ranges and the fresh output remain
             // live through unary_output's completion, including launch errors.
-            unsafe { kernel.launch(left, right, output, elements as u64) }
+            unsafe { kernel.launch(left, right, output, elements as u64, scalars) }
         })
     }
 

@@ -284,7 +284,8 @@ class Hardware(unittest.TestCase):
         for scale in [0.37, -1.91237, -0.0]:
             fn.__globals__['scale'] = scale
             self.compare(compiled(x), tx.sin() * scale)
-        self.assertEqual(len(cache(compiled).graphs), 3)
+        # The first changed float promotes to one reusable runtime parameter.
+        self.assertEqual(len(cache(compiled).graphs), 2)
         fn.__globals__['fw'] = object()
         with self.assertRaises(NotImplementedError):
             compiled(x)
@@ -448,18 +449,19 @@ class Block:
             raise AssertionError('installed PyTorch production execution')
 sys.meta_path.insert(0, Block())
 import torch_rs as m
+scale = 0.375
 def f(x, y):
     a = m.sin(x)
-    return a * a - y.cos() + 0.375
+    return a * a - y.cos() + scale
 compiled = m.compile(f)
 def forbid(frame, event, arg):
     if event == 'call' and frame.f_code is f.__code__:
         raise AssertionError('body replay')
 sys.setprofile(forbid)
-for value in (0.125, -1.875):
+for value, scale in ((0.125, 0.375), (-1.875, -1.25), (0.75, 0.375)):
     x = m.tensor([value]).to('cuda:0')
     output = compiled(x, x)
-    expected = math.sin(value)**2 - math.cos(value) + 0.375
+    expected = math.sin(value)**2 - math.cos(value) + scale
     assert abs(output.cpu().tolist()[0] - expected) < 1e-6
     assert output.data_ptr() != x.data_ptr()
 sys.setprofile(None)

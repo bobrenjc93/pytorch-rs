@@ -18,6 +18,9 @@ enum Expr {
     Folded(u64),
     // Exact sign-bit inversion, unlike the language's positive-zero subtraction.
     Flip(usize),
+    // Keep the original negative double separate from its positive factors.
+    // Shared raw uses round before addition; subtraction may cancel the sign.
+    SignedDouble(usize),
 }
 
 #[derive(Default)]
@@ -76,6 +79,19 @@ impl Lowering {
         }
     }
 
+    fn unit_product(&self, node: &Node) -> Option<usize> {
+        let Node::Mul(a, b) = *node else {
+            return None;
+        };
+        if self.constant(b) == Some(1.0) {
+            Some(a)
+        } else if self.constant(a) == Some(1.0) {
+            Some(b)
+        } else {
+            None
+        }
+    }
+
     fn fold_tensor_arithmetic(&self, node: &Node) -> Option<u64> {
         let (Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b)) = *node else {
             return None;
@@ -118,7 +134,7 @@ impl Lowering {
         Some(self.node(Node::Mul(a, b)))
     }
 
-    fn normalize(&mut self, node: Node) -> usize {
+    fn normalize(&mut self, node: Node, last_use: [bool; 2]) -> usize {
         // Keep arithmetic on known constant tensors distinct from scalar
         // nodes and runtime expressions. In particular, later negation must
         // invert the constant's sign, not emit positive-zero subtraction or
@@ -128,6 +144,26 @@ impl Lowering {
             return self.intern(Expr::Folded(bits));
         }
         let node = self.float_operands(node);
+        if let Some(value) = self.unit_product(&node) {
+            return value;
+        }
+        let expose = |this: &mut Self, id, eligible| {
+            if eligible && let Expr::SignedDouble(product) = this.nodes[id] {
+                this.intern(Expr::Flip(product))
+            } else {
+                id
+            }
+        };
+        // Earlier live additions consume the rounded signed double. Its last
+        // consumer, and subtraction/negation consumers, may expose the factors.
+        let node = match node {
+            Node::Add(a, b) => {
+                Node::Add(expose(self, a, last_use[0]), expose(self, b, last_use[1]))
+            }
+            Node::Sub(a, b) if a != b => Node::Sub(expose(self, a, true), expose(self, b, true)),
+            Node::Neg(a) => Node::Neg(expose(self, a, true)),
+            other => other,
+        };
         match node {
             // Only integer zero needs a different arithmetic rule after scalar
             // conversion. Other integers share the converted float expression.
@@ -138,9 +174,6 @@ impl Lowering {
                     .map(|c| (a, b, c, false))
                     .or_else(|| self.constant(a).map(|c| (b, a, c, true)));
                 if let Some((value, _, scalar, reversed)) = coefficient {
-                    if scalar.to_bits() == 1.0_f64.to_bits() {
-                        return value;
-                    }
                     if scalar.to_bits() == (-1.0_f64).to_bits() {
                         return self.intern(Expr::Flip(value));
                     }
@@ -153,7 +186,7 @@ impl Lowering {
                         } else {
                             Node::Mul(value, two)
                         });
-                        return self.intern(Expr::Flip(product));
+                        return self.intern(Expr::SignedDouble(product));
                     }
                 }
             }
@@ -186,7 +219,11 @@ impl Lowering {
                         Some(self.node(Node::Sub(right, left)))
                     }
                     Expr::Node(Node::Neg(value)) | Expr::Flip(value) => Some(value),
-                    Expr::Node(_) | Expr::SelfSub(_) | Expr::Zero | Expr::Folded(_) => None,
+                    Expr::Node(_)
+                    | Expr::SelfSub(_)
+                    | Expr::Zero
+                    | Expr::Folded(_)
+                    | Expr::SignedDouble(_) => None,
                 };
                 if let Some(value) = value {
                     // 0-(a-b) = (b-a)+0, including IEEE zero signs.
@@ -242,9 +279,14 @@ impl Lowering {
             }
             Expr::Node(Node::Relu(a) | Node::Sin(a) | Node::Cos(a))
             | Expr::Flip(a)
-            | Expr::SelfSub(a) => vec![a],
+            | Expr::SelfSub(a)
+            | Expr::SignedDouble(a) => vec![a],
             Expr::Node(
-                Node::Input(_) | Node::Constant(_) | Node::Boolean(_) | Node::Integer(_),
+                Node::Input(_)
+                | Node::RuntimeScalar(_, _)
+                | Node::Constant(_)
+                | Node::Boolean(_)
+                | Node::Integer(_),
             )
             | Expr::Zero
             | Expr::Folded(_) => vec![],
@@ -266,7 +308,7 @@ fn early_aliases(graph: &Graph) -> (Vec<usize>, Vec<bool>) {
     let tensor = |id| {
         !matches!(
             graph.nodes[id],
-            Node::Constant(_) | Node::Integer(_) | Node::Boolean(_)
+            Node::Constant(_) | Node::Integer(_) | Node::Boolean(_) | Node::RuntimeScalar(_, _)
         )
     };
     let zeros: Vec<_> = graph
@@ -303,10 +345,79 @@ fn float32_bits(bits: u64) -> u32 {
     (f64::from_bits(bits) as f32).to_bits()
 }
 
+fn remap(node: &Node, mapped: &[usize]) -> Node {
+    match *node {
+        Node::Input(i) => Node::Input(i),
+        Node::RuntimeScalar(i, negative) => Node::RuntimeScalar(i, negative),
+        Node::Constant(bits) => Node::Constant(bits),
+        Node::Boolean(value) => Node::Boolean(value),
+        Node::Integer(bits) => Node::Integer(bits),
+        Node::Add(a, b) => Node::Add(mapped[a], mapped[b]),
+        Node::Sub(a, b) => Node::Sub(mapped[a], mapped[b]),
+        Node::Mul(a, b) => Node::Mul(mapped[a], mapped[b]),
+        Node::Neg(a) => Node::Neg(mapped[a]),
+        Node::Relu(a) => Node::Relu(mapped[a]),
+        Node::Sin(a) => Node::Sin(mapped[a]),
+        Node::Cos(a) => Node::Cos(mapped[a]),
+    }
+}
+
+// Find each original expression's last canonical live consumer before sign
+// normalization. Dead and duplicate expressions cannot impose rounding boundaries.
+fn last_consumers(graph: &Graph, aliases: &[usize], zeros: &[bool]) -> Vec<[bool; 2]> {
+    let mut canonical = Lowering::default();
+    let mut mapped = Vec::with_capacity(graph.nodes.len());
+    for (id, node) in graph.nodes.iter().enumerate() {
+        let value = if aliases[id] != id {
+            mapped[aliases[id]]
+        } else if zeros[id] {
+            canonical.intern(Expr::Zero)
+        } else {
+            let node = remap(node, &mapped);
+            if let Some(bits) = canonical.fold_tensor_arithmetic(&node) {
+                canonical.intern(Expr::Folded(bits))
+            } else {
+                let node = canonical.float_operands(node);
+                if let Some(value) = canonical.unit_product(&node) {
+                    value
+                } else {
+                    canonical.node(node)
+                }
+            }
+        };
+        mapped.push(value);
+    }
+    let mut live = vec![false; canonical.nodes.len()];
+    let mut last = vec![0; canonical.nodes.len()];
+    live[mapped[graph.output]] = true;
+    for id in (0..canonical.nodes.len()).rev() {
+        if !live[id] {
+            continue;
+        }
+        let operands = match canonical.nodes[id] {
+            Expr::Node(Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b)) => vec![a, b],
+            Expr::Node(Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a)) => vec![a],
+            _ => vec![],
+        };
+        for operand in operands {
+            live[operand] = true;
+            last[operand] = last[operand].max(id);
+        }
+    }
+    mapped
+        .iter()
+        .map(|&id| match canonical.nodes[id] {
+            Expr::Node(Node::Add(a, b)) => [last[a] == id, last[b] == id],
+            _ => [true, true],
+        })
+        .collect()
+}
+
 pub(super) fn source(graph: &Graph) -> String {
     let mut lower = Lowering::default();
     let mut mapped = Vec::with_capacity(graph.nodes.len());
     let (aliases, zeros) = early_aliases(graph);
+    let last = last_consumers(graph, &aliases, &zeros);
     for (id, node) in graph.nodes.iter().enumerate() {
         if aliases[id] != id {
             mapped.push(mapped[aliases[id]]);
@@ -316,20 +427,8 @@ pub(super) fn source(graph: &Graph) -> String {
             mapped.push(lower.intern(Expr::Zero));
             continue;
         }
-        let node = match *node {
-            Node::Input(i) => Node::Input(i),
-            Node::Constant(bits) => Node::Constant(bits),
-            Node::Boolean(value) => Node::Boolean(value),
-            Node::Integer(bits) => Node::Integer(bits),
-            Node::Add(a, b) => Node::Add(mapped[a], mapped[b]),
-            Node::Sub(a, b) => Node::Sub(mapped[a], mapped[b]),
-            Node::Mul(a, b) => Node::Mul(mapped[a], mapped[b]),
-            Node::Neg(a) => Node::Neg(mapped[a]),
-            Node::Relu(a) => Node::Relu(mapped[a]),
-            Node::Sin(a) => Node::Sin(mapped[a]),
-            Node::Cos(a) => Node::Cos(mapped[a]),
-        };
-        mapped.push(lower.normalize(node));
+        let node = remap(node, &mapped);
+        mapped.push(lower.normalize(node, last[id]));
     }
     let output = mapped[graph.output];
     let mut live = vec![false; lower.nodes.len()];
@@ -344,16 +443,30 @@ pub(super) fn source(graph: &Graph) -> String {
     let mut source = String::from(
         "// torch_rs typed pointwise SSA v1; float32, no fast math\n\
          extern \"C\" __global__ void torch_rs_pointwise(\n\
-         const float* x0, const float* x1, float* out, unsigned long long n) {\n\
+         const float* x0, const float* x1, float* out, unsigned long long n",
+    );
+    for index in 0..graph.scalar_count() {
+        write!(source, ", float s{index}").unwrap();
+    }
+    source.push_str(
+        ") {\n\
          for (unsigned long long i = (unsigned long long)blockIdx.x * blockDim.x + threadIdx.x;\n\
          i < n; i += (unsigned long long)blockDim.x * gridDim.x) {\n",
     );
+    let mut constant = Vec::with_capacity(lower.nodes.len());
     for (id, node) in lower.nodes.iter().enumerate() {
+        constant.push(
+            !matches!(node, Expr::Node(Node::Input(_) | Node::RuntimeScalar(_, _)))
+                && lower.operands(id).iter().all(|&operand| constant[operand]),
+        );
         if !live[id] {
             continue;
         }
         let expression = match *node {
             Expr::Node(Node::Input(i)) => format!("x{i}[i]"),
+            Expr::Node(Node::RuntimeScalar(i, negative)) => {
+                format!("{}s{i}", if negative { "-" } else { "" })
+            }
             Expr::Node(Node::Constant(bits) | Node::Integer(bits)) | Expr::Folded(bits) => {
                 format!("__uint_as_float(0x{:08x}u)", float32_bits(bits))
             }
@@ -371,9 +484,19 @@ pub(super) fn source(graph: &Graph) -> String {
                 |(x, y)| format!("fmaf(-v{x}, v{y}, 0.0f)"),
             ),
             Expr::Node(Node::Relu(a)) => format!("(v{a} < 0.0f ? 0.0f : v{a})"),
-            Expr::Node(Node::Sin(a)) => format!("sinf(v{a})"),
+            Expr::Node(Node::Sin(a)) => {
+                if constant[a] {
+                    format!("sinf(v{a})")
+                } else {
+                    // Match runtime reference sine's input FTZ boundary without
+                    // approximate range reduction or flushing other arithmetic.
+                    format!(
+                        "sinf((__float_as_uint(v{a}) & 0x7f800000u) == 0 ? __uint_as_float(__float_as_uint(v{a}) & 0x80000000u) : v{a})"
+                    )
+                }
+            }
             Expr::Node(Node::Cos(a)) => format!("cosf(v{a})"),
-            Expr::Flip(a) => format!("(-v{a})"),
+            Expr::Flip(a) | Expr::SignedDouble(a) => format!("(-v{a})"),
             Expr::SelfSub(a) => format!("__fsub_rn(v{a}, v{a})"),
         };
         writeln!(source, "const float v{id} = {expression};").unwrap();
