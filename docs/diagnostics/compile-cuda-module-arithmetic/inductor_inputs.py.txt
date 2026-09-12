@@ -1,0 +1,16 @@
+"""Reconstruct the fixed inputs of the independent Inductor spelling test."""
+import hashlib
+import json
+from pathlib import Path
+import numpy as np
+rng = np.random.default_rng(198304)
+cases = []
+for text, arity in (('m.add(x, y)', 2), ('a(x, y)', 2), ('m.neg(x)', 1),
+                    ('n(x)', 1), ('m.negative(x)', 1), ('negative(x)', 1),
+                    ('m.add(m.neg(x), y)', 2), ('a(negative(x), y)', 2)):
+    for shape in ((), (7,), (3, 5), (0,)):
+        values = [rng.integers(-31, 32, size=int(np.prod(shape))).astype(np.float32) * .125 for _ in range(arity)]
+        cases.append(dict(expression=text, shape=shape, input_sha256=[hashlib.sha256(v.tobytes()).hexdigest() for v in values]))
+print(json.dumps(dict(test_source_sha256=hashlib.sha256(Path('tests/test_compile_cuda_module_arithmetic.py').read_bytes()).hexdigest(),
+    method='ModuleArithmeticCudaTests.test_inductor_reference_public_spelling_matrix', seed=198304,
+    dtype='float32', byte_order='little endian', cases=cases), indent=2))

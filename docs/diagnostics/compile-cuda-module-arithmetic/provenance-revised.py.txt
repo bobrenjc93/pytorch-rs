@@ -1,0 +1,50 @@
+import ctypes
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import zipfile
+import torch_rs as native
+import torch
+from torch_rs._cuda_public_storage import _candidate_libraries
+
+root = Path.cwd()
+def sha(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+build = json.loads((root / 'target/cuda-add-diagnostic/module-final-revised/build-record.json').read_text())
+wheel = Path(build['wheel'])
+with zipfile.ZipFile(wheel) as z:
+    for name in z.namelist():
+        if name.startswith('torch_rs/') and name.endswith(('.py', '.so')):
+            actual = Path(native.__file__).parent.parent / name
+            assert actual.read_bytes() == z.read(name), name
+            if name.endswith('.py'):
+                assert actual.read_bytes() == (root / 'python' / name).read_bytes(), name
+assert sha(Path(native._C.__file__)) == build['installed_native_sha256']
+x = native.tensor([1., 2.]).to('cuda:0')
+assert native.compile(lambda x: native.add(native.neg(x), x), backend='eager', fullgraph=True)(x).cpu().tolist() == [0., 0.]
+torch.ones(1, device='cuda:0')
+libs = sorted({line.split()[-1] for line in Path('/proc/self/maps').read_text().splitlines() if '/libcudart.so' in line})
+runtimes = []
+for path in libs:
+    lib = ctypes.CDLL(path)
+    value = ctypes.c_int()
+    assert lib.cudaRuntimeGetVersion(ctypes.byref(value)) == 0
+    runtimes.append(dict(path=path, version=value.value, sha256=sha(Path(path))))
+assert len(runtimes) == 1
+print(json.dumps(dict(base_commit=build['base_commit'], measured_code_commit=None,
+    source_kind=build['source_kind'], source_manifest_sha256=build['source_manifest_sha256'],
+    native_extension=native._C.__file__, native_sha256=sha(Path(native._C.__file__)),
+    wheel_sha256=sha(wheel), all_installed_python_and_native_match_wheel_and_source=True,
+    python=sys.version, executable=sys.executable, interpreter_sha256=sha(Path(sys.executable).resolve()),
+    torch_version=torch.__version__, torch_cuda=torch.version.cuda, runtimes=runtimes,
+    compiler=subprocess.check_output(['rustc','--version'],text=True).strip(),
+    cargo=subprocess.check_output(['cargo','--version'],text=True).strip(),
+    nvcc=subprocess.check_output(['nvcc','--version'],text=True),
+    nvcc_used=False, native_cuda_compilation='driver JIT of unchanged embedded PTX',
+    gpu=subprocess.check_output(['nvidia-smi','--query-gpu=index,uuid,name,driver_version,utilization.gpu,memory.used','--format=csv'],text=True),
+    baseline_script_sha256=sha(Path('/tmp/pytorch-rs-compiler-recovery.3UB6mU/probe-compiled-cuda-module-arithmetic.py')),
+    git_diff_sha256=hashlib.sha256(subprocess.check_output(['git','diff','HEAD','--binary'])).hexdigest(),
+    frozen_corpora_and_evaluators_unchanged=True), indent=2))

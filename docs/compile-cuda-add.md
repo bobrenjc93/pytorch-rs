@@ -14,7 +14,7 @@ compilation, or a new CUDA performance score.
 import torch_rs as torch
 
 def combine(left, right):
-    intermediate = -right + left.mul(0.5)
+    intermediate = torch.add(torch.neg(right), left.mul(0.5))
     return 2 * intermediate
 
 compiled = torch.compile(combine, backend="eager", fullgraph=True)
@@ -31,10 +31,13 @@ globals read by the existing same-module helper. Conversion uses the public
 scalar multiplication parser, including integer overflow and float32 rounding.
 Scalar function arguments, closures, numeric subclasses/NumPy scalars, complex
 values, arithmetic on captured scalars, kwargs and `out` remain unsupported.
-Top-level calls require the native callable identity; patched bindings reject.
+Top-level calls require an immutable native callable identity; unsupported replacements reject.
 
 Unary `-`, zero-argument `.neg()`, `.negative()` and `.relu()` compose arbitrarily with
-operator `+` and positional `.add(tensor)`. This syntax supports
+operator `+` and positional `.add(tensor)`. Positional `torch_rs.add(x, y)`,
+`torch_rs.neg(x)` and `torch_rs.negative(x)` also capture, including module
+aliases, direct imported aliases and calls inside supported same-module helpers.
+These spellings reuse the existing add/neg nodes and native kernels. This syntax supports
 equal-shape addition and exactly `(M, N)+(N,)` in either operand order,
 self-addition, chains, scalar tensors, empty tensors, and contiguous views with
 nonzero offsets. Exact same-module helpers, live global tensor captures, and
@@ -59,12 +62,16 @@ number operands outside multiplication, broader broadcasts (including `(M,N)+(1,
 gradients, mixed CPU/CUDA inputs, and mixed CUDA ordinals. The bounded
 [view](compile-cuda-view.md), [reshape](compile-cuda-reshape.md), transpose and
 row-sum methods retain their documented keyword forms. Other keyword arguments and operations,
-closures, mutations, top-level `torch.neg`/`negative` calls, unsupported bytecode,
+closures, mutations, unsupported bytecode,
 and unsupported compiler options retain their existing rejection behavior.
 Float64 CUDA tensors and CUDA tensors requiring gradients cannot currently be constructed by the native substrate; the
 compiler metadata boundary also explicitly rejects those properties.
 The compiler reuses [native CUDA scalar multiplication](cuda-mul-scalar-validation.md);
 CPU multiplication capture and tensor-tensor multiplication remain unsupported.
+CPU module/direct-import call capture remains unsupported, including these new
+spellings; CPU operator and method capture retains its existing behavior.
+Function calls accept only the stated positional Tensor arguments: no `alpha`,
+`out`, keywords, scalar addition or extra/missing arguments.
 
 ReLU uses [native CUDA compare/select](cuda-relu.md), preserving NaN payloads
 and clamping negative zero to positive zero. Its method capture accepts any
@@ -93,6 +100,15 @@ bindings are reread on every call before cache lookup; helper dependencies use
 the same snapshots. Changed values specialize subject to `recompile_limit`,
 and unsupported replacements reject. Every call checks current input and capture
 devices and layouts.
+Module guards retain the legacy `mul`/`multiply`/`matmul` snapshots and guard
+new `add`/`neg`/`negative` fields only at loads that use them. Unused new fields
+do not invalidate warm graphs or spend `recompile_limit`, even when rebound
+or deleted. Direct imported aliases guard their own binding and survive
+unrelated public-attribute mutations. Replacing a used binding with another
+canonical native operation dispatches that operation with its own arity;
+unsupported callables, arbitrary modules, descriptors and missing used fields
+reject without user callbacks. Each load keeps its own snapshot, including
+multiple fields and helper loads in the same namespace.
 Rebinding a global creates a specialization or hits the existing recompile
 limit; an incompatible device transition is rejected. Rejected calls leave the
 graph cache unchanged. A new graph is published only after successful native
@@ -104,6 +120,19 @@ The private binary bridge independently delegates shape, layout, dtype, device
 and autograd validation to `Tensor::add`; it cannot bypass the kernel boundary.
 CUDA add nodes also validate declared result metadata before execution, while
 dynamic outputs derive concrete metadata from current inputs.
+
+## Public add/neg function-call validation
+
+[Module arithmetic evidence](diagnostics/compile-cuda-module-arithmetic/README.md)
+records the source-bound baseline and development checks. Reproduce the focused
+suite with `CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest -v tests.test_compile_cuda_module_arithmetic`;
+use `CUDA_VISIBLE_DEVICES=0,1` for its `ModuleArithmeticDeviceTests` class and an
+empty device mask for the hardware-free frontend checks. Tests cover all four
+policies, cache hits, exact exception classes, helpers, generated compositions,
+layout/broadcast boundaries, dynamic squeeze rank changes, lifetime, binding
+mutations and output prevalidation. Single-node arithmetic uses the existing
+native unary/binary hook; compositions execute through the native whole-graph
+bridge without per-node Python replay. Neither path runs the program body.
 
 ## Matrix/vector validation
 

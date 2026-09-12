@@ -227,7 +227,8 @@ fallback, callable backend invocation, or unguarded graph caching.
 The generic eager compiler also captures unmarked one- and two-input native
 CUDA float32 negation/ReLU/addition graphs with equal addition operand shapes or
 exactly `(M,N)` and `(N,)` in either order, using contiguous layouts,
-including unary `-`, `Tensor.neg()`/`negative()`/`relu()`, scalar/empty/offset inputs,
+including unary `-`, `Tensor.neg()`/`negative()`/`relu()`, positional native-module
+and imported-alias `add(x, y)`/`neg(x)`/`negative(x)`, scalar/empty/offset inputs,
 self-addition, chains, and global captures. Negation and ReLU allocate fresh contiguous
 CUDA storage with offset zero.
 CUDA metadata and caches guard the actual device ordinal and storage offset.
