@@ -123,8 +123,8 @@ dynamic outputs derive concrete metadata from current inputs.
 
 ## Public add/neg function-call validation
 
-[Module arithmetic evidence](diagnostics/compile-cuda-module-arithmetic/README.md)
-records the source-bound baseline and development checks. Reproduce the focused
+[Clean-commit module arithmetic evidence](diagnostics/compile-cuda-module-arithmetic/postcommit-e2378805/README.md)
+records validation at `e2378805`, with the [baseline and development checks](diagnostics/compile-cuda-module-arithmetic/README.md) preserved. Reproduce the focused
 suite with `CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest -v tests.test_compile_cuda_module_arithmetic`;
 use `CUDA_VISIBLE_DEVICES=0,1` for its `ModuleArithmeticDeviceTests` class and an
 empty device mask for the hardware-free frontend checks. Tests cover all four

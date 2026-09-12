@@ -1,0 +1,28 @@
+import datetime, hashlib, json, os, pathlib, subprocess, sys, time
+ROOT = pathlib.Path.cwd()
+OUT = ROOT / 'target/postcommit-e2378805'
+HEAD = 'e2378805eee2d1092d21c0678f503d888851e47c'
+def digest(p): return hashlib.sha256(p.read_bytes()).hexdigest()
+def stamp(): return datetime.datetime.now(datetime.timezone.utc).isoformat()
+def git_state():
+    head = subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip()
+    status = subprocess.check_output(['git','status','--porcelain'], text=True)
+    assert head == HEAD and not status, (head, status)
+    return {'commit':head, 'status':status, 'checked_at':stamp()}
+def snapshot():
+    return subprocess.check_output(['nvidia-smi','--query-gpu=index,uuid,name,driver_version,utilization.gpu,memory.used','--format=csv'], text=True)
+label, *command = sys.argv[1:]
+assert label.replace('-','').isalnum() and command
+receipt = OUT / (label + '.json')
+assert not receipt.exists()
+before = git_state()
+selected = {k:v for k,v in os.environ.items() if k.startswith(('UV_','CARGO_','RUSTUP_','CUDA_','TORCHINDUCTOR_','TRITON_','PYO3_')) or k in ('TMPDIR','VIRTUAL_ENV','TORCH_RS_CUDART','LD_LIBRARY_PATH','PYTHONDONTWRITEBYTECODE','XDG_CACHE_HOME')}
+log = OUT / (label + '.log')
+record = {'label':label,'argv':command,'cwd':str(ROOT),'environment':selected,'git_before':before,'resources':['gpu','cpu-heavy'],'snapshots_are_reservations':False,'gpu_before':snapshot(),'started_at':stamp()}
+start = time.perf_counter()
+with log.open('wb') as stream:
+    result = subprocess.run(command, cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT)
+record.update({'ended_at':stamp(),'duration_seconds':time.perf_counter()-start,'exit_code':result.returncode,'log':log.name,'log_sha256':digest(log),'gpu_after':snapshot(),'git_after':git_state()})
+receipt.write_text(json.dumps(record,indent=2)+'\n')
+print(label, 'exit', result.returncode, 'seconds', round(record['duration_seconds'],2), flush=True)
+sys.exit(result.returncode)
