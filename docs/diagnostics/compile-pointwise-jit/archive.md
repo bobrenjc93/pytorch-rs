@@ -79,8 +79,22 @@ repair and retains its original measured identity:
 [Development validation](review-folding.md) and its [bundle](review-folding.json.gz)
 preserve original and intermediate failures, output-bit probes, generated code,
 and build/test commands. Its 124 source hashes and seven regression-module
-hashes match `40a57b36`; these development checks remain unscored. The current
-evidence index links the subsequent clean capture.
+hashes match `40a57b36`; these development checks remain unscored. Clean
+`40a57b36` predates the shared-product, runtime-sine and warm-scalar repair and
+retains its original measurements:
+
+- [Coverage](postcommit-40a57b/candidate-coverage.json.gz),
+  [CUDA performance](postcommit-40a57b/candidate-cuda-perf.json.gz),
+  [receipt](postcommit-40a57b/postcommit.json), [logs](postcommit-40a57b/postcommit-logs.json.gz),
+  and [codegen provenance](postcommit-40a57b/provenance.json).
+
+## Shared products, runtime sine and warm captured scalars
+
+[Development validation](review-boundaries.md) and its [bundle](review-boundaries.json.gz)
+preserve the original numerical failures, intermediate failures, generated
+CUDA/PTX and command logs. The 124 implementation and ten regression-module
+hashes match `f745c45c`; the development measurements remain explicitly unscored.
+The current evidence index links the subsequent clean capture.
 
 Temporary worktree paths in these captures may no longer contain the original
 build or raw observations after cleanup. Checked-in reports, manifests, generated

@@ -53,8 +53,8 @@ Final checks used the locked release wheel, Python 3.12.14, default PyTorch
   sequence agree with the reference after the repair (NaN payloads excluded).
 
 These are unscored development checks of dirty sources based on `e61173f0`,
-not clean-commit campaign measurements. The [latest clean reports](README.md)
-remain pinned to `40a57b36`, before this repair, and require fresh captures
-following Burner's next implementation commit. All earlier measurements and
-failures remain unchanged. The supported subset and remaining exclusions are
+not clean-commit campaign measurements. Burner committed this repair as
+`f745c45c`. The [post-commit capture](README.md) supplies fresh clean coverage/performance,
+generated-code evidence and all ten pointwise regression modules. All earlier
+measurements and failures remain unchanged. The supported subset and remaining exclusions are
 in the [compiler contract](../../compile-pointwise-jit.md).
