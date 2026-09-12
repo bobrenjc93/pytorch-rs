@@ -1,0 +1,109 @@
+"""Verify the clean measurements and restrict publication to evidence and links."""
+from datetime import datetime, timezone
+import gzip, hashlib, json, pathlib, re, subprocess
+root=pathlib.Path.cwd().resolve()
+commit='e2898c1d4ff8162c15b327b908e02008a767aff6'
+relative='docs/diagnostics/compile-cuda-module-t/postcommit-e2898c1d/'
+out=root/relative
+allowed={'docs/compile-cuda-t.md','docs/diagnostics/compile-cuda-module-t/README.md'}
+def sha(raw): return hashlib.sha256(raw).hexdigest()
+def git(*args): return subprocess.check_output(['git',*args],text=True).strip()
+def encode(value): return (json.dumps(value,indent=2)+'\n').encode()
+def resolve(base,delta):
+    files={**base,**delta['changed']}
+    for p in delta['removed']: del files[p]
+    return files
+assert git('rev-parse','HEAD')==commit
+changed=git('diff','--name-only').splitlines()
+assert set(changed)==allowed,changed
+assert not git('diff','--cached','--name-only')
+assert all(p.startswith(relative) for p in git('ls-files','--others','--exclude-standard').splitlines())
+subprocess.run(['git','diff','--check'],check=True)
+commands=json.loads((out/'commands.json').read_bytes())
+capture=json.loads((out/'capture.json').read_bytes())
+refs=json.loads((out/'manifests.json').read_bytes())
+compact=json.loads((out/'build-record.json').read_bytes())
+bref=refs['build']; raw=gzip.decompress((out/bref['base']).read_bytes())
+assert sha(raw)==bref['base_sha256']
+files=dict(sorted(resolve(json.loads(raw),bref['delta']).items(),key=lambda item:pathlib.PurePosixPath(item[0]).parts))
+assert sha(json.dumps(files,sort_keys=True).encode())==bref['sha256']==compact['source_manifest_sha256']
+build={k:(files if k=='source_files' else compact[k]) for k in compact['original_field_order']}
+assert sha(encode(build))==compact['original_record_sha256']==capture['original_build_record_sha256']
+assert build['measured_code_commit']==capture['measured_code_commit']==commit
+assert build['origin_status']==capture['clean_status']=='' and build['source_matches_commit']
+assert build['origin_patch_sha256']==sha(b'')
+for name,digest in capture['source_export_logs'].items():
+    assert sha(gzip.decompress((out/('logs/source-export-'+name+'.gz')).read_bytes()))==digest
+for key in ('source_root','wheel','installed_package','installed_native','build_target'):
+    assert pathlib.Path(build[key]).resolve().is_relative_to(root),key
+assert sha(pathlib.Path(build['wheel']).read_bytes())==build['wheel_sha256']==capture['wheel_sha256']
+assert sha(pathlib.Path(build['installed_native']).read_bytes())==build['installed_native_sha256']==capture['native_sha256']
+for p,v in files.items():
+    assert sha((pathlib.Path(build['source_root'])/p).read_bytes())==v,p
+    if p not in allowed: assert sha((root/p).read_bytes())==v,p
+for kind in ('production','input'):
+    ref=refs[kind]; raw=gzip.decompress((out/ref['base']).read_bytes())
+    assert sha(raw)==ref['base_sha256']; base=json.loads(raw)
+    index=json.loads((out/ref['existing_index']).read_bytes())
+    assert index['base_sha256']==ref['base_sha256']
+    for key in {r[kind+'_manifest'] for r in commands.values()}:
+        if key==ref['base_sha256']: manifest=base
+        elif key in ref['reused_sha256']: manifest=resolve(base,index['variants'][key])
+        else: manifest=resolve(base,ref['new_variants'][key])
+        assert sha(json.dumps(manifest,sort_keys=True).encode())==key
+        for p,v in manifest.items():
+            assert sha((root/p).read_bytes())==v,p
+            if not p.startswith('target/'): assert files[p]==v,p
+for name,r in commands.items():
+    assert r['base_commit']==r['head_after']==commit and r['exit_code']==0
+    assert r['clean_status_before']==r['clean_status_after']=='' and r['production_unchanged']
+    assert pathlib.Path(r['cwd']).resolve()==root
+    assert sha(gzip.decompress((out/r['log']).read_bytes()))==r['log_sha256'],name
+    original={k:v for k,v in r.items() if k not in ('original_receipt_sha256','log','summary')}
+    assert sha(encode(original))==r['original_receipt_sha256'],name
+    for key in ('UV_CACHE_DIR','UV_PYTHON_INSTALL_DIR','UV_PYTHON_BIN_DIR','UV_PROJECT_ENVIRONMENT',
+                'TMPDIR','XDG_CACHE_HOME','CUDA_CACHE_PATH','TORCHINDUCTOR_CACHE_DIR','TRITON_CACHE_DIR',
+                'VIRTUAL_ENV','PYO3_PYTHON','TORCH_RS_CUDART','CARGO_HOME','CARGO_TARGET_DIR'):
+        assert pathlib.Path(r['environment'][key]).resolve().is_relative_to(root),(name,key)
+    for p,v in r['native'].items():
+        assert (root/p).resolve().is_relative_to(root/'.venv')
+        if name!='release-build': assert sha((root/p).read_bytes())==v
+    assert r['started_at']<=r['ended_at']
+    assert r['resources']==['gpu','cpu-heavy'] and r['snapshot_is_not_reservation']
+pre=json.loads(gzip.decompress((out/'logs/preflight.log.gz').read_bytes()))
+post=json.loads(gzip.decompress((out/'logs/postflight.log.gz').read_bytes()))
+assert pre==post
+assert pre['source_provenance']==capture['source_provenance']
+assert pre['torch']=='2.13.0+cu130' and pre['versions']['cudaRuntimeGetVersion']==13000
+assert pre['gpu']=='NVIDIA H100' and '12.6.85' in pre['nvcc']
+assert pre['installed_python_matches_source'] and pre['native_sha256']==capture['native_sha256']
+for key in ('executable','base_prefix','native','cuda_runtime','torch_import','torch_rs_import','numpy_import'):
+    assert pathlib.Path(pre[key]).resolve().is_relative_to(root),key
+for p in (root/'python/torch_rs').glob('*.py'):
+    installed=pathlib.Path(pre['torch_rs_import']).parent/p.name
+    assert sha(installed.read_bytes())==sha(p.read_bytes()),p
+selected={p for p in files if p.startswith('tests/test_compile') and p.endswith('.py')}|{'tests/test_top_level_compile.py'}
+sweep=gzip.decompress((out/'logs/compiler-complete.log.gz').read_bytes()).decode()
+assert len(selected)==62
+assert all(('tests.'+pathlib.Path(p).stem) in sweep for p in selected)
+# Current evidence must never acquire another worktree's paths. Historical source
+# manifests contain file names/hashes only and continue to reference prior bytes.
+for path in out.rglob('*'):
+    if path.is_file():
+        raw=gzip.decompress(path.read_bytes()) if path.suffix=='.gz' else path.read_bytes()
+        for match in re.findall(re.escape(str(root.parent).encode()+b'/')+rb'[^\s"\'<>)]*',raw):
+            assert match.decode().startswith(str(root)),(str(path),match)
+links=0
+for p in [root/x for x in allowed]+[out/'README.md']:
+    for dest in re.findall(r'\]\(([^)]+)\)',p.read_text()):
+        if '://' in dest or dest.startswith('#'): continue
+        target=dest.split('#',1)[0]
+        assert (p.parent/target).exists(),(p,target)
+        links+=1
+print(json.dumps(dict(verified_at=datetime.now(timezone.utc).isoformat(),measured_code_commit=commit,
+    passed=True,clean_measurement_commands=len(commands),compiler_modules=len(selected),
+    source_build_native_input_bindings_verified=True,original_receipts_and_build_record_reconstructed=True,
+    current_paths_inside_worktree=True,historical_measurements_unchanged=True,
+    implementation_dependencies_tests_and_harnesses_unchanged=True,
+    publication_diff=changed,publication_untracked_prefix=relative,documentation_links_checked=links,
+    whitespace_check_passed=True,independent_review_and_merge_gates_still_required=True),indent=2))

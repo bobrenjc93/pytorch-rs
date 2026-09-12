@@ -6,6 +6,10 @@ PyO3 function at package startup and uses the existing CUDA rank-0–2 view node
 No kernels, backend semantics, methods, dtype, gradient or layout boundaries change.
 See the [supported contract](../../compile-cuda-t.md).
 
+The deferred [clean-commit capture](postcommit-e2898c1d/README.md) is now complete
+for `e2898c1d4ff8162c15b327b908e02008a767aff6`. The development measurements and
+historical delivery status below remain as originally recorded.
+
 Before edits, the unchanged frozen probe (SHA-256
 `fecd393d78b70d7cba9dbfe7993fb94d7bf0c51057fd9a53018770291c79fc24`)
 reproduced the audited clean-main

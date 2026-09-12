@@ -1,0 +1,113 @@
+"""Package fresh clean-commit measurements, sharing existing immutable manifests."""
+import gzip, hashlib, json, pathlib, re, subprocess
+root=pathlib.Path.cwd().resolve()
+commit='e2898c1d4ff8162c15b327b908e02008a767aff6'
+work=root/'target/module-t-postcommit-e2898c1d'
+historical=root/'docs/diagnostics/compile-cuda-module-t'
+out=historical/'postcommit-e2898c1d'
+def sha(raw): return hashlib.sha256(raw).hexdigest()
+def git(*args): return subprocess.check_output(['git',*args],text=True).strip()
+def encode(value): return (json.dumps(value,indent=2)+'\n').encode()
+def delta(base,files):
+    return {'changed':{p:v for p,v in files.items() if base.get(p)!=v},'removed':[p for p in base if p not in files]}
+assert git('rev-parse','HEAD')==commit and git('status','--porcelain')==''
+assert not out.exists()
+expected=('release-build','interpreter-local','preflight','native-verification','focused','restoration',
+          'hidden-cpu','rust-default','rust-cuda','rust-hidden','format','clippy-default',
+          'clippy-bindings','docs','compiler-complete','postflight')
+artifacts={}; commands={}; summaries={}
+for name in expected:
+    original=(work/(name+'.json')).read_bytes()
+    r=json.loads(original)
+    assert r['base_commit']==r['head_after']==commit,name
+    assert r['clean_status_before']==r['clean_status_after']=='',name
+    assert r['exit_code']==0 and r['production_unchanged'],name
+    assert pathlib.Path(r['cwd']).resolve()==root
+    raw=(work/(name+'.log')).read_bytes()
+    assert sha(raw)==r['log_sha256'],name
+    r['original_receipt_sha256']=sha(original)
+    r['log']='logs/'+name+'.log.gz'
+    text=raw.decode(errors='replace')
+    found=re.search(r'Ran (\d+) tests? in .*\n\n(OK|FAILED)([^\n]*)',text)
+    if found:
+        fields={k:int(v) for k,v in re.findall(r'(skipped|errors|failures)=(\d+)',found[3])}
+        r['summary']={'run':int(found[1]),'status':found[2],**fields}
+        r['summary']['passed']=int(found[1])-sum(fields.values())
+    rust=re.findall(r'test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored;',text)
+    if rust:
+        r['summary']={k:sum(int(v[i]) for v in rust) for i,k in enumerate(('passed','failed','ignored'))}
+    summaries[name]=r.get('summary',{'exit_code':r['exit_code']})
+    commands[name]=r
+    artifacts[r['log']]=gzip.compress(raw,mtime=0)
+references={}
+for kind in ('production','input'):
+    index=json.loads((historical/(kind+'-manifests.json')).read_bytes())
+    raw=gzip.decompress((historical/(kind+'-base.json.gz')).read_bytes())
+    assert sha(raw)==index['base_sha256']
+    base=json.loads(raw); variants={}; reused=[]
+    for key in {r[kind+'_manifest'] for r in commands.values()}:
+        raw=(work/(key+'.json')).read_bytes(); assert sha(raw)==key
+        files=json.loads(raw)
+        if key==index['base_sha256']: reused.append(key)
+        elif key in index['variants']:
+            d=index['variants'][key]; resolved={**base,**d['changed']}
+            for p in d['removed']: del resolved[p]
+            assert resolved==files
+            reused.append(key)
+        else: variants[key]=delta(base,files)
+        for p,v in files.items():
+            if not p.startswith('target/'):
+                assert sha((root/p).read_bytes())==v,p
+    references[kind]={'base':'../'+kind+'-base.json.gz','base_sha256':index['base_sha256'],
+                      'existing_index':'../'+kind+'-manifests.json','reused_sha256':sorted(reused),
+                      'new_variants':variants}
+build_folder=root/'target/cuda-add-diagnostic/module-t-postcommit-e2898c1d'
+build_raw=(build_folder/'build-record.json').read_bytes(); build=json.loads(build_raw)
+assert build['source_matches_commit'] and build['measured_code_commit']==commit
+assert build['origin_status']=='' and build['origin_patch_sha256']==sha(b'')
+for key in ('source_root','wheel','installed_package','installed_native','build_target'):
+    assert pathlib.Path(build[key]).resolve().is_relative_to(root),key
+assert sha(pathlib.Path(build['wheel']).read_bytes())==build['wheel_sha256']
+assert sha(pathlib.Path(build['installed_native']).read_bytes())==build['installed_native_sha256']
+files=build['source_files']
+assert sha(json.dumps(files,sort_keys=True).encode())==build['source_manifest_sha256']
+assert all(sha((pathlib.Path(build['source_root'])/p).read_bytes())==v for p,v in files.items())
+assert all(sha((root/p).read_bytes())==v for p,v in files.items())
+base_raw=gzip.decompress((historical/'build-source-base.json.gz').read_bytes())
+references['build']={'base':'../build-source-base.json.gz','base_sha256':sha(base_raw),
+                     'sha256':build['source_manifest_sha256'],'delta':delta(json.loads(base_raw),files)}
+compact={k:v for k,v in build.items() if k!='source_files'}
+compact['source_files_reference']='manifests.json#build'
+compact['original_field_order']=list(build)
+compact['original_record_sha256']=sha(build_raw)
+artifacts['build-record.json']=encode(compact)
+for name in ('build.log','dependency_setup.log','origin.patch'):
+    artifacts['logs/source-export-'+name+'.gz']=gzip.compress((build_folder/name).read_bytes(),mtime=0)
+for name in ('record.py','env.sh','checks.sh','preflight.py','environment.py','interpreter-local.py','sweep.py','docs_smoke.py','publish.py','verify.py','document.py'):
+    artifacts['recipes/'+name+'.txt']=(work/name).read_bytes()
+preflight=json.loads((work/'preflight.log').read_bytes())
+postflight=json.loads((work/'postflight.log').read_bytes())
+assert preflight==postflight
+assert preflight['native_sha256']==build['installed_native_sha256']
+assert preflight['source_provenance']['commit']==commit and preflight['git_status']==''
+artifacts['commands.json']=encode(commands)
+artifacts['manifests.json']=encode(references)
+capture={'measured_code_commit':commit,'comparison_base':'9b9236bff0a7d6209da9ed75463151a603e248be',
+         'root':str(root),'clean_status':'','started_at':commands['release-build']['started_at'],
+         'finished_at':commands['postflight']['ended_at'],'source_provenance':preflight['source_provenance'],
+         'native_sha256':build['installed_native_sha256'],'wheel_sha256':build['wheel_sha256'],
+         'original_build_record_sha256':sha(build_raw),'build_source_manifest_sha256':build['source_manifest_sha256'],
+         'results':summaries,'measurement_commands':len(commands),
+         'source_export_logs':{name:sha((build_folder/name).read_bytes()) for name in ('build.log','dependency_setup.log','origin.patch')},
+         'environment':'Verified existing worktree-local Python 3.12.14 and .venv; locked dev/reference sync; fresh exact-commit release wheel built and installed. No interpreter, environment or native package copied.',
+         'cache_state':'New release Cargo target, Rust-check target, Inductor/Triton/CUDA cache directories; warm local Cargo/uv download caches. Later commands reuse caches warmed during this capture.',
+         'resources':['gpu','cpu-heavy'],'snapshots_are_reservations':False,
+         'performance_measured':False,'scores_computed':False,'implementation_changed':False,
+         'historical_measurements_modified':False}
+artifacts['capture.json']=encode(capture)
+# Only publish after all measurement, provenance and preservation checks pass.
+assert git('status','--porcelain')==''
+for name,data in artifacts.items():
+    path=out/name; path.parent.mkdir(parents=True,exist_ok=True)
+    assert not path.exists(); path.write_bytes(data)
+print(json.dumps(capture,indent=2))

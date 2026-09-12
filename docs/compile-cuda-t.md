@@ -82,6 +82,12 @@ CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m unittest -v tests.test_compile_cuda
 CUDA_VISIBLE_DEVICES=0 cargo test --locked --features python-bindings --lib cuda_graph
 ```
 
+The [module/imported-t clean-commit capture](diagnostics/compile-cuda-module-t/postcommit-e2898c1d/README.md)
+measured `e2898c1d4ff8162c15b327b908e02008a767aff6` with a fresh locked release
+wheel. The complete compiler sweep, focused H100/reference, two-device, hidden
+CPU, Rust and documentation checks passed. Independent review and Burner merge
+gates remain required.
+
 The [module/imported-t development evidence](diagnostics/compile-cuda-module-t/README.md)
 preserves the exact-main 32-gap baseline, source/build/input-bound checks and
 original failures. The previous `m.t(x)` rejection fixture now uses

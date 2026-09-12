@@ -1,0 +1,13 @@
+set -e
+source target/module-t-postcommit-e2898c1d/env.sh
+run_capture() { python target/module-t-postcommit-e2898c1d/record.py "$@"; }
+run_capture preflight python target/module-t-postcommit-e2898c1d/preflight.py
+run_capture native-verification python .github/scripts/verify_native_extension.py
+run_capture focused python -m unittest -v tests.test_compile_cuda_module_t tests.test_t tests.test_t_reference tests.test_transpose tests.test_transpose_reference
+run_capture restoration env CUDA_VISIBLE_DEVICES=0,1 python -m unittest -v tests.test_compile_cuda_module_t.ModuleTDeviceTests tests.test_compile_cuda_t.CompileTDeviceTests tests.test_compile_cuda_module_squeeze.ModuleSqueezeDeviceTests tests.test_compile_cuda_module_relu.ModuleReluDeviceTests tests.test_compile_cuda_module_arithmetic.ModuleArithmeticDeviceTests
+run_capture hidden-cpu env CUDA_VISIBLE_DEVICES= python -m unittest -v tests.test_compile_cuda_module_t tests.test_compile_cuda_t tests.test_compile_cuda_module_squeeze tests.test_compile_cuda_module_relu tests.test_compile_cuda_module_arithmetic tests.test_compile_static_analysis tests.test_top_level_compile tests.test_t tests.test_t_reference tests.test_transpose tests.test_transpose_reference
+run_capture rust-cuda cargo test --locked --features python-bindings --lib cuda_graph
+run_capture rust-hidden env CUDA_VISIBLE_DEVICES= cargo test --locked --features python-bindings --lib cuda_graph
+run_capture docs python target/module-t-postcommit-e2898c1d/docs_smoke.py
+run_capture compiler-complete python target/module-t-postcommit-e2898c1d/sweep.py
+run_capture postflight python target/module-t-postcommit-e2898c1d/preflight.py

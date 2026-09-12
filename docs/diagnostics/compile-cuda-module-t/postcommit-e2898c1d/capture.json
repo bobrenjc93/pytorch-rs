@@ -1,0 +1,103 @@
+{
+  "measured_code_commit": "e2898c1d4ff8162c15b327b908e02008a767aff6",
+  "comparison_base": "9b9236bff0a7d6209da9ed75463151a603e248be",
+  "root": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_caf1a3f7",
+  "clean_status": "",
+  "started_at": "2026-09-12T08:10:36.411465+00:00",
+  "finished_at": "2026-09-12T08:26:51.558666+00:00",
+  "source_provenance": {
+    "commit": "e2898c1d4ff8162c15b327b908e02008a767aff6",
+    "source_sha256": "0a68f0cd8b1cc5af363c2a0e5e8add84a74065c66d42df5a555d65dcd941575e",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "native_sha256": "c97eae5e599322f5265281fb6c7ed7d43f5923f83a9a6fe0fb23a3fbd142fe46",
+  "wheel_sha256": "9888bd9d4b2a0380b499a8e2945c5d918b32c48a6e801633d4135b8e287115d3",
+  "original_build_record_sha256": "5af616f9c70a4ef7229ddc7e6a5b15ac37640308e3a3c8ea82155ac0b240ba25",
+  "build_source_manifest_sha256": "1a0545972f94eee6265c8dacc3d7fcfcade61a7976b671d09e9c14e06d7d5e76",
+  "results": {
+    "release-build": {
+      "exit_code": 0
+    },
+    "interpreter-local": {
+      "exit_code": 0
+    },
+    "preflight": {
+      "exit_code": 0
+    },
+    "native-verification": {
+      "exit_code": 0
+    },
+    "focused": {
+      "run": 40,
+      "status": "OK",
+      "skipped": 1,
+      "passed": 39
+    },
+    "restoration": {
+      "run": 5,
+      "status": "OK",
+      "passed": 5
+    },
+    "hidden-cpu": {
+      "run": 148,
+      "status": "OK",
+      "skipped": 54,
+      "passed": 94
+    },
+    "rust-default": {
+      "passed": 395,
+      "failed": 0,
+      "ignored": 0
+    },
+    "rust-cuda": {
+      "passed": 15,
+      "failed": 0,
+      "ignored": 0
+    },
+    "rust-hidden": {
+      "passed": 15,
+      "failed": 0,
+      "ignored": 0
+    },
+    "format": {
+      "exit_code": 0
+    },
+    "clippy-default": {
+      "exit_code": 0
+    },
+    "clippy-bindings": {
+      "exit_code": 0
+    },
+    "docs": {
+      "run": 12,
+      "status": "OK",
+      "passed": 12
+    },
+    "compiler-complete": {
+      "run": 708,
+      "status": "OK",
+      "skipped": 18,
+      "passed": 690
+    },
+    "postflight": {
+      "exit_code": 0
+    }
+  },
+  "measurement_commands": 16,
+  "source_export_logs": {
+    "build.log": "9a5cc71d0c4f79dfd2a47e144d8bde460678a4223395068350b836eaa4805b1d",
+    "dependency_setup.log": "7ec512e4de7112136b5fe57723381526fa3a0c34bccad2723b01476fd5065551",
+    "origin.patch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "environment": "Verified existing worktree-local Python 3.12.14 and .venv; locked dev/reference sync; fresh exact-commit release wheel built and installed. No interpreter, environment or native package copied.",
+  "cache_state": "New release Cargo target, Rust-check target, Inductor/Triton/CUDA cache directories; warm local Cargo/uv download caches. Later commands reuse caches warmed during this capture.",
+  "resources": [
+    "gpu",
+    "cpu-heavy"
+  ],
+  "snapshots_are_reservations": false,
+  "performance_measured": false,
+  "scores_computed": false,
+  "implementation_changed": false,
+  "historical_measurements_modified": false
+}

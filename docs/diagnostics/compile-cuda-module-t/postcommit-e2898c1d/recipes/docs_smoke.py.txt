@@ -1,0 +1,8 @@
+import hashlib, json, pathlib, subprocess, sys
+paths=['README.md','FEATURES.md','docs/README.md','docs/compile-cuda-t.md',
+       'docs/compile-cuda-add.md','docs/supported-surface.md','docs/diagnostics/compile-cuda-module-t/README.md']
+print(json.dumps({p:hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() for p in paths},indent=2),flush=True)
+subprocess.run([sys.executable,'-m','unittest','-v','tests.test_readme_quickstart'],check=True)
+text=pathlib.Path('docs/compile-cuda-t.md').read_text().split('```python\n',1)[1].split('```',1)[0]
+exec(compile(text,'docs/compile-cuda-t.md','exec'))
+print('CUDA t documentation example passed')
