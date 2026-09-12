@@ -1,0 +1,393 @@
+{
+  "kind": "clean committed candidate post-commit evidence",
+  "measured_commit": "dbd1a0f6b398fde35ddd760018ee105a6758760b",
+  "verified_at_utc": "2026-09-12T19:56:33.380559+00:00",
+  "worktree": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7",
+  "prior_evidence_verification": {
+    "baseline.json.gz": "7f9c0d761c4cea4adbfe27366ceb5f4203eafff1debcbb8088738b50020981f3",
+    "candidate-coverage.json.gz": "8783cef464f90c5157a146cc7e7b6ab09ea8a0fd29b37bb10fe915f907a87e37",
+    "candidate-cuda-perf.json.gz": "b5b1ea923ff2eae6e7e8bde709376446e5282afe5404954d577c84f0b7cf3a1f",
+    "candidate-diagnostic.json.gz": "eb37b4985cc1849ebc285677ad64908c4873bb492b8b981d53e1df841dcb7e21",
+    "capture.py": "47f2595eae062d084bac91e9716e4e81c42d13ea08639d93b378229a303ebbf1",
+    "initial-ieee-probes.json.gz": "9d4e9b34ed2a7e18ca0295c9577c742e0d6b3c52f0392b01c689f7e2e47c9e73",
+    "kernel.cu": "ed7b5bf3c6d3aee5168880df33de40a9a36bcd7778320a1a28c04b38f35570cd",
+    "kernel.ptx.gz": "b622cda451d36340a80cef5bcdf4958707e34b1c7d6440ef57ac6b53858380f0",
+    "logs.json.gz": "5a1a5a1e9c261863d970815eb560af039ae0e7566404383ea6b87586b6b0537b",
+    "postcommit-53c100/candidate-coverage.json.gz": "4040eb382d3870d9c087dac33c282c3ccd5f189d2ef5a47cb5d5872f6eb0e0b8",
+    "postcommit-53c100/candidate-cuda-perf.json.gz": "a848af1d4fd011016f9ea682980efaaf1bd21670ac7150d8cac31e82991c107f",
+    "postcommit-53c100/kernel.cu": "2bd144a59f3f472f829e7bbd8a728d0bdf156b9a9ca80f50c9c73dac2d43d6dc",
+    "postcommit-53c100/kernel.ptx.gz": "67ae986ef972defd9d3259d7e4764ba0d9384d6e758e75e37a739c90d5f23242",
+    "postcommit-53c100/postcommit-logs.json.gz": "990efc0b3e550372b88b2b7284b3eb01906853e788c7f9c457dfc49db87e05fb",
+    "postcommit-53c100/postcommit.json": "192d45ff244fcee1f357b7d5833b2c97a906951463d9a865a9e5096077401e40",
+    "postcommit-53c100/provenance.json": "814ce82180eb6b478e1db5730e8cc4e1a031b9f1a035226a1860839b5d1c715c",
+    "postcommit-53c100/source-manifest.json.gz": "9e9ec12bcc97920157901798d8ae4bdc77819b2e39f61d31e2a089199958fc0c",
+    "postcommit-60abd/candidate-coverage.json.gz": "c18acc8ff3eab79166758b6d4ed36257b93e39c9f2fea9e5a293757881550985",
+    "postcommit-60abd/candidate-cuda-perf.json.gz": "f19d5310f8d07cd0d65e2b412d8015d69ea847e2934e1492d9efe77ffc9ef0c8",
+    "postcommit-60abd/kernel.cu": "ed7b5bf3c6d3aee5168880df33de40a9a36bcd7778320a1a28c04b38f35570cd",
+    "postcommit-60abd/kernel.ptx.gz": "b622cda451d36340a80cef5bcdf4958707e34b1c7d6440ef57ac6b53858380f0",
+    "postcommit-60abd/postcommit-logs.json.gz": "03a6a4d2bcb330977d4b9d1434add956a4e6537f367531f4fa9eb0e436745ecc",
+    "postcommit-60abd/postcommit.json": "2158c7e61e7bee96d70c45251b14101b2825816f4e1b86a490c5103b06161d8c",
+    "postcommit-60abd/provenance.json": "3de49c5bf8c6ca3b4ccb98b45d7b4601e7e3be28d99e7c14382c8d1c8486ddd2",
+    "postcommit-60abd/source-manifest.json.gz": "c620390c6414827919d8d02f94587dfd435d4175fbe30eff12e1c44e734c147d",
+    "postcommit-logs.json.gz": "6341bb56d27609e7ca66f5520ebdc761a1169e13504801ea47409d840f38e1ee",
+    "postcommit.json": "fae89cdc78163c6d348a33365841673d1b6e0c0c88236e8277360cffe9d406de",
+    "provenance.json": "9f37858720c47eed70dbb5e87c67c9fd840a4545d9bc3628b370ff7b46f55051",
+    "review-fixes.json.gz": "6b394b5894014c48fc3924a3b4dd66dbc1ed1e2abdae3f30014a5a213896b653",
+    "review-round2.json.gz": "cc16ecf835eb045ae7acd2e3902b01114d493d8abf237d728a9e713c373c2755",
+    "review-round3.json.gz": "49d8ec9c954fc039d7bc922400a795e9a44b894dceecaaa3b0ff68b6b1b60fc1",
+    "source-manifest.json.gz": "5f7a8c92b277459ae1cf3be440c3edb28d06ac345d95b0708279f8c020740169",
+    "validation.json": "2b362966154822095d51fc89a2ef6ff971cfc74199461c1823536a80c3b88187",
+    "baseline_source_files_verified": 123,
+    "review_round3_implementation_source_files_verified": 124,
+    "review_round3_regression_source_files_verified": 6,
+    "campaign_base": "76738b39fd6884ffd43b4dff2f5292257a1c6e6b",
+    "candidate": "dbd1a0f6b398fde35ddd760018ee105a6758760b"
+  },
+  "baseline": {
+    "report": "../baseline.json.gz",
+    "commit": "76738b39fd6884ffd43b4dff2f5292257a1c6e6b",
+    "report_sha256": "7f9c0d761c4cea4adbfe27366ceb5f4203eafff1debcbb8088738b50020981f3",
+    "source_files_verified_against_commit": 123
+  },
+  "measurements": {
+    "coverage": {
+      "report": "candidate-coverage.json.gz",
+      "report_uncompressed_sha256": "38d1aba227678be7a2622c37bc89c3871a6dd84bd9824101d19f11c599f09080",
+      "report_gzip_sha256": "36674517775530fe8c46996cde7a5848985a72a05d31c5cb444fb30489846f43",
+      "source_sha256": "de744990acfa6c79bf88de7a3fbc920cd3bf0c2e08ccde4ecd6baea0e65ee121",
+      "source_files_verified": 129,
+      "scores": {
+        "categories": {
+          "broadcasting": {
+            "contribution": 0.0,
+            "eligible": 8,
+            "passed": 0,
+            "weight": 8
+          },
+          "containers_pytrees": {
+            "contribution": 0.0,
+            "eligible": 8,
+            "passed": 0,
+            "weight": 6
+          },
+          "custom_functions": {
+            "contribution": 0.0,
+            "eligible": 8,
+            "passed": 0,
+            "weight": 6
+          },
+          "decompositions": {
+            "contribution": 0.0,
+            "eligible": 8,
+            "passed": 0,
+            "weight": 6
+          },
+          "dtype_device_transitions": {
+            "contribution": 0.0,
+            "eligible": 8,
+            "passed": 0,
+            "weight": 4
+          },
+          "dynamic_shapes": {
+            "contribution": 0.0,
+            "eligible": 8,
+            "passed": 0,
+            "weight": 8
+          },
+          "graph_breaks": {
+            "contribution": 0.0,
+            "eligible": 8,
+            "passed": 0,
+            "weight": 8
+          },
+          "inference": {
+            "contribution": 0.0,
+            "eligible": 8,
+            "passed": 0,
+            "weight": 6
+          },
+          "modules_parameters_buffers": {
+            "contribution": 0.0,
+            "eligible": 8,
+            "passed": 0,
+            "weight": 8
+          },
+          "mutation_aliasing_views": {
+            "contribution": 0.0,
+            "eligible": 8,
+            "passed": 0,
+            "weight": 8
+          },
+          "python_control_flow": {
+            "contribution": 0.0,
+            "eligible": 8,
+            "passed": 0,
+            "weight": 8
+          },
+          "recompilation_guards": {
+            "contribution": 0.0,
+            "eligible": 8,
+            "passed": 0,
+            "weight": 4
+          },
+          "tensor_arithmetic": {
+            "contribution": 6.0,
+            "eligible": 8,
+            "passed": 4,
+            "weight": 12
+          },
+          "training_autograd": {
+            "contribution": 0.0,
+            "eligible": 8,
+            "passed": 0,
+            "weight": 8
+          }
+        },
+        "common_success_geomean_ratio": 2.174493505614985,
+        "eligible": 112,
+        "passed": 4,
+        "score": 6.0
+      },
+      "command": [
+        "bash",
+        "scripts/evaluate_torch_compile_default.sh",
+        "--metric",
+        "coverage",
+        "--output",
+        "target/postcommit-dbd1a0/coverage.json"
+      ],
+      "environment_overrides": {
+        "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/tmp",
+        "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/xdg-cache",
+        "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/cuda-cache",
+        "CUDA_CACHE_DISABLE": "1",
+        "CUDA_VISIBLE_DEVICES": "0",
+        "UV_SYSTEM_CERTS": "true",
+        "HTTPS_PROXY": "http://fwdproxy:8080"
+      },
+      "setup": {
+        "build_identity": {
+          "commit": "dbd1a0f6b398fde35ddd760018ee105a6758760b",
+          "source_sha256": "de744990acfa6c79bf88de7a3fbc920cd3bf0c2e08ccde4ecd6baea0e65ee121",
+          "working_tree_changes": ""
+        },
+        "cache_state": "worktree-local dependency/build caches may be warm; a fresh wheel is always built and installed",
+        "environment_and_dependencies_seconds": 0.066509825,
+        "finished_at_unix_ns": 1789242585005551022,
+        "install_and_verification_seconds": 0.252362669,
+        "native_build_seconds": 0.561018811,
+        "started_at_unix_ns": 1789242584125659717,
+        "total_seconds": 0.879891305
+      }
+    },
+    "cuda-perf": {
+      "report": "candidate-cuda-perf.json.gz",
+      "report_uncompressed_sha256": "8d6445a6d3848c565690fc06b21749177e4cef30be77066aa9045d17506c8c70",
+      "report_gzip_sha256": "8de0c50ccdc9b3972f069e72af48181f265ed93ee777bbae8e99b664306acb87",
+      "source_sha256": "de744990acfa6c79bf88de7a3fbc920cd3bf0c2e08ccde4ecd6baea0e65ee121",
+      "source_files_verified": 129,
+      "scores": {
+        "categories": {
+          "broadcasting": {
+            "contribution": 0.0,
+            "eligible": 4,
+            "passed": 0,
+            "weight": 8
+          },
+          "containers_pytrees": {
+            "contribution": 0.0,
+            "eligible": 4,
+            "passed": 0,
+            "weight": 6
+          },
+          "custom_functions": {
+            "contribution": 0.0,
+            "eligible": 4,
+            "passed": 0,
+            "weight": 6
+          },
+          "decompositions": {
+            "contribution": 0.0,
+            "eligible": 4,
+            "passed": 0,
+            "weight": 6
+          },
+          "dtype_device_transitions": {
+            "contribution": 0.0,
+            "eligible": 4,
+            "passed": 0,
+            "weight": 4
+          },
+          "dynamic_shapes": {
+            "contribution": 0.0,
+            "eligible": 4,
+            "passed": 0,
+            "weight": 8
+          },
+          "graph_breaks": {
+            "contribution": 0.0,
+            "eligible": 4,
+            "passed": 0,
+            "weight": 8
+          },
+          "inference": {
+            "contribution": 0.0,
+            "eligible": 4,
+            "passed": 0,
+            "weight": 6
+          },
+          "modules_parameters_buffers": {
+            "contribution": 0.0,
+            "eligible": 4,
+            "passed": 0,
+            "weight": 8
+          },
+          "mutation_aliasing_views": {
+            "contribution": 0.0,
+            "eligible": 4,
+            "passed": 0,
+            "weight": 8
+          },
+          "python_control_flow": {
+            "contribution": 0.0,
+            "eligible": 4,
+            "passed": 0,
+            "weight": 8
+          },
+          "recompilation_guards": {
+            "contribution": 0.0,
+            "eligible": 4,
+            "passed": 0,
+            "weight": 4
+          },
+          "tensor_arithmetic": {
+            "contribution": 12.0,
+            "eligible": 4,
+            "passed": 4,
+            "weight": 12
+          },
+          "training_autograd": {
+            "contribution": 0.0,
+            "eligible": 4,
+            "passed": 0,
+            "weight": 8
+          }
+        },
+        "common_success_geomean_ratio": 2.1452513673646267,
+        "eligible": 56,
+        "passed": 4,
+        "score": 12.0
+      },
+      "command": [
+        "bash",
+        "scripts/evaluate_torch_compile_default.sh",
+        "--metric",
+        "cuda-perf",
+        "--output",
+        "target/postcommit-dbd1a0/cuda-perf.json"
+      ],
+      "environment_overrides": {
+        "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/tmp",
+        "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/xdg-cache",
+        "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/cuda-cache",
+        "CUDA_CACHE_DISABLE": "1",
+        "CUDA_VISIBLE_DEVICES": "0",
+        "UV_SYSTEM_CERTS": "true",
+        "HTTPS_PROXY": "http://fwdproxy:8080"
+      },
+      "setup": {
+        "build_identity": {
+          "commit": "dbd1a0f6b398fde35ddd760018ee105a6758760b",
+          "source_sha256": "de744990acfa6c79bf88de7a3fbc920cd3bf0c2e08ccde4ecd6baea0e65ee121",
+          "working_tree_changes": ""
+        },
+        "cache_state": "worktree-local dependency/build caches may be warm; a fresh wheel is always built and installed",
+        "environment_and_dependencies_seconds": 0.070038977,
+        "finished_at_unix_ns": 1789242801541411015,
+        "install_and_verification_seconds": 0.249166831,
+        "native_build_seconds": 0.544464412,
+        "started_at_unix_ns": 1789242800677740795,
+        "total_seconds": 0.86367022
+      }
+    }
+  },
+  "gate_unset_environment": [
+    "CONDA_PREFIX"
+  ],
+  "gate_additional_environment": {
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "checks": {
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7",
+    "commit": "dbd1a0f6b398fde35ddd760018ee105a6758760b",
+    "working_tree_changes_before": "",
+    "environment_overrides": {
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/tmp",
+      "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/xdg-cache",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/cuda-cache",
+      "CUDA_CACHE_DISABLE": "1",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/postcommit-dbd1a0/test-inductor",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/postcommit-dbd1a0/test-triton",
+      "PYTHONNOUSERSITE": "1",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "OMP_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1",
+      "RAYON_NUM_THREADS": "1"
+    },
+    "commands": [
+      {
+        "label": "codegen",
+        "argv": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+          "-B",
+          "docs/diagnostics/compile-pointwise-jit/capture.py",
+          "target/postcommit-dbd1a0/codegen"
+        ],
+        "started_at_unix_ns": 1789242947046629077,
+        "finished_at_unix_ns": 1789242948132037554,
+        "exit_code": 0,
+        "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/postcommit-dbd1a0/codegen.log",
+        "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "label": "focused-jit-tests",
+        "argv": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+          "-B",
+          "-m",
+          "unittest",
+          "tests.test_compile_pointwise_jit",
+          "tests.test_compile_pointwise_liveness",
+          "tests.test_compile_pointwise_signature_guards",
+          "tests.test_compile_pointwise_rounding",
+          "tests.test_compile_pointwise_scalar_admission",
+          "tests.test_compile_pointwise_integer_scalars",
+          "-v"
+        ],
+        "started_at_unix_ns": 1789242948178470774,
+        "finished_at_unix_ns": 1789242985043968715,
+        "exit_code": 0,
+        "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/postcommit-dbd1a0/focused-jit-tests.log",
+        "log_sha256": "65781d8e99f8e8313f2c14a56c8bca639bac73e236a1d06ed345ce3df3dcda64"
+      }
+    ],
+    "working_tree_changes_after": ""
+  },
+  "verified": [
+    "clean measured source and build identities",
+    "baseline source identities at campaign merge base",
+    "unchanged evaluator/corpus hashes, tolerances, warmups, samples and denominators",
+    "all fixed cells and both CUDA orders",
+    "all reference programs passed",
+    "same CUDA synchronization binding and one host thread",
+    "fresh-input observations and no-body/no-PyTorch execution evidence",
+    "worktree-local executables, packages, wheels and artifacts",
+    "wheel/native/interpreter/source/log/raw-observation hashes",
+    "generated CUDA/PTX/source-manifest hashes and shared code module",
+    "37 focused JIT/liveness/signature/rounding/scalar-admission/integer-scalar tests, one explicit two-device skip"
+  ],
+  "validation_scope": "Fresh committed release wheel: all 37 JIT/liveness/signature/rounding/scalar-admission/integer-scalar tests, one explicit two-device skip. Earlier review-round-three Rust, backend, documentation and two-device logs remain unchanged; their implementation and regression-source hashes match this commit. Unrelated full suites were not repeated.",
+  "codegen_provenance_sha256": "721eb16ed33031652d07e73b8f34e11a9036b458d31b170a76093b3965628c58",
+  "logs_sha256": "749e72b3026d80893d4e85e089f86b381191972b454fe02266f786ecd9229033"
+}

@@ -68,7 +68,9 @@ semantic checks, not timing or cold-compilation measurements.
 This is unscored development evidence on dirty sources based on `4f0faea`, not a
 clean-commit campaign capture. All earlier measurements remain unchanged. The
 `53c10058` reports predate these fixes and cannot score the revised implementation.
-After Burner commits it, the unchanged coverage/CUDA-performance gates and
-`capture.py` must be refreshed using the [documented workflow](README.md).
+Burner committed these fixes as `dbd1a0f6`. The subsequent
+[post-commit capture](README.md) supplies fresh clean coverage/performance reports,
+generated-code evidence and all six pointwise regression modules. This original
+unscored development bundle remains unchanged at its original source identity.
 No evaluator, corpus, tolerance, denominator, dependency or managed progress
 artifact changed. This validation does not replace independent review.
