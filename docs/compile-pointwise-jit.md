@@ -179,9 +179,8 @@ remain the scoring authority with all 112 coverage and 56 CUDA performance
 cells. These focused tests do not change their denominator. Unsupported
 categories remain zero. The [post-commit evidence](diagnostics/compile-pointwise-jit/README.md)
 records fresh clean-commit coverage, CUDA-performance and generated-code captures
-for `f745c45c`, before the current globals-key, static signed-zero guard and
-constant-unary precision repairs, alongside the unchanged source-bound baseline
-and original failures.
-Fresh campaign captures await Burner's next clean implementation commit.
+for `5fc75c41`, including globals-key admission, static signed-zero guards and
+constant-unary precision, alongside the unchanged source-bound baseline and
+original failures.
 [Repair validation](diagnostics/compile-pointwise-jit/review-static-guards.md) records
 the development checks separately from these clean campaign measurements.

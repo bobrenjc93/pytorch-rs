@@ -44,8 +44,9 @@ Final checks used the rebuilt release wheel, Python 3.12.14, default PyTorch
 
 These are unscored dirty-source checks based on `a14afaeb`, not clean campaign
 measurements. Existing reports remain pinned to their actual measured commits.
-Fresh coverage/performance captures await Burner's next clean implementation
-commit. Temporary wheel/cache/log paths may disappear during cleanup; the
+Burner committed the repair as `5fc75c41`; the [post-commit capture](README.md)
+supplies fresh clean coverage/performance and all thirteen regression modules.
+Temporary wheel/cache/log paths may disappear during cleanup; the
 compressed bundle retains the durable evidence. See the bounded
 [compiler contract](../../compile-pointwise-jit.md) and
 [latest clean capture](README.md).

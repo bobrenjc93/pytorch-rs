@@ -100,3 +100,19 @@ Temporary worktree paths in these captures may no longer contain the original
 build or raw observations after cleanup. Checked-in reports, manifests, generated
 code, and compressed logs retain what was captured. No failed measurement was
 overwritten or promoted as a score.
+
+## Globals keys, static zero guards and constant unary precision
+
+Clean `f745c45c` predates this repair. Its original captures remain unchanged:
+
+- [Coverage](postcommit-f745c4/candidate-coverage.json.gz),
+  [CUDA performance](postcommit-f745c4/candidate-cuda-perf.json.gz),
+  [receipt](postcommit-f745c4/postcommit.json), [logs](postcommit-f745c4/postcommit-logs.json.gz),
+  and [codegen provenance](postcommit-f745c4/provenance.json).
+
+[Development validation](review-static-guards.md) and its
+[bundle](review-static-guards.json.gz) retain the original admission, signed-zero
+and constant-sine failures, intermediate checks and generated-code evidence.
+All 124 implementation and thirteen regression-module hashes match `5fc75c41`;
+these development runs remain unscored. The current evidence index links the
+subsequent clean capture.
