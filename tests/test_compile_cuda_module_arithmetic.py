@@ -42,6 +42,115 @@ class Hostile:
     __getattr__ = fail
 
 
+# Each subprocess starts before the frontend import; parent-process patching
+# cannot exercise the lazy-initialization boundary.
+_OWNER_STARTUP_PROBE = r'''
+import sys
+import types
+import torch_rs as m
+
+mode, replacement = sys.argv[1:]
+assert 'torch_rs._compile_bytecode' not in sys.modules
+assert 'torch_rs._compile_trace' not in sys.modules
+owner = m._C._VariableFunctionsClass
+canonical = owner.neg
+callbacks = []
+def counterfeit(x):
+    callbacks.append('counterfeit body')
+    return x
+# This is an imported counterfeit, not a supported same-module helper.
+counterfeit.__module__ = 'untrusted_native_replacement'
+class Hostile:
+    def __getattribute__(self, name):
+        callbacks.append(name)
+        raise AssertionError('owner callback: ' + name)
+if replacement == 'namespace':
+    m._C._VariableFunctionsClass = types.SimpleNamespace(**{
+        name: getattr(owner, name) for name in ('mul', 'multiply', 'matmul', 'add', 'neg', 'negative')
+    })
+    m._C._VariableFunctionsClass.neg = counterfeit
+elif replacement == 'hostile':
+    m._C._VariableFunctionsClass = Hostile()
+else:
+    assert replacement == 'deleted'
+    del m._C._VariableFunctionsClass
+m.neg = counterfeit
+bad_alias = m.neg
+
+def program(x): return m.neg(x)
+def imported_bad(x): return bad_alias(x)
+def imported_good(x): return canonical(x)
+def untouched(x): return m.add(canonical(x), x)
+
+def rejected(callback):
+    try:
+        callback()
+    except Exception as error:
+        from torch_rs._compile_trace import CompileTraceUnsupportedError
+        assert type(error) is CompileTraceUnsupportedError, type(error)
+    else:
+        raise AssertionError('counterfeit accepted')
+    assert not callbacks, callbacks
+
+assert 'torch_rs._compile_bytecode' not in sys.modules
+if mode == 'frontend':
+    from torch_rs import _compile_bytecode as frontend, _compile_trace as trace
+    metadata = (trace.CompileTraceTensorMetadata((2,), (1,), trace.float32, 'cuda:0', False, 0),)
+    for fn in (program, imported_bad):
+        for _ in range(2):
+            rejected(lambda: frontend.lower_compile_graph(fn, metadata))
+    assert frontend._builtin_target(counterfeit) is None
+    for name in ('add', 'neg', 'negative', 'mul', 'multiply', 'matmul'):
+        assert frontend._builtin_target(getattr(owner, name)) is not None
+    assert [op.target for op in frontend.lower_compile_graph(untouched, metadata).operations] == ['neg', 'add']
+    m.neg = canonical
+    assert frontend.lower_compile_graph(program, metadata).operations[0].target == 'neg'
+else:
+    assert mode == 'cuda'
+    from torch_rs import _compiler_state as state
+    x = m.tensor([1., -3.]).to('cuda:0')
+    for fullgraph, dynamic in ((True, None), (True, False), (True, True), (False, None)):
+        m.neg = counterfeit
+        previous = set(state.native_eager_compile_caches)
+        compiled = m.compile(program, backend='eager', fullgraph=fullgraph, dynamic=dynamic, recompile_limit=1)
+        cache, = set(state.native_eager_compile_caches) - previous
+        for _ in range(2):
+            rejected(lambda: compiled(x))
+            assert not cache.graphs
+        # A direct canonical import and unused fields remain valid while the
+        # public neg binding and exported owner are still malformed.
+        for fn, expected in ((imported_good, [-1., 3.]), (untouched, [0., 0.])):
+            control = m.compile(fn, backend='eager', fullgraph=fullgraph, dynamic=dynamic, recompile_limit=1)
+            for _ in range(2): assert control(x).cpu().tolist() == expected
+        invalid = m.compile(imported_bad, backend='eager', fullgraph=fullgraph, dynamic=dynamic)
+        for _ in range(2): rejected(lambda: invalid(x))
+        m.neg = canonical
+        retained = []
+        for _ in range(2):
+            output = compiled(x)
+            assert output.cpu().tolist() == [-1., 3.]
+            retained.append(output)
+        assert retained[0].data_ptr() != retained[1].data_ptr()
+        assert len(cache.graphs) == 1
+        before = dict(cache.graphs)
+        m.neg = counterfeit
+        for _ in range(2): rejected(lambda: compiled(x))
+        assert cache.graphs == before
+        m.neg = canonical
+        assert compiled(x).cpu().tolist() == [-1., 3.]
+        assert x.cpu().tolist() == [1., -3.]
+assert not callbacks, callbacks
+'''
+
+
+def check_owner_startup(test, mode):
+    for replacement in ('namespace', 'hostile', 'deleted'):
+        with test.subTest(replacement=replacement):
+            result = subprocess.run([sys.executable, '-c', _OWNER_STARTUP_PROBE, mode, replacement],
+                                    capture_output=True, text=True, timeout=60)
+            test.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
 class ModuleArithmeticFrontendTests(ExactErrors, unittest.TestCase):
     def test_identity_arity_registry_and_cpu_boundary_without_gpu(self):
         cuda = trace.CompileTraceTensorMetadata((3, 5), (5, 1), trace.float32, 'cuda:0', False, 0)
@@ -115,6 +224,9 @@ class ModuleArithmeticFrontendTests(ExactErrors, unittest.TestCase):
             self.assertEqual(bytecode._builtin_target(native.add).arity, 2)
             self.assertIsNone(bytecode._builtin_target(Hostile()))
 
+    def test_owner_rebinding_before_first_frontend_import(self):
+        check_owner_startup(self, "frontend")
+
     def test_native_planner_rejects_declarations_without_device(self):
         hook = trace._native._compile_trace_cuda_graph
         self.exact_error(TypeError, lambda: hook((object(),), []))
@@ -123,6 +235,9 @@ class ModuleArithmeticFrontendTests(ExactErrors, unittest.TestCase):
 
 @unittest.skipUnless(available('0'), 'requires real CUDA with CUDA_VISIBLE_DEVICES=0')
 class ModuleArithmeticCudaTests(ExactErrors, Comparison, unittest.TestCase):
+    def test_owner_rebinding_before_first_public_compiled_call(self):
+        check_owner_startup(self, "cuda")
+
     def checked(self, fn, ref_fn, args, refs, fullgraph, dynamic):
         compiled, cache = compile_with_cache(fn, fullgraph, dynamic)
         reference = torch.compile(ref_fn, backend='eager', fullgraph=fullgraph, dynamic=dynamic)

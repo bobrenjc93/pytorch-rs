@@ -168,7 +168,10 @@ parity claim. Noncontiguous CUDA negation and CUDA autograd remain unsupported;
 see [capture scope](docs/compile-cuda-add.md) and [kernel validation](docs/cuda-neg-validation.md).
 The [CUDA arithmetic frontend](docs/compile-cuda-add.md) recognizes positional
 module/direct-import `add`, `neg` and `negative` by immutable
-`_VariableFunctionsClass` callable identity. Explicit operation/arity dispatch
+`_VariableFunctionsClass` callable identity, retained by eager package
+initialization before the frontend is imported lazily. Replacing the public
+native owner export cannot supply new identities or run attribute hooks.
+Explicit operation/arity dispatch
 records existing add/neg nodes in the shared registry. Dependency descriptors
 retain each global load's immediate module attribute; cache snapshots distinguish
 code location and namespace. Legacy module guards stay intact, and unused new

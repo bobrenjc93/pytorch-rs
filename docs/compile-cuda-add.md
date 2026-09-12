@@ -109,6 +109,10 @@ canonical native operation dispatches that operation with its own arity;
 unsupported callables, arbitrary modules, descriptors and missing used fields
 reject without user callbacks. Each load keeps its own snapshot, including
 multiple fields and helper loads in the same namespace.
+The immutable callable owner is retained during package initialization. The lazy
+frontend never resolves identities through the writable native owner export;
+replacing or deleting that export before the first compile does not authorize
+counterfeit callables or invoke their hooks.
 Rebinding a global creates a specialization or hits the existing recompile
 limit; an incompatible device transition is rejected. Rejected calls leave the
 graph cache unchanged. A new graph is published only after successful native
@@ -133,6 +137,11 @@ layout/broadcast boundaries, dynamic squeeze rank changes, lifetime, binding
 mutations and output prevalidation. Single-node arithmetic uses the existing
 native unary/binary hook; compositions execute through the native whole-graph
 bridge without per-node Python replay. Neither path runs the program body.
+
+The [owner-initialization review revision](diagnostics/compile-cuda-module-arithmetic/owner-startup-review/README.md)
+adds fresh-process checks for substitutions made before the first frontend
+import. Its development validation is separate from the `e2378805` capture;
+a new clean-commit capture is required after Burner commits the revision.
 
 ## Matrix/vector validation
 

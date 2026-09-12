@@ -1,0 +1,305 @@
+{
+  "test_source_sha256": "26e16ec8e4eb79f22328f406f2d7f2e678441448f17b9aa8eec13164a0127dd0",
+  "method": "ModuleArithmeticCudaTests.test_inductor_reference_public_spelling_matrix",
+  "seed": 198304,
+  "dtype": "float32",
+  "byte_order": "little endian",
+  "cases": [
+    {
+      "expression": "m.add(x, y)",
+      "shape": [],
+      "input_sha256": [
+        "6e2d940ec245414280371827aa94b1df039d565cb0b2ac10a6dcce0c9b4275ee",
+        "2b8ed731b4d8ee1a01aa494b69e955d221a9d8bc4feaa815bce9b3114e49c028"
+      ]
+    },
+    {
+      "expression": "m.add(x, y)",
+      "shape": [
+        7
+      ],
+      "input_sha256": [
+        "080c260dfe47f8d3418a30bc90ce6c9b219f079746e8cd8084e2036d0b20da9d",
+        "176363e02de60fd9f7c156ac8926ca1d7614ab5cd397418d4e184e656e13d241"
+      ]
+    },
+    {
+      "expression": "m.add(x, y)",
+      "shape": [
+        3,
+        5
+      ],
+      "input_sha256": [
+        "20d97dd91445773bc5c34d38f246d3787d4109c0f721f8e1cb3a60082e2c93fa",
+        "05067c49041a8410e679ccd3531da8a9dd0689c26d91d0bf02187bd4a92475d7"
+      ]
+    },
+    {
+      "expression": "m.add(x, y)",
+      "shape": [
+        0
+      ],
+      "input_sha256": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ]
+    },
+    {
+      "expression": "a(x, y)",
+      "shape": [],
+      "input_sha256": [
+        "adc6bd4662754f47b88b5564159334cc4077e337f512fa8ce6e6511c259d0b25",
+        "15c0ebbda8272f659b165b77bb5c9889e405d7bf0e01e130fd45644c81cb0957"
+      ]
+    },
+    {
+      "expression": "a(x, y)",
+      "shape": [
+        7
+      ],
+      "input_sha256": [
+        "390990a8063c92627e7227992a29d074426e26c04ea2ff325cb8af55c7aeae13",
+        "97f3472633721ed7314f3dc7caf74ba0e08357496f97cd6e3426d28c342f5c10"
+      ]
+    },
+    {
+      "expression": "a(x, y)",
+      "shape": [
+        3,
+        5
+      ],
+      "input_sha256": [
+        "1e94c4ea7fd8f6266768e9a3f58c76023993177c5a790fed3c65ddd94d12d4c6",
+        "7b67316930db08d506c23eb71ab633226911b83b318da063c53a1dfb7227cfdc"
+      ]
+    },
+    {
+      "expression": "a(x, y)",
+      "shape": [
+        0
+      ],
+      "input_sha256": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ]
+    },
+    {
+      "expression": "m.neg(x)",
+      "shape": [],
+      "input_sha256": [
+        "2eb6d5ff0db42d7f7cbe8b41799bd8572921172d0bb260e18a796ae0be181b6a"
+      ]
+    },
+    {
+      "expression": "m.neg(x)",
+      "shape": [
+        7
+      ],
+      "input_sha256": [
+        "ef4e51a8e2161612f7a8606e12a7f862e0e6f760b9ac9a099aa993c66d07da22"
+      ]
+    },
+    {
+      "expression": "m.neg(x)",
+      "shape": [
+        3,
+        5
+      ],
+      "input_sha256": [
+        "59fd66538a5c2befe31e27185f6cc89bc08497b301935b2b8b314d244ed9d2e2"
+      ]
+    },
+    {
+      "expression": "m.neg(x)",
+      "shape": [
+        0
+      ],
+      "input_sha256": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ]
+    },
+    {
+      "expression": "n(x)",
+      "shape": [],
+      "input_sha256": [
+        "d99e58435243d9fef9c88273b8d553b4fba4d0baf8009d29eae74fa99e0d9f57"
+      ]
+    },
+    {
+      "expression": "n(x)",
+      "shape": [
+        7
+      ],
+      "input_sha256": [
+        "30cfd095356fcfcc17faefb895abb5ab23f38ed1939616d381cfe21808ebbc46"
+      ]
+    },
+    {
+      "expression": "n(x)",
+      "shape": [
+        3,
+        5
+      ],
+      "input_sha256": [
+        "b736158a9b35bc2bac072cb9add4fbe08cc7feb1e75ca84b59d1c2806241524f"
+      ]
+    },
+    {
+      "expression": "n(x)",
+      "shape": [
+        0
+      ],
+      "input_sha256": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ]
+    },
+    {
+      "expression": "m.negative(x)",
+      "shape": [],
+      "input_sha256": [
+        "15c0ebbda8272f659b165b77bb5c9889e405d7bf0e01e130fd45644c81cb0957"
+      ]
+    },
+    {
+      "expression": "m.negative(x)",
+      "shape": [
+        7
+      ],
+      "input_sha256": [
+        "f10a109f7ed97bc152b61eabdc2b1483cbbe2bef7e235d010ca968018be1ae42"
+      ]
+    },
+    {
+      "expression": "m.negative(x)",
+      "shape": [
+        3,
+        5
+      ],
+      "input_sha256": [
+        "c427d2e96590795d9ce4813e52bd52bd56cd2a652e35cf2a044301acc44e7a40"
+      ]
+    },
+    {
+      "expression": "m.negative(x)",
+      "shape": [
+        0
+      ],
+      "input_sha256": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ]
+    },
+    {
+      "expression": "negative(x)",
+      "shape": [],
+      "input_sha256": [
+        "d88c86f15bbea365d658ad95a81d45367c465f7af6f7264fb077f01747ddc77d"
+      ]
+    },
+    {
+      "expression": "negative(x)",
+      "shape": [
+        7
+      ],
+      "input_sha256": [
+        "060145c9ca7af2a7efda7326bf73f7cf67812fc3196024807769175231767eec"
+      ]
+    },
+    {
+      "expression": "negative(x)",
+      "shape": [
+        3,
+        5
+      ],
+      "input_sha256": [
+        "c93aa7ddd335d445fe48da4d85e94bd041b837dbcd8bceb5480b4b718094a275"
+      ]
+    },
+    {
+      "expression": "negative(x)",
+      "shape": [
+        0
+      ],
+      "input_sha256": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ]
+    },
+    {
+      "expression": "m.add(m.neg(x), y)",
+      "shape": [],
+      "input_sha256": [
+        "85c076146a4c89538db425a844fa5628e30867d6c5d456c32cdaa48e1d7649a3",
+        "4f9666bffd029360e6e44ae8be3ab0690dd7a2032737723fa16e3d757b4d4a6c"
+      ]
+    },
+    {
+      "expression": "m.add(m.neg(x), y)",
+      "shape": [
+        7
+      ],
+      "input_sha256": [
+        "2d28acd7af8f872fe6390f308d5cf67fae8d94fb61a72bbca8be63fb5a2eba87",
+        "86a800584a4804b18efccca6b18bd84eb92a6369b6a1734669c1ead1a3ed514b"
+      ]
+    },
+    {
+      "expression": "m.add(m.neg(x), y)",
+      "shape": [
+        3,
+        5
+      ],
+      "input_sha256": [
+        "1794defbded50f1a2af0ba89809ce247fdad7c1687e4feca16fe6eafc14da0af",
+        "69bdec61931225647677ed63d7e0ed2d933c741b0832deb9cc2634f5b52f5c6b"
+      ]
+    },
+    {
+      "expression": "m.add(m.neg(x), y)",
+      "shape": [
+        0
+      ],
+      "input_sha256": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ]
+    },
+    {
+      "expression": "a(negative(x), y)",
+      "shape": [],
+      "input_sha256": [
+        "a072de4735671fa5603f4676fc2831dad7cb8c54e804d7de6903b31859c70206",
+        "c501756a4047ad5f4e34b90c82bfc72525fbdd8fef4db202bce938cdb82b3881"
+      ]
+    },
+    {
+      "expression": "a(negative(x), y)",
+      "shape": [
+        7
+      ],
+      "input_sha256": [
+        "59580bd9a7bd2643b89dda43c2631d69f94cd13ec0eeaa1c4666367954d75bc8",
+        "f340483a57b325720950fd87236ff35146f098b419e1a80887af7b178a9b86f7"
+      ]
+    },
+    {
+      "expression": "a(negative(x), y)",
+      "shape": [
+        3,
+        5
+      ],
+      "input_sha256": [
+        "376ff58d9ce66994bad0c519f5756d8dd87da660c5be26e6e78b0772d09adf4e",
+        "bd1b87bf9471fec259b2a7fcf97d7488bab47639b5c1701a3314991bacff5dd9"
+      ]
+    },
+    {
+      "expression": "a(negative(x), y)",
+      "shape": [
+        0
+      ],
+      "input_sha256": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ]
+    }
+  ]
+}

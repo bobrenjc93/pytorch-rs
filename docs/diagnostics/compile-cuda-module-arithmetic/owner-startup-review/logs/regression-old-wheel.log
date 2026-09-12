@@ -1,0 +1,161 @@
+test_owner_rebinding_before_first_frontend_import (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticFrontendTests.test_owner_rebinding_before_first_frontend_import) ... 
+  test_owner_rebinding_before_first_frontend_import (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticFrontendTests.test_owner_rebinding_before_first_frontend_import) (replacement='namespace') ... FAIL
+  test_owner_rebinding_before_first_frontend_import (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticFrontendTests.test_owner_rebinding_before_first_frontend_import) (replacement='hostile') ... FAIL
+  test_owner_rebinding_before_first_frontend_import (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticFrontendTests.test_owner_rebinding_before_first_frontend_import) (replacement='deleted') ... FAIL
+test_owner_rebinding_before_first_public_compiled_call (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_owner_rebinding_before_first_public_compiled_call) ... 
+  test_owner_rebinding_before_first_public_compiled_call (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_owner_rebinding_before_first_public_compiled_call) (replacement='namespace') ... FAIL
+  test_owner_rebinding_before_first_public_compiled_call (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_owner_rebinding_before_first_public_compiled_call) (replacement='hostile') ... FAIL
+  test_owner_rebinding_before_first_public_compiled_call (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_owner_rebinding_before_first_public_compiled_call) (replacement='deleted') ... FAIL
+
+======================================================================
+FAIL: test_owner_rebinding_before_first_frontend_import (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticFrontendTests.test_owner_rebinding_before_first_frontend_import) (replacement='namespace')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/tests/test_compile_cuda_module_arithmetic.py", line 151, in check_owner_startup
+    test.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+AssertionError: 1 != 0 : Traceback (most recent call last):
+  File "<string>", line 55, in <module>
+  File "<string>", line 46, in rejected
+AssertionError: counterfeit accepted
+
+
+======================================================================
+FAIL: test_owner_rebinding_before_first_frontend_import (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticFrontendTests.test_owner_rebinding_before_first_frontend_import) (replacement='hostile')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/tests/test_compile_cuda_module_arithmetic.py", line 151, in check_owner_startup
+    test.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+AssertionError: 1 != 0 : Traceback (most recent call last):
+  File "<string>", line 41, in rejected
+  File "<string>", line 55, in <lambda>
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 1638, in lower_compile_graph
+    compile_request = prepare_compile_cache_request(program, input_metadatas)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 702, in prepare_compile_cache_request
+    descriptor = analyze_compile_program(program)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 521, in analyze_compile_program
+    global_loads = _global_load_dependencies_from_instructions(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 545, in _global_load_dependencies_from_instructions
+    _resolve_live_global_dependency(program, program, instruction, name, attribute)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 490, in _resolve_live_global_dependency
+    dependency = _global_value_dependency(name, value, module_attribute)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 450, in _global_value_dependency
+    builtin = _builtin_target(value)
+              ^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 430, in _builtin_target
+    if value is owner.mul or value is owner.multiply:
+                ^^^^^^^^^
+  File "<string>", line 20, in __getattribute__
+AssertionError: owner callback: mul
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 55, in <module>
+  File "<string>", line 44, in rejected
+AssertionError: <class 'AssertionError'>
+
+
+======================================================================
+FAIL: test_owner_rebinding_before_first_frontend_import (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticFrontendTests.test_owner_rebinding_before_first_frontend_import) (replacement='deleted')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/tests/test_compile_cuda_module_arithmetic.py", line 151, in check_owner_startup
+    test.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+AssertionError: 1 != 0 : Traceback (most recent call last):
+  File "<string>", line 51, in <module>
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 16, in <module>
+    _NATIVE_FUNCTION_OWNER = _trace._native._VariableFunctionsClass
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: module 'torch_rs.torch_rs' has no attribute '_VariableFunctionsClass'
+
+
+======================================================================
+FAIL: test_owner_rebinding_before_first_public_compiled_call (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_owner_rebinding_before_first_public_compiled_call) (replacement='namespace')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/tests/test_compile_cuda_module_arithmetic.py", line 151, in check_owner_startup
+    test.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+AssertionError: 1 != 0 : Traceback (most recent call last):
+  File "<string>", line 72, in <module>
+  File "<string>", line 46, in rejected
+AssertionError: counterfeit accepted
+
+
+======================================================================
+FAIL: test_owner_rebinding_before_first_public_compiled_call (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_owner_rebinding_before_first_public_compiled_call) (replacement='hostile')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/tests/test_compile_cuda_module_arithmetic.py", line 151, in check_owner_startup
+    test.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+AssertionError: 1 != 0 : Traceback (most recent call last):
+  File "<string>", line 41, in rejected
+  File "<string>", line 72, in <lambda>
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 444, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 824, in compiled_model
+    compile_request = _compile_bytecode.prepare_compile_cache_request(
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 702, in prepare_compile_cache_request
+    descriptor = analyze_compile_program(program)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 521, in analyze_compile_program
+    global_loads = _global_load_dependencies_from_instructions(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 545, in _global_load_dependencies_from_instructions
+    _resolve_live_global_dependency(program, program, instruction, name, attribute)
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 490, in _resolve_live_global_dependency
+    dependency = _global_value_dependency(name, value, module_attribute)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 450, in _global_value_dependency
+    builtin = _builtin_target(value)
+              ^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 430, in _builtin_target
+    if value is owner.mul or value is owner.multiply:
+                ^^^^^^^^^
+  File "<string>", line 20, in __getattribute__
+AssertionError: owner callback: mul
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 72, in <module>
+  File "<string>", line 44, in rejected
+AssertionError: <class 'AssertionError'>
+
+
+======================================================================
+FAIL: test_owner_rebinding_before_first_public_compiled_call (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_owner_rebinding_before_first_public_compiled_call) (replacement='deleted')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/tests/test_compile_cuda_module_arithmetic.py", line 151, in check_owner_startup
+    test.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+AssertionError: 1 != 0 : Traceback (most recent call last):
+  File "<string>", line 41, in rejected
+  File "<string>", line 72, in <lambda>
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 444, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 790, in compiled_model
+    from . import _compile_bytecode as _compile_bytecode
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 16, in <module>
+    _NATIVE_FUNCTION_OWNER = _trace._native._VariableFunctionsClass
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: module 'torch_rs.torch_rs' has no attribute '_VariableFunctionsClass'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 72, in <module>
+  File "<string>", line 44, in rejected
+AssertionError: <class 'AttributeError'>
+
+
+----------------------------------------------------------------------
+Ran 2 tests in 2.377s
+
+FAILED (failures=6)

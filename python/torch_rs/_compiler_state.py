@@ -3,7 +3,11 @@
 import threading
 import weakref
 
+# Imported eagerly by package initialization, before callers can replace the
+# native module's writable owner export. Lazy frontends must use this identity
+# instead of reading that export at their first invocation.
 from .torch_rs import (
+    _VariableFunctionsClass as native_function_owner,
     _exchange_enable_guard_collectives as exchange_enable_guard_collectives,
 )
 

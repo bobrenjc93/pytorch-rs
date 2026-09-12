@@ -1,0 +1,22 @@
+import sys, types
+import torch_rs as m
+assert 'torch_rs._compile_bytecode' not in sys.modules
+owner = m._C._VariableFunctionsClass
+if sys.argv[1] == 'counterfeit':
+    def identity(x): return x
+    m._C._VariableFunctionsClass = types.SimpleNamespace(**{name: getattr(owner, name) for name in ('mul','multiply','matmul','add','neg','negative')})
+    m._C._VariableFunctionsClass.neg = identity
+    m.neg = identity
+else:
+    class Hostile:
+        def __getattribute__(self, name): raise AssertionError('owner callback: ' + name)
+    m._C._VariableFunctionsClass = Hostile()
+def program(x): return m.neg(x)
+x = m.tensor([1., -3.]).to('cuda:0')
+print('eager', program(x).cpu().tolist(), flush=True)
+f = m.compile(program, backend='eager', fullgraph=True)
+try:
+    print('cold', f(x).cpu().tolist(), flush=True)
+    print('warm', f(x).cpu().tolist(), flush=True)
+except Exception as e:
+    print(type(e).__name__ + ': ' + str(e), flush=True)

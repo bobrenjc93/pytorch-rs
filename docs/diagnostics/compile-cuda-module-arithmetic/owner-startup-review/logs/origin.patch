@@ -1,0 +1,227 @@
+diff --git a/ARCHITECTURE.md b/ARCHITECTURE.md
+index 96962d9..102e5dd 100644
+--- a/ARCHITECTURE.md
++++ b/ARCHITECTURE.md
+@@ -168,7 +168,10 @@ parity claim. Noncontiguous CUDA negation and CUDA autograd remain unsupported;
+ see [capture scope](docs/compile-cuda-add.md) and [kernel validation](docs/cuda-neg-validation.md).
+ The [CUDA arithmetic frontend](docs/compile-cuda-add.md) recognizes positional
+ module/direct-import `add`, `neg` and `negative` by immutable
+-`_VariableFunctionsClass` callable identity. Explicit operation/arity dispatch
++`_VariableFunctionsClass` callable identity, retained by eager package
++initialization before the frontend is imported lazily. Replacing the public
++native owner export cannot supply new identities or run attribute hooks.
++Explicit operation/arity dispatch
+ records existing add/neg nodes in the shared registry. Dependency descriptors
+ retain each global load's immediate module attribute; cache snapshots distinguish
+ code location and namespace. Legacy module guards stay intact, and unused new
+diff --git a/docs/compile-cuda-add.md b/docs/compile-cuda-add.md
+index 4527d34..b813329 100644
+--- a/docs/compile-cuda-add.md
++++ b/docs/compile-cuda-add.md
+@@ -109,6 +109,10 @@ canonical native operation dispatches that operation with its own arity;
+ unsupported callables, arbitrary modules, descriptors and missing used fields
+ reject without user callbacks. Each load keeps its own snapshot, including
+ multiple fields and helper loads in the same namespace.
++The immutable callable owner is retained during package initialization. The lazy
++frontend never resolves identities through the writable native owner export;
++replacing or deleting that export before the first compile does not authorize
++counterfeit callables or invoke their hooks.
+ Rebinding a global creates a specialization or hits the existing recompile
+ limit; an incompatible device transition is rejected. Rejected calls leave the
+ graph cache unchanged. A new graph is published only after successful native
+@@ -134,6 +138,11 @@ mutations and output prevalidation. Single-node arithmetic uses the existing
+ native unary/binary hook; compositions execute through the native whole-graph
+ bridge without per-node Python replay. Neither path runs the program body.
+ 
++The [owner-initialization review revision](diagnostics/compile-cuda-module-arithmetic/owner-startup-review/README.md)
++adds fresh-process checks for substitutions made before the first frontend
++import. Its development validation is separate from the `e2378805` capture;
++a new clean-commit capture is required after Burner commits the revision.
++
+ ## Matrix/vector validation
+ 
+ [Trailing-vector validation](compile-cuda-trailing-vector-validation.md) gives
+diff --git a/python/torch_rs/__init__.py b/python/torch_rs/__init__.py
+index be80c30..d871bb8 100644
+--- a/python/torch_rs/__init__.py
++++ b/python/torch_rs/__init__.py
+@@ -9,6 +9,7 @@ import types as _types
+ from math import e, inf, nan, pi
+ 
+ from . import torch_rs as _native
++from . import _compiler_state as _compile_state
+ from .torch_rs import *
+ 
+ # PyTorch's built-in variable functions reduce through owners in ``torch._C``.
+diff --git a/python/torch_rs/_compile_bytecode.py b/python/torch_rs/_compile_bytecode.py
+index 0a9c1f5..b1d40ee 100644
+--- a/python/torch_rs/_compile_bytecode.py
++++ b/python/torch_rs/_compile_bytecode.py
+@@ -10,10 +10,10 @@ import types as _types
+ from dataclasses import dataclass, field, replace
+ 
+ from . import _compile_trace as _trace
++from ._compiler_state import native_function_owner as _NATIVE_FUNCTION_OWNER
+ 
+ 
+ _NATIVE_MODULE = _sys.modules[__package__]
+-_NATIVE_FUNCTION_OWNER = _trace._native._VariableFunctionsClass
+ 
+ _CODE_FLAG_VARARGS = 0x04
+ _CODE_FLAG_VARKEYWORDS = 0x08
+diff --git a/python/torch_rs/_compiler_state.py b/python/torch_rs/_compiler_state.py
+index 5d3b3f9..1a21f54 100644
+--- a/python/torch_rs/_compiler_state.py
++++ b/python/torch_rs/_compiler_state.py
+@@ -3,7 +3,11 @@
+ import threading
+ import weakref
+ 
++# Imported eagerly by package initialization, before callers can replace the
++# native module's writable owner export. Lazy frontends must use this identity
++# instead of reading that export at their first invocation.
+ from .torch_rs import (
++    _VariableFunctionsClass as native_function_owner,
+     _exchange_enable_guard_collectives as exchange_enable_guard_collectives,
+ )
+ 
+diff --git a/tests/test_compile_cuda_module_arithmetic.py b/tests/test_compile_cuda_module_arithmetic.py
+index dfa4ef3..6750e83 100644
+--- a/tests/test_compile_cuda_module_arithmetic.py
++++ b/tests/test_compile_cuda_module_arithmetic.py
+@@ -42,6 +42,115 @@ class Hostile:
+     __getattr__ = fail
+ 
+ 
++# Each subprocess starts before the frontend import; parent-process patching
++# cannot exercise the lazy-initialization boundary.
++_OWNER_STARTUP_PROBE = r'''
++import sys
++import types
++import torch_rs as m
++
++mode, replacement = sys.argv[1:]
++assert 'torch_rs._compile_bytecode' not in sys.modules
++assert 'torch_rs._compile_trace' not in sys.modules
++owner = m._C._VariableFunctionsClass
++canonical = owner.neg
++callbacks = []
++def counterfeit(x):
++    callbacks.append('counterfeit body')
++    return x
++# This is an imported counterfeit, not a supported same-module helper.
++counterfeit.__module__ = 'untrusted_native_replacement'
++class Hostile:
++    def __getattribute__(self, name):
++        callbacks.append(name)
++        raise AssertionError('owner callback: ' + name)
++if replacement == 'namespace':
++    m._C._VariableFunctionsClass = types.SimpleNamespace(**{
++        name: getattr(owner, name) for name in ('mul', 'multiply', 'matmul', 'add', 'neg', 'negative')
++    })
++    m._C._VariableFunctionsClass.neg = counterfeit
++elif replacement == 'hostile':
++    m._C._VariableFunctionsClass = Hostile()
++else:
++    assert replacement == 'deleted'
++    del m._C._VariableFunctionsClass
++m.neg = counterfeit
++bad_alias = m.neg
++
++def program(x): return m.neg(x)
++def imported_bad(x): return bad_alias(x)
++def imported_good(x): return canonical(x)
++def untouched(x): return m.add(canonical(x), x)
++
++def rejected(callback):
++    try:
++        callback()
++    except Exception as error:
++        from torch_rs._compile_trace import CompileTraceUnsupportedError
++        assert type(error) is CompileTraceUnsupportedError, type(error)
++    else:
++        raise AssertionError('counterfeit accepted')
++    assert not callbacks, callbacks
++
++assert 'torch_rs._compile_bytecode' not in sys.modules
++if mode == 'frontend':
++    from torch_rs import _compile_bytecode as frontend, _compile_trace as trace
++    metadata = (trace.CompileTraceTensorMetadata((2,), (1,), trace.float32, 'cuda:0', False, 0),)
++    for fn in (program, imported_bad):
++        for _ in range(2):
++            rejected(lambda: frontend.lower_compile_graph(fn, metadata))
++    assert frontend._builtin_target(counterfeit) is None
++    for name in ('add', 'neg', 'negative', 'mul', 'multiply', 'matmul'):
++        assert frontend._builtin_target(getattr(owner, name)) is not None
++    assert [op.target for op in frontend.lower_compile_graph(untouched, metadata).operations] == ['neg', 'add']
++    m.neg = canonical
++    assert frontend.lower_compile_graph(program, metadata).operations[0].target == 'neg'
++else:
++    assert mode == 'cuda'
++    from torch_rs import _compiler_state as state
++    x = m.tensor([1., -3.]).to('cuda:0')
++    for fullgraph, dynamic in ((True, None), (True, False), (True, True), (False, None)):
++        m.neg = counterfeit
++        previous = set(state.native_eager_compile_caches)
++        compiled = m.compile(program, backend='eager', fullgraph=fullgraph, dynamic=dynamic, recompile_limit=1)
++        cache, = set(state.native_eager_compile_caches) - previous
++        for _ in range(2):
++            rejected(lambda: compiled(x))
++            assert not cache.graphs
++        # A direct canonical import and unused fields remain valid while the
++        # public neg binding and exported owner are still malformed.
++        for fn, expected in ((imported_good, [-1., 3.]), (untouched, [0., 0.])):
++            control = m.compile(fn, backend='eager', fullgraph=fullgraph, dynamic=dynamic, recompile_limit=1)
++            for _ in range(2): assert control(x).cpu().tolist() == expected
++        invalid = m.compile(imported_bad, backend='eager', fullgraph=fullgraph, dynamic=dynamic)
++        for _ in range(2): rejected(lambda: invalid(x))
++        m.neg = canonical
++        retained = []
++        for _ in range(2):
++            output = compiled(x)
++            assert output.cpu().tolist() == [-1., 3.]
++            retained.append(output)
++        assert retained[0].data_ptr() != retained[1].data_ptr()
++        assert len(cache.graphs) == 1
++        before = dict(cache.graphs)
++        m.neg = counterfeit
++        for _ in range(2): rejected(lambda: compiled(x))
++        assert cache.graphs == before
++        m.neg = canonical
++        assert compiled(x).cpu().tolist() == [-1., 3.]
++        assert x.cpu().tolist() == [1., -3.]
++assert not callbacks, callbacks
++'''
++
++
++def check_owner_startup(test, mode):
++    for replacement in ('namespace', 'hostile', 'deleted'):
++        with test.subTest(replacement=replacement):
++            result = subprocess.run([sys.executable, '-c', _OWNER_STARTUP_PROBE, mode, replacement],
++                                    capture_output=True, text=True, timeout=60)
++            test.assertEqual(result.returncode, 0, result.stdout + result.stderr)
++
++
+ class ModuleArithmeticFrontendTests(ExactErrors, unittest.TestCase):
+     def test_identity_arity_registry_and_cpu_boundary_without_gpu(self):
+         cuda = trace.CompileTraceTensorMetadata((3, 5), (5, 1), trace.float32, 'cuda:0', False, 0)
+@@ -115,6 +224,9 @@ class ModuleArithmeticFrontendTests(ExactErrors, unittest.TestCase):
+             self.assertEqual(bytecode._builtin_target(native.add).arity, 2)
+             self.assertIsNone(bytecode._builtin_target(Hostile()))
+ 
++    def test_owner_rebinding_before_first_frontend_import(self):
++        check_owner_startup(self, "frontend")
++
+     def test_native_planner_rejects_declarations_without_device(self):
+         hook = trace._native._compile_trace_cuda_graph
+         self.exact_error(TypeError, lambda: hook((object(),), []))
+@@ -123,6 +235,9 @@ class ModuleArithmeticFrontendTests(ExactErrors, unittest.TestCase):
+ 
+ @unittest.skipUnless(available('0'), 'requires real CUDA with CUDA_VISIBLE_DEVICES=0')
+ class ModuleArithmeticCudaTests(ExactErrors, Comparison, unittest.TestCase):
++    def test_owner_rebinding_before_first_public_compiled_call(self):
++        check_owner_startup(self, "cuda")
++
+     def checked(self, fn, ref_fn, args, refs, fullgraph, dynamic):
+         compiled, cache = compile_with_cache(fn, fullgraph, dynamic)
+         reference = torch.compile(ref_fn, backend='eager', fullgraph=fullgraph, dynamic=dynamic)

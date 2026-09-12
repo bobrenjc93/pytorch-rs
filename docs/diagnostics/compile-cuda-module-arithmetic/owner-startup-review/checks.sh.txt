@@ -1,0 +1,20 @@
+set -eu
+. docs/diagnostics/compile-cuda-module-arithmetic/env.sh.txt
+export GIT_OPTIONAL_LOCKS=0
+record() { python3 target/owner-startup-review/record.py "$@"; }
+record provenance-before .venv/bin/python target/owner-startup-review/provenance.py
+record verify-native .venv/bin/python .github/scripts/verify_native_extension.py
+record startup-fixed .venv/bin/python -m unittest -v tests.test_compile_cuda_module_arithmetic.ModuleArithmeticFrontendTests.test_owner_rebinding_before_first_frontend_import tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_owner_rebinding_before_first_public_compiled_call
+record focused-cuda .venv/bin/python -m unittest -v tests.test_compile_cuda_module_arithmetic tests.test_cuda_add tests.test_cuda_neg
+CUDA_VISIBLE_DEVICES= record cpu-hidden .venv/bin/python -m unittest -v tests.test_compile_cuda_module_arithmetic tests.test_top_level_compile tests.test_tensor_add tests.test_tensor_add_reference tests.test_top_level_add tests.test_top_level_add_reference tests.test_neg_reference tests.test_top_level_neg tests.test_top_level_neg_reference tests.test_top_level_negative tests.test_top_level_negative_reference
+CUDA_VISIBLE_DEVICES=0,1 record restoration .venv/bin/python -m unittest -v tests.test_compile_cuda_module_arithmetic.ModuleArithmeticDeviceTests tests.test_compile_cuda_boundary.CompileCudaDeviceTests
+record rust-default cargo test --locked --all-targets
+record rust-graph-cuda cargo test --locked --features python-bindings --lib cuda_graph
+CUDA_VISIBLE_DEVICES= record rust-graph-hidden cargo test --locked --features python-bindings --lib cuda_graph
+record formatting cargo fmt --check
+record clippy-default cargo clippy --locked --all-targets -- -D warnings
+record clippy-python cargo clippy --locked --all-targets --features python-bindings -- -D warnings
+record docs-smoke .venv/bin/python -m unittest -v tests.test_readme_quickstart
+record inductor-inputs .venv/bin/python target/postcommit-e2378805/inductor_inputs.py
+record compiler-complete .venv/bin/python target/postcommit-e2378805/compiler_sweep.py
+record provenance-after .venv/bin/python target/owner-startup-review/provenance.py

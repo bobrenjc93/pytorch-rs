@@ -10,10 +10,10 @@ import types as _types
 from dataclasses import dataclass, field, replace
 
 from . import _compile_trace as _trace
+from ._compiler_state import native_function_owner as _NATIVE_FUNCTION_OWNER
 
 
 _NATIVE_MODULE = _sys.modules[__package__]
-_NATIVE_FUNCTION_OWNER = _trace._native._VariableFunctionsClass
 
 _CODE_FLAG_VARARGS = 0x04
 _CODE_FLAG_VARKEYWORDS = 0x08
