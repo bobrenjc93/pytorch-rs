@@ -1499,7 +1499,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
         )
         self.assertEqual(
             compile_eval["definitionVersion"],
-            "evaldef_repo_a61c0e71_v3",
+            "evaldef_repo_a61c0e71_v4",
         )
 
 

@@ -51,7 +51,7 @@ def worker_result():
 
 class DefaultCompileEvaluatorTests(unittest.TestCase):
     def test_frozen_manifest_and_weights(self):
-        self.assertEqual(corpus.VERSION, "public-default-compile-v1")
+        self.assertEqual(corpus.VERSION, "public-default-compile-v2")
         self.assertEqual(len(corpus.CASES), 28)
         self.assertEqual(len({case.name for case in corpus.CASES}), 28)
         self.assertEqual(sum(corpus.CATEGORY_WEIGHTS.values()), 100)
@@ -191,6 +191,22 @@ class DefaultCompileEvaluatorTests(unittest.TestCase):
         self.assertFalse(cells[0]["passed"])
         self.assertEqual(cells[0]["ratio"], 0)
 
+    def test_bfloat16_tolerance_is_symmetric_without_relaxing_float32_cases(self):
+        candidate = worker_result()
+        for name in ("bfloat16_roundtrip", "affine_relu"):
+            candidate["cases"][name]["variants"][0]["observed"]["output"]["values"] = [
+                1.004
+            ]
+        cells = evaluator.compare_workers(worker_result(), candidate)
+        bf = next(cell for cell in cells if cell["case"] == "bfloat16_roundtrip")
+        fp = next(cell for cell in cells if cell["case"] == "affine_relu")
+        self.assertTrue(
+            bf["passed"],
+            "candidate receives the same bfloat16 allowance as the reference",
+        )
+        self.assertFalse(fp["passed"], "ordinary float32 correctness remains strict")
+        self.assertEqual(evaluator.RTOL_OVERRIDES, {"bfloat16_roundtrip": 8e-3})
+
     def test_no_candidate_success_means_zero_and_no_common_success_ratio(self):
         candidate = worker_result()
         for name in candidate["cases"]:
@@ -257,8 +273,8 @@ class DefaultCompileEvaluatorTests(unittest.TestCase):
         ]
         by_id = {item["id"]: item for item in definitions}
         for identity, version, metric in (
-            ("eval_a61c0e71", "evaldef_repo_a61c0e71_v3", "coverage"),
-            ("eval_6f98c42d", "evaldef_repo_6f98c42d_v2", "cuda-perf"),
+            ("eval_a61c0e71", "evaldef_repo_a61c0e71_v4", "coverage"),
+            ("eval_6f98c42d", "evaldef_repo_6f98c42d_v3", "cuda-perf"),
         ):
             self.assertEqual(by_id[identity]["definitionVersion"], version)
             self.assertEqual(

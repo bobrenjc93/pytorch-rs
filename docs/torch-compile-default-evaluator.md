@@ -36,10 +36,10 @@ raw compressed observations, compiler logs, and timing reports under
 `target/default-compile-eval/`. On hosts using an enterprise CA, configure uv's
 system trust store (`UV_SYSTEM_CERTS=true`); do not disable TLS verification.
 
-## Corpus v1
+## Corpus v2
 
 [`torch_compile_default_corpus.py`](../scripts/torch_compile_default_corpus.py)
-owns `public-default-compile-v1`: 28 actual programs, two per category. Factories
+owns `public-default-compile-v2`: 28 actual programs, two per category. Factories
 run unchanged with either framework and only use public APIs and ordinary
 tensors. No function-name dispatch, tensor markers, private prepared executors,
 or benchmark tensor wrappers are eligible.
@@ -96,10 +96,12 @@ by `fullgraph=True` or a custom backend returning an FX graph's Python forward.
 All tensor values—not just checksums—are compared, along with shapes, strides,
 dtypes, devices, gradient requirements, container types, repeated object
 identity, mutated inputs, and post-return view aliasing. Tolerances are
-`rtol=1e-4`, `atol=1e-4`. Only the reference-versus-eager bfloat16 check uses
-`rtol=8e-3`: default Inductor may retain higher precision between casts, unlike
-eager bfloat16 intermediate rounding. Candidate-versus-compiled-reference
-comparison retains the tighter tolerance and requires actual bfloat16 output.
+`rtol=1e-4`, `atol=1e-4`. The mixed bfloat16/float32 program uses `rtol=8e-3`
+symmetrically for reference-versus-eager, cold-versus-warm, and candidate-versus-
+compiled-reference comparisons: default Inductor may retain higher precision
+between casts, unlike eager bfloat16 intermediate rounding. Metadata remains
+exact, including actual bfloat16 output; ordinary float32 programs retain the
+tighter tolerance.
 
 An identity compiler fails. After warmup, a profile probe rejects a wrapper
 that re-executes the original Python entrypoint, including a wrapper around
@@ -150,13 +152,19 @@ reference. The old CUDA gate measured one marker-selected, handwritten kernel
 at four shapes through private benchmark tensors. Those measurements describe
 their narrow workloads; neither establishes this default-API comparison.
 
-Coverage definition `eval_a61c0e71` is now v3; CUDA performance definition
-`eval_6f98c42d` is now v2. Historical 100 scores remain historical, non-comparable
+Coverage definition `eval_a61c0e71` is now v4; CUDA performance definition
+`eval_6f98c42d` is now v3. Historical 100 scores remain historical, non-comparable
 records and must not be used as floors for these definitions. A lower new score
 is a **measurement correction**, not an implementation regression. Keep this
 campaign change separate from compiler implementation candidates and obtain
 human review before adopting it. Burner owns canonical score-history updates;
 do not manually rewrite old progress artifacts.
+
+The initial public-default v1 capture (coverage v3 / performance v2) is retained
+as pre-adoption evidence. Review found that its bfloat16 tolerance was asymmetric;
+v2 applies the same declared allowance to both frameworks and is freshly
+rebaselined. Neither capture changes the native implementation or authorizes
+reusing scores across definition versions.
 
 The retained `evaluate_torch_compile_coverage.py` and
 `benchmark_compile_cuda.py` are legacy diagnostics only. Neither command is

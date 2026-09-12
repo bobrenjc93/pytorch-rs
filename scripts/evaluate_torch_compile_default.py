@@ -46,7 +46,7 @@ WARMUPS = 5
 SAMPLES = 17
 RTOL = 1e-4
 ATOL = 1e-4
-BFLOAT16_EAGER_RTOL = 8e-3
+RTOL_OVERRIDES = {"bfloat16_roundtrip": 8e-3}
 SOURCE_PATHS = (
     "src",
     "python",
@@ -400,6 +400,7 @@ def latency_summary(samples):
 
 
 def measure_case(case, fw, implementation, device, synchronize):
+    rtol = RTOL_OVERRIDES.get(case.name, RTOL)
     if implementation == "reference":
         fw.compiler.reset()
         from torch._dynamo.utils import counters
@@ -439,12 +440,7 @@ def measure_case(case, fw, implementation, device, synchronize):
                 fw,
                 device,
             )
-            eager_rtol = (
-                BFLOAT16_EAGER_RTOL if case.name == "bfloat16_roundtrip" else RTOL
-            )
-            compare(
-                observed, expected, "reference compiled versus eager", rtol=eager_rtol
-            )
+            compare(observed, expected, "reference compiled versus eager", rtol=rtol)
 
         for _ in range(WARMUPS):
             args = fresh()
@@ -460,7 +456,7 @@ def measure_case(case, fw, implementation, device, synchronize):
             synchronize()
             samples.append((time.perf_counter_ns() - start) / 1e6)
         warm_observed = observe(output, args, program, case, fw, device)
-        compare(warm_observed, observed, "cold versus warm")
+        compare(warm_observed, observed, "cold versus warm", rtol=rtol)
         args = fresh(sample=1)
         output = reject_eager_wrapper(
             program.function, compiled, lambda: invoke(compiled, args, case, fw)
@@ -487,7 +483,7 @@ def measure_case(case, fw, implementation, device, synchronize):
                 changed,
                 expected,
                 "changed-input reference versus eager",
-                rtol=eager_rtol,
+                rtol=rtol,
             )
         result["variants"].append(
             {
@@ -752,11 +748,13 @@ def compare_workers(reference, candidate):
                     value = native["variants"][index]
                     if value["variant"] != variant:
                         raise AssertionError("missing/reordered candidate variant")
-                    compare(value["observed"], ref_value["observed"])
+                    rtol = RTOL_OVERRIDES.get(case.name, RTOL)
+                    compare(value["observed"], ref_value["observed"], rtol=rtol)
                     compare(
                         value["changed_observed"],
                         ref_value["changed_observed"],
                         "same-shape new inputs",
+                        rtol=rtol,
                     )
                     ratio = ref_value["median_ms"] / value["median_ms"]
                     if not math.isfinite(ratio) or ratio <= 0:
@@ -900,7 +898,7 @@ def evaluate(args):
         report["setup"] = setup_identity(
             args.build_identity, args.setup_timestamps, provenance
         )
-        report["bfloat16_reference_eager_rtol"] = BFLOAT16_EAGER_RTOL
+        report["rtol_overrides"] = RTOL_OVERRIDES
         report["gpu_before"] = gpu_snapshot()
         report["rustc"] = subprocess.check_output(
             ["rustc", "--version"], text=True

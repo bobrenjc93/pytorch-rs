@@ -1,5 +1,10 @@
 # Public-default compile baseline — 2026-09-12
 
+Initial **pre-adoption** capture, superseded by public-default corpus v2. Review
+found an asymmetric bfloat16 tolerance; the corrected gate applies the same
+allowance to both frameworks and is remeasured separately. This original report
+is retained unchanged, not used as calibration for the revised definitions.
+
 This is a **metric correction**, not a compiler implementation change. The
 measurements are pinned to clean evaluator commit
 `c05b1dcc8eda0ba621de48184cf52b5f727dec77`, whose native implementation is unchanged

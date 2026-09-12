@@ -7,7 +7,7 @@ Factories run unchanged with either framework. Inputs never carry compiler marke
 from dataclasses import dataclass
 
 
-VERSION = "public-default-compile-v1"
+VERSION = "public-default-compile-v2"
 CATEGORY_WEIGHTS = {
     "tensor_arithmetic": 12,
     "broadcasting": 8,
