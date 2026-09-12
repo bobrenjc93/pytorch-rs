@@ -51,9 +51,30 @@ FMA and `--ftz=false`:
   two-device restoration evidence is also preserved.
 
 These are unscored dirty-source checks based on `1905c865`. Burner committed
-the repair as `42959e14`; the [post-commit capture](README.md) supplies fresh clean
-coverage/performance and the combined fifteen-module regression selection.
+the repair as `42959e14`; its [post-commit receipt](postcommit-42959e/postcommit.json)
+records clean coverage/performance and the combined fifteen-module selection.
+The [current evidence index](README.md) links later clean revisions.
 The preceding capture remains pinned to `5fc75c41`; no old report was relabeled.
 Temporary wheel/cache/raw-log paths may disappear
 at cleanup; this compressed bundle preserves the durable evidence. See the
 [compiler contract](../../compile-pointwise-jit.md) and [evidence index](README.md).
+
+## Historical build timeline clarification
+
+The retained `operator-offset-first-validation.log` in the development bundle
+started at **22:54:17.715 UTC** with wheel SHA-256 `daa9ddaf…`; it recorded
+**94 tests, 12 failures and two skips**, explicitly outside qualification.
+The replacement installation began at **22:54:24.204 UTC**, after that process
+started. The source fingerprint at test start therefore did not atomically
+attest which native binary was already loaded. Those failures remain unchanged.
+
+The operator identifies the earlier native binary as `98f9a08…`, and the
+replacement codegen record identifies `6f44f68…`. The earlier wheel has been
+cleaned up, so its native-hash association rests on the operator's clarification;
+it cannot be reverified from that wheel. The bundle retains both codegen
+identities, the installation receipt, the failed operator log and the later
+passing 76-test log. These attempts are distinct from the subsequent clean
+`42959e14` and `74602c07` captures. The operator also reported a separate passing
+three-test run on physical GPUs 6 and 7; that report does not replace the
+retained author's `CUDA_VISIBLE_DEVICES=0,1` receipt or a future independent
+acceptance run.

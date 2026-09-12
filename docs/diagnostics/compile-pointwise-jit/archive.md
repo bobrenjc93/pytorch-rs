@@ -51,8 +51,13 @@ cases, numerical probes and repair checks; dirty-source runs remain unscored.
 
 The later scalar-zero contraction, nonfinite binding and offset-cache repair is
 documented in [review-zero-boundaries.md](review-zero-boundaries.md) and its
-[bundle](review-zero-boundaries.json.gz). The current index links its clean
-`42959e14` capture, which remains directly accessible outside this archive.
+[bundle](review-zero-boundaries.json.gz). Its clean `42959e14`
+[coverage](postcommit-42959e/candidate-coverage.json.gz),
+[performance](postcommit-42959e/candidate-cuda-perf.json.gz),
+[receipt](postcommit-42959e/postcommit.json) and
+[logs](postcommit-42959e/postcommit-logs.json.gz) remain directly accessible.
+These reports predate the rejection-message clarification in `74602c07`;
+the current evidence index links the fresh capture of that revision.
 
 ## Initial implementation
 

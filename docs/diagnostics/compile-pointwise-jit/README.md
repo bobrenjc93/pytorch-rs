@@ -1,24 +1,24 @@
 # Native default pointwise JIT validation
 
 Fresh coverage, CUDA-performance and generated-code captures measure clean
-implementation commit `42959e143cde354172aa298543d7113c717e3953` on 2026-09-12,
-including scalar-zero contraction, nonfinite binding histories and contiguous
-offset cache reuse. Both unchanged
+implementation commit `74602c0763f25f761e6cdf8009f1083780f15625` on 2026-09-12,
+including the clarified default-backend rejection messages, with the preceding
+scalar-zero contraction, nonfinite binding and offset-cache repairs. Both unchanged
 public-default-compile-v2 scoring commands report
 `valid: true`, `diagnostic: false`, with no infrastructure error. The clean
 baseline remains pinned to campaign base
 `76738b39fd6884ffd43b4dff2f5292257a1c6e6b`, verified as the merge base with main.
 See the [implementation contract](../../compile-pointwise-jit.md).
 
-| Unchanged public-default-compile-v2 gate | Clean baseline | Clean candidate `42959e14` |
+| Unchanged public-default-compile-v2 gate | Clean baseline | Clean candidate `74602c07` |
 | --- | ---: | ---: |
 | Weighted coverage | 0% (0/112 cells) | 6% (4/112 cells) |
 | Weighted CUDA performance | 0% (0/56 cells) | 12% (4/56 cells) |
-| CUDA-performance common-success geometric mean, reference/candidate | null | 1.8932128846357912 |
+| CUDA-performance common-success geometric mean, reference/candidate | null | 1.7998308080199972 |
 
 The measured gains over the baseline are 6 percentage points of
 weighted coverage and 12 points of weighted CUDA performance. The weighted
-scores are unchanged from the preceding `5fc75c41` capture.
+scores are unchanged from the preceding `42959e14` capture.
 Only the two arithmetic programs in both CUDA variants pass; all other cells
 remain zero. The uncapped ratio describes only those four cells; the baseline
 has no common successes, so its ratio is null. These are fixed-corpus results,
@@ -26,16 +26,16 @@ not general Inductor parity.
 
 ## Current committed evidence
 
-- [Coverage](postcommit-42959e/candidate-coverage.json.gz) and
-  [CUDA performance](postcommit-42959e/candidate-cuda-perf.json.gz) are
+- [Coverage](postcommit-74602c/candidate-coverage.json.gz) and
+  [CUDA performance](postcommit-74602c/candidate-cuda-perf.json.gz) are
   byte-preserving gzip copies of complete evaluator reports. They preserve
   all 112 coverage and 56 performance cells, both CUDA implementation orders,
   five warmups, 17 samples, one host thread, symmetric synchronization,
   changed-input checks, cold costs, unsupported outcomes and slow results.
   Every reference program passed in all five reference workers.
-- The [receipt](postcommit-42959e/postcommit.json) records commands, environment,
+- The [receipt](postcommit-74602c/postcommit.json) records commands, environment,
   setup timestamps, cache state, source/build/wheel identities and verification.
-  [Logs](postcommit-42959e/postcommit-logs.json.gz) retain both gate/build outputs,
+  [Logs](postcommit-74602c/postcommit-logs.json.gz) retain both gate/build outputs,
   all ten workers, the focused checks, and the verification scripts. Original
   raw-observation and wheel paths are recorded with hashes, but those temporary
   artifacts may be removed by worktree cleanup. The reports and compressed logs
@@ -44,10 +44,10 @@ not general Inductor parity.
   candidate source hashes, wheel/native/interpreter identities, worker logs and
   raw-observation hashes were verified locally. Evaluator/corpus hashes, category
   weights, tolerances and denominators match the baseline.
-- [Generated CUDA](postcommit-42959e/kernel.cu),
-  [PTX](postcommit-42959e/kernel.ptx.gz),
-  [provenance](postcommit-42959e/provenance.json) and
-  [source manifest](postcommit-42959e/source-manifest.json.gz) were freshly
+- [Generated CUDA](postcommit-74602c/kernel.cu),
+  [PTX](postcommit-74602c/kernel.ptx.gz),
+  [provenance](postcommit-74602c/provenance.json) and
+  [source manifest](postcommit-74602c/source-manifest.json.gz) were freshly
   captured with the existing [capture.py](capture.py) from the exact installed
   evaluation wheel. The provenance field named `base_commit` identifies the
   measured candidate commit. An independent ordinary public function exercises
@@ -55,9 +55,11 @@ not general Inductor parity.
   two graph entries. The capture asserts that installed PyTorch was not imported.
   This establishes code-generation provenance, not a separate timing score.
 
-The `42959e14` committed wheel passed all fifteen pointwise regression modules:
-83 tests with two explicit two-device skips under `CUDA_VISIBLE_DEVICES=0`.
-This includes the operator-added liveness, signature, integer-scalar,
+The `74602c07` committed wheel passed all fifteen pointwise regression modules:
+84 tests with two explicit two-device skips under `CUDA_VISIBLE_DEVICES=0`.
+Sixteen archive/documentation checks also passed. The new rejection-message
+test verifies that unsupported inputs execute no user callbacks. The regression
+selection also includes the operator-added liveness, signature, integer-scalar,
 warm-binding, nonfinite-history and constant-transcendental modules,
 scalar-zero contraction and offset cache transitions, callback-free globals-key
 admission, static captured-zero transitions, constant-unary precision,
@@ -70,7 +72,9 @@ checkout remained clean throughout both gates and these checks.
 
 [Repair validation](review-zero-boundaries.md) preserves the original failures,
 before/after numerical probes, Rust IR, backend, Clippy and build checks. Its 124
-source hashes and fifteen regression-module hashes match `42959e14`;
+source hashes and fifteen regression-module hashes match its historical
+`42959e14` revision. Relative to that record, `74602c07` changes rejection
+messages and their tests;
 those development runs remain distinct from these clean measurements.
 
 The native JIT selected NVRTC **13.0**, CUDA runtime **13000**, `compute_90`,
@@ -112,14 +116,14 @@ export XDG_CACHE_HOME="$PWD/target/xdg-cache"
 export CUDA_CACHE_PATH="$PWD/target/default-compile-eval/cuda-cache"
 export CUDA_CACHE_DISABLE=1 UV_SYSTEM_CERTS=true
 CUDA_VISIBLE_DEVICES=0 bash scripts/evaluate_torch_compile_default.sh \
-  --metric coverage --output target/postcommit-42959e/coverage.json
+  --metric coverage --output target/postcommit-74602c/coverage.json
 CUDA_VISIBLE_DEVICES=0 bash scripts/evaluate_torch_compile_default.sh \
-  --metric cuda-perf --output target/postcommit-42959e/cuda-perf.json
+  --metric cuda-perf --output target/postcommit-74602c/cuda-perf.json
 ```
 
 Choose new output paths when reproducing; the evaluator refuses to overwrite
-evidence. The [receipt](postcommit-42959e/postcommit.json) records the exact
-codegen and fifteen-module unittest commands using
+evidence. The [receipt](postcommit-74602c/postcommit.json) records the exact
+codegen, fifteen-module regression and archive/documentation commands using
 `target/default-compile-eval/venv/bin/python`, with dedicated local
 Inductor/Triton test caches. The unchanged
 [gate documentation](../../torch-compile-default-evaluator.md) defines scoring.
