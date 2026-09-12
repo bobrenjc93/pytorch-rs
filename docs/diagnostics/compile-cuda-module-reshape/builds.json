@@ -1,0 +1,74 @@
+{
+  "module-reshape-baseline": {
+    "source_root": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_21283913/target/cuda-add-diagnostic/module-reshape-baseline/source",
+    "source_manifest_sha256": "767c518969a0dcc4cd267899a5e4ee13ae91237f78541f7e21a453d74c9be89e",
+    "base_commit": "6772c3405a8bc2baf70ca80106a27a390b19e9a0",
+    "measured_code_commit": "6772c3405a8bc2baf70ca80106a27a390b19e9a0",
+    "source_kind": "clean commit export",
+    "origin_status": "",
+    "origin_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source_matches_commit": true,
+    "durations_seconds": {
+      "dependency_setup": 0.017391693778336048,
+      "build": 47.5252914596349,
+      "wheel_install": 0.12833737302571535
+    },
+    "build_cache": "empty per-export Cargo target; shared worktree Cargo/uv download caches warm",
+    "profile": "release, thin LTO, codegen-units=1, extension-module, locked dependencies",
+    "wheel": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_21283913/target/cuda-add-diagnostic/module-reshape-baseline/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "wheel_sha256": "179c15c7e9b923394d56c9f8bec7f751cee8d0e516af29c2e841db3c3b81b668",
+    "installed_package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_21283913/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+    "installed_native": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_21283913/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+    "installed_native_sha256": "20d24dcc2dccf438d018c1a09f11f8cf193ebf698c39dcbb4955a711933fc2b5",
+    "build_target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_21283913/target/cuda-add-diagnostic/module-reshape-baseline/build",
+    "source_inventory": "builds/base-source.json.gz"
+  },
+  "module-reshape-development": {
+    "source_root": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_21283913/target/cuda-add-diagnostic/module-reshape-development/source",
+    "source_manifest_sha256": "698918ac369c50e265ac07304186f63e0b81e3dc8a59f3acadd824d56fa35321",
+    "base_commit": "6772c3405a8bc2baf70ca80106a27a390b19e9a0",
+    "measured_code_commit": null,
+    "source_kind": "immutable current-source export; uncommitted overlay, not exact HEAD",
+    "origin_status": " M python/torch_rs/_compile_bytecode.py\n M tests/test_compile_cuda_reshape.py\n M tests/test_compile_cuda_view.py\n?? tests/test_compile_cuda_module_reshape.py\n",
+    "origin_patch_sha256": "f1e5fc30a49c8e6b23da275bd41a14902e6d0cd07597ae93b014df1f59f84ae1",
+    "source_matches_commit": false,
+    "durations_seconds": {
+      "dependency_setup": 0.019499571062624454,
+      "build": 46.36908563692123,
+      "wheel_install": 0.12966710049659014
+    },
+    "build_cache": "empty per-export Cargo target; shared worktree Cargo/uv download caches warm",
+    "profile": "release, thin LTO, codegen-units=1, extension-module, locked dependencies",
+    "wheel": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_21283913/target/cuda-add-diagnostic/module-reshape-development/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "wheel_sha256": "6a0780c071cbbeaeb3333f1c3948732585b8c6b4f7d3740935bc46a435bbb531",
+    "installed_package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_21283913/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+    "installed_native": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_21283913/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+    "installed_native_sha256": "20d24dcc2dccf438d018c1a09f11f8cf193ebf698c39dcbb4955a711933fc2b5",
+    "build_target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_21283913/target/cuda-add-diagnostic/module-reshape-development/build",
+    "source_inventory": "builds/module-reshape-development-delta.json"
+  },
+  "module-reshape-development-second": {
+    "source_root": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_21283913/target/cuda-add-diagnostic/module-reshape-development-second/source",
+    "source_manifest_sha256": "a5dcf804492c8fbdad153cfaf21324ebb074139bcdae23fa47e1e8e68501983b",
+    "base_commit": "6772c3405a8bc2baf70ca80106a27a390b19e9a0",
+    "measured_code_commit": null,
+    "source_kind": "immutable current-source export; uncommitted overlay, not exact HEAD",
+    "origin_status": " M FEATURES.md\n M docs/README.md\n M docs/compile-cuda-reshape.md\n M docs/supported-surface.md\n M python/torch_rs/_compile_bytecode.py\n M tests/test_compile_cuda_reshape.py\n M tests/test_compile_cuda_view.py\n?? tests/test_compile_cuda_module_reshape.py\n",
+    "origin_patch_sha256": "9a70fd6f82effb179ff051c6b66378c307bb943a437d60d5511b9c980efaad48",
+    "source_matches_commit": false,
+    "durations_seconds": {
+      "dependency_setup": 0.020154871977865696,
+      "build": 45.721609505824745,
+      "wheel_install": 0.12598114740103483
+    },
+    "build_cache": "empty per-export Cargo target; shared worktree Cargo/uv download caches warm",
+    "profile": "release, thin LTO, codegen-units=1, extension-module, locked dependencies",
+    "wheel": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_21283913/target/cuda-add-diagnostic/module-reshape-development-second/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "wheel_sha256": "8b6b0b47273c53c131dd4e278cbac938f19e7a88b7c153226d3d852d11530de7",
+    "installed_package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_21283913/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+    "installed_native": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_21283913/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+    "installed_native_sha256": "20d24dcc2dccf438d018c1a09f11f8cf193ebf698c39dcbb4955a711933fc2b5",
+    "build_target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_21283913/target/cuda-add-diagnostic/module-reshape-development-second/build",
+    "source_inventory": "builds/module-reshape-development-second-delta.json"
+  }
+}

@@ -255,13 +255,15 @@ including negative/same axes; keyword axes remain method-only. Static/dynamic
 captures retain metadata and cache guards. Dynamic axis expressions, general
 permute, swapdims/swapaxes, properties and module/imported transpose kwargs or other arities are excluded.
 
-[Compiled CUDA `Tensor.reshape`](docs/compile-cuda-reshape.md) captures exact
-constant integer shapes of rank 0/1/2, including scalar tuples and `-1` inference.
+[Compiled CUDA reshape](docs/compile-cuda-reshape.md) captures method shapes and
+exactly two-positional-argument native `torch.reshape(x, shape)`/genuine aliases
+with exact tuple/list constant integer shapes of rank 0/1/2, including scalar
+tuples and `-1` inference.
 It reuses native eager alias-or-pack planning and CUDA packing, preserving bits,
 view offsets/strides, copy independence and repeated output identity. Dynamic
 sizes may change view-versus-pack behavior under unchanged rank/stride/offset
 and device guards. Shape expressions, arbitrary containers, CPU/gradient capture,
-`reshape_as` and top-level reshape remain excluded; scoring corpora are unchanged.
+`reshape_as` and keyword/variadic top-level reshape remain excluded; scoring corpora are unchanged.
 
 [Compiled CUDA `Tensor.squeeze()`](docs/compile-cuda-squeeze.md) accepts no-argument
 methods and one-positional-argument native-module `torch.squeeze(x)` calls or

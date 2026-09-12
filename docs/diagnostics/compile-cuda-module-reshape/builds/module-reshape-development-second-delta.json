@@ -1,0 +1,13 @@
+{
+  "changed": {
+    "FEATURES.md": "2e48afa1f561d43b00421f1d75bc9c342726bb8c1087b2c3fb04ae467460c5b2",
+    "docs/README.md": "646b9293eabfb9de070b3c3f67b7fee032e0802436ed4a23d7e5056fbe627d3d",
+    "docs/compile-cuda-reshape.md": "c9c30bcacaa01532a2c57acf10b0ba97c8789018d1ebc8cfd902e0141bea0e0a",
+    "docs/supported-surface.md": "41bc26679d648553ffb1f3919d5103691c2f060eeee5d74aedcbd6f648fa7d8c",
+    "python/torch_rs/_compile_bytecode.py": "d4098504201b6f5e596dfd9d170d0c21c1618503a1183d78930cc50281144fc9",
+    "tests/test_compile_cuda_module_reshape.py": "58aac17d3d38d813bbdf0ce0c7ef24c89e2af7eafb8d0e274acc76454a3e4309",
+    "tests/test_compile_cuda_reshape.py": "f2a70819924b617ab867762424498186963ddaa4b96cce1cd122ce2c8aff5f9e",
+    "tests/test_compile_cuda_view.py": "444f52728e84ff109ec2059278fc5d2d86919d5de82277a95340cea4d6f05591"
+  },
+  "removed": []
+}

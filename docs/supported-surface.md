@@ -1533,9 +1533,13 @@ share storage and preserve offsets; positive-stride rank-1/2 copies pack on-devi
 with canonical strides and offset zero. Each call creates a distinct wrapper;
 repeated outputs retain identity. Static/dynamic guards and whole-graph metadata
 prevalidation remain live. Literal/local dimensions are frozen and global integers
-have type/value guards. Lists, conversions, symbolic/computed shapes, scalar call
-arguments, higher ranks, CPU/gradient capture, `reshape_as` and top-level
-`torch.reshape` are excluded. See the guide for public binding/error ordering
+have type/value guards. Exactly two-positional-argument native `torch.reshape(x, shape)`
+and genuine imported aliases also accept exact tuple/list constant shapes through
+the same planner. The immutable native owner establishes callable identity; guards
+cover only used fields, preserving unrelated graphs through reshape mutation.
+Method lists, conversions, symbolic/computed shapes, arbitrary shape globals,
+scalar call arguments, higher ranks, CPU/gradient capture, `reshape_as` and
+keyword/variadic top-level reshape are excluded. See the guide for public binding/error ordering
 and the distinction between invalid and deliberately unsupported dimensions.
 
 [Compiled CUDA `Tensor.squeeze()`](compile-cuda-squeeze.md) accepts no-argument

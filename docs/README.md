@@ -25,7 +25,7 @@ artifacts are generated at merge time and are not source documentation.
 - [Architecture map](../ARCHITECTURE.md): Source map for the Rust core, Python bindings, wrappers, and test layout.
 - [Compiled CUDA squeeze](compile-cuda-squeeze.md): Method and one-argument module/imported singleton removal, shared-storage wrappers and H100 validation.
 - [Compiled CUDA view](compile-cuda-view.md): Alias-only constant shapes, strict stride compatibility and H100 validation.
-- [Compiled CUDA reshape](compile-cuda-reshape.md): Constant rank-0/1/2 shapes, native alias-or-pack semantics and H100 validation.
+- [Compiled CUDA reshape](compile-cuda-reshape.md): Method and positional native/imported constant tuple/list shapes, rank-0/1/2 alias-or-pack semantics and H100 validation.
 - [Compiled CUDA transpose views](compile-cuda-t.md): Method and one-argument module/imported `t`, constant-axis method and three-positional-argument module/imported `transpose` capture, packing composition and H100 validation.
 - [Compiled CUDA contiguous](compile-cuda-contiguous.md): Parameterless native view packing, alias semantics and clean-commit H100 validation including review regressions.
 - [Compiled CUDA matmul](compile-cuda-matmul.md): Exact capture scope, runnable example, and separate `torch.compile` timing reproduction.

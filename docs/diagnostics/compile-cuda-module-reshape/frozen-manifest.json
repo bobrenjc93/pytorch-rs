@@ -1,0 +1,62 @@
+{
+  "bootstrap-module-reshape-probe-python.py": {
+    "sha256": "c81e194350f059f175c93891abdb9a480493bc9072e94f45d6db471f95669939",
+    "bytes": 4139
+  },
+  "compiled-cuda-module-reshape-baseline-initial-failure-receipt.json": {
+    "sha256": "52ae0b853fc8f88383de43f9277454e4d6bf002c0fa71051f81512ed9b21380d",
+    "bytes": 1499
+  },
+  "compiled-cuda-module-reshape-baseline-initial-failure.log": {
+    "sha256": "2049a9853d4b9c6c328202be842a3424e16a272bf59eb1546a8059b1699c248f",
+    "bytes": 6426
+  },
+  "compiled-cuda-module-reshape-baseline-v2-probe.json": {
+    "sha256": "ca2922e920cb4cd75034549a4dc841210b6b13bc0c262a007ce439ea76356534",
+    "bytes": 160297
+  },
+  "compiled-cuda-module-reshape-baseline-v2-receipt.json": {
+    "sha256": "38d5e17fb649df05cbe02a529ab07c750f6dd749639f0ddec84a1447d161726c",
+    "bytes": 1815
+  },
+  "compiled-cuda-module-reshape-baseline-v2-spec-verification.json": {
+    "sha256": "a2ab3d891a60c2083dd22765d7b7a785fa2a87fa54d22611f922d20ba8b24345",
+    "bytes": 701
+  },
+  "compiled-cuda-module-reshape-baseline-verified.json": {
+    "sha256": "5d81dbd9ca09aa17862e848fa2bed4ffd50b9dd8e754b4e2ad10965834142628",
+    "bytes": 185191
+  },
+  "compiled-cuda-module-reshape-reference-metadata-diagnostic.log": {
+    "sha256": "20a3fb9a9bda228ed2f5db3a494d0db5f54ca8bfaea1046f14b34b3e1648d71e",
+    "bytes": 1857
+  },
+  "compiled-cuda-module-reshape-reference-metadata-survey.json": {
+    "sha256": "794ce27b74b5ab88bbbd34ca064208d48da57c62f1391770c68cf329fc69b8aa",
+    "bytes": 238019
+  },
+  "merge-1986-verified.json": {
+    "sha256": "33bd863e0cfbad28553da2d4cdc71b801ef9c51b7e315492bf9243b1704ae3e4",
+    "bytes": 3248
+  },
+  "prepare-compiled-cuda-module-reshape-probe.sh": {
+    "sha256": "524ffb67ded92832664a4fc5f663f126782230b6182446a6510cacd2771944c0",
+    "bytes": 2689
+  },
+  "probe-compiled-cuda-module-reshape-v2.py": {
+    "sha256": "058e9ae774afbb977a14246e4370043fee28eda93dfd6540f48a29ff25946c7c",
+    "bytes": 14169
+  },
+  "probe-compiled-cuda-module-reshape.py": {
+    "sha256": "70fc9e24cdc6d9bfc1d829fa6e965ad767ec5ccd42225dc14352637e86e34ee0",
+    "bytes": 10552
+  },
+  "run-compiled-cuda-module-reshape-baseline-v2.sh": {
+    "sha256": "77335bbe0c1c30cf49a24ca61ffe1e8d58b22937cbafbb78671438b24023e214",
+    "bytes": 3114
+  },
+  "survey-module-reshape-reference-metadata.py": {
+    "sha256": "0e41f08ad1dd5a4e118e8ad07ebc53806dd980092ae753d99dba13427650ed62",
+    "bytes": 4131
+  }
+}

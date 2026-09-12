@@ -1,0 +1,9 @@
+{
+  "changed": {
+    "python/torch_rs/_compile_bytecode.py": "06a8f2b8831609f6338e2054fcc275bdcbd6aa8f113598be578252c960eb9cfd",
+    "tests/test_compile_cuda_module_reshape.py": "1dbacd7d522c53a4a67e71f34ad914447b8b63057c903697743b3c8ee7db7e1e",
+    "tests/test_compile_cuda_reshape.py": "f2a70819924b617ab867762424498186963ddaa4b96cce1cd122ce2c8aff5f9e",
+    "tests/test_compile_cuda_view.py": "444f52728e84ff109ec2059278fc5d2d86919d5de82277a95340cea4d6f05591"
+  },
+  "removed": []
+}

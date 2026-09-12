@@ -624,7 +624,7 @@ class CompileCudaViewTests(unittest.TestCase):
         for text in ('def program(x, n):\n    return x.view(n)\n',
                      'def program(x):\n    return x.view_as(x)\n',
                      'def program(x):\n    return x.reshape_as(x)\n',
-                     'def program(x):\n    return m.reshape(x, (1,))\n'):
+                     'def program(x):\n    return m.reshape(x, shape=(1,))\n'):
             fn = make_program(text, module=native)
             with self.assertRaises(TypeError if 'x, n' in text else NotImplementedError):
                 compile_with_cache(fn)[0](*((x, 1) if 'x, n' in text else (x,)))
