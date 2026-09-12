@@ -1583,7 +1583,7 @@ def execute_compile_trace_graph(graph, *inputs):
             metadata_values=metadata_values, metadata_only=True,
         )
     if cuda_graph and (len(graph.operations) > 1 or any(
-        op.target in ("contiguous", "t", "squeeze", "transpose", "reshape", "view", "relu")
+        op.target in ("contiguous", "t", "squeeze", "transpose", "reshape", "view", "relu", "sum")
         for op in graph.operations
     )):
         indices = {name: index for index, name in enumerate(metadata_values)}

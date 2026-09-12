@@ -16,18 +16,18 @@ import torch_rs as torch
 
 
 def row_sums(x):
-    return x.sum(dim=-1, keepdim=True)
+    return torch.sum(x, -1)
 
 
 compiled = torch.compile(row_sums, backend="eager", fullgraph=True, dynamic=False)
 x = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]).to("cuda:0")
 y = compiled(x)
-assert tuple(y.shape) == (2, 1)
-assert y.cpu().tolist() == [[6.0], [15.0]]
+assert tuple(y.shape) == (2,)
+assert y.cpu().tolist() == [6.0, 15.0]
 
 # The same compiled wrapper executes new values, not cached outputs.
 changed = torch.tensor([[3.0, 2.0, 1.0], [-4.0, -5.0, -6.0]]).to("cuda:0")
-assert compiled(changed).cpu().tolist() == [[6.0], [-15.0]]
+assert compiled(changed).cpu().tolist() == [6.0, -15.0]
 ```
 
 ## Supported boundary
@@ -37,6 +37,16 @@ The method forms `x.sum(1)`, `x.sum(1, True)`, `x.sum(1, keepdim=True)` and
 constant integer `1` or `-1`; `keepdim` must be an exact constant boolean and
 defaults to `False`. Constant locals and guarded module globals follow the
 existing compiler rules. Keyword lowering is supported on Python 3.10–3.14.
+
+Top-level `torch_rs.sum(x, 1)` / `torch_rs.sum(x, -1)` and imported genuine
+aliases accept exactly two positional arguments, with `keepdim=False`.
+They share the method reduction planner and executor. Recognition uses the
+immutable native function owner retained during package initialization; it does
+not trust names or writable exports. Only used module fields are guarded:
+changing or deleting an unrelated `sum` leaves existing graphs and their
+recompile budget intact. Retained genuine aliases survive export replacement;
+changed used bindings are checked on cold calls and cache hits without invoking
+replacement callables. Restored bindings can reuse the original specialization.
 
 Inputs must be exact native CUDA tensors, contiguous float32, rank two and
 without gradients. Contiguous offset views and singleton layouts are accepted.
@@ -52,9 +62,11 @@ and shape/stride specialization rules.
 
 Full reductions, dim `0`/`-2`, dimension sequences, other ranks, noncontiguous
 inputs, other dtypes and autograd remain unsupported in this capture path.
-So do `dtype`, `out`, argument unpacking, top-level `torch.sum`, nonconstant
-options and invalid option types. CPU compilation is unchanged; no eager
-fallback is provided for rejected CUDA graphs.
+So do `dtype`, `out`, argument unpacking, nonconstant options and invalid option
+types. Top-level keywords and a third positional `keepdim` argument remain
+unsupported; existing Tensor method keyword and keepdim forms are unchanged.
+CPU compilation is unchanged; no eager fallback is provided for rejected CUDA
+graphs.
 
 ## Validation and performance evidence
 
@@ -66,8 +78,14 @@ checks. Reproduce the focused checks with:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest -v \
-  tests.test_compile_sum_lowering tests.test_compile_cuda_sum_rows
+  tests.test_compile_sum_lowering tests.test_compile_cuda_sum_rows \
+  tests.test_compile_cuda_module_sum
 ```
+
+The [top-level development evidence](diagnostics/compile-cuda-module-sum/README.md)
+retains the unchanged 144-cell pre-edit probe and subsequent source-bound checks.
+Dyadic inputs establish bounded correctness, not general exact summation or a
+speed improvement. The existing special-value and precision policy is unchanged.
 
 The unchanged hardware evaluator still observes the old unary entry point,
 so compiled row sums receive zero credit despite working natively. The

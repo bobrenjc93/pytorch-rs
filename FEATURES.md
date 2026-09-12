@@ -224,6 +224,12 @@ changing the configured default backend. Unsupported compiler programs and
 `__torch_function__` modes, forwarding to installed PyTorch, graph-break eager
 fallback, callable backend invocation, or unguarded graph caching.
 
+The bounded CUDA compiler also accepts genuine top-level `torch_rs.sum(x, 1)`
+and `torch_rs.sum(x, -1)` or imported aliases with exactly two positional
+arguments. Inputs remain contiguous rank-two CUDA float32 without gradients;
+top-level keywords and explicit keepdim are unsupported. Existing method-sum
+forms are unchanged. See the [compiled row-sum contract](docs/compile-cuda-sum-rows.md).
+
 The generic eager compiler also captures unmarked one- and two-input native
 CUDA float32 negation/ReLU/addition graphs with equal addition operand shapes or
 exactly `(M,N)` and `(N,)` in either order, using contiguous layouts,

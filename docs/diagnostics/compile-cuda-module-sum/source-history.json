@@ -1,0 +1,40 @@
+{
+  "base_commit": "a8ea1225406d3aaa0412d74091ecd8aef97ea1a7",
+  "base_manifest_sha256": "20b83eeb6f9b4faa25239a94c6d03d345278e7fdb3a7022072bffe11095fa65b",
+  "snapshots": {
+    "26ccd09272e2dc6e68aa4c46742894a00b0167199970a9dede37cd858bc9fe52": {
+      "changed_or_added": {
+        "python/torch_rs/_compile_bytecode.py": "505483005699d97d9fa9827ac609a54aa03dd6579192cba6ebc5efbf213d4d54",
+        "python/torch_rs/_compile_trace.py": "d02b872a6c090aa2959478e46f2f4f234dc739141fff7cb7cfd086c583f70a34",
+        "tests/test_compile_cuda_module_sum.py": "042867c626ee8bd49f4b2faff6373ea9002d9a148682b9d3ddf5e93223b6ed7c"
+      },
+      "deleted": []
+    },
+    "20b83eeb6f9b4faa25239a94c6d03d345278e7fdb3a7022072bffe11095fa65b": {
+      "changed_or_added": {},
+      "deleted": []
+    },
+    "e4c441e130f59f963afdd7fcfcc306a2a3c8ac65fa1446db7d06c5dfbed6a336": {
+      "changed_or_added": {
+        "python/torch_rs/_compile_bytecode.py": "505483005699d97d9fa9827ac609a54aa03dd6579192cba6ebc5efbf213d4d54",
+        "python/torch_rs/_compile_trace.py": "d02b872a6c090aa2959478e46f2f4f234dc739141fff7cb7cfd086c583f70a34",
+        "tests/test_compile_cuda_module_sum.py": "bea11993ef49b160999aea67a29f36e6827d238d93496fd157261b3a6c6abe56"
+      },
+      "deleted": []
+    },
+    "002e99b20bce5be10c27c9c5faa90e6077b51fd8345f5615f61bd0602fba8532": {
+      "changed_or_added": {
+        "python/torch_rs/_compile_bytecode.py": "505483005699d97d9fa9827ac609a54aa03dd6579192cba6ebc5efbf213d4d54",
+        "tests/test_compile_cuda_module_sum.py": "f18b666c18f95aa8b617e6ef1df9f0a199a6cc3f220a675d64553edcd1e6e66c"
+      },
+      "deleted": []
+    },
+    "a5ea6c434c3a0b4b157eab0354594ca4c870713e4ce5f41fd7d4d2358d08d376": {
+      "changed_or_added": {
+        "python/torch_rs/_compile_bytecode.py": "505483005699d97d9fa9827ac609a54aa03dd6579192cba6ebc5efbf213d4d54",
+        "tests/test_compile_cuda_module_sum.py": "aaf2138b21aabd845e64b67ed4307448984f634b8ac580d5801369675a2532d1"
+      },
+      "deleted": []
+    }
+  }
+}
