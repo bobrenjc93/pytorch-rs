@@ -10,6 +10,7 @@ artifacts are generated at merge time and are not source documentation.
 - [Feature coverage contract](../FEATURES.md): Weighted feature areas and what counts toward coverage.
 - [Benchmark policy](../BENCHMARKING.md): Correctness gates, measurement rules, provenance, and anti-gaming policy.
 - [Default compiler evaluations](torch-compile-default-evaluator.md): Versioned public-default Inductor coverage and real-CUDA performance gates; legacy scores are non-comparable.
+- [Native default CUDA compiler](compile-pointwise-jit.md): Fused pointwise compilation through ordinary `torch_rs.compile(fn)`, a runnable example, supported boundaries, and current H100 evidence.
 - [Hardware heterogeneity evaluator](hardware-heterogeneity-evaluator.md): Fixed accelerator-family and feature-depth matrix, evidence rules, and real-hardware scoring policy.
 - [Generated creation validator](../scripts/validate_creation_factory_benchmark.py): Held-out seeded shape path for creation-factory benchmark review.
 
@@ -18,6 +19,10 @@ artifacts are generated at merge time and are not source documentation.
 - [First-success example](../examples/first_success.py): Runnable version of the README first-success assertions.
 
 ## Contributor Guides
+
+The default fused compiler is described above. The older compiled-operation
+guides below describe bounded `backend="eager"` capture, not general default
+Inductor support.
 
 - [Contributing guide](../CONTRIBUTING.md): Locked setup, environment expectations, test selection, draft workflow, and documentation ownership.
 - [Setup troubleshooting](troubleshooting.md): Short fixes for common environment, import, reference dependency, and stale wheel failures.

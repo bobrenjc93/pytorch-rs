@@ -35,8 +35,10 @@ The review fixes leave the earlier candidate's weighted scores unchanged.
 - The [receipt](postcommit-dbd1a0/postcommit.json) records commands, environment,
   setup timestamps, cache state, source/build/wheel identities and verification.
   [Logs](postcommit-dbd1a0/postcommit-logs.json.gz) retain both gate/build outputs,
-  all ten workers, the focused checks, and the verification scripts. Raw output
-  observations and wheels remain at verified worktree-local paths in the reports.
+  all ten workers, the focused checks, and the verification scripts. Original
+  raw-observation and wheel paths are recorded with hashes, but those temporary
+  artifacts may be removed by worktree cleanup. The reports and compressed logs
+  checked into this directory are the durable evidence.
   All 123 baseline source hashes were verified against its commit; all 129
   candidate source hashes, wheel/native/interpreter identities, worker logs and
   raw-observation hashes were verified locally. Evaluator/corpus hashes, category
@@ -61,6 +63,10 @@ admission, generated expression trees, guards, cache/reset,
 concurrency, lifetimes and no-body/no-eager/no-PyTorch execution checks. The
 checkout remained clean throughout both gates and these checks.
 
+[Review-fix validation](review-round3.md) records the supporting Rust, backend,
+documentation, and separate two-device checks at the same implementation-source
+identity. Its development runs remain distinct from the clean measurements.
+
 The native JIT selected NVRTC **13.0**, CUDA runtime **13000**, `compute_90`,
 explicit FMA and gradual underflow, without fast math. Independently queried
 `nvcc` **12.6** was not used for JIT generation. The GPU was H100 index 0,
@@ -69,56 +75,14 @@ explicit FMA and gradual underflow, without fast math. Independently queried
 The reports retain actual library paths, hashes and before/after GPU snapshots;
 snapshots do not establish a scheduler reservation.
 
-## Preserved earlier evidence
+## Baseline and history
 
-All earlier measured artifacts remain byte-for-byte unchanged:
-
-- [Campaign baseline](baseline.json.gz): clean `76738b39`, zero coverage and
-  performance, null common-success ratio. It is the comparison baseline for
-  this candidate; unchanged historical workloads were not rerun.
-- [Earlier coverage](candidate-coverage.json.gz),
-  [earlier CUDA performance](candidate-cuda-perf.json.gz),
-  [receipt](postcommit.json), [logs](postcommit-logs.json.gz), and root-level
-  [codegen provenance](provenance.json), [source](kernel.cu),
-  [PTX](kernel.ptx.gz), [manifest](source-manifest.json.gz): clean `5b93c983`,
-  before review fixes. They do not measure the current candidate.
-- [Original development diagnostic](candidate-diagnostic.json.gz): explicitly
-  unscored dirty-source evidence, including original observations.
-- [First-review coverage](postcommit-60abd/candidate-coverage.json.gz),
-  [CUDA performance](postcommit-60abd/candidate-cuda-perf.json.gz),
-  [receipt](postcommit-60abd/postcommit.json),
-  [logs](postcommit-60abd/postcommit-logs.json.gz) and
-  [codegen provenance](postcommit-60abd/provenance.json): clean `60abd863`,
-  before the second numerical review fixes. These reports also record 6%/12%;
-  their timings do not measure the current revision.
-- [First-review validation](review-fixes.md) and [bundle](review-fixes.json.gz):
-  development regressions and original failures before the second review fixes.
-  Its exhaustive selection covered 69 compiler files and 805 cases.
-- [Second-review coverage](postcommit-53c100/candidate-coverage.json.gz),
-  [CUDA performance](postcommit-53c100/candidate-cuda-perf.json.gz),
-  [receipt](postcommit-53c100/postcommit.json),
-  [logs](postcommit-53c100/postcommit-logs.json.gz) and
-  [codegen provenance](postcommit-53c100/provenance.json): clean `53c10058`,
-  before the third review fixes. Those 6%/12% measurements remain pinned to
-  their original code and build identities.
-- [Second-review validation](review-round2.md) and [bundle](review-round2.json.gz):
-  original 24 failing subcases, before/after numerical probes and checks at
-  their original source identity, before the third review fixes.
-- [Third-review validation](review-round3.md) and [bundle](review-round3.json.gz):
-  original 30 failing subcases, intermediate failures, numerical probes and
-  final checks. All 124 implementation-source hashes and six regression-module
-  hashes match this committed revision. It records 406 default / 433 bindings
-  Rust tests, 96 backend/entrypoint checks, Clippy, documentation and separate
-  two-device checks. This remains unscored development evidence. Unrelated full
-  suites were not repeated during this evidence refresh.
-- Original author [inventory](validation.json), [logs](logs.json.gz) and
-  [IEEE probes](initial-ieee-probes.json.gz) retain the initial validation,
-  failures and subsequent repairs at their original source identities.
-
-Historical paths identify the original captures and may no longer contain the
-original installed build. Current-candidate credit uses only the fresh
-`postcommit-dbd1a0` reports. No failed measurement was overwritten or promoted
-as a score. This evidence step does not approve the branch or replace review.
+The [campaign baseline](baseline.json.gz) measures clean `76738b39`: zero
+coverage and performance, with a null common-success ratio. The
+[evidence archive](archive.md) catalogs earlier implementations, review repairs,
+and original failures. All captured artifacts retain their original bytes,
+paths, and measured identities; none was relabeled as a current result.
+These reports do not replace independent review or the merge gate.
 
 ## Reproduce
 
@@ -135,7 +99,7 @@ export PYTHONDONTWRITEBYTECODE=1
 export TMPDIR="$PWD/target/tmp"
 export XDG_CACHE_HOME="$PWD/target/xdg-cache"
 export CUDA_CACHE_PATH="$PWD/target/default-compile-eval/cuda-cache"
-export CUDA_CACHE_DISABLE=1 UV_SYSTEM_CERTS=true HTTPS_PROXY=http://fwdproxy:8080
+export CUDA_CACHE_DISABLE=1 UV_SYSTEM_CERTS=true
 CUDA_VISIBLE_DEVICES=0 bash scripts/evaluate_torch_compile_default.sh \
   --metric coverage --output target/postcommit-dbd1a0/coverage.json
 CUDA_VISIBLE_DEVICES=0 bash scripts/evaluate_torch_compile_default.sh \
@@ -148,6 +112,11 @@ codegen and six-module unittest commands using
 `target/default-compile-eval/venv/bin/python`, with dedicated local
 Inductor/Triton test caches. The unchanged
 [gate documentation](../../torch-compile-default-evaluator.md) defines scoring.
+
+A proxy is not a project prerequisite. If your network requires one, set
+`HTTPS_PROXY` to your own approved proxy before running these commands. The
+receipts preserve the capture machine's proxy setting for provenance; do not
+copy that machine-specific address into another environment.
 
 Driver disk-code caching was disabled symmetrically for both implementations
 in these candidate gates; the historical baseline did not set that flag.
