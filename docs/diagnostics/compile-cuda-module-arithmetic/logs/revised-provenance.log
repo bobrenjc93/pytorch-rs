@@ -1,0 +1,31 @@
+{
+  "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+  "measured_code_commit": null,
+  "source_kind": "immutable current-source export; uncommitted overlay, not exact HEAD",
+  "source_manifest_sha256": "1b1cc327f34ad88d70ff153071f9adebf8c6f82f9d89c38ec642b69d15ed276e",
+  "native_extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+  "native_sha256": "14772b0ffa66622f8634e4a32256e998b2655be17a06c286bc7d7d50c0568ca9",
+  "wheel_sha256": "963a0cf5c48a24feb0c38c1c825246f125e33409631b979771d8744156dfdb0f",
+  "all_installed_python_and_native_match_wheel_and_source": true,
+  "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/bin/python",
+  "interpreter_sha256": "f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526",
+  "torch_version": "2.13.0+cu130",
+  "torch_cuda": "13.0",
+  "runtimes": [
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+      "version": 13000,
+      "sha256": "96c42e418cec19054186b9429c321603cc190bf26a18104e19408117a2a817b0"
+    }
+  ],
+  "compiler": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+  "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)",
+  "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0\n",
+  "nvcc_used": false,
+  "native_cuda_compilation": "driver JIT of unchanged embedded PTX",
+  "gpu": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 3 %, 765 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+  "baseline_script_sha256": "67359b3f2589c6db733068196f5add9be339b09228bf6e077731f87bc7ff9ac8",
+  "git_diff_sha256": "17a23818c547e1b22f9cc376bbdc02533f606e2315c8e01103ee480d8d65455e",
+  "frozen_corpora_and_evaluators_unchanged": true
+}

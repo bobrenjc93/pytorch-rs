@@ -1,0 +1,1560 @@
+{
+  "baseline": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "/tmp/pytorch-rs-compiler-recovery.3UB6mU/probe-compiled-cuda-module-arithmetic.py",
+      "64dd296ee65bff37d5d2868506de2e61aa5effb5"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 16.88797688484192,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 2 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-220b6628f3e51dda303e0d1ee6f292cf508cabc85f5c0c332bd9f11a073ea5bb.json",
+    "input_manifest_sha256": "220b6628f3e51dda303e0d1ee6f292cf508cabc85f5c0c332bd9f11a073ea5bb",
+    "log_sha256": "cf3730dab23e78069cb840cb3e113cedb75fd6419e5b645ee7bf3094ce585432",
+    "measured_code_commit": null,
+    "published_log": "logs/baseline.log.gz",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "candidate-build": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/maturin",
+      "build",
+      "--release",
+      "--locked",
+      "--out",
+      "target/wheels"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 46.73057174682617,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-cbb29605039a91be14ddd61d12f2ea7e0790ed31bacef59aea393f6f2efbb71c.json",
+    "input_manifest_sha256": "cbb29605039a91be14ddd61d12f2ea7e0790ed31bacef59aea393f6f2efbb71c",
+    "log_sha256": "bc72bfd0b41a35bc72331d58d27717c78a18cf72125fa2e89a11369b9361c280",
+    "measured_code_commit": null,
+    "published_log": "logs/candidate-build.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "clippy": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      "cargo",
+      "clippy",
+      "--locked",
+      "--all-targets",
+      "--features",
+      "python-bindings",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 9.8694486618042,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-ebe7999300495dc8a697d8f604da19c4a1cd9bfd1481563b95d93ed9d050f9a6.json",
+    "input_manifest_sha256": "ebe7999300495dc8a697d8f604da19c4a1cd9bfd1481563b95d93ed9d050f9a6",
+    "log_sha256": "b6c0b7e4193594cf0234bc483a526583cc26b8de6154b1129ea1a723c88caef9",
+    "measured_code_commit": null,
+    "published_log": "logs/clippy.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "clippy-default": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      "cargo",
+      "clippy",
+      "--locked",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 2.8499462604522705,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 929 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 673 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-8f74428f293abf21d6a65337020d48da0198f1808b18e6cb173f2d37a54664fd.json",
+    "input_manifest_sha256": "8f74428f293abf21d6a65337020d48da0198f1808b18e6cb173f2d37a54664fd",
+    "log_sha256": "88269c0e24137af2870d7a14e3692b3ee7cbbd29b478b1911b4e31cc78f295d1",
+    "measured_code_commit": null,
+    "published_log": "logs/clippy-default.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "compiler-final": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "target/compiler_sweep.py"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 442.7054626941681,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 4 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f.json",
+    "input_manifest_sha256": "4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f",
+    "log_sha256": "842ba0eafa701ef0e8aae9680081d9cd8e2e3c34ab65f430eefd4673dd0ec2ba",
+    "measured_code_commit": null,
+    "published_log": "logs/compiler-final.log.gz",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "compiler-final-source": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "target/compiler_sweep.py"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 423.03091311454773,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-d963419336edba25f7304c5cae6ce40b384df02fcde0788d6758ee092071b81a.json",
+    "input_manifest_sha256": "d963419336edba25f7304c5cae6ce40b384df02fcde0788d6758ee092071b81a",
+    "log_sha256": "b042f6b43dfc0ea08cea6c1071c24ad856b25dc8a7e22bdbf1dcbc7409c39f49",
+    "measured_code_commit": null,
+    "published_log": "logs/compiler-final-source.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "complete-compiler": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "target/compiler_sweep.py"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 0.04695010185241699,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 1,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-87b1b0cfa2301a3db3734bfbf5dd38b4250cdfb67997e8dd9537f8bba49ab389.json",
+    "input_manifest_sha256": "87b1b0cfa2301a3db3734bfbf5dd38b4250cdfb67997e8dd9537f8bba49ab389",
+    "log_sha256": "84a0fded9809d9a77e5f3721a0a10c4fd9dc99fb591a67b5697567fd5a603637",
+    "measured_code_commit": null,
+    "published_log": "logs/complete-compiler.log.gz",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "complete-compiler-revised": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "target/compiler_sweep.py"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 71.24868392944336,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": -2,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 2 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-87b1b0cfa2301a3db3734bfbf5dd38b4250cdfb67997e8dd9537f8bba49ab389.json",
+    "input_manifest_sha256": "87b1b0cfa2301a3db3734bfbf5dd38b4250cdfb67997e8dd9537f8bba49ab389",
+    "log_sha256": "a8a90bf0785758e4ca623d87fa21eab217955f1cb1e2deb0b9aa188acf8236bd",
+    "measured_code_commit": null,
+    "published_log": "logs/complete-compiler-revised.log.gz",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "cpu-final": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_compile_cuda_module_arithmetic",
+      "tests.test_top_level_compile",
+      "tests.test_tensor_add",
+      "tests.test_tensor_add_reference",
+      "tests.test_top_level_add",
+      "tests.test_top_level_add_reference",
+      "tests.test_neg_reference",
+      "tests.test_top_level_neg",
+      "tests.test_top_level_neg_reference",
+      "tests.test_top_level_negative",
+      "tests.test_top_level_negative_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 3.638099193572998,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f.json",
+    "input_manifest_sha256": "4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f",
+    "log_sha256": "973fcf8980a71577e638ef9669a291db4ab10621d1066631ba8bc1e05e82b6eb",
+    "measured_code_commit": null,
+    "published_log": "logs/cpu-final.log.gz",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "cuda-final": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_compile_cuda_module_arithmetic",
+      "tests.test_cuda_add",
+      "tests.test_cuda_neg"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 37.59615969657898,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 3 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f.json",
+    "input_manifest_sha256": "4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f",
+    "log_sha256": "f2718a89944e0933d52e2a5acb314049c29c0b627da7cf2ffec9a0ac4733d6d9",
+    "measured_code_commit": null,
+    "published_log": "logs/cuda-final.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "docs-final": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_readme_quickstart"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 0.1970505714416504,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f.json",
+    "input_manifest_sha256": "4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f",
+    "log_sha256": "163b62cbcbf7d00cdcfaee21b2d04e327369529fce124a8295586147ef274fc9",
+    "measured_code_commit": null,
+    "published_log": "logs/docs-final.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "docs-smoke": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_readme_quickstart"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 0.1344895362854004,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 1,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f.json",
+    "input_manifest_sha256": "4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f",
+    "log_sha256": "27ce02dc6e022caabc3b966dcc7a1d38b34fd8d9e674b4e3ca4f54ba3be757a1",
+    "measured_code_commit": null,
+    "published_log": "logs/docs-smoke.log.gz",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "final-build": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      "python3",
+      "scripts/build_cuda_add_diagnostic.py",
+      "--name",
+      "module-final"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 49.59672784805298,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-8f74428f293abf21d6a65337020d48da0198f1808b18e6cb173f2d37a54664fd.json",
+    "input_manifest_sha256": "8f74428f293abf21d6a65337020d48da0198f1808b18e6cb173f2d37a54664fd",
+    "log_sha256": "90c8343d44399b7bd0ce0fd1070bcb97a9ccebfdcb0ed4852f98b204323ca6c5",
+    "measured_code_commit": null,
+    "published_log": "logs/final-build.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "final-clippy": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      "cargo",
+      "clippy",
+      "--locked",
+      "--all-targets",
+      "--features",
+      "python-bindings",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 0.06642699241638184,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 1277 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 1277 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f.json",
+    "input_manifest_sha256": "4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f",
+    "log_sha256": "a13905646e2aed93ec6ea9ed6ac91490a4e01f91af0215c3965279a910612149",
+    "measured_code_commit": null,
+    "published_log": "logs/final-clippy.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "final-focused": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_compile_cuda_module_arithmetic",
+      "tests.test_cuda_add",
+      "tests.test_cuda_neg"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 37.5251350402832,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 1,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-8f74428f293abf21d6a65337020d48da0198f1808b18e6cb173f2d37a54664fd.json",
+    "input_manifest_sha256": "8f74428f293abf21d6a65337020d48da0198f1808b18e6cb173f2d37a54664fd",
+    "log_sha256": "b343f5869638e688734a40e3f93c29b6dc690a754f0de2ad2a12ee6a40db0e84",
+    "measured_code_commit": null,
+    "published_log": "logs/final-focused.log.gz",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "final-format": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      "cargo",
+      "fmt",
+      "--check"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 0.6163687705993652,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 1277 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 1277 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f.json",
+    "input_manifest_sha256": "4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "measured_code_commit": null,
+    "published_log": "logs/final-format.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "final-provenance": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "target/provenance.py"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 3.2904539108276367,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 2 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-8f74428f293abf21d6a65337020d48da0198f1808b18e6cb173f2d37a54664fd.json",
+    "input_manifest_sha256": "8f74428f293abf21d6a65337020d48da0198f1808b18e6cb173f2d37a54664fd",
+    "log_sha256": "76fd9154c5764d75e131fa13d01e675b98f21fab0f8bbd90b671726a35fc6baf",
+    "measured_code_commit": null,
+    "published_log": "logs/final-provenance.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "final-revised-build": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      "python3",
+      "scripts/build_cuda_add_diagnostic.py",
+      "--name",
+      "module-final-revised"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 50.542354583740234,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-87b1b0cfa2301a3db3734bfbf5dd38b4250cdfb67997e8dd9537f8bba49ab389.json",
+    "input_manifest_sha256": "87b1b0cfa2301a3db3734bfbf5dd38b4250cdfb67997e8dd9537f8bba49ab389",
+    "log_sha256": "c59a4924009c9c660fb1844a8f24136863bfc5f65b12b958abc9bed18fbf896b",
+    "measured_code_commit": null,
+    "published_log": "logs/final-revised-build.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "final-rust-graph": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--features",
+      "python-bindings",
+      "--lib",
+      "cuda_graph"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 0.5857312679290771,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 2 %, 673 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 673 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-8f74428f293abf21d6a65337020d48da0198f1808b18e6cb173f2d37a54664fd.json",
+    "input_manifest_sha256": "8f74428f293abf21d6a65337020d48da0198f1808b18e6cb173f2d37a54664fd",
+    "log_sha256": "d9d42162f83d1799ac78b744330abb9a761b630c1370981628049baa26c3ce93",
+    "measured_code_commit": null,
+    "published_log": "logs/final-rust-graph.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "focused-first": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_compile_cuda_module_arithmetic",
+      "tests.test_compile_static_analysis",
+      "tests.test_compile_cuda_trailing_vector"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 46.456501483917236,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 1,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 2 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-7212b9f398c2a6d5cfabe6aa7d88b568bad145b68eaf0259f3efcf4762b38047.json",
+    "input_manifest_sha256": "7212b9f398c2a6d5cfabe6aa7d88b568bad145b68eaf0259f3efcf4762b38047",
+    "log_sha256": "8b9020111d4cff267075b6bf6ec8cfc22b225891fe07018f1988c2c2ac7376bc",
+    "measured_code_commit": null,
+    "published_log": "logs/focused-first.log.gz",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "focused-second": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_compile_cuda_module_arithmetic",
+      "tests.test_compile_static_analysis",
+      "tests.test_compile_cuda_trailing_vector"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 50.478515625,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 2 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-ebe7999300495dc8a697d8f604da19c4a1cd9bfd1481563b95d93ed9d050f9a6.json",
+    "input_manifest_sha256": "ebe7999300495dc8a697d8f604da19c4a1cd9bfd1481563b95d93ed9d050f9a6",
+    "log_sha256": "7e5eac7ac3d1db44880541ef719fe47620b237ea341076c52f0bbb3eb6df4630",
+    "measured_code_commit": null,
+    "published_log": "logs/focused-second.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "formatting": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      "cargo",
+      "fmt",
+      "--check"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 0.5808846950531006,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-ebe7999300495dc8a697d8f604da19c4a1cd9bfd1481563b95d93ed9d050f9a6.json",
+    "input_manifest_sha256": "ebe7999300495dc8a697d8f604da19c4a1cd9bfd1481563b95d93ed9d050f9a6",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "measured_code_commit": null,
+    "published_log": "logs/formatting.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "guarded-final-build": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      "python3",
+      "scripts/build_cuda_add_diagnostic.py",
+      "--name",
+      "module-final-guarded"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 51.58571791648865,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f.json",
+    "input_manifest_sha256": "4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f",
+    "log_sha256": "5c917c6ab5ea45edfedd6ac086ece0543e9fff58ca3e185f4184a48e4175e4c4",
+    "measured_code_commit": null,
+    "published_log": "logs/guarded-final-build.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "guarded-provenance": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "target/provenance.py"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 3.375702142715454,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 2 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f.json",
+    "input_manifest_sha256": "4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f",
+    "log_sha256": "decc57fd984a78f0f7075dd5497a7073398008e781a75a002f55adc84f5eb1c6",
+    "measured_code_commit": null,
+    "published_log": "logs/guarded-provenance.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "guide-example": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "-c",
+      "from pathlib import Path; text = Path(\"docs/compile-cuda-add.md\").read_text(); exec(text.split(\"```python\\n\", 1)[1].split(\"```\", 1)[0]); print(\"Compiled CUDA guide example passed\")"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 0.623732328414917,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 2 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-d963419336edba25f7304c5cae6ce40b384df02fcde0788d6758ee092071b81a.json",
+    "input_manifest_sha256": "d963419336edba25f7304c5cae6ce40b384df02fcde0788d6758ee092071b81a",
+    "log_sha256": "dd7c5b109119b1a1f2fe60e948401f807ceaea4f13b570543a835d550a21a9db",
+    "measured_code_commit": null,
+    "published_log": "logs/guide-example.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "inductor-inputs": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "target/inductor_inputs.py"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 0.18085408210754395,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f.json",
+    "input_manifest_sha256": "4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f",
+    "log_sha256": "d3c3f5df26a38b251378c05cf35a91ffd00de538d394425959288a453af01068",
+    "measured_code_commit": null,
+    "published_log": "logs/inductor-inputs.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "inductor-inputs-final": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "target/inductor_inputs.py"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 0.1800084114074707,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 1279 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 1279 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-d963419336edba25f7304c5cae6ce40b384df02fcde0788d6758ee092071b81a.json",
+    "input_manifest_sha256": "d963419336edba25f7304c5cae6ce40b384df02fcde0788d6758ee092071b81a",
+    "log_sha256": "b0a2afcdcd9a43b82b0ffb1e162ad7ba262d2baaefdf00bf301a37a852f2a8e5",
+    "measured_code_commit": null,
+    "published_log": "logs/inductor-inputs-final.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "native-extension": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      ".github/scripts/verify_native_extension.py"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 0.1142113208770752,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-87b1b0cfa2301a3db3734bfbf5dd38b4250cdfb67997e8dd9537f8bba49ab389.json",
+    "input_manifest_sha256": "87b1b0cfa2301a3db3734bfbf5dd38b4250cdfb67997e8dd9537f8bba49ab389",
+    "log_sha256": "e0f16e8a321f9ca319ab6e6c5e04cbd0d335708e68aee70876112537b0f4aa7b",
+    "measured_code_commit": null,
+    "published_log": "logs/native-extension.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "native-extension-final": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      ".github/scripts/verify_native_extension.py"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 0.11706328392028809,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f.json",
+    "input_manifest_sha256": "4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f",
+    "log_sha256": "e0f16e8a321f9ca319ab6e6c5e04cbd0d335708e68aee70876112537b0f4aa7b",
+    "measured_code_commit": null,
+    "published_log": "logs/native-extension-final.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "owner-guard-audit": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "target/owner_guard_audit.py"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 0.15672564506530762,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 1,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 639 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 639 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-87b1b0cfa2301a3db3734bfbf5dd38b4250cdfb67997e8dd9537f8bba49ab389.json",
+    "input_manifest_sha256": "87b1b0cfa2301a3db3734bfbf5dd38b4250cdfb67997e8dd9537f8bba49ab389",
+    "log_sha256": "b6c549bf1d09b08030cd70c20b4ec1f9d66aa6b93f9c65b2c30a3072a192ef07",
+    "measured_code_commit": null,
+    "published_log": "logs/owner-guard-audit.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "owner-guard-final": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "target/owner_guard_audit.py"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 0.14209342002868652,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f.json",
+    "input_manifest_sha256": "4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f",
+    "log_sha256": "ee71d3937aae7dab918b3c6eb44f9d175aca9c1d2c6575d93a819e2d65f808a9",
+    "measured_code_commit": null,
+    "published_log": "logs/owner-guard-final.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "portable-cpu": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_compile_cuda_module_arithmetic",
+      "tests.test_top_level_compile",
+      "tests.test_neg_reference",
+      "tests.test_top_level_neg",
+      "tests.test_top_level_neg_reference",
+      "tests.test_top_level_negative",
+      "tests.test_top_level_negative_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 3.2045679092407227,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 1,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-8f74428f293abf21d6a65337020d48da0198f1808b18e6cb173f2d37a54664fd.json",
+    "input_manifest_sha256": "8f74428f293abf21d6a65337020d48da0198f1808b18e6cb173f2d37a54664fd",
+    "log_sha256": "5fc2b72ac852405a4ab36aafd543f447077460ce07a21f2425bc5cccf33450f6",
+    "measured_code_commit": null,
+    "published_log": "logs/portable-cpu.log.gz",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "portable-cpu-revised": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_compile_cuda_module_arithmetic",
+      "tests.test_top_level_compile",
+      "tests.test_tensor_add",
+      "tests.test_tensor_add_reference",
+      "tests.test_top_level_add",
+      "tests.test_top_level_add_reference",
+      "tests.test_neg_reference",
+      "tests.test_top_level_neg",
+      "tests.test_top_level_neg_reference",
+      "tests.test_top_level_negative",
+      "tests.test_top_level_negative_reference"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 3.452968120574951,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-87b1b0cfa2301a3db3734bfbf5dd38b4250cdfb67997e8dd9537f8bba49ab389.json",
+    "input_manifest_sha256": "87b1b0cfa2301a3db3734bfbf5dd38b4250cdfb67997e8dd9537f8bba49ab389",
+    "log_sha256": "2f4f7102ee18752283acc1c9cf45d1d76bbb40adba61c673e452649b56ebc470",
+    "measured_code_commit": null,
+    "published_log": "logs/portable-cpu-revised.log.gz",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "portable-rust-graph": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--features",
+      "python-bindings",
+      "--lib",
+      "cuda_graph"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 0.28814005851745605,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 673 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 673 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-8f74428f293abf21d6a65337020d48da0198f1808b18e6cb173f2d37a54664fd.json",
+    "input_manifest_sha256": "8f74428f293abf21d6a65337020d48da0198f1808b18e6cb173f2d37a54664fd",
+    "log_sha256": "484833426525433ca15f9cc30609f3ca202a6bbcaa374f888fa088223fdb151e",
+    "measured_code_commit": null,
+    "published_log": "logs/portable-rust-graph.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "provenance-after": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "target/provenance.py"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 3.312201976776123,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f.json",
+    "input_manifest_sha256": "4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f",
+    "log_sha256": "decc57fd984a78f0f7075dd5497a7073398008e781a75a002f55adc84f5eb1c6",
+    "measured_code_commit": null,
+    "published_log": "logs/provenance-after.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "restoration-final": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_compile_cuda_module_arithmetic.ModuleArithmeticDeviceTests",
+      "tests.test_compile_cuda_boundary.CompileCudaDeviceBoundaryTests"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 3.4782965183258057,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0,1",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 1,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 2 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 1 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f.json",
+    "input_manifest_sha256": "4371c390f94e187c7f08228114923a036b230c03e3e53db51c66bbb24dd6d57f",
+    "log_sha256": "e3fd9c39967227b4c088bb37108b112cfca08301bbf90c7314cfdd85629a802e",
+    "measured_code_commit": null,
+    "published_log": "logs/restoration-final.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "restoration-revised": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_compile_cuda_module_arithmetic.ModuleArithmeticDeviceTests",
+      "tests.test_compile_cuda_boundary.CompileCudaDeviceTests"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 8.40102481842041,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0,1",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 2 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-d963419336edba25f7304c5cae6ce40b384df02fcde0788d6758ee092071b81a.json",
+    "input_manifest_sha256": "d963419336edba25f7304c5cae6ce40b384df02fcde0788d6758ee092071b81a",
+    "log_sha256": "72f40eca66dc7147bd5c9c5af2e0ed5ffb066f4e64209faccb7ce124eb5b7338",
+    "measured_code_commit": null,
+    "published_log": "logs/restoration-revised.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "revised-provenance": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      ".venv/bin/python",
+      "target/provenance.py"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 3.6114017963409424,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 2 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-87b1b0cfa2301a3db3734bfbf5dd38b4250cdfb67997e8dd9537f8bba49ab389.json",
+    "input_manifest_sha256": "87b1b0cfa2301a3db3734bfbf5dd38b4250cdfb67997e8dd9537f8bba49ab389",
+    "log_sha256": "fbd6c1c4615ebb9776cad0af7614967084462f08d630ee3b07ffca795e37ad55",
+    "measured_code_commit": null,
+    "published_log": "logs/revised-provenance.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "rust-default": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--all-targets"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 12.278551578521729,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 1 %, 933 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 931 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-7212b9f398c2a6d5cfabe6aa7d88b568bad145b68eaf0259f3efcf4762b38047.json",
+    "input_manifest_sha256": "7212b9f398c2a6d5cfabe6aa7d88b568bad145b68eaf0259f3efcf4762b38047",
+    "log_sha256": "b25a7939f1c00c74dd4a0aa13ba2c73e1373dec13567726c846e249e55646f8d",
+    "measured_code_commit": null,
+    "published_log": "logs/rust-default.log.gz",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "rust-default-final": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      "env",
+      "TORCH_RS_CUDART=/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+      "cargo",
+      "test",
+      "--locked",
+      "--all-targets"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 7.060885906219482,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 2 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-d963419336edba25f7304c5cae6ce40b384df02fcde0788d6758ee092071b81a.json",
+    "input_manifest_sha256": "d963419336edba25f7304c5cae6ce40b384df02fcde0788d6758ee092071b81a",
+    "log_sha256": "22ae585183f06823579fa72cc976227de8836744dc71d60c2cd43084163d347f",
+    "measured_code_commit": null,
+    "published_log": "logs/rust-default-final.log.gz",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  },
+  "rust-python-graph": {
+    "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--features",
+      "python-bindings",
+      "--lib",
+      "cuda_graph"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739",
+    "elapsed_seconds": 15.387629270553589,
+    "environment": {
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cargo-build",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/cuda-cache",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "RUSTUP_TOOLCHAIN": "1.92.0",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/tmp",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/inductor-cache",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/triton-cache",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-cache",
+      "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-bin",
+      "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python"
+    },
+    "exit_code": 0,
+    "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 2 %, 929 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 116 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 130 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 102 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 108 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 60 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 114 MiB\n",
+    "input_manifest": "inputs-ebe7999300495dc8a697d8f604da19c4a1cd9bfd1481563b95d93ed9d050f9a6.json",
+    "input_manifest_sha256": "ebe7999300495dc8a697d8f604da19c4a1cd9bfd1481563b95d93ed9d050f9a6",
+    "log_sha256": "d61ea14a6beba766b6f5cec7254106509f780646b6da200d80955a2fd3dfcb1e",
+    "measured_code_commit": null,
+    "published_log": "logs/rust-python-graph.log",
+    "resources": [
+      "gpu",
+      "cpu-heavy"
+    ],
+    "source_kind": "development worktree, not a clean-commit capture"
+  }
+}

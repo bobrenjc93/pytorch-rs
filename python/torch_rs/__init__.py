@@ -9,6 +9,7 @@ import types as _types
 from math import e, inf, nan, pi
 
 from . import torch_rs as _native
+from . import _compiler_state as _compile_state
 from .torch_rs import *
 
 # PyTorch's built-in variable functions reduce through owners in ``torch._C``.

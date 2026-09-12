@@ -1,0 +1,10 @@
+from unittest.mock import patch
+import torch_rs as native
+from torch_rs import _compile_bytecode as bytecode, _compile_trace as trace
+class Owner:
+    def __getattribute__(self, name):
+        raise AssertionError('owner callback: ' + name)
+with patch.object(trace._native, '_VariableFunctionsClass', Owner()):
+    assert bytecode._builtin_target(native.neg).target == 'neg'
+    assert bytecode._builtin_target(object()) is None
+print('Immutable owner identity preserved without callbacks')

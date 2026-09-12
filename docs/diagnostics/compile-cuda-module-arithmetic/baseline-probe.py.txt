@@ -1,0 +1,163 @@
+"""Non-scoring, exact-main H100 gap probe for native-module add/neg syntax.
+
+Preparation is not evidence. Run only in a fresh source-bound environment after
+the squeeze candidate is merged and the new main baselines are verified.
+"""
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+from unittest.mock import patch
+
+import numpy as np
+import torch
+import torch_rs as native
+
+root = Path.cwd().resolve()
+sys.path.insert(0, str(root))
+from tests.test_cuda_contiguous import metadata
+
+
+def program_for(expression, arity, module):
+    namespace = {"__name__": __name__, "m": module, "add_alias": module.add,
+                 "neg_alias": module.neg, "negative_alias": module.negative}
+    arguments = "x" if arity == 1 else "x, y"
+    exec(f"def program({arguments}):\n    return {expression}\n", namespace)
+    return namespace["program"]
+
+
+def no_original_body(program, callback):
+    def reject(frame, event, argument):
+        if event == "call" and frame.f_code is program.__code__:
+            raise AssertionError("native compiled execution entered original Python body")
+    previous = sys.getprofile()
+    try:
+        sys.setprofile(reject)
+        return callback()
+    finally:
+        sys.setprofile(previous)
+
+
+def compare(actual, expected):
+    assert metadata(actual) == metadata(expected)
+    np.testing.assert_allclose(np.asarray(actual.cpu().tolist(), dtype=np.float32),
+                               expected.detach().cpu().numpy(), rtol=0, atol=0)
+
+
+def gap(callback):
+    try:
+        callback()
+    except NotImplementedError as error:
+        assert type(error).__name__ == "CompileTraceUnsupportedError", repr(error)
+        return {"type": type(error).__name__, "message": str(error)}
+    raise AssertionError("Expected the native-module arithmetic capture gap on main")
+
+
+head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+assert len(sys.argv) == 2 and re.fullmatch(r"[0-9a-f]{40}", sys.argv[1]) and head == sys.argv[1]
+assert subprocess.check_output(["git", "rev-parse", "main"], text=True).strip() == head
+assert subprocess.check_output(["git", "status", "--porcelain"], text=True) == ""
+assert os.environ["CUDA_VISIBLE_DEVICES"] == "0"
+assert torch.cuda.is_available() and torch.cuda.device_count() == 1
+assert torch.cuda.get_device_name(0) == "NVIDIA H100"
+assert Path(sys.prefix).resolve() == root / ".venv"
+assert Path(native._C.__file__).resolve().is_relative_to(root / ".venv")
+
+specifications = (
+    ("module_add", "m.add(x, y)", 2, True),
+    ("imported_add", "add_alias(x, y)", 2, True),
+    ("module_neg", "m.neg(x)", 1, True),
+    ("imported_neg", "neg_alias(x)", 1, True),
+    ("module_negative", "m.negative(x)", 1, True),
+    ("imported_negative", "negative_alias(x)", 1, True),
+    ("module_composition", "m.add(m.neg(x), y)", 2, True),
+    ("imported_composition", "add_alias(negative_alias(x), y)", 2, True),
+    ("existing_operator_add", "x + y", 2, False),
+    ("existing_operator_neg", "-x", 1, False),
+    ("existing_module_mul", "m.mul(x, -2)", 1, False),
+)
+rng = np.random.default_rng(198301)
+cases = []
+for label, expression, arity, expected_gap in specifications:
+    for shape in ((), (7,), (3, 5), (0,)):
+        # Exact dyadic inputs keep the simple add/neg references bit-stable.
+        data = [np.asarray(rng.integers(-31, 32, size=shape) * .125, dtype=np.float32)
+                for _ in range(arity)]
+        args = [native.tensor(value).to("cuda:0") for value in data]
+        refs = [torch.tensor(value, device="cuda:0") if value.size else
+                torch.empty(value.shape, device="cuda:0", dtype=torch.float32) for value in data]
+        for actual, expected in zip(args, refs):
+            assert metadata(actual) == metadata(expected), (label, shape)
+        program = program_for(expression, arity, native)
+        reference_program = program_for(expression, arity, torch)
+        expected = reference_program(*refs)
+        eager = program(*args)
+        compare(eager, expected)
+        assert all(eager is not arg for arg in args)
+        torch._dynamo.reset()
+        reference = torch.compile(reference_program, backend="inductor", fullgraph=True, dynamic=False)
+        for _ in range(2):
+            actual_reference = reference(*refs)
+            torch.testing.assert_close(actual_reference, expected, rtol=0, atol=0)
+            assert metadata(actual_reference) == metadata(expected)
+        compiled = no_original_body(program, lambda: native.compile(
+            program, backend="eager", fullgraph=True, dynamic=False))
+        results = []
+        for call in ("cold", "repeat"):
+            invoke = lambda: no_original_body(program, lambda: compiled(*args))
+            if expected_gap:
+                results.append({"call": call, "unsupported": gap(invoke)})
+            else:
+                actual = invoke()
+                compare(actual, expected)
+                assert all(actual is not arg for arg in args)
+                results.append({"call": call, "passed": True})
+        for actual, reference_input in zip(args, refs):
+            compare(actual, reference_input)
+        cases.append({"name": label, "expression": expression, "arity": arity,
+                      "shape": list(shape), "expected_gap": expected_gap,
+                      "input_sha256": [hashlib.sha256(value.tobytes()).hexdigest() for value in data],
+                      "native_eager_passed": True, "reference_inductor_cold_and_repeat_passed": True,
+                      "original_native_program_body_not_executed": True, "native_calls": results})
+
+# Newly admitted names must not become mandatory guards for old module syntax.
+# These are positive baseline controls, not permission to execute rebound code.
+unrelated_rebindings = []
+for attribute in ("add", "neg", "negative"):
+    calls = []
+    def forbidden(*args, **kwargs):
+        calls.append(True)
+        raise AssertionError("executed unrelated replacement callable")
+    program = program_for("m.mul(x, -2)", 1, native)
+    x = native.tensor([1., -2., 3.]).to("cuda:0")
+    tx = torch.tensor([1., -2., 3.], device="cuda:0")
+    compiled = native.compile(program, backend="eager", fullgraph=True, dynamic=False)
+    compare(no_original_body(program, lambda: compiled(x)), tx * -2)
+    with patch.object(native, attribute, forbidden):
+        # A warm wrapper and a newly created wrapper must both remain valid.
+        compare(no_original_body(program, lambda: compiled(x)), tx * -2)
+        cold = native.compile(program, backend="eager", fullgraph=True, dynamic=False)
+        compare(no_original_body(program, lambda: cold(x)), tx * -2)
+    assert not calls
+    unrelated_rebindings.append({"attribute": attribute, "existing_module_mul_preserved": True,
+                                 "replacement_callback_calls": len(calls)})
+
+assert len(cases) == 44 and sum(case["expected_gap"] for case in cases) == 32
+assert subprocess.check_output(["git", "status", "--porcelain"], text=True) == ""
+print(json.dumps({"verified_baseline_gap": True, "commit": head,
+                  "probe_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                  "metadata_helper_sha256": hashlib.sha256((root / "tests/test_cuda_contiguous.py").read_bytes()).hexdigest(),
+                  "native_extension": native._C.__file__,
+                  "native_extension_sha256": hashlib.sha256(Path(native._C.__file__).read_bytes()).hexdigest(),
+                  "reference": torch.__version__, "gpu": torch.cuda.get_device_name(0),
+                  "cases": cases, "unrelated_rebindings": unrelated_rebindings,
+                  "gap_cases": 32, "existing_positive_cases": 12,
+                  "reference_compile_backend": "inductor", "native_compile_backend": "eager",
+                  "native_backend_note": "Native CUDA graph capture/execution; original program body forbidden",
+                  "cuda_performance_measured": False, "scores_changed": False,
+                  "physical_gpu_snapshot_after": subprocess.check_output(["nvidia-smi",
+                      "--query-gpu=index,uuid,name,utilization.gpu,memory.used", "--format=csv,noheader"], text=True),
+                  "gpu_snapshot_is_not_reservation": True}, indent=2))

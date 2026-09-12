@@ -1,0 +1,33 @@
+"""Record development command status and content identity; not a scoring evaluator."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+root = Path.cwd()
+out = root / 'target/evidence'
+out.mkdir(parents=True, exist_ok=True)
+label, *command = sys.argv[1:]
+assert not (out / (label + '.json')).exists()
+def sha(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+def snapshot():
+    return subprocess.check_output(['nvidia-smi', '--query-gpu=index,uuid,name,driver_version,utilization.gpu,memory.used', '--format=csv'], text=True)
+paths = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z', 'src', 'python', 'tests', 'Cargo.toml', 'Cargo.lock', 'pyproject.toml', 'uv.lock', 'rust-toolchain.toml'], text=True).split('\0')
+manifest = {p: sha(root / p) for p in sorted(set(paths)) if p and (root / p).is_file()}
+raw = json.dumps(manifest, sort_keys=True, indent=2) + '\n'
+identity = hashlib.sha256(raw.encode()).hexdigest()
+manifest_path = out / ('inputs-' + identity + '.json')
+if not manifest_path.exists():
+    manifest_path.write_text(raw)
+record = dict(command=command, cwd=str(root), base_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(), input_manifest=manifest_path.name, input_manifest_sha256=identity, gpu_before=snapshot(), environment={k: os.environ[k] for k in ('CUDA_VISIBLE_DEVICES','CARGO_HOME','CARGO_TARGET_DIR','RUSTUP_TOOLCHAIN','UV_CACHE_DIR','UV_PYTHON_INSTALL_DIR','UV_PYTHON_BIN_DIR','TMPDIR','CUDA_CACHE_PATH','TORCHINDUCTOR_CACHE_DIR','TRITON_CACHE_DIR') if k in os.environ}, resources=['gpu','cpu-heavy'], measured_code_commit=None, source_kind='development worktree, not a clean-commit capture')
+start = time.time()
+with (out / (label + '.log')).open('x') as log:
+    result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT)
+record.update(exit_code=result.returncode, elapsed_seconds=time.time()-start, gpu_after=snapshot(), log_sha256=sha(out / (label + '.log')))
+(out / (label + '.json')).write_text(json.dumps(record, indent=2) + '\n')
+print(json.dumps({'label':label,'exit_code':result.returncode,'seconds':record['elapsed_seconds']}), flush=True)
+sys.exit(result.returncode)

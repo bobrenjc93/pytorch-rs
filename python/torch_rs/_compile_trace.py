@@ -1568,10 +1568,10 @@ def execute_compile_trace_graph(graph, *inputs):
             )
         metadata_values[operation.name] = expected_metadata
 
-    if (len(graph.operations) > 1 or any(op.target in ("contiguous", "t", "squeeze", "transpose", "reshape", "view", "relu") for op in graph.operations)) and all(
-        metadata.device.type == "cuda" for metadata in metadata_values.values()
-    ):
-        # Validate the output tree too before the native bridge can launch.
+    cuda_graph = all(metadata.device.type == "cuda" for metadata in metadata_values.values())
+    if cuda_graph:
+        # Validate outputs before either the single-operation native hook or
+        # the whole-graph bridge can launch.
         # Reuse the materializer's structural/metadata checks without tensors.
         _materialize_graph_output(
             graph.output, graph.output_metadata, declared_values,
@@ -1582,6 +1582,10 @@ def execute_compile_trace_graph(graph, *inputs):
             value_name="output", dynamic=graph.dynamic,
             metadata_values=metadata_values, metadata_only=True,
         )
+    if cuda_graph and (len(graph.operations) > 1 or any(
+        op.target in ("contiguous", "t", "squeeze", "transpose", "reshape", "view", "relu")
+        for op in graph.operations
+    )):
         indices = {name: index for index, name in enumerate(metadata_values)}
         nodes = [
             (operation.target, tuple(indices[name] for name in operation.inputs),

@@ -1,0 +1,2 @@
+eager [1.0, -3.0]
+CompileTraceUnsupportedError: torch.compile trace bytecode lowering does not support global or import access in 'program': LOAD_GLOBAL

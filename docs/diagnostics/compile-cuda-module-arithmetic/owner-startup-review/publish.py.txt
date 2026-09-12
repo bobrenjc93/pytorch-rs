@@ -1,0 +1,67 @@
+"""Package source-bound review validation; no clean-commit claim."""
+import gzip, hashlib, json, re, subprocess
+from pathlib import Path
+root=Path.cwd(); work=root/'target/owner-startup-review'; prior=root/'docs/diagnostics/compile-cuda-module-arithmetic'; dest=prior/'owner-startup-review'
+def sha(raw): return hashlib.sha256(raw).hexdigest()
+def digest(p): return sha(p.read_bytes())
+def write(p,data): p.write_text(json.dumps(data,indent=2)+'\n')
+assert {p.name for p in dest.iterdir()} == {'README.md'}
+head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+assert head=='7ff7cf3bb3496b077479db7938b3ebb457d6415c'
+# Preserve every previously committed evidence byte, including clean capture.
+oldfiles=subprocess.check_output(['git','ls-files','-z',str(prior.relative_to(root))]).decode().split('\0')
+oldhashes={}
+for name in filter(None,oldfiles):
+    original=subprocess.check_output(['git','show','HEAD:'+name])
+    assert (root/name).read_bytes()==original,name
+    oldhashes[str((root/name).relative_to(prior))]=sha(original)
+receipts=[]
+for path in work.glob('*.json'):
+    r=json.loads(path.read_text())
+    if 'command' not in r: continue
+    assert digest(work/r['log'])==r['log_sha256']
+    assert r['exit_code']==(1 if r['label'] in ('regression-old-wheel','docs-smoke') else 0),r['label']
+    r['published_log']='logs/'+r['log']
+    text=(work/r['log']).read_text()
+    results=re.findall(r'Ran (\d+) tests? in ([\d.]+)s',text)
+    if results:
+        run,seconds=results[-1]; skipped=re.findall(r'^OK \(skipped=(\d+)\)',text,re.M)
+        failures=re.findall(r'^FAILED \(failures=(\d+)\)',text,re.M)
+        r['test_summary']={'run':int(run),'skipped':int(skipped[-1]) if skipped else 0,'failed_subtests':int(failures[-1]) if failures else 0,'reported_seconds':float(seconds)}
+        if r['exit_code']==0: r['test_summary']['passed']=int(run)-r['test_summary']['skipped']
+    rust=re.findall(r'test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored;',text)
+    if rust: r['test_summary']={'passed':sum(int(v[0]) for v in rust),'failed':sum(int(v[1]) for v in rust),'ignored':sum(int(v[2]) for v in rust)}
+    receipts.append(r)
+receipts.sort(key=lambda r:r['started_at']); labels={r['label']:r for r in receipts}
+assert labels['compiler-complete']['test_summary']=={'run':666,'skipped':15,'failed_subtests':0,'reported_seconds':labels['compiler-complete']['test_summary']['reported_seconds'],'passed':651}
+assert labels['regression-old-wheel']['test_summary']['failed_subtests']==6
+assert labels['startup-fixed']['test_summary']['passed']==2
+manifest_names={r['input_manifest'] for r in receipts}; assert len(manifest_names)==1
+manifest_name,=manifest_names; new=json.loads((work/manifest_name).read_text())
+assert all(digest(root/p)==v for p,v in new.items())
+base_data=json.loads((prior/'input-manifests.json').read_text())
+base_name='inputs-d963419336edba25f7304c5cae6ce40b384df02fcde0788d6758ee092071b81a.json'
+base=dict(base_data['base']); base.update(base_data['variants'][base_name]['changed'])
+for name in base_data['variants'][base_name]['removed']: del base[name]
+changed={k:v for k,v in new.items() if base.get(k)!=v}; removed=sorted(set(base)-set(new))
+assert set(changed)=={'python/torch_rs/__init__.py','python/torch_rs/_compiler_state.py','python/torch_rs/_compile_bytecode.py','tests/test_compile_cuda_module_arithmetic.py'}
+current_inputs=json.loads((work/'inductor-inputs.log').read_text()); old_inputs=json.loads((prior/'postcommit-e2378805/logs/inductor-inputs.log').read_text())
+assert current_inputs['cases']==old_inputs['cases'] and current_inputs['seed']==old_inputs['seed']
+build_root=root/'target/cuda-add-diagnostic/owner-startup-review'; build=json.loads((build_root/'build-record.json').read_text())
+assert build['base_commit']==head and build['measured_code_commit'] is None and not build['source_matches_commit']
+assert all(digest(Path(build['source_root'])/p)==v for p,v in build['source_files'].items())
+for key in ('source_root','wheel','installed_native','installed_package','build_target'): Path(build[key]).resolve().relative_to(root)
+before=json.loads((work/'provenance-before.log').read_text()); after=json.loads((work/'provenance-after.log').read_text())
+for key in ('installed_module_hashes','source_manifest_sha256','native_sha256','wheel_sha256','interpreter_inventory_sha256','runtimes'): assert before[key]==after[key]
+(dest/'logs').mkdir(parents=True)
+for r in receipts: (dest/r['published_log']).write_bytes((work/r['log']).read_bytes())
+for name in ('regression-before.log','counterfeit-before.log','hostile-before.log'):
+    (dest/'logs'/name).write_bytes((work/name).read_bytes())
+for name in ('build.log','dependency_setup.log','origin.patch'): (dest/'logs'/name).write_bytes((build_root/name).read_bytes())
+(dest/'build-record.json.gz').write_bytes(gzip.compress((build_root/'build-record.json').read_bytes(),mtime=0))
+for name in ('record.py','provenance.py','checks.sh','reproduce.py','publish.py'):
+    (dest/(name+'.txt')).write_bytes((work/name).read_bytes())
+write(dest/'commands.json',receipts)
+write(dest/'input-delta.json',{'base_file':'../input-manifests.json','base_file_sha256':digest(prior/'input-manifests.json'),'base_variant':base_name,'changed':changed,'removed':removed,'reconstructed_name':manifest_name,'reconstructed_sha256':digest(work/manifest_name)})
+write(dest/'capture.json',{'kind':'source-bound review revision development evidence; not a clean-commit capture','base_commit':head,'measured_code_commit':None,'source_manifest_sha256':build['source_manifest_sha256'],'build_record_uncompressed_sha256':digest(build_root/'build-record.json'),'input_manifest':'input-delta.json','seeded_32_cell_inputs_unchanged':True,'pre_fix_installation':{'build_record':'../postcommit-e2378805/build-record.json.gz','measured_code_commit':'e2378805eee2d1092d21c0678f503d888851e47c','command_labels':['reproduce-counterfeit','reproduce-hostile','regression-old-wheel'],'note':'new regression tests ran against the pre-revision installed release wheel before replacement; test/source manifest describes the local harness, not that older installed library'},'prior_evidence_sha256':oldhashes,'summaries':{r['label']:r.get('test_summary',{'exit_code':r['exit_code']}) for r in receipts},'outstanding':'Burner must commit this implementation revision, then run a fresh clean-commit capture before final evidence approval','retained_preliminary_runs':{'regression-before.log':{'exit_code':1,'note':'first execution of the same two subprocess regressions against the old installed wheel; timestamps not recorded'},'counterfeit-before.log':{'exit_code':0},'hostile-before.log':{'exit_code':0}},'reused_recipes':{n:{'path':'../'+n,'sha256':digest(prior/n)} for n in ('env.sh.txt','compiler_sweep.py.txt','inductor_inputs.py.txt')}})
+print(dest)

@@ -1,0 +1,39 @@
+test_compositions_helpers_dynamic_squeeze_and_no_replay (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_compositions_helpers_dynamic_squeeze_and_no_replay) ... ok
+test_dynamic_reuse_nested_outputs_and_lifetime (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_dynamic_reuse_nested_outputs_and_lifetime) ... ok
+test_inductor_reference_public_spelling_matrix (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_inductor_reference_public_spelling_matrix) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ok
+test_layouts_broadcast_offsets_and_ieee_bits (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_layouts_broadcast_offsets_and_ieee_bits) ... ok
+test_precise_guards_rebindings_failed_attempts_and_limits (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_precise_guards_rebindings_failed_attempts_and_limits) ... ok
+test_prevalidation_exact_errors_unused_inputs_and_hooks (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_prevalidation_exact_errors_unused_inputs_and_hooks) ... ok
+test_seeded_calls_generated_compositions_and_all_policies (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_seeded_calls_generated_compositions_and_all_policies) ... ok
+test_restoration_success_rejection_unused_input_and_lifetime (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticDeviceTests.test_restoration_success_rejection_unused_input_and_lifetime) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_exported_owner_rebinding_cannot_supply_callable_identities (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticFrontendTests.test_exported_owner_rebinding_cannot_supply_callable_identities) ... ok
+test_identity_arity_registry_and_cpu_boundary_without_gpu (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticFrontendTests.test_identity_arity_registry_and_cpu_boundary_without_gpu) ... ok
+test_module_and_direct_guards_do_not_invoke_callbacks (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticFrontendTests.test_module_and_direct_guards_do_not_invoke_callbacks) ... ok
+test_native_planner_rejects_declarations_without_device (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticFrontendTests.test_native_planner_rejects_declarations_without_device) ... ok
+test_cross_thread_pool_release_on_both_devices (tests.test_cuda_add.CudaAddDeviceTests.test_cross_thread_pool_release_on_both_devices) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_device_restoration_success_failure_and_drop (tests.test_cuda_add.CudaAddDeviceTests.test_device_restoration_success_failure_and_drop) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_replay_eviction_restores_context_across_devices (tests.test_cuda_add.CudaAddDeviceTests.test_replay_eviction_restores_context_across_devices) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_cached_allocation_on_fresh_host_thread (tests.test_cuda_add.CudaAddTests.test_cached_allocation_on_fresh_host_thread) ... ok
+test_completion_before_independent_stream_read (tests.test_cuda_add.CudaAddTests.test_completion_before_independent_stream_read) ... ok
+test_invalid_and_unsupported_inputs (tests.test_cuda_add.CudaAddTests.test_invalid_and_unsupported_inputs) ... ok
+test_numerical_edges (tests.test_cuda_add.CudaAddTests.test_numerical_edges) ... ok
+test_offsets_singletons_and_empty_views (tests.test_cuda_add.CudaAddTests.test_offsets_singletons_and_empty_views) ... ok
+test_random_held_out_shapes_and_public_forms (tests.test_cuda_add.CudaAddTests.test_random_held_out_shapes_and_public_forms) ... ok
+test_repeated_launch_eviction_aliases_and_immediate_drops (tests.test_cuda_add.CudaAddTests.test_repeated_launch_eviction_aliases_and_immediate_drops) ... ok
+test_source_output_lifetimes_chaining_and_reuse (tests.test_cuda_add.CudaAddTests.test_source_output_lifetimes_chaining_and_reuse) ... ok
+test_without_pytorch_import (tests.test_cuda_add.CudaAddTests.test_without_pytorch_import) ... ok
+test_device_guard_and_context_cache (tests.test_cuda_neg.CudaNegDeviceTests.test_device_guard_and_context_cache) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'
+test_completion_and_independent_output (tests.test_cuda_neg.CudaNegTests.test_completion_and_independent_output) ... ok
+test_generated_shapes_public_forms_and_input_preservation (tests.test_cuda_neg.CudaNegTests.test_generated_shapes_public_forms_and_input_preservation) ... ok
+test_ieee_bits_and_offset_views (tests.test_cuda_neg.CudaNegTests.test_ieee_bits_and_offset_views) ... ok
+test_large_allocation_lifetime_outside_front_cache (tests.test_cuda_neg.CudaNegTests.test_large_allocation_lifetime_outside_front_cache) ... ok
+test_layout_autograd_rejection_and_compiled_negation (tests.test_cuda_neg.CudaNegTests.test_layout_autograd_rejection_and_compiled_negation) ... ok
+test_lifetimes_reuse_and_fresh_thread_context (tests.test_cuda_neg.CudaNegTests.test_lifetimes_reuse_and_fresh_thread_context) ... ok
+test_no_pytorch_forwarding (tests.test_cuda_neg.CudaNegTests.test_no_pytorch_forwarding) ... ok
+
+----------------------------------------------------------------------
+Ran 32 tests in 33.220s
+
+OK (skipped=5)

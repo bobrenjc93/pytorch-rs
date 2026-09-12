@@ -1,0 +1,15 @@
+    Checking crossbeam-utils v0.8.23
+    Checking libc v0.2.189
+    Checking cfg-if v1.0.4
+    Checking once_cell v1.21.4
+    Checking inventory v0.3.24
+    Checking either v1.18.0
+    Checking libloading v0.8.9
+    Checking crossbeam-epoch v0.9.21
+    Checking crossbeam-deque v0.8.8
+    Checking rayon-core v1.13.0
+    Checking pyo3-ffi v0.29.2
+    Checking rayon v1.12.0
+    Checking pyo3 v0.29.2
+    Checking pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 9.82s

@@ -1,0 +1,45 @@
+test_restoration_success_rejection_unused_input_and_lifetime (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticDeviceTests.test_restoration_success_rejection_unused_input_and_lifetime) ... FAIL
+CompileCudaDeviceBoundaryTests (unittest.loader._FailedTest.CompileCudaDeviceBoundaryTests) ... ERROR
+
+======================================================================
+ERROR: CompileCudaDeviceBoundaryTests (unittest.loader._FailedTest.CompileCudaDeviceBoundaryTests)
+----------------------------------------------------------------------
+AttributeError: module 'tests.test_compile_cuda_boundary' has no attribute 'CompileCudaDeviceBoundaryTests'. Did you mean: 'CompileCudaBoundaryTests'?
+
+======================================================================
+FAIL: test_restoration_success_rejection_unused_input_and_lifetime (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticDeviceTests.test_restoration_success_rejection_unused_input_and_lifetime)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/tests/test_compile_cuda_module_arithmetic.py", line 454, in test_restoration_success_rejection_unused_input_and_lifetime
+    self.exact_error(trace.CompileTraceUnsupportedError, lambda: compiled(x, x))
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/tests/test_compile_cuda_module_arithmetic.py", line 34, in exact_error
+    callback()
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/tests/test_compile_cuda_module_arithmetic.py", line 454, in <lambda>
+    self.exact_error(trace.CompileTraceUnsupportedError, lambda: compiled(x, x))
+                                                                 ^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 444, in compiled_model
+    result = implementation(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 860, in compiled_model
+    return _execute_native_eager_compile_graph(graph, args, _compile_trace)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 778, in _execute_native_eager_compile_graph
+    return compile_trace.execute_compile_trace_graph(graph, *inputs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/_compile_trace.py", line 1602, in execute_compile_trace_graph
+    outputs = _native._compile_trace_cuda_graph(tuple(values.values()), nodes)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/mock.py", line 1139, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/mock.py", line 1143, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/unittest/mock.py", line 1198, in _execute_mock_call
+    raise effect
+AssertionError: launched
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.369s
+
+FAILED (failures=1, errors=1)

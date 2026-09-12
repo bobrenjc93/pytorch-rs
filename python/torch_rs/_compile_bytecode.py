@@ -7,10 +7,13 @@ import dis as _dis
 import struct as _struct
 import sys as _sys
 import types as _types
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from . import _compile_trace as _trace
+from ._compiler_state import native_function_owner as _NATIVE_FUNCTION_OWNER
 
+
+_NATIVE_MODULE = _sys.modules[__package__]
 
 _CODE_FLAG_VARARGS = 0x04
 _CODE_FLAG_VARKEYWORDS = 0x08
@@ -64,6 +67,7 @@ class _GlobalTensorCacheDependency:
 @dataclass(frozen=True, slots=True)
 class _BytecodeBuiltin:
     target: str
+    arity: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +78,7 @@ class _BytecodeModule:
 @dataclass(frozen=True, slots=True)
 class _GlobalValueCacheDependency:
     global_name: str
+    load_key: tuple
     guard: object
     value: object = field(compare=False, hash=False, repr=False)
 
@@ -82,6 +87,7 @@ class _GlobalValueCacheDependency:
 class _GlobalLoadDependency:
     name: str
     instruction: object
+    module_attribute: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,7 +115,7 @@ class _LoweringState:
     global_tensor_proxies: dict[str, _trace.CompileTraceTensorProxy] = field(
         default_factory=dict
     )
-    global_values: dict[str, object] = field(default_factory=dict)
+    global_values: dict[tuple, object] = field(default_factory=dict)
     helper_call_count: int = 0
     has_mixed_tuple: bool = False
     local_constant_error: _trace.CompileTraceUnsupportedError | None = None
@@ -420,15 +426,19 @@ def _is_exact_native_tensor(value):
 def _builtin_target(value):
     # Immutable native binding owners establish identity, not callable names or
     # source text. Public aliases are accepted only while they still match.
-    owner = _trace._native._VariableFunctionsClass
+    owner = _NATIVE_FUNCTION_OWNER
     if value is owner.mul or value is owner.multiply:
-        return _BytecodeBuiltin("mul_scalar")
+        return _BytecodeBuiltin("mul_scalar", 2)
     if value is owner.matmul:
-        return _BytecodeBuiltin("matmul")
+        return _BytecodeBuiltin("matmul", 2)
+    if value is owner.add:
+        return _BytecodeBuiltin("add", 2)
+    if value is owner.neg or value is owner.negative:
+        return _BytecodeBuiltin("neg", 1)
     return None
 
 
-def _global_value_dependency(name, value):
+def _global_value_dependency(name, value, module_attribute=None):
     if _builtins.type(value) in (_builtins.bool, _builtins.int, _builtins.float):
         # Use the original type and binary64 bits, preserving signed zero and
         # stable NaN guards without executing equality or conversion callbacks.
@@ -436,19 +446,33 @@ def _global_value_dependency(name, value):
             _builtins.type(value),
             _struct.pack("!d", value) if _builtins.type(value) is _builtins.float else value,
         )
-        return _GlobalValueCacheDependency(name, guard, _BytecodeConstant(value))
+        return _GlobalValueCacheDependency(name, (), guard, _BytecodeConstant(value))
     builtin = _builtin_target(value)
     if builtin is not None:
-        return _GlobalValueCacheDependency(name, value, builtin)
-    if _builtins.type(value) is _types.ModuleType and value is _sys.modules[__package__]:
-        bindings = tuple((attr, vars(value).get(attr)) for attr in ("mul", "multiply", "matmul"))
+        return _GlobalValueCacheDependency(name, (), value, builtin)
+    if _builtins.type(value) is _types.ModuleType and value is _NATIVE_MODULE:
+        # Retain the legacy module guard. Newly supported fields are guarded
+        # only at loads that actually use them, so unrelated mutations neither
+        # reject old programs nor spend their recompile budget.
+        attributes = ("mul", "multiply", "matmul")
+        if module_attribute in ("add", "neg", "negative"):
+            attributes += (module_attribute,)
+        bindings = tuple((attr, vars(value).get(attr)) for attr in attributes)
         if all(_builtin_target(fn) is not None for _, fn in bindings):
             lowered = tuple((attr, _builtin_target(fn)) for attr, fn in bindings)
-            return _GlobalValueCacheDependency(name, (value, bindings), _BytecodeModule(lowered))
+            return _GlobalValueCacheDependency(name, (), (value, bindings), _BytecodeModule(lowered))
     return None
 
 
-def _resolve_live_global_dependency(root_program, program, instruction, name):
+def _global_load_key(program, instruction):
+    # One global module can load several fields, including from a helper.
+    # Keep each snapshot rather than overwriting them by global name.
+    return (id(program.__globals__), program.__code__, instruction.offset)
+
+
+def _resolve_live_global_dependency(
+    root_program, program, instruction, name, module_attribute=None,
+):
     try:
         value = program.__globals__[name]
     except KeyError:
@@ -463,9 +487,9 @@ def _resolve_live_global_dependency(root_program, program, instruction, name):
             tensor=value,
         )
 
-    dependency = _global_value_dependency(name, value)
+    dependency = _global_value_dependency(name, value, module_attribute)
     if dependency is not None:
-        return dependency
+        return replace(dependency, load_key=_global_load_key(program, instruction))
 
     helper = value
     helper_code = (
@@ -502,16 +526,24 @@ def analyze_compile_program(program):
     return _CompileProgramDescriptor(code, global_loads, layout is not None)
 
 
-def _global_load_dependencies_from_instructions(program, instructions, *, resolve=False):
+def _global_load_dependencies_from_instructions(
+    program, instructions, *, resolve=False, validate_opcodes=True,
+):
     global_loads = []
-    for instruction in instructions:
-        kind = _instruction_form(program, instruction)
-        if kind != "load_global":
+    for index, instruction in enumerate(instructions):
+        if validate_opcodes:
+            kind = _instruction_form(program, instruction)
+            if kind != "load_global":
+                continue
+        elif instruction.opname != "LOAD_GLOBAL":
             continue
         name = _global_name(program, instruction)
+        following = instructions[index + 1] if index + 1 < len(instructions) else None
+        attribute = (following.argval if following is not None
+                     and following.opname in ("LOAD_ATTR", "LOAD_METHOD") else None)
         if resolve:
-            _resolve_live_global_dependency(program, program, instruction, name)
-        global_loads.append(_GlobalLoadDependency(name, instruction))
+            _resolve_live_global_dependency(program, program, instruction, name, attribute)
+        global_loads.append(_GlobalLoadDependency(name, instruction, attribute))
     return tuple(global_loads)
 
 
@@ -530,6 +562,7 @@ def _global_cache_dependencies_for_loads(
             program,
             global_load.instruction,
             global_load.name,
+            global_load.module_attribute,
         )
         if _builtins.isinstance(dependency, _GlobalTensorCacheDependency):
             global_tensor_dependencies.append(dependency)
@@ -553,13 +586,11 @@ def _global_cache_dependencies_for_loads(
                 global_load.instruction,
                 "helper function calls",
             )
-        helper_loads = tuple(
-            _GlobalLoadDependency(_global_name(helper, instruction), instruction)
-            for instruction in _analyzable_bytecode_instructions(
-                helper,
-                dependency.code,
-            )
-            if instruction.opname == "LOAD_GLOBAL"
+        # Preserve helper error precedence: resolve its globals before the
+        # lowering pass validates other opcodes (which may contain effects).
+        helper_loads = _global_load_dependencies_from_instructions(
+            helper, tuple(_analyzable_bytecode_instructions(helper, dependency.code)),
+            validate_opcodes=False,
         )
         nested_helpers, nested_tensors, nested_values = _global_cache_dependencies_for_loads(
             root_program,
@@ -609,8 +640,9 @@ def _resolve_global_dependency(state, program, instruction, name):
         for dependency in state.helper_dependencies:
             if dependency.global_name == name:
                 return dependency
-        if name in state.global_values:
-            return state.global_values[name]
+        load_key = _global_load_key(program, instruction)
+        if load_key in state.global_values:
+            return state.global_values[load_key]
         if name in state.global_tensor_proxies:
             return state.global_tensor_proxies[name]
         _unsupported_bytecode(program, instruction, "global dependency snapshot")
@@ -1249,13 +1281,19 @@ def _handle_call(recorder, locals, stack, program, instruction, state, active):
     if names and not isinstance(callable_value, _BytecodeMethod):
         _unsupported_bytecode(program, instruction, "keyword arguments")
     if _builtins.isinstance(callable_value, _BytecodeBuiltin):
-        if len(args) != 2:
-            _unsupported_bytecode(program, instruction, "native binary argument count")
-        if callable_value.target == "matmul":
-            left, right = (_require_tensor(arg, program, instruction, "matmul operand") for arg in args)
-            stack.append(recorder.record_binary("matmul", left, right, "torch.matmul"))
-        else:
+        target = callable_value.target
+        if len(args) != callable_value.arity:
+            _unsupported_bytecode(program, instruction, f"native {target} argument count")
+        if target in ("add", "matmul"):
+            left, right = (_require_tensor(arg, program, instruction, f"{target} operand") for arg in args)
+            stack.append(recorder.record_binary(target, left, right, f"torch.{target}"))
+        elif target == "neg":
+            operand = _require_tensor(args[0], program, instruction, "neg operand")
+            stack.append(recorder.record_unary("neg", operand))
+        elif target == "mul_scalar":
             stack.append(_record_scalar_multiply(recorder, *args, program, instruction))
+        else:
+            _unsupported_bytecode(program, instruction, "native function target")
         return
     if _builtins.isinstance(callable_value, _BytecodeMethod):
         stack.append(
@@ -1635,7 +1673,7 @@ def lower_compile_graph(program, input_metadatas, *, name=None, compile_request=
         root_program=program,
         helper_dependencies=compile_request.helper_dependencies,
         global_tensor_proxies=global_tensor_proxies,
-        global_values={d.global_name: d.value for d in compile_request.global_value_dependencies},
+        global_values={d.load_key: d.value for d in compile_request.global_value_dependencies},
     )
     output = _lower_function_body(
         recorder,

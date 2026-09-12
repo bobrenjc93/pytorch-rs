@@ -1,0 +1,14 @@
+{
+  "base_file": "../input-manifests.json",
+  "base_file_sha256": "0b6a43001dfc0786d597c50b0e333bfa6789525e91866935fbff34eca28e81e8",
+  "base_variant": "inputs-d963419336edba25f7304c5cae6ce40b384df02fcde0788d6758ee092071b81a.json",
+  "changed": {
+    "python/torch_rs/__init__.py": "c79c49ab3e693b408988a533d44c5113f7864eaff7c1bf241b24ca72adceb5d7",
+    "python/torch_rs/_compile_bytecode.py": "d1518a64b17b5030929f01cf137129994f4d5fb909d222b43b82a81f3a8d1a70",
+    "python/torch_rs/_compiler_state.py": "3b01fcfcb4c4a57a2c94c1a8e45c08b4e2525cc932da7d667b2d5191c15d7a22",
+    "tests/test_compile_cuda_module_arithmetic.py": "26e16ec8e4eb79f22328f406f2d7f2e678441448f17b9aa8eec13164a0127dd0"
+  },
+  "removed": [],
+  "reconstructed_name": "inputs-b5a5ffb70443f69dffa05224f354b74b368ea84184c19880e3fb42dff033004e.json",
+  "reconstructed_sha256": "b5a5ffb70443f69dffa05224f354b74b368ea84184c19880e3fb42dff033004e"
+}

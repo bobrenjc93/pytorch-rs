@@ -1,0 +1,72 @@
+"""Publish compact development receipts without touching prior evidence."""
+import hashlib
+import gzip
+import json
+from pathlib import Path
+import shutil
+
+root = Path.cwd()
+source = root / 'target/evidence'
+destination = root / 'docs/diagnostics/compile-cuda-module-arithmetic'
+def sha(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+def write(name, value):
+    (destination / name).write_text(json.dumps(value, indent=2, sort_keys=True) + '\n')
+# Keep one full input manifest; each state stores only changes against that
+# manifest. Reconstruct with sorted indent=2 JSON + newline to verify receipts.
+paths = sorted(source.glob('inputs-*.json'))
+base_path = paths[0]
+base = json.loads(base_path.read_text())
+variants = {}
+for path in paths:
+    current = json.loads(path.read_text())
+    variants[path.name] = dict(sha256=sha(path), changed={k:v for k,v in current.items() if base.get(k) != v}, removed=sorted(set(base)-set(current)))
+    restored = {k:v for k,v in base.items() if k not in variants[path.name]['removed']}
+    restored.update(variants[path.name]['changed'])
+    assert hashlib.sha256((json.dumps(restored, sort_keys=True, indent=2)+'\n').encode()).hexdigest() == sha(path)
+write('input-manifests.json', dict(base_name=base_path.name, base=base, variants=variants))
+records = {}
+logs = destination / 'logs'
+logs.mkdir(exist_ok=True)
+for path in sorted(source.glob('*.json')):
+    if path.name.startswith('inputs-') or path.name == 'interpreter.json':
+        continue
+    record = json.loads(path.read_text())
+    records[path.stem] = record
+    log = path.with_suffix('.log')
+    if log.exists():
+        if log.stat().st_size > 8000 and path.stem != 'compiler-final-source':
+            published = logs / (log.name + '.gz')
+            published.write_bytes(gzip.compress(log.read_bytes(), mtime=0))
+        else:
+            published = logs / log.name
+            shutil.copyfile(log, published)
+        record['published_log'] = str(published.relative_to(destination))
+write('commands.json', records)
+shutil.copyfile(source / 'interpreter.json', destination / 'interpreter.json')
+builds = {}
+for name in ('module-baseline', 'module-final', 'module-final-revised', 'module-final-guarded'):
+    folder = root / 'target/cuda-add-diagnostic' / name
+    record_path = folder / 'build-record.json'
+    record = json.loads(record_path.read_text())
+    # The full export includes historical docs/evidence, irrelevant to building
+    # this extension. Retain their aggregate hash and keep all build inputs.
+    full = record.pop('source_files')
+    record['source_files'] = {k:v for k,v in full.items() if k.startswith(('src/', 'python/')) or k in ('Cargo.toml','Cargo.lock','rust-toolchain.toml','pyproject.toml','uv.lock','README.md')}
+    record['full_build_record_sha256'] = sha(record_path)
+    record['full_source_file_count'] = len(full)
+    record['record_compaction'] = 'All native/Python/build inputs retained; full export manifest fingerprint retained; historical docs and evidence file entries omitted.'
+    record['observed_build_exit_code'] = 0
+    builds[name] = record
+    shutil.copyfile(folder / 'build.log', logs / (name + '-build.log'))
+write('builds.json', builds)
+for name in ('env.sh', 'record.py', 'provenance.py', 'compiler_sweep.py', 'compiler_sweep_initial.py', 'owner_guard_audit.py', 'inductor_inputs.py', 'check_evidence.py', 'summarize_evidence.py', 'bootstrap.py', 'publish_evidence.py'):
+    shutil.copyfile(root / 'target' / name, destination / (name + '.txt'))
+original_provenance = (root / 'target/provenance.py').read_text().replace('module-final-guarded/build-record.json', 'module-final/build-record.json')
+(destination / 'provenance-initial.py.txt').write_text(original_provenance)
+(destination / 'provenance-revised.py.txt').write_text((root / 'target/provenance.py').read_text().replace('module-final-guarded/build-record.json', 'module-final-revised/build-record.json'))
+probe = Path('/tmp/pytorch-rs-compiler-recovery.3UB6mU/probe-compiled-cuda-module-arithmetic.py')
+shutil.copyfile(probe, destination / 'baseline-probe.py.txt')
+# Preserve the baseline's complete input hashes and per-call outcomes verbatim.
+shutil.copyfile(source / 'baseline.log', destination / 'baseline.json')
+print('Published', len(records), 'command receipts and', len(variants), 'input states')

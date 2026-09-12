@@ -271,7 +271,7 @@ class CompileCudaTrailingVectorTests(Comparison, unittest.TestCase):
                     _compile_trace._native._compile_trace_binary(*args, "add")
                 self.assertEqual(cache.graphs, before)
         for expression in ("x.add(y, alpha=1)", "x.add(y, alpha=2)", "x.add(other=y)",
-                           "x.add(y, out=None)", "m.add(x, y)", "x + 1", "x * y", "x - y"):
+                           "x.add(y, out=None)", "m.add(x, y, alpha=1)", "x + 1", "x * y", "x - y"):
             program = make_program(f"def program(x, y):\n    return {expression}\n")
             with self.assertRaises(NotImplementedError):
                 native.compile(program, backend="eager", fullgraph=True)(x, y)

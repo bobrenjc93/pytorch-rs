@@ -166,6 +166,19 @@ executor preflights the whole graph before launching any operation, including
 on dynamic cache hits. This is not a general Inductor compiler or a performance
 parity claim. Noncontiguous CUDA negation and CUDA autograd remain unsupported;
 see [capture scope](docs/compile-cuda-add.md) and [kernel validation](docs/cuda-neg-validation.md).
+The [CUDA arithmetic frontend](docs/compile-cuda-add.md) recognizes positional
+module/direct-import `add`, `neg` and `negative` by immutable
+`_VariableFunctionsClass` callable identity, retained by eager package
+initialization before the frontend is imported lazily. Replacing the public
+native owner export cannot supply new identities or run attribute hooks.
+Explicit operation/arity dispatch
+records existing add/neg nodes in the shared registry. Dependency descriptors
+retain each global load's immediate module attribute; cache snapshots distinguish
+code location and namespace. Legacy module guards stay intact, and unused new
+fields do not enter cache keys. CUDA output trees are prevalidated before both
+single-operation hooks and whole-graph execution. CPU global-call rejection and
+the native planners/kernels remain unchanged.
+
 The compiler's `matmul` binary node plans rank-2 `(M,K)@(K,N)` output
 metadata and validates inner dimensions and output size before any node runs.
 `_compile_trace_binary` calls native `Tensor::matmul`, which independently checks

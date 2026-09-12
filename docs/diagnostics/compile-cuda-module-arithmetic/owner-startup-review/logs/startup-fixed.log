@@ -1,0 +1,7 @@
+test_owner_rebinding_before_first_frontend_import (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticFrontendTests.test_owner_rebinding_before_first_frontend_import) ... ok
+test_owner_rebinding_before_first_public_compiled_call (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_owner_rebinding_before_first_public_compiled_call) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 2.426s
+
+OK

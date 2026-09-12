@@ -1,0 +1,66 @@
+import ctypes, datetime, hashlib, json, os, stat, subprocess, sys, zipfile
+from pathlib import Path
+import torch_rs as native
+import torch
+root = Path.cwd()
+head = '35a52edcd4af20ce655f6bffa1779aa7bb1b0781'
+def sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()
+assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip() == head
+assert not subprocess.check_output(['git','status','--porcelain'],text=True)
+build = json.loads((root/'target/cuda-add-diagnostic/module-postcommit-35a52edc/build-record.json').read_text())
+assert build['measured_code_commit'] == head and build['source_matches_commit'] and not build['origin_status']
+source = Path(build['source_root'])
+assert all(sha(source/name) == value for name,value in build['source_files'].items())
+assert hashlib.sha256(json.dumps(build['source_files'],sort_keys=True).encode()).hexdigest() == build['source_manifest_sha256']
+wheel = Path(build['wheel'])
+assert sha(wheel) == build['wheel_sha256']
+verified = {}
+with zipfile.ZipFile(wheel) as z:
+    for name in z.namelist():
+        if name.startswith('torch_rs/') and name.endswith(('.py','.so')):
+            actual = Path(native.__file__).parent.parent / name
+            actual.resolve().relative_to(root)
+            assert actual.read_bytes() == z.read(name), name
+            if name.endswith('.py'):
+                assert actual.read_bytes() == (root/'python'/name).read_bytes() == (source/'python'/name).read_bytes(), name
+            verified[name] = sha(actual)
+assert sha(Path(native._C.__file__)) == build['installed_native_sha256']
+interpreter = root/'target/uv-python/cpython-3.12.14-linux-x86_64-gnu'
+inventory = {}
+for p in sorted(interpreter.rglob('*')):
+    key = p.relative_to(interpreter).as_posix()
+    info = p.lstat()
+    if p.is_symlink():
+        target = os.readlink(p)
+        assert not os.path.isabs(target) and (p.parent/target).resolve().is_relative_to(interpreter.resolve())
+        inventory[key] = ['symlink',target]
+    elif p.is_file(): inventory[key] = ['file',stat.S_IMODE(info.st_mode),info.st_size,sha(p)]
+    elif p.is_dir(): inventory[key] = ['directory',stat.S_IMODE(info.st_mode)]
+    else: raise AssertionError(key)
+inventory_sha = hashlib.sha256(json.dumps(inventory,sort_keys=True).encode()).hexdigest()
+assert inventory_sha == '519ae888f6f47836a48399b7eff35b28582673e893a08261bd5e2758f9a4f265'
+assert sha(Path(sys.executable).resolve()) == 'f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526'
+assert Path(sys.base_prefix).resolve() == interpreter.resolve()
+assert Path(sys.prefix).resolve() == root/'.venv'
+x = native.tensor([1.,2.]).to('cuda:0')
+assert native.compile(lambda x: native.add(native.neg(x),x),backend='eager',fullgraph=True)(x).cpu().tolist() == [0.,0.]
+torch.ones(1,device='cuda:0')
+libs = sorted({line.split()[-1] for line in Path('/proc/self/maps').read_text().splitlines() if '/libcudart.so' in line})
+runtimes = []
+for path in libs:
+    Path(path).resolve().relative_to(root)
+    value = ctypes.c_int()
+    assert ctypes.CDLL(path).cudaRuntimeGetVersion(ctypes.byref(value)) == 0
+    runtimes.append({'path':path,'version':value.value,'sha256':sha(Path(path))})
+assert len(runtimes) == 1 and runtimes[0]['version'] == 13000
+print(json.dumps({'captured_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+'measured_code_commit':head,'git_status':'','source_kind':build['source_kind'],'source_manifest_sha256':build['source_manifest_sha256'],
+'source_file_count':len(build['source_files']),'source_export_reverified':True,'installed_module_hashes':verified,
+'native_extension':native._C.__file__,'native_sha256':sha(Path(native._C.__file__)),'wheel':str(wheel),'wheel_sha256':sha(wheel),
+'python':sys.version,'executable':sys.executable,'interpreter_sha256':sha(Path(sys.executable).resolve()),'interpreter_inventory_sha256':inventory_sha,
+'interpreter_reused':True,'dependency_environment_reused':True,'setup':'existing worktree-local verified interpreter and canonical venv; locked dev/reference sync; fresh empty-target release wheel from clean commit',
+'cache_state':'warm worktree-local uv/Cargo downloads, Python graph/Inductor/Triton/CUDA caches; new empty release Cargo target',
+'interpreter_inventory_entries':len(inventory),'torch_version':torch.__version__,'torch_cuda':torch.version.cuda,'runtimes':runtimes,
+'compiler':subprocess.check_output(['rustc','--version'],text=True).strip(),'cargo':subprocess.check_output(['cargo','--version'],text=True).strip(),
+'nvcc':subprocess.check_output(['nvcc','--version'],text=True),'nvcc_used':False,'native_cuda_compilation':'driver JIT of unchanged embedded PTX',
+'gpu':subprocess.check_output(['nvidia-smi','--query-gpu=index,uuid,name,driver_version,utilization.gpu,memory.used','--format=csv'],text=True)},indent=2))

@@ -1,0 +1,293 @@
+{
+  "schema": "native-module-arithmetic-clean-commit-capture-v1",
+  "published_at": "2026-09-12T01:46:32.471907+00:00",
+  "measured_code_commit": "e2378805eee2d1092d21c0678f503d888851e47c",
+  "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+  "measurement_git_status": "",
+  "kind": "non-scoring clean implementation commit validation; no performance measurement or merge approval",
+  "resources": [
+    "gpu",
+    "cpu-heavy"
+  ],
+  "gpu_selection": "0 normally; 0,1 only for restoration; snapshots do not reserve devices",
+  "build_record": "build-record.json.gz",
+  "build_record_uncompressed_sha256": "669b76e7e514e6b156548e1998f773f7b059cba821144d8e5702c55198922697",
+  "source_manifest_sha256": "7d39d7a99faaaa44adef98487a3b9ef493a3aa6c5a5980af0eaec74757ffc4d8",
+  "source_file_count": 5598,
+  "input_manifest": {
+    "path": "../input-manifests.json",
+    "file_sha256": "0b6a43001dfc0786d597c50b0e333bfa6789525e91866935fbff34eca28e81e8",
+    "variant": "inputs-d963419336edba25f7304c5cae6ce40b384df02fcde0788d6758ee092071b81a.json",
+    "sha256": "d963419336edba25f7304c5cae6ce40b384df02fcde0788d6758ee092071b81a",
+    "all_current_inputs_verified": true
+  },
+  "inductor_inputs": {
+    "path": "logs/inductor-inputs.log",
+    "sha256": "b0a2afcdcd9a43b82b0ffb1e162ad7ba262d2baaefdf00bf301a37a852f2a8e5",
+    "matches_development_final_inputs": true
+  },
+  "candidate_audit": {
+    "path": "candidate-audit.json",
+    "kind": "pre-capture audit; outstanding_capture records work requested before these measurements"
+  },
+  "prior_evidence": {
+    "path": "../verification.json",
+    "sha256": "38cb24d626a4dd38bb46532945ebef3f57c69d9e91ecf9619324e6293f24f818",
+    "files_reverified_unchanged": 66,
+    "receipts_reverified": 41,
+    "frozen_baseline_and_development_bytes_preserved": true
+  },
+  "recipe_reuse": {
+    "env.sh.txt": {
+      "path": "../env.sh.txt",
+      "sha256": "c615bd3132bbdb407e1026175591d64fb2ebf01f04ddfce20b8f01f558548df9"
+    },
+    "compiler_sweep.py.txt": {
+      "path": "../compiler_sweep.py.txt",
+      "sha256": "308f9f91fc58014611f69cab3124e36483ea0378307095ff5f362b89620af977"
+    },
+    "inductor_inputs.py.txt": {
+      "path": "../inductor_inputs.py.txt",
+      "sha256": "c42664836401ec592949b44cd40ed350619668ed32f5bbfe8e9c9dfe721cdf30"
+    }
+  },
+  "recipe_sha256": {
+    "record.py.txt": "1fae417ed9d39e400667134ae93cd0ebb02de381afffa9981a37e09fc075285f",
+    "provenance.py.txt": "12be24ff5056761bfe8787d0e7f540281c8b46677a5da6365ea3c8a2c3fa33d4",
+    "checks.sh.txt": "e8e82e9000095898da979ec633b9228d0b0694ced5c175962d3df1b8b31e81a3",
+    "publish.py.txt": "8431c183099b23f582bb25e33329d490e68e5ffcaccecdc34e7358f9ed69900a",
+    "verify_publication.py.txt": "e205f4639b4aaede7301e2581c1b6202032adc707670f4398ce1bb71df0b8b5b"
+  },
+  "setup_reuse": "existing worktree-local verified interpreter and canonical venv; locked dev/reference sync; fresh empty-target release wheel from clean commit",
+  "cache_state": "warm worktree-local uv/Cargo downloads, Python graph/Inductor/Triton/CUDA caches; new empty release Cargo target",
+  "provenance_before": "logs/provenance-before.log",
+  "provenance_after": "logs/provenance-after.log",
+  "summary": {
+    "release-build": {
+      "exit_code": 0
+    },
+    "provenance-before": {
+      "exit_code": 0
+    },
+    "verify-native": {
+      "exit_code": 0
+    },
+    "focused-cuda": {
+      "run": 32,
+      "passed": 27,
+      "skipped": 5,
+      "reported_seconds": 33.22,
+      "skip_lines": [
+        "test_restoration_success_rejection_unused_input_and_lifetime (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticDeviceTests.test_restoration_success_rejection_unused_input_and_lifetime) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+        "test_cross_thread_pool_release_on_both_devices (tests.test_cuda_add.CudaAddDeviceTests.test_cross_thread_pool_release_on_both_devices) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+        "test_device_restoration_success_failure_and_drop (tests.test_cuda_add.CudaAddDeviceTests.test_device_restoration_success_failure_and_drop) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+        "test_replay_eviction_restores_context_across_devices (tests.test_cuda_add.CudaAddDeviceTests.test_replay_eviction_restores_context_across_devices) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+        "test_device_guard_and_context_cache (tests.test_cuda_neg.CudaNegDeviceTests.test_device_guard_and_context_cache) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'"
+      ]
+    },
+    "cpu-hidden": {
+      "run": 116,
+      "passed": 108,
+      "skipped": 8,
+      "reported_seconds": 0.753,
+      "skip_lines": [
+        "test_compositions_helpers_dynamic_squeeze_and_no_replay (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_compositions_helpers_dynamic_squeeze_and_no_replay) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'",
+        "test_dynamic_reuse_nested_outputs_and_lifetime (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_dynamic_reuse_nested_outputs_and_lifetime) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'",
+        "test_inductor_reference_public_spelling_matrix (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_inductor_reference_public_spelling_matrix) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'",
+        "test_layouts_broadcast_offsets_and_ieee_bits (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_layouts_broadcast_offsets_and_ieee_bits) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'",
+        "test_precise_guards_rebindings_failed_attempts_and_limits (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_precise_guards_rebindings_failed_attempts_and_limits) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'",
+        "test_prevalidation_exact_errors_unused_inputs_and_hooks (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_prevalidation_exact_errors_unused_inputs_and_hooks) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'",
+        "test_seeded_calls_generated_compositions_and_all_policies (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_seeded_calls_generated_compositions_and_all_policies) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0'",
+        "test_restoration_success_rejection_unused_input_and_lifetime (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticDeviceTests.test_restoration_success_rejection_unused_input_and_lifetime) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'"
+      ]
+    },
+    "restoration": {
+      "run": 2,
+      "passed": 2,
+      "skipped": 0,
+      "reported_seconds": 4.551,
+      "skip_lines": []
+    },
+    "rust-default": {
+      "passed": 395,
+      "failed": 0,
+      "ignored": 0,
+      "individual_summaries": [
+        [
+          "180",
+          "0",
+          "0",
+          "0",
+          "0",
+          "1.59"
+        ],
+        [
+          "92",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0.27"
+        ],
+        [
+          "3",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0.45"
+        ],
+        [
+          "1",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0.40"
+        ],
+        [
+          "2",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0.53"
+        ],
+        [
+          "1",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0.78"
+        ],
+        [
+          "6",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0.38"
+        ],
+        [
+          "1",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0.44"
+        ],
+        [
+          "2",
+          "0",
+          "0",
+          "0",
+          "0",
+          "1.58"
+        ],
+        [
+          "4",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0.97"
+        ],
+        [
+          "103",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0.01"
+        ]
+      ]
+    },
+    "rust-graph-cuda": {
+      "passed": 15,
+      "failed": 0,
+      "ignored": 0,
+      "individual_summaries": [
+        [
+          "15",
+          "0",
+          "0",
+          "0",
+          "192",
+          "0.48"
+        ]
+      ]
+    },
+    "rust-graph-hidden": {
+      "passed": 15,
+      "failed": 0,
+      "ignored": 0,
+      "individual_summaries": [
+        [
+          "15",
+          "0",
+          "0",
+          "0",
+          "192",
+          "0.25"
+        ]
+      ]
+    },
+    "formatting": {
+      "exit_code": 0
+    },
+    "clippy-default": {
+      "exit_code": 0
+    },
+    "clippy-python": {
+      "exit_code": 0
+    },
+    "docs-smoke": {
+      "run": 12,
+      "passed": 12,
+      "skipped": 0,
+      "reported_seconds": 0.148,
+      "skip_lines": []
+    },
+    "docs-guide": {
+      "exit_code": 0
+    },
+    "inductor-inputs": {
+      "exit_code": 0
+    },
+    "compiler-complete": {
+      "run": 664,
+      "passed": 649,
+      "skipped": 15,
+      "reported_seconds": 409.524,
+      "skip_lines": [
+        "test_ordinals_captures_and_current_device_restoration (tests.test_compile_cuda_boundary.CompileCudaDeviceTests.test_ordinals_captures_and_current_device_restoration) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+        "test_device_and_context_restored (tests.test_compile_cuda_contiguous.CompileContiguousDeviceTests.test_device_and_context_restored) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+        "test_composed_restoration_and_mixed_devices (tests.test_compile_cuda_graph.CudaGraphDeviceTests.test_composed_restoration_and_mixed_devices) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+        "test_device_restore_cache_and_mixed_device_errors (tests.test_compile_cuda_matmul.CompileCudaMatmulDeviceTests.test_device_restore_cache_and_mixed_device_errors) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+        "test_restoration_success_rejection_unused_input_and_lifetime (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticDeviceTests.test_restoration_success_rejection_unused_input_and_lifetime) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+        "test_ownership_restoration_and_cache_separation (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarDeviceTests.test_ownership_restoration_and_cache_separation) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+        "test_ownership_captures_and_device_restoration (tests.test_compile_cuda_neg.CompileCudaNegDeviceTests.test_ownership_captures_and_device_restoration) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+        "test_context_captures_mixed_devices_and_restoration (tests.test_compile_cuda_relu.CompileCudaReluDeviceTests.test_context_captures_mixed_devices_and_restoration) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+        "test_context_restoration_and_unused_mixed_capture (tests.test_compile_cuda_reshape.ReshapeDeviceTests.test_context_restoration_and_unused_mixed_capture) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+        "test_restoration_and_unused_input_capture_device_guards (tests.test_compile_cuda_squeeze.SqueezeDeviceTests.test_restoration_and_unused_input_capture_device_guards) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+        "test_current_device_restored_for_single_and_composed_reductions (tests.test_compile_cuda_sum_rows.CompileCudaSumDeviceTests.test_current_device_restored_for_single_and_composed_reductions) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+        "test_device_context_and_unused_capture (tests.test_compile_cuda_t.CompileTDeviceTests.test_device_context_and_unused_capture) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+        "test_ordinals_and_restoration (tests.test_compile_cuda_trailing_vector.CompileCudaTrailingVectorDeviceTests.test_ordinals_and_restoration) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+        "test_restore_device_context_and_unused_capture (tests.test_compile_cuda_transpose.TransposeDeviceTests.test_restore_device_context_and_unused_capture) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+        "test_context_restoration_and_unused_mixed_capture (tests.test_compile_cuda_view.ViewDeviceTests.test_context_restoration_and_unused_mixed_capture) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'"
+      ]
+    },
+    "provenance-after": {
+      "exit_code": 0
+    }
+  },
+  "compiler_selection": "every tests/test_compile*.py plus tests/test_top_level_compile.py; 59 modules",
+  "limitations": [
+    "unittest counts are test methods, not parameterized subcases",
+    "CUDA-hidden Rust hardware sections return early without a reported ignored count",
+    "Inductor disk caches were warm; per-test wrapper cold/cache-hit behavior does not claim cold toolchain latency",
+    "earlier development failures and frozen baseline remain unchanged in the parent evidence directory",
+    "independent review, evaluation and delivery gates remain separate"
+  ]
+}

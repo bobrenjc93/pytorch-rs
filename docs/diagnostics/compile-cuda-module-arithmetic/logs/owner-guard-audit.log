@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/owner_guard_audit.py", line 8, in <module>
+    assert bytecode._builtin_target(native.neg).target == 'neg'
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/.venv/lib/python3.12/site-packages/torch_rs/_compile_bytecode.py", line 429, in _builtin_target
+    if value is owner.mul or value is owner.multiply:
+                ^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6f83c739/target/owner_guard_audit.py", line 6, in __getattribute__
+    raise AssertionError('owner callback: ' + name)
+AssertionError: owner callback: mul

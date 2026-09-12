@@ -1,0 +1,13 @@
+import json
+from pathlib import Path
+import re
+folder = Path('target/evidence')
+for name in ('compiler-final-source', 'cuda-final', 'cpu-final', 'restoration-revised', 'docs-final',
+             'rust-default-final', 'final-rust-graph', 'portable-rust-graph'):
+    record = json.loads((folder / (name + '.json')).read_text())
+    log = (folder / (name + '.log')).read_text()
+    match = re.search(r'Ran (\d+) tests?', log)
+    rust = re.findall(r'test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored', log)
+    skip = re.search(r'OK \(skipped=(\d+)\)', log)
+    print(name, dict(exit_code=record['exit_code'], run=int(match[1]) if match else sum(int(a) for a,b,c in rust),
+                     skipped=int(skip[1]) if skip else sum(int(c) for a,b,c in rust)))

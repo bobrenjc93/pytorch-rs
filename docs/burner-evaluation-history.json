@@ -11325,6 +11325,26 @@
         "eval_d4c0b71e": 97,
         "eval_b7f2a91c": 5.6
       }
+    },
+    {
+      "key": "pr:1982",
+      "recordedAt": "2026-09-12T04:24:34.315Z",
+      "label": "PR #1982",
+      "kind": "leaf",
+      "prNumber": 1982,
+      "title": "Compile native CUDA add and neg function calls with guarded module aliases",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 98,
+        "eval_39340456": 95,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96,
+        "eval_a61c0e71": 100,
+        "eval_6f98c42d": 100,
+        "eval_d4c0b71e": 97,
+        "eval_b7f2a91c": 5.6
+      }
     }
   ]
 }

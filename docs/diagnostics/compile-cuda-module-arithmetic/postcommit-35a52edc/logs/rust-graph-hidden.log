@@ -1,0 +1,22 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running unittests src/lib.rs (target/cargo-build/debug/deps/pytorch_rs-545e4fdb10cc861f)
+
+running 15 tests
+test tensor::cuda_graph::tests::empty_alias_does_not_require_canonical_strides ... ok
+test tensor::cuda_graph::tests::shape_count_validation_does_not_admit_higher_rank_operations ... ok
+test tensor::cuda_graph::tests::packing_and_arithmetic_plan_layouts_independently ... ok
+test tensor::cuda_graph::tests::view_plans_only_aliases_including_offsets_empty_and_singleton_strides ... ok
+test python::compile_cuda_graph::tests::squeeze_prevalidates_payload_arity_and_metadata_before_any_operation ... ok
+test python::compile_cuda_graph::tests::invalid_late_nodes_execute_zero_native_operations ... ok
+test python::compile_cuda_graph::tests::incompatible_view_rejects_before_even_an_earlier_pack ... ok
+test python::compile_cuda_graph::tests::relu_graph_prevalidates_early_and_late_nodes ... ok
+test python::compile_cuda_graph::tests::t_metadata_types_reject_before_any_native_operation ... ok
+test python::compile_cuda_graph::tests::shape_payloads_reject_before_early_or_late_execution ... ok
+test tensor::cuda_graph::tests::t_plans_only_bounded_views_and_reuses_storage ... ok
+test python::compile_cuda_graph::tests::transpose_axes_reject_before_early_or_late_execution ... ok
+test tensor::cuda_graph::tests::transpose_axes_plan_and_execute_shared_storage ... ok
+test tensor::cuda_graph::tests::reshape_plans_shared_views_and_device_packs ... ok
+test tensor::cuda_graph::tests::squeeze_plans_surviving_strides_and_retains_storage_even_when_empty ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 192 filtered out; finished in 0.25s
+

@@ -1,0 +1,152 @@
+{
+  "schema": "native-module-arithmetic-clean-commit-capture-v1",
+  "published_at": "2026-09-12T03:49:39.768089+00:00",
+  "measured_code_commit": "35a52edcd4af20ce655f6bffa1779aa7bb1b0781",
+  "base_commit": "64dd296ee65bff37d5d2868506de2e61aa5effb5",
+  "measurement_git_status": "",
+  "kind": "non-scoring clean-commit validation including owner-initialization review fix; no performance or merge-approval claim",
+  "resources": [
+    "gpu",
+    "cpu-heavy"
+  ],
+  "gpu_selection": "0 ordinarily; 0,1 only for restoration; snapshots are not reservations",
+  "build_record": "build-record.json.gz",
+  "build_record_uncompressed_sha256": "8fc6c6ab83dd71191cd9f1c8d5203592be6a411e7b71cd094e6c519f80258bf8",
+  "source_manifest_sha256": "b3aa0086daffd7f656f18d1b4a564e773926e47a91421aea6e13f1030c6c5212",
+  "source_file_count": 5670,
+  "input_manifest": {
+    "path": "../owner-startup-review/input-delta.json",
+    "file_sha256": "c2a9dd4007e13c0bb3916ee33e4ef25334d00500435a82e8e131a1e233dfee29",
+    "reconstructed_sha256": "b5a5ffb70443f69dffa05224f354b74b368ea84184c19880e3fb42dff033004e",
+    "all_current_inputs_verified": true
+  },
+  "inductor_inputs": {
+    "path": "logs/inductor-inputs.log",
+    "sha256": "887705ed67eeef2186386bc9b94abb6742575d0e687b3c18091797a9b1813fb9",
+    "matches_review_development_inputs": true
+  },
+  "prior_evidence": {
+    "audit": "candidate-audit.json",
+    "files_reverified_unchanged": 138,
+    "receipts_reverified": 81,
+    "preserved": true
+  },
+  "candidate_audit_kind": "pre-capture audit; outstanding_capture describes the request before these measurements",
+  "recipe_reuse": {
+    "env.sh.txt": {
+      "path": "../env.sh.txt",
+      "sha256": "c615bd3132bbdb407e1026175591d64fb2ebf01f04ddfce20b8f01f558548df9"
+    },
+    "compiler_sweep.py.txt": {
+      "path": "../compiler_sweep.py.txt",
+      "sha256": "308f9f91fc58014611f69cab3124e36483ea0378307095ff5f362b89620af977"
+    },
+    "inductor_inputs.py.txt": {
+      "path": "../inductor_inputs.py.txt",
+      "sha256": "c42664836401ec592949b44cd40ed350619668ed32f5bbfe8e9c9dfe721cdf30"
+    },
+    "owner-startup-review/reproduce.py.txt": {
+      "path": "../owner-startup-review/reproduce.py.txt",
+      "sha256": "c438f9b913cdb5cc8df5a861633b6e055844c0414e4491211a5ab2a51b7f96e7"
+    }
+  },
+  "recipe_sha256": {
+    "record.py.txt": "cf9f635bb7d50fbf81a91aa0bcb71b17dd1ab191467736262de785c77b1bb3dd",
+    "provenance.py.txt": "77452e4aec58c60b4432c644dfbc965505eed3dd9933894cf401a4114c9be0f9",
+    "checks.sh.txt": "9fb7aab65ab14ba2bb547eb5b7b242084c373933db0bec52ecfcdbb606e30e30",
+    "publish.py.txt": "73a1c4eee8205b44a99d330cd33b36fad7c31cbe8b24d40d9988c7d77e26b7e9",
+    "verify_publication.py.txt": "9f9fc54a64b02a8be6d4725b6b21f5eed9a537fb0ea199a7267d84f9b0c7f2c8"
+  },
+  "setup_reuse": "existing worktree-local verified interpreter and canonical venv; locked dev/reference sync; fresh empty-target release wheel from clean commit",
+  "cache_state": "warm worktree-local uv/Cargo downloads, Python graph/Inductor/Triton/CUDA caches; new empty release Cargo target",
+  "provenance_before": "logs/provenance-before.log",
+  "provenance_after": "logs/provenance-after.log",
+  "summary": {
+    "release-build": {
+      "exit_code": 0
+    },
+    "provenance-before": {
+      "exit_code": 0
+    },
+    "verify-native": {
+      "exit_code": 0
+    },
+    "reviewer-counterfeit": {
+      "exit_code": 0
+    },
+    "reviewer-hostile": {
+      "exit_code": 0
+    },
+    "focused-cuda": {
+      "run": 34,
+      "passed": 29,
+      "skipped": 5,
+      "reported_seconds": 36.58
+    },
+    "cpu-hidden": {
+      "run": 118,
+      "passed": 109,
+      "skipped": 9,
+      "reported_seconds": 1.121
+    },
+    "restoration": {
+      "run": 2,
+      "passed": 2,
+      "skipped": 0,
+      "reported_seconds": 5.513
+    },
+    "rust-default": {
+      "passed": 395,
+      "failed": 0,
+      "ignored": 0
+    },
+    "rust-graph-cuda": {
+      "passed": 15,
+      "failed": 0,
+      "ignored": 0
+    },
+    "rust-graph-hidden": {
+      "passed": 15,
+      "failed": 0,
+      "ignored": 0
+    },
+    "formatting": {
+      "exit_code": 0
+    },
+    "clippy-default": {
+      "exit_code": 0
+    },
+    "clippy-python": {
+      "exit_code": 0
+    },
+    "docs-smoke": {
+      "run": 12,
+      "passed": 12,
+      "skipped": 0,
+      "reported_seconds": 0.148
+    },
+    "docs-guide": {
+      "exit_code": 0
+    },
+    "inductor-inputs": {
+      "exit_code": 0
+    },
+    "compiler-complete": {
+      "run": 666,
+      "passed": 651,
+      "skipped": 15,
+      "reported_seconds": 421.57
+    },
+    "provenance-after": {
+      "exit_code": 0
+    }
+  },
+  "compiler_selection": "all tests/test_compile*.py and tests/test_top_level_compile.py; 59 modules",
+  "limitations": [
+    "Test-method counts overlap between suites; parameterized cases are not separate method counts",
+    "CUDA-hidden Rust hardware sections return early without reported ignored tests",
+    "Warm persistent compilation caches; these are functional checks, not cold toolchain latency measurements",
+    "Prior baselines and failures remain pinned to their original source identities",
+    "Independent review, evaluation and delivery gates remain separate"
+  ]
+}

@@ -1,0 +1,253 @@
+{
+  "kind": "source-bound review revision development evidence; not a clean-commit capture",
+  "base_commit": "7ff7cf3bb3496b077479db7938b3ebb457d6415c",
+  "measured_code_commit": null,
+  "source_manifest_sha256": "101a75aa82778631695bd4bc4c1c6cdfa81595dd5ab733e714d3ed96c2e7b7ad",
+  "build_record_uncompressed_sha256": "6cc2faf5a2b8207c46362331b33c62a110f4c84534e04d98f0ce58e0d75e997e",
+  "input_manifest": "input-delta.json",
+  "seeded_32_cell_inputs_unchanged": true,
+  "pre_fix_installation": {
+    "build_record": "../postcommit-e2378805/build-record.json.gz",
+    "measured_code_commit": "e2378805eee2d1092d21c0678f503d888851e47c",
+    "command_labels": [
+      "reproduce-counterfeit",
+      "reproduce-hostile",
+      "regression-old-wheel"
+    ],
+    "note": "new regression tests ran against the pre-revision installed release wheel before replacement; test/source manifest describes the local harness, not that older installed library"
+  },
+  "prior_evidence_sha256": {
+    "README.md": "48367774fc70358e35e175a94977302e110b79222c50dacc1ba2224f17891279",
+    "baseline-probe.py.txt": "67359b3f2589c6db733068196f5add9be339b09228bf6e077731f87bc7ff9ac8",
+    "baseline.json": "cf3730dab23e78069cb840cb3e113cedb75fd6419e5b645ee7bf3094ce585432",
+    "bootstrap.py.txt": "1ce4d83dfd224736c963595f4ed702a3d96a37a0f38e9084ba6bbd0dc869e792",
+    "builds.json": "fd80d0f1ef4d288f810a389bbc03470cea2187c3ebdb9a095947825c974ea8b2",
+    "check_evidence.py.txt": "6f895d1fc15de176e39b3cb781ef3dd106bbc52b6f4a43f60d35d29394f12b9f",
+    "commands.json": "8801fd5ebb3af94fb120c027ef7dc2ad1ed542e74727f0f46dadcc0d1e3249a8",
+    "compiler_sweep.py.txt": "308f9f91fc58014611f69cab3124e36483ea0378307095ff5f362b89620af977",
+    "compiler_sweep_initial.py.txt": "77606a3bdd15ff2ea5c6200d8e26abe69f664e03da7c599f42d2a2932d51f442",
+    "env.sh.txt": "c615bd3132bbdb407e1026175591d64fb2ebf01f04ddfce20b8f01f558548df9",
+    "inductor_inputs.py.txt": "c42664836401ec592949b44cd40ed350619668ed32f5bbfe8e9c9dfe721cdf30",
+    "input-manifests.json": "0b6a43001dfc0786d597c50b0e333bfa6789525e91866935fbff34eca28e81e8",
+    "interpreter.json": "917cd46ef7bdbcb7ad2f8e9ed1344f21d3b860fa817e0a7d22e318d30709ed62",
+    "logs/baseline.log.gz": "cc241f74538fece5af7995541e75d23f4da8b510e60ba841d4a830df9c90c306",
+    "logs/candidate-build.log": "bc72bfd0b41a35bc72331d58d27717c78a18cf72125fa2e89a11369b9361c280",
+    "logs/clippy-default.log": "88269c0e24137af2870d7a14e3692b3ee7cbbd29b478b1911b4e31cc78f295d1",
+    "logs/clippy.log": "b6c0b7e4193594cf0234bc483a526583cc26b8de6154b1129ea1a723c88caef9",
+    "logs/compiler-final-source.log": "b042f6b43dfc0ea08cea6c1071c24ad856b25dc8a7e22bdbf1dcbc7409c39f49",
+    "logs/compiler-final.log.gz": "d470cabe1878b5a05ec7e7f7b746772fdbaf52c10bc0d5881543f3ad4a3e6408",
+    "logs/complete-compiler-revised.log.gz": "90b82f1ab6f5da49ce383cea7aa8aaa8281006a1dc7232037a69821ef2464556",
+    "logs/complete-compiler.log.gz": "62e42b50ff55bda3dd6f3f6c8e32d753c94d5c32eaeb0a4127b455f522c3fa8c",
+    "logs/cpu-final.log.gz": "8c07bb9a7b797af0ca28a5fb1b71f7a7a9f072d1adc39c73b188b64e5bff46c3",
+    "logs/cuda-final.log": "f2718a89944e0933d52e2a5acb314049c29c0b627da7cf2ffec9a0ac4733d6d9",
+    "logs/docs-final.log": "163b62cbcbf7d00cdcfaee21b2d04e327369529fce124a8295586147ef274fc9",
+    "logs/docs-smoke.log.gz": "c8d2158c98114001e413388bf9230db7cf3ced6b60572f2326b2f340f0ae4400",
+    "logs/final-build.log": "90c8343d44399b7bd0ce0fd1070bcb97a9ccebfdcb0ed4852f98b204323ca6c5",
+    "logs/final-clippy.log": "a13905646e2aed93ec6ea9ed6ac91490a4e01f91af0215c3965279a910612149",
+    "logs/final-focused.log.gz": "34379a2fb6473629771f9407c3aaf424c6166b6474d36cbddc7a235028531505",
+    "logs/final-format.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "logs/final-provenance.log": "76fd9154c5764d75e131fa13d01e675b98f21fab0f8bbd90b671726a35fc6baf",
+    "logs/final-revised-build.log": "c59a4924009c9c660fb1844a8f24136863bfc5f65b12b958abc9bed18fbf896b",
+    "logs/final-rust-graph.log": "d9d42162f83d1799ac78b744330abb9a761b630c1370981628049baa26c3ce93",
+    "logs/focused-first.log.gz": "86acf58855cb36d20c228ad65c23446c575fc74330f75f001d714f945e68454a",
+    "logs/focused-second.log": "7e5eac7ac3d1db44880541ef719fe47620b237ea341076c52f0bbb3eb6df4630",
+    "logs/formatting.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "logs/guarded-final-build.log": "5c917c6ab5ea45edfedd6ac086ece0543e9fff58ca3e185f4184a48e4175e4c4",
+    "logs/guarded-provenance.log": "decc57fd984a78f0f7075dd5497a7073398008e781a75a002f55adc84f5eb1c6",
+    "logs/guide-example.log": "dd7c5b109119b1a1f2fe60e948401f807ceaea4f13b570543a835d550a21a9db",
+    "logs/inductor-inputs-final.log": "b0a2afcdcd9a43b82b0ffb1e162ad7ba262d2baaefdf00bf301a37a852f2a8e5",
+    "logs/inductor-inputs.log": "d3c3f5df26a38b251378c05cf35a91ffd00de538d394425959288a453af01068",
+    "logs/module-baseline-build.log": "3cf5f4d695098237d2e62fe13121b351190e0ef8010139388c113fb4eedac0d6",
+    "logs/module-final-build.log": "24c6ad3f8a600a7b38de933d76a5ca93784023c0000b65951e672b059f22dbf2",
+    "logs/module-final-guarded-build.log": "8f7f5ed0b534de826abe35b6a93c31baaa7d75242abef83e5f251c23d0fb52bb",
+    "logs/module-final-revised-build.log": "5b4f215c2d0cee2a88b4c9bc7fae4d2a56daf016687323984e2f0d889f0c6195",
+    "logs/native-extension-final.log": "e0f16e8a321f9ca319ab6e6c5e04cbd0d335708e68aee70876112537b0f4aa7b",
+    "logs/native-extension.log": "e0f16e8a321f9ca319ab6e6c5e04cbd0d335708e68aee70876112537b0f4aa7b",
+    "logs/owner-guard-audit.log": "b6c549bf1d09b08030cd70c20b4ec1f9d66aa6b93f9c65b2c30a3072a192ef07",
+    "logs/owner-guard-final.log": "ee71d3937aae7dab918b3c6eb44f9d175aca9c1d2c6575d93a819e2d65f808a9",
+    "logs/portable-cpu-revised.log.gz": "baa8d18fd79984216f9cfc0e507af55e2a4bb57607bca88da0b80607cd76981f",
+    "logs/portable-cpu.log.gz": "38e5621d03a0dfe2bbbf3286af389dc45eee45f9bc46ea74f176a0e9813fcca1",
+    "logs/portable-rust-graph.log": "484833426525433ca15f9cc30609f3ca202a6bbcaa374f888fa088223fdb151e",
+    "logs/provenance-after.log": "decc57fd984a78f0f7075dd5497a7073398008e781a75a002f55adc84f5eb1c6",
+    "logs/restoration-final.log": "e3fd9c39967227b4c088bb37108b112cfca08301bbf90c7314cfdd85629a802e",
+    "logs/restoration-revised.log": "72f40eca66dc7147bd5c9c5af2e0ed5ffb066f4e64209faccb7ce124eb5b7338",
+    "logs/revised-provenance.log": "fbd6c1c4615ebb9776cad0af7614967084462f08d630ee3b07ffca795e37ad55",
+    "logs/rust-default-final.log.gz": "3869c7fa88ddcec9ec66be7f1c4ddc62707c6a2fcef8cd6f242efb8ee8dbba21",
+    "logs/rust-default.log.gz": "d1bbafbee127f14b83c82ef16a93d8c11dca343e8b9c15e6aeb45ca0566520da",
+    "logs/rust-python-graph.log": "d61ea14a6beba766b6f5cec7254106509f780646b6da200d80955a2fd3dfcb1e",
+    "owner_guard_audit.py.txt": "3686049b2bb9d3c7e0b647ba227bf40d0aebe08300349fa64bd7bb57ac2f5e15",
+    "postcommit-e2378805/README.md": "46750fc60c982bdb1a6b9917125c4f101388fb24bb8829f9704397749f637d08",
+    "postcommit-e2378805/build-record.json.gz": "e4ec2ac7ee6978795e330c2367981a4de3a1198af20dd571bf35c50ce12375e0",
+    "postcommit-e2378805/candidate-audit.json": "726ecefb50a3255b5db9e410be36ead939832ac0665ba9fcee3500f5e65c4142",
+    "postcommit-e2378805/capture.json": "1dfca11e06c5081b51b1dbbc0c7e13e105135744b9b5f1e1c15e27e67c0ec432",
+    "postcommit-e2378805/checks.sh.txt": "e8e82e9000095898da979ec633b9228d0b0694ced5c175962d3df1b8b31e81a3",
+    "postcommit-e2378805/commands.json": "514da7285757ff0bd2c1c2633f1cf0a7db67630a8f239f3febea73fee4f02e68",
+    "postcommit-e2378805/logs/build.log": "3ff5ce99c74497abc19f963cd30e905875b775e18c9a5d0edc191ce4615342c6",
+    "postcommit-e2378805/logs/clippy-default.log": "ee1d3fffa2022e962e63e0dbe4d35c9c198450a20c29fc09030f635dbb38bfcd",
+    "postcommit-e2378805/logs/clippy-python.log": "a13905646e2aed93ec6ea9ed6ac91490a4e01f91af0215c3965279a910612149",
+    "postcommit-e2378805/logs/compiler-complete.log": "ee44030c7af4d0a32adacf2a665b2f101fdfb05ec7910788a1c918908d7d0c22",
+    "postcommit-e2378805/logs/cpu-hidden.log": "dcb3176b1d03843b66dbc5b873f4d8f179b8cdf378ea614b59ca4f10d3f8dc4d",
+    "postcommit-e2378805/logs/dependency_setup.log": "4af3471b6f52489fe9ff68567a94aee59f09cc30014b8eb5f88001fafdb8bf6c",
+    "postcommit-e2378805/logs/docs-guide.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "postcommit-e2378805/logs/docs-smoke.log": "df65880b8ca193266edccfa74434e286fcadcc34778ee7f02cb8675fb6664b1f",
+    "postcommit-e2378805/logs/focused-cuda.log": "7e25491e0bf897b6b599872cb8750651aee69b94df6f4e4416637432c90f2c5a",
+    "postcommit-e2378805/logs/formatting.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "postcommit-e2378805/logs/inductor-inputs.log": "b0a2afcdcd9a43b82b0ffb1e162ad7ba262d2baaefdf00bf301a37a852f2a8e5",
+    "postcommit-e2378805/logs/origin.patch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "postcommit-e2378805/logs/provenance-after.log": "f5c48358f8ed67ce09c9068ad52c8fb6b2fd60f05abc20e80d5a2fc2a7286064",
+    "postcommit-e2378805/logs/provenance-before.log": "ceea5750ad731c002d95e505dee0b3f88afc9a900d69c81fe01523bb00485a3f",
+    "postcommit-e2378805/logs/publication-docs-smoke.log": "163b62cbcbf7d00cdcfaee21b2d04e327369529fce124a8295586147ef274fc9",
+    "postcommit-e2378805/logs/release-build.log": "7c0d2a3b6ad55370c268a00db3a6c8eeb712f5751f35b930344b4edf193df85f",
+    "postcommit-e2378805/logs/restoration.log": "5b50a32e878566b861e4739d75697de96ccf8505a88e59ab8aad3d616cf2f813",
+    "postcommit-e2378805/logs/rust-default.log": "4027dcbd96d090795578e9e421fd7893c34a9cce02e5804fec05b5ee140e81b0",
+    "postcommit-e2378805/logs/rust-graph-cuda.log": "95dd6c7fd73ddbb0eec9b60ce62a03c67c8b54ae1c89f9f39633129e6795c550",
+    "postcommit-e2378805/logs/rust-graph-hidden.log": "f5451a3e33ff9ca529c5876242bbf05a58df37ed18066e7381d3c4b36c44568e",
+    "postcommit-e2378805/logs/verify-native.log": "e0f16e8a321f9ca319ab6e6c5e04cbd0d335708e68aee70876112537b0f4aa7b",
+    "postcommit-e2378805/provenance.py.txt": "12be24ff5056761bfe8787d0e7f540281c8b46677a5da6365ea3c8a2c3fa33d4",
+    "postcommit-e2378805/publish.py.txt": "8431c183099b23f582bb25e33329d490e68e5ffcaccecdc34e7358f9ed69900a",
+    "postcommit-e2378805/record.py.txt": "1fae417ed9d39e400667134ae93cd0ebb02de381afffa9981a37e09fc075285f",
+    "postcommit-e2378805/verification.json": "7f6f22af7fee89b9be5789c8e1264fe5d5638eefe123bf94cd99d22cfff94573",
+    "postcommit-e2378805/verify_publication.py.txt": "e205f4639b4aaede7301e2581c1b6202032adc707670f4398ce1bb71df0b8b5b",
+    "provenance-initial.py.txt": "8ca1ed27219ecd6528ec26d74d5a54debf8ad5a99af8fead6ed4350f654b3b6b",
+    "provenance-revised.py.txt": "fe64c8389f87a1cc3d611a574468d0822589f8c8861312a5ff22f3a3f237c934",
+    "provenance.py.txt": "309670bec83af36977f9bbfd3dc12dff88854f8187b8857d0dbd7b71c62db75e",
+    "publish_evidence.py.txt": "4cddd83bc419e09ca88856920078780a9881ff0b9bc2dd8dc1905019da0020f2",
+    "record.py.txt": "9c2d9cde513e254def03ded969d13ab44ab2dd55f1875ff0068d9f33ca01bd30",
+    "summarize_evidence.py.txt": "39626eb184b911fc8e39d0d8974c57cb0861a401763c35d8d434bba5866d9284",
+    "verification.json": "38cb24d626a4dd38bb46532945ebef3f57c69d9e91ecf9619324e6293f24f818"
+  },
+  "summaries": {
+    "reproduce-counterfeit": {
+      "exit_code": 0
+    },
+    "reproduce-hostile": {
+      "exit_code": 0
+    },
+    "regression-old-wheel": {
+      "run": 2,
+      "skipped": 0,
+      "failed_subtests": 6,
+      "reported_seconds": 2.377
+    },
+    "release-build": {
+      "exit_code": 0
+    },
+    "provenance-before": {
+      "exit_code": 0
+    },
+    "verify-native": {
+      "exit_code": 0
+    },
+    "startup-fixed": {
+      "run": 2,
+      "skipped": 0,
+      "failed_subtests": 0,
+      "reported_seconds": 2.426,
+      "passed": 2
+    },
+    "focused-cuda": {
+      "run": 34,
+      "skipped": 5,
+      "failed_subtests": 0,
+      "reported_seconds": 35.706,
+      "passed": 29
+    },
+    "cpu-hidden": {
+      "run": 118,
+      "skipped": 9,
+      "failed_subtests": 0,
+      "reported_seconds": 1.119,
+      "passed": 109
+    },
+    "restoration": {
+      "run": 2,
+      "skipped": 0,
+      "failed_subtests": 0,
+      "reported_seconds": 4.497,
+      "passed": 2
+    },
+    "rust-default": {
+      "passed": 395,
+      "failed": 0,
+      "ignored": 0
+    },
+    "rust-graph-cuda": {
+      "passed": 15,
+      "failed": 0,
+      "ignored": 0
+    },
+    "rust-graph-hidden": {
+      "passed": 15,
+      "failed": 0,
+      "ignored": 0
+    },
+    "formatting": {
+      "exit_code": 0
+    },
+    "clippy-default": {
+      "exit_code": 0
+    },
+    "clippy-python": {
+      "exit_code": 0
+    },
+    "docs-smoke": {
+      "run": 12,
+      "skipped": 0,
+      "failed_subtests": 1,
+      "reported_seconds": 0.155
+    },
+    "docs-smoke-revised": {
+      "run": 12,
+      "skipped": 0,
+      "failed_subtests": 0,
+      "reported_seconds": 0.153,
+      "passed": 12
+    },
+    "inductor-inputs": {
+      "exit_code": 0
+    },
+    "compiler-complete": {
+      "run": 666,
+      "skipped": 15,
+      "failed_subtests": 0,
+      "reported_seconds": 422.954,
+      "passed": 651
+    },
+    "provenance-after": {
+      "exit_code": 0
+    },
+    "reproduce-counterfeit-fixed": {
+      "exit_code": 0
+    },
+    "reproduce-hostile-fixed": {
+      "exit_code": 0
+    }
+  },
+  "outstanding": "Burner must commit this implementation revision, then run a fresh clean-commit capture before final evidence approval",
+  "retained_preliminary_runs": {
+    "regression-before.log": {
+      "exit_code": 1,
+      "note": "first execution of the same two subprocess regressions against the old installed wheel; timestamps not recorded"
+    },
+    "counterfeit-before.log": {
+      "exit_code": 0
+    },
+    "hostile-before.log": {
+      "exit_code": 0
+    }
+  },
+  "reused_recipes": {
+    "env.sh.txt": {
+      "path": "../env.sh.txt",
+      "sha256": "c615bd3132bbdb407e1026175591d64fb2ebf01f04ddfce20b8f01f558548df9"
+    },
+    "compiler_sweep.py.txt": {
+      "path": "../compiler_sweep.py.txt",
+      "sha256": "308f9f91fc58014611f69cab3124e36483ea0378307095ff5f362b89620af977"
+    },
+    "inductor_inputs.py.txt": {
+      "path": "../inductor_inputs.py.txt",
+      "sha256": "c42664836401ec592949b44cd40ed350619668ed32f5bbfe8e9c9dfe721cdf30"
+    }
+  }
+}

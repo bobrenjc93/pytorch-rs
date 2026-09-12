@@ -1,0 +1,12 @@
+"""Run every compiler test module, including the public entrypoint tests."""
+from pathlib import Path
+import unittest
+import sys
+sys.path.insert(0, str(Path.cwd()))
+paths = sorted(set(Path('tests').glob('test_compile*.py')) | {Path('tests/test_top_level_compile.py')})
+names = ['.'.join(path.with_suffix('').parts) for path in paths]
+print('Complete compiler selection:', len(names), 'modules', flush=True)
+print('\n'.join(map(str, paths)), flush=True)
+suite = unittest.defaultTestLoader.loadTestsFromNames(names)
+result = unittest.TextTestRunner(verbosity=2).run(suite)
+raise SystemExit(not result.wasSuccessful())

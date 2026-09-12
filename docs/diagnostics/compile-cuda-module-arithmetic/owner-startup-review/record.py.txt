@@ -1,0 +1,19 @@
+import datetime, hashlib, json, os, pathlib, subprocess, sys, time
+root=pathlib.Path.cwd(); out=root/'target/owner-startup-review'
+def sha(raw): return hashlib.sha256(raw).hexdigest()
+def git(*args): return subprocess.check_output(['git',*args],text=True)
+def stamp(): return datetime.datetime.now(datetime.timezone.utc).isoformat()
+def snapshot(): return subprocess.check_output(['nvidia-smi','--query-gpu=index,uuid,name,driver_version,utilization.gpu,memory.used','--format=csv'],text=True)
+label,*command=sys.argv[1:]; assert not (out/(label+'.json')).exists()
+paths=git('ls-files','--cached','--others','--exclude-standard','-z','src','python','tests','Cargo.toml','Cargo.lock','pyproject.toml','uv.lock','rust-toolchain.toml').split('\0')
+inputs={p:sha((root/p).read_bytes()) for p in sorted(set(paths)) if p and (root/p).is_file()}
+raw=json.dumps(inputs,sort_keys=True,indent=2)+'\n'; identity=sha(raw.encode()); manifest=out/('inputs-'+identity+'.json')
+if not manifest.exists(): manifest.write_text(raw)
+r={'label':label,'command':command,'cwd':str(root),'base_commit':git('rev-parse','HEAD').strip(),'measured_code_commit':None,'source_kind':'review revision development capture; installed build identity recorded separately','git_status_before':git('status','--porcelain'),'input_manifest':manifest.name,'input_manifest_sha256':identity,'resources':['gpu','cpu-heavy'],'gpu_before':snapshot(),'environment':{k:v for k,v in os.environ.items() if k.startswith(('UV_','CARGO_','CUDA_','RUSTUP_','TORCHINDUCTOR_','TRITON_','PYO3_')) or k in ('TMPDIR','VIRTUAL_ENV','TORCH_RS_CUDART','XDG_CACHE_HOME','PYTHONDONTWRITEBYTECODE','LD_LIBRARY_PATH')},'started_at':stamp()}
+start=time.perf_counter(); log=out/(label+'.log')
+with log.open('wb') as f: result=subprocess.run(command,stdout=f,stderr=subprocess.STDOUT)
+r.update(ended_at=stamp(),elapsed_seconds=time.perf_counter()-start,exit_code=result.returncode,log=log.name,log_sha256=sha(log.read_bytes()),gpu_after=snapshot(),git_status_after=git('status','--porcelain'))
+assert all(sha((root/p).read_bytes())==v for p,v in inputs.items())
+(out/(label+'.json')).write_text(json.dumps(r,indent=2)+'\n')
+print(label,result.returncode,round(r['elapsed_seconds'],2),flush=True)
+sys.exit(result.returncode)
