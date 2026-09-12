@@ -55,6 +55,8 @@ The same assertion-only smoke check is available as
 The [exhaustive supported surface](docs/supported-surface.md) owns exact method
 variants and exclusions, including [compiler options and cache behavior](docs/supported-surface.md#jit-and-compiler).
 The private H100 compile benchmark path is limited to its fixed workload.
+Its historical 100 scores do not establish default Inductor parity; see the
+[public-default compiler evaluations](docs/torch-compile-default-evaluator.md).
 
 `torch.cuda.is_available()` and `torch.cuda.device_count()` report runtime GPU
 visibility; backend build flags do not. See [CUDA setup and tests](docs/troubleshooting.md#optional-native-cuda-runtime)

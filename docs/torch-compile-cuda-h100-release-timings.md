@@ -1,5 +1,9 @@
 # H100 CUDA `torch.compile` Shape-Matrix Timings
 
+Historical specialized-kernel diagnostic, **not default compiler parity**.
+The [public-default compiler gate](torch-compile-default-evaluator.md) measures
+ordinary programs without this benchmark's private markers or tensor wrappers.
+
 Date: 2026-09-09 (UTC)
 
 Historical measured commit: `e2f40ff16f8aba5216bc51699b56571e7e82a3e4`.

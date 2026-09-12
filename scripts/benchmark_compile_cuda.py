@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Benchmark a fixed CUDA ``torch.compile`` reference workload matrix.
+"""Legacy specialized CUDA microbenchmark; not a default compiler parity gate.
 
 The benchmark is intentionally narrow: it measures one PyTorch 2.13 CUDA/H100
 reference expression across a versioned fixed shape matrix and matching private
 ``torch_rs`` CUDA compile paths. CPU execution, eager fallback, and forwarding
 to installed PyTorch are fail-closed and never count as eligible CUDA compile
 evidence.
+
+Use evaluate_torch_compile_default.py for public default-API coverage/performance.
+Numbers from this private workload are non-comparable to those scoring gates.
 """
 
 from __future__ import annotations

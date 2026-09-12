@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Emit Burner EvaluationOutput JSON for torch.compile coverage parity."""
+"""Legacy eager-capture diagnostic (not the public-default compile score).
+
+Preserved for historical reproduction. The scoring gate is now
+evaluate_torch_compile_default.py; this script does not compare default Inductor.
+"""
 
 from __future__ import annotations
 

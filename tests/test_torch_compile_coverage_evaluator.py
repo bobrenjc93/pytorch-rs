@@ -1481,7 +1481,7 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
                 process.kill()
                 process.wait(timeout=10)
 
-    def test_burner_evaluation_config_is_command_backed(self):
+    def test_burner_scoring_has_migrated_off_the_legacy_eager_gate(self):
         with (REPOSITORY_ROOT / ".burner" / "evaluations.json").open(
             encoding="utf-8"
         ) as evaluations_file:
@@ -1495,11 +1495,11 @@ class TorchCompileCoverageEvaluatorTests(unittest.TestCase):
 
         self.assertEqual(
             compile_eval["command"],
-            "bash scripts/evaluate_torch_compile_coverage.sh",
+            "bash scripts/evaluate_torch_compile_default.sh --metric coverage",
         )
         self.assertEqual(
             compile_eval["definitionVersion"],
-            "evaldef_repo_a61c0e71_v2",
+            "evaldef_repo_a61c0e71_v4",
         )
 
 

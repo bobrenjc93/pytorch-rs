@@ -38,6 +38,15 @@ Interpreter paths retain their lexical identity because `.venv/bin/python` may
 link to a base interpreter. See [stack provenance validation](docs/top-level-stack-provenance.md)
 for the reproduction, rejection coverage, and interpreter checks.
 
+## Default compiler gates
+
+The scoring gates are the [public-default compiler evaluations](docs/torch-compile-default-evaluator.md):
+ordinary `torch_rs.compile(program)` versus default PyTorch Inductor across a
+versioned CPU/CUDA program corpus. Both are executable commands checked into
+`.burner/evaluations.json`. The development host has eight H100 GPUs; use an
+available one for actual CUDA testing. Legacy 100 scores from the eager/custom-
+backend coverage gate or private CUDA kernel are not comparable to these gates.
+
 ## Historical release timing reports
 
 These reports are historical release evidence snapshots: they record the code,
@@ -130,8 +139,10 @@ provenance.
 - [`torch.compile` eager CPU release timings](docs/torch-compile-cpu-release-timings.md)
 - [`torch.compile` H100 CUDA prepared-executor timings](docs/torch-compile-cuda-h100-release-timings.md)
 
-The CUDA compile measurement boundary is a narrow, fail-closed skeleton. Run it
-on the H100 host with a single visible device:
+The default compiler gates above own current scoring.
+This section documents a **legacy non-scoring microbenchmark**.
+It is useful only for reproducing the private specialized kernel's historical
+measurements. Run it on the H100 host with a single visible device:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python scripts/benchmark_compile_cuda.py
@@ -193,7 +204,8 @@ wrong shapes, skipped execution, eager fallback, incorrect outputs, or
 installed-PyTorch forwarding are retained as zero-credit rows in the weighted
 denominator. The report includes each row's raw steady-state speed ratio,
 capped ratio, weighted score contribution, the common-success geometric-mean
-speed ratio, and the coverage-adjusted aggregate percentage used as the score.
+speed ratio, and its own fixed-matrix aggregate percentage. That percentage is
+not the default `torch.compile` coverage or performance score.
 The public CPU-build `torch.cuda` probe behavior remains unchanged.
 
 ### Layout/view ops

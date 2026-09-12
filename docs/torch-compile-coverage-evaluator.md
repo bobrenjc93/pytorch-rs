@@ -1,5 +1,10 @@
 # torch.compile Coverage Evaluator
 
+**Legacy eager/custom-backend diagnostic.** This page describes the retired
+coverage measurement, not default Inductor parity. Use the
+[public-default compiler gates](torch-compile-default-evaluator.md) for current
+scoring; historical results from this command are not comparable.
+
 The deterministic compile-coverage evaluator runs the versioned v13
 reference-eligible corpus against stock PyTorch 2.13 and the current
 `torch_rs` wheel. It fails closed on malformed corpus metadata,
@@ -12,7 +17,7 @@ input factories, dynamic variant input factories, input payload hashes, no-grad
 inference flags, module-global Tensor fixtures, and guard-step definitions
 before scoring.
 
-Run the full Burner evaluator from the repository root:
+Reproduce the legacy diagnostic from the repository root:
 
 ```bash
 bash scripts/evaluate_torch_compile_coverage.sh

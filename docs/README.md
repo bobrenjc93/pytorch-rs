@@ -9,7 +9,7 @@ artifacts are generated at merge time and are not source documentation.
 - [Supported surface](supported-surface.md): Exhaustive Python API coverage and unsupported boundary contract.
 - [Feature coverage contract](../FEATURES.md): Weighted feature areas and what counts toward coverage.
 - [Benchmark policy](../BENCHMARKING.md): Correctness gates, measurement rules, provenance, and anti-gaming policy.
-- [Compile coverage evaluator](torch-compile-coverage-evaluator.md): Command-backed Burner evaluator for the v4 reference-eligible `torch.compile` corpus.
+- [Default compiler evaluations](torch-compile-default-evaluator.md): Versioned public-default Inductor coverage and real-CUDA performance gates; legacy scores are non-comparable.
 - [Hardware heterogeneity evaluator](hardware-heterogeneity-evaluator.md): Fixed accelerator-family and feature-depth matrix, evidence rules, and real-hardware scoring policy.
 - [Generated creation validator](../scripts/validate_creation_factory_benchmark.py): Held-out seeded shape path for creation-factory benchmark review.
 
@@ -48,6 +48,7 @@ artifacts are generated at merge time and are not source documentation.
 
 ## Historical Validation Evidence
 
+- [Legacy eager compile evaluator](torch-compile-coverage-evaluator.md): Historical eager/custom-backend diagnostic, no longer the default compiler scoring gate.
 - [Compiler analysis and CPU tanh composite validation](diagnostics/compile-cuda-graph/composite-postcommit-d94daecd/README.md): Historical measurements of implementation `d94daecd`, with
   [source clean](diagnostics/compile-cuda-graph/postcommit-4cb0432/README.md) (`4cb0432`) and
   [source development](diagnostics/compile-cuda-graph/static-analysis-b7936239-development/README.md) predecessors.
