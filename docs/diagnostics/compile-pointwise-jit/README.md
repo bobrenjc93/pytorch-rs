@@ -1,6 +1,13 @@
 # Native default pointwise JIT validation
 
-Fresh coverage, CUDA-performance and generated-code captures measure clean
+**Refresh required after the composed constant-tensor arithmetic fix.** The
+reports below remain pinned to `dbd1a0f6` and predate that fix. Repeat the
+unchanged gates and `capture.py` after Burner commits it; no revised score is
+claimed from development validation.
+The [repair validation](review-constant-tensors.md) preserves the reproduced
+failures and final semantic/code-generation checks.
+
+The preceding coverage, CUDA-performance and generated-code captures measure clean
 implementation commit `dbd1a0f6b398fde35ddd760018ee105a6758760b`, including all three rounds of review fixes,
 on 2026-09-12. Both unchanged public-default-compile-v2 scoring commands report
 `valid: true`, `diagnostic: false`, with no infrastructure error. The clean
@@ -8,13 +15,13 @@ baseline remains pinned to campaign base
 `76738b39fd6884ffd43b4dff2f5292257a1c6e6b`, verified as the merge base with main.
 See the [implementation contract](../../compile-pointwise-jit.md).
 
-| Unchanged public-default-compile-v2 gate | Clean baseline | Clean candidate `dbd1a0f6` |
+| Unchanged public-default-compile-v2 gate | Clean baseline | `dbd1a0f6` (refresh pending) |
 | --- | ---: | ---: |
 | Weighted coverage | 0% (0/112 cells) | 6% (4/112 cells) |
 | Weighted CUDA performance | 0% (0/56 cells) | 12% (4/56 cells) |
 | CUDA-performance common-success geometric mean, reference/candidate | null | 2.1452513673646267 |
 
-The measured gains over the baseline are 6 percentage points
+At `dbd1a0f6`, the measured gains over the baseline are 6 percentage points
 of weighted coverage and 12 points of weighted CUDA
 performance. Only the two arithmetic programs in both CUDA variants pass;
 all other cells remain zero. Successful performance cells each reach the cap
@@ -23,7 +30,7 @@ describes only those four cells; the baseline has no common successes, so its
 ratio is null. These are fixed-corpus results, not general Inductor parity.
 The review fixes leave the earlier candidate's weighted scores unchanged.
 
-## Current committed evidence
+## Committed evidence before the composed constant-tensor fix
 
 - [Coverage](postcommit-dbd1a0/candidate-coverage.json.gz) and
   [CUDA performance](postcommit-dbd1a0/candidate-cuda-perf.json.gz) are

@@ -84,6 +84,10 @@ for non-finite inputs; floating zero multiplication retains IEEE NaN and zero
 signs. The resulting constant tensor is distinct from a scalar operand, so
 further tensor multiplication still has float semantics. Constant-zero addition
 and negation follow default Inductor's simplifications and observable zero signs.
+Add/subtract/multiply of known constant tensors and scalar constants retain a
+constant tensor result, including its zero sign. Subsequent negation flips that
+sign instead of lowering to positive-zero subtraction or FMA. Operations with
+runtime tensor values and the libdevice/unary paths retain their existing rules.
 Float constants are rounded to float32 once and encoded by their IEEE bits,
 including negative zero and non-finite values.
 Integer constants follow default Inductor's Python binary64-to-float32
@@ -143,7 +147,8 @@ The unchanged [public-default compiler gates](torch-compile-default-evaluator.md
 remain the scoring authority with all 112 coverage and 56 CUDA performance
 cells. These focused tests do not change their denominator. Unsupported
 categories remain zero. The [post-commit evidence](diagnostics/compile-pointwise-jit/README.md)
-records fresh clean-commit coverage, CUDA-performance and generated-code captures
-for `dbd1a0f6`, including all three rounds of review fixes, alongside the unchanged
-source-bound baseline and original development failures. Development validation
-remains separate from these committed measurements.
+records clean-commit coverage, CUDA-performance and generated-code captures
+for `dbd1a0f6`, before the composed constant-tensor arithmetic fix, alongside the
+unchanged source-bound baseline and original development failures. After Burner
+commits this fix, fresh captures are required; development validation remains
+separate from committed measurements.

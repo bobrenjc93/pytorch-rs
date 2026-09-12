@@ -79,6 +79,37 @@ impl Lowering {
         }
     }
 
+    fn fold_tensor_arithmetic(&self, node: &Node) -> Option<u32> {
+        let (Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b)) = *node else {
+            return None;
+        };
+        if !matches!(self.nodes[a], Expr::Splat(_)) && !matches!(self.nodes[b], Expr::Splat(_)) {
+            return None;
+        }
+        let value = |id| match self.nodes[id] {
+            Expr::Splat(bits) => Some(f32::from_bits(bits)),
+            _ => self.constant(id),
+        };
+        let (left, right) = (value(a)?, value(b)?);
+        // Known tensor addition has the same positive-zero identity as the
+        // tensor/tensor path below. Tensor/scalar arithmetic instead evaluates
+        // the scalar operation, including +0 + -0 rounding to positive zero.
+        if matches!(node, Node::Add(_, _)) {
+            if matches!(self.nodes[a], Expr::Splat(0)) && matches!(self.nodes[b], Expr::Splat(_)) {
+                return Some(right.to_bits());
+            }
+            if matches!(self.nodes[b], Expr::Splat(0)) && matches!(self.nodes[a], Expr::Splat(_)) {
+                return Some(left.to_bits());
+            }
+        }
+        Some(match node {
+            Node::Add(_, _) => (left + right).to_bits(),
+            Node::Sub(_, _) => (left - right).to_bits(),
+            Node::Mul(_, _) => (left * right).to_bits(),
+            _ => unreachable!(),
+        })
+    }
+
     // Extract a negative product's sign without changing operand order. A sign
     // extracted from an add becomes subtraction before choosing its FMA side.
     fn positive(&mut self, id: usize) -> Option<usize> {
@@ -107,6 +138,14 @@ impl Lowering {
         // Scalar-kind simplifications precede ordinary float32 promotion and
         // expression sharing. A promoted True must then agree with 1.0.
         let node = self.float_operands(node);
+        // Keep arithmetic on known constant tensors distinct from scalar
+        // nodes and runtime expressions. In particular, later negation must
+        // invert the constant's sign, not emit positive-zero subtraction or
+        // contract a multiplication with an added positive zero. Non-arithmetic
+        // operations still use their native libdevice/intrinsic lowering.
+        if let Some(bits) = self.fold_tensor_arithmetic(&node) {
+            return self.intern(Expr::Splat(bits));
+        }
         match node {
             // Only integer zero needs a different arithmetic rule after scalar
             // conversion. Other integers share the converted float expression.

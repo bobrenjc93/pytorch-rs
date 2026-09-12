@@ -191,6 +191,42 @@ class ScalarHardware(unittest.TestCase):
                     self.assertNotEqual(result.data_ptr(), x.data_ptr())
             self.assertEqual(len(cache(compiled).graphs), 1)
 
+    def test_negated_constant_tensor_arithmetic_preserves_zero_signs(self):
+        values = [float('inf'), -float('inf'), float('nan'), -3., 3., -0., 0., 1e-38]
+        # Include both operand orders, repeated nodes, and several arithmetic
+        # stages. Floating zero controls must retain data-dependent IEEE values.
+        bodies = ('-((x*scale)+0.0)', '-(0.0+(x*scale))',
+                  '-((x*scale)+-0.0)', '-((x*scale)*2.0)',
+                  '-(2.0*(x*scale))', '-((x*scale)-(x*scale))',
+                  '-(((x*scale)+0.0)*3.713)',
+                  '-(((x*scale)+1.25)-1.25)',
+                  '-((x*scale)*-2.0)', '-((x*scale).neg()+-0.0)',
+                  '-((x*scale).neg()-(x*scale))',
+                  '-((x*scale)+(x*scale).neg())',
+                  '-((x*scale).sin())', '-((x*scale).relu())',
+                  '-((x*scale)*floatinf)')
+        for body in bodies:
+            source = 'def f(x):\n return ' + body
+            fn = program(source, scale=0, floatinf=float('inf'))
+            ref_fn = program(source, scale=0, floatinf=float('inf'))
+            compiled, reference = native.compile(fn), self.torch.compile(ref_fn)
+            for scalar in (0, False, 0.0, 0):
+                fn.__globals__['scale'] = ref_fn.__globals__['scale'] = scalar
+                for data in (values, list(reversed(values))):
+                    x = native.tensor(data).to('cuda:0')
+                    tx = self.torch.tensor(data, device='cuda:0')
+                    with self.subTest(body=body, kind=type(scalar).__name__, fresh=data is not values):
+                        result = compiled(x)
+                        expected = reference(tx)
+                        self.compare(result, expected)
+                        self.compare(x, tx)
+                        self.assertNotEqual(result.data_ptr(), x.data_ptr())
+                        if type(scalar) is not float and body in bodies[:8]:
+                            host = self.torch.tensor(result.cpu().tolist())
+                            self.assertTrue(self.torch.equal(host, self.torch.zeros_like(host)))
+                            self.assertTrue(host.signbit().all().item())
+            self.assertEqual(len(cache(compiled).graphs), 3)
+
 
 if __name__ == '__main__':
     unittest.main()

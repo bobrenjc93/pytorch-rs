@@ -104,6 +104,32 @@ mod tests {
     }
 
     #[test]
+    fn constant_tensor_arithmetic_retains_signed_zero_for_negation() {
+        for scalar in [Node::Integer(0), Node::Boolean(false)] {
+            for operation in [Node::Add(2, 3), Node::Mul(2, 4), Node::Sub(2, 2)] {
+                let graph = Graph {
+                    inputs: 1,
+                    nodes: vec![
+                        Node::Input(0),
+                        scalar.clone(),
+                        Node::Mul(0, 1),
+                        Node::Constant(0),
+                        Node::Constant(2.0_f32.to_bits()),
+                        operation,
+                        Node::Neg(5),
+                    ],
+                    output: 6,
+                };
+                let source = graph.source().unwrap();
+                assert!(source.contains("0x80000000u"));
+                assert!(!source.contains("x0[i]"));
+                assert!(!source.contains("fmaf("));
+                assert!(!source.contains("__fsub_rn("));
+            }
+        }
+    }
+
+    #[test]
     fn sign_rewrites_do_not_acquire_shared_subtraction_semantics() {
         let mut graph = Graph {
             inputs: 1,
