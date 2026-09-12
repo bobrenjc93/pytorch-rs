@@ -77,9 +77,11 @@ CUDA_VISIBLE_DEVICES=0 cargo test --locked --features python-bindings --lib cuda
 CUDA_VISIBLE_DEVICES= .venv/bin/python -m unittest -v tests.test_compile_cuda_module_squeeze tests.test_compile_cuda_squeeze
 ```
 
-The [module/direct-import development evidence](diagnostics/compile-cuda-module-squeeze/README.md)
-records the unchanged exact-main 32-gap reproduction, trusted startup and guard
-checks, shared-storage bit tests, and final-source validation. The old rejection
+The [clean-commit module/direct-import capture](diagnostics/compile-cuda-module-squeeze/postcommit-52b1e4e8/README.md)
+validates `52b1e4e8` with a fresh release build, H100/reference checks, the complete
+compiler sweep and two-device restoration. The
+[development evidence](diagnostics/compile-cuda-module-squeeze/README.md) preserves
+the exact-main 32-gap reproduction and original failures. The old rejection
 fixture now uses `m.squeeze(x, dim=0)` to preserve its unsupported-binding purpose.
 
 The [clean-commit capture](diagnostics/compile-cuda-squeeze/postcommit-f8f8244/README.md)

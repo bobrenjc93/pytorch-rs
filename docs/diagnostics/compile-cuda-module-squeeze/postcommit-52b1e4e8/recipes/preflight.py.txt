@@ -1,0 +1,66 @@
+"""Revalidate the existing local interpreter and committed build/source identities."""
+import ast, hashlib, json, os, pathlib, stat, subprocess, sys, zipfile
+from datetime import datetime, timezone
+root=pathlib.Path.cwd()
+commit='52b1e4e8ed45c6f78d66ff790fe926bb08607c28'
+def sha(raw): return hashlib.sha256(raw).hexdigest()
+def git(*args): return subprocess.check_output(['git',*args])
+assert git('rev-parse','HEAD').decode().strip()==commit
+assert git('status','--porcelain')==b''
+historical=root/'docs/diagnostics/compile-cuda-module-squeeze'
+bootstrap=json.loads((historical/'recipes/bootstrap.json').read_text())
+# Reuse the exact inventorier from the committed setup recipe, without copying
+# an installation or executing its destination-absence guards.
+tree=ast.parse((historical/'recipes/bootstrap.py.txt').read_text())
+functions=[node for node in tree.body if isinstance(node,ast.FunctionDef)]
+namespace={'hashlib':hashlib,'os':os,'stat':stat}
+exec(compile(ast.Module(body=functions,type_ignores=[]),'committed-bootstrap-inventory','exec'),namespace)
+destination=root/'target/uv-python/cpython-3.12.14-linux-x86_64-gnu'
+inventory=namespace['inventory'](destination)
+digest=sha(json.dumps(inventory,sort_keys=True).encode())
+assert digest==bootstrap['installationManifestSha256']
+assert sha((destination/'bin/python3.12').read_bytes())==bootstrap['interpreterSha256']
+identity=json.loads(subprocess.check_output([str(destination/'bin/python3.12'),'-I','-B','-c',
+    'import json,sys,sysconfig; print(json.dumps(dict(version=sys.version,executable=sys.executable,base_prefix=sys.base_prefix,stdlib=sysconfig.get_path("stdlib"),include=sysconfig.get_path("include"))))'],text=True))
+for key in ('executable','base_prefix','stdlib','include'):
+    assert pathlib.Path(identity[key]).resolve().is_relative_to(destination)
+assert namespace['inventory'](destination)==inventory
+build_path=root/'target/cuda-add-diagnostic/module-squeeze-clean-52b1e4e8/build-record.json'
+build=json.loads(build_path.read_text())
+assert build['measured_code_commit']==commit and build['origin_status']=='' and build['source_matches_commit']
+assert build['origin_patch_sha256']==sha(b'')
+export=pathlib.Path(build['source_root'])
+assert export.resolve().is_relative_to(root/'target')
+files=build['source_files']
+assert sha(json.dumps(files,sort_keys=True).encode())==build['source_manifest_sha256']
+for name,digest in files.items():
+    assert sha((root/name).read_bytes())==digest,name
+    assert sha((export/name).read_bytes())==digest,name
+import torch_rs
+installed=pathlib.Path(torch_rs.__file__).parent
+assert installed.resolve().is_relative_to(root/'.venv')
+assert pathlib.Path(sys.prefix).resolve()==root/'.venv'
+native=pathlib.Path(torch_rs._C.__file__).resolve()
+assert str(native)==build['installed_native']
+assert sha(native.read_bytes())==build['installed_native_sha256']
+for name,digest in files.items():
+    if name.startswith('python/torch_rs/') and name.endswith('.py'):
+        assert sha((installed/name.removeprefix('python/torch_rs/')).read_bytes())==digest,name
+wheel=pathlib.Path(build['wheel'])
+assert wheel.resolve().is_relative_to(root/'target')
+assert sha(wheel.read_bytes())==build['wheel_sha256']
+with zipfile.ZipFile(wheel) as archive:
+    member,=[p for p in archive.namelist() if p.endswith('.so')]
+    assert sha(archive.read(member))==sha(native.read_bytes())
+baseline=json.loads(__import__('gzip').decompress((historical/'logs/baseline.log.gz').read_bytes()))
+assert baseline['gap_cases']==32 and baseline['existing_positive_cases']==12
+manifest={p:sha((root/p).read_bytes()) for p in git('ls-files').decode().splitlines()}
+(root/'target/postcommit-52b1e4e8/committed-files.json').write_text(json.dumps(manifest,sort_keys=True))
+diff_names=git('diff','--name-only','main...HEAD').decode().splitlines()
+print(json.dumps(dict(verified_at=datetime.now(timezone.utc).isoformat(),measured_code_commit=commit,
+    origin_status='',root=str(root),interpreter_identity=identity,interpreter_inventory_sha256=bootstrap['installationManifestSha256'],
+    interpreter_binary_sha256=bootstrap['interpreterSha256'],interpreter_reused=True,environment_copied=False,
+    build_record_sha256=sha(build_path.read_bytes()),native=str(native),wheel=str(wheel),
+    committed_files_sha256=sha(json.dumps(manifest,sort_keys=True).encode()),complete_candidate_diff_files=len(diff_names),
+    candidate_diff_sha256=sha(git('diff','main...HEAD','--binary')),installed_python_matches_commit=True,
+    immutable_source_export_matches_commit=True,baseline_preserved=True),indent=2))

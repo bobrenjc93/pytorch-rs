@@ -1,0 +1,11 @@
+import hashlib, json, pathlib, sys
+import numpy, torch, torch_rs
+root=pathlib.Path.cwd()
+records={}
+for name,module in (('native',torch_rs),('reference',torch),('numpy',numpy)):
+    path=pathlib.Path(module.__file__).resolve()
+    assert path.is_relative_to(root/'.venv'),path
+    records[name]={'file':str(path),'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
+assert pathlib.Path(sys.prefix).resolve()==root/'.venv'
+records['reference'].update(version=torch.__version__,cuda=torch.version.cuda)
+print(json.dumps(records,indent=2))
