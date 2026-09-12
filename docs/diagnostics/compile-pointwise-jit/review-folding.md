@@ -48,6 +48,8 @@ PyTorch 2.13.0+cu130 on H100 with `CUDA_VISIBLE_DEVICES=0`:
 The JIT uses NVRTC 13.0, runtime 13000 and `compute_90`, without fast math.
 Environments, caches and generated files stay inside this worktree. These are
 unscored semantic checks from dirty sources based on `c3a8bd08`, not timing or
-clean-commit campaign measurements. The [latest clean capture](README.md) stays
-pinned to `0c836a49` and requires refresh after Burner commits this repair.
+clean-commit campaign measurements. Burner committed this repair as `40a57b36`.
+The [post-commit capture](README.md)
+supplies fresh clean coverage/performance, generated-code evidence and all seven
+pointwise modules. Earlier clean reports remain pinned to their original commits.
 No evaluator, tolerance, denominator or managed progress artifact changed.

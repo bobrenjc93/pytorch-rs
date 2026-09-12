@@ -66,8 +66,21 @@ two-device checks. These dirty-source development runs are unscored. The clean
 [Development validation](review-constant-tensors.md) and its
 [bundle](review-constant-tensors.json.gz) preserve the 48 originally failing
 subcases, numerical probes, generated code and final checks. These dirty-source
-runs remain unscored; clean `0c836a49` measurements are linked from the current
-evidence index.
+runs remain unscored. Clean `0c836a49` predates the precision and zero-origin
+repair and retains its original measured identity:
+
+- [Coverage](postcommit-0c836a/candidate-coverage.json.gz),
+  [CUDA performance](postcommit-0c836a/candidate-cuda-perf.json.gz),
+  [receipt](postcommit-0c836a/postcommit.json), [logs](postcommit-0c836a/postcommit-logs.json.gz),
+  and [codegen provenance](postcommit-0c836a/provenance.json).
+
+## Constant-folding precision and zero-origin repair
+
+[Development validation](review-folding.md) and its [bundle](review-folding.json.gz)
+preserve original and intermediate failures, output-bit probes, generated code,
+and build/test commands. Its 124 source hashes and seven regression-module
+hashes match `40a57b36`; these development checks remain unscored. The current
+evidence index links the subsequent clean capture.
 
 Temporary worktree paths in these captures may no longer contain the original
 build or raw observations after cleanup. Checked-in reports, manifests, generated

@@ -160,9 +160,8 @@ The unchanged [public-default compiler gates](torch-compile-default-evaluator.md
 remain the scoring authority with all 112 coverage and 56 CUDA performance
 cells. These focused tests do not change their denominator. Unsupported
 categories remain zero. The [post-commit evidence](diagnostics/compile-pointwise-jit/README.md)
-retains clean-commit coverage, CUDA-performance and generated-code captures
-for `0c836a49`, alongside the unchanged source-bound baseline and original
-failures. Those captures precede the constant-folding precision and zero-origin
-repair and require refresh after Burner commits this revision.
+records fresh clean-commit coverage, CUDA-performance and generated-code captures
+for `40a57b36`, including the constant-folding precision and zero-origin repair,
+alongside the unchanged source-bound baseline and original failures.
 [Repair validation](diagnostics/compile-pointwise-jit/review-folding.md) records
-the new development checks separately; they are not clean campaign measurements.
+the development checks separately from these clean campaign measurements.
