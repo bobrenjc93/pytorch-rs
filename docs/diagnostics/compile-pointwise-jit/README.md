@@ -89,8 +89,10 @@ snapshots do not establish a scheduler reservation.
 The [campaign baseline](baseline.json.gz) measures clean `76738b39`: zero
 coverage and performance, with a null common-success ratio. The
 [evidence archive](archive.md) catalogs earlier implementations, review repairs,
-and original failures. All captured artifacts retain their original bytes,
-paths, and measured identities; none was relabeled as a current result.
+and original failures. Seven superseded captures are consolidated in a
+hash-indexed archive in this repository. All captured artifacts retain their
+original bytes, logical paths and measured identities; none was relabeled as a
+current result. The baseline and current capture remain directly accessible.
 These reports do not replace independent review or the merge gate.
 
 ## Reproduce

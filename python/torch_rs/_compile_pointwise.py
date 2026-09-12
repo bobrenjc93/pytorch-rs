@@ -326,7 +326,8 @@ def implementation(model, recompile_limit):
         if type(_ROOT) is not types.ModuleType:
             unsupported("patched native package type")
         if any(type(arg) is not _TENSOR_TYPE for arg in args):
-            raise NotImplementedError(_ROOT._COMPILE_UNSUPPORTED_MESSAGE)
+            unsupported("default backend requires exact native CUDA float32 Tensor inputs; "
+                        "see docs/compile-pointwise-jit.md")
         if _ROOT.overrides._get_current_function_mode() is not None:
             unsupported("active __torch_function__ mode")
         for cls, name, expected in _METHOD_GUARDS:
@@ -335,7 +336,8 @@ def implementation(model, recompile_limit):
         # The native bridge checks all metadata and storage bounds again on launch.
         metadata = tuple(_native._compile_trace_tensor_metadata(arg) for arg in args)
         if any(m[4] == "cpu" for m in metadata):
-            raise NotImplementedError(_ROOT._COMPILE_UNSUPPORTED_MESSAGE)
+            unsupported("default backend does not compile CPU tensors; use backend='eager' "
+                        "for the documented CPU capture subset; see docs/compile-pointwise-jit.md")
         _native._pointwise_validate_inputs(args)
         # Contiguous input offsets are launch-time addresses, not compiler
         # specialization guards. Inductor reuses a static scalar specialization

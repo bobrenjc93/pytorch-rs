@@ -161,11 +161,33 @@ class Admission(unittest.TestCase):
         self.assertIs(native.compile(fn, disable=True), fn)
         compiled = native.compile(fn)
         self.assertEqual(compiled._torch_rs_compile_backend, 'inductor')
-        with self.assertRaises(NotImplementedError):
+        with self.assertRaisesRegex(NotImplementedError, 'default backend does not compile CPU tensors'):
             compiled(native.tensor([1.]))
-        with self.assertRaises(NotImplementedError):
+        with self.assertRaisesRegex(NotImplementedError, 'requires exact native CUDA float32 Tensor inputs'):
             compiled(1)
         self.assertEqual(native.compile(fn, backend='eager')(native.tensor([2.])).tolist(), [-2.])
+
+    def test_default_rejections_explain_supported_backend_without_executing_user_code(self):
+        effects = []
+        class Trap:
+            def __repr__(self):
+                effects.append('repr')
+                return 'trap'
+            def __torch_function__(self, *args, **kwargs):
+                effects.append('dispatch')
+                raise AssertionError('unsupported input must not dispatch')
+        fn = program('def f(x):\n effects.append("body")\n return -x', effects=effects)
+        compiled = native.compile(fn)
+        for value in (native.tensor([1.]), Trap(), 1, None):
+            with self.subTest(kind=type(value).__name__), self.assertRaises(NotImplementedError) as caught:
+                compiled(value)
+            message = str(caught.exception)
+            self.assertIn('default backend', message)
+            self.assertIn('docs/compile-pointwise-jit.md', message)
+            self.assertNotIn("only backend='eager'", message)
+            self.assertNotIn('CUDA compilation', message)
+        self.assertEqual(effects, [])
+        self.assertEqual(len(cache(compiled).graphs), 0)
 
 
 def available():
