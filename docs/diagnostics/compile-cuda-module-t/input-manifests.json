@@ -1,0 +1,97 @@
+{
+  "base_sha256": "ab77d45b291ace2cb9b8797e319b12e66a8bc13b68f72710d599047e6f053e79",
+  "variants": {
+    "ac7440d2f8a7d485bc6db92df0b2e0efb0757b90261c6058ca8fd6f401aa0b0e": {
+      "changed": {
+        "target/module-t-evidence/candidate-probe.py": "9fab9e5f7c764463643d8c6226408fcc3e6b5760b26904806b7fe9282cef3335",
+        "target/module-t-evidence/docs_smoke.py": "56572fced2af1dba1bdb679fe6690a38fd1f7079dd01c4e332e3dfbde857793b",
+        "target/module-t-evidence/make_tests.py": "e9682609084210187a7f0122029e0edc46e48a3de6fbbb82438e63b4ac027ad8",
+        "target/module-t-evidence/publish.py": "f1b66a09ab7b4ea3f30e534f6b3cd024f145367a057587a421c5a5e4a1988c7f",
+        "target/module-t-evidence/test_compile_cuda_module_t.first.py": "400c33e6f5f8cca56288007910cb176dc226b519ec613b0e2bc19228fb85d4e6",
+        "target/module-t-evidence/test_compile_cuda_module_t.second.py": "469b354fcf4ea73ba796b686c539ee1923ec0682b5e1a1d683bab73685e5d713",
+        "tests/test_compile_cuda_module_t.py": "469b354fcf4ea73ba796b686c539ee1923ec0682b5e1a1d683bab73685e5d713",
+        "tests/test_compile_cuda_t.py": "6b6e31eaf8e02db10391a2f8669fe89dbbba461c243c03194950b31e3e364948"
+      },
+      "removed": []
+    },
+    "d5b28a19c908aac21d7212dfbf31a1ec408c69420782c6c27c575e6f9f381d40": {
+      "changed": {
+        "target/module-t-evidence/make_tests.py": "e9682609084210187a7f0122029e0edc46e48a3de6fbbb82438e63b4ac027ad8",
+        "target/module-t-evidence/test_compile_cuda_module_t.first.py": "400c33e6f5f8cca56288007910cb176dc226b519ec613b0e2bc19228fb85d4e6",
+        "tests/test_compile_cuda_module_t.py": "400c33e6f5f8cca56288007910cb176dc226b519ec613b0e2bc19228fb85d4e6",
+        "tests/test_compile_cuda_t.py": "6b6e31eaf8e02db10391a2f8669fe89dbbba461c243c03194950b31e3e364948"
+      },
+      "removed": []
+    },
+    "27483a6f4a1dfc42b7568a1ef4a2e4c205c63a7e9176df2c29b443fd5d16ddb7": {
+      "changed": {
+        "target/module-t-evidence/candidate-probe.py": "9fab9e5f7c764463643d8c6226408fcc3e6b5760b26904806b7fe9282cef3335",
+        "target/module-t-evidence/docs_smoke.py": "56572fced2af1dba1bdb679fe6690a38fd1f7079dd01c4e332e3dfbde857793b",
+        "target/module-t-evidence/make_tests.py": "e9682609084210187a7f0122029e0edc46e48a3de6fbbb82438e63b4ac027ad8",
+        "target/module-t-evidence/publish.py": "e1181b8a22fc2a8d697fbd6a605f64a753fe65b6c71ce87206b8eb03609437f1",
+        "target/module-t-evidence/test_compile_cuda_module_t.first.py": "400c33e6f5f8cca56288007910cb176dc226b519ec613b0e2bc19228fb85d4e6",
+        "target/module-t-evidence/test_compile_cuda_module_t.second.py": "469b354fcf4ea73ba796b686c539ee1923ec0682b5e1a1d683bab73685e5d713",
+        "tests/test_compile_cuda_module_t.py": "469b354fcf4ea73ba796b686c539ee1923ec0682b5e1a1d683bab73685e5d713",
+        "tests/test_compile_cuda_t.py": "6b6e31eaf8e02db10391a2f8669fe89dbbba461c243c03194950b31e3e364948"
+      },
+      "removed": []
+    },
+    "facb9b566b7776755fd45454a8f9426f23b1cc2ac7598c6216ff640d66737652": {
+      "changed": {
+        "target/module-t-evidence/candidate-probe.py": "9fab9e5f7c764463643d8c6226408fcc3e6b5760b26904806b7fe9282cef3335",
+        "target/module-t-evidence/docs_smoke.py": "56572fced2af1dba1bdb679fe6690a38fd1f7079dd01c4e332e3dfbde857793b",
+        "target/module-t-evidence/make_tests.py": "e9682609084210187a7f0122029e0edc46e48a3de6fbbb82438e63b4ac027ad8",
+        "target/module-t-evidence/publish.first.py": "4afcda627124cad2df1a636f40f495d49815c1e830a5033407a5b526c76ab7ab",
+        "target/module-t-evidence/publish.py": "ba8545fa732ee8d7838904f8f3bca130bbc7a74398d54920090063fb5964e7a9",
+        "target/module-t-evidence/test_compile_cuda_module_t.first.py": "400c33e6f5f8cca56288007910cb176dc226b519ec613b0e2bc19228fb85d4e6",
+        "target/module-t-evidence/test_compile_cuda_module_t.second.py": "469b354fcf4ea73ba796b686c539ee1923ec0682b5e1a1d683bab73685e5d713",
+        "tests/test_compile_cuda_module_t.py": "469b354fcf4ea73ba796b686c539ee1923ec0682b5e1a1d683bab73685e5d713",
+        "tests/test_compile_cuda_t.py": "6b6e31eaf8e02db10391a2f8669fe89dbbba461c243c03194950b31e3e364948"
+      },
+      "removed": []
+    },
+    "8c0ac1b855c70cc2c122003ab16e19333f0ffa83bb5f25dfa70c9b163b7e5f03": {
+      "changed": {
+        "target/module-t-evidence/docs_smoke.py": "56572fced2af1dba1bdb679fe6690a38fd1f7079dd01c4e332e3dfbde857793b",
+        "target/module-t-evidence/make_tests.py": "e9682609084210187a7f0122029e0edc46e48a3de6fbbb82438e63b4ac027ad8",
+        "target/module-t-evidence/publish.py": "f1b66a09ab7b4ea3f30e534f6b3cd024f145367a057587a421c5a5e4a1988c7f",
+        "target/module-t-evidence/test_compile_cuda_module_t.first.py": "400c33e6f5f8cca56288007910cb176dc226b519ec613b0e2bc19228fb85d4e6",
+        "tests/test_compile_cuda_module_t.py": "400c33e6f5f8cca56288007910cb176dc226b519ec613b0e2bc19228fb85d4e6",
+        "tests/test_compile_cuda_t.py": "6b6e31eaf8e02db10391a2f8669fe89dbbba461c243c03194950b31e3e364948"
+      },
+      "removed": []
+    },
+    "7d11c63a787da959976750834e26e8680ea1a5f17ef287414fbf49db6ea03dfd": {
+      "changed": {
+        "target/module-t-evidence/docs_smoke.py": "56572fced2af1dba1bdb679fe6690a38fd1f7079dd01c4e332e3dfbde857793b",
+        "target/module-t-evidence/make_tests.py": "e9682609084210187a7f0122029e0edc46e48a3de6fbbb82438e63b4ac027ad8",
+        "target/module-t-evidence/test_compile_cuda_module_t.first.py": "400c33e6f5f8cca56288007910cb176dc226b519ec613b0e2bc19228fb85d4e6",
+        "tests/test_compile_cuda_module_t.py": "400c33e6f5f8cca56288007910cb176dc226b519ec613b0e2bc19228fb85d4e6",
+        "tests/test_compile_cuda_t.py": "6b6e31eaf8e02db10391a2f8669fe89dbbba461c243c03194950b31e3e364948"
+      },
+      "removed": []
+    },
+    "40fedd6b446f93a1eec34b1818baaa45333e8eb0d3ec977440b06cce96cb1232": {
+      "changed": {
+        "target/module-t-evidence/candidate-probe.py": "9fab9e5f7c764463643d8c6226408fcc3e6b5760b26904806b7fe9282cef3335",
+        "target/module-t-evidence/docs_smoke.py": "56572fced2af1dba1bdb679fe6690a38fd1f7079dd01c4e332e3dfbde857793b",
+        "target/module-t-evidence/make_tests.py": "e9682609084210187a7f0122029e0edc46e48a3de6fbbb82438e63b4ac027ad8",
+        "target/module-t-evidence/publish.first.py": "4afcda627124cad2df1a636f40f495d49815c1e830a5033407a5b526c76ab7ab",
+        "target/module-t-evidence/publish.py": "4afcda627124cad2df1a636f40f495d49815c1e830a5033407a5b526c76ab7ab",
+        "target/module-t-evidence/test_compile_cuda_module_t.first.py": "400c33e6f5f8cca56288007910cb176dc226b519ec613b0e2bc19228fb85d4e6",
+        "target/module-t-evidence/test_compile_cuda_module_t.second.py": "469b354fcf4ea73ba796b686c539ee1923ec0682b5e1a1d683bab73685e5d713",
+        "tests/test_compile_cuda_module_t.py": "469b354fcf4ea73ba796b686c539ee1923ec0682b5e1a1d683bab73685e5d713",
+        "tests/test_compile_cuda_t.py": "6b6e31eaf8e02db10391a2f8669fe89dbbba461c243c03194950b31e3e364948"
+      },
+      "removed": []
+    },
+    "cf4c28744af1468fe1cbcb8776b867d6d0799738fba50deb4a71b0db9759cff0": {
+      "changed": {
+        "target/module-t-evidence/make_tests.py": "e9682609084210187a7f0122029e0edc46e48a3de6fbbb82438e63b4ac027ad8",
+        "tests/test_compile_cuda_module_t.py": "400c33e6f5f8cca56288007910cb176dc226b519ec613b0e2bc19228fb85d4e6",
+        "tests/test_compile_cuda_t.py": "6b6e31eaf8e02db10391a2f8669fe89dbbba461c243c03194950b31e3e364948"
+      },
+      "removed": []
+    }
+  }
+}

@@ -1501,8 +1501,9 @@ validated before any native node runs, including cache hits. CPU capture of
 this method, arguments (even explicit default formats), higher-rank packing,
 zero-stride packing and gradients remain unsupported.
 
-[Compiled CUDA `Tensor.t()`](compile-cuda-t.md) accepts only parameterless
-rank-0/1/2 float32 no-grad views under the same policies. It preserves storage,
+[Compiled CUDA transpose views](compile-cuda-t.md) accept parameterless
+`Tensor.t()`, exactly one-positional-argument native `torch.t(x)` and genuine
+direct-import aliases on rank-0/1/2 float32 no-grad tensors under the same policies. It preserves storage,
 offset, dtype and device, reversing rank-2 shape/strides. Every call creates a
 new view object even for scalars/vectors; repeated references to one result keep
 identity. `t().contiguous()` enables packing before arithmetic, while transposed
@@ -1517,7 +1518,10 @@ Invalid bindings/types, out-of-range axes and signed-64-bit overflow raise
 `TypeError`, `IndexError` and `ValueError`, respectively. Index-like objects,
 integer subclasses, named axes and dynamic axis expressions remain unsupported.
 General permute, swapdims/swapaxes, `.T`/`.mT`, top-level
-`torch.t`/`torch.transpose`, CPU capture and higher ranks remain excluded.
+`torch.transpose`, keywords or extra arguments to module/imported `t`, CPU capture
+and higher ranks remain excluded. Genuine `t` identity is retained at package
+startup; per-used-field guards preserve unrelated squeeze/ReLU/arithmetic caches
+when public/native `t` is replaced or deleted.
 
 [Compiled CUDA `Tensor.reshape`](compile-cuda-reshape.md) accepts exact integer
 constant variadic dimensions or one exact flat tuple (including `()` and a

@@ -1,0 +1,7 @@
+{
+  "cases_and_failures_and_input_hashes_match_audited_probe": true,
+  "gap_cases": 32,
+  "positive_controls": 12,
+  "rebinding_controls": 3,
+  "completed_before_edits": true
+}

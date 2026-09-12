@@ -1,0 +1,74 @@
+diff --git a/python/torch_rs/_compile_bytecode.py b/python/torch_rs/_compile_bytecode.py
+index c32cad4..65b5f9c 100644
+--- a/python/torch_rs/_compile_bytecode.py
++++ b/python/torch_rs/_compile_bytecode.py
+@@ -13,6 +13,7 @@ from . import _compile_trace as _trace
+ from ._compiler_state import native_function_owner as _NATIVE_FUNCTION_OWNER
+ from ._compiler_state import native_relu as _NATIVE_RELU
+ from ._compiler_state import native_squeeze as _NATIVE_SQUEEZE
++from ._compiler_state import native_t as _NATIVE_T
+ 
+ 
+ _NATIVE_MODULE = _sys.modules[__package__]
+@@ -427,11 +428,13 @@ def _is_exact_native_tensor(value):
+ 
+ def _builtin_target(value):
+     # Trusted startup bindings establish identity, not callable names or source
+-    # text. ReLU and squeeze have no member on the immutable arithmetic owner.
++    # text. ReLU, squeeze and t have no member on the immutable arithmetic owner.
+     if value is _NATIVE_RELU:
+         return _BytecodeBuiltin("relu", 1)
+     if value is _NATIVE_SQUEEZE:
+         return _BytecodeBuiltin("squeeze", 1)
++    if value is _NATIVE_T:
++        return _BytecodeBuiltin("t", 1)
+     owner = _NATIVE_FUNCTION_OWNER
+     if value is owner.mul or value is owner.multiply:
+         return _BytecodeBuiltin("mul_scalar", 2)
+@@ -461,7 +464,7 @@ def _global_value_dependency(name, value, module_attribute=None):
+         # only at loads that actually use them, so unrelated mutations neither
+         # reject old programs nor spend their recompile budget.
+         attributes = ("mul", "multiply", "matmul")
+-        if module_attribute in ("add", "neg", "negative", "relu", "squeeze"):
++        if module_attribute in ("add", "neg", "negative", "relu", "squeeze", "t"):
+             attributes += (module_attribute,)
+         bindings = tuple((attr, vars(value).get(attr)) for attr in attributes)
+         if all(_builtin_target(fn) is not None for _, fn in bindings):
+@@ -1293,7 +1296,7 @@ def _handle_call(recorder, locals, stack, program, instruction, state, active):
+         if target in ("add", "matmul"):
+             left, right = (_require_tensor(arg, program, instruction, f"{target} operand") for arg in args)
+             stack.append(recorder.record_binary(target, left, right, f"torch.{target}"))
+-        elif target in ("neg", "relu", "squeeze"):
++        elif target in ("neg", "relu", "squeeze", "t"):
+             operand = _require_tensor(args[0], program, instruction, f"{target} operand")
+             stack.append(recorder.record_unary(target, operand))
+         elif target == "mul_scalar":
+diff --git a/python/torch_rs/_compiler_state.py b/python/torch_rs/_compiler_state.py
+index b932ccd..4f7ac4f 100644
+--- a/python/torch_rs/_compiler_state.py
++++ b/python/torch_rs/_compiler_state.py
+@@ -11,9 +11,10 @@ from .torch_rs import (
+     _exchange_enable_guard_collectives as exchange_enable_guard_collectives,
+     relu as native_relu,
+     squeeze as native_squeeze,
++    t as native_t,
+ )
+ 
+-# ReLU and squeeze are PyO3 module functions, not native_function_owner members.
++# ReLU, squeeze and t are PyO3 module functions, not native_function_owner members.
+ # Retain them here too, before either writable public/native export can change.
+ 
+ 
+diff --git a/tests/test_compile_cuda_t.py b/tests/test_compile_cuda_t.py
+index 13ad184..5dea2d4 100644
+--- a/tests/test_compile_cuda_t.py
++++ b/tests/test_compile_cuda_t.py
+@@ -289,7 +289,7 @@ class CompileCudaTTests(unittest.TestCase):
+         x = native.ones((3, 7)).to('cuda:0')
+         expressions = ('-a', 'a * 2', 'a + a', 'a @ a', 'a.sum(1)',
+                        'x.t(0)', 'x.t(dim=0)', 'x.t(foo=True)', 'x.t().reshape(1, 3, 7)',
+-                       'x.swapdims(0, 1)', 'x.permute(1, 0)', 'x.T', 'x.mT', 'm.t(x)')
++                       'x.swapdims(0, 1)', 'x.permute(1, 0)', 'x.T', 'x.mT', 'm.t(x, dim=0)')
+         for dynamic in (False, True):
+             for expression in expressions:
+                 fn = make_program(f'def program(x):\n    a = x.t()\n    b = a.contiguous()\n    return {expression}\n')

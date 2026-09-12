@@ -1,0 +1,77 @@
+# Native module t: clean-commit capture
+
+Measured `e2898c1d4ff8162c15b327b908e02008a767aff6` from a clean checkout, with a fresh
+locked exact-source release wheel. All 16 command receipts passed and record
+clean status before and after execution. This completes the post-commit capture
+deferred by the [development record](../README.md); its baseline, replay and
+failed attempts remain unchanged.
+
+| Check | Measured result |
+| --- | --- |
+| Complete compiler sweep, all 62 modules | 708 run, 690 passed, 18 skipped |
+| Focused module-t and eager t/transpose native/reference | 40 run, 39 passed, 1 skipped |
+| Two-physical-GPU restoration | 5 run, 5 passed, 0 skipped |
+| CUDA-hidden/frontend/CPU/reference | 148 run, 94 passed, 54 skipped |
+| Rust default all-targets, CUDA hidden | 395 passed, 0 ignored |
+| Rust Python-binding graph/planner, H100 | 15 passed |
+| Rust Python-binding graph/planner, CUDA hidden | 15 passed; hardware sections return early |
+| Formatting and default/Python-binding Clippy | Passed |
+| README/navigation and CUDA example | 12 tests and example passed |
+| Interpreter, installed native/source and pre/postflight identity | Passed |
+
+The focused suite includes the original 32 spelling cells against Inductor under
+all four policies, cold/repeated calls, aliases and startup mutations, guarded
+cache recovery, dynamic/view layouts, IEEE-bit alias mutation and lifetime,
+existing consumers and whole-graph rejection. The complete sweep selects every
+`tests/test_compile*.py` plus `tests/test_top_level_compile.py`; it also retains
+earlier arithmetic, ReLU, squeeze and method-view regressions. Counts above are
+test functions, not generated subcases. Single-GPU and hidden-device skips are
+preserved in the logs; restoration runs separately with two visible GPUs.
+
+[Capture metadata](capture.json), [command receipts](commands.json) and
+[build metadata](build-record.json) bind actual timestamps, commands, GPU
+snapshots, source/input manifests, wheel and installed native hashes.
+[Manifests](manifests.json) reuse unchanged development manifests and store only
+new deltas, including the clean source export. Original receipt and build-record
+bytes can be reconstructed and hash-verified. [Verification](verification.json)
+checks those bindings, historical preservation and the evidence-only diff.
+No development outcome is substituted for a current measurement.
+
+Python 3.12.14 and the existing canonical `.venv` remain inside this worktree.
+The complete local interpreter inventory and executable match the previously
+verified distribution; no interpreter, project environment, wheel or installed
+package was copied in this step. The repository source-export builder performed
+locked dev/reference dependency setup and a fresh release build with Rust 1.92.0.
+The release target, Rust-check target and CUDA/Inductor/Triton cache directories
+were new for this capture; download caches were warm. Later commands reused
+caches warmed by earlier commands in this capture.
+
+Native/reference runtime is CUDA 13.0; reference is PyTorch `2.13.0+cu130`.
+The host reports H100 and driver 580.82.07; nvcc is 12.6.85, while native kernels
+use driver JIT of embedded PTX. Ordinary GPU checks use mask `0`; restoration
+uses `0,1`; hidden checks use an empty mask. Physical GPU 0 is
+`GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1`, and GPU 1 is
+`GPU-11979b85-93e3-21d3-e68f-df37b8a4c296`. Receipts retain all eight GPU
+UUID/utilization/memory snapshots. Resources are `gpu` and `cpu-heavy`; snapshots
+are observations, not reservations.
+
+To reproduce, use the [recorded environment](recipes/env.sh.txt), the unchanged
+`scripts/build_cuda_add_diagnostic.py --name <absent-local-name> --revision HEAD`
+via the local Python, and the exact commands in `commands.json`. The
+[check sequence](recipes/checks.sh.txt) and [complete sweep recipe](recipes/sweep.py.txt)
+retain the measured workload selection. The separate Rust/format/Clippy commands
+are in the receipts. Adapt only output-directory and clean-commit guards for a
+new capture; never overwrite these records or the historical baseline. The
+[publisher](recipes/publish.py.txt) runs only after clean measurements finish;
+the [verifier](recipes/verify-v2.py.txt) validates the resulting evidence and links.
+
+Only evidence and navigation links were added after measurement. These are
+non-scoring correctness/development diagnostics; command durations are not
+performance measurements. No evaluator, corpus, denominator, supported behavior
+or managed progress artifact changed. Independent review and Burner delivery/
+merge gates remain required; this capture does not approve the branch.
+
+The initial publication link check required its own not-yet-written verification
+report. The [failure reproduction](publication-failure.json) and original recipe
+are preserved. The corrected verifier checks the emitted report on a second
+pass; measurement logs, commands and results are unchanged.

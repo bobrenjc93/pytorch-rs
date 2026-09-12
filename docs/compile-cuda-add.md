@@ -104,7 +104,7 @@ the same snapshots. Changed values specialize subject to `recompile_limit`,
 and unsupported replacements reject. Every call checks current input and capture
 devices and layouts.
 Module guards retain the legacy `mul`/`multiply`/`matmul` snapshots and guard
-new `add`/`neg`/`negative`/`relu`/`squeeze` fields only at loads that use them.
+new `add`/`neg`/`negative`/`relu`/`squeeze`/`t` fields only at loads that use them.
 Unused new fields do not invalidate warm graphs or spend `recompile_limit`, even when rebound
 or deleted. Direct imported aliases guard their own binding and survive
 unrelated public-attribute mutations. Replacing a used binding with another
@@ -115,10 +115,10 @@ multiple fields and helper loads in the same namespace.
 The immutable callable owner is retained during package initialization. The lazy
 frontend never resolves identities through the writable native owner export;
 replacing or deleting that export before the first compile does not authorize
-counterfeit callables or invoke their hooks. ReLU and squeeze are PyO3 module
+counterfeit callables or invoke their hooks. ReLU, squeeze and t are PyO3 module
 functions, not arithmetic-owner members. Their genuine identities are retained
 during package initialization, before callers can replace or delete public
-`relu`/`squeeze` or native `_C.relu`/`_C.squeeze`. Genuine retained imports survive
+`relu`/`squeeze`/`t` or native `_C.relu`/`_C.squeeze`/`_C.t`. Genuine retained imports survive
 those unrelated changes; fake replacements cannot become trusted during the first frontend import.
 Rebinding a global creates a specialization or hits the existing recompile
 limit; an incompatible device transition is rejected. Rejected calls leave the

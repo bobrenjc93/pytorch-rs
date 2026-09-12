@@ -1,0 +1,61 @@
+{
+  "baseline": {
+    "source_root": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_caf1a3f7/target/cuda-add-diagnostic/module-t-baseline/source",
+    "source_manifest_sha256": "ff122d21d11caead19dba86059b82e8f2dbdbdee2d14bbadff01511a5eb3114d",
+    "base_commit": "9b9236bff0a7d6209da9ed75463151a603e248be",
+    "measured_code_commit": "9b9236bff0a7d6209da9ed75463151a603e248be",
+    "source_kind": "clean commit export",
+    "origin_status": "",
+    "origin_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source_matches_commit": true,
+    "durations_seconds": {
+      "dependency_setup": 0.061113917268812656,
+      "build": 48.224664497189224,
+      "wheel_install": 0.12892107851803303
+    },
+    "build_cache": "empty per-export Cargo target; shared worktree Cargo/uv download caches warm",
+    "profile": "release, thin LTO, codegen-units=1, extension-module, locked dependencies",
+    "wheel": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_caf1a3f7/target/cuda-add-diagnostic/module-t-baseline/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "wheel_sha256": "ab2935ce537a9c67216fb1f48c40c95aeac9607e40692eefc24f893af8d6499b",
+    "installed_package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_caf1a3f7/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+    "installed_native": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_caf1a3f7/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+    "installed_native_sha256": "c97eae5e599322f5265281fb6c7ed7d43f5923f83a9a6fe0fb23a3fbd142fe46",
+    "build_target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_caf1a3f7/target/cuda-add-diagnostic/module-t-baseline/build",
+    "original_record_sha256": "4730e195d78e12d751fc592cd8cb52b63704ceb529d9d5e9cee7d37232d729bc",
+    "build_recipe": "python scripts/build_cuda_add_diagnostic.py --name module-t-baseline --revision HEAD"
+  },
+  "development": {
+    "source_root": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_caf1a3f7/target/cuda-add-diagnostic/module-t-development/source",
+    "source_manifest_sha256": "4b9711b4f0caa1dd966540e91685c51a82d6a1d3ea60166029bc15cd916d0da5",
+    "base_commit": "9b9236bff0a7d6209da9ed75463151a603e248be",
+    "measured_code_commit": null,
+    "source_kind": "immutable current-source export; uncommitted overlay, not exact HEAD",
+    "origin_status": " M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compiler_state.py\n M tests/test_compile_cuda_t.py\n?? tests/test_compile_cuda_module_t.py\n",
+    "origin_patch_sha256": "4901db78578025e384968aa11906214d5664ab3dc9117a460b3be5834266e082",
+    "source_matches_commit": false,
+    "durations_seconds": {
+      "dependency_setup": 0.02240096963942051,
+      "build": 46.494813782162964,
+      "wheel_install": 0.13772180769592524
+    },
+    "build_cache": "empty per-export Cargo target; shared worktree Cargo/uv download caches warm",
+    "profile": "release, thin LTO, codegen-units=1, extension-module, locked dependencies",
+    "wheel": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_caf1a3f7/target/cuda-add-diagnostic/module-t-development/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "wheel_sha256": "72dcd8a8613fd092b4055ae2d8523340a9dfbb995ba850424a9d702de79ade28",
+    "installed_package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_caf1a3f7/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+    "installed_native": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_caf1a3f7/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+    "installed_native_sha256": "c97eae5e599322f5265281fb6c7ed7d43f5923f83a9a6fe0fb23a3fbd142fe46",
+    "build_target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_caf1a3f7/target/cuda-add-diagnostic/module-t-development/build",
+    "source_delta_from_base": {
+      "changed": {
+        "python/torch_rs/_compile_bytecode.py": "a5d34215425f3fdc0fb42be40fc2afb42185b2c42a39f5ad8f3306a97323238f",
+        "python/torch_rs/_compiler_state.py": "e25edd0356c2eb032fdadcdd5f0fa17df7de3bf7e4308e89d78a4d349b6c432f",
+        "tests/test_compile_cuda_module_t.py": "400c33e6f5f8cca56288007910cb176dc226b519ec613b0e2bc19228fb85d4e6",
+        "tests/test_compile_cuda_t.py": "6b6e31eaf8e02db10391a2f8669fe89dbbba461c243c03194950b31e3e364948"
+      },
+      "removed": []
+    },
+    "original_record_sha256": "004847aef13c414a0b2c81ddbb77f6fa590bcf36047ab84410e6b9dd31554785",
+    "build_recipe": "python scripts/build_cuda_add_diagnostic.py --name module-t-development"
+  }
+}

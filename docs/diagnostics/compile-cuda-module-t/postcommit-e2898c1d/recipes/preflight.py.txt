@@ -1,0 +1,23 @@
+import contextlib, hashlib, importlib.metadata, io, json, pathlib, runpy, subprocess, sys
+root=pathlib.Path.cwd().resolve()
+sys.path.insert(0,str(root))
+from scripts.evaluate_cuda_math import source_provenance
+buffer=io.StringIO()
+with contextlib.redirect_stdout(buffer):
+    runpy.run_path(str(root/'target/module-t-postcommit-e2898c1d/environment.py'))
+record=json.loads(buffer.getvalue())
+import numpy, torch, torch_rs
+for name,module in (('numpy',numpy),('torch',torch),('torch_rs',torch_rs)):
+    path=pathlib.Path(module.__file__).resolve()
+    assert path.is_relative_to(root/'.venv'),path
+    record[name+'_import']=str(path)
+record['source_provenance']=source_provenance()
+record['git_status']=subprocess.check_output(['git','status','--porcelain'],text=True)
+assert record['git_status']==''
+assert record['source_provenance']['commit']=='e2898c1d4ff8162c15b327b908e02008a767aff6'
+record['dependencies']={d.metadata['Name']:d.version for d in importlib.metadata.distributions()}
+record['uv_lock_sha256']=hashlib.sha256((root/'uv.lock').read_bytes()).hexdigest()
+record['runtime_sha256']=hashlib.sha256(pathlib.Path(record['cuda_runtime']).read_bytes()).hexdigest()
+record['visible_device_count']=torch.cuda.device_count()
+assert record['visible_device_count']==1
+print(json.dumps(record,indent=2))

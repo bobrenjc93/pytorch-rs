@@ -1,0 +1,34 @@
+import hashlib,json,os,stat,subprocess,sys
+from pathlib import Path
+from datetime import datetime,timezone
+def sha(raw):
+    return hashlib.sha256(raw).hexdigest()
+def inventory(folder):
+    result = {}
+    for p in sorted(folder.rglob('*')):
+        key = p.relative_to(folder).as_posix()
+        info = p.lstat()
+        if p.is_symlink():
+            target = os.readlink(p)
+            assert not os.path.isabs(target)
+            assert (p.parent/target).resolve().is_relative_to(folder.resolve())
+            result[key] = ['symlink', target]
+        elif p.is_file():
+            result[key] = ['file', stat.S_IMODE(info.st_mode), info.st_size, sha(p.read_bytes())]
+        elif p.is_dir():
+            result[key] = ['directory', stat.S_IMODE(info.st_mode)]
+        else:
+            raise AssertionError('unexpected installation entry ' + key)
+    return result
+
+root=Path.cwd().resolve()
+destination=root/'target/uv-python/cpython-3.12.14-linux-x86_64-gnu'
+expected='519ae888f6f47836a48399b7eff35b28582673e893a08261bd5e2758f9a4f265'
+before=inventory(destination)
+assert sha(json.dumps(before,sort_keys=True).encode())==expected
+assert inventory(destination)==before
+assert sha((destination/'bin/python3.12').read_bytes())=='f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526'
+assert Path(sys.base_prefix).resolve()==destination
+assert Path(sys.prefix).resolve()==root/'.venv'
+assert inventory(destination)==before
+print(json.dumps(dict(checked_at=datetime.now(timezone.utc).isoformat(),complete_local_inventory_matches_verified_distribution=True,installation_manifest_sha256=expected,interpreter_sha256=sha((destination/'bin/python3.12').read_bytes()),historical_bootstrap_record="docs/diagnostics/compile-cuda-module-t/recipes/bootstrap.json",destination=str(destination),executable=sys.executable,base_prefix=sys.base_prefix,version=sys.version,existing_worktree_local_interpreter_reverified=True,copied_again=False),indent=2))

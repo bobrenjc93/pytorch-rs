@@ -1,0 +1,17 @@
+{
+  "kind": "Evidence publication verification; no workload or implementation failure",
+  "command": [
+    "python",
+    "target/module-t-postcommit-e2898c1d/verify.py"
+  ],
+  "exit_code": 1,
+  "log": "logs/verification-link-failure.log.gz",
+  "log_sha256": "c3615535fe0c219dd8ddee24b5d18b7fcb564bec744ca88c7a845c4911d95458",
+  "log_is": "Explicit reproduction of initial failure, using unchanged original verification recipe",
+  "log_file_mtime_utc": "2026-09-12T08:27:23.901516+00:00",
+  "recipe": "recipes/verify.py.txt",
+  "recipe_sha256": "0d77f0895a4bf0a2d90a6e3374e58ad3b5b1d297837dfcbff3e65c92bac252d6",
+  "cause": "Markdown link verification required verification.json before the verifier had emitted it.",
+  "correction": "verify-v2.py permits its pending self-reference on the first pass; a second pass verifies the emitted report link.",
+  "measurement_commands_rerun_or_modified": false
+}

@@ -1,0 +1,194 @@
+{
+  "production": {
+    "base": "../production-base.json.gz",
+    "base_sha256": "80941737227c509933fa935388024bc0a7dd2995e6df862a5609bac94420b7cf",
+    "existing_index": "../production-manifests.json",
+    "reused_sha256": [
+      "6b426486a251da507987792122637b534fe71ea7d326579af40cc0eb7fca2d2d"
+    ],
+    "new_variants": {}
+  },
+  "input": {
+    "base": "../input-base.json.gz",
+    "base_sha256": "ab77d45b291ace2cb9b8797e319b12e66a8bc13b68f72710d599047e6f053e79",
+    "existing_index": "../input-manifests.json",
+    "reused_sha256": [],
+    "new_variants": {
+      "e84c45fddd1819cd3a5f209c5e9b09bafaf6255463ee36f2e71f9d81e94db5d1": {
+        "changed": {
+          "target/module-t-postcommit-e2898c1d/docs_smoke.py": "56572fced2af1dba1bdb679fe6690a38fd1f7079dd01c4e332e3dfbde857793b",
+          "target/module-t-postcommit-e2898c1d/environment.py": "2ab2b9b3706d7f434c451c5b19861b3be06b3aeabd8a9689b68a2a065ce205c2",
+          "target/module-t-postcommit-e2898c1d/interpreter.py": "0be2336473288e5709da1672d1c47f178760cdb2a22c761a2108670fd365bf9d",
+          "target/module-t-postcommit-e2898c1d/record.py": "269691368ccd5823c2041d8a9f946142dea3b3009608e40c3cbcf500c3c355a0",
+          "target/module-t-postcommit-e2898c1d/sweep.py": "ff601b08bc303196c6f0dbf23351cc01e1109172b913d2e3b3a59edc1932eeab",
+          "tests/test_compile_cuda_module_t.py": "469b354fcf4ea73ba796b686c539ee1923ec0682b5e1a1d683bab73685e5d713",
+          "tests/test_compile_cuda_t.py": "6b6e31eaf8e02db10391a2f8669fe89dbbba461c243c03194950b31e3e364948"
+        },
+        "removed": [
+          "target/module-t-evidence/bootstrap.py",
+          "target/module-t-evidence/environment.py",
+          "target/module-t-evidence/probe-compiled-cuda-module-t.py",
+          "target/module-t-evidence/record.py",
+          "target/module-t-evidence/sweep.py"
+        ]
+      },
+      "6d363abf2ab00e2035216deed09709849c3170e56711df9eab08522c2f7a8132": {
+        "changed": {
+          "target/module-t-postcommit-e2898c1d/docs_smoke.py": "56572fced2af1dba1bdb679fe6690a38fd1f7079dd01c4e332e3dfbde857793b",
+          "target/module-t-postcommit-e2898c1d/environment.py": "2ab2b9b3706d7f434c451c5b19861b3be06b3aeabd8a9689b68a2a065ce205c2",
+          "target/module-t-postcommit-e2898c1d/interpreter.py": "0be2336473288e5709da1672d1c47f178760cdb2a22c761a2108670fd365bf9d",
+          "target/module-t-postcommit-e2898c1d/preflight.py": "d1c02bc1022cb5d0850c42504d4191409e79e08370ca66b2f9cf55dc47404fd0",
+          "target/module-t-postcommit-e2898c1d/record.py": "269691368ccd5823c2041d8a9f946142dea3b3009608e40c3cbcf500c3c355a0",
+          "target/module-t-postcommit-e2898c1d/sweep.py": "ff601b08bc303196c6f0dbf23351cc01e1109172b913d2e3b3a59edc1932eeab",
+          "tests/test_compile_cuda_module_t.py": "469b354fcf4ea73ba796b686c539ee1923ec0682b5e1a1d683bab73685e5d713",
+          "tests/test_compile_cuda_t.py": "6b6e31eaf8e02db10391a2f8669fe89dbbba461c243c03194950b31e3e364948"
+        },
+        "removed": [
+          "target/module-t-evidence/bootstrap.py",
+          "target/module-t-evidence/environment.py",
+          "target/module-t-evidence/probe-compiled-cuda-module-t.py",
+          "target/module-t-evidence/record.py",
+          "target/module-t-evidence/sweep.py"
+        ]
+      },
+      "c1a97ab5ad2a821075a5eef6026c010697ca10637977eacda3e2216f698b36e4": {
+        "changed": {
+          "target/module-t-postcommit-e2898c1d/docs_smoke.py": "56572fced2af1dba1bdb679fe6690a38fd1f7079dd01c4e332e3dfbde857793b",
+          "target/module-t-postcommit-e2898c1d/document.py": "f6c9747d7f51329e4fc68198531cd5a82dba25415cc3716176a7da48fd16f42b",
+          "target/module-t-postcommit-e2898c1d/environment.py": "2ab2b9b3706d7f434c451c5b19861b3be06b3aeabd8a9689b68a2a065ce205c2",
+          "target/module-t-postcommit-e2898c1d/interpreter-local.py": "1d2582526fb755d64822db71b6682caffd530abb93597bc72c40ad93949ef461",
+          "target/module-t-postcommit-e2898c1d/interpreter.py": "0be2336473288e5709da1672d1c47f178760cdb2a22c761a2108670fd365bf9d",
+          "target/module-t-postcommit-e2898c1d/preflight.py": "d1c02bc1022cb5d0850c42504d4191409e79e08370ca66b2f9cf55dc47404fd0",
+          "target/module-t-postcommit-e2898c1d/publish.py": "6d1bc8ff4bbddf55ef4a0d9c5d835f7e22cfa008b3b4f74353d88a71cf9e338d",
+          "target/module-t-postcommit-e2898c1d/record.py": "269691368ccd5823c2041d8a9f946142dea3b3009608e40c3cbcf500c3c355a0",
+          "target/module-t-postcommit-e2898c1d/sweep.py": "ff601b08bc303196c6f0dbf23351cc01e1109172b913d2e3b3a59edc1932eeab",
+          "target/module-t-postcommit-e2898c1d/verify.py": "0d77f0895a4bf0a2d90a6e3374e58ad3b5b1d297837dfcbff3e65c92bac252d6",
+          "tests/test_compile_cuda_module_t.py": "469b354fcf4ea73ba796b686c539ee1923ec0682b5e1a1d683bab73685e5d713",
+          "tests/test_compile_cuda_t.py": "6b6e31eaf8e02db10391a2f8669fe89dbbba461c243c03194950b31e3e364948"
+        },
+        "removed": [
+          "target/module-t-evidence/bootstrap.py",
+          "target/module-t-evidence/environment.py",
+          "target/module-t-evidence/probe-compiled-cuda-module-t.py",
+          "target/module-t-evidence/record.py",
+          "target/module-t-evidence/sweep.py"
+        ]
+      },
+      "c6717f4bfd585fcdd80f390960d7f794ab8604194b33427cc7255f13206b5eb2": {
+        "changed": {
+          "target/module-t-postcommit-e2898c1d/docs_smoke.py": "56572fced2af1dba1bdb679fe6690a38fd1f7079dd01c4e332e3dfbde857793b",
+          "target/module-t-postcommit-e2898c1d/environment.py": "2ab2b9b3706d7f434c451c5b19861b3be06b3aeabd8a9689b68a2a065ce205c2",
+          "target/module-t-postcommit-e2898c1d/interpreter-local.py": "1d2582526fb755d64822db71b6682caffd530abb93597bc72c40ad93949ef461",
+          "target/module-t-postcommit-e2898c1d/interpreter.py": "0be2336473288e5709da1672d1c47f178760cdb2a22c761a2108670fd365bf9d",
+          "target/module-t-postcommit-e2898c1d/preflight.py": "d1c02bc1022cb5d0850c42504d4191409e79e08370ca66b2f9cf55dc47404fd0",
+          "target/module-t-postcommit-e2898c1d/record.py": "269691368ccd5823c2041d8a9f946142dea3b3009608e40c3cbcf500c3c355a0",
+          "target/module-t-postcommit-e2898c1d/sweep.py": "ff601b08bc303196c6f0dbf23351cc01e1109172b913d2e3b3a59edc1932eeab",
+          "tests/test_compile_cuda_module_t.py": "469b354fcf4ea73ba796b686c539ee1923ec0682b5e1a1d683bab73685e5d713",
+          "tests/test_compile_cuda_t.py": "6b6e31eaf8e02db10391a2f8669fe89dbbba461c243c03194950b31e3e364948"
+        },
+        "removed": [
+          "target/module-t-evidence/bootstrap.py",
+          "target/module-t-evidence/environment.py",
+          "target/module-t-evidence/probe-compiled-cuda-module-t.py",
+          "target/module-t-evidence/record.py",
+          "target/module-t-evidence/sweep.py"
+        ]
+      },
+      "47f4d76f06e600e6b0e2d1793766cc21af345c7d4bf92c9db7a2fd683b19962b": {
+        "changed": {
+          "target/module-t-postcommit-e2898c1d/docs_smoke.py": "56572fced2af1dba1bdb679fe6690a38fd1f7079dd01c4e332e3dfbde857793b",
+          "target/module-t-postcommit-e2898c1d/environment.py": "2ab2b9b3706d7f434c451c5b19861b3be06b3aeabd8a9689b68a2a065ce205c2",
+          "target/module-t-postcommit-e2898c1d/record.py": "269691368ccd5823c2041d8a9f946142dea3b3009608e40c3cbcf500c3c355a0",
+          "target/module-t-postcommit-e2898c1d/sweep.py": "ff601b08bc303196c6f0dbf23351cc01e1109172b913d2e3b3a59edc1932eeab",
+          "tests/test_compile_cuda_module_t.py": "469b354fcf4ea73ba796b686c539ee1923ec0682b5e1a1d683bab73685e5d713",
+          "tests/test_compile_cuda_t.py": "6b6e31eaf8e02db10391a2f8669fe89dbbba461c243c03194950b31e3e364948"
+        },
+        "removed": [
+          "target/module-t-evidence/bootstrap.py",
+          "target/module-t-evidence/environment.py",
+          "target/module-t-evidence/probe-compiled-cuda-module-t.py",
+          "target/module-t-evidence/record.py",
+          "target/module-t-evidence/sweep.py"
+        ]
+      }
+    }
+  },
+  "build": {
+    "base": "../build-source-base.json.gz",
+    "base_sha256": "ff122d21d11caead19dba86059b82e8f2dbdbdee2d14bbadff01511a5eb3114d",
+    "sha256": "1a0545972f94eee6265c8dacc3d7fcfcade61a7976b671d09e9c14e06d7d5e76",
+    "delta": {
+      "changed": {
+        "ARCHITECTURE.md": "a266e4a5be080fc78a62cc13ccbb8b0d470f49f34cac9050fd8410a3fc9b8150",
+        "FEATURES.md": "b26dc2ba1a2bbb3c25b44eda13cb64b62d37cf8ad0f9acf87157fd27632e0f6f",
+        "docs/README.md": "cea381d051277e9ce7fc48ff8464a7919230b67f52cb085ef079aa95d736bd23",
+        "docs/compile-cuda-add.md": "ac45a5b44c301e5cfd75091aea5f947610b3a14277fbb5b00133ec8da421d26d",
+        "docs/compile-cuda-t.md": "5c88876f09f3105691ff1c6edd7048b52095358c409bcb175b9c57448d22caf9",
+        "docs/diagnostics/compile-cuda-module-t/README.md": "e32f5a324401dc016da94413a8f81b9026a7c1cf32ac55df2064aab2994ee9e3",
+        "docs/diagnostics/compile-cuda-module-t/baseline-environment.json": "5a41c62c1a4f319a79186f183d9b1e6ec0a9d5159755a68375a33cefdff3aed5",
+        "docs/diagnostics/compile-cuda-module-t/baseline-verification.json": "3b09e8862c044440b2e86112db098f019a4889b3f65c83ec38d5ae47ef182937",
+        "docs/diagnostics/compile-cuda-module-t/build-source-base.json.gz": "bf75bca7ac0f78532ff014f6908e654d16d69de619757578a8ac12101aa71c6b",
+        "docs/diagnostics/compile-cuda-module-t/builds.json": "35b56473d45a894c6c2a9fe123426fe0e4eb823f65114b8ecece365d505a8d71",
+        "docs/diagnostics/compile-cuda-module-t/candidate-verification.json": "7c71dd8568488f00b7da06dae77ee6b9843e04943b3c041399fc48cd8ebe574c",
+        "docs/diagnostics/compile-cuda-module-t/commands.json": "8a88d10c1fdcb24f9dcd138f38f8312aec82e720e09d43ffc74d0c10eac830b2",
+        "docs/diagnostics/compile-cuda-module-t/external/compiled-cuda-module-t-baseline-output.log.gz": "7f727caefa610158fd6d1065e25d397c5f64171e7a0f7d1383ac27728936e8a4",
+        "docs/diagnostics/compile-cuda-module-t/external/compiled-cuda-module-t-baseline-probe.json.gz": "4e82771016262aa316df8c8193d070377533a932c2175c8b47d6167cd57f498e",
+        "docs/diagnostics/compile-cuda-module-t/external/compiled-cuda-module-t-baseline-receipt.json.gz": "74a5805630404d467b59f1435957c7ba8c9fa9d5541841f80ab4d41437f7f600",
+        "docs/diagnostics/compile-cuda-module-t/external/compiled-cuda-module-t-baseline-verified.json.gz": "abad70fb084b580eb51e85f7aa96a005908b188bea6b530d5436176012e7e741",
+        "docs/diagnostics/compile-cuda-module-t/external/prepare-compiled-cuda-module-t-probe.sh.gz": "ce97a422a5be3f0b587dddc0581c0ddf7309ea504d00ce850c306a3e598287f4",
+        "docs/diagnostics/compile-cuda-module-t/external/probe-compiled-cuda-module-t.py.gz": "4cb06440a0a02516a6c386e797b0e180843169c86b46c430470f66ecade8d2e0",
+        "docs/diagnostics/compile-cuda-module-t/external-provenance.json": "794e3f5f7db08e14217d2debd2abd9434fd2fedcdf8b92a9b1fddc1caaee195f",
+        "docs/diagnostics/compile-cuda-module-t/failures/publish.first.py.gz": "53cd3b7d301e05574aba5b1ea6cd4937d1ee9f85441a3d1e0446d9f5034b9207",
+        "docs/diagnostics/compile-cuda-module-t/failures/published-summary.first.json.gz": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec",
+        "docs/diagnostics/compile-cuda-module-t/failures/test_compile_cuda_module_t.first.py.gz": "7276de861bb9b37be7e5e58ad40f29485e566fb57fb8beeda6bc726e24d21a89",
+        "docs/diagnostics/compile-cuda-module-t/input-base.json.gz": "740a698fd484f467d0fa84939ba47b2c30b545fa50f07f792d6891550a210ae7",
+        "docs/diagnostics/compile-cuda-module-t/input-manifests.json": "f61a21a8aacc3a26d12e6f9b62395ea1b4375783029a7e05179070418425d838",
+        "docs/diagnostics/compile-cuda-module-t/integrity-audit.json": "f765fa4e0253abc792e02ac6182f191261ec7f7f28cbeb31fe0fdcddcf4a0bd1",
+        "docs/diagnostics/compile-cuda-module-t/logs/baseline.log.gz": "b0f0a3a8d94d2b620d1d045bf50df285b48e2c281c79c73f774516ae9676ad63",
+        "docs/diagnostics/compile-cuda-module-t/logs/candidate.log.gz": "e551b4172278fb6180c40da6fdde6965393f04527335c7be604b8ccde9b01fc2",
+        "docs/diagnostics/compile-cuda-module-t/logs/clippy-bindings.log.gz": "6fb17af1057107935d7724290cb981f6e8a74110b936891d2ae40c1683f53328",
+        "docs/diagnostics/compile-cuda-module-t/logs/clippy-default.log.gz": "28584f148207cce7856ea42f0b47790c860c72cfede877ea06da4f9db5c39a20",
+        "docs/diagnostics/compile-cuda-module-t/logs/compiler-final.log.gz": "3081915ff2f864ad1392b5050e62f8444389238fc99f4fa3d81cabfce2bb73af",
+        "docs/diagnostics/compile-cuda-module-t/logs/dependencies-baseline.log.gz": "5c4cc076b0423a39b32da865c416aaf9b4d607c6af77d5f1b8027aed5a45f633",
+        "docs/diagnostics/compile-cuda-module-t/logs/dependencies-development.log.gz": "300de437ed6ae5f86f2b06575702b2fac2440d2a9e05cf3258367917737a6373",
+        "docs/diagnostics/compile-cuda-module-t/logs/docs-complete.log.gz": "c6aff31b09f611c9442d23c5f7d437dc7c210b9ed8b7317d35684829b250d281",
+        "docs/diagnostics/compile-cuda-module-t/logs/docs-final.log.gz": "f317463ce7f19b6869964fa976164e6d9b7a27a26c297acec5d4b781509b4380",
+        "docs/diagnostics/compile-cuda-module-t/logs/docs.log.gz": "82a30ddbc6b169d28c57dba4a9529483bd38c86d84b679510cdfd235d3b18dab",
+        "docs/diagnostics/compile-cuda-module-t/logs/environment.log.gz": "de4ab5a1d61321cccded28b2019d48b900cc4ef6c75d44ee1dce11d6ceb9829d",
+        "docs/diagnostics/compile-cuda-module-t/logs/focused-first.log.gz": "94cf1531cdc2b23ab7464989931140d48659fa7bb66c94d8c7d24d4439d55e1e",
+        "docs/diagnostics/compile-cuda-module-t/logs/focused-revision.log.gz": "313f23eee00426dc13a528fc8116f67ff5cfdfa07b5bc7b9dfd304a435c5184b",
+        "docs/diagnostics/compile-cuda-module-t/logs/format.log.gz": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec",
+        "docs/diagnostics/compile-cuda-module-t/logs/hidden-cpu.log.gz": "6f4847d9196c8668b57f7ae649680e0f1500f52d517caa9e0bd7eeead818f67d",
+        "docs/diagnostics/compile-cuda-module-t/logs/initial-dependencies.log.gz": "879e73f2529bc506619dd9b1e341c65b106bbf4b0a58a4cc65a96430f3beae7d",
+        "docs/diagnostics/compile-cuda-module-t/logs/native-verification.log.gz": "c17233efd5c06fdae03efcd22deaeda08210f0106c040c4b316ddc10f0ab0c4c",
+        "docs/diagnostics/compile-cuda-module-t/logs/publish-first.log.gz": "09fbe053cb8bf2bb76cc156f6e93cc72a2427318a4c73f0b4a1bedb4807d278e",
+        "docs/diagnostics/compile-cuda-module-t/logs/release-build-baseline.log.gz": "d4316bffa44870f210d304f1b5c4130c18b3a3727854abd92d03f3ec368d9124",
+        "docs/diagnostics/compile-cuda-module-t/logs/release-build-development.log.gz": "6d93221946ba7033ab61c00d0755737a59a57c75f2dfbf75ff38f663cfe928ae",
+        "docs/diagnostics/compile-cuda-module-t/logs/restoration.log.gz": "90de57b00b243a828522e377c0c757eedbd6df34c405caa64222a368d3868597",
+        "docs/diagnostics/compile-cuda-module-t/logs/rust-cuda.log.gz": "37d68519152628ff7a194821d3f84403c663d7238ffa7a3dbae24527ee00e8aa",
+        "docs/diagnostics/compile-cuda-module-t/logs/rust-default.log.gz": "175f149795984da5b7f567528a0c5bc2450c4ccc6a951b10e8197a9a10a5d922",
+        "docs/diagnostics/compile-cuda-module-t/logs/rust-hidden.log.gz": "ee3dff53c8046425ddab93e5fe012f16efa7c089473187b9ffd951481d89e96c",
+        "docs/diagnostics/compile-cuda-module-t/origin-baseline.patch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "docs/diagnostics/compile-cuda-module-t/origin-development.patch": "4901db78578025e384968aa11906214d5664ab3dc9117a460b3be5834266e082",
+        "docs/diagnostics/compile-cuda-module-t/production-base.json.gz": "5cc96bcfeb3855e1e46f3d2e5a01b627efb341f4dd133926f56d87764ae570db",
+        "docs/diagnostics/compile-cuda-module-t/production-manifests.json": "3e13b3518fb06fce74fba73b2ff6918309b3f7347c9f6ffb729bd5a5b89a8e5e",
+        "docs/diagnostics/compile-cuda-module-t/recipes/bootstrap.json": "4c64d9bdb3172c36ebeff6ee5831abcde23abb02c33a0d08a451db6d899430d8",
+        "docs/diagnostics/compile-cuda-module-t/recipes/bootstrap.py.txt": "e3611e5587ef148786815623424e53744ca0c7046f53044f72f12e034e706809",
+        "docs/diagnostics/compile-cuda-module-t/recipes/candidate-probe.py.txt": "9fab9e5f7c764463643d8c6226408fcc3e6b5760b26904806b7fe9282cef3335",
+        "docs/diagnostics/compile-cuda-module-t/recipes/docs_smoke.py.txt": "56572fced2af1dba1bdb679fe6690a38fd1f7079dd01c4e332e3dfbde857793b",
+        "docs/diagnostics/compile-cuda-module-t/recipes/env.sh.txt": "09a38e9ed3a64298b712c8774e8c53a826fa881a51495d8989076d288fc5c1f6",
+        "docs/diagnostics/compile-cuda-module-t/recipes/environment.py.txt": "2ab2b9b3706d7f434c451c5b19861b3be06b3aeabd8a9689b68a2a065ce205c2",
+        "docs/diagnostics/compile-cuda-module-t/recipes/publish.py.txt": "ba8545fa732ee8d7838904f8f3bca130bbc7a74398d54920090063fb5964e7a9",
+        "docs/diagnostics/compile-cuda-module-t/recipes/record.py.txt": "e6253beb7c4c3ad5178f9595db60dc2d674757d492e6a5d2f17b67bb4a5d6e6c",
+        "docs/diagnostics/compile-cuda-module-t/recipes/sweep.py.txt": "ff601b08bc303196c6f0dbf23351cc01e1109172b913d2e3b3a59edc1932eeab",
+        "docs/diagnostics/compile-cuda-module-t/verification.json": "6cc16cea333f9bf418bdd2a1cd6440f060ccb7e4dec7cdb8eee5762cc5fcf81b",
+        "docs/supported-surface.md": "b99785a71c91fadaa06a17fff1ecdbe5455377c87bd897c3a82aa1c2155e9c52",
+        "python/torch_rs/_compile_bytecode.py": "a5d34215425f3fdc0fb42be40fc2afb42185b2c42a39f5ad8f3306a97323238f",
+        "python/torch_rs/_compiler_state.py": "e25edd0356c2eb032fdadcdd5f0fa17df7de3bf7e4308e89d78a4d349b6c432f",
+        "tests/test_compile_cuda_module_t.py": "469b354fcf4ea73ba796b686c539ee1923ec0682b5e1a1d683bab73685e5d713",
+        "tests/test_compile_cuda_t.py": "6b6e31eaf8e02db10391a2f8669fe89dbbba461c243c03194950b31e3e364948"
+      },
+      "removed": []
+    }
+  }
+}

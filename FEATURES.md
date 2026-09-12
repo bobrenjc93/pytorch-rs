@@ -245,13 +245,14 @@ rank, or packs positive-stride rank-1/rank-2 views into independent same-device
 float32 storage with canonical strides and offset zero. Arguments, formats,
 CPU capture, higher-rank packing and gradients are excluded. Non-scoring
 H100 graphlets verify these semantics; the frozen compiler denominator is unchanged.
-[Compiled CUDA `Tensor.t()`](docs/compile-cuda-t.md) also captures parameterless
-rank-0/1/2 float32 no-grad views, preserving storage and offsets while creating
-a distinct view object per call. It composes with packing and existing arithmetic;
+[Compiled CUDA transpose views](docs/compile-cuda-t.md) capture parameterless
+`Tensor.t()`, exactly one-positional-argument native `torch.t(x)` and genuine
+direct-import aliases on rank-0/1/2 float32 no-grad tensors, preserving storage
+and offsets while creating a distinct view object per call. It composes with packing and existing arithmetic;
 `Tensor.transpose(dim0, dim1)` shares this path with exact constant integer axes,
 including negative/same axes and positional/keyword binding. Static/dynamic
 captures retain metadata and cache guards. Dynamic axis expressions, general
-permute, swapdims/swapaxes, properties and top-level transpose are excluded.
+permute, swapdims/swapaxes, properties and top-level `torch.transpose` are excluded.
 
 [Compiled CUDA `Tensor.reshape`](docs/compile-cuda-reshape.md) captures exact
 constant integer shapes of rank 0/1/2, including scalar tuples and `-1` inference.

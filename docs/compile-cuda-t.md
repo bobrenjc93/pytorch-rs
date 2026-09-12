@@ -1,20 +1,22 @@
 # Compiled CUDA transpose views
 
-The bounded eager compiler captures `Tensor.t()` and `Tensor.transpose(dim0, dim1)`
+The bounded eager compiler captures `Tensor.t()`, one-positional-argument
+`torch.t(x)` and genuine direct-import aliases, plus `Tensor.transpose(dim0, dim1)`,
 for native CUDA float32 tensors of rank 0, 1 or 2 without gradients:
 
 ```python
 import torch_rs as torch
+from torch_rs import t as transpose_view
 
 def transpose_and_pack(x):
-    return -x.transpose(dim0=0, dim1=1).contiguous()
+    return -transpose_view(x).contiguous()
 
 x = torch.tensor([[1., 2., 3.], [4., 5., 6.]]).to("cuda:0")
 f = torch.compile(transpose_and_pack, backend="eager", fullgraph=True)
 assert f(x).cpu().tolist() == [[-1., -4.], [-2., -5.], [-3., -6.]]
 ```
 
-Each `t()` or `transpose()` creates a new view object sharing the input's
+Each method/module/imported `t` or method `transpose` creates a new view object sharing the input's
 storage, dtype, device and offset. Different rank-2 axes swap shape and strides;
 scalars, vectors and same-axis transposes keep their metadata but still return
 a distinct object. Repeated references to one result preserve identity,
@@ -50,12 +52,22 @@ Index-like objects/integer subclasses, named dimensions and dynamic axis
 expressions are deliberately unsupported. Static and dynamic policies do not
 imply support for arbitrary shape-dependent Python expressions.
 
+The genuine PyO3 `t` function is retained in `_compiler_state` during package
+initialization, before writable public `t` or native `_C.t` exports can change.
+It is not a `_VariableFunctionsClass` member. Module calls guard each used field;
+retained direct aliases guard their own binding. Unrelated `t` mutation/deletion
+does not invalidate squeeze/ReLU/arithmetic caches or spend `recompile_limit=1`.
+Canonical substitutions follow callable identity and arity. Counterfeit bindings
+reject without equality, descriptor or conversion callbacks. See the
+[shared callable guard contract](compile-cuda-add.md#metadata-and-cache-contract).
+
 [Constant-shape rank-0/1/2 reshape](compile-cuda-reshape.md) and
 [alias-only view](compile-cuda-view.md) also compose with these views.
 
-Arguments to `t()`, rank >2, CPU capture, other dtypes, gradients,
-`swapdims`/`swapaxes`, general permute, `.T`/`.mT`, top-level
-`torch.t`/`torch.transpose` and new backends remain unsupported. No-break
+Arguments to method `t()`, extra arguments or any keywords to module/imported
+`t(x)`, rank >2, CPU capture, other dtypes, gradients, `swapdims`/`swapaxes`,
+general permute, `.T`/`.mT`, top-level `torch.transpose` and new backends remain
+unsupported. No-break
 `fullgraph=False` retains its existing default-dynamic policy. These graphlets are non-scoring diagnostics: the frozen 38-case corpus,
 performance workloads, evaluator/observer/hardware contracts and unadopted
 PR1970/PR1971 campaigns are unchanged.
@@ -65,10 +77,24 @@ PR1970/PR1971 campaigns are unchanged.
 Use the [locked contributor setup](../CONTRIBUTING.md), then run:
 
 ```sh
-CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest -v tests.test_compile_cuda_t tests.test_compile_cuda_transpose
-CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m unittest -v tests.test_compile_cuda_t.CompileTDeviceTests tests.test_compile_cuda_transpose.TransposeDeviceTests
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest -v tests.test_compile_cuda_module_t tests.test_compile_cuda_t tests.test_compile_cuda_transpose
+CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m unittest -v tests.test_compile_cuda_module_t.ModuleTDeviceTests tests.test_compile_cuda_t.CompileTDeviceTests tests.test_compile_cuda_transpose.TransposeDeviceTests
 CUDA_VISIBLE_DEVICES=0 cargo test --locked --features python-bindings --lib cuda_graph
 ```
+
+The [module/imported-t clean-commit capture](diagnostics/compile-cuda-module-t/postcommit-e2898c1d/README.md)
+measured `e2898c1d4ff8162c15b327b908e02008a767aff6` with a fresh locked release
+wheel. The complete compiler sweep, focused H100/reference, two-device, hidden
+CPU, Rust and documentation checks passed. Independent review and Burner merge
+gates remain required.
+
+The [module/imported-t development evidence](diagnostics/compile-cuda-module-t/README.md)
+preserves the exact-main 32-gap baseline, source/build/input-bound checks and
+original failures. The previous `m.t(x)` rejection fixture now uses
+`m.t(x, dim=0)`, preserving its unsupported-binding purpose. Positive tests cover
+the newly supported spelling. All four policies remain: `fullgraph=True` with
+`dynamic=None`, `False` or `True`, and `fullgraph=False` with `dynamic=None`.
+This is not general `torch.compile`, Inductor, training or performance parity.
 
 Hardware-only tests skip clearly without the required devices. Rust test-only
 accounting checks zero native operations for malformed early/late nodes; it is

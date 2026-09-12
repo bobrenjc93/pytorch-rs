@@ -1,0 +1,20 @@
+{
+  "verified_at": "2026-09-12T08:27:49.665802+00:00",
+  "measured_code_commit": "e2898c1d4ff8162c15b327b908e02008a767aff6",
+  "passed": true,
+  "clean_measurement_commands": 16,
+  "compiler_modules": 62,
+  "source_build_native_input_bindings_verified": true,
+  "original_receipts_and_build_record_reconstructed": true,
+  "current_paths_inside_worktree": true,
+  "historical_measurements_unchanged": true,
+  "implementation_dependencies_tests_and_harnesses_unchanged": true,
+  "publication_diff": [
+    "docs/compile-cuda-t.md",
+    "docs/diagnostics/compile-cuda-module-t/README.md"
+  ],
+  "publication_untracked_prefix": "docs/diagnostics/compile-cuda-module-t/postcommit-e2898c1d/",
+  "documentation_links_checked": 30,
+  "whitespace_check_passed": true,
+  "independent_review_and_merge_gates_still_required": true
+}

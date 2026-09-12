@@ -1,0 +1,174 @@
+"""Candidate replay of the unchanged frozen module-t inputs and recipes.
+
+Non-scoring development evidence. Baseline expected-gap labels are historical;
+all candidate calls must succeed. The original frozen probe remains unchanged.
+"""
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+from unittest.mock import patch
+
+import numpy as np
+import torch
+import torch_rs as native
+
+root = Path.cwd().resolve()
+sys.path.insert(0, str(root))
+from tests.test_cuda_contiguous import metadata
+from scripts.evaluate_cuda_math import source_provenance
+
+
+def program_for(expression, arity, module):
+    namespace = {"__name__": __name__, "m": module, "t_alias": module.t}
+    arguments = "x" if arity == 1 else "x, y"
+    exec(f"def program({arguments}):\n    return {expression}\n", namespace)
+    return namespace["program"]
+
+
+def no_original_body(program, callback):
+    def reject(frame, event, argument):
+        if event == "call" and frame.f_code is program.__code__:
+            raise AssertionError("native compiled execution entered original Python body")
+    previous = sys.getprofile()
+    try:
+        sys.setprofile(reject)
+        return callback()
+    finally:
+        sys.setprofile(previous)
+
+
+def compare(actual, expected):
+    assert metadata(actual) == metadata(expected)
+    # Empty nested lists lose their tensor rank; metadata above independently
+    # verifies shape/stride before the logical values are reshaped for comparison.
+    np.testing.assert_allclose(np.asarray(actual.cpu().tolist(), dtype=np.float32).reshape(tuple(actual.shape)),
+                               expected.detach().cpu().numpy(), rtol=0, atol=0)
+
+
+
+
+head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+assert len(sys.argv) == 3 and re.fullmatch(r"[0-9a-f]{40}", sys.argv[1]) and head == sys.argv[1]
+assert subprocess.check_output(["git", "rev-parse", "main"], text=True).strip() == head
+status = subprocess.check_output(["git", "status", "--porcelain"], text=True)
+assert os.environ["CUDA_VISIBLE_DEVICES"] == "0"
+assert torch.cuda.is_available() and torch.cuda.device_count() == 1
+assert torch.cuda.get_device_name(0) == "NVIDIA H100"
+assert Path(sys.prefix).resolve() == root / ".venv"
+assert Path(native._C.__file__).resolve().is_relative_to(root / ".venv")
+
+source_before = source_provenance()
+assert source_before["source_sha256"] == sys.argv[2]
+assert source_before["commit"] == head
+assert native.t is native._C.t
+assert not hasattr(native._C._VariableFunctionsClass, "t")
+specifications = (
+    ("module_t", "m.t(x)", 1, True),
+    ("imported_t", "t_alias(x)", 1, True),
+    ("module_t_after_add", "m.t(x + x)", 1, True),
+    ("imported_t_after_add", "t_alias(x + x)", 1, True),
+    ("module_t_before_packed_relu", "m.relu(m.t(x).contiguous())", 1, True),
+    ("imported_t_before_packed_relu", "m.relu(t_alias(x).contiguous())", 1, True),
+    ("module_t_after_relu", "m.t(m.relu(x))", 1, True),
+    ("imported_t_after_relu", "t_alias(m.relu(x))", 1, True),
+    ("existing_method_t", "x.t()", 1, False),
+    ("existing_module_squeeze", "m.squeeze(x)", 1, False),
+    ("existing_module_relu", "m.relu(x)", 1, False),
+)
+rng = np.random.default_rng(198501)
+cases = []
+for label, expression, arity, expected_gap in specifications:
+    for shape in ((), (7,), (3, 5), (0, 1)):
+        # Exact dyadic inputs make arithmetic comparison exact; this probe does
+        # not claim special-value bit parity or performance parity.
+        data = [np.asarray(rng.integers(-31, 32, size=shape) * .125, dtype=np.float32)
+                for _ in range(arity)]
+        args = [native.tensor(value.reshape(-1)).reshape(shape).to("cuda:0") for value in data]
+        refs = [torch.tensor(value.reshape(-1), device="cuda:0").reshape(shape) for value in data]
+        for actual, expected in zip(args, refs):
+            assert metadata(actual) == metadata(expected), (label, shape)
+        program = program_for(expression, arity, native)
+        reference_program = program_for(expression, arity, torch)
+        expected = reference_program(*refs)
+        eager = program(*args)
+        compare(eager, expected)
+        assert all(eager is not arg for arg in args)
+        if label in ("module_t", "imported_t", "existing_method_t", "existing_module_squeeze"):
+            assert eager.data_ptr() == args[0].data_ptr()
+            assert expected.data_ptr() == refs[0].data_ptr()
+        torch._dynamo.reset()
+        reference = torch.compile(reference_program, backend="inductor", fullgraph=True, dynamic=False)
+        for _ in range(2):
+            actual_reference = reference(*refs)
+            torch.testing.assert_close(actual_reference, expected, rtol=0, atol=0)
+            assert metadata(actual_reference) == metadata(expected)
+        compiled = no_original_body(program, lambda: native.compile(
+            program, backend="eager", fullgraph=True, dynamic=False))
+        results = []
+        for call in ("cold", "repeat"):
+            invoke = lambda: no_original_body(program, lambda: compiled(*args))
+            actual = invoke()
+            compare(actual, expected)
+            assert all(actual is not arg for arg in args)
+            if label in ("module_t", "imported_t", "existing_method_t", "existing_module_squeeze"):
+                assert actual.data_ptr() == args[0].data_ptr()
+            results.append({"call": call, "passed": True})
+        for actual, reference_input in zip(args, refs):
+            compare(actual, reference_input)
+        cases.append({"name": label, "expression": expression, "arity": arity,
+                      "shape": list(shape), "expected_gap": expected_gap,
+                      "input_sha256": [hashlib.sha256(value.tobytes()).hexdigest() for value in data],
+                      "native_eager_passed": True, "reference_inductor_cold_and_repeat_passed": True,
+                      "original_native_program_body_not_executed": True, "native_calls": results})
+
+# Newly admitted names must not become mandatory guards for old module syntax.
+# These are positive baseline controls, not permission to execute rebound code.
+unrelated_rebindings = []
+for expression, reference_callback in (
+    ("m.relu(x)", lambda x: x.relu()),
+    ("m.squeeze(x)", lambda x: x.squeeze()),
+    ("m.neg(x)", lambda x: -x),
+):
+    calls = []
+    def forbidden(*args, **kwargs):
+        calls.append(True)
+        raise AssertionError("executed unrelated replacement callable")
+    program = program_for(expression, 1, native)
+    x = native.tensor([1., -2., 3.]).to("cuda:0")
+    tx = torch.tensor([1., -2., 3.], device="cuda:0")
+    expected = reference_callback(tx)
+    compiled = native.compile(program, backend="eager", fullgraph=True, dynamic=False)
+    compare(no_original_body(program, lambda: compiled(x)), expected)
+    with patch.object(native, "t", forbidden):
+        compare(no_original_body(program, lambda: compiled(x)), expected)
+        cold = native.compile(program, backend="eager", fullgraph=True, dynamic=False)
+        compare(no_original_body(program, lambda: cold(x)), expected)
+    assert not calls
+    unrelated_rebindings.append({"attribute": "t", "expression": expression,
+                                 "existing_module_program_preserved": True,
+                                 "replacement_callback_calls": len(calls)})
+
+assert len(cases) == 44 and sum(case["expected_gap"] for case in cases) == 32
+assert subprocess.check_output(["git", "status", "--porcelain"], text=True) == status
+assert source_provenance() == source_before
+print(json.dumps({"verified_candidate_closure": True, "measurement_kind": "uncommitted development", "commit": head,
+                  "source_provenance": source_before,
+                  "genuine_t_is_native_module_function": True,
+                  "variable_function_owner_contains_t": False,
+                  "probe_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                  "metadata_helper_sha256": hashlib.sha256((root / "tests/test_cuda_contiguous.py").read_bytes()).hexdigest(),
+                  "native_extension": native._C.__file__,
+                  "native_extension_sha256": hashlib.sha256(Path(native._C.__file__).read_bytes()).hexdigest(),
+                  "reference": torch.__version__, "gpu": torch.cuda.get_device_name(0),
+                  "cases": cases, "unrelated_rebindings": unrelated_rebindings,
+                  "closed_baseline_gap_cases": 32, "existing_positive_cases": 12,
+                  "reference_compile_backend": "inductor", "native_compile_backend": "eager",
+                  "native_backend_note": "Native CUDA graph capture/execution; original program body forbidden",
+                  "cuda_performance_measured": False, "scores_changed": False,
+                  "physical_gpu_snapshot_after": subprocess.check_output(["nvidia-smi",
+                      "--query-gpu=index,uuid,name,utilization.gpu,memory.used", "--format=csv,noheader"], text=True),
+                  "gpu_snapshot_is_not_reservation": True}, indent=2))
