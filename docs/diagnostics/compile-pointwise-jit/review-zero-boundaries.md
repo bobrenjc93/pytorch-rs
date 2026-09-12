@@ -50,9 +50,10 @@ FMA and `--ftz=false`:
   All 77 prior measured artifacts remain byte-for-byte unchanged. Earlier
   two-device restoration evidence is also preserved.
 
-These are unscored dirty-source checks based on `1905c865`. The latest clean
-campaign capture remains pinned to `5fc75c41`, before this repair. Fresh
-coverage/performance capture awaits Burner's next clean implementation commit;
-no old report was relabeled. Temporary wheel/cache/raw-log paths may disappear
+These are unscored dirty-source checks based on `1905c865`. Burner committed
+the repair as `42959e14`; the [post-commit capture](README.md) supplies fresh clean
+coverage/performance and the combined fifteen-module regression selection.
+The preceding capture remains pinned to `5fc75c41`; no old report was relabeled.
+Temporary wheel/cache/raw-log paths may disappear
 at cleanup; this compressed bundle preserves the durable evidence. See the
 [compiler contract](../../compile-pointwise-jit.md) and [evidence index](README.md).

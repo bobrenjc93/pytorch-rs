@@ -116,3 +116,19 @@ and constant-sine failures, intermediate checks and generated-code evidence.
 All 124 implementation and thirteen regression-module hashes match `5fc75c41`;
 these development runs remain unscored. The current evidence index links the
 subsequent clean capture.
+
+## Scalar-zero contraction and nonfinite binding histories
+
+Clean `5fc75c41` predates this repair. Its original captures remain unchanged:
+
+- [Coverage](postcommit-5fc75c/candidate-coverage.json.gz),
+  [CUDA performance](postcommit-5fc75c/candidate-cuda-perf.json.gz),
+  [receipt](postcommit-5fc75c/postcommit.json), [logs](postcommit-5fc75c/postcommit-logs.json.gz),
+  and [codegen provenance](postcommit-5fc75c/provenance.json).
+
+[Development validation](review-zero-boundaries.md) and its
+[bundle](review-zero-boundaries.json.gz) retain the original and intermediate
+arithmetic failures, nonfinite cache histories, contiguous-offset transitions,
+checks and generated-code evidence. All 124 implementation and fifteen
+regression-module hashes match `42959e14`; these development runs remain
+unscored. The current evidence index links the subsequent clean capture.
