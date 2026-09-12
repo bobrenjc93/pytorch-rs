@@ -1,0 +1,82 @@
+"""Validate evidence publication, recording its artifact-only dirty state honestly."""
+import datetime, gzip, hashlib, json, os, re, subprocess, time
+from pathlib import Path
+root=Path.cwd()
+work=root/'target/postcommit-35a52edc'
+prior=root/'docs/diagnostics/compile-cuda-module-arithmetic'
+dest=prior/'postcommit-35a52edc'
+head='35a52edcd4af20ce655f6bffa1779aa7bb1b0781'
+def sha(raw): return hashlib.sha256(raw).hexdigest()
+def digest(p): return sha(p.read_bytes())
+def git(*args): return subprocess.check_output(['git',*args],text=True)
+assert git('rev-parse','HEAD').strip()==head
+assert set(git('diff','--name-only','HEAD').splitlines())=={'docs/compile-cuda-add.md'}
+untracked=git('ls-files','--others','--exclude-standard').splitlines()
+assert untracked and all(p.startswith(str(dest.relative_to(root))+'/') for p in untracked)
+audit=json.loads((dest/'candidate-audit.json').read_text())
+assert all(digest(prior/p)==value for p,value in audit['prior_evidence_files'].items())
+assert all(digest(root/p)==value for p,value in audit['candidate_files'].items() if p!='docs/compile-cuda-add.md')
+capture=json.loads((dest/'capture.json').read_text())
+assert capture['measured_code_commit']==head and not capture['measurement_git_status']
+build_raw=gzip.decompress((dest/'build-record.json.gz').read_bytes())
+assert sha(build_raw)==capture['build_record_uncompressed_sha256']
+build=json.loads(build_raw)
+assert build['source_matches_commit'] and build['measured_code_commit']==head and not build['origin_status']
+assert sha(json.dumps(build['source_files'],sort_keys=True).encode())==capture['source_manifest_sha256']
+commands=json.loads((dest/'commands.json').read_text())
+for receipt in commands:
+    assert receipt['exit_code']==0
+    assert digest(dest/receipt['published_log'])==receipt['log_sha256']
+    for key in ('git_before','git_after'):
+        assert receipt[key]['commit']==head and not receipt[key]['status']
+    assert Path(receipt['cwd'])==root
+    for key,value in receipt['environment'].items():
+        if key.endswith('_DIR') or key in ('CARGO_HOME','CARGO_TARGET_DIR','TMPDIR','VIRTUAL_ENV','TORCH_RS_CUDART','XDG_CACHE_HOME'):
+            Path(value).resolve().relative_to(root)
+for value in capture['recipe_reuse'].values():
+    assert digest(dest/value['path'])==value['sha256']
+for p,value in capture['recipe_sha256'].items(): assert digest(dest/p)==value
+m=capture['input_manifest']
+assert digest(dest/m['path'])==m['file_sha256']
+delta_path=dest/m['path']; delta=json.loads(delta_path.read_text())
+base_path=delta_path.parent/delta['base_file']; assert digest(base_path)==delta['base_file_sha256']
+data=json.loads(base_path.read_text()); inputs=dict(data['base'])
+variant=data['variants'][delta['base_variant']]; inputs.update(variant['changed'])
+for p in variant['removed']: del inputs[p]
+inputs.update(delta['changed'])
+for p in delta['removed']: del inputs[p]
+assert sha((json.dumps(inputs,sort_keys=True,indent=2)+'\n').encode())==m['reconstructed_sha256']
+assert all(digest(root/p)==value for p,value in inputs.items())
+links=[]
+for doc in (dest/'README.md',root/'docs/compile-cuda-add.md'):
+    for target in re.findall(r'\[[^\]]*\]\(([^)]+)\)',doc.read_text()):
+        if '://' in target or target.startswith('#'): continue
+        p=(doc.parent/target.split('#')[0]).resolve()
+        p.relative_to(root)
+        assert p.exists() or p == dest/'verification.json', (doc,target)
+        links.append({'document':str(doc.relative_to(root)),'target':target})
+# Reject stale absolute worktree paths in current evidence, including logs and
+# the decompressed build record. Historical evidence is only hash referenced.
+for p in dest.rglob('*'):
+    if p.is_file() and p.suffix!='.gz':
+        for found in re.findall(r'/data/users/[A-Za-z0-9_./-]+',p.read_text()):
+            assert found.startswith(str(root)), (p,found)
+for found in re.findall(r'/data/users/[A-Za-z0-9_./-]+',build_raw.decode()): assert found.startswith(str(root)),found
+command=['.venv/bin/python','-m','unittest','-v','tests.test_readme_quickstart']
+start=datetime.datetime.now(datetime.timezone.utc).isoformat(); elapsed=time.perf_counter()
+status=git('status','--porcelain','--untracked-files=all')
+log=dest/'logs/publication-docs-smoke.log'
+with log.open('wb') as stream:
+    result=subprocess.run(command,stdout=stream,stderr=subprocess.STDOUT)
+record={'checked_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'measured_code_commit':head,
+'kind':'artifact-only publication verification; not a clean-checkout measurement',
+'git_status_before':status,'git_status_after':git('status','--porcelain','--untracked-files=all'),
+'implementation_inputs_unchanged':True,'prior_evidence_bytes_unchanged':True,'clean_measurement_receipts_verified':len(commands),
+'current_evidence_paths_rooted_in_worktree':True,'documentation_links_checked':links,
+'publication_docs_smoke':{'argv':command,'started_at':start,'elapsed_seconds':time.perf_counter()-elapsed,'exit_code':result.returncode,'log':'logs/publication-docs-smoke.log','log_sha256':digest(log)},
+'artifact_sha256':{str(p.relative_to(dest)):digest(p) for p in sorted(dest.rglob('*')) if p.is_file() and p.name!='verification.json'},
+'guide_sha256':digest(root/'docs/compile-cuda-add.md')}
+(dest/'verification.json').write_text(json.dumps(record,indent=2)+'\n')
+assert result.returncode==0
+assert re.search(r'Ran 12 tests',log.read_text()) and '\nOK\n' in log.read_text()
+print('Verified 19 clean-commit receipts, unchanged implementation and prior evidence, artifact hashes, current paths and documentation links; 12 publication docs smoke tests passed.')

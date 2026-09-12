@@ -1,0 +1,59 @@
+"""Publish the clean owner-initialization capture, preserving prior evidence."""
+import datetime, gzip, hashlib, json, re, subprocess
+from pathlib import Path
+root=Path.cwd(); work=root/'target/postcommit-35a52edc'; prior=root/'docs/diagnostics/compile-cuda-module-arithmetic'; dest=prior/'postcommit-35a52edc'
+head='35a52edcd4af20ce655f6bffa1779aa7bb1b0781'
+def sha(raw): return hashlib.sha256(raw).hexdigest()
+def digest(p): return sha(p.read_bytes())
+def write(p,data): p.write_text(json.dumps(data,indent=2)+'\n')
+assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==head
+assert not subprocess.check_output(['git','status','--porcelain'],text=True)
+audit=json.loads((work/'candidate-audit.json').read_text())
+assert all(digest(prior/p)==v for p,v in audit['prior_evidence_files'].items())
+assert all(digest(root/p)==v for p,v in audit['candidate_files'].items())
+delta_path=prior/'owner-startup-review/input-delta.json'; delta=json.loads(delta_path.read_text())
+base_path=delta_path.parent/delta['base_file']; assert digest(base_path)==delta['base_file_sha256']
+base=json.loads(base_path.read_text()); inputs=dict(base['base']); variant=base['variants'][delta['base_variant']]; inputs.update(variant['changed'])
+for name in variant['removed']: del inputs[name]
+inputs.update(delta['changed'])
+for name in delta['removed']: del inputs[name]
+assert sha((json.dumps(inputs,sort_keys=True,indent=2)+'\n').encode())==delta['reconstructed_sha256']
+assert all(digest(root/p)==v for p,v in inputs.items())
+assert (work/'inductor-inputs.log').read_bytes()==(prior/'owner-startup-review/logs/inductor-inputs.log').read_bytes()
+labels=['release-build','provenance-before','verify-native','reviewer-counterfeit','reviewer-hostile','focused-cuda','cpu-hidden','restoration','rust-default','rust-graph-cuda','rust-graph-hidden','formatting','clippy-default','clippy-python','docs-smoke','docs-guide','inductor-inputs','compiler-complete','provenance-after']
+commands=[]
+for label in labels:
+    r=json.loads((work/(label+'.json')).read_text()); assert r['exit_code']==0,label
+    for key in ('git_before','git_after'): assert r[key]['commit']==head and not r[key]['status']
+    assert digest(work/r['log'])==r['log_sha256']; text=(work/r['log']).read_text()
+    results=re.findall(r'Ran (\d+) tests? in ([\d.]+)s',text)
+    if results:
+        run,seconds=results[-1]; skips=re.findall(r'^OK \(skipped=(\d+)\)',text,re.M); skip=int(skips[-1]) if skips else 0
+        assert re.search(r'^OK(?: \(skipped=\d+\))?$',text,re.M)
+        r['test_summary']={'run':int(run),'passed':int(run)-skip,'skipped':skip,'reported_seconds':float(seconds)}
+        r['skip_lines']=[line for line in text.splitlines() if ' ... skipped ' in line]
+    results=re.findall(r'test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored;',text)
+    if results: r['test_summary']={'passed':sum(int(v[0]) for v in results),'failed':sum(int(v[1]) for v in results),'ignored':sum(int(v[2]) for v in results)}
+    r['input_manifest_sha256']=delta['reconstructed_sha256']; r['published_log']='logs/'+r['log']; commands.append(r)
+by_label={r['label']:r for r in commands}
+for label,run,skip in (('compiler-complete',666,15),('focused-cuda',34,5),('cpu-hidden',118,9),('restoration',2,0),('docs-smoke',12,0)):
+    assert by_label[label]['test_summary']['run']==run and by_label[label]['test_summary']['skipped']==skip,label
+for label,passed in (('rust-default',395),('rust-graph-cuda',15),('rust-graph-hidden',15)): assert by_label[label]['test_summary']['passed']==passed,label
+assert (work/'reviewer-counterfeit.log').read_text().startswith('eager [1.0, -3.0]\nCompileTraceUnsupportedError:')
+assert (work/'reviewer-hostile.log').read_text()=='eager [-1.0, 3.0]\ncold [-1.0, 3.0]\nwarm [-1.0, 3.0]\n'
+build_root=root/'target/cuda-add-diagnostic/module-postcommit-35a52edc'; build=json.loads((build_root/'build-record.json').read_text())
+assert build['measured_code_commit']==head and build['source_matches_commit'] and not build['origin_status']
+assert all(digest(Path(build['source_root'])/p)==v for p,v in build['source_files'].items())
+for key in ('source_root','wheel','installed_package','installed_native','build_target'): Path(build[key]).resolve().relative_to(root)
+before=json.loads((work/'provenance-before.log').read_text()); after=json.loads((work/'provenance-after.log').read_text())
+for key in ('measured_code_commit','source_manifest_sha256','installed_module_hashes','native_sha256','wheel_sha256','interpreter_sha256','interpreter_inventory_sha256','runtimes'): assert before[key]==after[key],key
+assert not dest.exists(); (dest/'logs').mkdir(parents=True)
+for r in commands: (dest/r['published_log']).write_bytes((work/r['log']).read_bytes())
+for name in ('build.log','dependency_setup.log','origin.patch'): (dest/'logs'/name).write_bytes((build_root/name).read_bytes())
+(dest/'build-record.json.gz').write_bytes(gzip.compress((build_root/'build-record.json').read_bytes(),mtime=0))
+for name in ('record.py','provenance.py','checks.sh','publish.py','verify_publication.py'):
+    (dest/(name+'.txt')).write_bytes((work/name).read_bytes())
+(dest/'candidate-audit.json').write_bytes((work/'candidate-audit.json').read_bytes())
+write(dest/'commands.json',commands)
+write(dest/'capture.json',{'schema':'native-module-arithmetic-clean-commit-capture-v1','published_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'measured_code_commit':head,'base_commit':audit['base'],'measurement_git_status':'','kind':'non-scoring clean-commit validation including owner-initialization review fix; no performance or merge-approval claim','resources':['gpu','cpu-heavy'],'gpu_selection':'0 ordinarily; 0,1 only for restoration; snapshots are not reservations','build_record':'build-record.json.gz','build_record_uncompressed_sha256':digest(build_root/'build-record.json'),'source_manifest_sha256':build['source_manifest_sha256'],'source_file_count':len(build['source_files']),'input_manifest':{'path':'../owner-startup-review/input-delta.json','file_sha256':digest(delta_path),'reconstructed_sha256':delta['reconstructed_sha256'],'all_current_inputs_verified':True},'inductor_inputs':{'path':'logs/inductor-inputs.log','sha256':digest(work/'inductor-inputs.log'),'matches_review_development_inputs':True},'prior_evidence':{'audit':'candidate-audit.json','files_reverified_unchanged':len(audit['prior_evidence_files']),'receipts_reverified':audit['prior_receipts_verified'],'preserved':True},'candidate_audit_kind':'pre-capture audit; outstanding_capture describes the request before these measurements','recipe_reuse':{name:{'path':'../'+name,'sha256':digest(prior/name)} for name in ('env.sh.txt','compiler_sweep.py.txt','inductor_inputs.py.txt','owner-startup-review/reproduce.py.txt')},'recipe_sha256':{name:digest(dest/name) for name in ('record.py.txt','provenance.py.txt','checks.sh.txt','publish.py.txt','verify_publication.py.txt')},'setup_reuse':before['setup'],'cache_state':before['cache_state'],'provenance_before':'logs/provenance-before.log','provenance_after':'logs/provenance-after.log','summary':{r['label']:r.get('test_summary',{'exit_code':r['exit_code']}) for r in commands},'compiler_selection':'all tests/test_compile*.py and tests/test_top_level_compile.py; 59 modules','limitations':['Test-method counts overlap between suites; parameterized cases are not separate method counts','CUDA-hidden Rust hardware sections return early without reported ignored tests','Warm persistent compilation caches; these are functional checks, not cold toolchain latency measurements','Prior baselines and failures remain pinned to their original source identities','Independent review, evaluation and delivery gates remain separate']})
+print(dest)

@@ -1,0 +1,159 @@
+{
+  "checked_at": "2026-09-12T03:49:40.266814+00:00",
+  "measured_code_commit": "35a52edcd4af20ce655f6bffa1779aa7bb1b0781",
+  "kind": "artifact-only publication verification; not a clean-checkout measurement",
+  "git_status_before": " M docs/compile-cuda-add.md\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/README.md\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/build-record.json.gz\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/candidate-audit.json\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/capture.json\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/checks.sh.txt\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/commands.json\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/build.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/clippy-default.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/clippy-python.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/compiler-complete.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/cpu-hidden.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/dependency_setup.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/docs-guide.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/docs-smoke.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/focused-cuda.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/formatting.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/inductor-inputs.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/origin.patch\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/provenance-after.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/provenance-before.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/release-build.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/restoration.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/reviewer-counterfeit.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/reviewer-hostile.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/rust-default.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/rust-graph-cuda.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/rust-graph-hidden.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/verify-native.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/provenance.py.txt\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/publish.py.txt\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/record.py.txt\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/verify_publication.py.txt\n",
+  "git_status_after": " M docs/compile-cuda-add.md\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/README.md\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/build-record.json.gz\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/candidate-audit.json\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/capture.json\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/checks.sh.txt\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/commands.json\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/build.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/clippy-default.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/clippy-python.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/compiler-complete.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/cpu-hidden.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/dependency_setup.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/docs-guide.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/docs-smoke.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/focused-cuda.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/formatting.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/inductor-inputs.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/origin.patch\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/provenance-after.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/provenance-before.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/publication-docs-smoke.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/release-build.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/restoration.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/reviewer-counterfeit.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/reviewer-hostile.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/rust-default.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/rust-graph-cuda.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/rust-graph-hidden.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/logs/verify-native.log\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/provenance.py.txt\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/publish.py.txt\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/record.py.txt\n?? docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/verify_publication.py.txt\n",
+  "implementation_inputs_unchanged": true,
+  "prior_evidence_bytes_unchanged": true,
+  "clean_measurement_receipts_verified": 19,
+  "current_evidence_paths_rooted_in_worktree": true,
+  "documentation_links_checked": [
+    {
+      "document": "docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/README.md",
+      "target": "../owner-startup-review/README.md"
+    },
+    {
+      "document": "docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/README.md",
+      "target": "../postcommit-e2378805/README.md"
+    },
+    {
+      "document": "docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/README.md",
+      "target": "../README.md"
+    },
+    {
+      "document": "docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/README.md",
+      "target": "commands.json"
+    },
+    {
+      "document": "docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/README.md",
+      "target": "capture.json"
+    },
+    {
+      "document": "docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/README.md",
+      "target": "build-record.json.gz"
+    },
+    {
+      "document": "docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/README.md",
+      "target": "logs/provenance-before.log"
+    },
+    {
+      "document": "docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/README.md",
+      "target": "logs/provenance-after.log"
+    },
+    {
+      "document": "docs/diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/README.md",
+      "target": "verification.json"
+    },
+    {
+      "document": "docs/compile-cuda-add.md",
+      "target": "compile-cuda-matmul.md"
+    },
+    {
+      "document": "docs/compile-cuda-add.md",
+      "target": "compile-cuda-squeeze.md"
+    },
+    {
+      "document": "docs/compile-cuda-add.md",
+      "target": "compile-cuda-view.md"
+    },
+    {
+      "document": "docs/compile-cuda-add.md",
+      "target": "compile-cuda-reshape.md"
+    },
+    {
+      "document": "docs/compile-cuda-add.md",
+      "target": "cuda-mul-scalar-validation.md"
+    },
+    {
+      "document": "docs/compile-cuda-add.md",
+      "target": "cuda-relu.md"
+    },
+    {
+      "document": "docs/compile-cuda-add.md",
+      "target": "diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/README.md"
+    },
+    {
+      "document": "docs/compile-cuda-add.md",
+      "target": "diagnostics/compile-cuda-module-arithmetic/README.md"
+    },
+    {
+      "document": "docs/compile-cuda-add.md",
+      "target": "diagnostics/compile-cuda-module-arithmetic/owner-startup-review/README.md"
+    },
+    {
+      "document": "docs/compile-cuda-add.md",
+      "target": "diagnostics/compile-cuda-module-arithmetic/postcommit-e2378805/README.md"
+    },
+    {
+      "document": "docs/compile-cuda-add.md",
+      "target": "compile-cuda-trailing-vector-validation.md"
+    },
+    {
+      "document": "docs/compile-cuda-add.md",
+      "target": "compile-cuda-mul-scalar-validation.md"
+    },
+    {
+      "document": "docs/compile-cuda-add.md",
+      "target": "compile-cuda-neg-validation.md"
+    },
+    {
+      "document": "docs/compile-cuda-add.md",
+      "target": "compile-cuda-trailing-vector-validation.md"
+    },
+    {
+      "document": "docs/compile-cuda-add.md",
+      "target": "compile-cuda-add-validation.md"
+    }
+  ],
+  "publication_docs_smoke": {
+    "argv": [
+      ".venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_readme_quickstart"
+    ],
+    "started_at": "2026-09-12T03:49:40.008593+00:00",
+    "elapsed_seconds": 0.3055586079135537,
+    "exit_code": 0,
+    "log": "logs/publication-docs-smoke.log",
+    "log_sha256": "6f3517aeb352591d9f7805d69fcdf7c7f77392770cffc8f1d58eba69b6ebfdfb"
+  },
+  "artifact_sha256": {
+    "README.md": "b7f4d0bfbe212846e9abce40414fb64b596d8f2dd47d24719c8bb35e25094b74",
+    "build-record.json.gz": "699a6326a6f6e54001137a18968c5b2cb069b0927aeb081508a7b7d60540fca4",
+    "candidate-audit.json": "2ee8933efee3657092ddbdecadc3d112f8a33cf615e081038299d3d9ce7fbd7b",
+    "capture.json": "5bf71556c673778d996b95a4934d6fe4d0e6784a8639347051af8909b8e78879",
+    "checks.sh.txt": "9fb7aab65ab14ba2bb547eb5b7b242084c373933db0bec52ecfcdbb606e30e30",
+    "commands.json": "98350aed4e1eee556a7645211503e0f1a01942868dee808eac409ad00355000b",
+    "logs/build.log": "b6eaf1ec9b3f64706ea3bb233a61b0c9de3cda22c9c7c37393148be6aea4c681",
+    "logs/clippy-default.log": "ee1d3fffa2022e962e63e0dbe4d35c9c198450a20c29fc09030f635dbb38bfcd",
+    "logs/clippy-python.log": "a13905646e2aed93ec6ea9ed6ac91490a4e01f91af0215c3965279a910612149",
+    "logs/compiler-complete.log": "42bbf7fde6adbaaf27644c28fee3c9000a967ffff45c35724a8a10511de1c073",
+    "logs/cpu-hidden.log": "1ebf0ffdb963c5dd886de3938dffa3cc30ceae4069b66dc23b433cf4b8c464dd",
+    "logs/dependency_setup.log": "1e56bb2b79d6409170a9c8b05db1dcf79c3f0fa3875dbc7d5d940ff0ade6bc1e",
+    "logs/docs-guide.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "logs/docs-smoke.log": "df65880b8ca193266edccfa74434e286fcadcc34778ee7f02cb8675fb6664b1f",
+    "logs/focused-cuda.log": "356e490ba945672959da6d7e8a4e47a31302a25328aa326fab6a1c680f850310",
+    "logs/formatting.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "logs/inductor-inputs.log": "887705ed67eeef2186386bc9b94abb6742575d0e687b3c18091797a9b1813fb9",
+    "logs/origin.patch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "logs/provenance-after.log": "c8956c71a37649a4d7f267c52fa10f1f3cbd6a78561b0a286957fa206fac2351",
+    "logs/provenance-before.log": "f52b848619e23f5bff86acd4b5ad115d4e17634cb950f1a70413f3b1cb988527",
+    "logs/publication-docs-smoke.log": "6f3517aeb352591d9f7805d69fcdf7c7f77392770cffc8f1d58eba69b6ebfdfb",
+    "logs/release-build.log": "8ac9875466447e917245fbb7693694085fa533c1e0d63b80c55b23cc56b44426",
+    "logs/restoration.log": "241fabe98cb96b65c13ded5ec84d47e8c0f7b372402479f47d8bf9b6ff04d9d3",
+    "logs/reviewer-counterfeit.log": "97835dde692a959e95a51d4a5688a12cc40b3ebd3e200d9b4a9ade6c1a3d62ff",
+    "logs/reviewer-hostile.log": "8d16698a5588b95ecb615e653da315020e0e447eb447147eb1d630566c77960c",
+    "logs/rust-default.log": "910f920fdf8b1daea630fae3eb3c81e65bd59f2c0dc184700f7c1b316b8711df",
+    "logs/rust-graph-cuda.log": "567013e76438ac5ff17879747ba1bf6ea5b4a117089bd17c6dd1f13429b85c61",
+    "logs/rust-graph-hidden.log": "3ce2e87497b68a422c548b43cf6012f81ef3ea7e577105ed62c1061c30bb4c39",
+    "logs/verify-native.log": "e0f16e8a321f9ca319ab6e6c5e04cbd0d335708e68aee70876112537b0f4aa7b",
+    "provenance.py.txt": "77452e4aec58c60b4432c644dfbc965505eed3dd9933894cf401a4114c9be0f9",
+    "publish.py.txt": "73a1c4eee8205b44a99d330cd33b36fad7c31cbe8b24d40d9988c7d77e26b7e9",
+    "record.py.txt": "cf9f635bb7d50fbf81a91aa0bcb71b17dd1ab191467736262de785c77b1bb3dd",
+    "verify_publication.py.txt": "9f9fc54a64b02a8be6d4725b6b21f5eed9a537fb0ea199a7267d84f9b0c7f2c8"
+  },
+  "guide_sha256": "df8c8c6c062fbc7ac295d3afa35e9e535a05482e62d47fa3fba6b92f8bedeaf7"
+}

@@ -127,8 +127,8 @@ dynamic outputs derive concrete metadata from current inputs.
 
 ## Public add/neg function-call validation
 
-[Clean-commit module arithmetic evidence](diagnostics/compile-cuda-module-arithmetic/postcommit-e2378805/README.md)
-records validation at `e2378805`, with the [baseline and development checks](diagnostics/compile-cuda-module-arithmetic/README.md) preserved. Reproduce the focused
+[Clean-commit module arithmetic evidence](diagnostics/compile-cuda-module-arithmetic/postcommit-35a52edc/README.md)
+records validation at `35a52edc`, including the owner-initialization review fix, with the [baseline and development checks](diagnostics/compile-cuda-module-arithmetic/README.md) preserved. Reproduce the focused
 suite with `CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest -v tests.test_compile_cuda_module_arithmetic`;
 use `CUDA_VISIBLE_DEVICES=0,1` for its `ModuleArithmeticDeviceTests` class and an
 empty device mask for the hardware-free frontend checks. Tests cover all four
@@ -140,8 +140,8 @@ bridge without per-node Python replay. Neither path runs the program body.
 
 The [owner-initialization review revision](diagnostics/compile-cuda-module-arithmetic/owner-startup-review/README.md)
 adds fresh-process checks for substitutions made before the first frontend
-import. Its development validation is separate from the `e2378805` capture;
-a new clean-commit capture is required after Burner commits the revision.
+import. The clean `35a52edc` capture includes those checks; its development
+validation and the [earlier `e2378805` capture](diagnostics/compile-cuda-module-arithmetic/postcommit-e2378805/README.md) remain preserved at their original source identities.
 
 ## Matrix/vector validation
 

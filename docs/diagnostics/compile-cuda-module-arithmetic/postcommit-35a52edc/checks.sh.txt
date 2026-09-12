@@ -1,0 +1,22 @@
+set -eu
+. target/postcommit-35a52edc/env.sh
+export GIT_OPTIONAL_LOCKS=0
+record() { python3 target/postcommit-35a52edc/record.py "$@"; }
+record provenance-before .venv/bin/python target/postcommit-35a52edc/provenance.py
+record verify-native .venv/bin/python .github/scripts/verify_native_extension.py
+record reviewer-counterfeit .venv/bin/python docs/diagnostics/compile-cuda-module-arithmetic/owner-startup-review/reproduce.py.txt counterfeit
+record reviewer-hostile .venv/bin/python docs/diagnostics/compile-cuda-module-arithmetic/owner-startup-review/reproduce.py.txt hostile
+record focused-cuda .venv/bin/python -m unittest -v tests.test_compile_cuda_module_arithmetic tests.test_cuda_add tests.test_cuda_neg
+CUDA_VISIBLE_DEVICES= record cpu-hidden .venv/bin/python -m unittest -v tests.test_compile_cuda_module_arithmetic tests.test_top_level_compile tests.test_tensor_add tests.test_tensor_add_reference tests.test_top_level_add tests.test_top_level_add_reference tests.test_neg_reference tests.test_top_level_neg tests.test_top_level_neg_reference tests.test_top_level_negative tests.test_top_level_negative_reference
+CUDA_VISIBLE_DEVICES=0,1 record restoration .venv/bin/python -m unittest -v tests.test_compile_cuda_module_arithmetic.ModuleArithmeticDeviceTests tests.test_compile_cuda_boundary.CompileCudaDeviceTests
+record rust-default cargo test --locked --all-targets
+record rust-graph-cuda cargo test --locked --features python-bindings --lib cuda_graph
+CUDA_VISIBLE_DEVICES= record rust-graph-hidden cargo test --locked --features python-bindings --lib cuda_graph
+record formatting cargo fmt --check
+record clippy-default cargo clippy --locked --all-targets -- -D warnings
+record clippy-python cargo clippy --locked --all-targets --features python-bindings -- -D warnings
+record docs-smoke .venv/bin/python -m unittest -v tests.test_readme_quickstart
+record docs-guide .venv/bin/python -c 'from pathlib import Path; text = Path("docs/compile-cuda-add.md").read_text(); exec(compile(text.split("```python\n", 1)[1].split("```", 1)[0], "docs/compile-cuda-add.md", "exec"))'
+record inductor-inputs .venv/bin/python target/postcommit-35a52edc/inductor_inputs.py
+record compiler-complete .venv/bin/python target/postcommit-35a52edc/compiler_sweep.py
+record provenance-after .venv/bin/python target/postcommit-35a52edc/provenance.py
