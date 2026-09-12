@@ -1,0 +1,12 @@
+{
+  "base_sha256": "6b426486a251da507987792122637b534fe71ea7d326579af40cc0eb7fca2d2d",
+  "variants": {
+    "8d7c3a219fe127f33e8d45eaaabe2e370856642678edd22b2c2d90e3417e6a90": {
+      "changed": {
+        "python/torch_rs/_compile_bytecode.py": "6703cff50b2d5281a00686a535b88af04d5aa355a90674428411d1b44f6747f2",
+        "python/torch_rs/_compiler_state.py": "368627af1e2771d80206ec6a7cd16e103c3cbcf8718a8b22190db536d91b467f"
+      },
+      "removed": []
+    }
+  }
+}

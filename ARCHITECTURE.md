@@ -202,7 +202,8 @@ Callable/global/device/gradient/cache guards remain live. See
 [compiled layout scope and validation](docs/compile-cuda-contiguous.md).
 
 CUDA `Tensor.t()`, one-positional-argument native `torch.t(x)`/direct aliases,
-and constant-axis `Tensor.transpose(dim0, dim1)` use bounded
+and constant-axis `Tensor.transpose(dim0, dim1)` or three-positional-argument
+native `torch.transpose(x, dim0, dim1)`/direct aliases use bounded
 rank-0/1/2 view nodes to the same executor. The bytecode binder and proxy record
 transpose axes separately from arithmetic payloads. `src/tensor_cuda_graph.rs`
 reverses or swaps shape/strides during planning, reusing native axis normalization;

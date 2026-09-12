@@ -1,0 +1,131 @@
+{
+  "base_sha256": "b7def71d08d9edc73b45c0740d7ca75e3bd489741285c2c05c3bea2f17efab5f",
+  "variants": {
+    "5bffb035fefc0d3f2c30b09e652f8084bf1639fd78d4f426abb7f4da034238f3": {
+      "changed": {
+        "tests/test_compile_cuda_module_transpose.py": "200209e9cd6873f1c1a47bc1e3211f12a28d7875ea447bb5755661fd61691f0f",
+        "tests/test_compile_cuda_transpose.py": "0d8f3ec67edcef8a372ae335ac44c04b14ed2b61251ecc21e415f840568fdc21"
+      },
+      "removed": []
+    },
+    "6e05f1898a0ef086ce7bf996cec1321f9ea7ccb2b17ce509665ed78173ce6158": {
+      "changed": {
+        "tests/test_compile_cuda_module_transpose.py": "3e21e095eee767314c556678e4fa48ffafb4329495b41fb95a5ad3d28c1678bb",
+        "tests/test_compile_cuda_transpose.py": "0d8f3ec67edcef8a372ae335ac44c04b14ed2b61251ecc21e415f840568fdc21"
+      },
+      "removed": []
+    },
+    "3a248e89c5abfc209895cfad32ffb836e20f9baca2d029ed4a45394cc6f9cf32": {
+      "changed": {
+        "target/module-transpose/audit.py": "769ba4cb361a73973fb41b413e58382124419fe31fe004a4f58a57a51aeb7b96",
+        "target/module-transpose/bootstrap.py": "7c956b7348b503d85c2b014999de61f28275dda5f3a86fa379aeb19d98f1dd07",
+        "target/module-transpose/docs_smoke.py": "d6e340a887b01e57ee915aec098e4c6cffca3adcdd12fd0d9e794fce3787293d",
+        "target/module-transpose/env.sh": "7d221e2e8f41962d93207f7e43be6951456854e49db1b9f1a40c160649c17349",
+        "target/module-transpose/environment.py": "2ab2b9b3706d7f434c451c5b19861b3be06b3aeabd8a9689b68a2a065ce205c2",
+        "target/module-transpose/probe.py": "bc98874d08f12e7deb9e6f5284b0703104d292e6bed4fbbb49fe58c20030590f",
+        "target/module-transpose/publish.py": "1b7d8703c9c4edd52e9dce8a6b0034d68101c10d5bf625074ee2e318619f7d24",
+        "target/module-transpose/record.initial.py": "e5765d5adf171fbdf1d3ba940e4a6c83d114bf7d65a9ae24cf89bf8f1cc67a0c",
+        "target/module-transpose/record.py": "7cafb0fdb217ff6b3c42954c0003f2f087558e2b0626b4f97d493951e4876e90",
+        "target/module-transpose/sweep.py": "ff601b08bc303196c6f0dbf23351cc01e1109172b913d2e3b3a59edc1932eeab",
+        "target/module-transpose/test.boundaries.py": "ecf26dea29d97e6a4c707fd67a75720f17481b0e1a81f4bbba1d98a1751da5f2",
+        "target/module-transpose/test.first.py": "3e21e095eee767314c556678e4fa48ffafb4329495b41fb95a5ad3d28c1678bb",
+        "tests/test_compile_cuda_module_transpose.py": "3bbb8ba6678384cf2a1d858cab27d47dfa0df2e7def3d2f15e2d367376557232",
+        "tests/test_compile_cuda_transpose.py": "0d8f3ec67edcef8a372ae335ac44c04b14ed2b61251ecc21e415f840568fdc21"
+      },
+      "removed": []
+    },
+    "6067589b49e5eba9d57091a2ea904c9e6055f08b0c5b6d6cb52703fd11ba36e2": {
+      "changed": {
+        "target/module-transpose/audit.py": "769ba4cb361a73973fb41b413e58382124419fe31fe004a4f58a57a51aeb7b96",
+        "target/module-transpose/bootstrap.py": "7c956b7348b503d85c2b014999de61f28275dda5f3a86fa379aeb19d98f1dd07",
+        "target/module-transpose/docs_smoke.py": "d6e340a887b01e57ee915aec098e4c6cffca3adcdd12fd0d9e794fce3787293d",
+        "target/module-transpose/env.sh": "7d221e2e8f41962d93207f7e43be6951456854e49db1b9f1a40c160649c17349",
+        "target/module-transpose/environment.py": "2ab2b9b3706d7f434c451c5b19861b3be06b3aeabd8a9689b68a2a065ce205c2",
+        "target/module-transpose/probe.py": "bc98874d08f12e7deb9e6f5284b0703104d292e6bed4fbbb49fe58c20030590f",
+        "target/module-transpose/publish.first.py": "1b7d8703c9c4edd52e9dce8a6b0034d68101c10d5bf625074ee2e318619f7d24",
+        "target/module-transpose/publish.py": "52ea8fac0c24a747a915ac148570c940f8a36d749e92b8f56f460c50aea3de27",
+        "target/module-transpose/record.initial.py": "e5765d5adf171fbdf1d3ba940e4a6c83d114bf7d65a9ae24cf89bf8f1cc67a0c",
+        "target/module-transpose/record.py": "7cafb0fdb217ff6b3c42954c0003f2f087558e2b0626b4f97d493951e4876e90",
+        "target/module-transpose/sweep.py": "ff601b08bc303196c6f0dbf23351cc01e1109172b913d2e3b3a59edc1932eeab",
+        "target/module-transpose/test.boundaries.py": "ecf26dea29d97e6a4c707fd67a75720f17481b0e1a81f4bbba1d98a1751da5f2",
+        "target/module-transpose/test.first.py": "3e21e095eee767314c556678e4fa48ffafb4329495b41fb95a5ad3d28c1678bb",
+        "tests/test_compile_cuda_module_transpose.py": "3bbb8ba6678384cf2a1d858cab27d47dfa0df2e7def3d2f15e2d367376557232",
+        "tests/test_compile_cuda_transpose.py": "0d8f3ec67edcef8a372ae335ac44c04b14ed2b61251ecc21e415f840568fdc21"
+      },
+      "removed": []
+    },
+    "f835f626afa1dbb0549143ce7f3c5fcf1ba56e56b3de4c76ca433b1c255f1257": {
+      "changed": {
+        "target/module-transpose/audit.py": "769ba4cb361a73973fb41b413e58382124419fe31fe004a4f58a57a51aeb7b96",
+        "target/module-transpose/bootstrap.py": "7c956b7348b503d85c2b014999de61f28275dda5f3a86fa379aeb19d98f1dd07",
+        "target/module-transpose/docs_smoke.py": "d6e340a887b01e57ee915aec098e4c6cffca3adcdd12fd0d9e794fce3787293d",
+        "target/module-transpose/env.sh": "7d221e2e8f41962d93207f7e43be6951456854e49db1b9f1a40c160649c17349",
+        "target/module-transpose/environment.py": "2ab2b9b3706d7f434c451c5b19861b3be06b3aeabd8a9689b68a2a065ce205c2",
+        "target/module-transpose/probe.py": "bc98874d08f12e7deb9e6f5284b0703104d292e6bed4fbbb49fe58c20030590f",
+        "target/module-transpose/publish.py": "22faf81372cdf2705bba80a11773de879334ecb192f41e9263d41cf187a85180",
+        "target/module-transpose/record.initial.py": "e5765d5adf171fbdf1d3ba940e4a6c83d114bf7d65a9ae24cf89bf8f1cc67a0c",
+        "target/module-transpose/record.py": "7cafb0fdb217ff6b3c42954c0003f2f087558e2b0626b4f97d493951e4876e90",
+        "target/module-transpose/sweep.py": "ff601b08bc303196c6f0dbf23351cc01e1109172b913d2e3b3a59edc1932eeab",
+        "target/module-transpose/test.first.py": "3e21e095eee767314c556678e4fa48ffafb4329495b41fb95a5ad3d28c1678bb",
+        "tests/test_compile_cuda_module_transpose.py": "3e21e095eee767314c556678e4fa48ffafb4329495b41fb95a5ad3d28c1678bb",
+        "tests/test_compile_cuda_transpose.py": "0d8f3ec67edcef8a372ae335ac44c04b14ed2b61251ecc21e415f840568fdc21"
+      },
+      "removed": []
+    },
+    "7641d33b85caca26b7d438058c618d9a82a931f5252ff95aab37ef353ae2a97f": {
+      "changed": {
+        "target/module-transpose/audit.py": "769ba4cb361a73973fb41b413e58382124419fe31fe004a4f58a57a51aeb7b96",
+        "target/module-transpose/bootstrap.py": "7c956b7348b503d85c2b014999de61f28275dda5f3a86fa379aeb19d98f1dd07",
+        "target/module-transpose/docs_smoke.py": "d6e340a887b01e57ee915aec098e4c6cffca3adcdd12fd0d9e794fce3787293d",
+        "target/module-transpose/env.sh": "7d221e2e8f41962d93207f7e43be6951456854e49db1b9f1a40c160649c17349",
+        "target/module-transpose/environment.py": "2ab2b9b3706d7f434c451c5b19861b3be06b3aeabd8a9689b68a2a065ce205c2",
+        "target/module-transpose/probe.py": "bc98874d08f12e7deb9e6f5284b0703104d292e6bed4fbbb49fe58c20030590f",
+        "target/module-transpose/publish.py": "ae03a6ecc9d50ba4b45aa45aa4392318623a7ec90d4c6a48824b624811ff9c7d",
+        "target/module-transpose/record.initial.py": "e5765d5adf171fbdf1d3ba940e4a6c83d114bf7d65a9ae24cf89bf8f1cc67a0c",
+        "target/module-transpose/record.py": "7cafb0fdb217ff6b3c42954c0003f2f087558e2b0626b4f97d493951e4876e90",
+        "target/module-transpose/sweep.py": "ff601b08bc303196c6f0dbf23351cc01e1109172b913d2e3b3a59edc1932eeab",
+        "target/module-transpose/test.first.py": "3e21e095eee767314c556678e4fa48ffafb4329495b41fb95a5ad3d28c1678bb",
+        "tests/test_compile_cuda_module_transpose.py": "ecf26dea29d97e6a4c707fd67a75720f17481b0e1a81f4bbba1d98a1751da5f2",
+        "tests/test_compile_cuda_transpose.py": "0d8f3ec67edcef8a372ae335ac44c04b14ed2b61251ecc21e415f840568fdc21"
+      },
+      "removed": []
+    },
+    "98903bb4756202c1b8160f5ca02c90098940c3423ce7826569586174c11b7000": {
+      "changed": {
+        "target/module-transpose/audit.py": "769ba4cb361a73973fb41b413e58382124419fe31fe004a4f58a57a51aeb7b96",
+        "target/module-transpose/bootstrap.py": "7c956b7348b503d85c2b014999de61f28275dda5f3a86fa379aeb19d98f1dd07",
+        "target/module-transpose/docs_smoke.py": "d6e340a887b01e57ee915aec098e4c6cffca3adcdd12fd0d9e794fce3787293d",
+        "target/module-transpose/env.sh": "7d221e2e8f41962d93207f7e43be6951456854e49db1b9f1a40c160649c17349",
+        "target/module-transpose/environment.py": "2ab2b9b3706d7f434c451c5b19861b3be06b3aeabd8a9689b68a2a065ce205c2",
+        "target/module-transpose/probe.py": "bc98874d08f12e7deb9e6f5284b0703104d292e6bed4fbbb49fe58c20030590f",
+        "target/module-transpose/publish.py": "ae03a6ecc9d50ba4b45aa45aa4392318623a7ec90d4c6a48824b624811ff9c7d",
+        "target/module-transpose/record.initial.py": "e5765d5adf171fbdf1d3ba940e4a6c83d114bf7d65a9ae24cf89bf8f1cc67a0c",
+        "target/module-transpose/record.py": "7cafb0fdb217ff6b3c42954c0003f2f087558e2b0626b4f97d493951e4876e90",
+        "target/module-transpose/sweep.py": "ff601b08bc303196c6f0dbf23351cc01e1109172b913d2e3b3a59edc1932eeab",
+        "target/module-transpose/test.boundaries.py": "ecf26dea29d97e6a4c707fd67a75720f17481b0e1a81f4bbba1d98a1751da5f2",
+        "target/module-transpose/test.first.py": "3e21e095eee767314c556678e4fa48ffafb4329495b41fb95a5ad3d28c1678bb",
+        "tests/test_compile_cuda_module_transpose.py": "3bbb8ba6678384cf2a1d858cab27d47dfa0df2e7def3d2f15e2d367376557232",
+        "tests/test_compile_cuda_transpose.py": "0d8f3ec67edcef8a372ae335ac44c04b14ed2b61251ecc21e415f840568fdc21"
+      },
+      "removed": []
+    },
+    "4d8330feddef29ddb0b71247de33235b23d0e9e86df623b6b3ee17eb7ab51cba": {
+      "changed": {
+        "target/module-transpose/audit.py": "769ba4cb361a73973fb41b413e58382124419fe31fe004a4f58a57a51aeb7b96",
+        "target/module-transpose/bootstrap.py": "7c956b7348b503d85c2b014999de61f28275dda5f3a86fa379aeb19d98f1dd07",
+        "target/module-transpose/docs_smoke.py": "d6e340a887b01e57ee915aec098e4c6cffca3adcdd12fd0d9e794fce3787293d",
+        "target/module-transpose/env.sh": "7d221e2e8f41962d93207f7e43be6951456854e49db1b9f1a40c160649c17349",
+        "target/module-transpose/environment.py": "2ab2b9b3706d7f434c451c5b19861b3be06b3aeabd8a9689b68a2a065ce205c2",
+        "target/module-transpose/probe.py": "bc98874d08f12e7deb9e6f5284b0703104d292e6bed4fbbb49fe58c20030590f",
+        "target/module-transpose/publish.py": "ae03a6ecc9d50ba4b45aa45aa4392318623a7ec90d4c6a48824b624811ff9c7d",
+        "target/module-transpose/record.initial.py": "e5765d5adf171fbdf1d3ba940e4a6c83d114bf7d65a9ae24cf89bf8f1cc67a0c",
+        "target/module-transpose/record.py": "7cafb0fdb217ff6b3c42954c0003f2f087558e2b0626b4f97d493951e4876e90",
+        "target/module-transpose/sweep.py": "ff601b08bc303196c6f0dbf23351cc01e1109172b913d2e3b3a59edc1932eeab",
+        "target/module-transpose/test.first.py": "3e21e095eee767314c556678e4fa48ffafb4329495b41fb95a5ad3d28c1678bb",
+        "tests/test_compile_cuda_module_transpose.py": "8b7447d8d8a4b07538cdf04508e493dd2922d5ebe7ff89683283ce903bc97df7",
+        "tests/test_compile_cuda_transpose.py": "0d8f3ec67edcef8a372ae335ac44c04b14ed2b61251ecc21e415f840568fdc21"
+      },
+      "removed": []
+    }
+  }
+}

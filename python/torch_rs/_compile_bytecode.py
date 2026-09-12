@@ -14,6 +14,7 @@ from ._compiler_state import native_function_owner as _NATIVE_FUNCTION_OWNER
 from ._compiler_state import native_relu as _NATIVE_RELU
 from ._compiler_state import native_squeeze as _NATIVE_SQUEEZE
 from ._compiler_state import native_t as _NATIVE_T
+from ._compiler_state import native_transpose as _NATIVE_TRANSPOSE
 
 
 _NATIVE_MODULE = _sys.modules[__package__]
@@ -428,13 +429,15 @@ def _is_exact_native_tensor(value):
 
 def _builtin_target(value):
     # Trusted startup bindings establish identity, not callable names or source
-    # text. ReLU, squeeze and t have no member on the immutable arithmetic owner.
+    # text. These PyO3 functions have no member on the immutable arithmetic owner.
     if value is _NATIVE_RELU:
         return _BytecodeBuiltin("relu", 1)
     if value is _NATIVE_SQUEEZE:
         return _BytecodeBuiltin("squeeze", 1)
     if value is _NATIVE_T:
         return _BytecodeBuiltin("t", 1)
+    if value is _NATIVE_TRANSPOSE:
+        return _BytecodeBuiltin("transpose", 3)
     owner = _NATIVE_FUNCTION_OWNER
     if value is owner.mul or value is owner.multiply:
         return _BytecodeBuiltin("mul_scalar", 2)
@@ -464,7 +467,7 @@ def _global_value_dependency(name, value, module_attribute=None):
         # only at loads that actually use them, so unrelated mutations neither
         # reject old programs nor spend their recompile budget.
         attributes = ("mul", "multiply", "matmul")
-        if module_attribute in ("add", "neg", "negative", "relu", "squeeze", "t"):
+        if module_attribute in ("add", "neg", "negative", "relu", "squeeze", "t", "transpose"):
             attributes += (module_attribute,)
         bindings = tuple((attr, vars(value).get(attr)) for attr in attributes)
         if all(_builtin_target(fn) is not None for _, fn in bindings):
@@ -1299,6 +1302,11 @@ def _handle_call(recorder, locals, stack, program, instruction, state, active):
         elif target in ("neg", "relu", "squeeze", "t"):
             operand = _require_tensor(args[0], program, instruction, f"{target} operand")
             stack.append(recorder.record_unary(target, operand))
+        elif target == "transpose":
+            operand = _require_tensor(args[0], program, instruction, "transpose operand")
+            if any(not isinstance(axis, _BytecodeConstant) for axis in args[1:]):
+                _unsupported_bytecode(program, instruction, "native transpose requires constant axes")
+            stack.append(recorder.record_transpose(operand, args[1].value, args[2].value))
         elif target == "mul_scalar":
             stack.append(_record_scalar_multiply(recorder, *args, program, instruction))
         else:

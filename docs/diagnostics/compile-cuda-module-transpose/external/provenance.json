@@ -1,0 +1,47 @@
+{
+  "probe-compiled-cuda-module-transpose.py": {
+    "source": "/tmp/pytorch-rs-compiler-recovery.3UB6mU/probe-compiled-cuda-module-transpose.py",
+    "sha256": "bc98874d08f12e7deb9e6f5284b0703104d292e6bed4fbbb49fe58c20030590f",
+    "bytes": 9987
+  },
+  "bootstrap-module-transpose-probe-python.py": {
+    "source": "/tmp/pytorch-rs-compiler-recovery.3UB6mU/bootstrap-module-transpose-probe-python.py",
+    "sha256": "223ebd07f55a251177f66b287a790fa5faa694fb8f138a0000915ec7f0c1fb8f",
+    "bytes": 4141
+  },
+  "prepare-compiled-cuda-module-transpose-probe.sh": {
+    "source": "/tmp/pytorch-rs-compiler-recovery.3UB6mU/prepare-compiled-cuda-module-transpose-probe.sh",
+    "sha256": "8c8e7638d3f3a5f3682e6cd38766896c6c8423a7d9b014157e9b13462a3ca1cf",
+    "bytes": 2697
+  },
+  "audit-compiled-cuda-module-transpose-baseline.py": {
+    "source": "/tmp/pytorch-rs-compiler-recovery.3UB6mU/audit-compiled-cuda-module-transpose-baseline.py",
+    "sha256": "4f47304d171fbd7e71e7d92df7322641833208df90cdca722d46cba6eda3a231",
+    "bytes": 11471
+  },
+  "compiled-cuda-module-transpose-baseline-output.log": {
+    "source": "/tmp/pytorch-rs-compiler-recovery.3UB6mU/compiled-cuda-module-transpose-baseline-output.log",
+    "sha256": "3bc0963dc5e34fe8ed07890d720e21dd6cf4217b027d847e1b002ff7f63b0410",
+    "bytes": 142955
+  },
+  "compiled-cuda-module-transpose-baseline-preflight.json": {
+    "source": "/tmp/pytorch-rs-compiler-recovery.3UB6mU/compiled-cuda-module-transpose-baseline-preflight.json",
+    "sha256": "a173fc08076094610a99a829b468be21853f110c41b02461fa561a3564003b16",
+    "bytes": 2400
+  },
+  "compiled-cuda-module-transpose-baseline-probe.json": {
+    "source": "/tmp/pytorch-rs-compiler-recovery.3UB6mU/compiled-cuda-module-transpose-baseline-probe.json",
+    "sha256": "c22a620d70b46657041c5bf87ce1709e6c8cc090604660f7c8e633b622312a99",
+    "bytes": 136851
+  },
+  "compiled-cuda-module-transpose-baseline-receipt.json": {
+    "source": "/tmp/pytorch-rs-compiler-recovery.3UB6mU/compiled-cuda-module-transpose-baseline-receipt.json",
+    "sha256": "e0616643dc6cda587886b60b9bd51a73c9f88f192fb5f592f4dae1dd22a4a340",
+    "bytes": 1091
+  },
+  "compiled-cuda-module-transpose-baseline-verified.json": {
+    "source": "/tmp/pytorch-rs-compiler-recovery.3UB6mU/compiled-cuda-module-transpose-baseline-verified.json",
+    "sha256": "5c784a2f2026926f6797921118b5f42b3ea571e861b0822e4a8cdeddab729fe0",
+    "bytes": 159980
+  }
+}

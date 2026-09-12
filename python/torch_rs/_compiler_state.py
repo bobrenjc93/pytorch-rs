@@ -12,9 +12,10 @@ from .torch_rs import (
     relu as native_relu,
     squeeze as native_squeeze,
     t as native_t,
+    transpose as native_transpose,
 )
 
-# ReLU, squeeze and t are PyO3 module functions, not native_function_owner members.
+# ReLU, squeeze, t and transpose are PyO3 functions, not native_function_owner members.
 # Retain them here too, before either writable public/native export can change.
 
 
