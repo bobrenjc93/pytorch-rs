@@ -1,0 +1,93 @@
+# Clean-commit native module squeeze capture
+
+Fresh measurements of implementation commit
+`52b1e4e8ed45c6f78d66ff790fe926bb08607c28`, taken from the clean current worktree.
+The release source export, installed package/native library and all test inputs
+were verified against that commit before and after execution. Native, reference
+PyTorch and NumPy imports were verified inside the canonical worktree-local
+`.venv`. All 17 measurement receipts record empty Git status at both boundaries. No implementation,
+dependency, test, benchmark harness, evaluator or supported behavior changed.
+
+This completes the clean-commit capture deferred in the
+[development evidence](../README.md). Those original records, the exact-main
+32-gap baseline, its original failed NumPy empty-rank comparison, the frozen
+correction and local development failures remain byte-for-byte unchanged.
+These new results do not replace or relabel any historical measurement.
+
+## Results
+
+| Check | Fresh result |
+| --- | --- |
+| Complete compiler sweep, all 61 modules | 693 run, 676 passed, 17 skipped |
+| Focused CUDA/reference squeeze checks | 38 run, 36 passed, 2 skipped |
+| CUDA-hidden/frontend/CPU/reference | 119 run, 75 passed, 44 skipped |
+| Two-physical-GPU restoration, including existing arithmetic/ReLU controls | 4 run, 4 passed, 0 skipped |
+| Rust default all-targets, CUDA hidden | 395 passed |
+| Rust Python-binding CUDA graph/planner, H100 | 15 passed |
+| Rust Python-binding graph/planner, CUDA hidden | 15 passed; hardware sections return early |
+| Formatting and default/Python-binding Clippy | Passed |
+| README/navigation smoke and CUDA documentation example | 12 run, 12 passed, 0 skipped; example passed |
+| Interpreter, release build, installed native/Python and source checks | Passed |
+
+Counts describe test functions; seeded/generated subcases are additional.
+The unchanged tests include the original 32 spelling cells under all four
+policies, cold/repeated native and Inductor calls, trusted startup before frontend
+import, per-used-field guards, canonical substitutions, cache recovery, alias
+bits/lifetimes, dynamic ranks, prevalidation and unsupported boundaries.
+The full selection is every `test_compile*.py` plus `test_top_level_compile.py`.
+Single-device runs skip the two-device classes; CUDA-hidden runs skip hardware
+classes explicitly. No case selection, assertions, denominator or scoring changed.
+
+## Provenance and reproduction
+
+[Capture](capture.json), [command receipts](commands.json) and the original
+[release build record](build-record.json.gz) contain actual timestamps, command
+arguments, environment, source hashes, wheel/native hashes and GPU snapshots.
+[Manifest references](manifests.json) reuse the verified unchanged production and
+test-input manifests; they do not reuse development test results.
+The [publication verification](verification.json) checks the build, receipts,
+preserved records and evidence-only diff. Logs are losslessly compressed.
+
+Python 3.12.14 uses the already verified worktree-local interpreter distribution
+and canonical `.venv`; its entire file/mode/internal-link inventory and isolated
+identity were rechecked. No interpreter, virtual environment or native package
+was copied during this capture. The repository builder performed locked
+dev/reference synchronization and compiled a fresh Rust 1.92.0 release wheel
+(thin LTO, one codegen unit, extension-module) in a previously absent Cargo target,
+then installed and verified that wheel. Warm worktree download caches were reused;
+new Rust-check, Inductor, Triton and CUDA cache directories were created.
+Later commands reused caches warmed by this capture, as recorded. Test durations
+are not performance measurements.
+
+The host uses NVIDIA H100 GPUs, driver 580.82.07, native/reference CUDA runtime
+13.0 and PyTorch 2.13.0+cu130. Installed nvcc is 12.6.85; native kernels use driver
+JIT of embedded PTX. Resources are `gpu` and `cpu-heavy`. Ordinary checks use
+physical GPU 0 (`GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1`); restoration adds
+GPU 1 (`GPU-11979b85-93e3-21d3-e68f-df37b8a4c296`). Inventory, UUID,
+utilization and memory snapshots are observations, not reservations.
+All current-capture source, import, executable and build paths are inside this
+worktree; historical artifacts retain their original identities.
+
+To reproduce from clean commit `52b1e4e8`, use the committed
+[environment recipe](../recipes/env.sh.txt), copy this capture's
+[environment additions](recipes/env.sh.txt), [receipt envelope](recipes/run.py.txt)
+and [preflight](recipes/preflight.py.txt) into `target/postcommit-52b1e4e8/`,
+and [dependency-path check](recipes/dependency_paths.py.txt) into that directory.
+Copy the [check sequence](recipes/checks.sh.txt) there too, then invoke the existing builder:
+
+```sh
+source target/postcommit-52b1e4e8/env.sh
+python target/postcommit-52b1e4e8/run.py release-build python scripts/build_cuda_add_diagnostic.py --name module-squeeze-clean-52b1e4e8 --revision 52b1e4e8ed45c6f78d66ff790fe926bb08607c28
+bash target/postcommit-52b1e4e8/checks.sh
+python target/postcommit-52b1e4e8/run.py dependency-paths python target/postcommit-52b1e4e8/dependency_paths.py
+```
+
+The exact [check sequence](recipes/checks.sh.txt) invokes the committed recorder,
+tests and complete-sweep recipe unchanged. Use absent destinations/receipt names
+for independent captures; existing evidence must not be overwritten.
+Publication occurs only after every required clean measurement succeeds.
+
+This is non-scoring correctness evidence, not performance, general compiler,
+Inductor, training or hardware parity. Independent review, revision, fresh
+evaluations, same-branch Burner delivery and merge gates remain required.
+PR1970/PR1971 remain separate unadopted human-review campaigns.

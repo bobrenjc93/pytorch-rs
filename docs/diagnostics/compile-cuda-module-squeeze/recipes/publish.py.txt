@@ -1,0 +1,89 @@
+"""Publish local development receipts, never scores or managed progress."""
+import gzip, hashlib, json, pathlib, re, shutil
+root = pathlib.Path.cwd()
+source = root/'target/module-squeeze-evidence'
+out = root/'docs/diagnostics/compile-cuda-module-squeeze'
+def sha(raw): return hashlib.sha256(raw).hexdigest()
+def packed(path, raw):
+    path.parent.mkdir(parents=True,exist_ok=True)
+    data=gzip.compress(raw,mtime=0)
+    if path.exists(): assert path.read_bytes()==data,path
+    else: path.write_bytes(data)
+def copied(path, raw):
+    path.parent.mkdir(parents=True,exist_ok=True)
+    if path.exists(): assert path.read_bytes()==raw,path
+    else: path.write_bytes(raw)
+commands={}
+for path in sorted(source.glob('*.json')):
+    if re.fullmatch('[0-9a-f]{64}',path.stem): continue
+    receipt=json.loads(path.read_text())
+    commands[path.stem]=receipt
+    raw=(source/(path.stem+'.log')).read_bytes()
+    assert sha(raw)==receipt['log_sha256']
+    packed(out/'logs'/(path.stem+'.log.gz'),raw)
+    text=raw.decode(errors='replace')
+    match=re.search(r'Ran (\d+) tests? in .*\n\n(OK|FAILED)([^\n]*)',text)
+    if match:
+        fields={k:int(v) for k,v in re.findall(r'(skipped|errors|failures)=(\d+)',match[3])}
+        receipt['test_summary']={'run':int(match[1]),'status':match[2],**fields}
+        receipt['test_summary']['passed']=int(match[1])-sum(fields.values())
+    rust=re.findall(r'test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored;',text)
+    if rust:
+        receipt['rust_summary']={k:sum(int(v[i]) for v in rust) for i,k in enumerate(('passed','failed','ignored'))}
+(out/'commands.json').write_text(json.dumps(commands,indent=2)+'\n')
+# Shared full manifests once; changed source/test inputs are deltas, not copies.
+for kind in ('production','input'):
+    keys=list(dict.fromkeys(r[kind+'_manifest'] for r in commands.values()))
+    base_key=commands['baseline'][kind+'_manifest']
+    base=json.loads((source/(base_key+'.json')).read_text())
+    deltas={}
+    for key in keys:
+        raw=(source/(key+'.json')).read_bytes()
+        assert sha(raw)==key
+        data=json.loads(raw)
+        if key != base_key:
+            deltas[key]={'changed':{p:v for p,v in data.items() if base.get(p)!=v},
+                         'removed':[p for p in base if p not in data]}
+    packed(out/(kind+'-base.json.gz'),(source/(base_key+'.json')).read_bytes())
+    (out/(kind+'-manifests.json')).write_text(json.dumps({'base_sha256':base_key,'variants':deltas},indent=2)+'\n')
+builds={}
+base=None
+for name in ('baseline','development'):
+    folder=root/'target/cuda-add-diagnostic'/('module-squeeze-'+name)
+    raw=(folder/'build-record.json').read_bytes()
+    record=json.loads(raw)
+    files=record.pop('source_files')
+    if base is None:
+        base=files
+        packed(out/'build-source-base.json.gz',json.dumps(files,sort_keys=True).encode())
+    else:
+        record['source_delta_from_base']={'changed':{p:v for p,v in files.items() if base.get(p)!=v},
+                                          'removed':[p for p in base if p not in files]}
+    assert sha(json.dumps(files,sort_keys=True).encode())==record['source_manifest_sha256']
+    record['original_record_sha256']=sha(raw)
+    record['build_recipe']='python scripts/build_cuda_add_diagnostic.py --name module-squeeze-'+name+(' --revision HEAD' if name=='baseline' else '')
+    builds[name]=record
+    packed(out/'logs'/('release-build-'+name+'.log.gz'),(folder/'build.log').read_bytes())
+    packed(out/'logs'/('dependencies-'+name+'.log.gz'),(folder/'dependency_setup.log').read_bytes())
+    copied(out/('origin-'+name+'.patch'),(folder/'origin.patch').read_bytes())
+(out/'builds.json').write_text(json.dumps(builds,indent=2)+'\n')
+for filename in ('bootstrap.json','bootstrap.py','env.sh','record.py','sweep.py','environment.py','docs_smoke.py'):
+    copied(out/'recipes'/(filename+('.txt' if not filename.endswith('.json') else '')),(root/'target'/filename).read_bytes())
+for filename in ('test_compile_cuda_module_squeeze.first.py.gz','test_compile_cuda_module_squeeze.second.py.gz',
+                 'test_compile_cuda_module_squeeze.third.py.gz'):
+    copied(out/'failures'/filename,(root/'target'/filename).read_bytes())
+packed(out/'logs'/'initial-dependencies.log.gz',(root/'target/dependency-setup.log').read_bytes())
+# Explicitly bind final current tests to the executable release build.
+production=json.loads((source/(commands['environment']['production_manifest']+'.json')).read_text())
+assert all(sha((root/p).read_bytes())==v for p,v in production.items())
+for p,v in production.items():
+    if p in files: assert files[p]==v,(p,files[p],v)
+native_path=pathlib.Path(builds['development']['installed_native'])
+assert sha(native_path.read_bytes())==builds['development']['installed_native_sha256']
+verification={'production_matches_development_build':True,'native_matches_development_build':True,
+              'base_commit':builds['baseline']['base_commit'],'candidate_commit':None,
+              'clean_candidate_commit_capture':'deferred to Burner: implementation agent may not commit',
+              'final_test_sha256':sha((root/'tests/test_compile_cuda_module_squeeze.py').read_bytes()),
+              'resources':['gpu','cpu-heavy'],'scores_changed':False,'performance_measured':False}
+(out/'verification.json').write_text(json.dumps(verification,indent=2)+'\n')
+print(json.dumps({k:v.get('test_summary',v.get('rust_summary',{'exit_code':v['exit_code']})) for k,v in commands.items()},indent=2))

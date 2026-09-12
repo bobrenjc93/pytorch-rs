@@ -1,0 +1,91 @@
+"""Publish only newly measured clean-commit receipts; historical files stay intact."""
+import gzip, hashlib, json, pathlib, re, subprocess
+root=pathlib.Path.cwd()
+commit='52b1e4e8ed45c6f78d66ff790fe926bb08607c28'
+work=root/'target/postcommit-52b1e4e8'
+historical=root/'docs/diagnostics/compile-cuda-module-squeeze'
+out=historical/'postcommit-52b1e4e8'
+def sha(raw): return hashlib.sha256(raw).hexdigest()
+def git(*args): return subprocess.check_output(['git',*args],text=True)
+def write(name,raw,packed=False):
+    path=out/name
+    path.parent.mkdir(parents=True,exist_ok=True)
+    data=gzip.compress(raw,mtime=0) if packed else raw
+    assert not path.exists(),path
+    path.write_bytes(data)
+assert git('rev-parse','HEAD').strip()==commit
+assert git('status','--porcelain')==''
+assert not out.exists()
+expected=('release-build','provenance-before','environment','dependency-paths','verify-native','focused-cuda','restoration',
+          'cpu-hidden','rust-default','rust-cuda','rust-hidden','formatting','clippy-default',
+          'clippy-bindings','docs-smoke','compiler-complete','provenance-after')
+commands={}
+summaries={}
+for name in expected:
+    record=json.loads((work/(name+'.json')).read_text())
+    assert record['exit_code']==0 and record['production_unchanged'],name
+    assert record['measured_code_commit']==commit and record['base_commit']==commit
+    assert record['origin_status_before']==record['origin_status_after']==''
+    assert pathlib.Path(record['cwd']).resolve()==root
+    prefix='postcommit-52b1e4e8-'+name
+    raw=(root/'target/module-squeeze-evidence'/(prefix+'.log')).read_bytes()
+    original=(root/'target/module-squeeze-evidence'/(prefix+'.json')).read_bytes()
+    assert sha(raw)==record['log_sha256']
+    assert sha(original)==record['original_receipt_sha256']
+    original_record=json.loads(original)
+    assert all(record[k]==v for k,v in original_record.items())
+    record['log']='logs/'+name+'.log.gz'
+    text=raw.decode(errors='replace')
+    found=re.search(r'Ran (\d+) tests? in .*\n\n(OK|FAILED)([^\n]*)',text)
+    if found:
+        fields={k:int(v) for k,v in re.findall(r'(skipped|errors|failures)=(\d+)',found[3])}
+        record['summary']={'run':int(found[1]),'status':found[2],**fields}
+        record['summary']['passed']=int(found[1])-sum(fields.values())
+    rust=re.findall(r'test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored;',text)
+    if rust:
+        record['summary']={key:sum(int(v[i]) for v in rust) for i,key in enumerate(('passed','failed','ignored'))}
+    summaries[name]=record.get('summary',{'exit_code':record['exit_code']})
+    commands[name]=record
+    write(record['log'],raw,packed=True)
+# Reuse unchanged source and input manifests, independently matching fresh receipts.
+references={}
+for kind in ('production','input'):
+    index=json.loads((historical/(kind+'-manifests.json')).read_text())
+    base=json.loads(gzip.decompress((historical/(kind+'-base.json.gz')).read_bytes()))
+    keys={record[kind+'_manifest'] for record in commands.values()}
+    assert len(keys)==1
+    key,=keys
+    data=base.copy()
+    if key!=index['base_sha256']:
+        delta=index['variants'][key]
+        for p in delta['removed']: del data[p]
+        data.update(delta['changed'])
+    assert sha(json.dumps(data,sort_keys=True).encode())==key
+    assert all(sha((root/p).read_bytes())==v for p,v in data.items())
+    references[kind]={'sha256':key,'index':'../'+kind+'-manifests.json',
+                      'base':'../'+kind+'-base.json.gz'}
+build_folder=root/'target/cuda-add-diagnostic/module-squeeze-clean-52b1e4e8'
+build_raw=(build_folder/'build-record.json').read_bytes()
+build=json.loads(build_raw)
+assert build['source_matches_commit'] and build['measured_code_commit']==commit and build['origin_status']==''
+assert sha(pathlib.Path(build['wheel']).read_bytes())==build['wheel_sha256']
+assert sha(pathlib.Path(build['installed_native']).read_bytes())==build['installed_native_sha256']
+write('build-record.json.gz',build_raw,packed=True)
+for name in ('build.log','dependency_setup.log','origin.patch'):
+    write('logs/source-export-'+name+'.gz',(build_folder/name).read_bytes(),packed=True)
+write('commands.json',(json.dumps(commands,indent=2)+'\n').encode())
+write('manifests.json',(json.dumps(references,indent=2)+'\n').encode())
+for name in ('run.py','env.sh','checks.sh','preflight.py','dependency_paths.py','publish.py'):
+    write('recipes/'+name+'.txt',(work/name).read_bytes())
+capture={'measured_code_commit':commit,'root':str(root),'origin_status':'',
+         'started_at':commands['release-build']['started_at'],'finished_at':commands['provenance-after']['finished_at'],
+         'build_record_sha256':sha(build_raw),'native_sha256':build['installed_native_sha256'],
+         'wheel_sha256':build['wheel_sha256'],'source_manifest_sha256':build['source_manifest_sha256'],
+         'manifest_references':references,'results':summaries,
+         'environment_reused':'Existing worktree-local canonical .venv; locked dev/reference sync, newly built and installed exact-commit wheel',
+         'cache_state':'New release Cargo target, Rust-check target, Inductor/Triton/CUDA directories; warm worktree download caches. Later commands reuse this capture\u2019s caches.',
+         'resources':['gpu','cpu-heavy'],'snapshots_are_reservations':False,
+         'performance_measured':False,'scores_computed':False,'implementation_changed':False,
+         'historical_records_modified':False}
+write('capture.json',(json.dumps(capture,indent=2)+'\n').encode())
+print(json.dumps(capture,indent=2))

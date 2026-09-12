@@ -53,8 +53,10 @@ variants guard rank and exact strides; a reused graph recomputes operation
 shapes and validates equal shapes or exactly `(M, N)` and `(N,)` before
 executing any operation. Dynamic shapes do not enable broader broadcasting.
 
-[No-argument squeeze](compile-cuda-squeeze.md) also captures rank-0/1/2
-shared-storage views; its strided outputs require packing before arithmetic.
+[Compiled CUDA squeeze](compile-cuda-squeeze.md) also captures rank-0/1/2
+shared-storage views through `Tensor.squeeze()`, one-positional-argument
+`torch.squeeze(x)` and genuine direct-import aliases; its strided outputs require
+packing before arithmetic.
 
 CUDA graphs reject other unary operations (including `float` and `detach`), scalar
 number operands outside multiplication, broader broadcasts (including `(M,N)+(1,N)`,
@@ -102,8 +104,8 @@ the same snapshots. Changed values specialize subject to `recompile_limit`,
 and unsupported replacements reject. Every call checks current input and capture
 devices and layouts.
 Module guards retain the legacy `mul`/`multiply`/`matmul` snapshots and guard
-new `add`/`neg`/`negative`/`relu` fields only at loads that use them. Unused new fields
-do not invalidate warm graphs or spend `recompile_limit`, even when rebound
+new `add`/`neg`/`negative`/`relu`/`squeeze` fields only at loads that use them.
+Unused new fields do not invalidate warm graphs or spend `recompile_limit`, even when rebound
 or deleted. Direct imported aliases guard their own binding and survive
 unrelated public-attribute mutations. Replacing a used binding with another
 canonical native operation dispatches that operation with its own arity;
@@ -113,11 +115,11 @@ multiple fields and helper loads in the same namespace.
 The immutable callable owner is retained during package initialization. The lazy
 frontend never resolves identities through the writable native owner export;
 replacing or deleting that export before the first compile does not authorize
-counterfeit callables or invoke their hooks. ReLU is a PyO3 module function,
-not an arithmetic-owner member. Its genuine identity is also retained during
-package initialization, before callers can replace or delete public `relu` or
-native `_C.relu`. Genuine retained imports survive those unrelated changes;
-fake replacements cannot become trusted during the first frontend import.
+counterfeit callables or invoke their hooks. ReLU and squeeze are PyO3 module
+functions, not arithmetic-owner members. Their genuine identities are retained
+during package initialization, before callers can replace or delete public
+`relu`/`squeeze` or native `_C.relu`/`_C.squeeze`. Genuine retained imports survive
+those unrelated changes; fake replacements cannot become trusted during the first frontend import.
 Rebinding a global creates a specialization or hits the existing recompile
 limit; an incompatible device transition is rejected. Rejected calls leave the
 graph cache unchanged. A new graph is published only after successful native

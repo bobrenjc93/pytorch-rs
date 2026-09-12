@@ -1,0 +1,33 @@
+{
+  "base_sha256": "cbc06758bfb01b161e7884799b8e1c104e2013349b31392d61e882077d119bf8",
+  "variants": {
+    "8ba715a11ad9cce6ac76e9b5e5b8d0e5f0dc1fa223941d56462b358108a60d53": {
+      "changed": {
+        "tests/test_compile_cuda_module_squeeze.py": "4e63d03c7302a2ecb295c7b058ab7f248e17b252aa98b835a73c9ca353f24ad8",
+        "tests/test_compile_cuda_squeeze.py": "3f6d38a30fa5d8a15b6d689beffb1abec19ed301f7b5af962a8e18cc9b81f797"
+      },
+      "removed": []
+    },
+    "143e8001b2f280911c8636293e746d01d454b9b69f980a41c79abb5f217bd017": {
+      "changed": {
+        "tests/test_compile_cuda_module_squeeze.py": "0d2943304a3097b65a0ae97415ea8d6660a586d85cc667639c47d5fcb79365f8",
+        "tests/test_compile_cuda_squeeze.py": "3f6d38a30fa5d8a15b6d689beffb1abec19ed301f7b5af962a8e18cc9b81f797"
+      },
+      "removed": []
+    },
+    "42834866a9924014b1498ab879051635a5547e5ae96e6b2ebebf33a3d0ca438c": {
+      "changed": {
+        "tests/test_compile_cuda_module_squeeze.py": "5f88b69800a34db7f2541cc4c7e64edcceb9e51fd342d2ef5e36b9f0f28cee72",
+        "tests/test_compile_cuda_squeeze.py": "3f6d38a30fa5d8a15b6d689beffb1abec19ed301f7b5af962a8e18cc9b81f797"
+      },
+      "removed": []
+    },
+    "f6b2351b64ed83f462a66e11ad768233374911ac343ad9b40dde13d7014be2ef": {
+      "changed": {
+        "tests/test_compile_cuda_module_squeeze.py": "a7a66248c523ec0abdf10c1ab43cb7edceff9395142bc9c821c3c75ddf8a2a63",
+        "tests/test_compile_cuda_squeeze.py": "3f6d38a30fa5d8a15b6d689beffb1abec19ed301f7b5af962a8e18cc9b81f797"
+      },
+      "removed": []
+    }
+  }
+}

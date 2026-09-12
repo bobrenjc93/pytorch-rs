@@ -1,0 +1,27 @@
+{
+  "verified_at": "2026-09-12T06:49:20.649408+00:00",
+  "measured_code_commit": "52b1e4e8ed45c6f78d66ff790fe926bb08607c28",
+  "passed": true,
+  "clean_measurement_commands": 17,
+  "compiler_modules": 61,
+  "source_build_native_input_bindings_verified": true,
+  "current_paths_inside_worktree": true,
+  "historical_records_unchanged": true,
+  "implementation_dependencies_tests_and_harnesses_unchanged": true,
+  "publication_diff": [
+    "docs/compile-cuda-squeeze.md"
+  ],
+  "publication_untracked_prefix": "docs/diagnostics/compile-cuda-module-squeeze/postcommit-52b1e4e8/",
+  "independent_review_and_merge_gates_still_required": true,
+  "publication_docs": {
+    "tests": 12,
+    "passed": 12,
+    "cuda_example_passed": true,
+    "receipt_sha256": "59b6977da96fe3b74b7f176804bd3f97938f781c92f118d14dd1f06b9a6027e6",
+    "receipt": "publication-docs.json",
+    "phase": "artifact/documentation-only validation after clean measurements"
+  },
+  "publication_links_verified": true,
+  "publication_checked_at": "2026-09-12T06:49:20.681301+00:00",
+  "git_status_at_publication": " M docs/compile-cuda-squeeze.md\n?? docs/diagnostics/compile-cuda-module-squeeze/postcommit-52b1e4e8/\n"
+}

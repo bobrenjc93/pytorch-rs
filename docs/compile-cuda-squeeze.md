@@ -1,14 +1,16 @@
 # Compiled CUDA squeeze
 
-The bounded native eager compiler captures exactly `Tensor.squeeze()` with no
-arguments on exact CUDA float32 tensors of rank 0, 1 or 2 without gradients:
+The bounded native eager compiler captures `Tensor.squeeze()` with no arguments,
+`torch.squeeze(x)` with exactly one positional argument, and genuine direct-import
+aliases on exact CUDA float32 tensors of rank 0, 1 or 2 without gradients:
 
 ```python
 import torch_rs as torch
+from torch_rs import squeeze as remove_axes
 
 def remove_singletons(x):
-    y = x.squeeze()
-    return y, y, x.squeeze()
+    y = torch.squeeze(x)
+    return y, y, remove_axes(x)
 
 x = torch.tensor([[1., 2., 3.]]).to("cuda:0")
 f = torch.compile(remove_singletons, backend="eager", fullgraph=True)
@@ -42,7 +44,14 @@ calls the checked native view primitive without a copy or kernel. Both planners
 validate the whole graph, including cached declarations and nested output metadata,
 before any native operation. Supported execution never calls the Python body,
 user hooks or per-node Python methods. Method identity and unused input/capture
-device guards remain active.
+device guards remain active. The genuine PyO3 squeeze function is retained at
+package initialization, before public `squeeze` or native `_C.squeeze` exports can
+change. Module calls guard the field they use; retained direct imports guard
+their own binding. Unrelated squeeze mutation/deletion leaves ReLU/add/neg/mul/
+matmul programs valid, including with `recompile_limit=1`. Canonical substitutions
+follow the actual callable and arity; unsupported replacements reject without
+user equality, descriptor or conversion callbacks. See the
+[shared callable guard contract](compile-cuda-add.md#metadata-and-cache-contract).
 
 Squeeze composes with [view](compile-cuda-view.md),
 [reshape](compile-cuda-reshape.md), [transpose](compile-cuda-t.md),
@@ -50,7 +59,7 @@ Squeeze composes with [view](compile-cuda-view.md),
 row sums and ReLU. Strided arithmetic still requires packing first.
 
 Dimension-bearing calls, including `dim=`, tuples, lists and variadic axes,
-all other keywords, top-level `torch.squeeze`, `squeeze_`, `unsqueeze` and
+all other keywords, `squeeze_`, `unsqueeze` and
 `flatten` remain unsupported for capture. These raise
 `CompileTraceUnsupportedError`; existing native eager squeeze overloads are
 unchanged. CPU capture of squeeze, higher ranks, other dtypes, gradients,
@@ -62,11 +71,18 @@ This is not general `torch.compile`, Inductor, training or performance parity.
 Use the [locked contributor setup](../CONTRIBUTING.md), then run:
 
 ```sh
-CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest -v tests.test_compile_cuda_squeeze tests.test_squeeze tests.test_squeeze_reference
-CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m unittest -v tests.test_compile_cuda_squeeze.SqueezeDeviceTests
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest -v tests.test_compile_cuda_module_squeeze tests.test_compile_cuda_squeeze tests.test_squeeze tests.test_squeeze_reference
+CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m unittest -v tests.test_compile_cuda_module_squeeze.ModuleSqueezeDeviceTests tests.test_compile_cuda_squeeze.SqueezeDeviceTests
 CUDA_VISIBLE_DEVICES=0 cargo test --locked --features python-bindings --lib cuda_graph
-CUDA_VISIBLE_DEVICES= .venv/bin/python -m unittest -v tests.test_compile_cuda_squeeze
+CUDA_VISIBLE_DEVICES= .venv/bin/python -m unittest -v tests.test_compile_cuda_module_squeeze tests.test_compile_cuda_squeeze
 ```
+
+The [clean-commit module/direct-import capture](diagnostics/compile-cuda-module-squeeze/postcommit-52b1e4e8/README.md)
+validates `52b1e4e8` with a fresh release build, H100/reference checks, the complete
+compiler sweep and two-device restoration. The
+[development evidence](diagnostics/compile-cuda-module-squeeze/README.md) preserves
+the exact-main 32-gap reproduction and original failures. The old rejection
+fixture now uses `m.squeeze(x, dim=0)` to preserve its unsupported-binding purpose.
 
 The [clean-commit capture](diagnostics/compile-cuda-squeeze/postcommit-f8f8244/README.md)
 validates `f8f8244c2cfa81e255c1814d1bd101c5d846b03d`, including dynamic arithmetic

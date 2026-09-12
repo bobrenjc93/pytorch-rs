@@ -12,6 +12,7 @@ from dataclasses import dataclass, field, replace
 from . import _compile_trace as _trace
 from ._compiler_state import native_function_owner as _NATIVE_FUNCTION_OWNER
 from ._compiler_state import native_relu as _NATIVE_RELU
+from ._compiler_state import native_squeeze as _NATIVE_SQUEEZE
 
 
 _NATIVE_MODULE = _sys.modules[__package__]
@@ -426,9 +427,11 @@ def _is_exact_native_tensor(value):
 
 def _builtin_target(value):
     # Trusted startup bindings establish identity, not callable names or source
-    # text. ReLU has no member on the immutable arithmetic owner.
+    # text. ReLU and squeeze have no member on the immutable arithmetic owner.
     if value is _NATIVE_RELU:
         return _BytecodeBuiltin("relu", 1)
+    if value is _NATIVE_SQUEEZE:
+        return _BytecodeBuiltin("squeeze", 1)
     owner = _NATIVE_FUNCTION_OWNER
     if value is owner.mul or value is owner.multiply:
         return _BytecodeBuiltin("mul_scalar", 2)
@@ -458,7 +461,7 @@ def _global_value_dependency(name, value, module_attribute=None):
         # only at loads that actually use them, so unrelated mutations neither
         # reject old programs nor spend their recompile budget.
         attributes = ("mul", "multiply", "matmul")
-        if module_attribute in ("add", "neg", "negative", "relu"):
+        if module_attribute in ("add", "neg", "negative", "relu", "squeeze"):
             attributes += (module_attribute,)
         bindings = tuple((attr, vars(value).get(attr)) for attr in attributes)
         if all(_builtin_target(fn) is not None for _, fn in bindings):
@@ -1290,7 +1293,7 @@ def _handle_call(recorder, locals, stack, program, instruction, state, active):
         if target in ("add", "matmul"):
             left, right = (_require_tensor(arg, program, instruction, f"{target} operand") for arg in args)
             stack.append(recorder.record_binary(target, left, right, f"torch.{target}"))
-        elif target in ("neg", "relu"):
+        elif target in ("neg", "relu", "squeeze"):
             operand = _require_tensor(args[0], program, instruction, f"{target} operand")
             stack.append(recorder.record_unary(target, operand))
         elif target == "mul_scalar":

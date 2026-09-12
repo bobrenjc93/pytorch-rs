@@ -288,7 +288,7 @@ class CompileCudaSqueezeTests(unittest.TestCase):
                 raise AssertionError('index hook')
         expressions = ('x.squeeze(0)', 'x.squeeze((0,))', 'x.squeeze([0])', 'x.squeeze(0, 1)',
                        'x.squeeze(dim=0)', 'x.squeeze(other=0)', 'x.squeeze(hook)',
-                       'm.squeeze(x)', 'x.squeeze_()', 'x.unsqueeze(0)', 'x.flatten()',
+                       'm.squeeze(x, dim=0)', 'x.squeeze_()', 'x.unsqueeze(0)', 'x.flatten()',
                        '-x.t().squeeze()', 'x.t().squeeze() + x.t().squeeze()',
                        'x.t().squeeze() * 2', 'x.t().squeeze().relu()',
                        'x.t().squeeze().sum(1)', 'x.t().squeeze() @ x')

@@ -1,0 +1,12 @@
+{
+  "production": {
+    "sha256": "80941737227c509933fa935388024bc0a7dd2995e6df862a5609bac94420b7cf",
+    "index": "../production-manifests.json",
+    "base": "../production-base.json.gz"
+  },
+  "input": {
+    "sha256": "143e8001b2f280911c8636293e746d01d454b9b69f980a41c79abb5f217bd017",
+    "index": "../input-manifests.json",
+    "base": "../input-base.json.gz"
+  }
+}

@@ -1,0 +1,17 @@
+set -euo pipefail
+source target/postcommit-52b1e4e8/env.sh
+python target/postcommit-52b1e4e8/run.py provenance-before python target/postcommit-52b1e4e8/preflight.py
+python target/postcommit-52b1e4e8/run.py environment python docs/diagnostics/compile-cuda-module-squeeze/recipes/environment.py.txt
+python target/postcommit-52b1e4e8/run.py verify-native env TORCH_RS_VERIFY_VIRTUALENV="$task_root/.venv" python .github/scripts/verify_native_extension.py
+python target/postcommit-52b1e4e8/run.py focused-cuda python -m unittest -v tests.test_compile_cuda_module_squeeze tests.test_compile_cuda_squeeze tests.test_squeeze tests.test_squeeze_reference
+CUDA_VISIBLE_DEVICES=0,1 python target/postcommit-52b1e4e8/run.py restoration python -m unittest -v tests.test_compile_cuda_module_squeeze.ModuleSqueezeDeviceTests tests.test_compile_cuda_squeeze.SqueezeDeviceTests tests.test_compile_cuda_module_relu.ModuleReluDeviceTests tests.test_compile_cuda_module_arithmetic.ModuleArithmeticDeviceTests
+CUDA_VISIBLE_DEVICES= python target/postcommit-52b1e4e8/run.py cpu-hidden python -m unittest -v tests.test_compile_cuda_module_squeeze tests.test_compile_cuda_squeeze tests.test_compile_cuda_module_relu tests.test_compile_cuda_module_arithmetic tests.test_top_level_compile tests.test_compile_static_analysis tests.test_squeeze tests.test_squeeze_reference
+CUDA_VISIBLE_DEVICES= python target/postcommit-52b1e4e8/run.py rust-default cargo test --locked --all-targets
+python target/postcommit-52b1e4e8/run.py rust-cuda cargo test --locked --features python-bindings --lib cuda_graph
+CUDA_VISIBLE_DEVICES= python target/postcommit-52b1e4e8/run.py rust-hidden cargo test --locked --features python-bindings --lib cuda_graph
+python target/postcommit-52b1e4e8/run.py formatting cargo fmt --all -- --check
+python target/postcommit-52b1e4e8/run.py clippy-default cargo clippy --locked --all-targets -- -D warnings
+python target/postcommit-52b1e4e8/run.py clippy-bindings cargo clippy --locked --all-targets --features python-bindings -- -D warnings
+python target/postcommit-52b1e4e8/run.py docs-smoke python docs/diagnostics/compile-cuda-module-squeeze/recipes/docs_smoke.py.txt
+python target/postcommit-52b1e4e8/run.py compiler-complete python docs/diagnostics/compile-cuda-module-squeeze/recipes/sweep.py.txt
+python target/postcommit-52b1e4e8/run.py provenance-after python target/postcommit-52b1e4e8/preflight.py

@@ -1,0 +1,6 @@
+import pathlib, unittest, sys
+names=sorted({'tests.'+p.stem for p in pathlib.Path('tests').glob('test_compile*.py')}|{'tests.test_top_level_compile'})
+print('Complete compiler sweep:',len(names),'modules',flush=True)
+print('\n'.join(names),flush=True)
+result=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromNames(names))
+sys.exit(not result.wasSuccessful())

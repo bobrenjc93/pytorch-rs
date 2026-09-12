@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "command_receipts_verified": 23,
+  "shared_manifests_verified": 7,
+  "original_baseline_and_failures_preserved": true,
+  "source_native_and_build_binding_verified": true,
+  "protected_files_unchanged": true,
+  "final_sweep_present": true
+}

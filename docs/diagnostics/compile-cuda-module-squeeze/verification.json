@@ -1,0 +1,15 @@
+{
+  "production_matches_development_build": true,
+  "native_matches_development_build": true,
+  "base_commit": "66fd4d43e80e7c545f0cdb9f17f421cdc0012657",
+  "candidate_commit": null,
+  "clean_candidate_commit_capture": "deferred to Burner: implementation agent may not commit",
+  "final_test_sha256": "0d2943304a3097b65a0ae97415ea8d6660a586d85cc667639c47d5fcb79365f8",
+  "resources": [
+    "gpu",
+    "cpu-heavy"
+  ],
+  "scores_changed": false,
+  "performance_measured": false,
+  "integrity_audit": "integrity-audit.json"
+}
