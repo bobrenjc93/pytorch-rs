@@ -26,7 +26,7 @@ the source of truth.
 | neural-network functional API and modules | 15% | Functional activations including CPU `glu` with vector backward, `l1_loss`/`mse_loss` with finite matching-shape unreduced L1 backward, `linear`, dropout paths, module future flags | Modules/parameters, reduced, broadcasted, or nonfinite active-autograd L1, active-autograd softsign and higher-rank GLU, loss weights and legacy reductions |
 | optimizers, initialization, data utilities | 5% | `torch.nn.init.calculate_gain`, dataset and sampler helpers, `default_collate` for tensor leaves and exact str/bytes-led metadata, container-preserving `default_convert`, `DataChunk` | Optimizers, `DataLoader`, worker multiprocessing, random samplers, NumPy/object conversion or collation, numeric scalar collation, mutating initializers |
 | serialization, state dictionaries, model interchange | 5% | Serialization option state, mmap flags, state-dict prefix removal | `torch.save`, `torch.load`, module state-dict production/loading, model interchange |
-| compilation, parallelism, distributed execution | 5% | Eager JIT helpers, compiler registry/defaults/disable, narrow eager `torch.compile` including [captured CUDA rank-2 float32 matmul](docs/compile-cuda-matmul.md), backend/distributed probes | General CUDA compilation/runtime management, TorchScript and `torch.export` graph capture, process groups/collectives |
+| compilation, parallelism, distributed execution | 5% | Eager JIT helpers, compiler registry/defaults/disable, narrow eager `torch.compile` including [captured CUDA rank-2 float32 matmul](docs/compile-cuda-matmul.md), [default fused CUDA pointwise JIT](docs/compile-pointwise-jit.md), backend/distributed probes | General CUDA compilation/runtime management, TorchScript and `torch.export` graph capture, process groups/collectives |
 | ergonomics, diagnostics, documentation, ecosystem integration | 5% | Rank-0 `Tensor.__format__`, deterministic default-policy state, native warning policy | Deterministic enforcement, warning-only enforcement, nondefault deterministic modes |
 
 Full-tensor `Tensor.mean(dim=None, keepdim=False, dtype=None)` and
@@ -168,6 +168,7 @@ and other CUDA math remain unsupported. Dtype changes, autograd inputs
 or non-rank-1 CUDA copies, unindexed CUDA targets, broader CUDA factories and autograd, device selection APIs, streams, events,
 synchronization APIs, allocator APIs, memory APIs, general runtime management,
 and general `torch.compile` CUDA execution remain unsupported beyond the
+[default fused CUDA pointwise JIT](docs/compile-pointwise-jit.md),
 [bounded native CUDA neg/add capture](docs/compile-cuda-add.md) and private
 benchmark-only H100 pointwise-reduce compile evidence paths. See the
 [exact transfer contract](docs/supported-surface.md) for supported argument

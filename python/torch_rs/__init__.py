@@ -408,6 +408,7 @@ def _make_compile_wrapper(
     implementation,
 ):
     metadata_attribute_names = (
+        "_torch_rs_pointwise_cache",
         "_torch_rs_cuda_compile_executor",
         "_torch_rs_cuda_compile_preparation",
     )
@@ -932,6 +933,14 @@ def _compile_bound_model(
             dynamic=dynamic is True,
         )
 
+    if (implementation is None and not is_h100_cuda_target
+        and _builtins.type(resolved_backend) is _builtins.str and resolved_backend == "inductor"
+        and fullgraph is False and dynamic is None and mode is None and options is None
+        and isolate_recompiles is False and shapes_spec is None and _is_exact_python_function(model)):
+        from . import _compile_pointwise
+        implementation = _compile_pointwise.implementation(
+            model, _validated_compile_recompile_limit(recompile_limit))
+
     return _make_compile_wrapper(
         model,
         fullgraph=fullgraph,
@@ -961,7 +970,15 @@ def compile(
     isolate_recompiles=False,
     shapes_spec=None,
 ):
-    """Return a ``torch.compile`` compatibility shell.
+    """Compile the bounded native pointwise language, or an explicit backend.
+
+    With untouched defaults, straight-line functions over one or two same-shape
+    contiguous no-grad native CUDA float32 inputs lower to generated fused CUDA
+    code. Supported operations are add/subtract/multiply, negation/ReLU/sin/cos,
+    scalar constants and reused local intermediates. CPU, broadcasting, mutation,
+    control flow, module calls and training are outside this default JIT subset.
+    NVRTC and the CUDA driver compile/cache code; no PyTorch forwarding or eager
+    replay is used. See docs/compile-pointwise-jit.md for guards and scope.
 
     This entrypoint implements Python argument binding, ``disable=True``
     pass-through, and backend resolution through ``torch.compiler``. It also
@@ -1388,6 +1405,8 @@ from . import overrides as overrides
 from . import _tensor as _tensor
 
 _initialize_compile_tensor_method_guards()
+
+from . import _compile_pointwise as _compile_pointwise
 
 from . import serialization as serialization
 from . import utils as utils

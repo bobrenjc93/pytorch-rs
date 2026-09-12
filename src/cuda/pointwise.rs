@@ -2,6 +2,10 @@
 //! time and JIT-compiled by the installed NVIDIA driver, without nvcc or NVRTC.
 use super::{CStr, Library, Mutex, OnceLock, Status, TensorError, c_char, c_int, c_void};
 
+#[cfg(any(feature = "python-bindings", test))]
+#[path = "jit.rs"]
+pub(crate) mod jit;
+
 #[path = "sum_rows.rs"]
 mod sum_rows;
 pub(super) use sum_rows::{RowSumConfig, RowSumSlice, launch_sum_rows};

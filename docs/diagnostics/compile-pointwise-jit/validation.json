@@ -1,0 +1,1141 @@
+{
+  "compiler_selection_files": 67,
+  "compiler_selection_tests": 797,
+  "initial_selection": [
+    {
+      "module": "tests.test_compile_benchmark_artifact",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_benchmark_artifact"
+      ],
+      "exit_code": 0,
+      "seconds": 1.55
+    },
+    {
+      "module": "tests.test_compile_corpus",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_corpus"
+      ],
+      "exit_code": 0,
+      "seconds": 7.495
+    },
+    {
+      "module": "tests.test_compile_cuda_benchmark",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_benchmark"
+      ],
+      "exit_code": 0,
+      "seconds": 53.984
+    },
+    {
+      "module": "tests.test_compile_cuda_boundary",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_boundary"
+      ],
+      "exit_code": 0,
+      "seconds": 6.374
+    },
+    {
+      "module": "tests.test_compile_cuda_contiguous",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_contiguous"
+      ],
+      "exit_code": 0,
+      "seconds": 17.065
+    },
+    {
+      "module": "tests.test_compile_cuda_graph",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_graph"
+      ],
+      "exit_code": 0,
+      "seconds": 2.609
+    },
+    {
+      "module": "tests.test_compile_cuda_matmul",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_matmul"
+      ],
+      "exit_code": 1,
+      "seconds": 21.886
+    },
+    {
+      "module": "tests.test_compile_cuda_matmul_diagnostic",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_matmul_diagnostic"
+      ],
+      "exit_code": 0,
+      "seconds": 0.095
+    },
+    {
+      "module": "tests.test_compile_cuda_module_arithmetic",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_module_arithmetic"
+      ],
+      "exit_code": 0,
+      "seconds": 29.053
+    },
+    {
+      "module": "tests.test_compile_cuda_module_relu",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_module_relu"
+      ],
+      "exit_code": 0,
+      "seconds": 24.409
+    },
+    {
+      "module": "tests.test_compile_cuda_module_reshape",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_module_reshape"
+      ],
+      "exit_code": 0,
+      "seconds": 54.174
+    },
+    {
+      "module": "tests.test_compile_cuda_module_squeeze",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_module_squeeze"
+      ],
+      "exit_code": 0,
+      "seconds": 99.23
+    },
+    {
+      "module": "tests.test_compile_cuda_module_t",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_module_t"
+      ],
+      "exit_code": 0,
+      "seconds": 79.066
+    },
+    {
+      "module": "tests.test_compile_cuda_module_transpose",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_module_transpose"
+      ],
+      "exit_code": 0,
+      "seconds": 483.753
+    },
+    {
+      "module": "tests.test_compile_cuda_mul_scalar",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_mul_scalar"
+      ],
+      "exit_code": 0,
+      "seconds": 43.284
+    },
+    {
+      "module": "tests.test_compile_cuda_mul_scalar_diagnostic",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_mul_scalar_diagnostic"
+      ],
+      "exit_code": 0,
+      "seconds": 2.034
+    },
+    {
+      "module": "tests.test_compile_cuda_neg",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_neg"
+      ],
+      "exit_code": 0,
+      "seconds": 11.831
+    },
+    {
+      "module": "tests.test_compile_cuda_neg_add_diagnostic",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_neg_add_diagnostic"
+      ],
+      "exit_code": 0,
+      "seconds": 12.079
+    },
+    {
+      "module": "tests.test_compile_cuda_relu",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_relu"
+      ],
+      "exit_code": 0,
+      "seconds": 9.299
+    },
+    {
+      "module": "tests.test_compile_cuda_reshape",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_reshape"
+      ],
+      "exit_code": 0,
+      "seconds": 28.097
+    },
+    {
+      "module": "tests.test_compile_cuda_squeeze",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_squeeze"
+      ],
+      "exit_code": 0,
+      "seconds": 25.05
+    },
+    {
+      "module": "tests.test_compile_cuda_sum_rows",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_sum_rows"
+      ],
+      "exit_code": 0,
+      "seconds": 8.154
+    },
+    {
+      "module": "tests.test_compile_cuda_t",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_t"
+      ],
+      "exit_code": 0,
+      "seconds": 35.728
+    },
+    {
+      "module": "tests.test_compile_cuda_trailing_vector",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_trailing_vector"
+      ],
+      "exit_code": 0,
+      "seconds": 25.57
+    },
+    {
+      "module": "tests.test_compile_cuda_trailing_vector_diagnostic",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_trailing_vector_diagnostic"
+      ],
+      "exit_code": 0,
+      "seconds": 3.792
+    },
+    {
+      "module": "tests.test_compile_cuda_transpose",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_transpose"
+      ],
+      "exit_code": 0,
+      "seconds": 76.893
+    },
+    {
+      "module": "tests.test_compile_cuda_view",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_cuda_view"
+      ],
+      "exit_code": 0,
+      "seconds": 24.073
+    },
+    {
+      "module": "tests.test_compile_default_evaluator",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_default_evaluator"
+      ],
+      "exit_code": 0,
+      "seconds": 0.164
+    },
+    {
+      "module": "tests.test_compile_pointwise_jit",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_pointwise_jit"
+      ],
+      "exit_code": 0,
+      "seconds": 10.828
+    },
+    {
+      "module": "tests.test_compile_static_analysis",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_static_analysis"
+      ],
+      "exit_code": 0,
+      "seconds": 2.092
+    },
+    {
+      "module": "tests.test_compile_sum_lowering",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_sum_lowering"
+      ],
+      "exit_code": 0,
+      "seconds": 0.592
+    },
+    {
+      "module": "tests.test_compile_tanh_composition",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compile_tanh_composition"
+      ],
+      "exit_code": 0,
+      "seconds": 2.004
+    },
+    {
+      "module": "tests.test_compiled_with_cxx11_abi",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiled_with_cxx11_abi"
+      ],
+      "exit_code": 0,
+      "seconds": 0.156
+    },
+    {
+      "module": "tests.test_compiled_with_cxx11_abi_reference",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiled_with_cxx11_abi_reference"
+      ],
+      "exit_code": 0,
+      "seconds": 1.362
+    },
+    {
+      "module": "tests.test_compiler_assume_constant_result",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_assume_constant_result"
+      ],
+      "exit_code": 0,
+      "seconds": 0.12
+    },
+    {
+      "module": "tests.test_compiler_assume_constant_result_reference",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_assume_constant_result_reference"
+      ],
+      "exit_code": 0,
+      "seconds": 2.392
+    },
+    {
+      "module": "tests.test_compiler_disable",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_disable"
+      ],
+      "exit_code": 0,
+      "seconds": 0.134
+    },
+    {
+      "module": "tests.test_compiler_disable_reference",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_disable_reference"
+      ],
+      "exit_code": 0,
+      "seconds": 2.388
+    },
+    {
+      "module": "tests.test_compiler_get_default_backend",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_get_default_backend"
+      ],
+      "exit_code": 0,
+      "seconds": 0.128
+    },
+    {
+      "module": "tests.test_compiler_get_default_backend_reference",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_get_default_backend_reference"
+      ],
+      "exit_code": 0,
+      "seconds": 3.788
+    },
+    {
+      "module": "tests.test_compiler_is_compiling",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_is_compiling"
+      ],
+      "exit_code": 0,
+      "seconds": 0.131
+    },
+    {
+      "module": "tests.test_compiler_is_compiling_reference",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_is_compiling_reference"
+      ],
+      "exit_code": 0,
+      "seconds": 3.388
+    },
+    {
+      "module": "tests.test_compiler_is_dynamo_compiling",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_is_dynamo_compiling"
+      ],
+      "exit_code": 0,
+      "seconds": 0.131
+    },
+    {
+      "module": "tests.test_compiler_is_dynamo_compiling_reference",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_is_dynamo_compiling_reference"
+      ],
+      "exit_code": 0,
+      "seconds": 4.095
+    },
+    {
+      "module": "tests.test_compiler_is_exporting",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_is_exporting"
+      ],
+      "exit_code": 0,
+      "seconds": 0.124
+    },
+    {
+      "module": "tests.test_compiler_is_exporting_reference",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_is_exporting_reference"
+      ],
+      "exit_code": 0,
+      "seconds": 2.975
+    },
+    {
+      "module": "tests.test_compiler_keep_portable_guards_unsafe",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_keep_portable_guards_unsafe"
+      ],
+      "exit_code": 0,
+      "seconds": 0.125
+    },
+    {
+      "module": "tests.test_compiler_keep_portable_guards_unsafe_reference",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_keep_portable_guards_unsafe_reference"
+      ],
+      "exit_code": 0,
+      "seconds": 2.36
+    },
+    {
+      "module": "tests.test_compiler_keep_tensor_guards_unsafe",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_keep_tensor_guards_unsafe"
+      ],
+      "exit_code": 0,
+      "seconds": 0.127
+    },
+    {
+      "module": "tests.test_compiler_keep_tensor_guards_unsafe_reference",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_keep_tensor_guards_unsafe_reference"
+      ],
+      "exit_code": 0,
+      "seconds": 2.372
+    },
+    {
+      "module": "tests.test_compiler_list_backends",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_list_backends"
+      ],
+      "exit_code": 0,
+      "seconds": 0.122
+    },
+    {
+      "module": "tests.test_compiler_list_backends_reference",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_list_backends_reference"
+      ],
+      "exit_code": 0,
+      "seconds": 2.701
+    },
+    {
+      "module": "tests.test_compiler_register_backend",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_register_backend"
+      ],
+      "exit_code": 0,
+      "seconds": 0.126
+    },
+    {
+      "module": "tests.test_compiler_register_backend_reference",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_register_backend_reference"
+      ],
+      "exit_code": 0,
+      "seconds": 2.684
+    },
+    {
+      "module": "tests.test_compiler_set_default_backend",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_set_default_backend"
+      ],
+      "exit_code": 0,
+      "seconds": 0.124
+    },
+    {
+      "module": "tests.test_compiler_set_default_backend_reference",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_set_default_backend_reference"
+      ],
+      "exit_code": 0,
+      "seconds": 3.777
+    },
+    {
+      "module": "tests.test_compiler_set_enable_guard_collectives",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_set_enable_guard_collectives"
+      ],
+      "exit_code": 0,
+      "seconds": 0.257
+    },
+    {
+      "module": "tests.test_compiler_set_enable_guard_collectives_reference",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_set_enable_guard_collectives_reference"
+      ],
+      "exit_code": 0,
+      "seconds": 6.27
+    },
+    {
+      "module": "tests.test_compiler_skip_all_guards_unsafe",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_skip_all_guards_unsafe"
+      ],
+      "exit_code": 0,
+      "seconds": 0.124
+    },
+    {
+      "module": "tests.test_compiler_skip_all_guards_unsafe_reference",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_skip_all_guards_unsafe_reference"
+      ],
+      "exit_code": 0,
+      "seconds": 2.313
+    },
+    {
+      "module": "tests.test_compiler_skip_guard_on_all_nn_modules_unsafe",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_skip_guard_on_all_nn_modules_unsafe"
+      ],
+      "exit_code": 0,
+      "seconds": 0.121
+    },
+    {
+      "module": "tests.test_compiler_skip_guard_on_all_nn_modules_unsafe_reference",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_skip_guard_on_all_nn_modules_unsafe_reference"
+      ],
+      "exit_code": 0,
+      "seconds": 2.45
+    },
+    {
+      "module": "tests.test_compiler_skip_guard_on_globals_unsafe",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_skip_guard_on_globals_unsafe"
+      ],
+      "exit_code": 0,
+      "seconds": 0.126
+    },
+    {
+      "module": "tests.test_compiler_skip_guard_on_globals_unsafe_reference",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_skip_guard_on_globals_unsafe_reference"
+      ],
+      "exit_code": 0,
+      "seconds": 2.402
+    },
+    {
+      "module": "tests.test_compiler_skip_guard_on_inbuilt_nn_modules_unsafe",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_compiler_skip_guard_on_inbuilt_nn_modules_unsafe"
+      ],
+      "exit_code": 0,
+      "seconds": 2.336
+    },
+    {
+      "module": "tests.test_top_level_compile",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_top_level_compile"
+      ],
+      "exit_code": 1,
+      "seconds": 0.434
+    },
+    {
+      "module": "tests.test_torch_compile_coverage_evaluator",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_fe8723d7/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "tests.test_torch_compile_coverage_evaluator"
+      ],
+      "exit_code": 0,
+      "seconds": 6.739
+    }
+  ],
+  "passing_repairs": {
+    "tests.test_compile_cuda_matmul.CompileCudaMatmulTests.test_isolated_installed_wheel_no_body_no_pytorch": "jit-matmul-standard-venv.log",
+    "tests.test_top_level_compile": "jit-delivery-tests.log"
+  },
+  "focused_final": "jit-delivery-tests.log",
+  "two_device": "jit-two-device-fma.log",
+  "hardware_free_python314": "jit-python314-delivery.log",
+  "native_pointwise": "jit-rust-fma.log",
+  "native_cuda": "jit-rust-cuda.log",
+  "native_cuda_integrations": "jit-rust-integration.log",
+  "clippy": "jit-clippy-fma.log",
+  "documentation": [
+    "jit-doctests.log",
+    "jit-doc-python.log"
+  ],
+  "metrics": {
+    "baseline": {
+      "valid": true,
+      "diagnostic": false,
+      "scores": {
+        "coverage": {
+          "categories": {
+            "broadcasting": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "containers_pytrees": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 6
+            },
+            "custom_functions": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 6
+            },
+            "decompositions": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 6
+            },
+            "dtype_device_transitions": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 4
+            },
+            "dynamic_shapes": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "graph_breaks": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "inference": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 6
+            },
+            "modules_parameters_buffers": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "mutation_aliasing_views": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "python_control_flow": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "recompilation_guards": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 4
+            },
+            "tensor_arithmetic": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 12
+            },
+            "training_autograd": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            }
+          },
+          "common_success_geomean_ratio": null,
+          "eligible": 112,
+          "passed": 0,
+          "score": 0.0
+        },
+        "cuda-perf": {
+          "categories": {
+            "broadcasting": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "containers_pytrees": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 6
+            },
+            "custom_functions": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 6
+            },
+            "decompositions": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 6
+            },
+            "dtype_device_transitions": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 4
+            },
+            "dynamic_shapes": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "graph_breaks": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "inference": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 6
+            },
+            "modules_parameters_buffers": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "mutation_aliasing_views": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "python_control_flow": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "recompilation_guards": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 4
+            },
+            "tensor_arithmetic": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 12
+            },
+            "training_autograd": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            }
+          },
+          "common_success_geomean_ratio": null,
+          "eligible": 56,
+          "passed": 0,
+          "score": 0.0
+        }
+      }
+    },
+    "candidate-diagnostic": {
+      "valid": false,
+      "diagnostic": true,
+      "scores": {
+        "coverage": {
+          "categories": {
+            "broadcasting": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "containers_pytrees": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 6
+            },
+            "custom_functions": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 6
+            },
+            "decompositions": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 6
+            },
+            "dtype_device_transitions": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 4
+            },
+            "dynamic_shapes": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "graph_breaks": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "inference": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 6
+            },
+            "modules_parameters_buffers": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "mutation_aliasing_views": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "python_control_flow": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "recompilation_guards": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 4
+            },
+            "tensor_arithmetic": {
+              "contribution": 6.0,
+              "eligible": 8,
+              "passed": 4,
+              "weight": 12
+            },
+            "training_autograd": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            }
+          },
+          "common_success_geomean_ratio": 2.12810760647372,
+          "eligible": 112,
+          "passed": 4,
+          "score": 6.0
+        },
+        "cuda-perf": {
+          "categories": {
+            "broadcasting": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "containers_pytrees": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 6
+            },
+            "custom_functions": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 6
+            },
+            "decompositions": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 6
+            },
+            "dtype_device_transitions": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 4
+            },
+            "dynamic_shapes": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "graph_breaks": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "inference": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 6
+            },
+            "modules_parameters_buffers": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "mutation_aliasing_views": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "python_control_flow": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "recompilation_guards": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 4
+            },
+            "tensor_arithmetic": {
+              "contribution": 12.0,
+              "eligible": 4,
+              "passed": 4,
+              "weight": 12
+            },
+            "training_autograd": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            }
+          },
+          "common_success_geomean_ratio": 2.12810760647372,
+          "eligible": 56,
+          "passed": 4,
+          "score": 12.0
+        }
+      }
+    }
+  },
+  "note": "Candidate is a worktree diagnostic, not a clean committed scoring run. Burner must capture the final committed candidate. Full raw observations remain at the report paths; compressed reports retain every cell, both orders, all timing samples and observation hashes."
+}

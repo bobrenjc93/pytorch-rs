@@ -9,6 +9,9 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+#[cfg(any(feature = "python-bindings", test))]
+pub(crate) use pointwise::jit;
+
 mod blas;
 mod pointwise;
 mod pool;
@@ -541,6 +544,33 @@ impl CudaFloat32Storage {
                 }
             },
         )
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn pointwise_jit(
+        &self,
+        offset: usize,
+        other: &Self,
+        other_offset: usize,
+        elements: usize,
+        kernel: &jit::Kernel,
+    ) -> Result<Self, TensorError> {
+        if self.device_index != other.device_index || self.device_index != kernel.device {
+            return Err(crate::pointwise_ir::invalid("mixed CUDA JIT devices"));
+        }
+        if elements != 0
+            && other_offset
+                .checked_add(elements)
+                .is_none_or(|end| end > other.elements)
+        {
+            return Err(TensorError::IndexCalculationOverflow);
+        }
+        self.unary_output(offset, elements, elements, |left, output| {
+            let right = (other.data_ptr + other_offset * 4) as u64;
+            // SAFETY: both checked contiguous ranges and the fresh output remain
+            // live through unary_output's completion, including launch errors.
+            unsafe { kernel.launch(left, right, output, elements as u64) }
+        })
     }
 
     fn unary_output(

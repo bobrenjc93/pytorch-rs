@@ -209,6 +209,29 @@ impl Storage {
         }
     }
 
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn cuda_pointwise_jit(
+        &self,
+        offset: usize,
+        other: &Self,
+        other_offset: usize,
+        elements: usize,
+        kernel: &crate::cuda::jit::Kernel,
+    ) -> Result<Self, TensorError> {
+        match (&self.payload, &other.payload) {
+            (StoragePayload::CudaFloat32(left), StoragePayload::CudaFloat32(right)) => Ok(Self {
+                payload: StoragePayload::CudaFloat32(left.pointwise_jit(
+                    offset,
+                    right,
+                    other_offset,
+                    elements,
+                    kernel,
+                )?),
+            }),
+            _ => Err(crate::pointwise_ir::invalid("expected CUDA storage")),
+        }
+    }
+
     pub(crate) fn cuda_add_float32(
         &self,
         left_offset: usize,
