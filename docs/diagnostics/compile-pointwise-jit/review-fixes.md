@@ -82,8 +82,10 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo clippy --locked --all-targets --features python-bindings -- -D warnings
 ```
 
-The existing clean candidate measurements remain pinned to `5b93c983`, before
-these fixes. They must be refreshed using the unchanged coverage/performance
-commands and `capture.py` after Burner creates the new implementation commit.
-The worker cannot create that commit. No evaluator, corpus, dependency, tolerance,
-denominator or managed progress artifact changed, and no new score is claimed.
+Burner committed these fixes as `60abd863`. The subsequent
+[post-commit capture](README.md) now supplies fresh clean coverage/performance,
+generated-code evidence and all three pointwise regression modules. The older
+`5b93c983` measurements and this dirty-source development bundle remain unchanged
+at their original source identities. This bundle itself claims no score; no
+evaluator, corpus, dependency, tolerance, denominator or managed progress
+artifact changed.
