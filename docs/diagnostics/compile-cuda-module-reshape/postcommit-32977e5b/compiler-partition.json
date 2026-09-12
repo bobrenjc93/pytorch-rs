@@ -1,0 +1,194 @@
+{
+  "test_compile_benchmark_artifact": [
+    "tests/test_compile_benchmark_artifact.py"
+  ],
+  "test_compile_corpus": [
+    "tests/test_compile_corpus.py"
+  ],
+  "test_compile_cuda_benchmark": [
+    "tests/test_compile_cuda_benchmark.py"
+  ],
+  "test_compile_cuda_boundary": [
+    "tests/test_compile_cuda_boundary.py"
+  ],
+  "test_compile_cuda_contiguous": [
+    "tests/test_compile_cuda_contiguous.py"
+  ],
+  "test_compile_cuda_graph": [
+    "tests/test_compile_cuda_graph.py"
+  ],
+  "test_compile_cuda_matmul": [
+    "tests/test_compile_cuda_matmul.py"
+  ],
+  "test_compile_cuda_matmul_diagnostic": [
+    "tests/test_compile_cuda_matmul_diagnostic.py"
+  ],
+  "test_compile_cuda_module_arithmetic": [
+    "tests/test_compile_cuda_module_arithmetic.py"
+  ],
+  "test_compile_cuda_module_relu": [
+    "tests/test_compile_cuda_module_relu.py"
+  ],
+  "test_compile_cuda_module_reshape": [
+    "tests/test_compile_cuda_module_reshape.py"
+  ],
+  "test_compile_cuda_module_squeeze": [
+    "tests/test_compile_cuda_module_squeeze.py"
+  ],
+  "test_compile_cuda_module_t": [
+    "tests/test_compile_cuda_module_t.py"
+  ],
+  "test_compile_cuda_module_transpose": [
+    "tests/test_compile_cuda_module_transpose.py"
+  ],
+  "test_compile_cuda_mul_scalar": [
+    "tests/test_compile_cuda_mul_scalar.py"
+  ],
+  "test_compile_cuda_mul_scalar_diagnostic": [
+    "tests/test_compile_cuda_mul_scalar_diagnostic.py"
+  ],
+  "test_compile_cuda_neg": [
+    "tests/test_compile_cuda_neg.py"
+  ],
+  "test_compile_cuda_neg_add_diagnostic": [
+    "tests/test_compile_cuda_neg_add_diagnostic.py"
+  ],
+  "test_compile_cuda_relu": [
+    "tests/test_compile_cuda_relu.py"
+  ],
+  "test_compile_cuda_reshape": [
+    "tests/test_compile_cuda_reshape.py"
+  ],
+  "test_compile_cuda_squeeze": [
+    "tests/test_compile_cuda_squeeze.py"
+  ],
+  "test_compile_cuda_sum_rows": [
+    "tests/test_compile_cuda_sum_rows.py"
+  ],
+  "test_compile_cuda_t": [
+    "tests/test_compile_cuda_t.py"
+  ],
+  "test_compile_cuda_trailing_vector": [
+    "tests/test_compile_cuda_trailing_vector.py"
+  ],
+  "test_compile_cuda_trailing_vector_diagnostic": [
+    "tests/test_compile_cuda_trailing_vector_diagnostic.py"
+  ],
+  "test_compile_cuda_transpose": [
+    "tests/test_compile_cuda_transpose.py"
+  ],
+  "test_compile_cuda_view": [
+    "tests/test_compile_cuda_view.py"
+  ],
+  "test_compile_static_analysis": [
+    "tests/test_compile_static_analysis.py"
+  ],
+  "test_compile_sum_lowering": [
+    "tests/test_compile_sum_lowering.py"
+  ],
+  "test_compile_tanh_composition": [
+    "tests/test_compile_tanh_composition.py"
+  ],
+  "test_compiled_with_cxx11_abi": [
+    "tests/test_compiled_with_cxx11_abi.py"
+  ],
+  "test_compiled_with_cxx11_abi_reference": [
+    "tests/test_compiled_with_cxx11_abi_reference.py"
+  ],
+  "test_compiler_assume_constant_result": [
+    "tests/test_compiler_assume_constant_result.py"
+  ],
+  "test_compiler_assume_constant_result_reference": [
+    "tests/test_compiler_assume_constant_result_reference.py"
+  ],
+  "test_compiler_disable": [
+    "tests/test_compiler_disable.py"
+  ],
+  "test_compiler_disable_reference": [
+    "tests/test_compiler_disable_reference.py"
+  ],
+  "test_compiler_get_default_backend": [
+    "tests/test_compiler_get_default_backend.py"
+  ],
+  "test_compiler_get_default_backend_reference": [
+    "tests/test_compiler_get_default_backend_reference.py"
+  ],
+  "test_compiler_is_compiling": [
+    "tests/test_compiler_is_compiling.py"
+  ],
+  "test_compiler_is_compiling_reference": [
+    "tests/test_compiler_is_compiling_reference.py"
+  ],
+  "test_compiler_is_dynamo_compiling": [
+    "tests/test_compiler_is_dynamo_compiling.py"
+  ],
+  "test_compiler_is_dynamo_compiling_reference": [
+    "tests/test_compiler_is_dynamo_compiling_reference.py"
+  ],
+  "test_compiler_is_exporting": [
+    "tests/test_compiler_is_exporting.py"
+  ],
+  "test_compiler_is_exporting_reference": [
+    "tests/test_compiler_is_exporting_reference.py"
+  ],
+  "test_compiler_keep_portable_guards_unsafe": [
+    "tests/test_compiler_keep_portable_guards_unsafe.py"
+  ],
+  "test_compiler_keep_portable_guards_unsafe_reference": [
+    "tests/test_compiler_keep_portable_guards_unsafe_reference.py"
+  ],
+  "test_compiler_keep_tensor_guards_unsafe": [
+    "tests/test_compiler_keep_tensor_guards_unsafe.py"
+  ],
+  "test_compiler_keep_tensor_guards_unsafe_reference": [
+    "tests/test_compiler_keep_tensor_guards_unsafe_reference.py"
+  ],
+  "test_compiler_list_backends": [
+    "tests/test_compiler_list_backends.py"
+  ],
+  "test_compiler_list_backends_reference": [
+    "tests/test_compiler_list_backends_reference.py"
+  ],
+  "test_compiler_register_backend": [
+    "tests/test_compiler_register_backend.py"
+  ],
+  "test_compiler_register_backend_reference": [
+    "tests/test_compiler_register_backend_reference.py"
+  ],
+  "test_compiler_set_default_backend": [
+    "tests/test_compiler_set_default_backend.py"
+  ],
+  "test_compiler_set_default_backend_reference": [
+    "tests/test_compiler_set_default_backend_reference.py"
+  ],
+  "test_compiler_set_enable_guard_collectives": [
+    "tests/test_compiler_set_enable_guard_collectives.py"
+  ],
+  "test_compiler_set_enable_guard_collectives_reference": [
+    "tests/test_compiler_set_enable_guard_collectives_reference.py"
+  ],
+  "test_compiler_skip_all_guards_unsafe": [
+    "tests/test_compiler_skip_all_guards_unsafe.py"
+  ],
+  "test_compiler_skip_all_guards_unsafe_reference": [
+    "tests/test_compiler_skip_all_guards_unsafe_reference.py"
+  ],
+  "test_compiler_skip_guard_on_all_nn_modules_unsafe": [
+    "tests/test_compiler_skip_guard_on_all_nn_modules_unsafe.py"
+  ],
+  "test_compiler_skip_guard_on_all_nn_modules_unsafe_reference": [
+    "tests/test_compiler_skip_guard_on_all_nn_modules_unsafe_reference.py"
+  ],
+  "test_compiler_skip_guard_on_globals_unsafe": [
+    "tests/test_compiler_skip_guard_on_globals_unsafe.py"
+  ],
+  "test_compiler_skip_guard_on_globals_unsafe_reference": [
+    "tests/test_compiler_skip_guard_on_globals_unsafe_reference.py"
+  ],
+  "test_compiler_skip_guard_on_inbuilt_nn_modules_unsafe": [
+    "tests/test_compiler_skip_guard_on_inbuilt_nn_modules_unsafe.py"
+  ],
+  "test_top_level_compile": [
+    "tests/test_top_level_compile.py"
+  ]
+}

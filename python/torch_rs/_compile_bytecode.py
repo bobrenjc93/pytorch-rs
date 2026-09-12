@@ -123,6 +123,8 @@ class _LoweringState:
     helper_call_count: int = 0
     has_mixed_tuple: bool = False
     local_constant_error: _trace.CompileTraceUnsupportedError | None = None
+    shape_lists: list = field(default_factory=list)
+    used_shape_lists: set[int] = field(default_factory=set)
 
 
 @dataclass(frozen=True, slots=True)
@@ -439,6 +441,8 @@ def _builtin_target(value):
     if value is _NATIVE_TRANSPOSE:
         return _BytecodeBuiltin("transpose", 3)
     owner = _NATIVE_FUNCTION_OWNER
+    if value is owner.reshape:
+        return _BytecodeBuiltin("reshape", 2)
     if value is owner.mul or value is owner.multiply:
         return _BytecodeBuiltin("mul_scalar", 2)
     if value is owner.matmul:
@@ -467,7 +471,7 @@ def _global_value_dependency(name, value, module_attribute=None):
         # only at loads that actually use them, so unrelated mutations neither
         # reject old programs nor spend their recompile budget.
         attributes = ("mul", "multiply", "matmul")
-        if module_attribute in ("add", "neg", "negative", "relu", "squeeze", "t", "transpose"):
+        if module_attribute in ("add", "neg", "negative", "relu", "squeeze", "t", "transpose", "reshape"):
             attributes += (module_attribute,)
         bindings = tuple((attr, vars(value).get(attr)) for attr in attributes)
         if all(_builtin_target(fn) is not None for _, fn in bindings):
@@ -1032,6 +1036,9 @@ def _store_local(locals, stack, program, instruction, name, state):
         locals[name] = value
         return
     if _builtins.isinstance(value, _BytecodeConstant):
+        if any(value is shape for shape in state.shape_lists):
+            locals[name] = value
+            return
         if type(value.value) not in (int, tuple):
             try:
                 _trace._normalize_mul_scalar(value.value)
@@ -1307,6 +1314,18 @@ def _handle_call(recorder, locals, stack, program, instruction, state, active):
             if any(not isinstance(axis, _BytecodeConstant) for axis in args[1:]):
                 _unsupported_bytecode(program, instruction, "native transpose requires constant axes")
             stack.append(recorder.record_transpose(operand, args[1].value, args[2].value))
+        elif target == "reshape":
+            operand = _require_tensor(args[0], program, instruction, "reshape operand")
+            shape = _reshape_argument(args[1])
+            # The top-level schema accepts a container, not the method's
+            # variadic dimensions. Normalize only exact bytecode containers;
+            # the shared binder preserves dimension validation precedence.
+            if type(shape) not in (tuple, list):
+                raise TypeError("reshape(): argument 'shape' must be tuple of ints")
+            shape = _trace._bind_reshape_shape((tuple(shape),), {}, operand.metadata)
+            stack.append(recorder.record_reshape(operand, shape))
+            if any(args[1] is value for value in state.shape_lists):
+                state.used_shape_lists.add(id(args[1]))
         elif target == "mul_scalar":
             stack.append(_record_scalar_multiply(recorder, *args, program, instruction))
         else:
@@ -1575,12 +1594,21 @@ def _handle_build_list(recorder, locals, stack, program, instruction, state, act
     argument_count = instruction.arg or 0
     values = [_pop(stack, program, instruction) for _ in range(argument_count)]
     values.reverse()
+    if values and all(isinstance(value, _BytecodeConstant) and type(value.value) is int
+                      for value in values):
+        # Keep the wrapper alive and track consumption by identity. Only a
+        # successful top-level reshape can admit this constant list; unused,
+        # overwritten, returned, or method-bound lists retain their rejection.
+        shape = _BytecodeConstant([value.value for value in values])
+        state.shape_lists.append(shape)
+        stack.append(shape)
+        return
     output = list(values)
     try:
         _require_output_value(output, program, instruction, "list return value")
     except _trace.CompileTraceUnsupportedError as error:
         # Preserve a literal/local container for binding/type validation. It
-        # remains forbidden as a shape, output, helper input or unused local.
+        # remains forbidden as a captured shape, output, helper input or unused local.
         state.local_constant_error = state.local_constant_error or error
         stack.append(_BytecodeConstant([_reshape_argument(v) for v in values]))
         return
@@ -1704,6 +1732,10 @@ def lower_compile_graph(program, input_metadatas, *, name=None, compile_request=
     )
     if state.local_constant_error is not None:
         raise state.local_constant_error
+    if any(id(value) not in state.used_shape_lists for value in state.shape_lists):
+        raise _trace.CompileTraceUnsupportedError(
+            "torch.compile constant lists require a top-level reshape consumer"
+        )
     if state.has_mixed_tuple:
         raise _trace.CompileTraceUnsupportedError(
             "torch.compile mixed constant/Tensor tuples are only retained for shape argument validation"

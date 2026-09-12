@@ -1,13 +1,14 @@
 # Compiled CUDA reshape
 
-The bounded eager compiler captures `Tensor.reshape` on native CUDA float32
-rank-0/1/2 tensors without gradients, with rank-0/1/2 outputs:
+The bounded eager compiler captures `Tensor.reshape`, exactly two-positional-argument
+`torch.reshape(x, constant_shape)`, and genuine direct-import aliases on native CUDA
+float32 rank-0/1/2 tensors without gradients, with rank-0/1/2 outputs:
 
 ```python
 import torch_rs as torch
 
 def flatten_transpose(x):
-    return x.t().reshape(-1)
+    return torch.reshape(x.t(), [-1])
 
 x = torch.tensor([[1., 2., 3.], [4., 5., 6.]]).to("cuda:0")
 f = torch.compile(flatten_transpose, backend="eager", fullgraph=True)
@@ -16,7 +17,7 @@ assert y.cpu().tolist() == [1., 4., 2., 5., 3., 6.]
 assert y.data_ptr() != x.data_ptr()
 ```
 
-Shapes accept positional exact integer constants (`reshape(2, -1)`) or one
+Method shapes accept positional exact integer constants (`reshape(2, -1)`) or one
 exact flat tuple (`reshape((2, -1))`, also `shape=(2, -1)`). `reshape(())`
 produces a scalar from one element. One `-1` may infer a dimension. Literal and
 local constants are frozen; live module-global integers have type/value guards.
@@ -29,7 +30,7 @@ PyTorch checks the first ordinary shape element before keyword binding, then
 unpacks the remaining dimensions in order. In particular, a first boolean is
 invalid, while some later booleans are accepted by reference PyTorch. Those
 later boolean forms are deliberately unsupported here, as are integer subclasses,
-index conversions, lists, tuple subclasses, arbitrary containers, symbolic or
+index conversions, method lists, tuple subclasses, arbitrary containers, symbolic or
 computed dimensions and scalar function arguments. The compiler never invokes
 user conversion methods. Tensor-only input binding retains its existing errors.
 Known dimension type/overflow errors and invalid call structure are checked even
@@ -37,6 +38,18 @@ when another value is nonconstant. Local nonnumeric constants retain the same
 reshape binding errors as inline literals. Unsupported locals and mixed
 literal/local tuples are retained only for validation; they cannot enter a
 compiled graph or become output pytrees, even when unused or overwritten.
+
+Top-level calls require exactly two positional arguments and an exact tuple/list
+of constant integer dimensions, such as `torch.reshape(x, (2, -1))` or a genuine
+`from torch_rs import reshape` alias called with `[2, -1]`. Keywords, variadic
+shapes, shape metadata expressions and arbitrary shape globals remain excluded.
+The frontend recognizes the immutable native variable-function owner's identity,
+retained at package startup. It guards only used module fields and imported
+bindings, so unrelated reshape replacement/deletion leaves existing graphs valid.
+Retained genuine aliases survive public/native export mutation; fake callables
+reject without invoking their bodies, equality, descriptors or conversions.
+Nonempty integer lists must feed a supported top-level reshape; this does not
+admit unused integer lists, integer-list outputs or method list shapes.
 
 A view-compatible reshape creates a distinct Python object sharing storage,
 with the native view planner's strides and the input offset. A copy-required
@@ -63,10 +76,9 @@ again while rank/stride/device/offset guards remain exact. Both planners validat
 the whole graph before execution, including early/late nodes, cached declarations,
 output field types and repeated output/metadata pairs. Actual inputs and unused
 captures must share a CUDA device. CPU capture, higher ranks, new dtypes,
-gradients, `reshape_as`, top-level `torch.reshape`, dtype-changing
-views, new backends and fusion are outside this increment.
+gradients, `reshape_as`, dtype-changing views, new backends and fusion are outside this increment.
 
-[Compiled `Tensor.view`](compile-cuda-view.md) accepts the same bounded shape
+[Compiled `Tensor.view`](compile-cuda-view.md) accepts the same bounded method shape
 surface with `size=` keyword binding, but always requires alias-compatible strides.
 
 ## Validation
@@ -74,15 +86,27 @@ surface with `size=` keyword binding, but always requires alias-compatible strid
 Use the [locked contributor setup](../CONTRIBUTING.md), then run:
 
 ```sh
-CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest -v tests.test_compile_cuda_reshape
-CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m unittest -v tests.test_compile_cuda_reshape.ReshapeDeviceTests
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest -v tests.test_compile_cuda_module_reshape tests.test_compile_cuda_reshape
+CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m unittest -v tests.test_compile_cuda_module_reshape.ModuleReshapeDeviceTests tests.test_compile_cuda_reshape.ReshapeDeviceTests
 CUDA_VISIBLE_DEVICES=0 cargo test --locked --features python-bindings --lib cuda_graph
 CUDA_VISIBLE_DEVICES=0 cargo test --locked --test cuda_contiguous
-CUDA_VISIBLE_DEVICES='' .venv/bin/python -m unittest -v tests.test_compile_cuda_reshape
+CUDA_VISIBLE_DEVICES='' .venv/bin/python -m unittest -v tests.test_compile_cuda_module_reshape tests.test_compile_cuda_reshape
 ```
 
+The [top-level development evidence](diagnostics/compile-cuda-module-reshape/README.md)
+retains the exact-main 144-cell baseline: 96 native rejections, of which 94 are
+strict-reference eligible. Two empty add-then-reshape cells retain their surveyed
+Inductor stride discrepancy and earn zero strict-parity credit. The new frontend
+closes all 96 rejections without changing that classification. No performance
+or general compiler/Inductor/training parity is claimed.
+
 Hardware-only cases skip clearly when the required devices are unavailable.
-The [latest clean-commit capture](diagnostics/compile-cuda-reshape/postcommit-93441a9f/README.md)
+The [top-level clean-commit capture](diagnostics/compile-cuda-module-reshape/postcommit-32977e5b/README.md)
+measures `32977e5dbab09e4b069dad921286d31697ecadb5` with a fresh source-bound
+release wheel, the frozen 144-cell replay, all four policies, the complete compiler
+selection and device/portability checks.
+
+The [earlier method-only capture](diagnostics/compile-cuda-reshape/postcommit-93441a9f/README.md)
 measures `93441a9fc13e8124a507a34810f2c3d97f7e69f1` with a fresh local environment
 and release build, including all three reviews' argument-validation regressions.
 H100 differentials, compiler and CPU/layout regressions, two-device restoration,
