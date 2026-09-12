@@ -11,6 +11,10 @@ Program coverage and CUDA speed are separate measurements. Correctly capturing
 a native graph without fusion may earn coverage; it earns performance credit
 only at its measured speed against default Inductor.
 
+The [2026-09-12 clean baseline](evaluation-data/default-compile-v2/README.md)
+records 0/112 coverage cells and 0/56 CUDA performance cells, with all reference
+programs passing. It is a campaign proposal awaiting review, not an adopted main score.
+
 ## Run on real hardware
 
 The development host has eight NVIDIA H100 GPUs. CUDA is testable here; do not
