@@ -77,7 +77,7 @@ class Admission(unittest.TestCase):
         graph = lower(fn, 2)
         source = bridge._pointwise_source(graph.nodes, graph.output, graph.inputs)
         self.assertEqual(source.count('sinf('), 1)
-        self.assertIn('(v2 * v2)', source)
+        self.assertIn('__fmul_rn(v2, v2)', source)
         self.assertIn('cosf(', source)
         self.assertNotIn('__sinf', source)
         self.assertIn('0x3dcccccdu', source)

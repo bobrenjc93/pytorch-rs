@@ -151,8 +151,10 @@ def resolve(model, program):
     return tuple(keys), values
 
 
-def lower(program, values, arity):
-    nodes = [("input", i, 0, 0) for i in range(arity)]
+def lower(program, values, arity, input_ids=None):
+    if input_ids is None:
+        input_ids = tuple(range(arity))
+    nodes = [("input", i, 0, 0) for i in input_ids]
     locals_ = dict(zip(program.code.co_varnames, (Value(i) for i in range(arity))))
     stack = []
 
@@ -278,12 +280,16 @@ def implementation(model, recompile_limit):
             if program.code.co_argcount != len(args):
                 unsupported("function signature changed")
             bindings, values = resolve(model, program)
-            key = (program.code, bindings, metadata)
+            # Object identity, not equal values or shared storage, determines
+            # whether two parameters denote the same expression. Retain only
+            # the relationship so fresh tensors can reuse graphs and code.
+            input_ids = (0, 0) if len(args) == 2 and args[0] is args[1] else tuple(range(len(args)))
+            key = (program.code, bindings, metadata, input_ids)
             executor = cache.graphs.get(key)
             if executor is None:
                 if len(cache.graphs) >= recompile_limit:
                     unsupported(f"hit recompile_limit={recompile_limit}")
-                graph = lower(program, values, len(args))
+                graph = lower(program, values, len(args), input_ids)
                 # Code specializes expressions and device, not shapes, values or pointers.
                 # Keep this map inside reset-owned cache entries, so reset releases modules.
                 code_key = (graph, metadata[0][4])

@@ -1,29 +1,37 @@
 # Native default pointwise JIT validation
 
+**Refresh required after the second numerical review fixes.** The reports below
+measure `60abd863` and remain unchanged, but do not measure the revised expression
+deduplication, repeated-input guards, sign normalization and shared-product
+contraction. Burner must repeat the unchanged clean-commit gates and `capture.py`
+after committing these fixes. See [round-two validation](review-round2.md) for
+the development regressions and retained failures; no new score is claimed.
+
 Fresh coverage, CUDA-performance and generated-code captures measure clean
-implementation commit `60abd863d2fa8f2352be48bfe505adff345ac50f`, including the review fixes,
+implementation commit `60abd863d2fa8f2352be48bfe505adff345ac50f`, including the first review fixes,
 on 2026-09-12. Both unchanged public-default-compile-v2 scoring commands report
 `valid: true`, `diagnostic: false`, with no infrastructure error. The clean
 baseline remains pinned to campaign base
 `76738b39fd6884ffd43b4dff2f5292257a1c6e6b`, verified as the merge base with main.
 See the [implementation contract](../../compile-pointwise-jit.md).
 
-| Unchanged public-default-compile-v2 gate | Clean baseline | Clean candidate `60abd863` |
+| Unchanged public-default-compile-v2 gate | Clean baseline | Candidate `60abd863` (refresh pending) |
 | --- | ---: | ---: |
 | Weighted coverage | 0% (0/112 cells) | 6% (4/112 cells) |
 | Weighted CUDA performance | 0% (0/56 cells) | 12% (4/56 cells) |
 | CUDA-performance common-success geometric mean, reference/candidate | null | 2.093486504225413 |
 
-The measured gains over the baseline are 6 percentage points
+At `60abd863`, the measured gains over the baseline are 6 percentage points
 of weighted coverage and 12 points of weighted CUDA
 performance. Only the two arithmetic programs in both CUDA variants pass;
 all other cells remain zero. Successful performance cells each reach the cap
 of one, accounting for the arithmetic category's 12% weight. The uncapped ratio
 describes only those four cells; the baseline has no common successes, so its
 ratio is null. These are fixed-corpus results, not general Inductor parity.
-The review fixes leave the earlier candidate's weighted scores unchanged.
+The first review fixes left the earlier candidate's weighted scores unchanged.
+The second review fixes have not yet received a clean-commit measurement.
 
-## Current committed evidence
+## Committed evidence before the second review fixes
 
 - [Coverage](postcommit-60abd/candidate-coverage.json.gz) and
   [CUDA performance](postcommit-60abd/candidate-cuda-perf.json.gz) are
@@ -93,8 +101,8 @@ All earlier measured artifacts remain byte-for-byte unchanged:
   failures and subsequent repairs at their original source identities.
 
 Historical paths identify the original captures and may no longer contain the
-original installed build. Current-candidate credit uses only the fresh
-`postcommit-60abd` reports. No failed measurement was overwritten or promoted
+original installed build. The `postcommit-60abd` reports apply only to that
+revision; the second review fixes require a new capture. No failed measurement was overwritten or promoted
 as a score. This evidence step does not approve the branch or replace review.
 
 ## Reproduce
@@ -127,5 +135,6 @@ Driver disk-code caching was disabled symmetrically for both implementations
 in these candidate gates; the historical baseline did not set that flag.
 These results are not cold-cache speed comparisons between builds. Worker
 Inductor/Triton caches start separately fresh; dependency/native build caches
-may be warm, as recorded in setup receipts. No implementation, dependency,
-test, evaluator, corpus or managed progress artifact changed in this step.
+may be warm, as recorded in setup receipts. The `60abd863` post-commit capture
+changed only evidence and its documentation; the subsequent numerical fixes
+are documented separately above.

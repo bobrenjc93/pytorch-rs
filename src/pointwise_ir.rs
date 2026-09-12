@@ -1,6 +1,7 @@
 //! Typed, shape-independent pointwise SSA and CUDA C lowering. No device access.
 use crate::tensor_error::TensorError;
-use std::fmt::Write;
+#[path = "pointwise_lowering.rs"]
+mod lowering;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Node {
@@ -72,121 +73,7 @@ impl Graph {
 
     pub(crate) fn source(&self) -> Result<String, TensorError> {
         self.validate()?;
-        // Only observable consumers constrain contraction. Validate the entire
-        // graph first, then remove dead expressions (including unused locals).
-        // Negated products consume their factors directly in the emitted FMA.
-        let operands = |node: &Node| match *node {
-            Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b) => Some((a, Some(b))),
-            Node::Neg(a) => match self.nodes[a] {
-                Node::Mul(left, right) => Some((left, Some(right))),
-                _ => Some((a, None)),
-            },
-            Node::Relu(a) | Node::Sin(a) | Node::Cos(a) => Some((a, None)),
-            Node::Input(_) | Node::Constant(_) => None,
-        };
-        let mut live = vec![false; self.nodes.len()];
-        live[self.output] = true;
-        for index in (0..self.nodes.len()).rev() {
-            if live[index]
-                && let Some((a, b)) = operands(&self.nodes[index])
-            {
-                live[a] = true;
-                if let Some(b) = b {
-                    live[b] = true;
-                }
-            }
-        }
-        let mut uses = vec![0; self.nodes.len()];
-        uses[self.output] += 1;
-        for (index, node) in self.nodes.iter().enumerate() {
-            if live[index]
-                && let Some((a, b)) = operands(node)
-            {
-                uses[a] += 1;
-                if let Some(b) = b {
-                    uses[b] += 1;
-                }
-            }
-        }
-        let mut source = String::from(
-            "// torch_rs typed pointwise SSA v1; float32, no fast math\n\
-             extern \"C\" __global__ void torch_rs_pointwise(\n\
-             const float* x0, const float* x1, float* out, unsigned long long n) {\n\
-             for (unsigned long long i = (unsigned long long)blockIdx.x * blockDim.x + threadIdx.x;\n\
-             i < n; i += (unsigned long long)blockDim.x * gridDim.x) {\n",
-        );
-        for (index, node) in self.nodes.iter().enumerate() {
-            if !live[index] {
-                continue;
-            }
-            let expression = match *node {
-                Node::Input(id) => format!("x{id}[i]"),
-                Node::Constant(bits) => format!("__uint_as_float(0x{bits:08x}u)"),
-                Node::Add(a, b) => self
-                    .contract(a, b, false, &uses)
-                    .unwrap_or_else(|| format!("(v{a} + v{b})")),
-                Node::Sub(a, b) => self
-                    .contract(a, b, true, &uses)
-                    .unwrap_or_else(|| format!("(v{a} - v{b})")),
-                Node::Mul(a, b) => format!("(v{a} * v{b})"),
-                // Inductor lowers negation as 0 - x and contracts products into
-                // that subtraction. FMA preserves negative underflowed zero,
-                // while an exactly zero product still yields positive zero.
-                Node::Neg(a) => match self.nodes[a] {
-                    Node::Mul(left, right) => format!("fmaf(-v{left}, v{right}, 0.0f)"),
-                    _ => format!("__fsub_rn(0.0f, v{a})"),
-                },
-                Node::Relu(a) => format!("(v{a} < 0.0f ? 0.0f : v{a})"),
-                Node::Sin(a) => format!("sinf(v{a})"),
-                Node::Cos(a) => format!("cosf(v{a})"),
-            };
-            writeln!(source, "const float v{index} = {expression};").unwrap();
-        }
-        writeln!(source, "out[i] = v{};\n}}\n}}", self.output).unwrap();
-        Ok(source)
-    }
-
-    // Contract a single-use product explicitly. Otherwise NVRTC can strength-
-    // reduce multiplication into addition before its FMA pass, changing overflow
-    // compared with Inductor. This is a local SSA rule, independent of constants,
-    // input shapes and program identity. If both operands are products, follow
-    // Inductor's left-first contraction: the right product is rounded first.
-    // Addition of a negative-coefficient product is normalized as subtraction
-    // from the positive product before selecting that first operand.
-    // Products with remaining shared uses remain SSA values.
-    fn contract(
-        &self,
-        left: usize,
-        right: usize,
-        subtract: bool,
-        uses: &[usize],
-    ) -> Option<String> {
-        let product = |id| match self.nodes[id] {
-            Node::Mul(a, b) if uses[id] == 1 => Some((a, b)),
-            _ => None,
-        };
-        let negative_coefficient = |a, b| {
-            [a, b].iter().any(|&id| {
-                matches!(self.nodes[id],
-                Node::Constant(bits) if f32::from_bits(bits) < 0.0)
-            })
-        };
-        match (product(left), product(right)) {
-            (Some((a, b)), Some((c, d)))
-                if !subtract && negative_coefficient(a, b) && !negative_coefficient(c, d) =>
-            {
-                Some(format!("fmaf(v{c}, v{d}, v{left})"))
-            }
-            (Some((a, b)), _) => Some(format!(
-                "fmaf(v{a}, v{b}, {}v{right})",
-                if subtract { "-" } else { "" }
-            )),
-            (None, Some((a, b))) => Some(format!(
-                "fmaf({}v{a}, v{b}, v{left})",
-                if subtract { "-" } else { "" }
-            )),
-            _ => None,
-        }
+        Ok(lowering::source(self))
     }
 }
 
@@ -290,8 +177,69 @@ mod tests {
         };
         let code = graph.source().unwrap();
         assert_eq!(code.matches("sinf(").count(), 1);
-        assert!(code.contains("(v1 * v1)"));
+        assert!(code.contains("__fmul_rn(v1, v1)"));
         assert!(code.contains("0x80000000u"));
         assert!(!code.contains("__sinf"));
+    }
+
+    #[test]
+    fn equivalent_products_share_rounding_without_commuting_operands() {
+        let mut graph = Graph {
+            inputs: 2,
+            nodes: vec![
+                Node::Input(0),
+                Node::Input(1),
+                Node::Mul(0, 1),
+                Node::Mul(0, 1),
+                Node::Sub(2, 3),
+            ],
+            output: 4,
+        };
+        let code = graph.source().unwrap();
+        assert_eq!(code.matches("__fmul_rn(").count(), 1);
+        assert!(code.contains("__fsub_rn(v2, v2)"));
+        assert!(!code.contains("fmaf("));
+        graph.nodes[3] = Node::Mul(1, 0);
+        assert!(graph.source().unwrap().contains("fmaf("));
+    }
+
+    #[test]
+    fn shared_products_can_contract_for_each_consumer() {
+        let graph = Graph {
+            inputs: 2,
+            nodes: vec![
+                Node::Input(0),
+                Node::Input(1),
+                Node::Constant(2.0_f32.to_bits()),
+                Node::Mul(0, 2),
+                Node::Sub(3, 1),
+                Node::Add(4, 3),
+            ],
+            output: 5,
+        };
+        let code = graph.source().unwrap();
+        assert!(code.contains("fmaf(v0, v2, -v1)"));
+        assert!(code.contains("fmaf(v0, v2, v4)"));
+    }
+
+    #[test]
+    fn negated_subtraction_reverses_contraction_before_rounding_zero() {
+        let graph = Graph {
+            inputs: 2,
+            nodes: vec![
+                Node::Input(0),
+                Node::Input(1),
+                Node::Constant(2.0_f32.to_bits()),
+                Node::Mul(0, 2),
+                Node::Mul(1, 2),
+                Node::Sub(3, 4),
+                Node::Neg(5),
+            ],
+            output: 6,
+        };
+        let code = graph.source().unwrap();
+        assert!(code.contains("fmaf(v1, v2, -v3)"));
+        assert!(code.contains("__fadd_rn("));
+        assert!(!code.contains("fmaf(v0, v2, -v4)"));
     }
 }

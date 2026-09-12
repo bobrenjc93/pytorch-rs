@@ -47,7 +47,8 @@ explicit `backend="eager"` capture implementation remain separate.
 
 `_compile_pointwise.py` statically admits CPython straight-line bytecode and
 constructs typed float32 SSA nodes. `pointwise_ir.rs` independently validates
-node topology and emits CUDA C from operator rules, retaining intermediates.
+node topology; `pointwise_lowering.rs` canonicalizes expressions and emits CUDA
+C from operator rules, retaining intermediates.
 `cuda/jit.rs` compiles it with NVRTC and loads the resulting PTX through the
 existing native driver. No fixed expression, shape, name, or corpus recognizer
 is involved. Accurate libdevice `sinf`/`cosf` and `--ftz=false` are used;
@@ -55,15 +56,21 @@ fast math is not enabled. Arithmetic explicitly allows FMA contraction
 (`--fmad=true`) to match default Inductor, including cancellation and overflow
 cases where CUDA eager's separately rounded operations differ. SSA variables
 retain expression dependencies and reuse through native compiler optimization.
-A local multiply/add-subtract rule emits explicit `fmaf` so toolkit
-strength reduction cannot lose the intended contraction. For two eligible
-products, contraction selects the left product, rounding the other first;
-addition with a negative coefficient on the left normalizes subtraction from
-the positive product first. Negated products use `fmaf(-a, b, +0)`, and those
-factor uses are accounted for before selecting subsequent contractions.
-The complete IR is validated before dead expressions are removed; only live
-consumers constrain contraction, so an unused local cannot change rounding of
-the returned expression. Invalid unused operations remain rejected.
+Numerical lowering shares identical ordered expressions before selecting
+explicit `fmaf` operations for each consumer. Self-subtraction uses the shared
+rounded value: finite values produce positive zero, while infinities and NaNs
+produce NaN. Products may contract at multiple consumers while retaining their
+rounded value for other uses. Operand order is retained, including for
+commutative operators, to match the reference's expression deduplication.
+Sign normalization precedes contraction: `-(a-b)` becomes `(b-a)+0`, products
+with negative coefficients in sums become subtraction, and unit multipliers
+and signed doubling follow the reference's normalization. Negated products use
+`fmaf(-a, b, +0)`.
+Uncontracted operations use explicit round-to-nearest CUDA intrinsics so NVRTC
+cannot choose a different contraction after strength reduction.
+The complete IR is validated before unused expressions are removed; an unused
+local cannot change rounding of the returned expression. Invalid unused
+operations remain rejected.
 Float constants are rounded to float32 once and encoded by their IEEE bits,
 including negative zero and non-finite values.
 Integer constants follow default Inductor's Python binary64-to-float32
@@ -89,8 +96,12 @@ The private kernel object exposes generated source/PTX, compiler version,
 options and device for regression evidence.
 
 Each wrapper caches validated graphs and compiled modules, never tensor data,
-results or input pointers. Shape/stride/offset/dtype/device/gradient and live
-scalar/function bindings are guarded. A changed shape creates a graph cache
+results or input pointers. Shape/stride/offset/dtype/device/gradient, live
+scalar/function bindings, and repeated-input object relationships are guarded.
+Passing the same Tensor for both parameters shares its input expression;
+distinct tensors, even equal-valued tensors or views sharing storage, keep
+separate expressions. Only this identity relationship is cached, so fresh
+tensors reuse the same specialization. A changed shape creates a graph cache
 entry but reuses code for the same expression and device. Failed admission,
 compilation or execution does not consume a cache slot. `recompile_limit`
 retains the existing default of eight metadata/binding specializations.
@@ -118,7 +129,8 @@ The unchanged [public-default compiler gates](torch-compile-default-evaluator.md
 remain the scoring authority with all 112 coverage and 56 CUDA performance
 cells. These focused tests do not change their denominator. Unsupported
 categories remain zero. The [post-commit evidence](diagnostics/compile-pointwise-jit/README.md)
-records fresh clean-commit coverage, CUDA-performance and generated-code captures
-for `60abd863`, including the review fixes, alongside the unchanged source-bound
-baseline and original development failures. The development validation remains
-separate from these committed measurements.
+records clean-commit coverage, CUDA-performance and generated-code captures
+for `60abd863`, before the latest numerical review fixes, alongside the unchanged
+source-bound baseline and original development failures. Fresh captures are
+required after Burner commits these fixes; development validation does not
+replace the committed measurements.
