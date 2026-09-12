@@ -103,5 +103,6 @@ records the local commands, failures and generated-kernel evidence.
 The unchanged [public-default compiler gates](torch-compile-default-evaluator.md)
 remain the scoring authority with all 112 coverage and 56 CUDA performance
 cells. These focused tests do not change their denominator. Unsupported
-categories remain zero. Fresh committed-candidate scoring belongs to Burner's
-post-commit evidence phase.
+categories remain zero. The [post-commit evidence](diagnostics/compile-pointwise-jit/README.md)
+records fresh clean-commit coverage and CUDA-performance captures, alongside
+the unchanged source-bound baseline and original development failures.
