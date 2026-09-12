@@ -82,14 +82,22 @@ operator-specific rules and float32 promotion have run. Boolean `False` and
 integer zero multiplication produce a known positive-zero tensor, including
 for non-finite inputs; floating zero multiplication retains IEEE NaN and zero
 signs. The resulting constant tensor is distinct from a scalar operand, so
-further tensor multiplication still has float semantics. Constant-zero addition
-and negation follow default Inductor's simplifications and observable zero signs.
-Add/subtract/multiply of known constant tensors and scalar constants retain a
-constant tensor result, including its zero sign. Subsequent negation flips that
-sign instead of lowering to positive-zero subtraction or FMA. Operations with
-runtime tensor values and the libdevice/unary paths retain their existing rules.
-Float constants are rounded to float32 once and encoded by their IEEE bits,
-including negative zero and non-finite values.
+further tensor multiplication still has float semantics. Only zeros created by
+this early integer/Boolean rewrite qualify for tensor addition identities or a
+right-hand subtraction identity. Addition identities run before subtraction
+identities; a zero exposed by subtraction cannot retroactively remove an addition.
+Zeros computed by subsequent arithmetic retain
+the arithmetic operation at runtime consumers: `(x*0)+x` preserves an input
+negative zero, while `(x*0+0.0)+x` produces positive zero.
+Scalar literals and add/subtract/multiply/negate of known constant tensors retain
+Python binary64 precision and zero signs until float32 materialization. For
+example, `((x*0)+16777216.0)+1.0-16777216.0` folds to one. A constant is rounded
+to float32 at each runtime consumer or output; other constant consumers of the
+same intermediate retain its binary64 value. ReLU/sin/cos stop this propagation
+and consume float32 values. Folded negation flips the constant's sign instead of
+lowering to positive-zero subtraction or FMA. Runtime arithmetic retains its
+existing contraction rules. IEEE bits preserve negative zero and non-finite
+values across the private IR bridge.
 Integer constants follow default Inductor's Python binary64-to-float32
 normalization; large integers at rounding boundaries can differ by one float32
 ULP from eager's direct integer conversion.
@@ -119,7 +127,12 @@ scalar/function bindings, and repeated-input object relationships are guarded.
 Passing the same Tensor for both parameters shares its input expression;
 distinct tensors, even equal-valued tensors or views sharing storage, keep
 separate expressions. Only this identity relationship is cached, so fresh
-tensors reuse the same specialization. A changed shape creates a graph cache
+tensors reuse the same specialization. Captured scalars remain statically
+specialized by their full value. Inductor may instead promote changed floating
+bindings to runtime scalar tensors and change their rounding boundaries; the
+binding regression compares each native specialization with a fresh constant-
+specialized reference, not Inductor's adaptive warm-call strategy.
+A changed shape creates a graph cache
 entry but reuses code for the same expression and device. Failed admission,
 compilation or execution does not consume a cache slot. `recompile_limit`
 retains the existing default of eight metadata/binding specializations.
@@ -147,7 +160,9 @@ The unchanged [public-default compiler gates](torch-compile-default-evaluator.md
 remain the scoring authority with all 112 coverage and 56 CUDA performance
 cells. These focused tests do not change their denominator. Unsupported
 categories remain zero. The [post-commit evidence](diagnostics/compile-pointwise-jit/README.md)
-records fresh clean-commit coverage, CUDA-performance and generated-code captures
-for `0c836a49`, including the composed constant-tensor arithmetic fix, alongside
-the unchanged source-bound baseline and original development failures.
-Development validation remains separate from these committed measurements.
+retains clean-commit coverage, CUDA-performance and generated-code captures
+for `0c836a49`, alongside the unchanged source-bound baseline and original
+failures. Those captures precede the constant-folding precision and zero-origin
+repair and require refresh after Burner commits this revision.
+[Repair validation](diagnostics/compile-pointwise-jit/review-folding.md) records
+the new development checks separately; they are not clean campaign measurements.

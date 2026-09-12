@@ -1,6 +1,11 @@
 # Native default pointwise JIT validation
 
-Fresh coverage, CUDA-performance and generated-code captures measure clean
+The constant-folding precision and zero-origin repair changes implementation
+after the latest clean capture. **A fresh post-commit capture is required** once
+Burner commits this revision. [Repair validation](review-folding.md) records
+development checks and original failures without assigning campaign scores.
+
+The retained coverage, CUDA-performance and generated-code captures measure clean
 implementation commit `0c836a491530d34b368bc13312c5695331634cf5` on 2026-09-12,
 including the composed constant-tensor arithmetic fix. Both unchanged
 public-default-compile-v2 scoring commands report
@@ -9,7 +14,7 @@ baseline remains pinned to campaign base
 `76738b39fd6884ffd43b4dff2f5292257a1c6e6b`, verified as the merge base with main.
 See the [implementation contract](../../compile-pointwise-jit.md).
 
-| Unchanged public-default-compile-v2 gate | Clean baseline | Clean candidate `0c836a49` |
+| Unchanged public-default-compile-v2 gate | Clean baseline | Pre-repair candidate `0c836a49` |
 | --- | ---: | ---: |
 | Weighted coverage | 0% (0/112 cells) | 6% (4/112 cells) |
 | Weighted CUDA performance | 0% (0/56 cells) | 12% (4/56 cells) |
@@ -22,7 +27,7 @@ remain zero. The uncapped ratio describes only those four cells; the baseline
 has no common successes, so its ratio is null. These are fixed-corpus results,
 not general Inductor parity.
 
-## Current committed evidence
+## Latest clean capture (refresh required)
 
 - [Coverage](postcommit-0c836a/candidate-coverage.json.gz) and
   [CUDA performance](postcommit-0c836a/candidate-cuda-perf.json.gz) are
@@ -53,7 +58,7 @@ not general Inductor parity.
   two graph entries. The capture asserts that installed PyTorch was not imported.
   This establishes code-generation provenance, not a separate timing score.
 
-The fresh committed wheel passed all six pointwise regression modules:
+The `0c836a49` committed wheel passed all six pointwise regression modules:
 38 tests with one explicit two-device skip under `CUDA_VISIBLE_DEVICES=0`.
 This includes both operator-added liveness/signature modules, overflow and
 signed-zero regressions, repeated expressions/input identities, sign normalization,
@@ -64,7 +69,7 @@ checkout remained clean throughout both gates and these checks.
 
 [Repair validation](review-constant-tensors.md) preserves the original failures,
 before/after numerical probes, Rust IR, Clippy and build checks. Its 124 source
-hashes and six regression-module hashes match this committed implementation;
+hashes and six regression-module hashes match `0c836a49`;
 those development runs remain distinct from these clean measurements.
 
 The native JIT selected NVRTC **13.0**, CUDA runtime **13000**, `compute_90`,
@@ -123,4 +128,4 @@ in these candidate gates; the historical baseline did not set that flag.
 These results are not cold-cache speed comparisons between builds. Worker
 Inductor/Triton caches start separately fresh; dependency/native build caches
 may be warm, as recorded in setup receipts. No implementation, dependency,
-test, evaluator, corpus or managed progress artifact changed in this step.
+test, evaluator, corpus or managed progress artifact changed during that capture.

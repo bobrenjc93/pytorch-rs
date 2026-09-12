@@ -81,7 +81,7 @@ class Admission(unittest.TestCase):
         self.assertIn('cosf(', source)
         self.assertNotIn('__sinf', source)
         self.assertIn('0x3dcccccdu', source)
-        self.assertEqual(frontend.scalar_bits(-0.0), 0x80000000)
+        self.assertEqual(frontend.scalar_bits(-0.0), 0x8000000000000000)
 
     def test_rejects_whole_graph_without_executing_user_objects(self):
         effects = []

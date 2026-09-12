@@ -50,10 +50,10 @@ def scalar_bits(value):
         unsupported("constants must be exact bool/int/float values")
     if type(value) is int and not -(1 << 63) <= value < (1 << 64):
         unsupported("integer scalar is outside native scalar range")
-    try:
-        return struct.unpack("=I", struct.pack("=f", value))[0]
-    except OverflowError:
-        return 0xff800000 if value < 0 else 0x7f800000
+    # Inductor propagates Python floating values before materializing float32.
+    # Preserve the original binary64 value, including signed zero and values
+    # outside the float32 range, across the private IR bridge.
+    return struct.unpack("=Q", struct.pack("=d", value))[0]
 
 
 @dataclass(frozen=True)

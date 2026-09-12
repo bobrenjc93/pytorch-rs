@@ -6,10 +6,10 @@ mod lowering;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Node {
     Input(usize),
-    Constant(u32),
+    Constant(u64),
     Boolean(bool),
-    // Python integer normalized to float32, with its scalar kind retained.
-    Integer(u32),
+    // Python integer normalized to binary64, with its scalar kind retained.
+    Integer(u64),
     Add(usize, usize),
     Sub(usize, usize),
     Mul(usize, usize),
@@ -84,6 +84,78 @@ impl Graph {
 mod tests {
     use super::*;
     #[test]
+    fn constant_tensors_fold_before_float32_materialization() {
+        for (left, increment, expected) in [
+            (16_777_216.0_f64, 1.0_f64, 1.0_f32),
+            (16_777_217.0, 0.0, 1.0),
+        ] {
+            let graph = Graph {
+                inputs: 1,
+                nodes: vec![
+                    Node::Input(0),
+                    Node::Integer(0),
+                    Node::Mul(0, 1),
+                    Node::Constant(left.to_bits()),
+                    Node::Add(2, 3),
+                    Node::Constant(increment.to_bits()),
+                    Node::Add(4, 5),
+                    Node::Constant(16_777_216.0_f64.to_bits()),
+                    Node::Sub(6, 7),
+                ],
+                output: 8,
+            };
+            let source = graph.source().unwrap();
+            assert!(source.contains(&format!("0x{:08x}u", expected.to_bits())));
+            assert!(!source.contains("x0[i]"));
+            assert!(!source.contains("__fadd_rn"));
+        }
+    }
+
+    #[test]
+    fn computed_zero_does_not_acquire_early_zero_identity() {
+        let mut graph = Graph {
+            inputs: 1,
+            nodes: vec![
+                Node::Input(0),
+                Node::Integer(0),
+                Node::Mul(0, 1),
+                Node::Constant(0),
+                Node::Add(2, 3),
+                Node::Add(0, 4),
+            ],
+            output: 5,
+        };
+        assert!(graph.source().unwrap().contains("__fadd_rn"));
+        graph.nodes[5] = Node::Add(0, 2);
+        let source = graph.source().unwrap();
+        assert!(source.contains("x0[i]"));
+        assert!(!source.contains("__fadd_rn"));
+    }
+
+    #[test]
+    fn subtraction_aliases_preserve_contraction_after_addition_pass() {
+        let graph = Graph {
+            inputs: 2,
+            nodes: vec![
+                Node::Input(0),
+                Node::Input(1),
+                Node::Integer(0),
+                Node::Mul(0, 2),
+                Node::Sub(3, 3),
+                Node::Constant(2.0_f64.to_bits()),
+                Node::Mul(0, 5),
+                Node::Sub(6, 4),
+                Node::Mul(1, 5),
+                Node::Sub(7, 8),
+            ],
+            output: 9,
+        };
+        let source = graph.source().unwrap();
+        assert_eq!(source.matches("fmaf(").count(), 1);
+        assert!(!source.contains("__fsub_rn"));
+    }
+
+    #[test]
     fn boolean_multiplication_is_distinct_from_float_zero() {
         let mut graph = Graph {
             inputs: 1,
@@ -114,7 +186,7 @@ mod tests {
                         scalar.clone(),
                         Node::Mul(0, 1),
                         Node::Constant(0),
-                        Node::Constant(2.0_f32.to_bits()),
+                        Node::Constant(2.0_f64.to_bits()),
                         operation,
                         Node::Neg(5),
                     ],
@@ -135,9 +207,9 @@ mod tests {
             inputs: 1,
             nodes: vec![
                 Node::Input(0),
-                Node::Constant(2.0_f32.to_bits()),
+                Node::Constant(2.0_f64.to_bits()),
                 Node::Mul(0, 1),
-                Node::Constant((-2.0_f32).to_bits()),
+                Node::Constant((-2.0_f64).to_bits()),
                 Node::Mul(0, 3),
                 Node::Add(2, 4),
             ],
@@ -157,7 +229,7 @@ mod tests {
             nodes: vec![
                 Node::Input(0),
                 Node::Input(1),
-                Node::Constant(2.0_f32.to_bits()),
+                Node::Constant(2.0_f64.to_bits()),
                 Node::Mul(0, 2),
                 Node::Mul(1, 2),
                 Node::Sub(3, 4),
@@ -176,7 +248,7 @@ mod tests {
             nodes: vec![
                 Node::Input(0),
                 Node::Input(1),
-                Node::Constant(2.0_f32.to_bits()),
+                Node::Constant(2.0_f64.to_bits()),
                 Node::Mul(0, 2),
                 Node::Mul(1, 2),
                 Node::Add(3, 3),
@@ -240,7 +312,7 @@ mod tests {
                 Node::Input(0),
                 Node::Sin(0),
                 Node::Mul(1, 1),
-                Node::Constant(0x8000_0000),
+                Node::Constant(0x8000_0000_0000_0000),
                 Node::Sub(2, 3),
             ],
             output: 4,
@@ -280,7 +352,7 @@ mod tests {
             nodes: vec![
                 Node::Input(0),
                 Node::Input(1),
-                Node::Constant(2.0_f32.to_bits()),
+                Node::Constant(2.0_f64.to_bits()),
                 Node::Mul(0, 2),
                 Node::Sub(3, 1),
                 Node::Add(4, 3),
@@ -299,7 +371,7 @@ mod tests {
             nodes: vec![
                 Node::Input(0),
                 Node::Input(1),
-                Node::Constant(2.0_f32.to_bits()),
+                Node::Constant(2.0_f64.to_bits()),
                 Node::Mul(0, 2),
                 Node::Mul(1, 2),
                 Node::Sub(3, 4),

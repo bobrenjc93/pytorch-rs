@@ -10,9 +10,12 @@ enum Expr {
     // Equality established before sign rewriting requires one rounded value.
     // A subtraction introduced by normalization must not acquire this rule.
     SelfSub(usize),
-    // A tensor filled by a scalar simplification, distinct from a Python scalar
-    // operand. Subsequent tensor multiplication still has IEEE float semantics.
-    Splat(u32),
+    // An early integer/Boolean multiplication rewrite, eligible for tensor
+    // zero identities. Later computed zeros must never acquire this provenance.
+    Zero,
+    // A constant tensor propagated in binary64, materialized as float32 at
+    // runtime consumers or output. Shared constant consumers retain precision.
+    Folded(u64),
     // Exact sign-bit inversion, unlike the language's positive-zero subtraction.
     Flip(usize),
 }
@@ -38,10 +41,10 @@ impl Lowering {
         self.intern(Expr::Node(node))
     }
 
-    fn constant(&self, id: usize) -> Option<f32> {
+    fn constant(&self, id: usize) -> Option<f64> {
         match self.nodes[id] {
-            Expr::Node(Node::Constant(bits) | Node::Integer(bits)) => Some(f32::from_bits(bits)),
-            Expr::Node(Node::Boolean(value)) => Some(f32::from(u8::from(value))),
+            Expr::Node(Node::Constant(bits) | Node::Integer(bits)) => Some(f64::from_bits(bits)),
+            Expr::Node(Node::Boolean(value)) => Some(f64::from(u8::from(value))),
             _ => None,
         }
     }
@@ -53,20 +56,14 @@ impl Lowering {
         }
     }
 
-    fn scalar_zero(&self, id: usize) -> bool {
-        matches!(
-            self.nodes[id],
-            Expr::Node(Node::Integer(0) | Node::Boolean(false))
-        )
-    }
-
     fn float_operand(&mut self, id: usize) -> usize {
-        match self.nodes[id] {
-            Expr::Node(Node::Boolean(value)) => {
-                self.node(Node::Constant(f32::from(u8::from(value)).to_bits()))
-            }
-            Expr::Node(Node::Integer(bits)) => self.node(Node::Constant(bits)),
-            _ => id,
+        // Runtime scalar uses are separately interned at float32 precision;
+        // never replace the unrounded value used by another constant consumer.
+        if let Some(value) = self.constant(id) {
+            let rounded = f64::from(f32::from_bits(float32_bits(value.to_bits())));
+            self.node(Node::Constant(rounded.to_bits()))
+        } else {
+            id
         }
     }
 
@@ -79,29 +76,21 @@ impl Lowering {
         }
     }
 
-    fn fold_tensor_arithmetic(&self, node: &Node) -> Option<u32> {
+    fn fold_tensor_arithmetic(&self, node: &Node) -> Option<u64> {
         let (Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b)) = *node else {
             return None;
         };
-        if !matches!(self.nodes[a], Expr::Splat(_)) && !matches!(self.nodes[b], Expr::Splat(_)) {
+        if !matches!(self.nodes[a], Expr::Zero | Expr::Folded(_))
+            && !matches!(self.nodes[b], Expr::Zero | Expr::Folded(_))
+        {
             return None;
         }
         let value = |id| match self.nodes[id] {
-            Expr::Splat(bits) => Some(f32::from_bits(bits)),
+            Expr::Zero => Some(0.0),
+            Expr::Folded(bits) => Some(f64::from_bits(bits)),
             _ => self.constant(id),
         };
         let (left, right) = (value(a)?, value(b)?);
-        // Known tensor addition has the same positive-zero identity as the
-        // tensor/tensor path below. Tensor/scalar arithmetic instead evaluates
-        // the scalar operation, including +0 + -0 rounding to positive zero.
-        if matches!(node, Node::Add(_, _)) {
-            if matches!(self.nodes[a], Expr::Splat(0)) && matches!(self.nodes[b], Expr::Splat(_)) {
-                return Some(right.to_bits());
-            }
-            if matches!(self.nodes[b], Expr::Splat(0)) && matches!(self.nodes[a], Expr::Splat(_)) {
-                return Some(left.to_bits());
-            }
-        }
         Some(match node {
             Node::Add(_, _) => (left + right).to_bits(),
             Node::Sub(_, _) => (left - right).to_bits(),
@@ -124,28 +113,21 @@ impl Lowering {
         } else {
             return None;
         };
-        let bits = self.constant(*coefficient).unwrap().to_bits() ^ 0x8000_0000;
+        let bits = self.constant(*coefficient).unwrap().to_bits() ^ 0x8000_0000_0000_0000;
         *coefficient = self.node(Node::Constant(bits));
         Some(self.node(Node::Mul(a, b)))
     }
 
     fn normalize(&mut self, node: Node) -> usize {
-        if let Node::Mul(a, b) = node
-            && (self.scalar_zero(a) || self.scalar_zero(b))
-        {
-            return self.intern(Expr::Splat(0));
-        }
-        // Scalar-kind simplifications precede ordinary float32 promotion and
-        // expression sharing. A promoted True must then agree with 1.0.
-        let node = self.float_operands(node);
         // Keep arithmetic on known constant tensors distinct from scalar
         // nodes and runtime expressions. In particular, later negation must
         // invert the constant's sign, not emit positive-zero subtraction or
         // contract a multiplication with an added positive zero. Non-arithmetic
         // operations still use their native libdevice/intrinsic lowering.
         if let Some(bits) = self.fold_tensor_arithmetic(&node) {
-            return self.intern(Expr::Splat(bits));
+            return self.intern(Expr::Folded(bits));
         }
+        let node = self.float_operands(node);
         match node {
             // Only integer zero needs a different arithmetic rule after scalar
             // conversion. Other integers share the converted float expression.
@@ -156,16 +138,16 @@ impl Lowering {
                     .map(|c| (a, b, c, false))
                     .or_else(|| self.constant(a).map(|c| (b, a, c, true)));
                 if let Some((value, _, scalar, reversed)) = coefficient {
-                    if scalar.to_bits() == 1.0_f32.to_bits() {
+                    if scalar.to_bits() == 1.0_f64.to_bits() {
                         return value;
                     }
-                    if scalar.to_bits() == (-1.0_f32).to_bits() {
+                    if scalar.to_bits() == (-1.0_f64).to_bits() {
                         return self.intern(Expr::Flip(value));
                     }
                     // Keep signed doubling's preferred rounded form, but retain
                     // its factors for consumers without another FMA candidate.
-                    if scalar.to_bits() == (-2.0_f32).to_bits() {
-                        let two = self.node(Node::Constant(2.0_f32.to_bits()));
+                    if scalar.to_bits() == (-2.0_f64).to_bits() {
+                        let two = self.node(Node::Constant(2.0_f64.to_bits()));
                         let product = self.node(if reversed {
                             Node::Mul(two, value)
                         } else {
@@ -177,12 +159,6 @@ impl Lowering {
             }
             Node::Sub(a, b) if a == b => return self.intern(Expr::SelfSub(a)),
             Node::Add(a, b) => {
-                if matches!(self.nodes[a], Expr::Splat(0)) {
-                    return b;
-                }
-                if matches!(self.nodes[b], Expr::Splat(0)) {
-                    return a;
-                }
                 if let Some(positive) = self.positive(b) {
                     return self.node(Node::Sub(a, positive));
                 }
@@ -198,15 +174,19 @@ impl Lowering {
                 }
             }
             Node::Neg(a) => {
-                if let Expr::Splat(bits) = self.nodes[a] {
-                    return self.intern(Expr::Splat(bits ^ 0x8000_0000));
+                match self.nodes[a] {
+                    Expr::Zero => return self.intern(Expr::Folded((-0.0_f64).to_bits())),
+                    Expr::Folded(bits) => {
+                        return self.intern(Expr::Folded(bits ^ 0x8000_0000_0000_0000));
+                    }
+                    _ => {}
                 }
                 let value = match self.nodes[a] {
                     Expr::Node(Node::Sub(left, right)) if left != right => {
                         Some(self.node(Node::Sub(right, left)))
                     }
                     Expr::Node(Node::Neg(value)) | Expr::Flip(value) => Some(value),
-                    Expr::Node(_) | Expr::SelfSub(_) | Expr::Splat(_) => None,
+                    Expr::Node(_) | Expr::SelfSub(_) | Expr::Zero | Expr::Folded(_) => None,
                 };
                 if let Some(value) = value {
                     // 0-(a-b) = (b-a)+0, including IEEE zero signs.
@@ -266,15 +246,76 @@ impl Lowering {
             Expr::Node(
                 Node::Input(_) | Node::Constant(_) | Node::Boolean(_) | Node::Integer(_),
             )
-            | Expr::Splat(_) => vec![],
+            | Expr::Zero
+            | Expr::Folded(_) => vec![],
         }
     }
+}
+
+// Reference graph identities run by operator phase, before numeric lowering.
+// Resolving every alias here avoids exposing a subtraction's zero to an
+// already-completed addition pass, while later subtractions can still use it.
+fn early_aliases(graph: &Graph) -> (Vec<usize>, Vec<bool>) {
+    fn resolve(aliases: &[usize], mut id: usize) -> usize {
+        while aliases[id] != id {
+            id = aliases[id];
+        }
+        id
+    }
+    let scalar_zero = |id| matches!(graph.nodes[id], Node::Integer(0) | Node::Boolean(false));
+    let tensor = |id| {
+        !matches!(
+            graph.nodes[id],
+            Node::Constant(_) | Node::Integer(_) | Node::Boolean(_)
+        )
+    };
+    let zeros: Vec<_> = graph
+        .nodes
+        .iter()
+        .map(|node| matches!(*node, Node::Mul(a, b) if scalar_zero(a) || scalar_zero(b)))
+        .collect();
+    let mut aliases: Vec<_> = (0..graph.nodes.len()).collect();
+    for subtract in [false, true] {
+        for (id, node) in graph.nodes.iter().enumerate() {
+            let (a, b) = match *node {
+                Node::Add(a, b) if !subtract => (a, b),
+                Node::Sub(a, b) if subtract => (a, b),
+                _ => continue,
+            };
+            let (a, b) = (resolve(&aliases, a), resolve(&aliases, b));
+            if tensor(a) && tensor(b) {
+                if !subtract && zeros[a] {
+                    aliases[id] = b;
+                } else if zeros[b] {
+                    aliases[id] = a;
+                }
+            }
+        }
+    }
+    for id in 0..aliases.len() {
+        aliases[id] = resolve(&aliases, id);
+    }
+    (aliases, zeros)
+}
+
+#[allow(clippy::cast_possible_truncation)]
+fn float32_bits(bits: u64) -> u32 {
+    (f64::from_bits(bits) as f32).to_bits()
 }
 
 pub(super) fn source(graph: &Graph) -> String {
     let mut lower = Lowering::default();
     let mut mapped = Vec::with_capacity(graph.nodes.len());
-    for node in &graph.nodes {
+    let (aliases, zeros) = early_aliases(graph);
+    for (id, node) in graph.nodes.iter().enumerate() {
+        if aliases[id] != id {
+            mapped.push(mapped[aliases[id]]);
+            continue;
+        }
+        if zeros[id] {
+            mapped.push(lower.intern(Expr::Zero));
+            continue;
+        }
         let node = match *node {
             Node::Input(i) => Node::Input(i),
             Node::Constant(bits) => Node::Constant(bits),
@@ -313,9 +354,10 @@ pub(super) fn source(graph: &Graph) -> String {
         }
         let expression = match *node {
             Expr::Node(Node::Input(i)) => format!("x{i}[i]"),
-            Expr::Node(Node::Constant(bits) | Node::Integer(bits)) | Expr::Splat(bits) => {
-                format!("__uint_as_float(0x{bits:08x}u)")
+            Expr::Node(Node::Constant(bits) | Node::Integer(bits)) | Expr::Folded(bits) => {
+                format!("__uint_as_float(0x{:08x}u)", float32_bits(bits))
             }
+            Expr::Zero => "__uint_as_float(0x00000000u)".into(),
             Expr::Node(Node::Boolean(value)) => if value { "1.0f" } else { "0.0f" }.into(),
             Expr::Node(Node::Add(a, b)) => lower
                 .contract(a, b, false)

@@ -10,7 +10,7 @@ use pyo3::{
     types::{PyInt, PyString, PyTuple},
 };
 
-type Payload = (String, usize, usize, u32);
+type Payload = (String, usize, usize, u64);
 
 fn graph(nodes: &Bound<'_, PyTuple>, output: usize, arity: usize) -> PyResult<Graph> {
     if nodes.len() > 4096 {
