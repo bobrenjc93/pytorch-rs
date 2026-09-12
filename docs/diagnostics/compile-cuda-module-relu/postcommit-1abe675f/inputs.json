@@ -1,0 +1,8 @@
+{
+  "manifest": "../input-manifests.json",
+  "manifest_file_sha256": "2779e72a380c01a763681a0799b2291bf3c63f43b87d19840f5d8049c8ecfbef",
+  "variant_sha256": "3ead271a91868a6dee432721ef4079253e35c466764bcd05c3fe0f96a35de6d2",
+  "input_recipe": "../input-recipe.json",
+  "input_recipe_sha256": "18ed5dff8672e61afd39e0d90d8002bb61a86c0ba61506f9fd2599f9dbfdc37a",
+  "unchanged_from_final_development_inputs": true
+}

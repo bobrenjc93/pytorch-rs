@@ -1,0 +1,24 @@
+{
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c953da64/.venv/bin/python",
+    "-m",
+    "unittest",
+    "-v",
+    "tests.test_readme_quickstart"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c953da64",
+  "measured_code_commit": "1abe675fc47215afba609f54716353730237c710",
+  "scope": "Documentation-only publication check after clean-commit capture; not a clean-checkout measurement",
+  "started_at": "2026-09-12T05:08:31.144354+00:00",
+  "finished_at": "2026-09-12T05:08:31.358642+00:00",
+  "git_status_before": " M docs/compile-cuda-add.md\n?? docs/diagnostics/compile-cuda-module-relu/postcommit-1abe675f/\n",
+  "git_status_after": " M docs/compile-cuda-add.md\n?? docs/diagnostics/compile-cuda-module-relu/postcommit-1abe675f/\n",
+  "documentation_sha256": {
+    "docs/compile-cuda-add.md": "9fdbef497f27bcd3ec22aa235064e1e845a41a5628c6b4b24c40dc454c938462",
+    "docs/diagnostics/compile-cuda-module-relu/postcommit-1abe675f/README.md": "5c1d932c316a05fdd68278447ae67a4b421063250c03e20d91c8b9dbdb7e3b49"
+  },
+  "exit_code": 0,
+  "log_sha256": "ea5030ffc0a78df928afc054b2a518dac1c4094a190369fba4e76c50719607f0",
+  "published_log": "logs/publication-docs.log",
+  "evidence_links_resolve": true
+}

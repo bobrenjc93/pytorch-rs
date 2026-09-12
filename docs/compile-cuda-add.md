@@ -249,8 +249,10 @@ usage and reproduction contract above.
 
 ## Public ReLU function-call validation
 
-[ReLU development evidence](diagnostics/compile-cuda-module-relu/README.md)
-records the unchanged exact-main 32-gap probe and source-bound release checks.
+[Clean-commit ReLU evidence](diagnostics/compile-cuda-module-relu/postcommit-1abe675f/README.md)
+records release validation at `1abe675fc47215afba609f54716353730237c710`.
+The [baseline and development evidence](diagnostics/compile-cuda-module-relu/README.md),
+including the unchanged exact-main 32-gap probe, remain preserved.
 Run `CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest -v tests.test_compile_cuda_module_relu`;
 use an empty device mask for frontend/CPU checks and `0,1` only for
 `ModuleReluDeviceTests`. Startup subprocesses mutate both exports before the

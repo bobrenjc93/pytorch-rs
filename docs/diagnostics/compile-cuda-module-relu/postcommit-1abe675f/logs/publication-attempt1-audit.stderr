@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c953da64/target/relu-postcommit/audit.py", line 28, in <module>
+    assert record['recorder_sha256']==sha((folder/'recipes/run.py.txt').read_bytes()),name
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c953da64/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/pathlib.py", line 1019, in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c953da64/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/pathlib.py", line 1013, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c953da64/docs/diagnostics/compile-cuda-module-relu/postcommit-1abe675f/recipes/run.py.txt'

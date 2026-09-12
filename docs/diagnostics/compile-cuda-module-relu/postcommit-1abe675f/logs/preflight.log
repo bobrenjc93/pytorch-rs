@@ -1,0 +1,21 @@
+{
+  "verified": true,
+  "measured_code_commit": "1abe675fc47215afba609f54716353730237c710",
+  "git_status": "",
+  "source_provenance": {
+    "commit": "1abe675fc47215afba609f54716353730237c710",
+    "source_sha256": "101838473ffef266ecc7b9df48f6d3fc84012923480b908deb5be5c074b879bc",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "build_record_sha256": "024892555c4f46400cdf45ff6113881894fdedadce1ddfbc2efa16a0eb4b0ec2",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c953da64/.venv/bin/python",
+  "python_prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c953da64/.venv",
+  "base_prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c953da64/target/uv-python/cpython-3.12.14-linux-x86_64-gnu",
+  "interpreter_manifest_sha256": "519ae888f6f47836a48399b7eff35b28582673e893a08261bd5e2758f9a4f265",
+  "interpreter_source_and_destination_still_identical": true,
+  "installation_reused_from_verified_worktree_local_bootstrap": true,
+  "dependency_lock_unchanged": true,
+  "source_export_and_installed_python_native_match": true,
+  "all_prior_development_artifacts_unchanged": true,
+  "cache_state": "Fresh per-export native build target; warm worktree Cargo/uv, Python and CUDA/Inductor/Triton caches. No performance measurement."
+}
