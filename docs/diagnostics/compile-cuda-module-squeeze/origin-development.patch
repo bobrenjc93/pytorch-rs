@@ -1,0 +1,74 @@
+diff --git a/python/torch_rs/_compile_bytecode.py b/python/torch_rs/_compile_bytecode.py
+index af8d6b0..c32cad4 100644
+--- a/python/torch_rs/_compile_bytecode.py
++++ b/python/torch_rs/_compile_bytecode.py
+@@ -12,6 +12,7 @@ from dataclasses import dataclass, field, replace
+ from . import _compile_trace as _trace
+ from ._compiler_state import native_function_owner as _NATIVE_FUNCTION_OWNER
+ from ._compiler_state import native_relu as _NATIVE_RELU
++from ._compiler_state import native_squeeze as _NATIVE_SQUEEZE
+ 
+ 
+ _NATIVE_MODULE = _sys.modules[__package__]
+@@ -426,9 +427,11 @@ def _is_exact_native_tensor(value):
+ 
+ def _builtin_target(value):
+     # Trusted startup bindings establish identity, not callable names or source
+-    # text. ReLU has no member on the immutable arithmetic owner.
++    # text. ReLU and squeeze have no member on the immutable arithmetic owner.
+     if value is _NATIVE_RELU:
+         return _BytecodeBuiltin("relu", 1)
++    if value is _NATIVE_SQUEEZE:
++        return _BytecodeBuiltin("squeeze", 1)
+     owner = _NATIVE_FUNCTION_OWNER
+     if value is owner.mul or value is owner.multiply:
+         return _BytecodeBuiltin("mul_scalar", 2)
+@@ -458,7 +461,7 @@ def _global_value_dependency(name, value, module_attribute=None):
+         # only at loads that actually use them, so unrelated mutations neither
+         # reject old programs nor spend their recompile budget.
+         attributes = ("mul", "multiply", "matmul")
+-        if module_attribute in ("add", "neg", "negative", "relu"):
++        if module_attribute in ("add", "neg", "negative", "relu", "squeeze"):
+             attributes += (module_attribute,)
+         bindings = tuple((attr, vars(value).get(attr)) for attr in attributes)
+         if all(_builtin_target(fn) is not None for _, fn in bindings):
+@@ -1290,7 +1293,7 @@ def _handle_call(recorder, locals, stack, program, instruction, state, active):
+         if target in ("add", "matmul"):
+             left, right = (_require_tensor(arg, program, instruction, f"{target} operand") for arg in args)
+             stack.append(recorder.record_binary(target, left, right, f"torch.{target}"))
+-        elif target in ("neg", "relu"):
++        elif target in ("neg", "relu", "squeeze"):
+             operand = _require_tensor(args[0], program, instruction, f"{target} operand")
+             stack.append(recorder.record_unary(target, operand))
+         elif target == "mul_scalar":
+diff --git a/python/torch_rs/_compiler_state.py b/python/torch_rs/_compiler_state.py
+index cda6b48..b932ccd 100644
+--- a/python/torch_rs/_compiler_state.py
++++ b/python/torch_rs/_compiler_state.py
+@@ -10,10 +10,11 @@ from .torch_rs import (
+     _VariableFunctionsClass as native_function_owner,
+     _exchange_enable_guard_collectives as exchange_enable_guard_collectives,
+     relu as native_relu,
++    squeeze as native_squeeze,
+ )
+ 
+-# ReLU is a PyO3 module function, not a member of native_function_owner.
+-# Retain it here too, before either writable public/native export can change.
++# ReLU and squeeze are PyO3 module functions, not native_function_owner members.
++# Retain them here too, before either writable public/native export can change.
+ 
+ 
+ default_backend = "inductor"
+diff --git a/tests/test_compile_cuda_squeeze.py b/tests/test_compile_cuda_squeeze.py
+index b2de3b4..b6b6c80 100644
+--- a/tests/test_compile_cuda_squeeze.py
++++ b/tests/test_compile_cuda_squeeze.py
+@@ -288,7 +288,7 @@ class CompileCudaSqueezeTests(unittest.TestCase):
+                 raise AssertionError('index hook')
+         expressions = ('x.squeeze(0)', 'x.squeeze((0,))', 'x.squeeze([0])', 'x.squeeze(0, 1)',
+                        'x.squeeze(dim=0)', 'x.squeeze(other=0)', 'x.squeeze(hook)',
+-                       'm.squeeze(x)', 'x.squeeze_()', 'x.unsqueeze(0)', 'x.flatten()',
++                       'm.squeeze(x, dim=0)', 'x.squeeze_()', 'x.unsqueeze(0)', 'x.flatten()',
+                        '-x.t().squeeze()', 'x.t().squeeze() + x.t().squeeze()',
+                        'x.t().squeeze() * 2', 'x.t().squeeze().relu()',
+                        'x.t().squeeze().sum(1)', 'x.t().squeeze() @ x')

@@ -1,0 +1,57 @@
+import gzip, hashlib, json, pathlib, subprocess
+root=pathlib.Path.cwd()
+out=root/'docs/diagnostics/compile-cuda-module-squeeze'
+def sha(raw): return hashlib.sha256(raw).hexdigest()
+def files_hash(files): return sha(json.dumps(files,sort_keys=True).encode())
+commands=json.loads((out/'commands.json').read_text())
+manifests={}
+for kind in ('input','production'):
+    index=json.loads((out/(kind+'-manifests.json')).read_text())
+    base=json.loads(gzip.decompress((out/(kind+'-base.json.gz')).read_bytes()))
+    assert files_hash(base)==index['base_sha256']
+    manifests[index['base_sha256']]=base
+    for key,delta in index['variants'].items():
+        current={p:v for p,v in base.items() if p not in delta['removed']}
+        current.update(delta['changed'])
+        assert files_hash(current)==key
+        manifests[key]=current
+for name,receipt in commands.items():
+    assert sha(gzip.decompress((out/'logs'/(name+'.log.gz')).read_bytes()))==receipt['log_sha256']
+    assert receipt['production_manifest'] in manifests and receipt['input_manifest'] in manifests
+    assert receipt['production_unchanged']
+for label,version in (('focused','first'),('dynamic-corrected','second'),('restoration','third')):
+    digest=manifests[commands[label]['input_manifest']]['tests/test_compile_cuda_module_squeeze.py']
+    assert sha(gzip.decompress((out/'failures'/('test_compile_cuda_module_squeeze.'+version+'.py.gz')).read_bytes()))==digest
+external=json.loads((out/'external-provenance.json').read_text())
+for name,record in external.items():
+    raw=gzip.decompress((out/(name+'.gz')).read_bytes())
+    assert sha(raw)==record['sha256'] and len(raw)==record['bytes']
+baseline=json.loads(gzip.decompress((out/'logs/baseline.log.gz').read_bytes()))
+assert baseline['gap_cases']==32 and baseline['existing_positive_cases']==12
+assert len(baseline['unrelated_rebindings'])==3
+assert baseline['probe_sha256']==external['probe-compiled-cuda-module-squeeze.py']['sha256']
+builds=json.loads((out/'builds.json').read_text())
+base=json.loads(gzip.decompress((out/'build-source-base.json.gz').read_bytes()))
+assert files_hash(base)==builds['baseline']['source_manifest_sha256']
+delta=builds['development']['source_delta_from_base']
+dev={p:v for p,v in base.items() if p not in delta['removed']}
+dev.update(delta['changed'])
+assert files_hash(dev)==builds['development']['source_manifest_sha256']
+assert builds['baseline']['installed_native_sha256']==builds['development']['installed_native_sha256']
+for p,v in manifests[commands['environment']['production_manifest']].items():
+    assert sha((root/p).read_bytes())==v
+allowed={'FEATURES.md','docs/README.md','docs/compile-cuda-add.md','docs/compile-cuda-squeeze.md','docs/supported-surface.md',
+         'python/torch_rs/_compile_bytecode.py','python/torch_rs/_compiler_state.py','tests/test_compile_cuda_squeeze.py'}
+changed=set(subprocess.check_output(['git','diff','--name-only'],text=True).splitlines())
+assert changed==allowed,changed
+untracked=subprocess.check_output(['git','ls-files','--others','--exclude-standard'],text=True).splitlines()
+assert all(p=='tests/test_compile_cuda_module_squeeze.py' or p.startswith('docs/diagnostics/compile-cuda-module-squeeze/') for p in untracked)
+if 'compiler-complete-final' in commands:
+    final=commands['compiler-complete-final']
+    assert final['exit_code']==0
+    final_inputs=manifests[final['input_manifest']]
+    assert all(sha((root/p).read_bytes())==v for p,v in final_inputs.items())
+    assert len({p for p in final_inputs if p.startswith('tests/test_compile') and p.endswith('.py')}|{'tests/test_top_level_compile.py'})==61
+print(json.dumps({'passed':True,'command_receipts_verified':len(commands),'shared_manifests_verified':len(manifests),
+                  'original_baseline_and_failures_preserved':True,'source_native_and_build_binding_verified':True,
+                  'protected_files_unchanged':True,'final_sweep_present':'compiler-complete-final' in commands},indent=2))

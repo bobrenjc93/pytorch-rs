@@ -1,0 +1,26 @@
+{
+  "verified": true,
+  "checkedAt": "2026-09-12T06:07:52.089255+00:00",
+  "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-squeeze/target/uv-python/cpython-3.12.14-linux-x86_64-gnu",
+  "destination": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_71a3b977/target/uv-python/cpython-3.12.14-linux-x86_64-gnu",
+  "sourcePreserved": true,
+  "destinationWasAbsent": true,
+  "entireInstallationByteAndLinkIdentical": true,
+  "installationManifestSha256": "519ae888f6f47836a48399b7eff35b28582673e893a08261bd5e2758f9a4f265",
+  "entries": 4927,
+  "files": 3665,
+  "symlinks": 1048,
+  "bytes": 102563177,
+  "interpreterSha256": "f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526",
+  "identity": {
+    "version": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+    "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_71a3b977/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+    "base_prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_71a3b977/target/uv-python/cpython-3.12.14-linux-x86_64-gnu",
+    "stdlib": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_71a3b977/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12",
+    "include": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_71a3b977/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/include/python3.12"
+  },
+  "toolchainCacheReusedOnly": true,
+  "projectEnvironmentCopied": false,
+  "nativeWheelCopied": false,
+  "globalSettingsChanged": false
+}
