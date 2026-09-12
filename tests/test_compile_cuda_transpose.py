@@ -203,7 +203,7 @@ class CompileCudaTransposeTests(unittest.TestCase):
                 with self.assertRaises(expected, msg=args):
                     compile_with_cache(fn)[0](x)
         for expr in ('x.transpose(x, 1)', 'x.transpose(x.shape[0], 1)', 'x.transpose(x.dim()-1, 0)',
-                     'x.swapdims(0, 1)', 'm.transpose(x, 0, 1)', 'x.permute(1, 0)', 'x.T',
+                     'x.swapdims(0, 1)', 'm.transpose(x, 0, dim1=1)', 'x.permute(1, 0)', 'x.T',
                      '-a', 'a * 2', 'a + a', 'a @ a', 'a.sum(1)'):
             fn = make_program(f'def program(x):\n    a = x.transpose(0, 1)\n    b = a.contiguous()\n    return {expr}\n')
             with patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('early execution')):

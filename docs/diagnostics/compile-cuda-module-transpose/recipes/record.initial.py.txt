@@ -1,0 +1,38 @@
+"""Local, non-scoring command receipts. Does not alter evaluators."""
+import hashlib, json, os, pathlib, subprocess, sys, time
+root = pathlib.Path.cwd()
+out = root/'target/module-transpose-evidence'
+out.mkdir(exist_ok=True)
+def sha(data): return hashlib.sha256(data).hexdigest()
+def manifest(paths):
+    return {str(p.relative_to(root)):sha(p.read_bytes()) for p in sorted(paths) if p.is_file()}
+def save_manifest(data):
+    raw = json.dumps(data, sort_keys=True).encode()
+    key = sha(raw)
+    path = out/(key+'.json')
+    if not path.exists(): path.write_bytes(raw)
+    return key
+def snapshot():
+    return subprocess.check_output(['nvidia-smi','--query-gpu=index,uuid,name,driver_version,utilization.gpu,memory.used','--format=csv'],text=True)
+label, *command = sys.argv[1:]
+assert not (out/(label+'.json')).exists()
+production = [p for folder in ('src','python') for p in (root/folder).rglob('*')]
+production += [root/p for p in ('Cargo.toml','Cargo.lock','rust-toolchain.toml','pyproject.toml','uv.lock')]
+inputs = [p for folder in ('tests','scripts','.github','examples') for p in (root/folder).rglob('*') if '__pycache__' not in p.parts]
+inputs = [p for p in inputs if p.is_file()]
+record = dict(command=command, cwd=str(root), base_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+    resources=['gpu','cpu-heavy'], snapshot_is_not_reservation=True, gpu_before=snapshot(),
+    production_manifest=save_manifest(manifest(production)), input_manifest=save_manifest(manifest(inputs)),
+    environment={k:v for k,v in os.environ.items() if k.startswith(('CUDA','CARGO','UV_','TORCH','TRITON','PYTHON','PYO3','XDG','OMP','RAYON')) or k in ('TMPDIR','VIRTUAL_ENV')},
+    native=manifest((root/'.venv/lib/python3.12/site-packages/torch_rs').glob('*.so')))
+record['effective_cuda_visible_devices'] = next((v.split('=', 1)[1] for v in command[1:] if v.startswith('CUDA_VISIBLE_DEVICES=')), os.environ.get('CUDA_VISIBLE_DEVICES')) if command[0] == 'env' else os.environ.get('CUDA_VISIBLE_DEVICES')
+if 'cargo' in command: record['native'] = {}
+start=time.time()
+with (out/(label+'.log')).open('wb') as log:
+    result=subprocess.run(command,stdout=log,stderr=subprocess.STDOUT)
+record.update(exit_code=result.returncode, elapsed_seconds=time.time()-start, gpu_after=snapshot(),
+              production_unchanged=manifest(production)==json.loads((out/(record['production_manifest']+'.json')).read_text()),
+              log_sha256=sha((out/(label+'.log')).read_bytes()))
+(out/(label+'.json')).write_text(json.dumps(record,indent=2)+'\n')
+print(label, result.returncode, record['elapsed_seconds'])
+sys.exit(result.returncode)

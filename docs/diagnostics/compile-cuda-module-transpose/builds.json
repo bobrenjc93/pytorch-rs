@@ -1,0 +1,61 @@
+{
+  "baseline": {
+    "source_root": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0aa9378e/target/cuda-add-diagnostic/module-transpose-baseline/source",
+    "source_manifest_sha256": "2a34415d18ca9773d8f08421be9e09e48431ef56aca88d8859da3f2475b99ed1",
+    "base_commit": "9795835e3265c18546029015ff04c06ae6c08f0a",
+    "measured_code_commit": "9795835e3265c18546029015ff04c06ae6c08f0a",
+    "source_kind": "clean commit export",
+    "origin_status": "",
+    "origin_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source_matches_commit": true,
+    "durations_seconds": {
+      "dependency_setup": 15.770699307322502,
+      "build": 47.512470250949264,
+      "wheel_install": 0.13345137145370245
+    },
+    "build_cache": "empty per-export Cargo target; shared worktree Cargo/uv download caches warm",
+    "profile": "release, thin LTO, codegen-units=1, extension-module, locked dependencies",
+    "wheel": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0aa9378e/target/cuda-add-diagnostic/module-transpose-baseline/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "wheel_sha256": "aba07b925b21d105af80dd6aa8bf54abab960b9aba076eb131fd9e470f686bde",
+    "installed_package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0aa9378e/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+    "installed_native": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0aa9378e/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+    "installed_native_sha256": "46187e250bd3d6b10d7830b8906e50d656ad5bce78bacbb90f270d52094a3882",
+    "build_target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0aa9378e/target/cuda-add-diagnostic/module-transpose-baseline/build",
+    "original_record_sha256": "ac5f1b0a15da72d40056e456b5696b27197d7029b43ad3dc34f6b0ea32a1670a",
+    "build_recipe": "python scripts/build_cuda_add_diagnostic.py --name module-transpose-baseline --revision HEAD"
+  },
+  "development": {
+    "source_root": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0aa9378e/target/cuda-add-diagnostic/module-transpose-development/source",
+    "source_manifest_sha256": "90ff23842878cb29bba497aba4f04f512a67781d31dfe038b003a211ed7632b0",
+    "base_commit": "9795835e3265c18546029015ff04c06ae6c08f0a",
+    "measured_code_commit": null,
+    "source_kind": "immutable current-source export; uncommitted overlay, not exact HEAD",
+    "origin_status": " M python/torch_rs/_compile_bytecode.py\n M python/torch_rs/_compiler_state.py\n M tests/test_compile_cuda_transpose.py\n?? tests/test_compile_cuda_module_transpose.py\n",
+    "origin_patch_sha256": "2ffa68982f5ef04849e79ac6834277ef013485b44c8399f86759de073882e23e",
+    "source_matches_commit": false,
+    "durations_seconds": {
+      "dependency_setup": 0.021807176060974598,
+      "build": 47.01047837547958,
+      "wheel_install": 0.1311939675360918
+    },
+    "build_cache": "empty per-export Cargo target; shared worktree Cargo/uv download caches warm",
+    "profile": "release, thin LTO, codegen-units=1, extension-module, locked dependencies",
+    "wheel": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0aa9378e/target/cuda-add-diagnostic/module-transpose-development/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "wheel_sha256": "63f21541744dc87154117478218a0829bc2f70458aa9fd99947950c37d8c9c26",
+    "installed_package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0aa9378e/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+    "installed_native": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0aa9378e/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+    "installed_native_sha256": "46187e250bd3d6b10d7830b8906e50d656ad5bce78bacbb90f270d52094a3882",
+    "build_target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0aa9378e/target/cuda-add-diagnostic/module-transpose-development/build",
+    "source_delta_from_base": {
+      "changed": {
+        "python/torch_rs/_compile_bytecode.py": "6703cff50b2d5281a00686a535b88af04d5aa355a90674428411d1b44f6747f2",
+        "python/torch_rs/_compiler_state.py": "368627af1e2771d80206ec6a7cd16e103c3cbcf8718a8b22190db536d91b467f",
+        "tests/test_compile_cuda_module_transpose.py": "200209e9cd6873f1c1a47bc1e3211f12a28d7875ea447bb5755661fd61691f0f",
+        "tests/test_compile_cuda_transpose.py": "0d8f3ec67edcef8a372ae335ac44c04b14ed2b61251ecc21e415f840568fdc21"
+      },
+      "removed": []
+    },
+    "original_record_sha256": "524a777489630836be1a26a98c489c01990681fe77664bda650b078485782c05",
+    "build_recipe": "python scripts/build_cuda_add_diagnostic.py --name module-transpose-development"
+  }
+}

@@ -1,0 +1,29 @@
+"""Read-only verification of this development bundle's source and baseline bindings."""
+import gzip
+import hashlib
+import json
+from pathlib import Path
+root = Path.cwd()
+evidence = root / 'target/module-transpose-evidence'
+sha = lambda raw: hashlib.sha256(raw).hexdigest()
+baseline = json.loads((evidence / 'baseline.log').read_text())
+external = json.loads(gzip.decompress((root / 'target/module-transpose/external/compiled-cuda-module-transpose-baseline-probe.json.gz').read_bytes()))
+for field in ('cases', 'unrelated_rebindings', 'source_provenance', 'probe_sha256'):
+    assert baseline[field] == external[field], field
+assert baseline['gap_cases'] == 96 and baseline['existing_positive_cases'] == 48
+assert sha((root / 'target/module-transpose/probe.py').read_bytes()) == baseline['probe_sha256']
+builds = [json.loads((root / f'target/cuda-add-diagnostic/module-transpose-{name}/build-record.json').read_text()) for name in ('baseline', 'development')]
+assert builds[0]['source_matches_commit'] and not builds[1]['source_matches_commit']
+assert baseline['native_extension_sha256'] == builds[0]['installed_native_sha256']
+assert sha(Path(builds[1]['installed_native']).read_bytes()) == builds[1]['installed_native_sha256']
+for folder in ('python', 'src'):
+    for path in (root / folder).rglob('*'):
+        if path.is_file():
+            assert sha(path.read_bytes()) == builds[1]['source_files'][str(path.relative_to(root))], path
+for name in ('Cargo.lock', 'Cargo.toml', 'pyproject.toml', 'uv.lock', 'rust-toolchain.toml'):
+    assert sha((root / name).read_bytes()) == builds[1]['source_files'][name]
+print(json.dumps(dict(exact_baseline_cases_failures_inputs_and_controls_match=True,
+    original_probe_bytes_unchanged=True, gap_cases=96, positive_cases=48, rebinding_controls=4,
+    final_production_matches_release_export=True, installed_native_matches_release=True,
+    native_binary_identical_to_baseline=builds[0]['installed_native_sha256']==builds[1]['installed_native_sha256'],
+    clean_candidate_capture=False), indent=2))

@@ -1,0 +1,86 @@
+"""Read-only audit of this non-scoring clean-commit capture."""
+import gzip, hashlib, json, pathlib, re, subprocess, zipfile
+root = pathlib.Path.cwd()
+work = root/'target/module-transpose-postcommit'
+receipts = work/'receipts'
+commit = '2bd04c79fb815ad2c139e85bacb5e23161b93c20'
+sha = lambda b: hashlib.sha256(b).hexdigest()
+def git(*args): return subprocess.check_output(['git',*args])
+assert git('rev-parse','HEAD').decode().strip() == commit
+assert not git('status','--porcelain')
+build_path = root/'target/cuda-add-diagnostic/module-transpose-postcommit-2bd04c79/build-record.json'
+build = json.loads(build_path.read_text())
+assert build['measured_code_commit'] == commit and build['source_matches_commit']
+assert not build['origin_status'] and build['origin_patch_sha256'] == sha(b'')
+assert sha(json.dumps(build['source_files'],sort_keys=True).encode()) == build['source_manifest_sha256']
+tracked = git('ls-files','-z').decode().split('\0')[:-1]
+assert set(build['source_files']) == set(tracked)
+for name, digest in build['source_files'].items():
+    assert sha((root/name).read_bytes()) == digest, name
+    assert sha((pathlib.Path(build['source_root'])/name).read_bytes()) == digest, name
+for key in ('source_root','wheel','installed_package','installed_native','build_target'):
+    assert pathlib.Path(build[key]).resolve().is_relative_to(root), key
+assert sha(pathlib.Path(build['wheel']).read_bytes()) == build['wheel_sha256']
+assert sha(pathlib.Path(build['installed_native']).read_bytes()) == build['installed_native_sha256']
+with zipfile.ZipFile(build['wheel']) as wheel:
+    native, = [name for name in wheel.namelist() if name.endswith('.so')]
+    assert sha(wheel.read(native)) == build['installed_native_sha256']
+    for path in (root/'python/torch_rs').rglob('*.py'):
+        relative = str(path.relative_to(root/'python'))
+        assert path.read_bytes() == wheel.read(relative)
+        assert path.read_bytes() == (pathlib.Path(build['installed_package']).parent/path.relative_to(root/'python/torch_rs')).read_bytes()
+labels = ['interpreter','build','environment','dependency-inventory','verify-native','compiler-focused','compiler-remaining','hidden-cpu','restoration','rust-default','rust-cuda','rust-hidden','fmt','clippy','clippy-bindings','docs']
+commands = {}
+for label in labels:
+    receipt = json.loads((receipts/(label+'.json')).read_text())
+    assert receipt['exit_code'] == 0, label
+    assert receipt['measured_code_commit'] == receipt['commit_after'] == commit
+    assert not receipt['git_status_before'] and not receipt['git_status_after'], label
+    assert receipt['input_unchanged'] and receipt['production_unchanged'], label
+    assert sha((receipts/(label+'.log')).read_bytes()) == receipt['log_sha256'], label
+    assert receipt['cwd'] == str(root)
+    assert sha((work/'record.py').read_bytes()) == receipt['recorder_sha256']
+    for key in ('production_manifest','input_manifest'):
+        raw = (receipts/(receipt[key]+'.json')).read_bytes()
+        assert sha(raw) == receipt[key]
+        for name, digest in json.loads(raw).items(): assert sha((root/name).read_bytes()) == digest, name
+    if 'cargo' in receipt['command']: assert receipt['native'] == {}
+    elif label not in ('interpreter','build'):
+        assert set(receipt['native'].values()) == {build['installed_native_sha256']}
+    command = receipt['command']
+    effective = next((v.split('=',1)[1] for v in command[1:] if v.startswith('CUDA_VISIBLE_DEVICES=')), receipt['environment']['CUDA_VISIBLE_DEVICES']) if command[0]=='env' else receipt['environment']['CUDA_VISIBLE_DEVICES']
+    assert effective == receipt['effective_cuda_visible_devices'], label
+    log = (receipts/(label+'.log')).read_text()
+    summary = {'exit_code': receipt['exit_code'], 'effective_cuda_visible_devices': effective}
+    tests = re.findall(r'Ran (\d+) tests? in ([\d.]+)s\n\nOK(?: \(skipped=(\d+)\))?',log)
+    if tests:
+        run, seconds, skipped = tests[-1]
+        summary.update(run=int(run),passed=int(run)-int(skipped or 0),skipped=int(skipped or 0),runner_seconds=float(seconds),failures=0,errors=0)
+    rust = re.findall(r'test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out;',log)
+    if rust:
+        summary.update({key:sum(int(row[i]) for row in rust) for i,key in enumerate(('passed','failed','ignored','measured','filtered_out'))})
+    commands[label] = summary
+all_modules = sorted({'tests.'+p.stem for p in (root/'tests').glob('test_compile*.py')} | {'tests.test_top_level_compile'})
+selections = [json.JSONDecoder().raw_decode((receipts/(label+'.log')).read_text())[0] for label in ('compiler-focused','compiler-remaining')]
+assert selections[0] == selections[1]
+selection = selections[0]
+assert selection['all_modules'] == all_modules
+assert set(selection['focused']).isdisjoint(selection['remaining'])
+assert sorted(selection['focused']+selection['remaining']) == all_modules
+historical = root/'docs/diagnostics/compile-cuda-module-transpose'
+external = json.loads((historical/'external/provenance.json').read_text())
+for name, provenance in external.items():
+    raw = gzip.decompress((historical/'external'/(name+'.gz')).read_bytes())
+    assert sha(raw) == provenance['sha256'] and len(raw) == provenance['bytes'], name
+baseline = json.loads(gzip.decompress((historical/'logs/baseline.log.gz').read_bytes()))
+original = json.loads(gzip.decompress((historical/'external/compiled-cuda-module-transpose-baseline-probe.json.gz').read_bytes()))
+for key in ('cases','unrelated_rebindings','source_provenance','probe_sha256'): assert baseline[key] == original[key], key
+historical_hashes = {str(p.relative_to(root)): sha(p.read_bytes()) for p in sorted(historical.rglob('*')) if p.is_file()}
+result = dict(measured_code_commit=commit, clean_before_publication=True, exact_commit_export_verified=True,
+    source_file_count=len(tracked), source_manifest_sha256=build['source_manifest_sha256'], wheel_sha256=build['wheel_sha256'],
+    native_sha256=build['installed_native_sha256'], installed_python_matches_commit_and_wheel=True,
+    commands=commands, compiler_selection=selection,
+    complete_compiler_totals={key:sum(commands[label][key] for label in ('compiler-focused','compiler-remaining')) for key in ('run','passed','skipped','failures','errors')},
+    historical_baseline_bytes_inputs_failures_verified_unchanged=True, historical_file_hashes=historical_hashes,
+    performance_measured=False, scores_changed=False)
+print(json.dumps(result,indent=2))

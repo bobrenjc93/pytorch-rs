@@ -1,0 +1,107 @@
+{
+  "interpreter": {
+    "sha256": "7b58fab274d60d3edaed10a0c57d4c2d805316dccd0f15f2c98a2c7c30ac64a0",
+    "bytes": 976,
+    "file": "logs/interpreter.log.gz"
+  },
+  "build": {
+    "sha256": "c41642746511ac9fa5c4681661cce86181401ca4d81d0c1940daed7f7530d128",
+    "bytes": 463,
+    "file": "logs/build.log.gz"
+  },
+  "environment": {
+    "sha256": "01c0cf4417faaf57429f7c041e922b92e46927b0d9929e016ac64afac1c686aa",
+    "bytes": 1445,
+    "file": "logs/environment.log.gz"
+  },
+  "dependency-inventory": {
+    "sha256": "68d3aad5532f301190886d2288bd0405f6c2c10ba6a8c7ff83021561b24ca89f",
+    "bytes": 884,
+    "file": "logs/dependency-inventory.log.gz"
+  },
+  "verify-native": {
+    "sha256": "1f4f1ed0eb8f3b02f70be7e905a9474e81a0d57f83a99c9673961b81d7023651",
+    "bytes": 538,
+    "file": "logs/verify-native.log.gz"
+  },
+  "compiler-focused": {
+    "sha256": "249683cddc601fc5f55d8adfcd3dcf57b5082dae9faaffc85695e4a4a99da8a7",
+    "bytes": 8886,
+    "file": "logs/compiler-focused.log.gz"
+  },
+  "compiler-remaining": {
+    "sha256": "1b0a2a5e0b7ef86d9d61230bbfb490b0d5f38ec880021702fed9ea420289d0bb",
+    "bytes": 140891,
+    "file": "logs/compiler-remaining.log.gz"
+  },
+  "hidden-cpu": {
+    "sha256": "febe013290bbbab6a689665e809df06cdd8cddeef2f63b1b60061f517d960f1e",
+    "bytes": 29909,
+    "file": "logs/hidden-cpu.log.gz"
+  },
+  "restoration": {
+    "sha256": "7b4555ed72587e7e61a34e682564e6d71f28a2e15095d6e7224d2ad610c2987b",
+    "bytes": 976,
+    "file": "logs/restoration.log.gz"
+  },
+  "rust-default": {
+    "sha256": "d936d213a92fa393d7ed62cd029f310389b48587c81c7217bf6484754adfed75",
+    "bytes": 34456,
+    "file": "logs/rust-default.log.gz"
+  },
+  "rust-cuda": {
+    "sha256": "fbeef480248d80367efb3a87f9271c090948f251b52e3c618b1c471775712f5b",
+    "bytes": 2311,
+    "file": "logs/rust-cuda.log.gz"
+  },
+  "rust-hidden": {
+    "sha256": "3f00e777ddb6715c2499a261b53f73d2335e6246b2a6d3876ab5b378feec388a",
+    "bytes": 1764,
+    "file": "logs/rust-hidden.log.gz"
+  },
+  "fmt": {
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0,
+    "file": "logs/fmt.log.gz"
+  },
+  "clippy": {
+    "sha256": "21e5a4b57c87a5568a889cbd1d300338590f08ad0480f72551a3f297b81aae6f",
+    "bytes": 432,
+    "file": "logs/clippy.log.gz"
+  },
+  "clippy-bindings": {
+    "sha256": "04657ecbafce1bcfa0d1f9f79783d3f4439a17e077c7f9cd695c9ff0f4c89f02",
+    "bytes": 322,
+    "file": "logs/clippy-bindings.log.gz"
+  },
+  "docs": {
+    "sha256": "c6942f72f92185d99a45b4a1c488ea8a849ab7a42901293f06775f799822bc67",
+    "bytes": 2697,
+    "file": "logs/docs.log.gz"
+  },
+  "provenance-audit": {
+    "sha256": "e9adb3448b7f7c4fc707b1cdaefaefa64467f0f33d9fb7e8a032812f42d5708f",
+    "bytes": 20006,
+    "file": "logs/provenance-audit.log.gz"
+  },
+  "build-dependencies": {
+    "sha256": "ae73851e60574434e1b906b65b2beaeed8ce05711d114d053364967fbee22e04",
+    "bytes": 823,
+    "file": "logs/build-dependencies.gz"
+  },
+  "release-build": {
+    "sha256": "8c3f692d85c74a2099e37635b30febc14d58eaa3f37822b52841f2539ad9817d",
+    "bytes": 1475,
+    "file": "logs/release-build.gz"
+  },
+  "origin-patch": {
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0,
+    "file": "logs/origin-patch.gz"
+  },
+  "venv-creation": {
+    "sha256": "a6979e876ef8293d866d10f7bc4603765c3c4e61e2d38f52f339a58d49961bd7",
+    "bytes": 183,
+    "file": "logs/venv-creation.log.gz"
+  }
+}

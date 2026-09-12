@@ -1,0 +1,14 @@
+{
+  "production_matches_development_build": true,
+  "native_matches_development_build": true,
+  "base_commit": "9795835e3265c18546029015ff04c06ae6c08f0a",
+  "candidate_commit": null,
+  "clean_candidate_commit_capture": "deferred to Burner: implementation agent may not commit",
+  "final_test_sha256": "3bbb8ba6678384cf2a1d858cab27d47dfa0df2e7def3d2f15e2d367376557232",
+  "resources": [
+    "gpu",
+    "cpu-heavy"
+  ],
+  "scores_changed": false,
+  "performance_measured": false
+}

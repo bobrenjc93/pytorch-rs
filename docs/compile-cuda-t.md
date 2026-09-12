@@ -1,22 +1,23 @@
 # Compiled CUDA transpose views
 
 The bounded eager compiler captures `Tensor.t()`, one-positional-argument
-`torch.t(x)` and genuine direct-import aliases, plus `Tensor.transpose(dim0, dim1)`,
+`torch.t(x)` and genuine direct-import aliases, plus `Tensor.transpose(dim0, dim1)`
+and exactly three-positional-argument `torch.transpose(x, dim0, dim1)`/direct aliases,
 for native CUDA float32 tensors of rank 0, 1 or 2 without gradients:
 
 ```python
 import torch_rs as torch
-from torch_rs import t as transpose_view
+from torch_rs import transpose as transpose_view
 
 def transpose_and_pack(x):
-    return -transpose_view(x).contiguous()
+    return -transpose_view(x, 0, 1).contiguous()
 
 x = torch.tensor([[1., 2., 3.], [4., 5., 6.]]).to("cuda:0")
 f = torch.compile(transpose_and_pack, backend="eager", fullgraph=True)
 assert f(x).cpu().tolist() == [[-1., -4.], [-2., -5.], [-3., -6.]]
 ```
 
-Each method/module/imported `t` or method `transpose` creates a new view object sharing the input's
+Each method/module/imported `t` or `transpose` creates a new view object sharing the input's
 storage, dtype, device and offset. Different rank-2 axes swap shape and strides;
 scalars, vectors and same-axis transposes keep their metadata but still return
 a distinct object. Repeated references to one result preserve identity,
@@ -42,7 +43,7 @@ and output leaves. Repeated output containers retain identity while each distinc
 output/metadata pairing is validated. All actual inputs and captures, including
 unused captures, must be on the same CUDA device.
 
-`transpose` binds two positional axes, `dim0`/`dim1` keywords in either order,
+Method `transpose` binds two positional axes, `dim0`/`dim1` keywords in either order,
 or a positional `dim0` with keyword `dim1`. Axes must be exact integer constants
 (literals, frozen locals or guarded globals). Negative axes normalize against
 rank; scalars accept `0` and `-1`. Same-axis calls still create views. Invalid
@@ -52,10 +53,14 @@ Index-like objects/integer subclasses, named dimensions and dynamic axis
 expressions are deliberately unsupported. Static and dynamic policies do not
 imply support for arbitrary shape-dependent Python expressions.
 
-The genuine PyO3 `t` function is retained in `_compiler_state` during package
-initialization, before writable public `t` or native `_C.t` exports can change.
-It is not a `_VariableFunctionsClass` member. Module calls guard each used field;
-retained direct aliases guard their own binding. Unrelated `t` mutation/deletion
+Module/imported `transpose` accepts exactly three positional arguments. Its axes
+use the same exact-integer validation as the method; keywords and other arities
+raise `CompileTraceUnsupportedError` before native work.
+
+The genuine PyO3 `t` and `transpose` functions are retained in `_compiler_state` during package
+initialization, before either writable public or native export can change.
+Neither is a `_VariableFunctionsClass` member. Module calls guard each used field;
+retained direct aliases guard their own binding. Unrelated `t`/`transpose` mutation/deletion
 does not invalidate squeeze/ReLU/arithmetic caches or spend `recompile_limit=1`.
 Canonical substitutions follow callable identity and arity. Counterfeit bindings
 reject without equality, descriptor or conversion callbacks. See the
@@ -66,7 +71,8 @@ reject without equality, descriptor or conversion callbacks. See the
 
 Arguments to method `t()`, extra arguments or any keywords to module/imported
 `t(x)`, rank >2, CPU capture, other dtypes, gradients, `swapdims`/`swapaxes`,
-general permute, `.T`/`.mT`, top-level `torch.transpose` and new backends remain
+general permute, `.T`/`.mT`, keywords/other arities for module/imported
+`transpose` and new backends remain
 unsupported. No-break
 `fullgraph=False` retains its existing default-dynamic policy. These graphlets are non-scoring diagnostics: the frozen 38-case corpus,
 performance workloads, evaluator/observer/hardware contracts and unadopted
@@ -74,11 +80,20 @@ PR1970/PR1971 campaigns are unchanged.
 
 ## Validation
 
+[Module/imported transpose development evidence](diagnostics/compile-cuda-module-transpose/README.md)
+preserves the unchanged 96-gap exact-main probe and fresh source-bound checks.
+The former negative `m.transpose(x, 0, 1)` fixture now uses
+`m.transpose(x, 0, dim1=1)`, retaining its unsupported-binding purpose; the new
+module suite supplies explicit positive coverage. The
+[clean-commit capture](diagnostics/compile-cuda-module-transpose/postcommit-2bd04c79/README.md)
+records the fresh release build and complete compiler checks on `2bd04c79`.
+Independent review and fresh merge gates remain Burner delivery requirements.
+
 Use the [locked contributor setup](../CONTRIBUTING.md), then run:
 
 ```sh
-CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest -v tests.test_compile_cuda_module_t tests.test_compile_cuda_t tests.test_compile_cuda_transpose
-CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m unittest -v tests.test_compile_cuda_module_t.ModuleTDeviceTests tests.test_compile_cuda_t.CompileTDeviceTests tests.test_compile_cuda_transpose.TransposeDeviceTests
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest -v tests.test_compile_cuda_module_transpose tests.test_compile_cuda_module_t tests.test_compile_cuda_t tests.test_compile_cuda_transpose
+CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m unittest -v tests.test_compile_cuda_module_transpose.ModuleTransposeDeviceTests tests.test_compile_cuda_module_t.ModuleTDeviceTests tests.test_compile_cuda_t.CompileTDeviceTests tests.test_compile_cuda_transpose.TransposeDeviceTests
 CUDA_VISIBLE_DEVICES=0 cargo test --locked --features python-bindings --lib cuda_graph
 ```
 

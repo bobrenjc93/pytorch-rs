@@ -1,0 +1,79 @@
+diff --git a/python/torch_rs/_compile_bytecode.py b/python/torch_rs/_compile_bytecode.py
+index 65b5f9c..aca0efa 100644
+--- a/python/torch_rs/_compile_bytecode.py
++++ b/python/torch_rs/_compile_bytecode.py
+@@ -14,6 +14,7 @@ from ._compiler_state import native_function_owner as _NATIVE_FUNCTION_OWNER
+ from ._compiler_state import native_relu as _NATIVE_RELU
+ from ._compiler_state import native_squeeze as _NATIVE_SQUEEZE
+ from ._compiler_state import native_t as _NATIVE_T
++from ._compiler_state import native_transpose as _NATIVE_TRANSPOSE
+ 
+ 
+ _NATIVE_MODULE = _sys.modules[__package__]
+@@ -428,13 +429,15 @@ def _is_exact_native_tensor(value):
+ 
+ def _builtin_target(value):
+     # Trusted startup bindings establish identity, not callable names or source
+-    # text. ReLU, squeeze and t have no member on the immutable arithmetic owner.
++    # text. These PyO3 functions have no member on the immutable arithmetic owner.
+     if value is _NATIVE_RELU:
+         return _BytecodeBuiltin("relu", 1)
+     if value is _NATIVE_SQUEEZE:
+         return _BytecodeBuiltin("squeeze", 1)
+     if value is _NATIVE_T:
+         return _BytecodeBuiltin("t", 1)
++    if value is _NATIVE_TRANSPOSE:
++        return _BytecodeBuiltin("transpose", 3)
+     owner = _NATIVE_FUNCTION_OWNER
+     if value is owner.mul or value is owner.multiply:
+         return _BytecodeBuiltin("mul_scalar", 2)
+@@ -464,7 +467,7 @@ def _global_value_dependency(name, value, module_attribute=None):
+         # only at loads that actually use them, so unrelated mutations neither
+         # reject old programs nor spend their recompile budget.
+         attributes = ("mul", "multiply", "matmul")
+-        if module_attribute in ("add", "neg", "negative", "relu", "squeeze", "t"):
++        if module_attribute in ("add", "neg", "negative", "relu", "squeeze", "t", "transpose"):
+             attributes += (module_attribute,)
+         bindings = tuple((attr, vars(value).get(attr)) for attr in attributes)
+         if all(_builtin_target(fn) is not None for _, fn in bindings):
+@@ -1299,6 +1302,11 @@ def _handle_call(recorder, locals, stack, program, instruction, state, active):
+         elif target in ("neg", "relu", "squeeze", "t"):
+             operand = _require_tensor(args[0], program, instruction, f"{target} operand")
+             stack.append(recorder.record_unary(target, operand))
++        elif target == "transpose":
++            operand = _require_tensor(args[0], program, instruction, "transpose operand")
++            if any(not isinstance(axis, _BytecodeConstant) for axis in args[1:]):
++                _unsupported_bytecode(program, instruction, "native transpose requires constant axes")
++            stack.append(recorder.record_transpose(operand, args[1].value, args[2].value))
+         elif target == "mul_scalar":
+             stack.append(_record_scalar_multiply(recorder, *args, program, instruction))
+         else:
+diff --git a/python/torch_rs/_compiler_state.py b/python/torch_rs/_compiler_state.py
+index 4f7ac4f..6a30999 100644
+--- a/python/torch_rs/_compiler_state.py
++++ b/python/torch_rs/_compiler_state.py
+@@ -12,9 +12,10 @@ from .torch_rs import (
+     relu as native_relu,
+     squeeze as native_squeeze,
+     t as native_t,
++    transpose as native_transpose,
+ )
+ 
+-# ReLU, squeeze and t are PyO3 module functions, not native_function_owner members.
++# ReLU, squeeze, t and transpose are PyO3 functions, not native_function_owner members.
+ # Retain them here too, before either writable public/native export can change.
+ 
+ 
+diff --git a/tests/test_compile_cuda_transpose.py b/tests/test_compile_cuda_transpose.py
+index 6d8e44b..40371a0 100644
+--- a/tests/test_compile_cuda_transpose.py
++++ b/tests/test_compile_cuda_transpose.py
+@@ -203,7 +203,7 @@ class CompileCudaTransposeTests(unittest.TestCase):
+                 with self.assertRaises(expected, msg=args):
+                     compile_with_cache(fn)[0](x)
+         for expr in ('x.transpose(x, 1)', 'x.transpose(x.shape[0], 1)', 'x.transpose(x.dim()-1, 0)',
+-                     'x.swapdims(0, 1)', 'm.transpose(x, 0, 1)', 'x.permute(1, 0)', 'x.T',
++                     'x.swapdims(0, 1)', 'm.transpose(x, 0, dim1=1)', 'x.permute(1, 0)', 'x.T',
+                      '-a', 'a * 2', 'a + a', 'a @ a', 'a.sum(1)'):
+             fn = make_program(f'def program(x):\n    a = x.transpose(0, 1)\n    b = a.contiguous()\n    return {expr}\n')
+             with patch.object(trace._native, '_compile_trace_cuda_graph', side_effect=AssertionError('early execution')):

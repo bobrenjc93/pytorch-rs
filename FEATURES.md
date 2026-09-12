@@ -249,10 +249,11 @@ H100 graphlets verify these semantics; the frozen compiler denominator is unchan
 `Tensor.t()`, exactly one-positional-argument native `torch.t(x)` and genuine
 direct-import aliases on rank-0/1/2 float32 no-grad tensors, preserving storage
 and offsets while creating a distinct view object per call. It composes with packing and existing arithmetic;
-`Tensor.transpose(dim0, dim1)` shares this path with exact constant integer axes,
-including negative/same axes and positional/keyword binding. Static/dynamic
+`Tensor.transpose(dim0, dim1)` and exactly three-positional-argument native
+`torch.transpose(x, dim0, dim1)`/direct aliases share this path with exact integer constant axes,
+including negative/same axes; keyword axes remain method-only. Static/dynamic
 captures retain metadata and cache guards. Dynamic axis expressions, general
-permute, swapdims/swapaxes, properties and top-level `torch.transpose` are excluded.
+permute, swapdims/swapaxes, properties and module/imported transpose kwargs or other arities are excluded.
 
 [Compiled CUDA `Tensor.reshape`](docs/compile-cuda-reshape.md) captures exact
 constant integer shapes of rank 0/1/2, including scalar tuples and `-1` inference.
