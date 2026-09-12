@@ -1489,6 +1489,12 @@ probe and does not import PyTorch.
 
 ##### JIT and compiler
 
+The bounded CUDA compiler also accepts genuine top-level `torch_rs.sum(x, 1)`
+and `torch_rs.sum(x, -1)` or imported aliases with exactly two positional
+arguments. Inputs remain contiguous rank-two CUDA float32 without gradients;
+top-level keywords and explicit keepdim are unsupported. Existing method-sum
+forms are unchanged. See the [compiled row-sum contract](compile-cuda-sum-rows.md).
+
 [Compiled CUDA `Tensor.contiguous()`](compile-cuda-contiguous.md) supports only
 the default parameterless method under the existing eager/fullgraph policies.
 CUDA float32 inputs without gradients may be strided: positive-stride rank-1

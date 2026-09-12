@@ -29,7 +29,7 @@ artifacts are generated at merge time and are not source documentation.
 - [Compiled CUDA transpose views](compile-cuda-t.md): Method and one-argument module/imported `t`, constant-axis method and three-positional-argument module/imported `transpose` capture, packing composition and H100 validation.
 - [Compiled CUDA contiguous](compile-cuda-contiguous.md): Parameterless native view packing, alias semantics and clean-commit H100 validation including review regressions.
 - [Compiled CUDA matmul](compile-cuda-matmul.md): Exact capture scope, runnable example, and separate `torch.compile` timing reproduction.
-- [Compiled CUDA row sums](compile-cuda-sum-rows.md): Runnable example, constant reduction options, layout/device boundaries, and focused checks.
+- [Compiled CUDA method and positional top-level row sums](compile-cuda-sum-rows.md): Runnable example, constant reduction options, layout/device boundaries, and focused checks.
 - [CUDA mul/neg/add graph capture](compile-cuda-add.md): Public bounded eager compilation, device/cache guards, unsupported cases, and reproduction.
   Includes positional module/imported add/neg/ReLU/squeeze/t calls with precise binding guards.
 - [Compiled CUDA scalar multiplication validation](compile-cuda-mul-scalar-validation.md): Guarded scalar grammar, independent diagnostics, and H100 checks.
