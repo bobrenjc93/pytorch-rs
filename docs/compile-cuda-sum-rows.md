@@ -84,6 +84,8 @@ CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m unittest -v \
 
 The [top-level development evidence](diagnostics/compile-cuda-module-sum/README.md)
 retains the unchanged 144-cell pre-edit probe and subsequent source-bound checks.
+The separate [clean-commit capture](diagnostics/compile-cuda-module-sum/postcommit-e46a496/README.md)
+records the fresh release build and required checks at `e46a496`.
 Dyadic inputs establish bounded correctness, not general exact summation or a
 speed improvement. The existing special-value and precision policy is unchanged.
 

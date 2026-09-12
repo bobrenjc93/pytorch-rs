@@ -1,0 +1,238 @@
+{
+  "kind": "clean implementation commit capture; non-scoring correctness evidence",
+  "measured_commit": "e46a496f995c1491a305f3038886e15cbb017fcf",
+  "checkout": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout",
+  "clean_before_and_after": true,
+  "identity": {
+    "source": {
+      "commit": "e46a496f995c1491a305f3038886e15cbb017fcf",
+      "source_sha256": "2f136123861946289a67c58c04b007c539e168902473072d160390481a133b33",
+      "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+    "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/.venv/bin/python",
+    "base_prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/target/uv-python/cpython-3.12.14-linux-x86_64-gnu",
+    "native": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+    "native_sha256": "2f2b1f95c44d5841ea6a3f0b135e832bf2ceb8a127a87771008676f9cc43d6d5",
+    "torch": "2.13.0+cu130",
+    "reference_cuda": "13.0",
+    "numpy": "2.5.1",
+    "native_runtime": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "native_runtime_version": 13000,
+    "cuda_visible_devices": "0",
+    "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)\n",
+    "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)\n",
+    "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0\n",
+    "cuda_libraries": [
+      "7fb6cf600000-7fb6cf766000 r--p 00000000 00:1f 332367847                  /usr/lib64/libcuda.so.580.82.07",
+      "7fb6cf766000-7fb6d06e8000 r-xp 00166000 00:1f 332367847                  /usr/lib64/libcuda.so.580.82.07",
+      "7fb6d06e8000-7fb6d5093000 r--p 010e8000 00:1f 332367847                  /usr/lib64/libcuda.so.580.82.07",
+      "7fb6d5093000-7fb6d5094000 ---p 05a93000 00:1f 332367847                  /usr/lib64/libcuda.so.580.82.07",
+      "7fb6d5094000-7fb6d51c9000 r--p 05a93000 00:1f 332367847                  /usr/lib64/libcuda.so.580.82.07",
+      "7fb6d51c9000-7fb6d51d2000 rw-p 05bc8000 00:1f 332367847                  /usr/lib64/libcuda.so.580.82.07",
+      "7fb6fb800000-7fb6fb8a6000 r-xp 00000000 00:2e 6597726402                 /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+      "7fb6fb8a6000-7fb6fbaa6000 ---p 000a6000 00:2e 6597726402                 /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+      "7fb6fbaa6000-7fb6fbaab000 r--p 000a6000 00:2e 6597726402                 /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+      "7fb6fbaab000-7fb6fbaac000 rw-p 000ab000 00:2e 6597726402                 /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13"
+    ]
+  },
+  "reference_compiler": {
+    "triton": "3.7.1",
+    "architecture": 90,
+    "selected_ptxas": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/.venv/lib/python3.12/site-packages/triton/backends/nvidia/bin/ptxas",
+    "selected_ptxas_sha256": "c960a4f238b17d5c5d3c01ad2bbc1ebd2c5aecc459cb4d223bff10b45f9b8fca",
+    "version": "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Fri_Feb_21_20:21:21_PST_2025\nCuda compilation tools, release 12.8, V12.8.93\nBuild cuda_12.8.r12.8/compiler.35583870_0\n",
+    "overrides": {
+      "TRITON_PTXAS_PATH": null,
+      "TRITON_PTXAS_BLACKWELL_PATH": null,
+      "TRITON_MOCK_PTX_VERSION": null,
+      "PTXAS_OPTIONS": null,
+      "DISABLE_PTXAS_OPT": null
+    },
+    "native_cuda_compiler": "embedded PTX, driver JIT; no nvcc or NVRTC invocation"
+  },
+  "bootstrap": {
+    "verified": true,
+    "checkedAt": "2026-09-12T14:29:48.696865+00:00",
+    "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/probe-compiled-cuda-squeeze/target/uv-python/cpython-3.12.14-linux-x86_64-gnu",
+    "destination": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/target/uv-python/cpython-3.12.14-linux-x86_64-gnu",
+    "sourcePreserved": true,
+    "destinationWasAbsent": true,
+    "entireInstallationByteAndLinkIdentical": true,
+    "installationManifestSha256": "519ae888f6f47836a48399b7eff35b28582673e893a08261bd5e2758f9a4f265",
+    "entries": 4927,
+    "files": 3665,
+    "symlinks": 1048,
+    "bytes": 102563177,
+    "interpreterSha256": "f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526",
+    "identity": {
+      "version": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+      "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+      "base_prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/target/uv-python/cpython-3.12.14-linux-x86_64-gnu",
+      "stdlib": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12",
+      "include": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/include/python3.12"
+    },
+    "toolchainCacheReusedOnly": true,
+    "projectEnvironmentCopied": false,
+    "nativeWheelCopied": false,
+    "globalSettingsChanged": false
+  },
+  "dependency_and_build_identity": {
+    "paths": {
+      "numpy": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/.venv/lib/python3.12/site-packages/numpy/__init__.py",
+      "torch": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "torch_rs": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+      "native": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so"
+    },
+    "sys_path": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/target/module-sum-evidence",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python312.zip",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/lib-dynload",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/.venv/lib/python3.12/site-packages"
+    ],
+    "environment": {
+      "RUSTFLAGS": null,
+      "RUSTC_WRAPPER": null,
+      "RUSTC_WORKSPACE_WRAPPER": null,
+      "RUSTUP_TOOLCHAIN": null,
+      "CARGO_ENCODED_RUSTFLAGS": null,
+      "TORCH_RS_CUDART": null,
+      "CUDA_VISIBLE_DEVICES": "0",
+      "LD_LIBRARY_PATH": null,
+      "PYTHONPATH": "",
+      "PYTHONHOME": null
+    },
+    "versions": {
+      "torch": "2.13.0",
+      "numpy": "2.5.1",
+      "maturin": "1.14.1",
+      "torch-rs": "0.1.0"
+    },
+    "build_input_sha256": {
+      "Cargo.toml": "7f8c40fb9a40c873dbb55470f8a43162e62976d85c95da0972d861bfc15e486d",
+      "Cargo.lock": "5adbfbc4753473099a887c270512ec919d8e0c53cd442750709e7a4e93d905b4",
+      "pyproject.toml": "451bb2a5f20316268a5b2a095002e77b5402844bdcd8e38322486e255fb071c9",
+      "uv.lock": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced",
+      "rust-toolchain.toml": "47ea224b44388390e7509b601af18d3c6509a8cac86a3bb51c81558949f7355e"
+    }
+  },
+  "wheels": [
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/target/clean-wheel/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+      "sha256": "9dfdd7595e3dc24a9df2ffc0514bf37522edf8abca528ac52d8f789cd524bc18",
+      "bytes": 1525775
+    }
+  ],
+  "compiler_selection": {
+    "selection": "every tests/test_compile*.py plus tests/test_top_level_compile.py",
+    "modules": 65,
+    "tests": 746,
+    "skips": 21,
+    "failures": 0,
+    "concurrent_disjoint_module_queues": 2,
+    "timing_credit_claimed": false
+  },
+  "candidate_closure": {
+    "verified": true,
+    "cells": 144,
+    "closed_gaps": 96,
+    "existing_controls": 48,
+    "unrelated_rebindings": 4,
+    "all_input_hashes_programs_reference_settings_match": true,
+    "historical_baseline_log_sha256": "8b97b45a19b1a205f9ffd37538019e97538e16e724e1690d2702ad00540f0284",
+    "original_probe_sha256": "9e8e66df128c5b7a7d0a56811dc1d704e6f2f8e4ff3867f3dc74568836f538c6",
+    "candidate_probe_log_sha256": "cdd411237e4a5191bd34179911a574dd2d3f5a82906ca78752804741ed54524e"
+  },
+  "checks": {
+    "two-gpu": {
+      "tests": 2,
+      "skips": 0,
+      "status": 0,
+      "effective_mask": "0,1"
+    },
+    "eager-reference": {
+      "tests": 57,
+      "skips": 1,
+      "status": 0,
+      "effective_mask": "0"
+    },
+    "final-hidden": {
+      "tests": 59,
+      "skips": 1,
+      "status": 0,
+      "effective_mask": ""
+    },
+    "final-docs": {
+      "tests": 12,
+      "skips": 0,
+      "status": 0,
+      "effective_mask": "0"
+    },
+    "rust-gpu": {
+      "tests": 4,
+      "failed": 0,
+      "ignored": 0,
+      "hardware_early_return": false,
+      "status": 0
+    },
+    "rust-planner": {
+      "tests": 7,
+      "failed": 0,
+      "ignored": 0,
+      "hardware_early_return": false,
+      "status": 0
+    },
+    "rust-final": {
+      "default_tests": 395,
+      "python_binding_tests": 422,
+      "total_tests": 817,
+      "harness_counts": [
+        180,
+        92,
+        3,
+        1,
+        2,
+        1,
+        6,
+        1,
+        2,
+        4,
+        103,
+        207,
+        92,
+        3,
+        1,
+        2,
+        1,
+        6,
+        1,
+        2,
+        4,
+        103
+      ],
+      "status": 0,
+      "command": [
+        "bash",
+        "-c",
+        "cargo fmt --check && cargo test --locked --all-targets && cargo test --locked --features python-bindings --all-targets && cargo clippy --locked --all-targets -- -D warnings && cargo clippy --locked --all-targets --features python-bindings -- -D warnings"
+      ],
+      "includes_format_and_both_clippy_configs": true
+    }
+  },
+  "raw_evidence_sha256": "0059871471e8c3677c439bee75143102deddcad62a0418898cb41d349795c549",
+  "historical_development_archive_sha256": "c8147b415f7aa6a15d607fef3a722ffbcf99faff8a2dc166fcf489d4d1481fe1",
+  "resources": [
+    "gpu",
+    "cpu-heavy"
+  ],
+  "resource_note": "correctness workload concurrency only; no exclusive reservation or timing credit",
+  "gpu_snapshots_are_reservations": false,
+  "cache_state": "new checkout, absent .venv and interpreter destination, empty worktree-local dependency/build/Inductor/Triton/CUDA caches at setup; caches reused within this capture",
+  "recipe_adaptations": [
+    "bootstrap root/head prerequisite only; original inventory assertions retained",
+    "run.py adds cleanliness and effective-mask provenance, disables user site/PYTHONPATH, omits extension attribution for Rust",
+    "complete-shard.py schedules unchanged unittest modules in two disjoint queues"
+  ],
+  "pending_review_and_merge_gates": true
+}
