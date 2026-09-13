@@ -45,6 +45,24 @@ without reproducing libdevice's internal arithmetic. Constant-only expressions
 have rank zero, and their products are excluded from contraction candidates:
 the reference folds those products before FMA selection.
 
+Expanded, nonconstant broadcast addresses add a cache-policy materialization
+before the reference load, so each such load advances the rank twice. Scalar
+loads and linear addresses advance it once. Singleton-only reshaping without
+element expansion remains linear. These ranks come from the checked input
+address mappings, and dead loads never participate. Consequently,
+`a=x+1.0; x*y+a*a` can contract the square for broadcast inputs even though its
+same-shape version contracts `x*y`.
+
+Native arithmetic specializes concrete input shapes. Exceptional-value parity
+is checked against a fresh default-Inductor specialization for each shape.
+Inductor's automatic symbolic recompilation after shape changes can produce a
+different load policy and FMA choice for the same concrete inputs, including
+different infinities on overflow. Native compilation does not reproduce that
+symbolic-history-dependent behavior. Persistent-wrapper tests cover finite
+shape transitions; they do not establish exceptional-value parity for arbitrary
+reference shape histories. The [broadcast repair record](diagnostics/compile-pointwise-broadcast/review-broadcast-order.md)
+preserves the observed divergence and the original failed tests.
+
 ## Sign normalization and live uses
 
 Subtraction introduced by sign normalization retains its contraction eligibility

@@ -473,6 +473,7 @@ fn early_aliases(graph: &Graph) -> (Vec<usize>, Vec<bool>) {
 
 fn materialization_ranks(
     graph: &Graph,
+    addresses: &[super::indexing::Address],
     aliases: &[usize],
     zeros: &[bool],
     mapped: &[usize],
@@ -505,7 +506,7 @@ fn materialization_ranks(
         seen[id] = true;
         match graph.nodes[id] {
             Node::Input(i) if inputs[i] == 0 => {
-                input_rank += 1;
+                input_rank += addresses[i].materialization_steps();
                 inputs[i] = input_rank;
             }
             Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b) => {
@@ -624,7 +625,8 @@ pub(super) fn source(graph: &Graph, addresses: &[super::indexing::Address]) -> S
         mapped.push(lower.normalize(node, last[id], uses[id]));
     }
     let output = mapped[graph.output];
-    let (inputs, calls) = materialization_ranks(graph, &aliases, &zeros, &mapped, &lower);
+    let (inputs, calls) =
+        materialization_ranks(graph, addresses, &aliases, &zeros, &mapped, &lower);
     let ranks = lower.contraction_ranks(&inputs, &calls);
     let mut live = vec![false; lower.nodes.len()];
     live[output] = true;

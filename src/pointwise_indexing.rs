@@ -10,6 +10,14 @@ pub(crate) enum Address {
 }
 
 impl Address {
+    pub(super) fn materialization_steps(&self) -> usize {
+        // The pinned reference emits an immovable cache-policy instruction
+        // before each nonconstant broadcast load. Linear and scalar loads
+        // have only the load itself. These instructions affect Reassociate's
+        // ordering even though the native kernel needs no cache hint.
+        1 + usize::from(matches!(self, Self::Broadcast(terms) if !terms.is_empty()))
+    }
+
     pub(super) fn source(&self) -> String {
         match self {
             Self::Linear => "i".into(),
@@ -120,7 +128,12 @@ impl Graph {
             .iter()
             .enumerate()
             .map(|(i, input)| {
-                if input.shape == output.shape {
+                // Adding/removing singleton axes without expanding elements
+                // still has a linear address (and no broadcast cache policy).
+                if input.shape == output.shape
+                    || (dependencies[self.output] & (1 << i) != 0
+                        && input.elements == output.elements)
+                {
                     return Address::Linear;
                 }
                 let mut terms = Vec::new();
@@ -224,6 +237,28 @@ mod tests {
                 .is_empty()
         );
         assert!(graph.indexing(&[&[]]).is_err());
+    }
+
+    #[test]
+    fn materialization_distinguishes_expansion_from_singleton_reshaping() {
+        for (left, right, steps) in [
+            (vec![2, 1], vec![1, 2], [2, 2]),
+            (vec![2, 1], vec![2, 2], [2, 1]),
+            (vec![2, 2], vec![1, 2], [1, 2]),
+            (vec![], vec![2, 2], [1, 1]),
+            (vec![1, 1], vec![2, 2], [1, 1]),
+            (vec![2], vec![1, 2], [1, 1]),
+            (vec![2, 1], vec![1, 2, 1], [1, 1]),
+            (vec![0, 1], vec![1, 2], [1, 1]),
+        ] {
+            let plan = graph().indexing(&[&left, &right]).unwrap();
+            let actual: Vec<_> = plan
+                .addresses
+                .iter()
+                .map(Address::materialization_steps)
+                .collect();
+            assert_eq!(actual, steps, "{left:?}, {right:?}");
+        }
     }
 
     #[test]

@@ -84,6 +84,8 @@ is involved.
 
 The [numerical contract](compile-pointwise-numerics.md) explains expression
 rewriting, FMA selection, constant precision, signed zeros and libdevice rounding.
+Arithmetic specializes concrete shapes; exceptional results can differ from
+Inductor after its automatic symbolic recompilation changes contraction order.
 
 ## Cache behavior
 
@@ -152,6 +154,9 @@ independently generated ranks, singleton patterns and expression graphs, both
 operand orders, empty/scalar/offset inputs and cache/lifetime checks.
 Their [validation record](diagnostics/compile-pointwise-broadcast/README.md)
 includes the full compiler sweep and clean baseline/candidate measurements.
+The [broadcast FMA repair](diagnostics/compile-pointwise-broadcast/review-broadcast-order.md)
+records subsequent regression checks; its clean candidate captures are pending
+Burner's next commit and evidence phase.
 
 The unchanged [public-default compiler gates](torch-compile-default-evaluator.md)
 remain the scoring authority with all 112 coverage and 56 CUDA performance

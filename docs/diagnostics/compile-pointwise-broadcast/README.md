@@ -1,10 +1,15 @@
 # Default CUDA pointwise broadcasting validation
 
+The [broadcast FMA repair](review-broadcast-order.md) changes numerical lowering
+after these captures. Candidate reports and generated-code captures below are
+stale for that repair and must be refreshed after Burner commits it; they are
+not evidence of the repaired candidate. Baseline measurements remain unchanged.
+
 The unchanged public-default-compile-v2 gates measured clean implementation
 `5adb2638f8b0d67adabc746ee38b2debabaa4f48` and clean current-main baseline
 `166687a730a86235fa38decfa364703b60ebc595` on 2026-09-13 UTC. Burner saved the
 implementation commit during worker recovery; the worker created no commits.
-Only documentation and this evidence were added after measurement.
+Commit `43f06fb` added only documentation and this evidence after measurement.
 See the [compiler contract](../../compile-pointwise-jit.md).
 
 | Measurement | Baseline | Broadcast implementation |
