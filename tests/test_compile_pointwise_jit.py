@@ -62,6 +62,17 @@ def diagnostic_capture_selectors():
         yield relative, namespace['dispatched_kernel']
 
 
+def gpu_dispatch_diagnostic():
+    root = Path(__file__).resolve().parents[1]
+    path = root / 'docs/diagnostics/compile-pointwise-positional/warm-dispatch/gpu-dispatch.py'
+    spec = importlib.util.spec_from_file_location('_synthetic_gpu_dispatch_check', path)
+    diagnostic = importlib.util.module_from_spec(spec)
+    # The stdlib-only consumer has no import-time GPU execution. Keep the
+    # isolated module out of sys.modules and do not replace production owners.
+    spec.loader.exec_module(diagnostic)
+    return diagnostic, path
+
+
 def custom_globals_program(source):
     effects = []
     class Globals(dict):
@@ -123,19 +134,9 @@ class Admission(unittest.TestCase):
         actual_cache.clear()
         self.assertFalse(actual_cache.executors)
 
-    def _gpu_dispatch_diagnostic(self):
-        root = Path(__file__).resolve().parents[1]
-        path = root / 'docs/diagnostics/compile-pointwise-positional/warm-dispatch/gpu-dispatch.py'
-        spec = importlib.util.spec_from_file_location('_synthetic_gpu_dispatch_check', path)
-        diagnostic = importlib.util.module_from_spec(spec)
-        # The stdlib-only consumer has no import-time GPU execution. Keep the
-        # isolated module out of sys.modules and do not replace production owners.
-        spec.loader.exec_module(diagnostic)
-        return diagnostic, path
-
     def _verify_synthetic_gpu_dispatch_reports(self, mismatches):
         root = Path(__file__).resolve().parents[1]
-        diagnostic, path = self._gpu_dispatch_diagnostic()
+        diagnostic, path = gpu_dispatch_diagnostic()
         script_hash = hashlib.sha256(path.read_bytes()).hexdigest()
         target = root / 'target'
         target.mkdir(exist_ok=True)
@@ -160,6 +161,10 @@ class Admission(unittest.TestCase):
                         cases[case_index]['traversals'][traversal_index]['outputs'][0]['values'] = [float(2.0).hex()]
                 report = {'passed': True, 'legIndex': index, 'buildLabel': build,
                           'implementation': implementation, 'scriptSha256': script_hash,
+                          'diagnosticVersion': diagnostic.VERSION,
+                          'synchronization': {'path': 'synthetic-runtime', 'sha256': 'a' * 64,
+                                              'version': 13000, 'api': 'cudaDeviceSynchronize',
+                                              'logicalDevice': 0},
                           'gpuUuid': 'GPU-synthetic-fixture', 'source': {'commit': build},
                           'startedAt': f'{index:02d}:00', 'finishedAt': f'{index:02d}:01',
                           'cases': cases}
@@ -182,7 +187,7 @@ class Admission(unittest.TestCase):
             return record
 
     def test_gpu_dispatch_verifier_preserves_ieee_values_and_jit_tolerance(self):
-        diagnostic, _ = self._gpu_dispatch_diagnostic()
+        diagnostic, _ = gpu_dispatch_diagnostic()
         def observation(values):
             return {'shape': [len(values)], 'stride': [1], 'dtype': 'torch.float32',
                     'device': 'cuda:0', 'requiresGrad': False,
@@ -223,6 +228,25 @@ class Admission(unittest.TestCase):
         self.assertIn('pair[0,1].literal_unary.traversal[7].output[0]', locations)
         self.assertIn('pair[0,1].literal_unary.traversal[8].output[0]', locations)
         self.assertIn('pair[4,5].repeated_alias.traversal[9].output[0]', locations)
+
+    def test_gpu_dispatch_synchronizer_propagates_runtime_errors(self):
+        diagnostic, _ = gpu_dispatch_diagnostic()
+        synchronizer = object.__new__(diagnostic.CudaSynchronizer)
+        from unittest.mock import Mock
+        synchronizer.runtime = types.SimpleNamespace(cudaSetDevice=Mock(return_value=0),
+                                                     cudaDeviceSynchronize=Mock(return_value=0))
+        synchronizer()
+        synchronizer.runtime.cudaSetDevice.assert_called_once_with(0)
+        synchronizer.runtime.cudaDeviceSynchronize.assert_called_once_with()
+        synchronizer.runtime.cudaSetDevice.return_value = 10
+        with self.assertRaisesRegex(RuntimeError, 'synchronization error 10'):
+            synchronizer()
+        # A failed device selection must not synchronize another device.
+        self.assertEqual(synchronizer.runtime.cudaDeviceSynchronize.call_count, 1)
+        synchronizer.runtime.cudaSetDevice.return_value = 0
+        synchronizer.runtime.cudaDeviceSynchronize.return_value = 700
+        with self.assertRaisesRegex(RuntimeError, 'synchronization error 700'):
+            synchronizer()
 
     def test_two_device_reservation_accepts_explicit_distinct_pairs(self):
         for mask, expected in (('0,1', True), ('6,7', True), ('GPU-a,GPU-b', True),
@@ -391,6 +415,77 @@ class Hardware(unittest.TestCase):
                 return compiled(*args)
         finally:
             sys.setprofile(old)
+
+    def test_gpu_dispatch_real_native_and_default_histories(self):
+        diagnostic, path = gpu_dispatch_diagnostic()
+        root = Path(__file__).resolve().parents[1]
+        # Preserve all observations, including failures, beneath the worktree.
+        (root / 'target').mkdir(exist_ok=True)
+        directory = Path(tempfile.mkdtemp(prefix='dispatch-smoke-', dir=root / 'target'))
+        script = r"""
+import importlib, importlib.util, sys, traceback
+from pathlib import Path
+path, directory, implementation = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+spec = importlib.util.spec_from_file_location('dispatch_smoke', path)
+diagnostic = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(diagnostic)
+directory.mkdir()
+diagnostic.environment(diagnostic.ROOT, directory)
+fw = importlib.import_module('torch_rs' if implementation == 'native' else 'torch')
+fw.set_num_threads(1)
+barrier = diagnostic.CudaSynchronizer()
+record = {'implementation': implementation, 'scriptSha256': diagnostic.sha(path.read_bytes()),
+          'synchronization': barrier.metadata, 'gpuBefore': diagnostic.inventory(),
+          'cases': [], 'frameworkPath': fw.__file__, 'executable': sys.executable}
+calls = 0
+def synchronize():
+    global calls
+    calls += 1
+    barrier()
+for name, source, kind in diagnostic.CASES:
+    row = {'name': name, 'passed': False}
+    record['cases'].append(row)
+    try:
+        diagnostic.history(fw, source, kind, row, synchronize)
+        row['passed'] = True
+    except Exception:
+        row['failure'] = traceback.format_exc()
+record.update(synchronizationCalls=calls, torchImported='torch' in sys.modules,
+              gpuAfter=diagnostic.inventory(), runtime=diagnostic.runtime_identity())
+diagnostic.write(directory/'report.json.gz', record)
+"""
+        reports = []
+        for implementation in ('native', 'reference'):
+            child = directory / implementation
+            env = os.environ.copy()
+            env.pop('PYTHONPATH', None)
+            env.pop('PYTHONHOME', None)
+            result = subprocess.run([sys.executable, '-I', '-B', '-c', script,
+                                     str(path), str(child), implementation], env=env,
+                                    text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            (directory / (implementation + '.log')).write_text(result.stdout)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            reports.append(diagnostic.read(child / 'report.json.gz'))
+        print(f'Diagnostic smoke observations retained at {directory}', flush=True)
+        self.assertFalse(reports[0]['torchImported'])
+        self.assertEqual(reports[0]['synchronization'], reports[1]['synchronization'])
+        for report in reports:
+            self.assertEqual(report['synchronizationCalls'], 7 * 24 * 2)
+            self.assertEqual(len(report['cases']), 7)
+            for row in report['cases']:
+                with self.subTest(implementation=report['implementation'], history=row['name']):
+                    self.assertTrue(row['passed'], row.get('failure'))
+                    self.assertEqual(len(row['traversals']), 24)
+                    self.assertEqual(len(row['sampleNs']), 17)
+        for left, right in zip(reports[0]['cases'], reports[1]['cases']):
+            self.assertEqual(left['inputs'], right['inputs'])
+            self.assertEqual(left['states'], right['states'])
+            self.assertEqual(len(left['traversals']), len(right['traversals']))
+            for a, b in zip(left['traversals'], right['traversals']):
+                self.assertEqual((a['phase'], a['index']), (b['phase'], b['index']))
+                self.assertEqual(len(a['outputs']), len(b['outputs']))
+                for actual, expected in zip(a['outputs'], b['outputs']):
+                    diagnostic.close_outputs(actual, expected)
 
     def test_diagnostic_capture_selectors_follow_actual_shape_revisit(self):
         fn = program('def f(x, y):\n return (x.relu() - y.relu()).relu()')

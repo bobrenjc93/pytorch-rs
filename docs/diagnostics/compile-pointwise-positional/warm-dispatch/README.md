@@ -107,9 +107,32 @@ regressions; timing traversals are not instrumented with a profiler.
 The [balanced hardware plan](measurement-plan.md) fixes the clean-wheel comparison
 before any new hardware timing. The
 [clean `ab6a3acd` record](../postcommit-ab6a3acd/README.md) refreshes the fixed
-gates and captures and retains the failed comparison. A committed diagnostic
-repair is required before the bounded hardware comparison can complete; the
-preserved `779e512c` measurements remain attributed to that earlier source.
+gates and captures and retains the failed v1 comparison. The v2 synchronization
+repair below is ready for a clean 16-leg rerun after Burner commits it. Existing
+clean measurements keep their original source and harness attribution.
+
+## Synchronization repair
+
+Version 2 uses the locked environment's CUDA 13 runtime to select logical device
+zero and call `cudaDeviceSynchronize` for both implementations. One synchronizer
+is constructed per leg, outside the history timings; reports record its path,
+SHA-256, runtime version, API and device. Verification rejects mixed diagnostic
+versions or synchronization identities. The public compiler calls, programs,
+16-leg order, two setup traversals, five warmups, 17 samples and numerical checks
+remain unchanged. No public native CUDA API or frozen evaluator was changed.
+
+The [development validation](sync-repair-validation.json.gz) preserves the clean
+pre-fix reproduction, initial environment rejection, corrected source snapshots,
+installed wheel identity, commands, logs and both complete smoke reports. Five
+focused tests pass. The real H100 smoke runs all seven actual histories in separate
+native/reference processes: 168 traversals and 336 barriers per process, with
+408 output comparisons and no PyTorch import in the native process. This tests
+execution and correctness; its instrumented timings are not performance evidence.
+
+The [failed clean v1 record](../postcommit-ab6a3acd/README.md#balanced-comparison-blocker)
+remains byte-identical. A new clean, source-bound execution of all 16 v2 legs is
+still required through Burner's post-commit evidence phase. Do not reuse the v1
+reference legs or attribute these dirty-tooling smoke results to a clean commit.
 
 ## Development validation
 

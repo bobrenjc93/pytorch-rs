@@ -82,6 +82,18 @@ the first attempt. CPU profiles, this bounded hardware comparison and ordinary
 regression tests cannot award fixed-corpus credit or override normal qualification.
 
 
+## Version 2 synchronization amendment
+
+The first clean v1 attempt is retained in the
+[ab6a3acd record](../postcommit-ab6a3acd/README.md#balanced-comparison-blocker):
+every native history stopped at the absent public synchronization method before
+timing. The v2 consumer uses the same locked CUDA runtime's `cudaSetDevice(0)`
+and `cudaDeviceSynchronize()` for both frameworks and records their shared
+runtime identity. All programs, histories, orders, traversals and tolerances
+above remain fixed. After Burner commits this correction, rerun all 16 legs
+with fresh output directories and source-bound wheels; do not combine v1 and v2
+legs. Development smoke tests do not satisfy that clean comparison.
+
 ## Reproduction with the committed consumer
 
 The [consumer](gpu-dispatch.py) uses no evaluator imports or altered reference

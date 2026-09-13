@@ -7,8 +7,9 @@ Evidence for the bounded native CUDA pointwise compiler. Start with the
 Fixed-corpus scores do not establish general Inductor parity.
 
 The [clean warm-dispatch record](postcommit-ab6a3acd/README.md) includes refreshed
-fixed gates and captures. Its balanced H100 comparison is blocked by the committed
-diagnostic's missing native synchronization API; all 16 attempts are retained.
+fixed gates and captures. Its failed v1 balanced comparison retains all 16
+attempts. The [synchronization repair](warm-dispatch/README.md#synchronization-repair)
+has real H100 smoke coverage; a clean v2 comparison follows Burner's tooling commit.
 
 ## Clean measurements
 

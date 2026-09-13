@@ -19,6 +19,7 @@ import uuid
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[4]
+VERSION = "warm-dispatch-gpu-v2"
 BEFORE = "885264b5319d76165e6be8d6df405450b3830c47"
 SOURCE_PATHS = ("src", "python", "crates", ".cargo", "build.rs", "Cargo.toml",
                 "Cargo.lock", "pyproject.toml", "uv.lock", "rust-toolchain.toml")
@@ -104,6 +105,38 @@ def runtime_identity():
             version = [version.value, minor.value]
         result.append({"path": name, "sha256": sha(Path(name).read_bytes()), "version": version})
     return result
+
+
+class CudaSynchronizer:
+    """Use the same device-wide CUDA runtime barrier for both frameworks."""
+
+    def __init__(self):
+        libraries = list(inside(sys.prefix).glob(
+            "lib/python*/site-packages/nvidia/cu13/lib/libcudart.so.13"))
+        assert len(libraries) == 1, "Expected the locked environment's single CUDA 13 runtime"
+        path = inside(libraries[0])
+        self.runtime = ctypes.CDLL(str(path))
+        self.runtime.cudaSetDevice.argtypes = [ctypes.c_int]
+        self.runtime.cudaSetDevice.restype = ctypes.c_int
+        self.runtime.cudaDeviceSynchronize.argtypes = []
+        self.runtime.cudaDeviceSynchronize.restype = ctypes.c_int
+        self.runtime.cudaRuntimeGetVersion.argtypes = [ctypes.POINTER(ctypes.c_int)]
+        self.runtime.cudaRuntimeGetVersion.restype = ctypes.c_int
+        version = ctypes.c_int()
+        self.check(self.runtime.cudaRuntimeGetVersion(ctypes.byref(version)))
+        self.metadata = {"path": str(path), "sha256": sha(path.read_bytes()),
+                         "version": version.value, "api": "cudaDeviceSynchronize",
+                         "logicalDevice": 0}
+        self()
+
+    @staticmethod
+    def check(status):
+        if status != 0:
+            raise RuntimeError(f"CUDA runtime synchronization error {status}")
+
+    def __call__(self):
+        self.check(self.runtime.cudaSetDevice(0))
+        self.check(self.runtime.cudaDeviceSynchronize())
 
 
 def environment(root, directory):
@@ -195,7 +228,7 @@ def tensor_record(tensor):
             "values": encoded_values(tensor.cpu().tolist())}
 
 
-def history(torch, source_text, kind, row):
+def history(torch, source_text, kind, row, synchronize):
     namespace = {}
     exec(source_text, namespace)
     model = namespace["f"]
@@ -207,12 +240,12 @@ def history(torch, source_text, kind, row):
     for phase, count in (("setup", 2), ("warmup", 5), ("sample", 17)):
         for index in range(count):
             outputs = []
-            torch.cuda.synchronize()
+            synchronize()
             start = time.perf_counter_ns()
             for args, updates in calls:
                 namespace.update(updates)
                 outputs.append(compiled(*args))
-            torch.cuda.synchronize()
+            synchronize()
             elapsed = time.perf_counter_ns() - start
             observations = [tensor_record(output) for output in outputs]
             row["traversals"].append({"phase": phase, "index": index, "elapsedNs": elapsed, "outputs": observations})
@@ -249,11 +282,13 @@ def leg(args, record, directory):
         assert torch.__version__ == "2.13.0+cu130"
     torch.set_num_threads(1)
     assert torch.cuda.is_available() and torch.cuda.device_count() == 1
+    synchronize = CudaSynchronizer()
+    record["synchronization"] = synchronize.metadata
     for name, text, kind in CASES:
         row = {"name": name, "program": text, "passed": False}
         record["cases"].append(row)
         try:
-            history(torch, text, kind, row)
+            history(torch, text, kind, row, synchronize)
             row["passed"] = True
         except Exception:
             row["failure"] = traceback.format_exc()
@@ -319,6 +354,11 @@ def verify(args, record, directory):
             assert (report["buildLabel"], report["implementation"]) == ORDER[index]
             assert len(report["cases"]) == 7
             assert report["scriptSha256"] == record["scriptSha256"]
+            assert report["diagnosticVersion"] == VERSION
+            synchronization = report["synchronization"]
+            assert synchronization["api"] == "cudaDeviceSynchronize"
+            assert synchronization["logicalDevice"] == 0
+            assert synchronization == reports[0]["synchronization"], "Synchronization identity differs"
             gpu.add(report["gpuUuid"])
             if report["buildLabel"] == "C": corrected.add(report["source"]["commit"])
             if index:
@@ -390,7 +430,7 @@ def main():
     output = inside(args.output)
     assert not output.exists() and not output.parent.exists(), "Each invocation requires a fresh output directory"
     output.parent.mkdir(parents=True)
-    record = {"diagnosticVersion": "warm-dispatch-gpu-v1", "commandKind": args.command_kind,
+    record = {"diagnosticVersion": VERSION, "commandKind": args.command_kind,
               "startedAt": datetime.now(timezone.utc).isoformat(), "command": sys.orig_argv,
               "scriptPath": str(Path(__file__).resolve()), "scriptSha256": sha(Path(__file__).read_bytes()),
               "executable": str(inside(sys.executable)), "executableSha256": sha(Path(sys.executable).read_bytes()),
