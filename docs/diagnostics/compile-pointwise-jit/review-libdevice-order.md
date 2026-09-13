@@ -44,10 +44,9 @@ NVRTC 13.0 generated the kernels for compute capability 9.0 with explicit
 FMA and `--ftz=false`; the development codegen capture also verifies warm
 code reuse and no installed-PyTorch import.
 
-This is unscored development validation. Clean coverage, CUDA-performance and
-generated-code captures remain required after Burner commits this repair.
-Run the unchanged commands in the [evidence index](README.md) from that clean
-commit, using new output paths. The existing baseline and campaign reports
+This is unscored development validation. The subsequent [clean capture](postcommit-aab2fd/postcommit.json) measures
+committed repair `aab2fd7` using both unchanged campaign commands and generated
+code provenance; this development bundle retains its original dirty identity. The existing baseline and campaign reports
 retain their original identities; no later implementation is credited with
 those measurements. Independent review and qualification remain required.
 Temporary build/cache paths may disappear during cleanup; the compressed

@@ -90,4 +90,17 @@ The clean `74602c07` [coverage](postcommit-74602c/candidate-coverage.json.gz),
 [logs](postcommit-74602c/postcommit-logs.json.gz) predate the prefix restoration.
 They remain unchanged. [Repair validation](review-error-prefix.md) preserves the
 original failure and distinguishes the implementation repair from the subsequent
-regression assertion and fresh `08e37fe5` capture linked by the current index.
+regression assertion and fresh `08e37fe5` capture linked below.
+
+
+## Before product-contraction repairs
+
+The clean `08e37fe5` [coverage](postcommit-08e37f/candidate-coverage.json.gz),
+[performance](postcommit-08e37f/candidate-cuda-perf.json.gz),
+[receipt](postcommit-08e37f/postcommit.json),
+[logs](postcommit-08e37f/postcommit-logs.json.gz) and
+[generated-code provenance](postcommit-08e37f/provenance.json) predate the
+product-contraction and libdevice-order repairs. All remain byte-identical.
+Their 6/12 weighted coverage/performance scores and common-success ratio
+1.9202617174174663 describe that measured revision only. The current
+[evidence index](README.md) links the fresh committed repair capture.

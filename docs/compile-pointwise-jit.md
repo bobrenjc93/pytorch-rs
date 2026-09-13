@@ -216,8 +216,7 @@ remain the scoring authority with all 112 coverage and 56 CUDA performance
 cells. These focused tests do not change their denominator. Unsupported
 categories remain zero. The [post-commit evidence](diagnostics/compile-pointwise-jit/README.md)
 records fresh clean-commit coverage, CUDA-performance and generated-code captures
-for `08e37fe5`, including public error-prefix compatibility and its regression
-assertion, alongside the unchanged source-bound baseline
+for `aab2fd7`, including the libdevice product-order repair, alongside the unchanged source-bound baseline
 and original failures.
 [Repair validation](diagnostics/compile-pointwise-jit/review-zero-boundaries.md) records
 the development checks separately from these clean campaign measurements.
