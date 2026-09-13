@@ -70,13 +70,13 @@ The archive is a JSON `files` mapping of relative paths to `text`,
 It preserves the original failure log, subsequent successful logs, command
 metadata, measured source snapshots and exact identities.
 
-## Required clean-candidate refresh
+## Clean-candidate refresh
 
-The existing [post-commit captures](postcommit-a8211b07/README.md) still measure
-`a8211b07` and are **stale for this revised candidate**. They have not been
-relabeled or edited. After Burner commits this fix, its normal post-commit owner
-must refresh the clean candidate fixed gate and two-H100 helper diagnostic,
-using the unchanged tools and full matrix. The clean-main capture remains
-applicable to unchanged `fe753725`. These development checks do not replace that
-required clean capture, independent review, or exact-head qualification. The
-existing operator observer's raw-report retention handoff also remains unchanged.
+The required clean candidate fixed gate and two-H100 helper diagnostic were
+refreshed at [76ea91a7](postcommit-76ea91a7/README.md), using the unchanged tools
+and full matrix. The earlier [post-commit captures](postcommit-a8211b07/README.md)
+still measure `a8211b07` and have not been relabeled or edited. The clean-main
+capture remains applicable to unchanged `fe753725` and was revalidated. These
+development records do not replace the clean captures, independent review or
+exact-head qualification. The operator observer's raw-report retention handoff
+remains unchanged.

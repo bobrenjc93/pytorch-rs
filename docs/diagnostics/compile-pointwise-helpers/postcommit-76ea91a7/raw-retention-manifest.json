@@ -1,0 +1,202 @@
+{
+  "checked_at_utc": "2026-09-13T23:15:41.629608+00:00",
+  "files": [
+    {
+      "build": "candidate",
+      "commit": "76ea91a7184005205b704c6b11f4ee68f140000d",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/default-compile-eval/run-20260913T230953Z-4b5efbc9/cpu-0-reference.json.gz",
+      "bytes": 45415154,
+      "sha256": "b76c8dca9a046c4f63f15019686c39fce0114126034b015e8177f18718149094"
+    },
+    {
+      "build": "candidate",
+      "commit": "76ea91a7184005205b704c6b11f4ee68f140000d",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/default-compile-eval/run-20260913T230953Z-4b5efbc9/cpu-0-reference.log",
+      "bytes": 2174,
+      "sha256": "13b60591012bf233433160aa61415b22129b1382e2a81a686582143d62f0e684"
+    },
+    {
+      "build": "candidate",
+      "commit": "76ea91a7184005205b704c6b11f4ee68f140000d",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/default-compile-eval/run-20260913T230953Z-4b5efbc9/cpu-0-candidate.json.gz",
+      "bytes": 2143,
+      "sha256": "5da639e16c96bd5034dc3e532192c26006c4a4cb326a6cf0a573f68d739bb70e"
+    },
+    {
+      "build": "candidate",
+      "commit": "76ea91a7184005205b704c6b11f4ee68f140000d",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/default-compile-eval/run-20260913T230953Z-4b5efbc9/cpu-0-candidate.log",
+      "bytes": 823,
+      "sha256": "425c342763d99e2789b8a29851cdc6f34b002e58bac0348f87e258427076d072"
+    },
+    {
+      "build": "candidate",
+      "commit": "76ea91a7184005205b704c6b11f4ee68f140000d",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/default-compile-eval/run-20260913T230953Z-4b5efbc9/cuda-0-reference.json.gz",
+      "bytes": 45417318,
+      "sha256": "cbc74653753b6b8ba357926a6c3bc71b83d661ead63e4b62dbf04f542783e7e9"
+    },
+    {
+      "build": "candidate",
+      "commit": "76ea91a7184005205b704c6b11f4ee68f140000d",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/default-compile-eval/run-20260913T230953Z-4b5efbc9/cuda-0-reference.log",
+      "bytes": 2575,
+      "sha256": "a7642791436f6af5b1b11132271478a0aaf0c42c8193d467a79e8d5e174fbd1f"
+    },
+    {
+      "build": "candidate",
+      "commit": "76ea91a7184005205b704c6b11f4ee68f140000d",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/default-compile-eval/run-20260913T230953Z-4b5efbc9/cuda-0-candidate.json.gz",
+      "bytes": 6178583,
+      "sha256": "7902549ddbdf5bd0efd9264831c06254b8ca3115e35deda8adacb6b600b0a4a9"
+    },
+    {
+      "build": "candidate",
+      "commit": "76ea91a7184005205b704c6b11f4ee68f140000d",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/default-compile-eval/run-20260913T230953Z-4b5efbc9/cuda-0-candidate.log",
+      "bytes": 851,
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac"
+    },
+    {
+      "build": "candidate",
+      "commit": "76ea91a7184005205b704c6b11f4ee68f140000d",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/default-compile-eval/run-20260913T230953Z-4b5efbc9/cuda-1-candidate.json.gz",
+      "bytes": 6178629,
+      "sha256": "fb5e196fba5158c4a1db272ecb3da4214d9c314b20b051c1e4020760df77a6cc"
+    },
+    {
+      "build": "candidate",
+      "commit": "76ea91a7184005205b704c6b11f4ee68f140000d",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/default-compile-eval/run-20260913T230953Z-4b5efbc9/cuda-1-candidate.log",
+      "bytes": 851,
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac"
+    },
+    {
+      "build": "candidate",
+      "commit": "76ea91a7184005205b704c6b11f4ee68f140000d",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/default-compile-eval/run-20260913T230953Z-4b5efbc9/cuda-1-reference.json.gz",
+      "bytes": 45417643,
+      "sha256": "a0e967d98c6f2ac78ed04141f7a9d328a96bfab8a032ce5b70adec5ba032ef60"
+    },
+    {
+      "build": "candidate",
+      "commit": "76ea91a7184005205b704c6b11f4ee68f140000d",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/default-compile-eval/run-20260913T230953Z-4b5efbc9/cuda-1-reference.log",
+      "bytes": 2575,
+      "sha256": "6f36f4e50f758ccbdb328c2adaeceaf7bde5ffbbc75cdd9828ea2e6a4d24c5fd"
+    },
+    {
+      "build": "main",
+      "commit": "fe7537251a53b54e1064309d28db2631605fb720",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/postcommit-a821/main/target/default-compile-eval/run-20260913T225107Z-7e6badf8/cpu-0-reference.json.gz",
+      "bytes": 45415261,
+      "sha256": "ca656174333979595a9acfbe64ee2291610bc8e169bd4a09cea54c78878ce7a9"
+    },
+    {
+      "build": "main",
+      "commit": "fe7537251a53b54e1064309d28db2631605fb720",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/postcommit-a821/main/target/default-compile-eval/run-20260913T225107Z-7e6badf8/cpu-0-reference.log",
+      "bytes": 2178,
+      "sha256": "f12aba297f939c0c5f363bf9f7a356e3bb26c66b0d65c19eeffdccb58fc9028c"
+    },
+    {
+      "build": "main",
+      "commit": "fe7537251a53b54e1064309d28db2631605fb720",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/postcommit-a821/main/target/default-compile-eval/run-20260913T225107Z-7e6badf8/cpu-0-candidate.json.gz",
+      "bytes": 2206,
+      "sha256": "1127e2fe0e338788bb6aab69486bfb3a55cc19f818c00d541a40abbb9593e771"
+    },
+    {
+      "build": "main",
+      "commit": "fe7537251a53b54e1064309d28db2631605fb720",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/postcommit-a821/main/target/default-compile-eval/run-20260913T225107Z-7e6badf8/cpu-0-candidate.log",
+      "bytes": 823,
+      "sha256": "425c342763d99e2789b8a29851cdc6f34b002e58bac0348f87e258427076d072"
+    },
+    {
+      "build": "main",
+      "commit": "fe7537251a53b54e1064309d28db2631605fb720",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/postcommit-a821/main/target/default-compile-eval/run-20260913T225107Z-7e6badf8/cuda-0-reference.json.gz",
+      "bytes": 45417615,
+      "sha256": "5a5c4d09fae7b2c8346f87f880de30a639ac34fe86ddadd1ced6d2386c2d61da"
+    },
+    {
+      "build": "main",
+      "commit": "fe7537251a53b54e1064309d28db2631605fb720",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/postcommit-a821/main/target/default-compile-eval/run-20260913T225107Z-7e6badf8/cuda-0-reference.log",
+      "bytes": 2619,
+      "sha256": "b4cbc5b32aa2bb052f5b71fe5ed5836c082298b6ef1c78b1bc54e07dd1c22eb9"
+    },
+    {
+      "build": "main",
+      "commit": "fe7537251a53b54e1064309d28db2631605fb720",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/postcommit-a821/main/target/default-compile-eval/run-20260913T225107Z-7e6badf8/cuda-0-candidate.json.gz",
+      "bytes": 4679219,
+      "sha256": "358864c7304821188137910cb4ab58bbae58c110c4bb4c57bcf73247bef93ba6"
+    },
+    {
+      "build": "main",
+      "commit": "fe7537251a53b54e1064309d28db2631605fb720",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/postcommit-a821/main/target/default-compile-eval/run-20260913T225107Z-7e6badf8/cuda-0-candidate.log",
+      "bytes": 851,
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac"
+    },
+    {
+      "build": "main",
+      "commit": "fe7537251a53b54e1064309d28db2631605fb720",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/postcommit-a821/main/target/default-compile-eval/run-20260913T225107Z-7e6badf8/cuda-1-candidate.json.gz",
+      "bytes": 4679228,
+      "sha256": "4a47edf3a3a68efc3d35123c192cbccb8ec760da89d88fd43d1f9d5599b8edeb"
+    },
+    {
+      "build": "main",
+      "commit": "fe7537251a53b54e1064309d28db2631605fb720",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/postcommit-a821/main/target/default-compile-eval/run-20260913T225107Z-7e6badf8/cuda-1-candidate.log",
+      "bytes": 851,
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac"
+    },
+    {
+      "build": "main",
+      "commit": "fe7537251a53b54e1064309d28db2631605fb720",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/postcommit-a821/main/target/default-compile-eval/run-20260913T225107Z-7e6badf8/cuda-1-reference.json.gz",
+      "bytes": 45417468,
+      "sha256": "030e8f7f7f88ca1a347c81e2cce9e6d0de0256ee63d04858a631e7c3b66e72ab"
+    },
+    {
+      "build": "main",
+      "commit": "fe7537251a53b54e1064309d28db2631605fb720",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_19fa0fee/target/postcommit-a821/main/target/default-compile-eval/run-20260913T225107Z-7e6badf8/cuda-1-reference.log",
+      "bytes": 2619,
+      "sha256": "deec14bd584e217071ff76daadf6f1fefbc081ba7122ae9460adefa9d165b5ba"
+    }
+  ],
+  "total_bytes": 294240257,
+  "local_files_preserved_and_verified": true,
+  "external_observer_receipt": null,
+  "retention_owner": "existing separately reviewed campaign-scoped pre-cleanup observer; worker has not modified or replaced it",
+  "status": "External retention receipt not available to this worker; these original reports must be preserved before ordinary worktree removal."
+}
