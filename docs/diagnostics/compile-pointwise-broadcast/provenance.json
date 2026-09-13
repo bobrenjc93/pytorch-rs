@@ -1,6 +1,6 @@
 {
   "kind": "non-scoring generated-code regression evidence",
-  "base_commit": "c1f2d380abd012313741e629a5139c651be14cc6",
+  "base_commit": "a2ccf6fb0cf964b8dce446e308a83850fad76e62",
   "dirty": false,
   "source_sha256": "f8685f63c4fd916f64c4e08de6ce6a1fb9ad7817c03027f679315bc5a1a4be42",
   "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",

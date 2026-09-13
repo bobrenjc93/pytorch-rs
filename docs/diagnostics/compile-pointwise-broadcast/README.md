@@ -6,14 +6,16 @@ Identical fresh default-Inductor runs also select numerically different kernels.
 The [second review record](review-autotune-blocker.md) preserves these results
 and the unresolved external numerical-contract dependency. The measurements
 below remain valid for their fixed corpus; they do not resolve these findings.
-The subsequent [regression run](review-regressions.json.gz) removes per-shape
+The subsequent [development regression run](review-regressions.json.gz) removes per-shape
 reference resets and adds cancellation-sensitive large-shape and persistent
-IEEE cases. The H100 run now fails eight subtests; the earlier passing test
-records below describe the earlier test selection, not the strengthened suite.
+IEEE cases. Its clean-commit rerun again fails eight subtests; the earlier
+passing test records below describe the earlier test selection, not the
+strengthened suite.
 
 The unchanged public-default-compile-v2 gates measured clean implementation
-`c1f2d380abd012313741e629a5139c651be14cc6`, including the
-[broadcast FMA repair](review-broadcast-order.md), on 2026-09-13 UTC. The clean
+`a2ccf6fb0cf964b8dce446e308a83850fad76e62`, including the strengthened
+regressions, on 2026-09-13 UTC. Native implementation sources remain unchanged
+from the [broadcast FMA repair](review-broadcast-order.md) at `c1f2d38`. The clean
 main baseline `166687a730a86235fa38decfa364703b60ebc595` retains its original
 measurements from earlier that day. Only documentation and evidence changed
 after the new captures; the worker created no commits.
@@ -23,7 +25,7 @@ See the [compiler contract](../../compile-pointwise-jit.md).
 | --- | ---: | ---: |
 | Weighted coverage | 6% (4/112) | 10% (8/112) |
 | Weighted CUDA performance | 12% (4/56) | 20% (8/56) |
-| Performance common-success geometric mean, reference/candidate | 1.8377081163578368 | 1.8784593297982968 |
+| Performance common-success geometric mean, reference/candidate | 1.8377081163578368 | 1.8767047192089992 |
 
 All four reports have `valid: true`, `diagnostic: false`. The new passing
 cells belong to broadcasting; unsupported categories remain zero. These are
@@ -42,8 +44,12 @@ No evaluator, corpus, tolerance, weight, denominator, or historical evidence cha
 - [Gate receipts](gates-receipt.json) record exact commands, clean commits,
   timestamps, return codes and GPU snapshots for the original baseline and new
   candidate runs. [Post-commit validation](post-commit-validation.json.gz)
-  preserves the new worker/build logs, capture commands and five passing focused
-  broadcast-priority tests, all run from clean `c1f2d38`.
+  preserves the new worker/build logs and capture commands from clean `a2ccf6f`.
+  The seven-test broadcast-priority suite reports eight failing subtests on H100.
+  With CUDA hidden, two metadata tests pass and five hardware tests explicitly
+  skip. Original `c1f2d38` reports, receipts and validation records are retained
+  byte-for-byte in `previous_capture_files`; they do not supply current-candidate
+  performance credit.
 - The original [validation bundle](validation.json.gz) and subsequent
   [repair bundle](review-broadcast-order.json.gz) retain their original compiler
   logs, commands, environment, source/test manifests, build/Clippy logs, gate
@@ -64,16 +70,18 @@ No evaluator, corpus, tolerance, weight, denominator, or historical evidence cha
 
 ## Checks and original failures
 
-The repair's complete compiler selection passed **901 tests in 85 disjoint module
+The earlier repair's complete compiler selection passed **901 tests in 85 disjoint module
 processes**, with **23 explicit skips** under `CUDA_VISIBLE_DEVICES=0`. Recorded
-test IDs verify exhaustive coverage without overlap; source and test hashes still
-match clean `c1f2d38`. The initial 896-test run remains in the original bundle.
+test IDs verify exhaustive coverage without overlap at clean `c1f2d38`.
+The changed priority suite is now captured separately at `a2ccf6f` and fails;
+this evidence phase did not repeat the unrelated full selection. The initial
+896-test run remains in the original bundle.
 All **three** focused
 pointwise device-restoration tests subsequently passed with devices `0,1`.
 The broadcast module passed nine tests with one two-device skip. Its original
 hardware-absent run (two metadata tests and seven explicit skips) and 80 scalar
 IEEE comparisons remain in the initial bundle. The repair's new priority module
-passed all five tests again from the clean commit; its development run with CUDA
+passed all five earlier tests again from `c1f2d38`; its development run with CUDA
 hidden passed both metadata tests and explicitly skipped all three hardware cases.
 Tests check numerical values, signed zeros, metadata, storage ownership,
 changed bindings/shapes, liveness, warm execution, guards and module lifetimes.

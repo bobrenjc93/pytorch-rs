@@ -22,6 +22,14 @@ explicitly. The test changes remove the masking behavior; they do **not** fix
 numerical lowering. The implementation and fixed evaluation artifacts remain
 unchanged, and the branch remains blocked.
 
+After Burner committed those tests as `a2ccf6fb0cf964b8dce446e308a83850fad76e62`,
+the [clean post-commit capture](post-commit-validation.json.gz) reproduced the
+same eight failing subtests on H100. It also records two passing metadata tests
+and five explicit skips with CUDA hidden. Both unchanged public-default gates
+and the non-corpus generated-code capture were refreshed at that commit; their
+fixed-corpus successes do not resolve the failures. The original development
+failure archive remains unchanged.
+
 The [capture bundle](review-autotune-blocker.json.gz) records clean HEAD
 `9155d4dd0e82e4c344f0be66e99e4397d1745bda`, whose implementation is unchanged
 from `c1f2d380abd012313741e629a5139c651be14cc6`. It includes exact reproduction
