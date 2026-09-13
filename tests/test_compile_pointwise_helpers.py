@@ -1,5 +1,5 @@
 """Direct helper admission and frozen specialization semantics; no body replay."""
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager, nullcontext
 import dis
 import gc
 import sys
@@ -29,6 +29,71 @@ def no_bodies(*functions):
 
 def root(helper, expression='helper(x)', signature='x', **bindings):
     return program(f'def f({signature}):\n return {expression}', helper=helper, **bindings)
+
+
+def check_ignored_capture_admission(test, x):
+    """Run the same warm/fresh rejection history with mocked or real execution."""
+    for closure in (False, True):
+        helper = program('def f(a, ignored):\n return -a')
+        identity = program('def f(a):\n return a')
+        captured = 0.5
+        if closure:
+            def fn(x):
+                saved = captured
+                return helper(x, identity(saved))
+            cell = dict(zip(fn.__code__.co_freevars, fn.__closure__))['captured']
+            def replace(value):
+                cell.cell_contents = value
+        else:
+            fn = root(helper, 'helper(x, captured)', captured=captured)
+            def replace(value):
+                fn.__globals__['captured'] = value
+        compiled = native.compile(fn)
+        with no_bodies(fn, helper, identity):
+            compiled(x)
+        state = cache(compiled)
+        # Leave the selected entry older than a same-graph distinct code guard,
+        # so failed admission must preserve recency as well as cache contents.
+        original = helper.__code__
+        helper.__code__ = original.replace()
+        compiled(x)
+        helper.__code__ = original
+        executor = next(iter(state.executors.values()))
+        def snapshot():
+            return ([(key, id(entry), tuple(entry.lowerings.items()),
+                      dict(entry.values), dict(entry.observations))
+                     for key, entry in state.graphs.items()],
+                    list(state.executors.items()))
+        before = snapshot()
+        for invalid in (identity, native, native.sin, 2**100, -(2**100)):
+            replace(invalid)
+            with test.subTest(closure=closure, invalid_type=type(invalid).__name__):
+                fresh = native.compile(fn)
+                with no_bodies(fn, helper, identity), test.assertRaises(NotImplementedError):
+                    fresh(x)
+                test.assertFalse(cache(fresh).graphs)
+                test.assertFalse(cache(fresh).executors)
+                with (patch.object(frontend, 'lower', side_effect=AssertionError('warm lowering')),
+                      patch.object(frontend.dis, 'get_instructions', side_effect=AssertionError('warm parsing')),
+                      patch.object(executor, 'run', side_effect=AssertionError('invalid launch'))
+                      if type(executor) is types.SimpleNamespace else nullcontext(),
+                      no_bodies(fn, helper, identity), test.assertRaises(NotImplementedError)):
+                    compiled(x)
+                test.assertEqual(snapshot(), before)
+        for valid in (True, 7, 2**64-1, -2**63, -0.0, float('nan'), float('inf'), 0.75):
+            replace(valid)
+            with (test.subTest(closure=closure, valid=valid), no_bodies(fn, helper, identity),
+                  patch.object(frontend, 'lower', side_effect=AssertionError('ignored value guard')),
+                  patch.object(frontend.dis, 'get_instructions', side_effect=AssertionError('warm parsing'))):
+                actual = compiled(x)
+            if type(actual) is native.Tensor:
+                test.assertEqual(actual.cpu().tolist(), [-v for v in x.cpu().tolist()])
+            test.assertEqual(len(state.graphs), 2)
+            test.assertEqual(len(state.executors), 1)
+        source = next(s for s in next(iter(state.graphs.values())).values if s.name == 'captured')
+        for entry in state.graphs.values():
+            test.assertNotIn(source, entry.observed)
+            test.assertNotIn(source, entry.observations)
 
 
 class HelperAdmission(unittest.TestCase):
@@ -293,6 +358,9 @@ class HelperCache(unittest.TestCase):
         self.codegen = self.stack.enter_context(patch.object(bridge, '_pointwise_compile', side_effect=compile_))
         self.x = native.tensor([1.0, -2.0])
 
+    def test_ignored_global_and_closure_arguments_revalidated_on_warm_hits(self):
+        check_ignored_capture_admission(self, self.x)
+
     def test_frozen_code_survives_mutation_rebinding_and_absent_tensor_abi(self):
         f1 = program('def f(a):\n return -a')
         code_a = f1.__code__
@@ -493,6 +561,9 @@ class HelperHardware(unittest.TestCase):
     def tearDown(self):
         native.compiler.reset()
         self.torch.compiler.reset()
+
+    def test_ignored_global_and_closure_arguments_revalidated_on_warm_hits(self):
+        check_ignored_capture_admission(self, native.tensor([1.0, -2.0]).to('cuda:0'))
 
     def compare(self, actual, expected, inputs):
         torch = self.torch

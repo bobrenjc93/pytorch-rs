@@ -133,6 +133,14 @@ class BoundValue:
     value: object
 
 
+def validate_data(obj):
+    """Check a data boundary without realizing or guarding a lazy source."""
+    item = obj.value if type(obj) is BoundValue else obj
+    if type(item) is not Value and type(item) is not RuntimeScalar:
+        scalar_bits(item)
+    return obj
+
+
 @dataclass(frozen=True)
 class TensorGuard:
     """Reference shape/stride predicates, independent of native address maps."""
@@ -192,6 +200,9 @@ class Specialization:
     # searches for each guard candidate. Tensor indices always come from the call.
     binding_checks: tuple = ()
     tensor_positions: tuple = ()
+    # Sources passed through data boundaries need admission even if ignored by
+    # the helper. These positions impose no scalar-value or tensor-shape guard.
+    data_positions: tuple = ()
 
 
 def _broadcast_elements(shapes):
@@ -550,7 +561,7 @@ def runtime_bindings(program, bindings, values, graphs, *, observed=None):
     return tuple(keys), resolved, tuple(scalars)
 
 
-def lower(program, values, arity, input_ids=None, *, observed=None):
+def lower(program, values, arity, input_ids=None, *, observed=None, data_sources=None):
     if input_ids is None:
         input_ids = tuple(range(arity))
     nodes = [("input", i, 0, 0) for i in input_ids]
@@ -562,9 +573,9 @@ def lower(program, values, arity, input_ids=None, *, observed=None):
     def data(obj):
         # Validate without realizing a lazy root source. Ignored parameters must
         # not acquire guards, but cannot carry callable/module/higher-order data.
-        item = obj.value if type(obj) is BoundValue else obj
-        if type(item) is not Value and type(item) is not RuntimeScalar:
-            scalar_bits(item)
+        validate_data(obj)
+        if data_sources is not None and type(obj) is BoundValue:
+            data_sources.add(obj.source)
         return obj
 
     def realize(obj):
@@ -741,7 +752,9 @@ def implementation(model, recompile_limit):
                 # The same lowering records which sources actually materialize,
                 # including dead operations but excluding unused local bindings.
                 observed = []
-                graph = lower(program, static_values, len(tensors), input_ids, observed=observed)
+                data_sources = set()
+                graph = lower(program, static_values, len(tensors), input_ids,
+                              observed=observed, data_sources=data_sources)
                 bindings, values, scalars = runtime_bindings(
                     program, static_bindings, static_values, cache.graphs, observed=observed)
                 if scalars:
@@ -755,9 +768,15 @@ def implementation(model, recompile_limit):
                     values, tuple(observed), observations, {},
                     tuple((position, expected) for position, expected in enumerate(bindings)
                           if expected[0] != "ignored"),
-                    tuple(program.positions[source] for source in observed if type(values[source]) is Value))
+                    tuple(program.positions[source] for source in observed if type(values[source]) is Value),
+                    tuple(position for position, source in enumerate(program.dependencies)
+                          if source in data_sources))
             else:
                 key, entry, scalars = selected
+                # A cached graph omits ignored sources, but helper argument
+                # admission still applies to their current values on every hit.
+                for position in entry.data_positions:
+                    validate_data(static_values[program.dependencies[position]])
                 graph = entry.lowerings.get(abi)
                 if graph is None:
                     values = dict(entry.values)

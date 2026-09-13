@@ -113,7 +113,8 @@ arguments. Identity and scalar-literal returns may feed later tensor operations;
 the root must still return one computed tensor. Scalar binary arithmetic remains
 unsupported. Both `RETURN_VALUE` and Python 3.12 `RETURN_CONST` use this data-only
 boundary. Passing an ignored input through a helper creates no scalar value guard,
-and all tensor inputs still undergo native validation.
+but its data admission is rechecked on warm cache hits, including global and
+closure rebinding. All tensor inputs still undergo native validation.
 
 Each helper binding freezes only its code identity in the existing logical
 specialization. Rebinding to another function with the same code reuses that
