@@ -26,11 +26,13 @@ result = torch.compile(pointwise)(x, y)
 
 ## Supported programs
 
-The positional-scalar extension and shared specialization fix are awaiting
-Burner's clean-commit qualification. Persistent default-Inductor regressions
-cover the previously failing signed-zero shape histories; the
+The positional-scalar extension and shared specialization fix have
+[clean-commit measurements](diagnostics/compile-pointwise-positional/postcommit-7a74596b/README.md)
+and passing persistent default-Inductor regressions for the formerly failing
+signed-zero shape histories. The
 [validation record](diagnostics/compile-pointwise-positional/README.md) preserves
-those failures alongside revision checks. This bounded surface does not establish
+those failures alongside revision checks. Burner's independent review and exact-head
+qualification remain pending. This bounded surface does not establish
 general Inductor parity.
 
 The function accepts one or two exact native CUDA float32 Tensor inputs on the

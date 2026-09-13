@@ -1,0 +1,58 @@
+{
+  "commit": "7a74596b5fa7fc17843eda8d90c885dc8cd72f12",
+  "status": "",
+  "wheel": {
+    "build_command": "maturin build --release --locked",
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/default-compile-eval/wheels.TXAuEi/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "profile": "release",
+    "sha256": "851270643d3ce98e7a58242513a0e08ef053cee48a4830e5cfbed7eb8a489251"
+  },
+  "commands": [
+    {
+      "name": "codegen",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/default-compile-eval/venv/bin/python",
+        "docs/diagnostics/compile-pointwise-positional/capture.py",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7a74596b/codegen",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/default-compile-eval/wheels.TXAuEi/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886",
+      "started_utc": "2026-09-13T09:53:08.397395+00:00",
+      "finished_utc": "2026-09-13T09:53:09.591316+00:00",
+      "returncode": 0,
+      "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7a74596b/codegen.log",
+      "environment": {
+        "CUDA_VISIBLE_DEVICES": "0",
+        "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7a74596b/codegen-inductor",
+        "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7a74596b/codegen-triton",
+        "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/cache/cuda",
+        "OMP_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1"
+      }
+    },
+    {
+      "name": "shape-history",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_compile_pointwise_runtime_scalars.ScalarShapeSpecializationHardware",
+        "tests.test_compile_pointwise_runtime_scalars.PersistentSpecializationHardware"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886",
+      "started_utc": "2026-09-13T09:53:09.591568+00:00",
+      "finished_utc": "2026-09-13T09:53:28.510389+00:00",
+      "returncode": 0,
+      "log": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7a74596b/shape-history.log",
+      "environment": {
+        "CUDA_VISIBLE_DEVICES": "0",
+        "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7a74596b/shape-history-inductor",
+        "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7a74596b/shape-history-triton",
+        "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/cache/cuda",
+        "OMP_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1"
+      }
+    }
+  ]
+}

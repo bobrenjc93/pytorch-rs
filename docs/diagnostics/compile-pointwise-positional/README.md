@@ -5,15 +5,14 @@ frozen scalar semantics before concrete native executable lookup. The original
 18 signed-zero subtest failures pass on H100 without changing their assertions
 or resetting the reference within a history.
 
-**Clean evidence refresh remains required after Burner commits this fix.** The
-existing candidate reports and CUDA/PTX capture measure `4ed105f5`, which predates
-the revised compiler. They are stale for the current implementation and remain
-unchanged to preserve their measurements and failures. They cannot qualify this
-revision. Burner must regenerate current-candidate clean coverage, CUDA timings
-and dispatched-module provenance through its post-commit phase; actual clean-main
-baseline records retain their measured identities.
+The [clean post-commit refresh](postcommit-7a74596b/README.md) measures candidate
+`7a74596b` and actual main `a281503f` with the unchanged full coverage/CUDA gate.
+It also refreshes the actually dispatched CUDA/PTX capture and passes all 12
+focused persistent-specialization tests against the clean candidate wheel.
+Earlier measurements and their failures remain pinned to their original commits.
+Burner's independent review and exact-head qualification remain separate gates.
 
-This development implementation accepts one or two exact tensors plus
+This implementation accepts one or two exact tensors plus
 exact built-in float/Boolean arguments in arbitrary positional slots. Positional
 integers remain unsupported; literal/captured integer behavior is unchanged.
 The [supported boundary](../../compile-pointwise-jit.md) and
@@ -121,9 +120,9 @@ No numerical failure occurred in the revision checks.
 The [development CUDA/PTX capture](review-fix-dispatched/provenance.json) uses the
 revised wheel and records dirty sources based on `66f4acdd`. Its
 [source manifest](review-fix-dispatched/source-manifest.json.gz) identifies the
-actual compiler and test bytes. It is a new development capture, not a replacement
-for the required clean post-commit capture. The original measured evidence below
-remains byte-for-byte preserved.
+actual compiler and test bytes. This development record is preserved alongside
+the new clean post-commit capture. The original measured evidence below remains
+byte-for-byte preserved.
 
 ## Reference characterization
 
@@ -233,12 +232,13 @@ CUDA_VISIBLE_DEVICES=0 .venv/bin/python \
   "$PWD/target/positional-codegen" "$PWD/target/wheels/torch_rs-WHEEL.whl"
 ```
 
-The retained module capture records clean implementation commit
-`4ed105f5aa80b619b874d594f5ec3ae84a1fba13`. The [post-commit record](postcommit-4ed105f5/README.md)
+The current module capture records clean implementation commit
+`7a74596b5fa7fc17843eda8d90c885dc8cd72f12`. The [post-commit record](postcommit-7a74596b/README.md)
 adds fresh full candidate and actual clean-main coverage/CUDA measurements,
-source/build/wheel verification, and a clean-commit rerun retaining all 18
-shape-history subtest failures. The earlier development validation and historical
-baseline reports above remain unchanged. These candidate captures are stale for
-the shared-cache revision and must be refreshed after its clean commit.
-Burner owns independent review, artifact commits, exact-head qualification and
-publication. Fixed-corpus scores do not establish general Inductor parity.
+source/build/wheel verification, and 12 passing persistent-specialization tests.
+The [earlier clean record](postcommit-4ed105f5/README.md) retains the pre-fix
+measurements and all 18 failures; its CUDA/PTX capture is archived byte-for-byte
+under that record. Earlier development validation and historical baseline reports
+remain unchanged. Burner owns independent review, artifact commits, exact-head
+qualification and publication. Fixed-corpus scores do not establish general
+Inductor parity.

@@ -1,10 +1,11 @@
-# Clean post-commit evidence
+# Historical clean post-commit evidence
 
 The candidate at `4ed105f5aa80b619b874d594f5ec3ae84a1fba13` and actual main at
 `a281503f3391bbd98a0ab6de2ff8f0c0a55a12d4` were measured from clean checkouts with
-the unchanged `public-default-compile-v2` gate. **The implementation remains
+the unchanged `public-default-compile-v2` gate. **This measured implementation was
 incomplete:** the focused clean-commit rerun reproduces 18 signed-zero/shape-history
-subtest failures. These measurements do not qualify the branch.
+subtest failures. These measurements do not qualify the later shared-cache revision.
+The [current clean evidence](../postcommit-7a74596b/README.md) records that revision.
 
 | Build | Measured commit | Weighted coverage | CUDA performance | Common-success reference/native latency ratio |
 | --- | --- | ---: | ---: | ---: |
@@ -41,13 +42,13 @@ capture used NVRTC 13.0 and CUDA runtime 13000. Installed nvcc 12.6 was recorded
 but did not compile the generated pointwise kernel. Burner held the `gpu` and
 `cpu-heavy` resources. Exact hashes, setup durations, timestamps, runtime paths,
 GPU inventories and before/after snapshots are retained in the reports and the
-[refreshed module provenance](../provenance.json).
+[refreshed module provenance](codegen/provenance.json).
 
 ## Capture and verification
 
 The committed [capture tool](../capture.py) was run using the exact wheel from the
-candidate gate. The refreshed [CUDA](../kernel.cu), [PTX](../kernel.ptx.gz),
-[source manifest](../source-manifest.json.gz) and [provenance](../provenance.json)
+candidate gate. The refreshed [CUDA](codegen/kernel.cu), [PTX](codegen/kernel.ptx.gz),
+[source manifest](codegen/source-manifest.json.gz) and [provenance](codegen/provenance.json)
 identify the actually dispatched module of the independent positional-scalar
 example. Source/native wheel bytes and all 128 source/test manifest entries were
 verified. The final call selects the earlier runtime specialization, distinct
@@ -57,7 +58,7 @@ from both the first static module and the last Boolean specialization.
 and the five-test `ScalarShapeSpecializationHardware` rerun against the clean
 candidate wheel. Three methods fail in 18 subtests; rank-transition and broadcast
 methods pass. All failure observations remain in the [logs](logs.json.gz).
-The [shared-cache prerequisite](../README.md#unresolved-prerequisite) remains;
+The [pre-fix failures](../README.md#retained-pre-fix-failures) describe this revision;
 no implementation, test, dependency, harness or evaluator was changed here.
 Unrelated full validation suites were not rerun.
 
@@ -83,7 +84,7 @@ CUDA_VISIBLE_DEVICES=0 target/default-compile-eval/venv/bin/python -m unittest -
   tests.test_compile_pointwise_runtime_scalars.ScalarShapeSpecializationHardware
 ```
 
-The last command currently fails as recorded. Use the gate's newly built wheel
+The last command fails on this measured revision as recorded. Use the gate's newly built wheel
 for the candidate capture. Run the gate again from the independent clean main
 checkout for the comparison. Exact executed commands, local cache settings and
 return codes are in the retained records. Burner owns independent review,
