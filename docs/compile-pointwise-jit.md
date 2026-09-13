@@ -248,3 +248,7 @@ the development checks separately from these clean campaign measurements.
 The [tensor-leaf multiply-add record](diagnostics/compile-pointwise-tensor-madd/README.md)
 documents the additional original-IR exception, default-Inductor comparisons,
 direct cached-kernel revalidation and dispatched CUDA/PTX captures.
+
+[Clean post-commit evidence](diagnostics/compile-pointwise-tensor-madd/postcommit-bf908578/README.md)
+records candidate `bf908578` and main `77aa16fc`, both fixed-corpus measurement
+orders, exact multiply-add comparisons and the raw-report retention manifest.

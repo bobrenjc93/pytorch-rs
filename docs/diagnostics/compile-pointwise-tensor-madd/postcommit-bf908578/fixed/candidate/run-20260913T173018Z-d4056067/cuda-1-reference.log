@@ -1,0 +1,42 @@
+reference/cuda: affine_relu
+reference/cuda: trigonometric
+reference/cuda: row_broadcast
+reference/cuda: rank3_broadcast
+reference/cuda: linear_module
+/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/default-compile-eval/venv/lib/python3.12/site-packages/torch/_inductor/compile_fx.py:321: UserWarning: TensorFloat32 tensor cores for float32 matrix multiplication available but not enabled. Consider setting `torch.set_float32_matmul_precision('high')` for better performance.
+  warnings.warn(
+reference/cuda: parameter_and_buffer
+reference/cuda: mlp
+reference/cuda: attention
+reference/cuda: matmul_backward
+reference/cuda: mlp_backward
+reference/cuda: shape_branch
+reference/cuda: static_loop
+reference/cuda: scalar_graph_break
+W0913 10:33:21.024000 1517496 torch/_dynamo/variables/tensor.py:1759] [0/0] Graph break from `Tensor.item()`, consider setting:
+W0913 10:33:21.024000 1517496 torch/_dynamo/variables/tensor.py:1759] [0/0]     torch._dynamo.config.capture_scalar_outputs = True
+W0913 10:33:21.024000 1517496 torch/_dynamo/variables/tensor.py:1759] [0/0] or:
+W0913 10:33:21.024000 1517496 torch/_dynamo/variables/tensor.py:1759] [0/0]     env TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1
+W0913 10:33:21.024000 1517496 torch/_dynamo/variables/tensor.py:1759] [0/0] to include these operations in the captured graph.
+W0913 10:33:21.024000 1517496 torch/_dynamo/variables/tensor.py:1759] [0/0] 
+W0913 10:33:21.024000 1517496 torch/_dynamo/variables/tensor.py:1759] [0/0] Graph break: from user code at:
+W0913 10:33:21.024000 1517496 torch/_dynamo/variables/tensor.py:1759] [0/0]   File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/scripts/torch_compile_default_corpus.py", line 206, in program
+W0913 10:33:21.024000 1517496 torch/_dynamo/variables/tensor.py:1759] [0/0]     if y.sum().item() > 0:
+W0913 10:33:21.024000 1517496 torch/_dynamo/variables/tensor.py:1759] [0/0]        ^^^^^^^^^^^^^^^^^^^
+W0913 10:33:21.024000 1517496 torch/_dynamo/variables/tensor.py:1759] [0/0] 
+W0913 10:33:21.024000 1517496 torch/_dynamo/variables/tensor.py:1759] [0/0] 
+reference/cuda: python_graph_break
+reference/cuda: shape_reshape
+reference/cuda: shape_reduction
+reference/cuda: mutating_view
+reference/cuda: transpose_view
+reference/cuda: nested_outputs
+reference/cuda: nested_inputs
+reference/cuda: layer_norm
+reference/cuda: gelu
+reference/cuda: python_helper
+reference/cuda: custom_autograd
+reference/cuda: scalar_guard
+reference/cuda: module_attribute_guard
+reference/cuda: bfloat16_roundtrip
+reference/cuda: device_roundtrip

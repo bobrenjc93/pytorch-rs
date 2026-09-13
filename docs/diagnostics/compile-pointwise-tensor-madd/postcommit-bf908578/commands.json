@@ -1,0 +1,172 @@
+[
+  {
+    "name": "paired-0-native",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/.venv/bin/python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/docs/diagnostics/compile-pointwise-tensor-madd/capture.py",
+      "native",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/paired-0-native",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/build/build.json"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18",
+    "startedAt": "2026-09-13T17:27:26Z",
+    "sourceCommit": "bf9085787aca29e523a7a38773f20f965167e734",
+    "sourceStatus": "",
+    "gpuBefore": "index, uuid, utilization.gpu [%], memory.used [MiB], driver_version\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 0 %, 4 MiB, 580.82.07\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 0 %, 4 MiB, 580.82.07\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 0 %, 4 MiB, 580.82.07\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 0 %, 4 MiB, 580.82.07\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 0 %, 4 MiB, 580.82.07\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 0 %, 4 MiB, 580.82.07\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 0 %, 4 MiB, 580.82.07\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 0 %, 4 MiB, 580.82.07\n",
+    "returncode": 0,
+    "finishedAt": "2026-09-13T17:27:37Z",
+    "gpuAfter": "index, uuid, utilization.gpu [%], memory.used [MiB], driver_version\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 1 %, 4 MiB, 580.82.07\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 0 %, 4 MiB, 580.82.07\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 0 %, 4 MiB, 580.82.07\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 0 %, 4 MiB, 580.82.07\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 0 %, 4 MiB, 580.82.07\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 0 %, 4 MiB, 580.82.07\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 0 %, 4 MiB, 580.82.07\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 0 %, 4 MiB, 580.82.07\n"
+  },
+  {
+    "name": "paired-1-reference",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/.venv/bin/python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/docs/diagnostics/compile-pointwise-tensor-madd/capture.py",
+      "reference",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/paired-1-reference",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/build/build.json"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18",
+    "startedAt": "2026-09-13T17:27:37Z",
+    "sourceCommit": "bf9085787aca29e523a7a38773f20f965167e734",
+    "sourceStatus": "",
+    "gpuBefore": "index, uuid, utilization.gpu [%], memory.used [MiB], driver_version\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 0 %, 4 MiB, 580.82.07\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 0 %, 4 MiB, 580.82.07\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 0 %, 4 MiB, 580.82.07\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 0 %, 4 MiB, 580.82.07\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 0 %, 4 MiB, 580.82.07\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 0 %, 4 MiB, 580.82.07\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 0 %, 4 MiB, 580.82.07\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 0 %, 4 MiB, 580.82.07\n",
+    "returncode": 0,
+    "finishedAt": "2026-09-13T17:27:58Z",
+    "gpuAfter": "index, uuid, utilization.gpu [%], memory.used [MiB], driver_version\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 0 %, 4 MiB, 580.82.07\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 0 %, 4 MiB, 580.82.07\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 0 %, 4 MiB, 580.82.07\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 0 %, 4 MiB, 580.82.07\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 0 %, 4 MiB, 580.82.07\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 0 %, 4 MiB, 580.82.07\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 0 %, 4 MiB, 580.82.07\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 0 %, 4 MiB, 580.82.07\n"
+  },
+  {
+    "name": "paired-2-reference",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/.venv/bin/python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/docs/diagnostics/compile-pointwise-tensor-madd/capture.py",
+      "reference",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/paired-2-reference",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/build/build.json"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18",
+    "startedAt": "2026-09-13T17:27:59Z",
+    "sourceCommit": "bf9085787aca29e523a7a38773f20f965167e734",
+    "sourceStatus": "",
+    "gpuBefore": "index, uuid, utilization.gpu [%], memory.used [MiB], driver_version\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 0 %, 4 MiB, 580.82.07\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 0 %, 4 MiB, 580.82.07\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 0 %, 4 MiB, 580.82.07\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 0 %, 4 MiB, 580.82.07\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 0 %, 4 MiB, 580.82.07\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 0 %, 4 MiB, 580.82.07\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 0 %, 4 MiB, 580.82.07\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 0 %, 4 MiB, 580.82.07\n",
+    "returncode": 0,
+    "finishedAt": "2026-09-13T17:28:20Z",
+    "gpuAfter": "index, uuid, utilization.gpu [%], memory.used [MiB], driver_version\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 0 %, 4 MiB, 580.82.07\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 0 %, 4 MiB, 580.82.07\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 0 %, 4 MiB, 580.82.07\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 0 %, 4 MiB, 580.82.07\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 0 %, 4 MiB, 580.82.07\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 0 %, 4 MiB, 580.82.07\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 0 %, 4 MiB, 580.82.07\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 0 %, 4 MiB, 580.82.07\n"
+  },
+  {
+    "name": "paired-3-native",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/.venv/bin/python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/docs/diagnostics/compile-pointwise-tensor-madd/capture.py",
+      "native",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/paired-3-native",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/build/build.json"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18",
+    "startedAt": "2026-09-13T17:28:20Z",
+    "sourceCommit": "bf9085787aca29e523a7a38773f20f965167e734",
+    "sourceStatus": "",
+    "gpuBefore": "index, uuid, utilization.gpu [%], memory.used [MiB], driver_version\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 0 %, 4 MiB, 580.82.07\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 0 %, 4 MiB, 580.82.07\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 0 %, 4 MiB, 580.82.07\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 0 %, 4 MiB, 580.82.07\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 0 %, 4 MiB, 580.82.07\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 0 %, 4 MiB, 580.82.07\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 0 %, 4 MiB, 580.82.07\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 0 %, 4 MiB, 580.82.07\n",
+    "returncode": 0,
+    "finishedAt": "2026-09-13T17:28:31Z",
+    "gpuAfter": "index, uuid, utilization.gpu [%], memory.used [MiB], driver_version\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 0 %, 4 MiB, 580.82.07\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 0 %, 4 MiB, 580.82.07\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 0 %, 4 MiB, 580.82.07\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 0 %, 4 MiB, 580.82.07\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 0 %, 4 MiB, 580.82.07\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 0 %, 4 MiB, 580.82.07\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 0 %, 4 MiB, 580.82.07\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 0 %, 4 MiB, 580.82.07\n"
+  },
+  {
+    "name": "comparison-0-1",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/.venv/bin/python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/docs/diagnostics/compile-pointwise-tensor-madd/capture.py",
+      "--compare",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/paired-0-native/report.json.gz",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/paired-1-reference/report.json.gz",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/comparison-0-1.json"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18",
+    "startedAt": "2026-09-13T17:28:31Z",
+    "sourceCommit": "bf9085787aca29e523a7a38773f20f965167e734",
+    "sourceStatus": "",
+    "gpuBefore": "index, uuid, utilization.gpu [%], memory.used [MiB], driver_version\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 0 %, 4 MiB, 580.82.07\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 0 %, 4 MiB, 580.82.07\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 0 %, 4 MiB, 580.82.07\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 0 %, 4 MiB, 580.82.07\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 0 %, 4 MiB, 580.82.07\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 0 %, 4 MiB, 580.82.07\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 0 %, 4 MiB, 580.82.07\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 0 %, 4 MiB, 580.82.07\n",
+    "returncode": 0,
+    "finishedAt": "2026-09-13T17:28:33Z",
+    "gpuAfter": "index, uuid, utilization.gpu [%], memory.used [MiB], driver_version\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 0 %, 4 MiB, 580.82.07\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 0 %, 4 MiB, 580.82.07\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 0 %, 4 MiB, 580.82.07\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 0 %, 4 MiB, 580.82.07\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 0 %, 4 MiB, 580.82.07\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 0 %, 4 MiB, 580.82.07\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 0 %, 4 MiB, 580.82.07\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 0 %, 4 MiB, 580.82.07\n"
+  },
+  {
+    "name": "comparison-2-3",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/.venv/bin/python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/docs/diagnostics/compile-pointwise-tensor-madd/capture.py",
+      "--compare",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/paired-2-reference/report.json.gz",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/paired-3-native/report.json.gz",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/comparison-2-3.json"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18",
+    "startedAt": "2026-09-13T17:28:33Z",
+    "sourceCommit": "bf9085787aca29e523a7a38773f20f965167e734",
+    "sourceStatus": "",
+    "gpuBefore": "index, uuid, utilization.gpu [%], memory.used [MiB], driver_version\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 0 %, 4 MiB, 580.82.07\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 0 %, 4 MiB, 580.82.07\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 0 %, 4 MiB, 580.82.07\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 0 %, 4 MiB, 580.82.07\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 0 %, 4 MiB, 580.82.07\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 0 %, 4 MiB, 580.82.07\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 0 %, 4 MiB, 580.82.07\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 0 %, 4 MiB, 580.82.07\n",
+    "returncode": 0,
+    "finishedAt": "2026-09-13T17:28:35Z",
+    "gpuAfter": "index, uuid, utilization.gpu [%], memory.used [MiB], driver_version\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 0 %, 4 MiB, 580.82.07\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 0 %, 4 MiB, 580.82.07\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 0 %, 4 MiB, 580.82.07\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 0 %, 4 MiB, 580.82.07\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 0 %, 4 MiB, 580.82.07\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 0 %, 4 MiB, 580.82.07\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 0 %, 4 MiB, 580.82.07\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 0 %, 4 MiB, 580.82.07\n"
+  },
+  {
+    "name": "two-device",
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/.venv/bin/python",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_compile_pointwise_tensor_madd.py",
+      "-v"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18",
+    "startedAt": "2026-09-13T17:28:35Z",
+    "sourceCommit": "bf9085787aca29e523a7a38773f20f965167e734",
+    "sourceStatus": "",
+    "gpuBefore": "index, uuid, utilization.gpu [%], memory.used [MiB], driver_version\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 0 %, 4 MiB, 580.82.07\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 0 %, 4 MiB, 580.82.07\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 0 %, 4 MiB, 580.82.07\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 0 %, 4 MiB, 580.82.07\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 0 %, 4 MiB, 580.82.07\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 0 %, 4 MiB, 580.82.07\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 0 %, 4 MiB, 580.82.07\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 0 %, 4 MiB, 580.82.07\n",
+    "returncode": 0,
+    "finishedAt": "2026-09-13T17:29:12Z",
+    "gpuAfter": "index, uuid, utilization.gpu [%], memory.used [MiB], driver_version\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 2 %, 4 MiB, 580.82.07\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 0 %, 4 MiB, 580.82.07\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 0 %, 4 MiB, 580.82.07\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 0 %, 4 MiB, 580.82.07\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 0 %, 4 MiB, 580.82.07\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 0 %, 4 MiB, 580.82.07\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 0 %, 4 MiB, 580.82.07\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 0 %, 4 MiB, 580.82.07\n"
+  },
+  {
+    "name": "fixed-candidate",
+    "command": [
+      "bash",
+      "scripts/evaluate_torch_compile_default.sh",
+      "--metric",
+      "both",
+      "--output",
+      "target/default-compile-eval/postcommit-report.json"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18",
+    "startedAt": "2026-09-13T17:29:12Z",
+    "sourceCommit": "bf9085787aca29e523a7a38773f20f965167e734",
+    "sourceStatus": "",
+    "gpuBefore": "index, uuid, utilization.gpu [%], memory.used [MiB], driver_version\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 0 %, 4 MiB, 580.82.07\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 0 %, 4 MiB, 580.82.07\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 0 %, 4 MiB, 580.82.07\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 0 %, 4 MiB, 580.82.07\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 0 %, 4 MiB, 580.82.07\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 0 %, 4 MiB, 580.82.07\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 0 %, 4 MiB, 580.82.07\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 0 %, 4 MiB, 580.82.07\n",
+    "returncode": 0,
+    "finishedAt": "2026-09-13T17:34:09Z",
+    "gpuAfter": "index, uuid, utilization.gpu [%], memory.used [MiB], driver_version\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 0 %, 4 MiB, 580.82.07\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 0 %, 4 MiB, 580.82.07\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 0 %, 4 MiB, 580.82.07\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 0 %, 4 MiB, 580.82.07\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 0 %, 4 MiB, 580.82.07\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 0 %, 4 MiB, 580.82.07\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 0 %, 4 MiB, 580.82.07\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 0 %, 4 MiB, 580.82.07\n"
+  },
+  {
+    "name": "fixed-main",
+    "command": [
+      "bash",
+      "scripts/evaluate_torch_compile_default.sh",
+      "--metric",
+      "both",
+      "--output",
+      "target/default-compile-eval/postcommit-report.json"
+    ],
+    "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/main",
+    "startedAt": "2026-09-13T17:34:09Z",
+    "sourceCommit": "77aa16fc2d0cbd258f0fa309140dc75708cf2ee3",
+    "sourceStatus": "",
+    "gpuBefore": "index, uuid, utilization.gpu [%], memory.used [MiB], driver_version\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 0 %, 4 MiB, 580.82.07\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 0 %, 4 MiB, 580.82.07\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 0 %, 4 MiB, 580.82.07\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 0 %, 4 MiB, 580.82.07\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 0 %, 4 MiB, 580.82.07\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 0 %, 4 MiB, 580.82.07\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 0 %, 4 MiB, 580.82.07\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 0 %, 4 MiB, 580.82.07\n",
+    "returncode": 0,
+    "finishedAt": "2026-09-13T17:39:07Z",
+    "gpuAfter": "index, uuid, utilization.gpu [%], memory.used [MiB], driver_version\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, 0 %, 4 MiB, 580.82.07\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, 0 %, 4 MiB, 580.82.07\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, 0 %, 4 MiB, 580.82.07\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, 0 %, 4 MiB, 580.82.07\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, 0 %, 4 MiB, 580.82.07\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, 0 %, 4 MiB, 580.82.07\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, 0 %, 4 MiB, 580.82.07\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, 0 %, 4 MiB, 580.82.07\n"
+  }
+]

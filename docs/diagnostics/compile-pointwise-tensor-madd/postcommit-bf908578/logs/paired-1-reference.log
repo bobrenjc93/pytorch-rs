@@ -1,0 +1,1 @@
+{"passed": true, "cases": [["product_left", true], ["product_right", true], ["square_left", true], ["square_right", true], ["repeated_unused", true], ["identities", true]]}

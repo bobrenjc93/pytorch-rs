@@ -1,0 +1,80 @@
+Using CPython 3.12.12 interpreter at: target/uv-python/cpython-3.12.12-linux-x86_64-gnu/bin/python3.12
+Creating virtual environment at: target/default-compile-eval/venv
+Activate with: source target/default-compile-eval/venv/bin/activate
+Using CPython 3.12.12 interpreter at: target/tensor-madd/postcommit/main/target/uv-python/cpython-3.12.12-linux-x86_64-gnu/bin/python3.12
+Creating virtual environment at: target/tensor-madd/postcommit/main/target/default-compile-eval/venv
+Activate with: source target/tensor-madd/postcommit/main/target/default-compile-eval/venv/bin/activate
+{
+  "started": 1789320418.0819075,
+  "finished": 1789320422.6738975,
+  "commands": [
+    [
+      "cp",
+      "-a",
+      "--reflink=auto",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/cargo-home/registry",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/cargo-home/registry"
+    ],
+    [
+      "cp",
+      "-a",
+      "--reflink=auto",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/python/cpython-3.12.12-linux-x86_64-gnu",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/uv-python/cpython-3.12.12-linux-x86_64-gnu"
+    ],
+    [
+      "uv",
+      "--no-config",
+      "venv",
+      "--python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/uv-python/cpython-3.12.12-linux-x86_64-gnu/bin/python3.12",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/default-compile-eval/venv"
+    ],
+    [
+      "cp",
+      "-a",
+      "--reflink=auto",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/.venv/lib/python3.12/site-packages",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/default-compile-eval/venv/lib/python3.12/site-packages"
+    ],
+    [
+      "cp",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/.venv/bin/maturin",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/default-compile-eval/venv/bin/maturin"
+    ],
+    [
+      "cp",
+      "-a",
+      "--reflink=auto",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/cargo-home/registry",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/main/target/cargo-home/registry"
+    ],
+    [
+      "cp",
+      "-a",
+      "--reflink=auto",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/python/cpython-3.12.12-linux-x86_64-gnu",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/main/target/uv-python/cpython-3.12.12-linux-x86_64-gnu"
+    ],
+    [
+      "uv",
+      "--no-config",
+      "venv",
+      "--python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/main/target/uv-python/cpython-3.12.12-linux-x86_64-gnu/bin/python3.12",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/main/target/default-compile-eval/venv"
+    ],
+    [
+      "cp",
+      "-a",
+      "--reflink=auto",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/.venv/lib/python3.12/site-packages",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/main/target/default-compile-eval/venv/lib/python3.12/site-packages"
+    ],
+    [
+      "cp",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/.venv/bin/maturin",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/main/target/default-compile-eval/venv/bin/maturin"
+    ]
+  ]
+}

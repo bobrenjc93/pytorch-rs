@@ -1,0 +1,12 @@
+During a read-only progress inspection at 2026-09-13T17:32:42Z, the inspection
+process enumerated *.json.gz while the fixed evaluator was writing a CUDA worker
+report. Reading that still-open gzip raised:
+EOFError: Compressed file ended before the end-of-stream marker was reached
+This was an inspection failure, not an evaluator failure. The evaluator and its
+raw files were left untouched; no workload was repeated. Final audits read only
+completed reports after the command sequence exits.
+
+The first package link check ran before creation of sha256.json and failed
+with AssertionError: sha256.json. package-check-before-manifest.log preserves
+the failure. The manifest was then generated and packaging checks repeated;
+no measurement, test, source, evaluator or report was changed.

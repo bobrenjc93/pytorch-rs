@@ -1,0 +1,100 @@
+# Clean post-commit tensor multiply-add evidence
+
+Measured candidate `bf9085787aca29e523a7a38773f20f965167e734` and actual main
+`77aa16fc2d0cbd258f0fa309140dc75708cf2ee3` on 2026-09-13. Both source checkouts
+were clean throughout their measurements. Main used a detached export inside
+this worktree; no branch or commit was created. Implementation, tests,
+benchmark harnesses, frozen evaluators and historical evidence are unchanged
+in this evidence step.
+
+## Results
+
+The clean candidate passed both native/reference and reference/native diagnostic
+orders: six programs, 42 shape/value/identity states and 966 calls per leg.
+Comparisons preserve exact finite values and signed zeros; NaN payload equality
+is not required. The ten focused regression tests also passed under an explicit
+GPU 0/1 reservation, including actual NVRTC/direct cached-kernel execution,
+address revalidation, reset/cache failures and current-device restoration.
+See the [command receipts](commands.json), [two-device log](logs/two-device.log),
+and exact comparisons for [native first](comparison-0-1.json) and
+[reference first](comparison-2-3.json).
+
+The unchanged `public-default-compile-v2` command completed valid measurements
+on both revisions. All reference cases passed. Every fixed cell, unsupported
+candidate outcome and slow result remains in the denominator and raw reports.
+The measured percentages below describe this fixed corpus only.
+
+| Capture | Commit | Coverage cells passed | Weighted coverage | CUDA cells passed | Weighted capped CUDA performance | Common-success ratio |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| [candidate](fixed/candidate/run-20260913T173018Z-d4056067/report.json) | `bf9085787aca` | 10/112 | 11% | 10/56 | 20% | 1.2832686449519584 |
+| [main](fixed/main/run-20260913T173516Z-6151e3a3/report.json) | `77aa16fc2d0c` | 8/112 | 9% | 8/56 | 12% | 1.2763391165958593 |
+
+Each fixed capture includes all 112 coverage cells and 56 CUDA performance cells.
+CUDA uses both implementation orders, separate fresh processes/caches, five
+warmups, 17 samples, one host compute thread and the same real CUDA runtime
+synchronization. The invocation was the repository-supported
+`bash scripts/evaluate_torch_compile_default.sh --metric both --output target/default-compile-eval/postcommit-report.json`.
+No backend, mode, autotuning, compiler-limit or tolerance override was supplied.
+No fixed-corpus result establishes broad Inductor equivalence or an all-program
+percentage. The competing-product default-autotune boundary remains unchanged.
+
+## Preserved artifacts and provenance
+
+- Raw diagnostic reports: [native first](paired-0-native.json.gz),
+  [reference second](paired-1-reference.json.gz),
+  [reference first](paired-2-reference.json.gz), [native second](paired-3-native.json.gz).
+- CUDA/PTX captured from each module actually dispatched:
+  [first native leg](paired-0-native.tar.gz), [second native leg](paired-3-native.tar.gz).
+  Every native call was checked against the successful executor LRU entry,
+  with original-body/eager/per-node replay rejected. Outputs were fresh and
+  complete input backing storage remained unchanged.
+- [Fresh diagnostic build manifest](build/build.json),
+  [source archive](build/source.tar.gz), [build log](build/build.log),
+  and exact built wheels under `build/` and `fixed/{candidate,main}/wheel/`.
+  Fixed capture directories preserve the summary reports and compiler logs.
+  The [raw-retention manifest](raw-retention.json) records every complete worker
+  report, its byte count/hash, actual capture path and observer staging path.
+  Main-export files were copied byte-for-byte into the canonical observed report
+  root; the installed operator observer retains both captures before cleanup.
+  Detailed raw reports remain unmodified and are not duplicated in git.
+- [Audit results](audit.json), [audit log](audit.log),
+  [audit source](audit-evidence.py.txt), [execution driver](run-evidence.py.txt),
+  [environment](environment.sh.txt), [environment preparation](prepare-environments.py.txt),
+  [setup receipt](prepare.log), and [resource/observer verification](ownership.json).
+
+The diagnostic build helper retains its fixed legacy `kind` string
+("development source capture; not a clean candidate/main evaluation"). That
+unmodified field describes the unscored helper; its actual `head`, empty
+`status`, source hashes and installed-wheel checks bind this new capture to the
+clean candidate commit above. The separate frozen evaluator reports explicitly
+record clean source provenance and `valid: true`.
+
+The diagnostic wheel SHA256 is `c29e39adc6d4a7509013e79966c7744d84e247c873bbae1abbd2e76a78da6672`;
+the installed extension SHA256 is `932a5ae9cd1759d987141ceb9d3fa2c50ddc6fd52b44329861c4a6c0f49a7d84`.
+Builds use Rust 1.92.0 and release/thin LTO/codegen-units=1. Python is 3.12.12;
+reference PyTorch is the locked 2.13.0+cu130. The actual pointwise JIT used
+NVRTC 13.0 with `compute_90`, FMA enabled and FTZ disabled; runtime synchronization
+used CUDA 13000. Host nvcc reports 12.6 and was not the JIT compiler.
+
+GPU 0 is H100 `GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1`; the focused two-device
+test also used H100 `GPU-11979b85-93e3-21d3-e68f-df37b8a4c296`. Driver version is
+580.82.07. The run held canonical `gpu` and `cpu-heavy` leases throughout;
+command receipts preserve before/after GPU snapshots. Measured interpreters, wheels,
+dependencies, builds and writable caches remained inside this worktree.
+
+The audit verifies source hashes against the actual git objects, installed
+Python/extension bytes against each wheel, raw report/log hashes, captured
+CUDA/PTX hashes and single-FMA structure, both exact comparisons, complete
+fixed denominators and the frozen evaluator's aggregate calculations. All 69
+files in the original diagnostic manifest remain byte-for-byte unchanged.
+The new [checksum manifest](sha256.json) covers this evidence bundle.
+A read-only progress probe briefly encountered a still-open gzip report; the
+[inspection note](inspection-notes.txt) preserves that failure. No workload was
+interrupted or rerun because of it.
+
+The operator's pinned scoped pre-cleanup observer remains installed and untouched;
+it owns canonical retention for Burner-managed evaluation cleanup. Raw reports remain in the observer-owned staging area until canonical cleanup;
+the checked-in manifests and summaries identify those complete captures. This
+preserves the evidence produced in this post-commit step without altering the
+frozen commands or replacing that observer. Independent review, exact-head
+qualification and merge gates remain Burner-owned.
