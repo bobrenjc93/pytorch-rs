@@ -67,13 +67,31 @@ Numerical lowering shares identical ordered expressions before selecting
 explicit `fmaf` operations for each consumer. Self-subtraction established before
 sign rewriting uses the shared rounded value: finite values produce positive zero, while infinities and NaNs
 produce NaN. Products may contract at multiple consumers while retaining their
-rounded value for other uses. Operand order is retained, including for
-commutative operators, to match the reference's expression deduplication.
+rounded value for other uses. Expression deduplication retains operand order,
+including for commutative operators. When a sum has two direct positive
+products, contraction selection follows the reference's arithmetic/select
+dependency ranking: live input loads receive successive ranks, arithmetic adds
+one dependency level, and ReLU adds comparison and selection levels. The
+lower-ranked product contracts; equal ranks retain expression order. Thus
+`x*x + x*y` contracts the square, while `a=x.relu(); a*a + x*y` rounds the
+square and contracts `x*y`, including when the sum operands are reversed.
+This bounded rule follows LLVM's
+[Reassociate operand ordering](https://github.com/llvm/llvm-project/blob/1f126a6dea50d185c0781743a667390037ae88bd/llvm/lib/Transforms/Scalar/Reassociate.cpp#L242)
+used by the measured reference. It does not model libdevice's internal control
+flow; expressions depending on sin/cos retain the existing contraction priority.
 Subtraction introduced by sign normalization retains its contraction eligibility
 even when the normalized operands coincide. Sign-flipped products retain their
 factors: direct products take contraction priority, but an otherwise unpaired
 signed product can still contract rather than prematurely overflowing. Shared
-negative doubling retains its rounded value for earlier addition consumers;
+tensor products retain that fallback; an exact sign flip of a single-use
+tensor product can instead move into its factor and contract directly,
+matching the reference's
+[negation hoisting](https://github.com/llvm/llvm-project/blob/1f126a6dea50d185c0781743a667390037ae88bd/llvm/lib/Transforms/InstCombine/InstCombineAddSub.cpp#L3020).
+This counts live canonical operand uses before sign normalization rewrites
+consumers; the signed result itself may be shared.
+An addition or right-hand subtraction can extract the factor's sign again
+only when the signed multiplication has one use. These are separate use counts.
+Shared negative doubling retains its rounded value for earlier addition consumers;
 the last live consumer and subtraction consumers can expose its factors.
 Consumer ordering is determined from live, deduplicated expressions before
 sign normalization, including elimination of multiplication by one.

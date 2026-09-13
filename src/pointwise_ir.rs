@@ -370,6 +370,54 @@ mod tests {
     }
 
     #[test]
+    fn competing_add_products_follow_dependency_rank() {
+        for (first, second) in [(0, 1), (1, 0)] {
+            for reversed in [false, true] {
+                let mut graph = Graph {
+                    inputs: 2,
+                    nodes: vec![
+                        Node::Input(0),
+                        Node::Input(1),
+                        Node::Mul(first, first),
+                        Node::Mul(first, second),
+                        if reversed {
+                            Node::Add(3, 2)
+                        } else {
+                            Node::Add(2, 3)
+                        },
+                    ],
+                    output: 4,
+                };
+                assert!(
+                    graph
+                        .source()
+                        .unwrap()
+                        .contains(&format!("fmaf(v{first}, v{first}, v3)"))
+                );
+                graph.nodes = vec![
+                    Node::Input(0),
+                    Node::Input(1),
+                    Node::Relu(first),
+                    Node::Mul(2, 2),
+                    Node::Mul(first, second),
+                    if reversed {
+                        Node::Add(4, 3)
+                    } else {
+                        Node::Add(3, 4)
+                    },
+                ];
+                graph.output = 5;
+                let source = graph.source().unwrap();
+                assert!(source.contains("__fmul_rn(v2, v2)"));
+                assert!(source.contains(&format!("fmaf(v{first}, v{second}, v3)")));
+                // Subtraction retains its original, noncommutative orientation.
+                graph.nodes[5] = Node::Sub(3, 4);
+                assert!(graph.source().unwrap().contains("fmaf(v2, v2, -v4)"));
+            }
+        }
+    }
+
+    #[test]
     fn contracts_left_product_when_both_operands_are_products() {
         let mut graph = Graph {
             inputs: 2,

@@ -4,6 +4,8 @@ use super::{Graph, Node};
 use std::collections::HashMap;
 use std::fmt::Write;
 
+const LOAD_RANK_BASE: usize = 1 << 16;
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum Expr {
     Node(Node),
@@ -34,6 +36,7 @@ struct ContractionProduct {
 struct Lowering {
     nodes: Vec<Expr>,
     interned: HashMap<Expr, usize>,
+    constant_expressions: Vec<bool>,
 }
 
 impl Lowering {
@@ -44,6 +47,15 @@ impl Lowering {
         let id = self.nodes.len();
         self.interned.insert(expr.clone(), id);
         self.nodes.push(expr);
+        self.constant_expressions.push(
+            !matches!(
+                self.nodes[id],
+                Expr::Node(Node::Input(_) | Node::RuntimeScalar(_, _))
+            ) && self
+                .operands(id)
+                .iter()
+                .all(|&operand| self.constant_expressions[operand]),
+        );
         id
     }
 
@@ -167,11 +179,22 @@ impl Lowering {
 
     // Extract a negative product's sign without changing operand order. A sign
     // extracted from an add becomes subtraction before choosing its FMA side.
-    fn positive(&mut self, id: usize) -> Option<usize> {
+    fn positive(&mut self, id: usize, single_use: bool) -> Option<usize> {
         if let Expr::Flip(a) = self.nodes[id] {
             return Some(a);
         }
         let (mut a, mut b) = self.product(id)?;
+        // InstCombine extracts a negated factor at Add/Sub consumers only
+        // when the signed multiply itself has one use. A shared signed result
+        // keeps its identity even when its original positive product had one use.
+        if single_use {
+            if let Expr::Flip(value) = self.nodes[a] {
+                return Some(self.node(Node::Mul(value, b)));
+            }
+            if let Expr::Flip(value) = self.nodes[b] {
+                return Some(self.node(Node::Mul(a, value)));
+            }
+        }
         let coefficient = if self.constant(a).is_some_and(|x| x < 0.0) {
             &mut a
         } else if self.constant(b).is_some_and(|x| x < 0.0) {
@@ -184,7 +207,7 @@ impl Lowering {
         Some(self.node(Node::Mul(a, b)))
     }
 
-    fn normalize(&mut self, node: Node, last_use: [bool; 2]) -> usize {
+    fn normalize(&mut self, node: Node, last_use: [bool; 2], uses: [usize; 2]) -> usize {
         // Keep arithmetic on known constant tensors distinct from scalar
         // nodes and runtime expressions. In particular, later negation must
         // invert the constant's sign, not emit positive-zero subtraction or
@@ -225,6 +248,23 @@ impl Lowering {
                     .or_else(|| self.constant(a).map(|c| (b, a, c, true)));
                 if let Some((value, _, scalar, reversed)) = coefficient {
                     if scalar.to_bits() == (-1.0_f64).to_bits() {
+                        // LLVM visitFNeg moves the sign into a single-use
+                        // tensor multiply before rewriting its consumers.
+                        // Count the original product's uses, not the signed
+                        // result's uses or uses introduced by normalization.
+                        if uses[usize::from(reversed)] == 1
+                            && let Some((a, b)) = self.product(value)
+                            && [a, b].iter().all(|&factor| {
+                                !self.constant_expressions[factor]
+                                    && !matches!(
+                                        self.nodes[factor],
+                                        Expr::Node(Node::RuntimeScalar(_, _))
+                                    )
+                            })
+                        {
+                            let negative = self.intern(Expr::Flip(b));
+                            return self.node(Node::Mul(a, negative));
+                        }
                         return self.intern(Expr::Flip(value));
                     }
                     // Keep signed doubling's preferred rounded form, but retain
@@ -242,15 +282,15 @@ impl Lowering {
             }
             Node::Sub(a, b) if a == b => return self.intern(Expr::SelfSub(a)),
             Node::Add(a, b) => {
-                if let Some(positive) = self.positive(b) {
+                if let Some(positive) = self.positive(b, uses[1] == 1) {
                     return self.node(Node::Sub(a, positive));
                 }
-                if let Some(positive) = self.positive(a) {
+                if let Some(positive) = self.positive(a, uses[0] == 1) {
                     return self.node(Node::Sub(b, positive));
                 }
             }
             Node::Sub(a, b) if a != b => {
-                if let Some(positive) = self.positive(b) {
+                if let Some(positive) = self.positive(b, uses[1] == 1) {
                     // Preserve this add's operand orientation. Reapplying the
                     // add sign rewrite would choose a different rounded product.
                     return self.node(Node::Add(a, positive));
@@ -286,9 +326,54 @@ impl Lowering {
         self.node(node)
     }
 
-    fn contract(&self, a: usize, b: usize, subtract: bool) -> Option<String> {
+    fn contraction_ranks(&self, input_ranks: &[usize]) -> Vec<Option<usize>> {
+        // LLVM Reassociate orders commutative operands by dependency rank
+        // before NVPTX selects an FMA. Model arithmetic/select dependencies,
+        // not expression size: shared operands do not increase the rank twice.
+        // Libdevice's internal control flow is outside this rank model.
+        let mut ranks: Vec<Option<usize>> = Vec::with_capacity(self.nodes.len());
+        for (id, expr) in self.nodes.iter().enumerate() {
+            let rank = match *expr {
+                Expr::Node(Node::Input(i)) => Some(input_ranks[i]),
+                // Reference runtime scalars are kernel arguments, below the
+                // separately ranked, side-effecting tensor loads.
+                Expr::Node(Node::RuntimeScalar(i, _)) => Some(i + 1),
+                Expr::Node(Node::Constant(_) | Node::Integer(_) | Node::Boolean(_))
+                | Expr::Zero
+                | Expr::Folded(_) => Some(0),
+                Expr::Node(Node::Sub(a, _)) if self.subtracts_scalar_zero(id).is_some() => ranks[a],
+                Expr::Node(Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b)) => {
+                    ranks[a].zip(ranks[b]).map(|(a, b)| a.max(b) + 1)
+                }
+                Expr::Node(Node::Relu(a)) => ranks[a].map(|rank| rank + 2), // compare, select
+                Expr::Node(Node::Neg(a)) | Expr::SelfSub(a) => ranks[a].map(|rank| rank + 1),
+                Expr::Flip(a) | Expr::SignedDouble(a) => ranks[a], // actual fneg
+                Expr::Node(Node::Sin(_) | Node::Cos(_)) => None,
+            };
+            ranks.push(rank);
+        }
+        ranks
+    }
+
+    fn contract(
+        &self,
+        a: usize,
+        b: usize,
+        subtract: bool,
+        ranks: &[Option<usize>],
+    ) -> Option<String> {
         let left = self.contraction_product(a);
         let right = self.contraction_product(b);
+        // Canonicalize only competing positive products of an addition. Signed
+        // products have already undergone a different normalization phase, and
+        // subtraction is not commutative. Ties retain the original orientation.
+        if !subtract
+            && left.is_some_and(|p| p.direct && !p.negative)
+            && right.is_some_and(|p| p.direct && !p.negative)
+            && ranks[a].zip(ranks[b]).is_some_and(|(a, b)| b < a)
+        {
+            return self.contract(b, a, false, ranks);
+        }
         // Prefer direct products, preserving left-to-right order when both
         // candidates are sign-flipped even if only the right is zero-wrapped.
         let preferred_left = left.filter(|product| {
@@ -385,6 +470,34 @@ fn early_aliases(graph: &Graph) -> (Vec<usize>, Vec<bool>) {
     (aliases, zeros)
 }
 
+fn input_load_ranks(graph: &Graph, aliases: &[usize], zeros: &[bool]) -> Vec<usize> {
+    // Reference loads are emitted on first live use, not in positional-input
+    // order. Traverse before sign normalization can reverse operand orientation.
+    let mut ranks = vec![0; graph.inputs];
+    let mut seen = vec![false; graph.nodes.len()];
+    let mut pending = vec![graph.output];
+    let mut rank = LOAD_RANK_BASE;
+    while let Some(id) = pending.pop() {
+        let id = aliases[id];
+        if seen[id] || zeros[id] {
+            continue;
+        }
+        seen[id] = true;
+        match graph.nodes[id] {
+            Node::Input(i) if ranks[i] == 0 => {
+                rank += 1;
+                ranks[i] = rank;
+            }
+            Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b) => {
+                pending.extend([b, a]);
+            }
+            Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a) => pending.push(a),
+            _ => {}
+        }
+    }
+    ranks
+}
+
 #[allow(clippy::cast_possible_truncation)]
 fn float32_bits(bits: u64) -> u32 {
     (f64::from_bits(bits) as f32).to_bits()
@@ -409,7 +522,11 @@ fn remap(node: &Node, mapped: &[usize]) -> Node {
 
 // Find each original expression's last canonical live consumer before sign
 // normalization. Dead and duplicate expressions cannot impose rounding boundaries.
-fn last_consumers(graph: &Graph, aliases: &[usize], zeros: &[bool]) -> Vec<[bool; 2]> {
+fn consumer_analysis(
+    graph: &Graph,
+    aliases: &[usize],
+    zeros: &[bool],
+) -> (Vec<[bool; 2]>, Vec<[usize; 2]>) {
     let mut canonical = Lowering::default();
     let mut mapped = Vec::with_capacity(graph.nodes.len());
     for (id, node) in graph.nodes.iter().enumerate() {
@@ -434,6 +551,7 @@ fn last_consumers(graph: &Graph, aliases: &[usize], zeros: &[bool]) -> Vec<[bool
     }
     let mut live = vec![false; canonical.nodes.len()];
     let mut last = vec![0; canonical.nodes.len()];
+    let mut uses = vec![0; canonical.nodes.len()];
     live[mapped[graph.output]] = true;
     for id in (0..canonical.nodes.len()).rev() {
         if !live[id] {
@@ -447,22 +565,31 @@ fn last_consumers(graph: &Graph, aliases: &[usize], zeros: &[bool]) -> Vec<[bool
         for operand in operands {
             live[operand] = true;
             last[operand] = last[operand].max(id);
+            uses[operand] += 1;
         }
     }
-    mapped
+    let last = mapped
         .iter()
         .map(|&id| match canonical.nodes[id] {
             Expr::Node(Node::Add(a, b)) => [last[a] == id, last[b] == id],
             _ => [true, true],
         })
-        .collect()
+        .collect();
+    let uses = mapped
+        .iter()
+        .map(|&id| match canonical.nodes[id] {
+            Expr::Node(Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b)) => [uses[a], uses[b]],
+            _ => [0, 0],
+        })
+        .collect();
+    (last, uses)
 }
 
 pub(super) fn source(graph: &Graph) -> String {
     let mut lower = Lowering::default();
     let mut mapped = Vec::with_capacity(graph.nodes.len());
     let (aliases, zeros) = early_aliases(graph);
-    let last = last_consumers(graph, &aliases, &zeros);
+    let (last, uses) = consumer_analysis(graph, &aliases, &zeros);
     for (id, node) in graph.nodes.iter().enumerate() {
         if aliases[id] != id {
             mapped.push(mapped[aliases[id]]);
@@ -473,9 +600,10 @@ pub(super) fn source(graph: &Graph) -> String {
             continue;
         }
         let node = remap(node, &mapped);
-        mapped.push(lower.normalize(node, last[id]));
+        mapped.push(lower.normalize(node, last[id], uses[id]));
     }
     let output = mapped[graph.output];
+    let ranks = lower.contraction_ranks(&input_load_ranks(graph, &aliases, &zeros));
     let mut live = vec![false; lower.nodes.len()];
     live[output] = true;
     for id in (0..lower.nodes.len()).rev() {
@@ -498,12 +626,7 @@ pub(super) fn source(graph: &Graph) -> String {
          for (unsigned long long i = (unsigned long long)blockIdx.x * blockDim.x + threadIdx.x;\n\
          i < n; i += (unsigned long long)blockDim.x * gridDim.x) {\n",
     );
-    let mut constant = Vec::with_capacity(lower.nodes.len());
     for (id, node) in lower.nodes.iter().enumerate() {
-        constant.push(
-            !matches!(node, Expr::Node(Node::Input(_) | Node::RuntimeScalar(_, _)))
-                && lower.operands(id).iter().all(|&operand| constant[operand]),
-        );
         if !live[id] {
             continue;
         }
@@ -518,13 +641,13 @@ pub(super) fn source(graph: &Graph) -> String {
             Expr::Zero => "__uint_as_float(0x00000000u)".into(),
             Expr::Node(Node::Boolean(value)) => if value { "1.0f" } else { "0.0f" }.into(),
             Expr::Node(Node::Add(a, b)) => lower
-                .contract(a, b, false)
+                .contract(a, b, false, &ranks)
                 .unwrap_or_else(|| format!("__fadd_rn(v{a}, v{b})")),
             Expr::Node(Node::Sub(a, _)) if lower.subtracts_scalar_zero(id).is_some() => {
                 format!("v{a}")
             }
             Expr::Node(Node::Sub(a, b)) => lower
-                .contract(a, b, true)
+                .contract(a, b, true, &ranks)
                 .unwrap_or_else(|| format!("__fsub_rn(v{a}, v{b})")),
             Expr::Node(Node::Mul(a, b)) => format!("__fmul_rn(v{a}, v{b})"),
             Expr::Node(Node::Neg(a)) => lower.product(a).map_or_else(
@@ -533,7 +656,7 @@ pub(super) fn source(graph: &Graph) -> String {
             ),
             Expr::Node(Node::Relu(a)) => format!("(v{a} < 0.0f ? 0.0f : v{a})"),
             Expr::Node(Node::Sin(a)) => {
-                if constant[a] {
+                if lower.constant_expressions[a] {
                     // Reference constant folding rounds a high-precision unary
                     // result to f32. Keep both input and output materialization
                     // boundaries; sinf's allowed ULP error can amplify later.
@@ -546,7 +669,9 @@ pub(super) fn source(graph: &Graph) -> String {
                     )
                 }
             }
-            Expr::Node(Node::Cos(a)) if constant[a] => format!("(float)cos((double)v{a})"),
+            Expr::Node(Node::Cos(a)) if lower.constant_expressions[a] => {
+                format!("(float)cos((double)v{a})")
+            }
             Expr::Node(Node::Cos(a)) => format!("cosf(v{a})"),
             Expr::Flip(a) | Expr::SignedDouble(a) => format!("(-v{a})"),
             Expr::SelfSub(a) => format!("__fsub_rn(v{a}, v{a})"),

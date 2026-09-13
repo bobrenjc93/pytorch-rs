@@ -1,6 +1,12 @@
 # Native default pointwise JIT validation
 
-Fresh coverage, CUDA-performance and generated-code captures measure clean
+The current product-contraction repair has
+[development validation](review-product-priority.md). The clean captures below
+predate that implementation change and do not measure the repaired candidate.
+Fresh campaign and generated-code captures require Burner's next clean commit;
+the original reports retain their measured identities.
+
+The latest preserved coverage, CUDA-performance and generated-code captures measure clean
 implementation commit `08e37fe500f2dfe2b53596335541dd6bf522ad60` on 2026-09-13,
 including the restored public `torch.compile():` error prefix and its
 CPU/non-Tensor rejection regression assertion. Both unchanged
@@ -24,7 +30,7 @@ remain zero. The uncapped ratio describes only those four cells; the baseline
 has no common successes, so its ratio is null. These are fixed-corpus results,
 not general Inductor parity.
 
-## Current committed evidence
+## Latest clean capture, before the product-contraction repair
 
 - [Coverage](postcommit-08e37f/candidate-coverage.json.gz) and
   [CUDA performance](postcommit-08e37f/candidate-cuda-perf.json.gz) are
