@@ -26,8 +26,23 @@ result = torch.compile(pointwise)(x, y)
 
 ## Supported programs
 
-The function must have one or two positional exact native CUDA float32 Tensor
-inputs, on the same device, with contiguous storage. Equal-shape inputs support
+The positional-scalar extension in this development candidate is **not yet
+qualified**. Persistent default-Inductor shape histories expose an unresolved
+shared-cache signed-zero mismatch, also reproducible with existing captures.
+The [retained failures and required cache refactor](diagnostics/compile-pointwise-positional/README.md#unresolved-prerequisite)
+describe the limitation; the implementation below is not a completed parity claim.
+
+The function accepts one or two exact native CUDA float32 Tensor inputs on the
+same device with contiguous storage, plus exact built-in `float` and `bool`
+arguments in any positional slots. For equal-shaped tensors:
+
+```python
+def f(scale, x, enabled, y):
+    return x * scale + y * enabled
+```
+
+Positional integers, numeric subclasses, keyword arguments, default expansion and scalar-only
+programs are unsupported. Equal-shape inputs support
 local intermediate variables, reused expressions, binary
 add/subtract/multiply (tensor/tensor or tensor/scalar in either order), and
 unary negation/ReLU/sin/cos. Operator syntax, positional Tensor methods, and
@@ -119,13 +134,21 @@ distinct tensors, even equal-valued tensors or views sharing storage, keep
 separate expressions. Only this identity relationship is cached, so fresh
 tensors reuse the same specialization.
 
-### Captured scalars
+### Scalar bindings
 
-Captured scalars are initially constant
-specializations. Static captured-float guards equate positive and negative
+Each used parameter, global and closure cell has an explicit source identity.
+Public parameter positions are distinct from filtered tensor indices and runtime
+scalar operand indices. All tensors, including unused ones, enter the same
+validation, alias, shape, code-generation and launch path. Scalar parameters that are unused or overwritten before their first read have
+no value guards; exact-type admission still checks every
+argument. Boolean bindings stay static. Integer literals and captures retain their
+existing support; positional integers are rejected before user hooks can run.
+
+Used positional and captured scalars are initially constant
+specializations. Static float guards equate positive and negative
 zero: a cache hit retains the sign captured by that graph, while a new graph
 uses the current value. Literal zeros and promoted runtime parameters retain
-their actual sign. A changed finite captured float becomes a runtime float32
+their actual sign. A changed finite float becomes a runtime float32
 kernel parameter, matching the reference's warm-call materialization boundary.
 Promotion is per binding, persists when earlier float values return, and is
 cleared by reset. Integer and Boolean bindings retain their scalar kinds.
@@ -133,10 +156,16 @@ Existing runtime promotions are applied before the complete graph-cache guard
 is checked; new promotion is discovered only on a cache miss. Returning to a
 cached finite specialization after an infinity/NaN-only interlude retains that
 specialization, while shape misses still consult the full binding history.
-At most 64 runtime scalar parameters are supported. Their current values are
+At most 64 runtime scalar parameters are supported in total across captures and
+positional arguments, by the existing single promotion pass. Their current values are
 passed by value at launch and are never retained in graph or code cache keys.
 The binding regressions keep both wrappers alive across changes without
-resetting the reference.
+resetting the reference. Persistent default-Inductor tests independently check
+positional, global and closure histories, repeated bindings, slot changes,
+nonfinite values, overflow, signed zeros and Boolean transitions. These tests
+characterize binding policy; additional persistent shape-history regressions
+fail on the shared-cache mismatch described above.
+See the [positional binding evidence](diagnostics/compile-pointwise-positional/README.md).
 
 ### Recompilation and reset
 

@@ -85,6 +85,15 @@ class Graph:
 
 
 @dataclass(frozen=True)
+class BindingSource:
+    # Parameter positions belong to the public signature, never to the native
+    # tensor tuple or scalar ABI. Captures retain their bytecode origin.
+    kind: str
+    name: str
+    position: int | None = None
+
+
+@dataclass(frozen=True)
 class Program:
     code: object
     instructions: tuple
@@ -104,14 +113,14 @@ def validate_signature_containers(model):
 
 
 def analyze(model, arity):
-    if type(model) is not types.FunctionType or arity not in (1, 2):
-        unsupported("expected an exact Python function and one or two inputs")
+    if type(model) is not types.FunctionType or arity < 1:
+        unsupported("expected an exact Python function and positional inputs")
     validate_signature_containers(model)
     code = model.__code__
     if (code.co_argcount != arity or code.co_kwonlyargcount or code.co_flags & (0x04 | 0x08 | 0x20 | 0x80 | 0x200)
             or code.co_cellvars
             or getattr(code, "co_exceptiontable", b"")):
-        unsupported("requires a straight-line function with one or two positional tensor inputs")
+        unsupported("requires a straight-line function with positional inputs and no defaults")
     # dis formats co_consts with repr, before yielding even a LOAD_CONST.
     # Admit the entire pool first; None and exact strings also hold compiler
     # metadata (implicit returns and docstrings), but cannot be scalar operands.
@@ -124,8 +133,23 @@ def analyze(model, arity):
     for instruction in instructions:
         if instruction.opname not in _ALLOWED:
             unsupported(f"unsupported bytecode {instruction.opname}; control flow, mutation and non-pointwise graphs are unsupported")
-    dependencies = tuple(dict.fromkeys((i.opname, i.argval) for i in instructions
-                                      if i.opname in ("LOAD_GLOBAL", "LOAD_DEREF")))
+    # Only initial parameter values read by the bytecode have scalar guards.
+    # Unused/overwritten tensors still remain in the complete native input tuple.
+    initial, read = set(code.co_varnames[:arity]), set()
+    for instruction in instructions:
+        op, arg = instruction.opname, instruction.argval
+        if op in ("STORE_FAST", "STORE_FAST_LOAD_FAST", "STORE_FAST_STORE_FAST"):
+            stored = (arg,) if op == "STORE_FAST" else arg[:1] if op == "STORE_FAST_LOAD_FAST" else arg
+            initial.difference_update(stored)
+        loaded = ((arg,) if op in ("LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_FAST_BORROW")
+                  else arg if op in ("LOAD_FAST_LOAD_FAST", "LOAD_FAST_BORROW_LOAD_FAST_BORROW")
+                  else arg[1:] if op == "STORE_FAST_LOAD_FAST" else ())
+        read.update(name for name in loaded if name in initial)
+    parameters = tuple(BindingSource("parameter", name, position)
+                       for position, name in enumerate(code.co_varnames[:arity]) if name in read)
+    captures = tuple(dict.fromkeys(BindingSource(i.opname, i.argval) for i in instructions
+                                  if i.opname in ("LOAD_GLOBAL", "LOAD_DEREF")))
+    dependencies = parameters + captures
     return Program(code, instructions, dependencies)
 
 
@@ -148,7 +172,26 @@ def binding(value):
     unsupported("only native operator bindings and scalar constants may be captured")
 
 
-def resolve(model, program):
+def bind_arguments(args):
+    """Filter once, retaining every tensor (including unused and repeated ones)."""
+    tensors, parameters = [], []
+    for arg in args:
+        kind = type(arg)
+        if kind is _TENSOR_TYPE:
+            parameters.append(Value(len(tensors)))
+            tensors.append(arg)
+        elif kind is float or kind is bool:
+            parameters.append(arg)
+        else:
+            unsupported("default backend requires exact native CUDA float32 Tensor inputs "
+                        "and exact float/bool positional scalars; positional integers and "
+                        "objects are unsupported; see docs/compile-pointwise-jit.md")
+    if len(tensors) not in (1, 2):
+        unsupported("expected one or two positional tensor arguments")
+    return tuple(tensors), tuple(parameters)
+
+
+def resolve(model, program, parameters=None):
     # FunctionType permits a dict subclass as globals. Never invoke its lookup
     # hooks, including on a warm call or before rejecting a later graph node.
     globals_ = model.__globals__
@@ -160,8 +203,18 @@ def resolve(model, program):
         unsupported("function globals keys must be exact strings")
     values, keys = {}, []
     closure = dict(zip(program.code.co_freevars, model.__closure__ or ()))
-    for kind, name in program.dependencies:
-        if kind == "LOAD_GLOBAL":
+    if parameters is None:
+        # Private hardware-free lowering callers model a tensor-only signature.
+        parameters = tuple(Value(i) for i in range(program.code.co_argcount))
+    for source in program.dependencies:
+        kind, name = source.kind, source.name
+        if kind == "parameter":
+            value = parameters[source.position]
+            if type(value) is Value:
+                keys.append(("tensor", value.index))
+                values[source] = value
+                continue
+        elif kind == "LOAD_GLOBAL":
             if name not in globals_:
                 unsupported("unbound global: " + name)
             value = globals_[name]
@@ -172,12 +225,12 @@ def resolve(model, program):
                 unsupported("empty closure binding: " + name)
         key, value = binding(value)
         keys.append(key)
-        values[kind, name] = value
+        values[source] = value
     return tuple(keys), values
 
 
 def runtime_bindings(program, bindings, values, graphs, *, promote=True):
-    """Promote changed captured floats using successful, reset-owned history."""
+    """Promote changed floats by source using successful, reset-owned history."""
     previous = [key[1] for key in graphs if key[0] is program.code]
     keys, resolved, scalars = list(bindings), dict(values), []
     for position, dependency in enumerate(program.dependencies):
@@ -210,7 +263,8 @@ def lower(program, values, arity, input_ids=None):
     nodes = [("input", i, 0, 0) for i in input_ids]
     runtime = sorted(value.index for value in values.values() if type(value) is RuntimeScalar)
     nodes.extend(("scalar", index, 0, 0) for index in runtime)
-    locals_ = dict(zip(program.code.co_varnames, (Value(i) for i in range(arity))))
+    locals_ = {source.name: values[source] for source in program.dependencies
+               if source.kind == "parameter"}
     stack = []
 
     def value(obj):
@@ -262,7 +316,7 @@ def lower(program, values, arity, input_ids=None):
             scalar_bits(arg)  # Validate before retaining; never invoke user conversion.
             stack.append(arg)
         elif op in ("LOAD_GLOBAL", "LOAD_DEREF"):
-            stack.append(values[op, arg])
+            stack.append(values[BindingSource(op, arg)])
         elif op in ("LOAD_ATTR", "LOAD_METHOD"):
             owner = stack.pop()
             if owner is _ROOT:
@@ -321,24 +375,22 @@ def implementation(model, recompile_limit):
 
     def compiled(*args, **kwargs):
         nonlocal program
-        if kwargs or len(args) not in (1, 2):
-            unsupported("expected one or two positional tensor arguments")
+        if kwargs:
+            unsupported("expected positional arguments without keywords")
         if type(_ROOT) is not types.ModuleType:
             unsupported("patched native package type")
-        if any(type(arg) is not _TENSOR_TYPE for arg in args):
-            unsupported("default backend requires exact native CUDA float32 Tensor inputs; "
-                        "see docs/compile-pointwise-jit.md")
+        tensors, parameters = bind_arguments(args)
         if _ROOT.overrides._get_current_function_mode() is not None:
             unsupported("active __torch_function__ mode")
         for cls, name, expected in _METHOD_GUARDS:
             if cls.__dict__.get(name, _MISSING) is not expected:
                 unsupported("patched Tensor operation binding: " + name)
         # The native bridge checks all metadata and storage bounds again on launch.
-        metadata = tuple(_native._compile_trace_tensor_metadata(arg) for arg in args)
+        metadata = tuple(_native._compile_trace_tensor_metadata(arg) for arg in tensors)
         if any(m[4] == "cpu" for m in metadata):
             unsupported("default backend does not compile CPU tensors; use backend='eager' "
                         "for the documented CPU capture subset; see docs/compile-pointwise-jit.md")
-        _native._pointwise_validate_inputs(args)
+        _native._pointwise_validate_inputs(tensors)
         # Contiguous input offsets are launch-time addresses, not compiler
         # specialization guards. Inductor reuses a static scalar specialization
         # across them. Bounds are still checked above and by native execution.
@@ -349,7 +401,7 @@ def implementation(model, recompile_limit):
             validate_signature_containers(model)
             if program.code.co_argcount != len(args):
                 unsupported("function signature changed")
-            static_bindings, static_values = resolve(model, program)
+            static_bindings, static_values = resolve(model, program, parameters)
             # Persistent runtime promotion takes precedence over old static
             # entries. Discover new promotion only after the full guard misses:
             # a nonfinite specialization must not invalidate a prior static hit.
@@ -358,7 +410,7 @@ def implementation(model, recompile_limit):
             # Object identity, not equal values or shared storage, determines
             # whether two parameters denote the same expression. Retain only
             # the relationship so fresh tensors can reuse graphs and code.
-            input_ids = (0, 0) if len(args) == 2 and args[0] is args[1] else tuple(range(len(args)))
+            input_ids = (0, 0) if len(tensors) == 2 and tensors[0] is tensors[1] else tuple(range(len(tensors)))
             key = (program.code, bindings, guard_metadata, input_ids)
             executor = cache.graphs.get(key)
             if executor is None:
@@ -369,7 +421,7 @@ def implementation(model, recompile_limit):
             if executor is None:
                 if len(cache.graphs) >= recompile_limit:
                     unsupported(f"hit recompile_limit={recompile_limit}")
-                graph = lower(program, values, len(args), input_ids)
+                graph = lower(program, values, len(tensors), input_ids)
                 # Linear loads share code across shapes. Broadcast address formulas
                 # specialize shapes, never storage offsets, values or pointers.
                 # Keep this map inside reset-owned cache entries, so reset releases modules.
@@ -379,11 +431,11 @@ def implementation(model, recompile_limit):
                 executor = next((entry for entry in cache.graphs.values()
                                  if entry[0] == code_key), None)
                 if executor is None:
-                    executor = (code_key, _native._pointwise_compile(args, graph.nodes, graph.output))
-                result = executor[1].run(args, scalars)
+                    executor = (code_key, _native._pointwise_compile(tensors, graph.nodes, graph.output))
+                result = executor[1].run(tensors, scalars)
                 cache.graphs[key] = executor
             else:
-                result = executor[1].run(args, scalars)
+                result = executor[1].run(tensors, scalars)
             return result
 
     compiled._torch_rs_pointwise_cache = cache

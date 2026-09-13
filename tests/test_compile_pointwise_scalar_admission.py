@@ -228,5 +228,104 @@ class ScalarHardware(unittest.TestCase):
             self.assertEqual(len(cache(compiled).graphs), 3)
 
 
+class PositionalBindingAdmission(unittest.TestCase):
+    def graph(self, source, args, **captures):
+        fn = program(source, **captures)
+        tensors, parameters = frontend.bind_arguments(args)
+        parsed = frontend.analyze(fn, len(args))
+        keys, values = frontend.resolve(fn, parsed, parameters)
+        return parsed, keys, values, frontend.lower(parsed, values, len(tensors))
+
+    def test_source_positions_are_separate_from_tensor_and_scalar_operands(self):
+        from torch_rs import torch_rs as bridge
+        x, y = native.tensor([1.]), native.tensor([2.])
+        parsed, keys, values, graph = self.graph(
+            'def f(a,x,b,y,c):\n return (x*a)+(y*b)+c+captured',
+            (0.375, x, True, y, -0.75), captured=1.125)
+        self.assertEqual(graph.inputs, 2)
+        self.assertEqual(graph.nodes[:2], (('input', 0, 0, 0), ('input', 1, 0, 0)))
+        self.assertEqual([(s.kind, s.name, s.position) for s in parsed.dependencies],
+                         [('parameter', 'a', 0), ('parameter', 'x', 1),
+                          ('parameter', 'b', 2), ('parameter', 'y', 3),
+                          ('parameter', 'c', 4), ('LOAD_GLOBAL', 'captured', None)])
+        self.assertIn('x1[i]', bridge._pointwise_source(graph.nodes, graph.output, 2))
+        self.assertEqual(keys[1], ('tensor', 0))
+        self.assertEqual(keys[3], ('tensor', 1))
+        self.assertEqual(values[parsed.dependencies[3]], frontend.Value(1))
+
+    def test_positional_rejection_never_invokes_object_or_type_hooks(self):
+        effects = []
+        class Trap(type(callback_scalar(effects))):
+            def __float__(self):
+                effects.append('float')
+                return 1.0
+            def __bool__(self):
+                effects.append('bool')
+                return True
+            def __getattribute__(self, name):
+                effects.append('attribute')
+                raise AssertionError(name)
+            def __eq__(self, other):
+                effects.append('comparison')
+                return False
+        class Float(float):
+            __float__ = Trap.__float__
+        class Integer(int):
+            __int__ = Trap.__float__
+        x = native.tensor([1.])
+        for value in (0, 1, 2**63, -2**100, 1+0j, None, [], {}, Trap(), Float(1), Integer(1)):
+            for args in ((value, x), (x, value)):
+                with self.assertRaises(NotImplementedError):
+                    frontend.bind_arguments(args)
+                self.assertEqual(effects, [])
+        for args in ((), (1.0, True), (x, x, False, x)):
+            with self.assertRaises(NotImplementedError):
+                frontend.bind_arguments(args)
+
+    def test_scalar_slots_preserve_original_ir_actual_shape_admission(self):
+        from torch_rs import torch_rs as bridge
+        x, y = native.tensor([1.]), native.tensor([2.])
+        for body in ('x.sin()+scale', 'x*scale+scale', 'x*scale*False'):
+            _, _, _, graph = self.graph('def f(scale,x,unused,flag):\n return '+body,
+                                        (0.375, x, y, True))
+            for shapes in (((5,), (1, 5)), ((5,), ()), ((0, 5), (1, 5))):
+                with self.subTest(body=body, shapes=shapes):
+                    with self.assertRaisesRegex(RuntimeError, 'arithmetic|sin/cos'):
+                        bridge._pointwise_source(graph.nodes, graph.output, 2, shapes)
+            # One tensor plus scalars retains the complete one-tensor language.
+            _, _, _, graph = self.graph('def f(scale,x,flag):\n return '+body,
+                                        (0.375, x, True))
+            bridge._pointwise_source(graph.nodes, graph.output, 1, ((1, 5),))
+        _, _, _, graph = self.graph('def f(a,x,b,y):\n return (x*a).relu()',
+                                    (0.375, x, False, y))
+        bridge._pointwise_source(graph.nodes, graph.output, 2, ((5,), (1, 5)))
+
+    def test_captures_and_parameters_share_one_runtime_budget(self):
+        from torch_rs import torch_rs as bridge
+        x = native.tensor([1.])
+        for total in (64, 65):
+            parameters = [f'a{i}' for i in range(33)]
+            captures = {f'g{i}': 1.25 for i in range(total-33)}
+            fn = program('def f(x,'+','.join(parameters)+'):\n return x+'
+                         +'+'.join(parameters+list(captures)), **captures)
+            parsed = frontend.analyze(fn, 34)
+            _, params = frontend.bind_arguments((x,)+(1.25,)*33)
+            keys, values = frontend.resolve(fn, parsed, params)
+            history = {(parsed.code, keys, (), (0,)): None}
+            fn.__globals__.update({name: 2.5 for name in captures})
+            _, params = frontend.bind_arguments((x,)+(2.5,)*33)
+            keys, values = frontend.resolve(fn, parsed, params)
+            if total == 65:
+                with self.assertRaisesRegex(NotImplementedError, '64 runtime scalar'):
+                    frontend.runtime_bindings(parsed, keys, values, history)
+            else:
+                _, values, scalars = frontend.runtime_bindings(parsed, keys, values, history)
+                self.assertEqual(len(scalars), 64)
+                graph = frontend.lower(parsed, values, 1)
+                source = bridge._pointwise_source(graph.nodes, graph.output, 1)
+                self.assertIn('float s63', source)
+                self.assertNotIn('float s64', source)
+
+
 if __name__ == '__main__':
     unittest.main()
