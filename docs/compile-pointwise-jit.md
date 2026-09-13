@@ -84,8 +84,11 @@ is involved.
 
 The [numerical contract](compile-pointwise-numerics.md) explains expression
 rewriting, FMA selection, constant precision, signed zeros and libdevice rounding.
-Arithmetic specializes concrete shapes; exceptional results can differ from
-Inductor after its automatic symbolic recompilation changes contraction order.
+Broadcast arithmetic has unresolved finite cancellation and IEEE failures,
+including fresh large shapes and persistent shape transitions. Default Inductor
+also varies contraction choices across timing-selected configurations. See the
+[review blocker](diagnostics/compile-pointwise-broadcast/review-autotune-blocker.md);
+general broadcast numerical parity is not established.
 
 ## Cache behavior
 

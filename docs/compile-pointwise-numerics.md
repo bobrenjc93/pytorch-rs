@@ -1,8 +1,9 @@
 # CUDA pointwise numerical semantics
 
 This is the numerical contract for the [default CUDA pointwise compiler](compile-pointwise-jit.md).
-It follows the measured PyTorch 2.13 Inductor behavior for the supported subset;
-the usage guide owns input restrictions, runtime setup and cache behavior.
+It describes the lowering and measured PyTorch 2.13 Inductor compatibility,
+including the unresolved broadcast failures below. The usage guide owns input
+restrictions, runtime setup and cache behavior.
 
 ## Rounding and library functions
 
@@ -53,15 +54,17 @@ address mappings, and dead loads never participate. Consequently,
 `a=x+1.0; x*y+a*a` can contract the square for broadcast inputs even though its
 same-shape version contracts `x*y`.
 
-Native arithmetic specializes concrete input shapes. Exceptional-value parity
-is checked against a fresh default-Inductor specialization for each shape.
-Inductor's automatic symbolic recompilation after shape changes can produce a
-different load policy and FMA choice for the same concrete inputs, including
-different infinities on overflow. Native compilation does not reproduce that
-symbolic-history-dependent behavior. Persistent-wrapper tests cover finite
-shape transitions; they do not establish exceptional-value parity for arbitrary
-reference shape histories. The [broadcast repair record](diagnostics/compile-pointwise-broadcast/review-broadcast-order.md)
-preserves the observed divergence and the original failed tests.
+This broadcast ranking model is incomplete. H100 review reproduces finite
+cancellation errors on large fresh shapes and after persistent shape transitions,
+as well as wrong infinity signs. Multiple reference loads per thread and
+symbolic indexing affect materialization order beyond the concrete address.
+The earlier per-shape reference resets and small finite test values did not
+exercise these failures. Moreover, identical fresh default-Inductor runs can
+select different contractions by timing, returning either 0 or 1 for the same
+inputs. The [second review record](diagnostics/compile-pointwise-broadcast/review-autotune-blocker.md)
+preserves the failures and the unresolved numerical-contract dependency.
+The earlier [broadcast repair record](diagnostics/compile-pointwise-broadcast/review-broadcast-order.md)
+retains its original observations; it does not establish general broadcast parity.
 
 ## Sign normalization and live uses
 

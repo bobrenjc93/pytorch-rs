@@ -1,5 +1,12 @@
 # Default CUDA pointwise broadcasting validation
 
+**Review status: blocked.** Subsequent H100 cancellation tests reproduce both
+finite and IEEE broadcast failures, including persistent shape transitions.
+Identical fresh default-Inductor runs also select numerically different kernels.
+The [second review record](review-autotune-blocker.md) preserves these results
+and the unresolved external numerical-contract dependency. The measurements
+below remain valid for their fixed corpus; they do not resolve these findings.
+
 The unchanged public-default-compile-v2 gates measured clean implementation
 `c1f2d380abd012313741e629a5139c651be14cc6`, including the
 [broadcast FMA repair](review-broadcast-order.md), on 2026-09-13 UTC. The clean
@@ -70,15 +77,17 @@ changed bindings/shapes, liveness, warm execution, guards and module lifetimes.
 All 30 focused Rust pointwise tests passed in both default and `python-bindings`
 configurations. Default and bindings builds, all-target Clippy with warnings
 denied, formatting, documentation checks and diff checks passed. Independent
-Moduler design and focused implementation reviews found no actionable issues
-within the documented concrete-shape contract.
+Moduler design and focused implementation reviews previously reported no
+actionable issues within the documented concrete-shape contract. The second
+review's measured failures supersede that conclusion.
 
 The repair archive preserves the original broadcast FMA failure and three
 exceptional-value failures caused by Inductor's automatic symbolic shape history.
-The [numerical contract](../../compile-pointwise-numerics.md) explains that
-remaining limitation. Fresh concrete-shape exceptional checks and finite-value
-persistent-wrapper checks pass; these measurements do not establish unrestricted
-symbolic-history parity.
+The [numerical contract](../../compile-pointwise-numerics.md) records the limits
+of that model. The recorded fresh-shape and finite-history tests passed, but
+the [second review](review-autotune-blocker.md) demonstrates that their values
+and reference resets missed finite cancellation failures. These measurements
+do not establish unrestricted broadcast or symbolic-history parity.
 
 Original logs retain two invalid test-fixture attempts (an unavailable native
 integer dtype and an unsupported gradient-carrying CUDA transfer), initial
