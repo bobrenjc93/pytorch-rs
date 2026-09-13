@@ -48,8 +48,9 @@ the reference folds those products before FMA selection.
 
 ## Unequal-shape numerical boundary
 
-Unequal input shapes admit at most one arithmetic stage and no live sin/cos in
-the returned original typed IR. Input/scalar depth is zero; add/subtract/multiply
+Unequal input shapes admit at most one arithmetic stage and no live sin/cos, or
+the tensor-leaf multiply-add exception below, in the returned original typed IR.
+Input/scalar depth is zero; add/subtract/multiply
 add one to the maximum operand depth, tensor negation adds one, and ReLU preserves
 depth. Scalar signs are metadata, not tensor negation. This check precedes
 numerical simplification, so zero/one identities cannot hide a second stage.
@@ -58,12 +59,25 @@ unequal shapes whose address maps are linear. Full graph and shape validation
 still includes dead expressions; numerical capability depends on the returned
 live expression only. Equal-shape admission and lowering remain unchanged.
 
-The accepted graph cannot supply a product to a second arithmetic consumer.
+The one-stage class cannot supply a product to a second arithmetic consumer.
 ReLU contributes comparison/selection, and scalar identities, sign normalization
 and constant materialization do not introduce another live add/multiply stage.
 Consequently this subset has no competing product contraction to select. Address
 calculation only chooses input elements; it no longer changes numerical
 materialization ranks to approximate a reference autotuner.
+
+The sole two-stage exception is `Add(Mul(Input(a), Input(b)), Input(c))` or
+`Add(Input(c), Mul(Input(a), Input(b)))`. All leaves must be tensor inputs;
+IDs may repeat. The existing lowering emits a single FMA with no competing
+product to rank. Scalar leaves of every kind, identity wrappers, subtraction,
+negation, ReLU, sin/cos and extra live arithmetic are outside this exception.
+Matching the original nodes before identities, CSE and sign normalization keeps
+those near misses excluded. Dead nodes and unused arguments still receive full
+validation, and direct execution still checks original admission and addresses.
+The [H100 diagnostic record](diagnostics/compile-pointwise-tensor-madd/README.md)
+preserves exact IEEE comparisons, including zero signs, against ordinary default
+Inductor; NaN payload equality is not required. This bounded evidence does not
+establish general Inductor equivalence.
 
 The earlier broad candidate's `a=x+1.0; x*y+a*a` failures are now explicit
 unsupported cases for unequal shapes. H100 runs found finite cancellation errors

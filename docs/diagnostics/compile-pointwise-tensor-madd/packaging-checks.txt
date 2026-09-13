@@ -1,0 +1,84 @@
+Packaging-only checks. No GPU measurements or wheel builds were performed.
+Commands used .venv/bin/python; TMPDIR and PYTHONPYCACHEPREFIX were worktree-local.
+Live GitHub verification attempts (git ls-remote, curl, gh api) were blocked by the destination filter.
+Canonical retry-owner pushed-commit attestation and helper hash were verified instead, along with
+the local remote-tracking ref, ancestor/full-history checks and all original Git blob bytes.
+
+python -m unittest discover -s tests -p test_compile_evidence_archive.py -v
+test_archive_corruption_rejected (test_compile_evidence_archive.EvidenceArchive.test_archive_corruption_rejected) ... ok
+test_collection_requires_later_archive (test_compile_evidence_archive.EvidenceArchive.test_collection_requires_later_archive) ... ok
+test_committed_archive (test_compile_evidence_archive.EvidenceArchive.test_committed_archive) ... ok
+test_committed_later_archive (test_compile_evidence_archive.EvidenceArchive.test_committed_later_archive) ... ok
+test_default_command_verifies_both_archives (test_compile_evidence_archive.EvidenceArchive.test_default_command_verifies_both_archives) ... ok
+test_member_corruption_rejected (test_compile_evidence_archive.EvidenceArchive.test_member_corruption_rejected) ... ok
+test_missing_duplicate_and_unsafe_members_rejected (test_compile_evidence_archive.EvidenceArchive.test_missing_duplicate_and_unsafe_members_rejected) ... ok
+test_exact_original_inventory_partition_and_safe_members (test_compile_evidence_archive.TensorMaddArchive.test_exact_original_inventory_partition_and_safe_members) ... ok
+test_visible_capture_and_fixed_summaries_match_archived_originals (test_compile_evidence_archive.TensorMaddArchive.test_visible_capture_and_fixed_summaries_match_archived_originals) ... ok
+test_wheel_provenance_schema_and_original_build_bindings (test_compile_evidence_archive.TensorMaddArchive.test_wheel_provenance_schema_and_original_build_bindings) ... ok
+test_historical_ancestor_and_three_original_wheel_blobs (test_compile_evidence_archive.TensorMaddGitHistory.test_historical_ancestor_and_three_original_wheel_blobs) ... ok
+test_mandatory_checks_in_source_archive_without_git (test_compile_evidence_archive.TensorMaddGitHistory.test_mandatory_checks_in_source_archive_without_git) ... ok
+test_missing_and_shallow_history_explicitly_skip_without_fetch (test_compile_evidence_archive.TensorMaddGitHistory.test_missing_and_shallow_history_explicitly_skip_without_fetch) ... ok
+
+----------------------------------------------------------------------
+Ran 13 tests in 0.864s
+
+OK
+
+CUDA_VISIBLE_DEVICES= python -m unittest discover -s tests -p test_readme_quickstart.py -v (initial incomplete local environment)
+test_benchmarking_indexes_historical_release_timing_reports (test_readme_quickstart.ReadmeQuickstartTests.test_benchmarking_indexes_historical_release_timing_reports) ... ok
+test_detailed_support_contracts_live_in_focused_docs (test_readme_quickstart.ReadmeQuickstartTests.test_detailed_support_contracts_live_in_focused_docs) ... ok
+test_docs_readme_indexes_contracts_guides_and_timing_evidence (test_readme_quickstart.ReadmeQuickstartTests.test_docs_readme_indexes_contracts_guides_and_timing_evidence) ... ok
+test_entry_point_links_resolve (test_readme_quickstart.ReadmeQuickstartTests.test_entry_point_links_resolve) ... ok
+test_first_success_example_is_short_and_runs (test_readme_quickstart.ReadmeQuickstartTests.test_first_success_example_is_short_and_runs) ... ERROR
+test_readme_keeps_quickstart_scope_and_evaluation_route (test_readme_quickstart.ReadmeQuickstartTests.test_readme_keeps_quickstart_scope_and_evaluation_route) ... ok
+test_readme_links_contributing_guide (test_readme_quickstart.ReadmeQuickstartTests.test_readme_links_contributing_guide) ... ok
+test_readme_routes_benchmark_policy_to_focused_docs (test_readme_quickstart.ReadmeQuickstartTests.test_readme_routes_benchmark_policy_to_focused_docs) ... ok
+test_readme_routes_to_supported_surface_anchors (test_readme_quickstart.ReadmeQuickstartTests.test_readme_routes_to_supported_surface_anchors) ... ok
+test_readme_scope_is_scan_friendly_table (test_readme_quickstart.ReadmeQuickstartTests.test_readme_scope_is_scan_friendly_table) ... ok
+test_source_install_commands_are_locked (test_readme_quickstart.ReadmeQuickstartTests.test_source_install_commands_are_locked) ... ok
+test_stale_wheel_recovery_uses_wheel_test_workflow (test_readme_quickstart.ReadmeQuickstartTests.test_stale_wheel_recovery_uses_wheel_test_workflow) ... ok
+
+======================================================================
+ERROR: test_first_success_example_is_short_and_runs (test_readme_quickstart.ReadmeQuickstartTests.test_first_success_example_is_short_and_runs)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/tests/test_readme_quickstart.py", line 727, in test_first_success_example_is_short_and_runs
+    exec(compile(source, f"{README}#first-success", "exec"), {})
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/README.md#first-success", line 1, in <module>
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/.venv/lib/python3.12/site-packages/torch_rs/__init__.py", line 1398, in <module>
+    from . import accelerator as accelerator
+  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/.venv/lib/python3.12/site-packages/torch_rs/accelerator/__init__.py", line 5, in <module>
+    from typing_extensions import deprecated as _deprecated
+ModuleNotFoundError: No module named 'typing_extensions'
+
+----------------------------------------------------------------------
+Ran 12 tests in 0.145s
+
+FAILED (errors=1)
+
+same README command after copying the existing typing_extensions dependency read-only into the local environment
+test_benchmarking_indexes_historical_release_timing_reports (test_readme_quickstart.ReadmeQuickstartTests.test_benchmarking_indexes_historical_release_timing_reports) ... ok
+test_detailed_support_contracts_live_in_focused_docs (test_readme_quickstart.ReadmeQuickstartTests.test_detailed_support_contracts_live_in_focused_docs) ... ok
+test_docs_readme_indexes_contracts_guides_and_timing_evidence (test_readme_quickstart.ReadmeQuickstartTests.test_docs_readme_indexes_contracts_guides_and_timing_evidence) ... ok
+test_entry_point_links_resolve (test_readme_quickstart.ReadmeQuickstartTests.test_entry_point_links_resolve) ... ok
+test_first_success_example_is_short_and_runs (test_readme_quickstart.ReadmeQuickstartTests.test_first_success_example_is_short_and_runs) ... ok
+test_readme_keeps_quickstart_scope_and_evaluation_route (test_readme_quickstart.ReadmeQuickstartTests.test_readme_keeps_quickstart_scope_and_evaluation_route) ... ok
+test_readme_links_contributing_guide (test_readme_quickstart.ReadmeQuickstartTests.test_readme_links_contributing_guide) ... ok
+test_readme_routes_benchmark_policy_to_focused_docs (test_readme_quickstart.ReadmeQuickstartTests.test_readme_routes_benchmark_policy_to_focused_docs) ... ok
+test_readme_routes_to_supported_surface_anchors (test_readme_quickstart.ReadmeQuickstartTests.test_readme_routes_to_supported_surface_anchors) ... ok
+test_readme_scope_is_scan_friendly_table (test_readme_quickstart.ReadmeQuickstartTests.test_readme_scope_is_scan_friendly_table) ... ok
+test_source_install_commands_are_locked (test_readme_quickstart.ReadmeQuickstartTests.test_source_install_commands_are_locked) ... ok
+test_stale_wheel_recovery_uses_wheel_test_workflow (test_readme_quickstart.ReadmeQuickstartTests.test_stale_wheel_recovery_uses_wheel_test_workflow) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 0.166s
+
+OK
+
+40 local navigation links passed. 128 production/build/dependency/evaluator files match 48fb3588c692db5b2a4f69033b5bf8a2bebb2019.
+capture.py and both fixed report.json files match original Git/archive bytes.
+Existing archive test lines and CLI are unchanged. git diff --check passed.
+
+Independent Moduler packaging/test review: no actionable findings.
+Final immutable operator-result/audit and all-three-sample assertions added; archive suite rerun: 13 tests passed.
+Independent review of those final additions also found no issues.

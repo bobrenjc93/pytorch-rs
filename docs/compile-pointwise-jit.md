@@ -56,8 +56,8 @@ Scalars and empty tensor shapes and contiguous views with storage offsets are
 supported. Outputs have fresh storage and canonical contiguous strides;
 inputs are unchanged. Returning an input unchanged is outside this subset.
 
-Unequal input shapes additionally require the returned expression to have at most
-one arithmetic stage and no live sin/cos. Input and scalar nodes start at depth
+Unequal input shapes additionally require either the tensor-leaf multiply-add
+described below, or at most one arithmetic stage and no live sin/cos. Input and scalar nodes start at depth
 zero; add/subtract/multiply add one to the maximum operand depth, tensor negation
 adds one, and ReLU preserves depth. Scalar sign metadata adds no tensor operation.
 This rule applies to the original typed expression before simplification, even
@@ -67,6 +67,14 @@ tensors, leading/interior singleton dimensions and empty outputs. For example,
 `(x.relu() - y.relu()).relu()` and `x * scale` are supported; `x * scale + scale`,
 `x*y + (x+1.0)*(x+1.0)` and live sin/cos are rejected with unequal input shapes.
 Equal-shape support retains the full pointwise language above.
+
+The sole two-stage broadcast exception is `a*b+c` or `c+a*b`, where all three
+leaves are tensor inputs. Input IDs may repeat within the one/two-tensor limit
+(for example, `x*y+x` or `y+x*x`); an unused argument still receives validation.
+The original returned IR must have exactly this structure. Scalar leaves,
+subtraction, negation, ReLU/sin/cos, a second product, extra arithmetic and
+identity wrappers do not qualify, even if later simplification removes them.
+This exception reuses the existing single-FMA lowering and checked addresses.
 
 Strided inputs, other dtypes, gradients (even inside no-grad),
 mutation, control flow, containers, helper calls, module calls, keyword operator
@@ -94,7 +102,7 @@ constructs typed SSA nodes with float32 tensor values and scalar kinds.
 C from operator rules, retaining intermediates.
 `pointwise_indexing.rs` checks every expression's broadcast shape and size before
 numerical rewriting, including dead expressions. The same Rust admission check
-enforces the unequal-shape arithmetic-depth boundary during compilation and direct
+enforces the unequal-shape original-IR boundary during compilation and direct
 cached-kernel execution, before NVRTC, output allocation or launch. Only live
 returned nodes determine numerical capability; dead expressions still receive
 full graph and shape validation. It derives the returned shape
@@ -102,12 +110,12 @@ and each live input's address from row-major coordinates; unused inputs do not
 expand the result. Singleton axes contribute no address increment. The same
 generated kernel fuses all supported pointwise operations.
 `cuda/jit.rs` compiles it with NVRTC and loads the resulting PTX through the
-existing native driver. No fixed expression, shape, name, or corpus recognizer
+existing native driver. No fixed workload, shape, name, or corpus recognizer
 is involved.
 
 The [numerical contract](compile-pointwise-numerics.md) explains expression
 rewriting, FMA selection, constant precision, signed zeros and libdevice rounding.
-The unequal-shape boundary excludes competing arithmetic contractions. The earlier
+The unequal-shape boundary excludes competing products. The earlier
 broad candidate had finite cancellation and IEEE failures, including fresh large
 shapes and persistent shape transitions; default Inductor also varies contraction
 choices across timing-selected configurations. The [historical review
@@ -236,3 +244,11 @@ for `aab2fd7`, including the libdevice product-order repair, alongside the uncha
 and original failures.
 [Repair validation](diagnostics/compile-pointwise-jit/review-libdevice-order.md) records
 the development checks separately from these clean campaign measurements.
+
+The [tensor-leaf multiply-add record](diagnostics/compile-pointwise-tensor-madd/README.md)
+documents the additional original-IR exception, default-Inductor comparisons,
+direct cached-kernel revalidation and dispatched CUDA/PTX captures.
+
+[Clean post-commit evidence](diagnostics/compile-pointwise-tensor-madd/postcommit-bf908578/README.md)
+records candidate `bf908578` and main `77aa16fc`, both fixed-corpus measurement
+orders, exact multiply-add comparisons and the raw-report retention manifest.
