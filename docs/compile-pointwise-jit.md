@@ -155,8 +155,8 @@ operand orders, empty/scalar/offset inputs and cache/lifetime checks.
 Their [validation record](diagnostics/compile-pointwise-broadcast/README.md)
 includes the full compiler sweep and clean baseline/candidate measurements.
 The [broadcast FMA repair](diagnostics/compile-pointwise-broadcast/review-broadcast-order.md)
-records subsequent regression checks; its clean candidate captures are pending
-Burner's next commit and evidence phase.
+records subsequent regression checks; the validation record includes refreshed
+clean candidate captures from `c1f2d38` after that repair.
 
 The unchanged [public-default compiler gates](torch-compile-default-evaluator.md)
 remain the scoring authority with all 112 coverage and 56 CUDA performance

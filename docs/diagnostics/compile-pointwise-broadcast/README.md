@@ -1,22 +1,18 @@
 # Default CUDA pointwise broadcasting validation
 
-The [broadcast FMA repair](review-broadcast-order.md) changes numerical lowering
-after these captures. Candidate reports and generated-code captures below are
-stale for that repair and must be refreshed after Burner commits it; they are
-not evidence of the repaired candidate. Baseline measurements remain unchanged.
-
 The unchanged public-default-compile-v2 gates measured clean implementation
-`5adb2638f8b0d67adabc746ee38b2debabaa4f48` and clean current-main baseline
-`166687a730a86235fa38decfa364703b60ebc595` on 2026-09-13 UTC. Burner saved the
-implementation commit during worker recovery; the worker created no commits.
-Commit `43f06fb` added only documentation and this evidence after measurement.
+`c1f2d380abd012313741e629a5139c651be14cc6`, including the
+[broadcast FMA repair](review-broadcast-order.md), on 2026-09-13 UTC. The clean
+main baseline `166687a730a86235fa38decfa364703b60ebc595` retains its original
+measurements from earlier that day. Only documentation and evidence changed
+after the new captures; the worker created no commits.
 See the [compiler contract](../../compile-pointwise-jit.md).
 
 | Measurement | Baseline | Broadcast implementation |
 | --- | ---: | ---: |
 | Weighted coverage | 6% (4/112) | 10% (8/112) |
 | Weighted CUDA performance | 12% (4/56) | 20% (8/56) |
-| Performance common-success geometric mean, reference/candidate | 1.8377081163578368 | 1.915793810988903 |
+| Performance common-success geometric mean, reference/candidate | 1.8377081163578368 | 1.8784593297982968 |
 
 All four reports have `valid: true`, `diagnostic: false`. The new passing
 cells belong to broadcasting; unsupported categories remain zero. These are
@@ -33,11 +29,18 @@ No evaluator, corpus, tolerance, weight, denominator, or historical evidence cha
   unsupported outcome, both CUDA orders, five warmups, 17 samples, cold/steady
   timings, synchronization and source/build/wheel provenance.
 - [Gate receipts](gates-receipt.json) record exact commands, clean commits,
-  timestamps, return codes and GPU snapshots before/after each run.
-- [Validation bundle](validation.json.gz) maps filenames to their original text:
-  all compiler logs, commands, environment, source/test manifests, build/Clippy
-  logs, gate worker logs, original failures, and the exhaustive partition receipt
-  (`compiler-summary.json`). Raw worker observations and wheels remain at the
+  timestamps, return codes and GPU snapshots for the original baseline and new
+  candidate runs. [Post-commit validation](post-commit-validation.json.gz)
+  preserves the new worker/build logs, capture commands and five passing focused
+  broadcast-priority tests, all run from clean `c1f2d38`.
+- The original [validation bundle](validation.json.gz) and subsequent
+  [repair bundle](review-broadcast-order.json.gz) retain their original compiler
+  logs, commands, environment, source/test manifests, build/Clippy logs, gate
+  worker logs, failures and exhaustive partition receipts. The original bundle
+  measures the initial implementation at `5adb263` or explicitly dirty development
+  sources; the repair bundle explicitly records uncommitted repair validation.
+  Neither substitutes for the clean candidate reports above.
+  Raw worker observations and wheels remain at the
   worktree-local paths recorded by the reports; their hashes were checked before
   packaging. Those large temporary artifacts are not duplicated here and may
   disappear during worktree cleanup. The reports and logs are durable.
@@ -50,20 +53,32 @@ No evaluator, corpus, tolerance, weight, denominator, or historical evidence cha
 
 ## Checks and original failures
 
-The complete compiler selection passed **896 tests in 84 disjoint module
+The repair's complete compiler selection passed **901 tests in 85 disjoint module
 processes**, with **23 explicit skips** under `CUDA_VISIBLE_DEVICES=0`. Recorded
-test IDs verify exhaustive coverage without overlap. All **three** focused
+test IDs verify exhaustive coverage without overlap; source and test hashes still
+match clean `c1f2d38`. The initial 896-test run remains in the original bundle.
+All **three** focused
 pointwise device-restoration tests subsequently passed with devices `0,1`.
-The new broadcast module passed nine tests with one two-device skip; with CUDA
-hidden it passed two metadata/codegen tests and explicitly skipped all seven
-hardware cases. Another 80 scalar IEEE comparisons passed against default
-Inductor. Tests check numerical values, signed zeros, metadata, storage ownership,
+The broadcast module passed nine tests with one two-device skip. Its original
+hardware-absent run (two metadata tests and seven explicit skips) and 80 scalar
+IEEE comparisons remain in the initial bundle. The repair's new priority module
+passed all five tests again from the clean commit; its development run with CUDA
+hidden passed both metadata tests and explicitly skipped all three hardware cases.
+Tests check numerical values, signed zeros, metadata, storage ownership,
 changed bindings/shapes, liveness, warm execution, guards and module lifetimes.
 
-All 29 focused Rust pointwise tests passed in both default and `python-bindings`
+All 30 focused Rust pointwise tests passed in both default and `python-bindings`
 configurations. Default and bindings builds, all-target Clippy with warnings
 denied, formatting, documentation checks and diff checks passed. Independent
-Moduler design and focused implementation reviews found no unresolved issues.
+Moduler design and focused implementation reviews found no actionable issues
+within the documented concrete-shape contract.
+
+The repair archive preserves the original broadcast FMA failure and three
+exceptional-value failures caused by Inductor's automatic symbolic shape history.
+The [numerical contract](../../compile-pointwise-numerics.md) explains that
+remaining limitation. Fresh concrete-shape exceptional checks and finite-value
+persistent-wrapper checks pass; these measurements do not establish unrestricted
+symbolic-history parity.
 
 Original logs retain two invalid test-fixture attempts (an unavailable native
 integer dtype and an unsupported gradient-carrying CUDA transfer), initial
@@ -80,7 +95,7 @@ Hardware was H100 GPU 0, `GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1`, driver
 NVRTC 13.0 and runtime 13000, targeting `compute_90` with explicit FMA and
 `--ftz=false`. Queried nvcc 12.6 was not used for JIT generation. The tested,
 captured and evaluated native extension has SHA256
-`4c87977a0afb8180799d44882d64ba45a796ef98e803578c9363429dcf3b693a`.
+`b1b32432462c6400e96e8c55827599af99e945d3efbd7348bcf78d006eb48251`.
 
 ## Reproduce
 

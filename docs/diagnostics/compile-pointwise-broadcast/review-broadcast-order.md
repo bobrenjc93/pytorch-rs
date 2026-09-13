@@ -77,11 +77,13 @@ history tests keep both wrappers alive. This does not establish exceptional-valu
 parity across arbitrary reference symbolic shape histories; see the
 [numerical contract](../../compile-pointwise-numerics.md).
 
-## Required clean captures
+## Completed clean captures
 
-The existing candidate coverage, CUDA-performance and generated-code reports
-still measure `5adb263` and are stale for this repair. After Burner commits it,
-rerun the unchanged commands in [the bundle README](README.md#reproduce) and
-refresh candidate captures from that clean revision. Preserve the original
-failures and the clean `166687a` baseline measurements. No clean-commit performance
-or coverage claim is made for this uncommitted repair.
+Burner committed the repair as `c1f2d380abd012313741e629a5139c651be14cc6`.
+The unchanged public-default commands then measured 10% coverage (8/112 cells)
+and 20% CUDA performance (8/56 cells), with both reports valid and non-diagnostic.
+Generated CUDA/PTX and all five focused broadcast-priority tests were also
+captured from that clean commit. The [bundle README](README.md) links the refreshed
+reports and post-commit logs. The original failures, development archive above,
+and clean `166687a` baseline measurements remain unchanged. These measurements
+do not remove the symbolic-history limitation described above.
