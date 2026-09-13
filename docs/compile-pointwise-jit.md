@@ -77,8 +77,14 @@ lower-ranked product contracts; equal ranks retain expression order. Thus
 square and contracts `x*y`, including when the sum operands are reversed.
 This bounded rule follows LLVM's
 [Reassociate operand ordering](https://github.com/llvm/llvm-project/blob/1f126a6dea50d185c0781743a667390037ae88bd/llvm/lib/Transforms/Scalar/Reassociate.cpp#L242)
-used by the measured reference. It does not model libdevice's internal control
-flow; expressions depending on sin/cos retain the existing contraction priority.
+used by the measured reference. Runtime libdevice sin/cos introduce control-flow
+joins, whose ranks follow all entry tensor loads. Distinct live calls receive
+successive rank regions in expression evaluation order; shared calls retain one
+region and nested calls follow their dependencies. Arithmetic after a call
+inherits that region. This models the pinned reference's join/PHI ordering
+without reproducing libdevice's internal arithmetic. Constant-only expressions
+have rank zero, and their products are excluded from contraction candidates:
+the reference folds those products before FMA selection.
 Subtraction introduced by sign normalization retains its contraction eligibility
 even when the normalized operands coincide. Sign-flipped products retain their
 factors: direct products take contraction priority, but an otherwise unpaired

@@ -90,6 +90,10 @@ impl Lowering {
     }
 
     fn contraction_product(&self, mut id: usize) -> Option<ContractionProduct> {
+        // Reference constant folding removes these products before contraction.
+        if self.constant_expressions[id] {
+            return None;
+        }
         // Decode only exact sign flips and scalar +0 subtraction, after
         // expression identity checks. Neither addition of zero nor tensor-zero
         // provenance is transparent here.
@@ -326,42 +330,39 @@ impl Lowering {
         self.node(node)
     }
 
-    fn contraction_ranks(&self, input_ranks: &[usize]) -> Vec<Option<usize>> {
-        // LLVM Reassociate orders commutative operands by dependency rank
-        // before NVPTX selects an FMA. Model arithmetic/select dependencies,
-        // not expression size: shared operands do not increase the rank twice.
-        // Libdevice's internal control flow is outside this rank model.
-        let mut ranks: Vec<Option<usize>> = Vec::with_capacity(self.nodes.len());
+    fn contraction_ranks(&self, input_ranks: &[usize], call_ranks: &[usize]) -> Vec<usize> {
+        // Reassociate orders commutative operands before NVPTX selects an FMA.
+        // Libdevice joins are immovable instructions in later basic blocks;
+        // their epochs dominate entry loads and ordinary dependency depth.
+        let mut ranks: Vec<usize> = Vec::with_capacity(self.nodes.len());
         for (id, expr) in self.nodes.iter().enumerate() {
-            let rank = match *expr {
-                Expr::Node(Node::Input(i)) => Some(input_ranks[i]),
-                // Reference runtime scalars are kernel arguments, below the
-                // separately ranked, side-effecting tensor loads.
-                Expr::Node(Node::RuntimeScalar(i, _)) => Some(i + 1),
-                Expr::Node(Node::Constant(_) | Node::Integer(_) | Node::Boolean(_))
-                | Expr::Zero
-                | Expr::Folded(_) => Some(0),
-                Expr::Node(Node::Sub(a, _)) if self.subtracts_scalar_zero(id).is_some() => ranks[a],
-                Expr::Node(Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b)) => {
-                    ranks[a].zip(ranks[b]).map(|(a, b)| a.max(b) + 1)
+            let rank = if self.constant_expressions[id] {
+                0
+            } else {
+                match *expr {
+                    Expr::Node(Node::Input(i)) => input_ranks[i],
+                    Expr::Node(Node::RuntimeScalar(i, _)) => i + 1,
+                    Expr::Node(Node::Constant(_) | Node::Integer(_) | Node::Boolean(_))
+                    | Expr::Zero
+                    | Expr::Folded(_) => 0,
+                    Expr::Node(Node::Sub(a, _)) if self.subtracts_scalar_zero(id).is_some() => {
+                        ranks[a]
+                    }
+                    Expr::Node(Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b)) => {
+                        ranks[a].max(ranks[b]) + 1
+                    }
+                    Expr::Node(Node::Relu(a)) => ranks[a] + 2, // compare, select
+                    Expr::Node(Node::Neg(a)) | Expr::SelfSub(a) => ranks[a] + 1,
+                    Expr::Flip(a) | Expr::SignedDouble(a) => ranks[a], // actual fneg
+                    Expr::Node(Node::Sin(_) | Node::Cos(_)) => call_ranks[id],
                 }
-                Expr::Node(Node::Relu(a)) => ranks[a].map(|rank| rank + 2), // compare, select
-                Expr::Node(Node::Neg(a)) | Expr::SelfSub(a) => ranks[a].map(|rank| rank + 1),
-                Expr::Flip(a) | Expr::SignedDouble(a) => ranks[a], // actual fneg
-                Expr::Node(Node::Sin(_) | Node::Cos(_)) => None,
             };
             ranks.push(rank);
         }
         ranks
     }
 
-    fn contract(
-        &self,
-        a: usize,
-        b: usize,
-        subtract: bool,
-        ranks: &[Option<usize>],
-    ) -> Option<String> {
+    fn contract(&self, a: usize, b: usize, subtract: bool, ranks: &[usize]) -> Option<String> {
         let left = self.contraction_product(a);
         let right = self.contraction_product(b);
         // Canonicalize only competing positive products of an addition. Signed
@@ -370,7 +371,7 @@ impl Lowering {
         if !subtract
             && left.is_some_and(|p| p.direct && !p.negative)
             && right.is_some_and(|p| p.direct && !p.negative)
-            && ranks[a].zip(ranks[b]).is_some_and(|(a, b)| b < a)
+            && ranks[b] < ranks[a]
         {
             return self.contract(b, a, false, ranks);
         }
@@ -470,32 +471,52 @@ fn early_aliases(graph: &Graph) -> (Vec<usize>, Vec<bool>) {
     (aliases, zeros)
 }
 
-fn input_load_ranks(graph: &Graph, aliases: &[usize], zeros: &[bool]) -> Vec<usize> {
-    // Reference loads are emitted on first live use, not in positional-input
-    // order. Traverse before sign normalization can reverse operand orientation.
-    let mut ranks = vec![0; graph.inputs];
+fn materialization_ranks(
+    graph: &Graph,
+    aliases: &[usize],
+    zeros: &[bool],
+    mapped: &[usize],
+    lower: &Lowering,
+) -> (Vec<usize>, Vec<usize>) {
+    // Traverse the live expression in evaluation order, before sign rewrites
+    // change orientation. All tensor loads are hoisted into the entry block;
+    // distinct runtime libdevice joins follow in call-completion order. CSE
+    // gives shared calls one join. Constants and dead calls have no such rank.
+    // The 65536 stride exceeds depth even after expanding the 4096-node IR.
+    let mut inputs = vec![0; graph.inputs];
+    let mut calls = vec![0; lower.nodes.len()];
     let mut seen = vec![false; graph.nodes.len()];
-    let mut pending = vec![graph.output];
-    let mut rank = LOAD_RANK_BASE;
-    while let Some(id) = pending.pop() {
+    let mut pending = vec![(graph.output, false)];
+    let mut input_rank = LOAD_RANK_BASE;
+    let mut call_rank = LOAD_RANK_BASE;
+    while let Some((id, complete)) = pending.pop() {
         let id = aliases[id];
+        let normalized = mapped[id];
+        if complete {
+            if !lower.constant_expressions[normalized] && calls[normalized] == 0 {
+                call_rank += LOAD_RANK_BASE;
+                calls[normalized] = call_rank;
+            }
+            continue;
+        }
         if seen[id] || zeros[id] {
             continue;
         }
         seen[id] = true;
         match graph.nodes[id] {
-            Node::Input(i) if ranks[i] == 0 => {
-                rank += 1;
-                ranks[i] = rank;
+            Node::Input(i) if inputs[i] == 0 => {
+                input_rank += 1;
+                inputs[i] = input_rank;
             }
             Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b) => {
-                pending.extend([b, a]);
+                pending.extend([(b, false), (a, false)]);
             }
-            Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a) => pending.push(a),
+            Node::Sin(a) | Node::Cos(a) => pending.extend([(id, true), (a, false)]),
+            Node::Neg(a) | Node::Relu(a) => pending.push((a, false)),
             _ => {}
         }
     }
-    ranks
+    (inputs, calls)
 }
 
 #[allow(clippy::cast_possible_truncation)]
@@ -603,7 +624,8 @@ pub(super) fn source(graph: &Graph) -> String {
         mapped.push(lower.normalize(node, last[id], uses[id]));
     }
     let output = mapped[graph.output];
-    let ranks = lower.contraction_ranks(&input_load_ranks(graph, &aliases, &zeros));
+    let (inputs, calls) = materialization_ranks(graph, &aliases, &zeros, &mapped, &lower);
+    let ranks = lower.contraction_ranks(&inputs, &calls);
     let mut live = vec![false; lower.nodes.len()];
     live[output] = true;
     for id in (0..lower.nodes.len()).rev() {

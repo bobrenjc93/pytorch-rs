@@ -17,10 +17,12 @@ class ProductPriority(unittest.TestCase):
         native.compiler.reset()
         self.torch.compiler.reset()
 
-    def check_families(self, families, *, swap_inputs=False, operator='+'):
+    def check_families(self, families, *, swap_inputs=False, operator='+', values=None):
         torch = self.torch
         left = [2e38, 1e38, -2e38, -1e38, 0., -0., 1.137, -1.137]
         right = [-1e10, -2e10, 1e10, 2e10, -0., 0., 1.137, -1.137]
+        if values is not None:
+            left, right = values
         if swap_inputs:
             left, right = right, left
         for setup, first, second in families:
@@ -107,6 +109,27 @@ class ProductPriority(unittest.TestCase):
             ('a=x.sin()+x\n ', 'a*a', 'x*y'),
             ('a=x.cos()+x\n ', 'a*a', 'x*y'),
         ])
+
+    def test_libdevice_call_dependency_order(self):
+        self.check_families([
+            ('a=x.sin()+x\n b=x.cos()-x\n ', 'a*x', 'b*x'),
+            ('a=x.cos()+x\n b=x.sin()-x\n ', 'a*x', 'b*x'),
+            ('s=x.sin()\n a=s+x\n b=s-x\n ', 'a*x', 'b*x'),
+            ('a=x.sin()+x\n b=x.sin()-x\n ', 'a*x', 'b*x'),
+            ('a=(x.sin()+x).cos()+x\n ', 'a*a', 'x*y'),
+            ('unused=y.sin()\n a=x.cos()+x\n ', 'a*a', 'x*y'),
+            ('a=((x*0)+1.0).sin()+x\n ', 'a*a', 'x*y'),
+        ])
+        self.check_families([
+            ('a=y.sin()+y\n ', 'a*a', 'y*x'),
+            ('a=y.cos()+y\n ', 'a*a', 'y*x'),
+        ], swap_inputs=True)
+
+    def test_constant_libdevice_products_are_folded_before_contraction(self):
+        self.check_families([
+            ('z=x*0\n a=(z+1.0).sin()*1e19\n ', 'a*a', 'x*y'),
+            ('z=x*0\n a=z.cos()*1e19\n ', 'a*a', 'x*y'),
+        ], values=([2e38, 1e38, -2e38, -1e38], [-2., -4., 2., 4.]))
 
     def test_relu_plus_input_product_order_control(self):
         self.check_families([('a=x.relu()+x\n ', 'a*a', 'x*y')])

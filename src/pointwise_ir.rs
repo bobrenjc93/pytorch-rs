@@ -418,6 +418,34 @@ mod tests {
     }
 
     #[test]
+    fn libdevice_joins_rank_after_entry_products() {
+        for unary in [Node::Sin(0), Node::Cos(0)] {
+            for reversed in [false, true] {
+                let graph = Graph {
+                    inputs: 2,
+                    nodes: vec![
+                        Node::Input(0),
+                        Node::Input(1),
+                        unary.clone(),
+                        Node::Add(2, 0),
+                        Node::Mul(3, 3),
+                        Node::Mul(0, 1),
+                        if reversed {
+                            Node::Add(5, 4)
+                        } else {
+                            Node::Add(4, 5)
+                        },
+                    ],
+                    output: 6,
+                };
+                let source = graph.source().unwrap();
+                assert!(source.contains("fmaf(v0, v1, v4)"));
+                assert!(!source.contains("fmaf(v3, v3,"));
+            }
+        }
+    }
+
+    #[test]
     fn contracts_left_product_when_both_operands_are_products() {
         let mut graph = Graph {
             inputs: 2,

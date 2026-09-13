@@ -1,7 +1,9 @@
 # Native default pointwise JIT validation
 
-The current product-contraction repair has
-[development validation](review-product-priority.md). The clean captures below
+The current libdevice product-order repair has
+[development validation](review-libdevice-order.md).
+The preceding [product-contraction repair](review-product-priority.md) and all
+original failures remain preserved. The clean captures below
 predate that implementation change and do not measure the repaired candidate.
 Fresh campaign and generated-code captures require Burner's next clean commit;
 the original reports retain their measured identities.
