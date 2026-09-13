@@ -102,6 +102,22 @@ class ProductPriority(unittest.TestCase):
             ('p=x*y\n unused=p+p\n a=x.relu()\n ', 'p*-1.0', 'a*a'),
         ], operator='-')
 
+    def test_libdevice_producer_product_order(self):
+        self.check_families([
+            ('a=x.sin()+x\n ', 'a*a', 'x*y'),
+            ('a=x.cos()+x\n ', 'a*a', 'x*y'),
+        ])
+
+    def test_relu_plus_input_product_order_control(self):
+        self.check_families([('a=x.relu()+x\n ', 'a*a', 'x*y')])
+
+    def test_signed_product_order_controls(self):
+        self.check_families([
+            ('a=x.relu()\n ', '-(a*a)', '-(x*y)'),
+            ('a=x.relu()\n ', '(-a)*a', '(-x)*y'),
+            ('a=x.relu()\n ', 'a*(-a)', 'x*(-y)'),
+        ])
+
 
 if __name__ == '__main__':
     unittest.main()
