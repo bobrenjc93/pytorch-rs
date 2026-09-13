@@ -1,5 +1,6 @@
 """Typed scalars, callback-free admission, and signed product provenance."""
 import unittest
+from unittest import mock
 
 import torch_rs as native
 from torch_rs import _compile_pointwise as frontend
@@ -325,6 +326,192 @@ class PositionalBindingAdmission(unittest.TestCase):
                 source = bridge._pointwise_source(graph.nodes, graph.output, 1)
                 self.assertIn('float s63', source)
                 self.assertNotIn('float s64', source)
+
+
+class SharedCacheGuards(unittest.TestCase):
+    """Exercise production cache selection without allocating synthetic shapes.
+
+    Only the native metadata/compile/launch boundary is replaced. The returned
+    IR and runtime arguments reveal which scalar specialization was dispatched;
+    hardware tests remain responsible for numerical admission and execution.
+    """
+
+    def setUp(self):
+        self.metadata = {}
+        self.arguments = []
+        self.launch_failure = None
+        for name, replacement in (
+                ('_compile_trace_tensor_metadata', lambda arg: self.metadata[id(arg)]),
+                ('_pointwise_validate_inputs', lambda args: None)):
+            patcher = mock.patch.object(frontend._native, name, side_effect=replacement)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(frontend._native, '_pointwise_compile',
+                                    side_effect=self.make_executor)
+        self.compile_bridge = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def make_executor(self, tensors, nodes, output):
+        executor = mock.Mock()
+        if self.launch_failure is not None:
+            executor.run.side_effect = self.launch_failure
+        else:
+            executor.run.side_effect = lambda args, scalars: (nodes, tuple(scalars))
+        return executor
+
+    def argument(self, shape, strides=None):
+        if strides is None:
+            stride, reversed_strides = 1, []
+            for size in reversed(shape):
+                reversed_strides.append(stride)
+                stride *= max(size, 1)
+            strides = tuple(reversed(reversed_strides))
+        arg = native.tensor([1.])
+        self.arguments.append(arg)  # Keep identities stable for metadata lookup.
+        self.metadata[id(arg)] = (shape, strides, 'float32', False, 'cuda:0', 0)
+        return arg
+
+    def compiled(self, source='def f(scale,x):\n return x*scale'):
+        return frontend.implementation(program(source), recompile_limit=8)
+
+    def test_generalized_selection_keeps_zero_singleton_and_rank_zero_separate(self):
+        compiled = self.compiled()
+        positive = compiled(0., self.argument((2,)))
+        negative = compiled(-0., self.argument((3,)))
+        self.assertNotEqual(positive, negative)
+        self.assertEqual(compiled(0., self.argument((2,))), negative)
+        singleton = compiled(0., self.argument((1,)))
+        empty = compiled(-0., self.argument((0,)))
+        scalar = compiled(0., self.argument(()))
+        self.assertEqual(len(cache(compiled).graphs), 5)
+        self.assertEqual(compiled(0., self.argument((4,))), negative)
+        self.assertEqual(compiled(-0., self.argument((1,))), singleton)
+        self.assertEqual(compiled(0., self.argument((0,))), empty)
+        self.assertEqual(compiled(-0., self.argument(())), scalar)
+        self.assertEqual(len(cache(compiled).graphs), 5)
+
+    def test_rank_history_generalizes_previously_unchanged_dimensions(self):
+        compiled = self.compiled()
+        compiled(0., self.argument((2, 3)))
+        compiled(0., self.argument((7,)))
+        after_rank_change = compiled(-0., self.argument((2, 4)))
+        self.assertEqual(compiled(0., self.argument((9, 4))), after_rank_change)
+        self.assertEqual(len(cache(compiled).graphs), 3)
+
+    def test_role_history_stays_with_public_source_across_tensor_positions(self):
+        compiled = self.compiled('def f(a,b):\n return a*b')
+        compiled(0.375, self.argument((2, 3)))
+        tensor_first = compiled(self.argument((2, 3)), 0.375)
+        changed_shape = compiled(self.argument((4, 5)), 1.125)
+        self.assertEqual(changed_shape[0], tensor_first[0])
+        self.assertEqual(tensor_first[1], (0.375,))
+        self.assertEqual(changed_shape[1], (1.125,))
+        self.assertEqual(len(cache(compiled).graphs), 2)
+
+    def test_contiguous_stride_relations_guard_noncanonical_singleton_strides(self):
+        compiled = self.compiled()
+        compiled(0., self.argument((2, 1, 3)))
+        generalized = compiled(-0., self.argument((3, 1, 4)))
+        self.assertEqual(compiled(0., self.argument((4, 1, 5))), generalized)
+        # Both layouts are contiguous, but the prior graph inferred the middle
+        # stride from the trailing dimension. The new layout must retrace.
+        independent = compiled(0., self.argument((4, 1, 5), (5, 9, 1)))
+        self.assertNotEqual(independent, generalized)
+        self.assertEqual(len(cache(compiled).graphs), 3)
+
+    def test_static_shape_history_promotes_only_independent_singleton_stride(self):
+        compiled = self.compiled()
+        compiled(0., self.argument((2, 1, 3)))
+        generalized = compiled(-0., self.argument((2, 1, 3), (3, 9, 1)))
+        self.assertEqual(compiled(0., self.argument((2, 1, 3), (3, 11, 1))), generalized)
+        self.assertEqual(len(cache(compiled).graphs), 2)
+        self.assertNotEqual(compiled(0., self.argument((2, 1, 3), (3, 1, 1))), generalized)
+        self.assertEqual(len(cache(compiled).graphs), 3)
+
+    def test_generalized_binary_shapes_preserve_broadcast_equalities(self):
+        compiled = self.compiled('def f(scale,x,y):\n discarded=x*scale\n return x*y')
+        compiled(0., self.argument((2, 3)), self.argument((2, 3)))
+        generalized = compiled(-0., self.argument((4, 5)), self.argument((4, 5)))
+        self.assertEqual(compiled(0., self.argument((6, 7)), self.argument((6, 7))), generalized)
+        guards = next(reversed(cache(compiled).graphs))[2]
+        x, y = self.argument((6, 7)), self.argument((6, 8))
+        by_source = {frontend.BindingSource('parameter', name, position): self.metadata[id(arg)][:5]
+                     for name, position, arg in (('x', 1, x), ('y', 2, y))}
+        # Individually these shapes meet the rank/size guards. Their unequal
+        # nonsingleton dimensions must fail before selecting this graph.
+        self.assertFalse(guards.matches(by_source))
+        self.assertEqual(len(cache(compiled).graphs), 2)
+
+    def test_64bit_iteration_specialization_has_no_residual_or_inverse_32bit_bounds(self):
+        compiled = self.compiled('def f(scale,x,y):\n discarded=x*scale\n return x*y')
+        compiled(0., self.argument((2, 1)), self.argument((1, 2)))
+        small = compiled(-0., self.argument((3, 1)), self.argument((1, 3)))
+        # Each input fits 32-bit indexing, but their broadcast output does not.
+        large = compiled(0., self.argument((65536, 1)), self.argument((1, 65536)))
+        self.assertNotEqual(small, large)
+        # A 64-bit graph has neither leftover bounds on individual inputs nor
+        # an inverse bound that would prevent it from accepting small inputs.
+        self.assertEqual(compiled(-0., self.argument((2**31, 1)), self.argument((1, 2))), large)
+        self.assertEqual(compiled(-0., self.argument((2, 1)), self.argument((1, 2))), large)
+        self.assertEqual(len(cache(compiled).graphs), 3)
+
+    def test_32bit_index_limit_is_inclusive(self):
+        compiled = self.compiled()
+        compiled(0., self.argument((2,)))
+        small = compiled(-0., self.argument((3,)))
+        self.assertEqual(compiled(0., self.argument((2**31-1,))), small)
+        self.assertEqual(len(cache(compiled).graphs), 2)
+        large = compiled(0., self.argument((2**31,)))
+        self.assertNotEqual(large, small)
+        self.assertEqual(compiled(-0., self.argument((2,))), large)
+        self.assertEqual(len(cache(compiled).graphs), 3)
+
+    def test_logical_hit_abi_changes_keep_both_lrus_bounded_without_consuming_slots(self):
+        fn = program('def f(a,x,b):\n local=a\n other=b\n return x*1.125')
+        compiled = frontend.implementation(fn, recompile_limit=1)
+        x, other = self.argument((4,)), self.argument((4,))
+        history = ((0.375, x, False), (x, x, True), (other, x, False),
+                   (True, x, other), (False, x, x), (True, x, -0.75))
+        owner, entry = cache(compiled), None
+        for cycle in range(2):
+            for step, args in enumerate(history):
+                with self.subTest(cycle=cycle, step=step):
+                    _, scalars = compiled(*args)
+                    self.assertEqual(scalars, ())
+                    self.assertEqual(len(owner.graphs), 1)
+                    current = next(iter(owner.graphs.values()))
+                    if entry is None:
+                        entry = current
+                    self.assertIs(current, entry)
+                    self.assertEqual(len(owner.executors), 1)
+                    self.assertEqual(len(entry.lowerings), 1)
+        # Revisited ABIs require rebuilding evicted executables while the
+        # original logical specialization remains selected throughout.
+        self.assertGreater(self.compile_bridge.call_count, len(history))
+
+    def test_compile_and_launch_failures_do_not_publish_history_and_reset_clears_both_levels(self):
+        compiled = self.compiled()
+        original = compiled(0., self.argument((2,)))
+        owner = cache(compiled)
+        graphs, executors = dict(owner.graphs), dict(owner.executors)
+        lowerings = [dict(entry.lowerings) for entry in owner.graphs.values()]
+        self.compile_bridge.side_effect = RuntimeError('synthetic compile failure')
+        with self.assertRaisesRegex(RuntimeError, 'synthetic compile failure'):
+            compiled(-0., self.argument((3,)))
+        self.compile_bridge.side_effect = self.make_executor
+        self.launch_failure = RuntimeError('synthetic launch failure')
+        with self.assertRaisesRegex(RuntimeError, 'synthetic launch failure'):
+            compiled(-0., self.argument((3,)))
+        self.assertEqual(owner.graphs, graphs)
+        self.assertEqual(owner.executors, executors)
+        self.assertEqual([entry.lowerings for entry in owner.graphs.values()], lowerings)
+        self.launch_failure = None
+        self.assertNotEqual(compiled(-0., self.argument((3,))), original)
+        native.compiler.reset()
+        self.assertFalse(owner.graphs)
+        self.assertFalse(owner.executors)
+        self.assertEqual(compiled(0., self.argument((2,))), original)
+        self.assertEqual(len(owner.graphs), 1)
 
 
 if __name__ == '__main__':

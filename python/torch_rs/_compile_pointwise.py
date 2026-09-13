@@ -100,6 +100,213 @@ class Program:
     dependencies: tuple
 
 
+@dataclass(frozen=True)
+class BoundValue:
+    """A lazy source read; assigning an unused local does not create a guard."""
+    source: BindingSource
+    value: object
+
+
+@dataclass(frozen=True)
+class TensorGuard:
+    """Reference shape/stride predicates, independent of native address maps."""
+    sizes: tuple
+    strides: tuple
+    properties: tuple
+
+    def matches(self, metadata, all_metadata):
+        shape, strides = metadata[:2]
+        if len(shape) != len(self.sizes) or metadata[2:5] != self.properties:
+            return False
+        if any((size < 2 if expected is None else size != expected)
+               for size, expected in zip(shape, self.sizes)):
+            return False
+        for stride, expected in zip(strides, self.strides):
+            if expected is None:
+                if stride < 2:
+                    return False
+            elif type(expected) is int:
+                if stride != expected:
+                    return False
+            elif expected[0] == "product":
+                axis = expected[1]
+                if stride != shape[axis] * strides[axis]:
+                    return False
+            elif stride != all_metadata[expected[1]][1][expected[2]]:
+                return False
+        return True
+
+
+@dataclass(frozen=True)
+class ShapeGuards:
+    """The admitted pointwise graph's tensor and cross-tensor shape contract."""
+    tensors: tuple
+    equal_axes: tuple
+    index_bounds: tuple
+
+    def matches(self, metadata):
+        if not all(guard.matches(metadata[source], metadata) for source, guard in self.tensors):
+            return False
+        if any(metadata[a][0][i] != metadata[b][0][j] for a, i, b, j in self.equal_axes):
+            return False
+        return all(0 <= _broadcast_elements([metadata[s][0] for s in group]) <= 2147483647
+                   for group in self.index_bounds)
+
+
+@dataclass
+class Specialization:
+    """Frozen logical semantics with lowerings for concrete tensor operand ABIs."""
+    # Scalars/operators are frozen here; tensor Values are rebound to the current
+    # filtered ABI only when a concrete lowering is missing. No tensor is retained.
+    values: dict
+    observed: tuple
+    observations: dict
+    lowerings: dict
+
+
+def _broadcast_elements(shapes):
+    result = ()
+    for shape in shapes:
+        rank = max(len(result), len(shape))
+        left, right = (1,) * (rank-len(result)) + result, (1,) * (rank-len(shape)) + shape
+        if any(a != b and a != 1 and b != 1 for a, b in zip(left, right)):
+            return -1
+        result = tuple(b if a == 1 else a for a, b in zip(left, right))
+    return math.prod(result)
+
+
+def _stride_observation(metadata):
+    # torch/_dynamo/pgo.py: FrameStateSizeEntry stride observations.
+    shape, strides = metadata[:2]
+    candidates, result = {}, [None] * len(shape)
+    for stride, negative_axis in sorted((s, -i) for i, s in enumerate(strides)):
+        axis = -negative_axis
+        result[axis] = candidates.get(stride, stride)
+        candidates.setdefault(stride * shape[axis], ("product", axis))
+    return tuple(result)
+
+
+def _tensor_guard(metadata, previous, duck_strides, source):
+    """Generalize successful source history while retaining zero/one guards."""
+    # torch/_dynamo/variables/builder.py: _automatic_dynamic and
+    # torch/fx/experimental/symbolic_shapes.py: _compute_symbolic_stride.
+    # This models only the admitted contiguous float32 pointwise surface.
+    shape, strides = metadata[:2]
+    tensors = [m for m in previous if type(m) is tuple]
+    dynamic_rank = "scalar" in previous or any(len(m[0]) != len(shape) for m in tensors)
+    dynamic = tuple(dynamic_rank or any(m[0][i] != size for m in tensors)
+                    for i, size in enumerate(shape))
+    sizes = tuple(None if changed and size > 1 else size for size, changed in zip(shape, dynamic))
+    # PGO only promotes independent strides while size history is fully static.
+    observed = _stride_observation(metadata)
+    dynamic_strides = tuple(not any(dynamic) and any(_stride_observation(m)[i] != atom for m in tensors)
+                            for i, atom in enumerate(observed))
+    candidates, guards = {}, [None] * len(shape)
+    for stride, negative_axis in sorted((s, -i) for i, s in enumerate(strides)):
+        axis = -negative_axis
+        contiguous = axis+1 < len(shape) and stride == shape[axis+1] * strides[axis+1]
+        if stride in (0, 1) and not contiguous:
+            guard = stride
+        elif dynamic_strides[axis]:
+            guard = stride if stride in (0, 1) else None
+        elif stride in candidates:
+            guard = ("product", candidates[stride])
+        elif None not in sizes:
+            guard = stride
+        else:
+            guard = duck_strides.get(stride)
+            duck_strides.setdefault(stride, ("equal", source, axis))
+        guards[axis] = guard
+        candidates[stride * shape[axis]] = axis
+    return TensorGuard(sizes, tuple(guards), metadata[2:5])
+
+
+def _logical_keys(program, bindings, values, observed, tensors):
+    """Guard realized sources and aliases without exposing native operand indices."""
+    keys, first, aliases = list(bindings), {}, []
+    for source in observed:
+        value = values[source]
+        if type(value) is Value:
+            tensor = tensors[value.index]
+            owner = next((s for s, index in first.items() if tensors[index] is tensor), None)
+            position = program.dependencies.index(source)
+            if owner is None:
+                first[source] = value.index
+                keys[position] = ("tensor", None)
+                aliases.append(len(first)-1)
+            else:
+                keys[position] = ("alias", owner)
+                aliases.append(tuple(first).index(owner))
+    for position, source in enumerate(program.dependencies):
+        if source not in observed:
+            keys[position] = ("ignored",)
+    return tuple(keys), first, tuple(aliases)
+
+
+def _shape_guards(program, graph, first, metadata, history):
+    """Build logical guards; actual full-input admission stays with native code."""
+    observations, guards, duck_strides = {}, [], {}
+    for source, index in first.items():
+        current = metadata[index][:5]
+        previous = [entry.observations[source] for key, entry in history.items()
+                    if key[0] is program.code and source in entry.observations]
+        guards.append((source, _tensor_guard(current, previous, duck_strides, source)))
+        observations[source] = current
+    # Graph topology supplies broadcast equalities and live iteration/buffer
+    # bounds. Rust remains the owner of actual-shape admission at compile/run.
+    dependencies, combined = [], False
+    for op, a, b, _ in graph.nodes:
+        if op == "input":
+            deps = {a}
+        elif op in ("add", "sub", "mul"):
+            deps = dependencies[a] | dependencies[b]
+            combined |= len(deps) == 2
+        elif op in ("neg", "relu", "sin", "cos"):
+            deps = dependencies[a]
+        else:
+            deps = set()
+        dependencies.append(deps)
+    equal_axes = []
+    if combined and len(first) == 2:
+        (left, li), (right, ri) = first.items()
+        ls, rs = metadata[li][0], metadata[ri][0]
+        for offset in range(1, min(len(ls), len(rs))+1):
+            if ls[-offset] > 1 and rs[-offset] > 1:
+                equal_axes.append((left, len(ls)-offset, right, len(rs)-offset))
+    live = tuple(s for s, i in first.items() if graph.nodes[i][1] in dependencies[graph.output])
+    groups = tuple((s,) for s in live) + ((live,) if len(live) == 2 else ())
+    # torch/_inductor/codegen/simd.py: can_use_32bit_indexing installs an
+    # upper-bound conjunction only if the whole kernel is 32-bit eligible.
+    # A 64-bit specialization has no inverse bound and can accept small shapes.
+    bounds = groups if all(_broadcast_elements([observations[s][0] for s in group]) <= 2147483647
+                           for group in groups) else ()
+    return ShapeGuards(tuple(guards), tuple(equal_axes), bounds), observations
+
+
+def _select_specialization(program, bindings, values, tensors, metadata, graphs):
+    """Select newest matching semantics before considering new scalar promotion.
+
+    A generalized entry can supersede an older exact shape even when its native
+    broadcast executable is absent. Conversely, a rank miss can expose an older
+    static scalar entry beneath a newer runtime entry.
+    """
+    for key, entry in reversed(graphs.items()):
+        if key[0] is not program.code:
+            continue
+        actual, _, aliases = _logical_keys(program, bindings, values, entry.observed, tensors)
+        scalars = []
+        for source, expected, current in zip(program.dependencies, key[1], actual):
+            if expected[0] == "runtime_float" and type(values[source]) is float:
+                scalars.append(values[source])
+            elif expected != current:
+                break
+        else:
+            by_source = {s: metadata[v.index][:5] for s, v in values.items() if type(v) is Value}
+            if aliases == key[3] and key[2].matches(by_source):
+                return key, entry, tuple(scalars)
+    return None
+
+
 def validate_signature_containers(model):
     # Function attributes permit container subclasses. Check their exact types
     # before emptiness so admission and warm guards never invoke user hooks.
@@ -229,24 +436,28 @@ def resolve(model, program, parameters=None):
     return tuple(keys), values
 
 
-def runtime_bindings(program, bindings, values, graphs, *, promote=True):
-    """Promote changed floats by source using successful, reset-owned history."""
+def runtime_bindings(program, bindings, values, graphs, *, observed=None):
+    """Resolve a new specialization after guard misses, from successful history."""
     previous = [key[1] for key in graphs if key[0] is program.code]
     keys, resolved, scalars = list(bindings), dict(values), []
     for position, dependency in enumerate(program.dependencies):
         value = values[dependency]
-        if type(value) is not float:
+        if (observed is not None and dependency not in observed) or type(value) is not float:
+            continue
+        # A new reference trace specializes nonfinite values even after prior
+        # promotion. An existing runtime guard can still accept them on a hit.
+        if not math.isfinite(value):
             continue
         observations = [keys_[position] for keys_ in previous]
-        dynamic = any(key[0] == "runtime_float" for key in observations)
-        if promote and not dynamic and math.isfinite(value):
+        dynamic = any(key[0] in ("runtime_float", "tensor") for key in observations)
+        if not dynamic:
             # Exact builtins only: numeric comparison matches the reference's
             # promotion history, including equal signed zeros and int/float
             # transitions. Booleans do not participate in scalar dynamism.
             dynamic = any(
-                (kind is float and struct.unpack("=d", prior)[0] != value)
-                or (kind is int and prior != value)
-                for kind, prior, *unused in observations
+                (key[0] is float and struct.unpack("=d", key[1])[0] != value)
+                or (key[0] is int and key[1] != value)
+                for key in observations
             )
         if dynamic:
             if len(scalars) >= 64:
@@ -257,17 +468,25 @@ def runtime_bindings(program, bindings, values, graphs, *, promote=True):
     return tuple(keys), resolved, tuple(scalars)
 
 
-def lower(program, values, arity, input_ids=None):
+def lower(program, values, arity, input_ids=None, *, observed=None):
     if input_ids is None:
         input_ids = tuple(range(arity))
     nodes = [("input", i, 0, 0) for i in input_ids]
     runtime = sorted(value.index for value in values.values() if type(value) is RuntimeScalar)
     nodes.extend(("scalar", index, 0, 0) for index in runtime)
-    locals_ = {source.name: values[source] for source in program.dependencies
+    locals_ = {source.name: BoundValue(source, values[source]) for source in program.dependencies
                if source.kind == "parameter"}
     stack = []
 
+    def realize(obj):
+        if type(obj) is BoundValue:
+            if observed is not None and obj.source not in observed:
+                observed.append(obj.source)
+            return obj.value
+        return obj
+
     def value(obj):
+        obj = realize(obj)
         if type(obj) is RuntimeScalar:
             if not obj.negative:
                 return Value(arity + obj.index, False)
@@ -316,9 +535,10 @@ def lower(program, values, arity, input_ids=None):
             scalar_bits(arg)  # Validate before retaining; never invoke user conversion.
             stack.append(arg)
         elif op in ("LOAD_GLOBAL", "LOAD_DEREF"):
-            stack.append(values[BindingSource(op, arg)])
+            source = BindingSource(op, arg)
+            stack.append(BoundValue(source, values[source]))
         elif op in ("LOAD_ATTR", "LOAD_METHOD"):
-            owner = stack.pop()
+            owner = realize(stack.pop())
             if owner is _ROOT:
                 if arg not in dict(_FUNCTIONS):
                     unsupported("unsupported native function: " + arg)
@@ -328,7 +548,7 @@ def lower(program, values, arity, input_ids=None):
             else:
                 unsupported("unsupported attribute: " + str(arg))
         elif op == "UNARY_NEGATIVE":
-            operand = stack.pop()
+            operand = realize(stack.pop())
             if type(operand) is RuntimeScalar:
                 stack.append(RuntimeScalar(operand.index, not operand.negative))
             elif isinstance(operand, Value):
@@ -344,7 +564,7 @@ def lower(program, values, arity, input_ids=None):
             stack.append(emit({"+": "add", "-": "sub", "*": "mul"}[symbol], [left, right]))
         elif op in ("CALL", "CALL_FUNCTION", "CALL_METHOD"):
             operands = [stack.pop() for _ in range(instruction.arg)][::-1]
-            target = stack.pop()
+            target = realize(stack.pop())
             if not isinstance(target, Call):
                 unsupported("only native pointwise operators may be called")
             if target.receiver is not None:
@@ -391,10 +611,6 @@ def implementation(model, recompile_limit):
             unsupported("default backend does not compile CPU tensors; use backend='eager' "
                         "for the documented CPU capture subset; see docs/compile-pointwise-jit.md")
         _native._pointwise_validate_inputs(tensors)
-        # Contiguous input offsets are launch-time addresses, not compiler
-        # specialization guards. Inductor reuses a static scalar specialization
-        # across them. Bounds are still checked above and by native execution.
-        guard_metadata = tuple(m[:5] for m in metadata)
         with cache.lock:
             if program is None or program.code is not model.__code__:
                 program = analyze(model, len(args))
@@ -402,40 +618,56 @@ def implementation(model, recompile_limit):
             if program.code.co_argcount != len(args):
                 unsupported("function signature changed")
             static_bindings, static_values = resolve(model, program, parameters)
-            # Persistent runtime promotion takes precedence over old static
-            # entries. Discover new promotion only after the full guard misses:
-            # a nonfinite specialization must not invalidate a prior static hit.
-            bindings, values, scalars = runtime_bindings(
-                program, static_bindings, static_values, cache.graphs, promote=False)
-            # Object identity, not equal values or shared storage, determines
-            # whether two parameters denote the same expression. Retain only
-            # the relationship so fresh tensors can reuse graphs and code.
             input_ids = (0, 0) if len(tensors) == 2 and tensors[0] is tensors[1] else tuple(range(len(tensors)))
-            key = (program.code, bindings, guard_metadata, input_ids)
-            executor = cache.graphs.get(key)
-            if executor is None:
-                bindings, values, scalars = runtime_bindings(
-                    program, static_bindings, static_values, cache.graphs)
-                key = (program.code, bindings, guard_metadata, input_ids)
-                executor = cache.graphs.get(key)
-            if executor is None:
+            abi = (len(tensors), input_ids, tuple((s, v.index) for s, v in static_values.items()
+                                               if type(v) is Value))
+            selected = _select_specialization(program, static_bindings, static_values,
+                                              tensors, metadata, cache.graphs)
+            if selected is None:
                 if len(cache.graphs) >= recompile_limit:
                     unsupported(f"hit recompile_limit={recompile_limit}")
-                graph = lower(program, values, len(tensors), input_ids)
-                # Linear loads share code across shapes. Broadcast address formulas
-                # specialize shapes, never storage offsets, values or pointers.
-                # Keep this map inside reset-owned cache entries, so reset releases modules.
-                shapes = tuple(m[0] for m in metadata)
-                indexing_key = None if all(s == shapes[0] for s in shapes) else shapes
-                code_key = (graph, metadata[0][4], indexing_key)
-                executor = next((entry for entry in cache.graphs.values()
-                                 if entry[0] == code_key), None)
-                if executor is None:
-                    executor = (code_key, _native._pointwise_compile(tensors, graph.nodes, graph.output))
-                result = executor[1].run(tensors, scalars)
-                cache.graphs[key] = executor
+                # The same lowering records which sources actually materialize,
+                # including dead operations but excluding unused local bindings.
+                observed = []
+                graph = lower(program, static_values, len(tensors), input_ids, observed=observed)
+                bindings, values, scalars = runtime_bindings(
+                    program, static_bindings, static_values, cache.graphs, observed=observed)
+                if scalars:
+                    graph = lower(program, values, len(tensors), input_ids)
+                bindings, first, aliases = _logical_keys(program, bindings, values, observed, tensors)
+                guards, observations = _shape_guards(program, graph, first, metadata, cache.graphs)
+                observations.update((s, "scalar") for s in observed
+                                    if type(static_values[s]) is float or type(static_values[s]) is int)
+                key = (program.code, bindings, guards, aliases)
+                entry = Specialization(values, tuple(observed), observations, {})
             else:
-                result = executor[1].run(tensors, scalars)
+                key, entry, scalars = selected
+                graph = entry.lowerings.get(abi)
+                if graph is None:
+                    values = dict(entry.values)
+                    for source in program.dependencies:
+                        if type(values[source]) is Value or source not in entry.observed:
+                            values[source] = static_values[source]
+                    graph = lower(program, values, len(tensors), input_ids)
+            # Logical guards choose scalar semantics. Concrete executables still
+            # specialize the full native ABI and exact broadcast address formula.
+            # Offsets/addresses and all original-IR admission are checked at run.
+            shapes = tuple(m[0] for m in metadata)
+            indexing_key = None if all(s == shapes[0] for s in shapes) else shapes
+            code_key = (graph, metadata[0][4], indexing_key)
+            executor = cache.executors.get(code_key)
+            if executor is None:
+                executor = _native._pointwise_compile(tensors, graph.nodes, graph.output)
+            result = executor.run(tensors, scalars)
+            # Publish both levels only after success. Executable and lowering LRU
+            # eviction bounds retained modules without consuming logical slots.
+            for mapping, item_key, item in ((entry.lowerings, abi, graph),
+                                            (cache.executors, code_key, executor),
+                                            (cache.graphs, key, entry)):
+                mapping.pop(item_key, None)
+                mapping[item_key] = item
+                while len(mapping) > recompile_limit:
+                    del mapping[next(iter(mapping))]
             return result
 
     compiled._torch_rs_pointwise_cache = cache

@@ -8,7 +8,7 @@ from unittest import mock
 import torch_rs as native
 from torch_rs import _compile_pointwise as frontend
 from torch_rs import torch_rs as bridge
-from tests.test_compile_pointwise_jit import available, cache, program, two_device_reservation
+from tests.test_compile_pointwise_jit import available, cache, kernels, program, two_device_reservation
 from tests import test_compile_pointwise_jit as jit_tests
 
 
@@ -108,22 +108,22 @@ class RuntimeScalarHardware(unittest.TestCase):
                     ref_setter(value)
                     outputs.append(self.compare(compiled, reference, [-0., 2., float('inf')])[0].item())
                     self.compare(compiled, reference, [float('nan'), -4., 0.])
-                    entries = list(cache(compiled).graphs.values())
-                    if len(entries) == 2:
+                    entries = kernels(compiled)
+                    if len(cache(compiled).graphs) == 2:
                         if dynamic_kernel is not None:
-                            self.assertIs(entries[-1][1], dynamic_kernel)
-                        dynamic_kernel = entries[-1][1]
+                            self.assertIs(entries[-1], dynamic_kernel)
+                        dynamic_kernel = entries[-1]
                 self.assertEqual(outputs, [1., 0., 0., 2.])
-                entries = list(cache(compiled).graphs.values())
-                self.assertEqual(len(entries), 2)
-                self.assertIn('float s0', entries[-1][1].source)
+                entries = kernels(compiled)
+                self.assertEqual(len(cache(compiled).graphs), 2)
+                self.assertIn('float s0', entries[-1].source)
                 native.compiler.reset()
                 self.torch.compiler.reset()
                 setter(16777217.0)
                 ref_setter(16777217.0)
                 self.assertEqual(self.compare(compiled, reference, [1., -1., 0.])[0].item(), 1.)
                 self.assertEqual(len(cache(compiled).graphs), 1)
-                self.assertNotIn('float s0', next(iter(cache(compiled).graphs.values()))[1].source)
+                self.assertNotIn('float s0', kernels(compiled)[0].source)
                 native.compiler.reset()
                 self.torch.compiler.reset()
 
@@ -150,11 +150,11 @@ class RuntimeScalarHardware(unittest.TestCase):
             fn.__globals__.update(left=left, right=right)
             ref_fn.__globals__.update(left=left, right=right)
             self.compare(compiled, reference, [-0., 0., 1., -1., 1e10])
-            entries = list(cache(compiled).graphs.values())
-            if len(entries) == 2:
+            entries = kernels(compiled)
+            if len(cache(compiled).graphs) == 2:
                 if dynamic_kernel is not None:
-                    self.assertIs(entries[-1][1], dynamic_kernel)
-                dynamic_kernel = entries[-1][1]
+                    self.assertIs(entries[-1], dynamic_kernel)
+                dynamic_kernel = entries[-1]
         self.assertEqual(len(cache(compiled).graphs), 2)
         self.assertIn('float s0, float s1', dynamic_kernel.source)
 
@@ -180,7 +180,7 @@ class RuntimeScalarHardware(unittest.TestCase):
         compiled(x)
         fn.__globals__['scale'] = 2.0
         compiled(x)
-        kernel = list(cache(compiled).graphs.values())[-1][1]
+        kernel = kernels(compiled)[-1]
         values = (1.25, -3.5, 8.0, 0.0) * 4
         def run(value):
             result = kernel.run((x,), (value,))
@@ -206,8 +206,8 @@ class RuntimeScalarHardware(unittest.TestCase):
                     fn.__globals__['scale'] = scale
                     compiled(x)
                     self.assertEqual(self.torch.cuda.current_device(), 1-target)
-        entries = list(cache(compiled).graphs.values())
-        kernel = next(entry[1] for entry in entries if entry[1].device == 0 and 'float s0' in entry[1].source)
+        entries = kernels(compiled)
+        kernel = next(entry for entry in entries if entry.device == 0 and 'float s0' in entry.source)
         with self.torch.cuda.device(1):
             with self.assertRaisesRegex(RuntimeError, 'device guard'):
                 kernel.run((x,), (1.0,))
@@ -225,7 +225,7 @@ class RuntimeScalarHardware(unittest.TestCase):
                 compiled(x)
         self.assertEqual(len(cache(compiled).graphs), 1)
         compiled(x)
-        kernel = list(cache(compiled).graphs.values())[-1][1]
+        kernel = kernels(compiled)[-1]
         callbacks = []
         class CustomFloat(float):
             def __float__(self):
@@ -347,7 +347,7 @@ class PositionalScalarHardware(unittest.TestCase):
         for s, t in ((16777217., 0.375), (16777218., 1.125), (16777217., 0.375)):
             self.check(fn, compiled, reference, (s, x, t), (s, tx, t))
         self.assertEqual(len(cache(compiled).graphs), 2)
-        self.assertIn('float s1', list(cache(compiled).graphs.values())[-1][1].source)
+        self.assertIn('float s1', kernels(compiled)[-1].source)
 
     def test_tensor_scalar_role_changes_keep_history_attached_to_public_slots(self):
         source = 'def f(a,b,c):\n return a*b+c'
@@ -383,7 +383,7 @@ class PositionalScalarHardware(unittest.TestCase):
             setter(gain)
             ref_setter(gain)
             self.check(fn, compiled, reference, (a, x, b), (a, tx, b))
-        self.assertIn('float s2', list(cache(compiled).graphs.values())[-1][1].source)
+        self.assertIn('float s2', kernels(compiled)[-1].source)
 
     def test_failed_calls_recompile_limit_reset_and_warm_no_replay(self):
         source = 'def f(s,x):\n return ((x*0)+s)-16777216.0'
@@ -437,7 +437,7 @@ class PositionalScalarHardware(unittest.TestCase):
                 fn.__globals__[name] = rf.__globals__[name] = scalar
             self.check(fn, compiled, reference, (x,)+(scalar,)*32, (tx,)+(scalar,)*32)
         self.assertEqual(len(cache(compiled).graphs), 2)
-        self.assertIn('float s63', list(cache(compiled).graphs.values())[-1][1].source)
+        self.assertIn('float s63', kernels(compiled)[-1].source)
 
     def test_broadcasts_with_scalar_slots_use_only_tensor_shapes(self):
         for body in ('(x+y).relu()', '(x*s).relu()'):
@@ -611,6 +611,182 @@ class ScalarShapeSpecializationHardware(unittest.TestCase):
         self.check_origins((((2, 1), (1, 3)), ((3, 1), (1, 4)),
                             ((2, 1), (1, 3)), ((1, 1), (1, 3)),
                             ((0, 1), (1, 3)), ((2, 1), (1, 3))), broadcast=True)
+
+
+@unittest.skipUnless(available(), 'requires native CUDA and reference PyTorch CUDA')
+class PersistentSpecializationHardware(unittest.TestCase):
+    setUpClass = classmethod(jit_tests.Hardware.setUpClass.__func__)
+    tearDown = jit_tests.Hardware.tearDown
+    upload = jit_tests.Hardware.upload
+    without_replay = jit_tests.Hardware.without_replay
+
+    def pair(self, source):
+        fn, ref_fn = program(source), program(source)
+        self.outputs = []
+        return fn, native.compile(fn), self.torch.compile(ref_fn)
+
+    def host(self, value):
+        return self.torch.tensor(value.cpu().tolist(), dtype=self.torch.float32).reshape(tuple(value.shape))
+
+    def assert_bits(self, actual, expected):
+        self.assertEqual(tuple(actual.shape), tuple(expected.shape))
+        self.torch.testing.assert_close(actual, expected, rtol=0, atol=0, equal_nan=True)
+        keep = ~expected.isnan()
+        self.assertTrue(self.torch.equal(actual.view(self.torch.int32)[keep],
+                                        expected.view(self.torch.int32)[keep]))
+
+    def check(self, pair, args, refs):
+        fn, compiled, reference = pair
+        inputs = [(value, self.host(value)) for value in args if type(value) is native.Tensor]
+        ref_inputs = [(value, value.cpu().clone()) for value in refs if isinstance(value, self.torch.Tensor)]
+        expected = reference(*refs)
+        actual = self.without_replay(fn, compiled, args)
+        self.assert_bits(self.host(actual), expected.cpu())
+        self.assertEqual(actual.stride(), expected.stride())
+        for value, before in inputs:
+            self.assert_bits(self.host(value), before)
+            self.assertIsNot(actual, value)
+            if actual.numel() and value.numel():
+                self.assertNotEqual(actual.data_ptr(), value.data_ptr())
+        for value, before in ref_inputs:
+            self.assert_bits(value.cpu(), before)
+        for previous in self.outputs:
+            self.assertIsNot(actual, previous)
+            if actual.numel() and previous.numel():
+                self.assertNotEqual(actual.data_ptr(), previous.data_ptr())
+        self.outputs.append(actual)
+        return actual
+
+    def test_older_static_precision_guard_survives_other_rank_runtime_graph(self):
+        pair = self.pair('def f(s,x):\n return ((x*0)+s)-16777216.0')
+        results = []
+        for shape, scalar in (((2,), 16777217.), ((2, 2), 16777218.),
+                              ((2,), 16777217.), ((3,), 16777217.), ((2,), 16777217.)):
+            count = 1
+            for size in shape:
+                count *= size
+            x, tx = self.upload([1.]*count, shape), self.upload([1.]*count, shape, self.torch)
+            with self.subTest(shape=shape, scalar=scalar):
+                results.append(self.check(pair, (scalar, x), (scalar, tx)).cpu().tolist())
+        self.assertEqual(results[0], [1., 1.])
+        self.assertEqual(results[2], [1., 1.])
+        self.assertEqual(results[3], [0., 0., 0.])
+        self.assertEqual(results[4], [0., 0.])
+
+    def test_nonfinite_runtime_hit_and_cold_rank_specialization(self):
+        pair = self.pair('def f(s,x):\n return x*s')
+        compiled = pair[1]
+        runtime = None
+        for step, (scalar, shape) in enumerate(((1.25, (4,)), (2.25, (4,)),
+                                               (float('inf'), (4,)), (float('inf'), (2, 2)),
+                                               (float('nan'), (4,)), (float('nan'), (2, 2)),
+                                               (1.25, (4,)))):
+            values = [0., -0., 1., -1.]
+            x, tx = self.upload(values, shape), self.upload(values, shape, self.torch)
+            with self.subTest(step=step, scalar=scalar, shape=shape):
+                self.check(pair, (scalar, x), (scalar, tx))
+                selected = kernels(compiled)[-1]
+                if step == 1:
+                    runtime = selected
+                elif step in (2, 4, 6):
+                    self.assertIs(selected, runtime)
+                elif step in (3, 5):
+                    self.assertNotIn('float s0', selected.source)
+
+    def test_tensor_float_roles_follow_reversed_alias_realization_order(self):
+        pair = self.pair('def f(a,b):\n return b-a')
+        x = self.upload([1., -1., 0., -0.], (4,))
+        tx = self.upload([1., -1., 0., -0.], (4,), self.torch)
+        # b is realized first even though a occupies the first public slot.
+        for args, refs in (((x, x), (tx, tx)),
+                           ((16777217., x), (16777217., tx)),
+                           ((x, 16777217.), (tx, 16777217.)),
+                           ((x, x[:]), (tx, tx[:])),
+                           ((16777218., x), (16777218., tx)),
+                           ((x, x), (tx, tx)),
+                           ((16777217., x), (16777217., tx))):
+            self.check(pair, args, refs)
+
+    def test_unused_local_scalar_tensor_roles_reuse_logical_guard(self):
+        pair = self.pair('def f(unused,x):\n local=unused\n return x*1.125')
+        x = self.upload([1., -1., 0., -0.], (4,))
+        tx = self.upload([1., -1., 0., -0.], (4,), self.torch)
+        for unused, ref_unused in ((0.375, 0.375), (x, tx), (x[:], tx[:]),
+                                   (False, False), (16777217., 16777217.), (x, tx)):
+            self.check(pair, (unused, x), (ref_unused, tx))
+            self.assertEqual(len(cache(pair[1]).graphs), 1)
+
+    def test_contiguous_singleton_stride_history_keeps_selected_zero_sign(self):
+        pair = self.pair('def f(s,x):\n return x*s')
+        history = ((2, True, 0.), (3, True, -0.), (2, True, 0.),
+                   (4, True, 0.), (2, False, 0.), (3, False, -0.),
+                   (2, True, -0.), (3, True, 0.))
+        for step, (count, transposed, scalar) in enumerate(history):
+            args = []
+            for framework in (native, self.torch):
+                base = self.upload([1.]*count, (1, count), framework)
+                value = base.transpose(0, 1) if transposed else base.reshape(count, 1)
+                self.assertTrue(value.is_contiguous())
+                self.assertEqual(tuple(value.shape), (count, 1))
+                self.assertEqual(value.stride(), (1, count if transposed else 1))
+                args.append(value)
+            with self.subTest(step=step, shape=(count, 1), strides=args[0].stride(), scalar=repr(scalar)):
+                actual = self.check(pair, (scalar, args[0]), (scalar, args[1]))
+                if step in (2, 3):
+                    # Generalizing size and singleton stride at -0.0 preserves
+                    # that graph's sign on later +0.0 guard hits.
+                    self.assertTrue(self.host(actual).signbit().all().item())
+
+    def test_logical_hit_new_broadcast_executor_keeps_frozen_zero(self):
+        pair = self.pair('def f(s,x,y):\n return x*s')
+        selected = None
+        for step, (count, scalar) in enumerate(((2, 0.), (3, -0.), (4, 0.), (5, -0.))):
+            shape = (count,) if step == 0 else (1, count)
+            x, tx = self.upload([1.]*count, (count,)), self.upload([1.]*count, (count,), self.torch)
+            y, ty = self.upload([2.]*count, shape), self.upload([2.]*count, shape, self.torch)
+            self.check(pair, (scalar, x, y), (scalar, tx, ty))
+            current = next(reversed(cache(pair[1]).graphs.values()))
+            if step == 1:
+                selected = current
+            elif step > 1:
+                self.assertIs(current, selected)
+                self.assertEqual(len(cache(pair[1]).graphs), 2)
+                self.assertIsNot(kernels(pair[1])[-1], previous_executor)
+            previous_executor = kernels(pair[1])[-1]
+
+    def test_failed_compile_and_launch_preserve_both_cache_orders_and_history(self):
+        pair = self.pair('def f(s,x,y):\n return x*s')
+        compiled = pair[1]
+        for count, scalar in ((2, 0.), (3, -0.)):
+            x, tx = self.upload([1.]*count, (count,)), self.upload([1.]*count, (count,), self.torch)
+            y, ty = self.upload([2.]*count, (1, count)), self.upload([2.]*count, (1, count), self.torch)
+            self.check(pair, (scalar, x, y), (scalar, tx, ty))
+
+        def snapshot():
+            state = cache(compiled)
+            return ([(key, id(entry), list(entry.lowerings.items())) for key, entry in state.graphs.items()],
+                    list(state.executors.items()))
+
+        class FailedLaunch:
+            def run(self, *args):
+                raise RuntimeError('injected transactional launch failure')
+
+        x, tx = self.upload([1.]*4, (4,)), self.upload([1.]*4, (4,), self.torch)
+        y, ty = self.upload([2.]*4, (1, 4)), self.upload([2.]*4, (1, 4), self.torch)
+        before = snapshot()
+        # Zero hits the dynamic shape guard but needs a new address formula;
+        # True requires a new logical specialization as well as an executable.
+        for scalar in (0., True):
+            for failure in ('compile', 'launch'):
+                effect = ({'side_effect': RuntimeError('injected transactional compile failure')}
+                          if failure == 'compile' else {'return_value': FailedLaunch()})
+                with self.subTest(scalar=scalar, failure=failure), \
+                     mock.patch.object(bridge, '_pointwise_compile', **effect):
+                    with self.assertRaisesRegex(RuntimeError, 'injected transactional'):
+                        compiled(scalar, x, y)
+                self.assertEqual(snapshot(), before)
+        self.check(pair, (0., x, y), (0., tx, ty))
+        self.check(pair, (True, x, y), (True, tx, ty))
 
 
 if __name__ == '__main__':

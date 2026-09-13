@@ -10,7 +10,7 @@ import torch_rs as native
 from torch_rs import torch_rs as bridge
 from torch_rs import _compile_pointwise as frontend
 from test_compile_pointwise_jit import (
-    Hardware, available, cache, kernel, lower, program, two_device_reservation,
+    Hardware, available, cache, kernel, kernels, lower, program, two_device_reservation,
 )
 
 
@@ -98,8 +98,8 @@ class Broadcast(unittest.TestCase):
                             self.compare(arg, ref, exact=True)
                             if math.prod(actual.shape) and math.prod(arg.shape):
                                 self.assertNotEqual(actual.data_ptr(), arg.data_ptr())
-            for entry in cache(compiled).graphs.values():
-                self.assertEqual(entry[1].ptx.count('.visible .entry'), 1)
+            for entry in kernels(compiled):
+                self.assertEqual(entry.ptx.count('.visible .entry'), 1)
             native.compiler.reset()
             self.torch.compiler.reset()
 

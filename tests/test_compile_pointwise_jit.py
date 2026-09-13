@@ -33,8 +33,12 @@ def cache(compiled):
     return compiled._torch_rs_pointwise_cache
 
 
+def kernels(compiled):
+    return list(cache(compiled).executors.values())
+
+
 def kernel(compiled):
-    return next(iter(cache(compiled).graphs.values()))[1]
+    return next(iter(cache(compiled).executors.values()))
 
 
 def custom_globals_program(source):
@@ -284,8 +288,13 @@ class Hardware(unittest.TestCase):
                             self.assertIsNot(actual, arg)
                             if count:
                                 self.assertNotEqual(actual.data_ptr(), arg.data_ptr())
-            self.assertEqual(len(cache(compiled).graphs), 6)
-            self.assertEqual(len({id(entry[1]) for entry in cache(compiled).graphs.values()}), 1)
+            # The generalized rank-two guard accepts the later (11, 263)
+            # shape. Compare logical entries with this persistent reference,
+            # rather than counting every distinct concrete metadata tuple.
+            reference_entries = self.torch._dynamo.eval_frame._debug_get_cache_entry_list(reference_fn.__code__)
+            self.assertEqual(len(reference_entries), 5)
+            self.assertEqual(len(cache(compiled).graphs), len(reference_entries))
+            self.assertEqual(len({id(entry) for entry in kernels(compiled)}), 1)
             generated = kernel(compiled)
             self.assertIn('torch_rs_pointwise', generated.ptx)
             self.assertEqual(generated.ptx.count('.visible .entry'), 1)
@@ -525,7 +534,7 @@ assert 'torch' not in sys.modules
             with torch.cuda.device(1 - target):
                 self.compare(compiled(x), torch.tensor([1., 2.], device=f'cuda:{target}').mul(0.7).sin())
                 self.assertEqual(torch.cuda.current_device(), 1 - target)
-        self.assertEqual({entry[1].device for entry in cache(compiled).graphs.values()}, {0, 1})
+        self.assertEqual({entry.device for entry in kernels(compiled)}, {0, 1})
         with torch.cuda.device(1):
             with self.assertRaisesRegex(RuntimeError, 'device guard'):
                 kernel(compiled).run((inputs[1],))

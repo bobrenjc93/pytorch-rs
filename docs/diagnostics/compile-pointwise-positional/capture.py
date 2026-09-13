@@ -17,7 +17,6 @@ import sys
 import zipfile
 
 import torch_rs as torch
-from torch_rs import _compile_pointwise as frontend
 from torch_rs import torch_rs as native
 
 root = Path.cwd().resolve()
@@ -56,21 +55,16 @@ for scale, enabled, shape, offset in ((0.375, False, (2, 17), 0),
     args = (scale, x, enabled, y)
     result = compiled(*args)
     assert result.shape == shape and result.data_ptr() not in (x.data_ptr(), y.data_ptr())
-    # Resolve the same complete guard as this call. In particular the last
-    # call returns to the initial scalar value but dispatches its runtime graph,
-    # not the first (static) module or the last inserted Boolean specialization.
-    tensors, parameters = frontend.bind_arguments(args)
-    program = frontend.analyze(pointwise, len(args))
-    keys, values = frontend.resolve(pointwise, program, parameters)
-    cache = compiled._torch_rs_pointwise_cache.graphs
-    keys, _, _ = frontend.runtime_bindings(program, keys, values, cache, promote=False)
-    metadata = tuple(native._compile_trace_tensor_metadata(t)[:5] for t in tensors)
-    kernel = cache[(program.code, keys, metadata, (0, 1))][1]
+    # Successful dispatch moves its executor to the end of the LRU cache.
+    # The last call returns to the initial scalar value but dispatches its
+    # runtime module, as the identity checks below verify.
+    cache = compiled._torch_rs_pointwise_cache
+    kernel = next(reversed(cache.executors.values()))
     dispatched.append(kernel)
     observations.append({'scale': scale, 'enabled': enabled, 'shape': shape, 'offset': offset,
                          'output': result.cpu().tolist(), 'source_sha256': sha(kernel.source.encode()),
                          'ptx_sha256': sha(kernel.ptx.encode())})
-assert len(cache) == 3
+assert len(cache.graphs) == 3
 assert dispatched[-1] is dispatched[1] and dispatched[-1] is not dispatched[0]
 assert dispatched[-1] is not dispatched[2]
 assert 'float s0' in kernel.source

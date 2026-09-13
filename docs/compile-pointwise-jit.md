@@ -26,11 +26,12 @@ result = torch.compile(pointwise)(x, y)
 
 ## Supported programs
 
-The positional-scalar extension in this development candidate is **not yet
-qualified**. Persistent default-Inductor shape histories expose an unresolved
-shared-cache signed-zero mismatch, also reproducible with existing captures.
-The [retained failures and required cache refactor](diagnostics/compile-pointwise-positional/README.md#unresolved-prerequisite)
-describe the limitation; the implementation below is not a completed parity claim.
+The positional-scalar extension and shared specialization fix are awaiting
+Burner's clean-commit qualification. Persistent default-Inductor regressions
+cover the previously failing signed-zero shape histories; the
+[validation record](diagnostics/compile-pointwise-positional/README.md) preserves
+those failures alongside revision checks. This bounded surface does not establish
+general Inductor parity.
 
 The function accepts one or two exact native CUDA float32 Tensor inputs on the
 same device with contiguous storage, plus exact built-in `float` and `bool`
@@ -150,12 +151,13 @@ zero: a cache hit retains the sign captured by that graph, while a new graph
 uses the current value. Literal zeros and promoted runtime parameters retain
 their actual sign. A changed finite float becomes a runtime float32
 kernel parameter, matching the reference's warm-call materialization boundary.
-Promotion is per binding, persists when earlier float values return, and is
-cleared by reset. Integer and Boolean bindings retain their scalar kinds.
-Existing runtime promotions are applied before the complete graph-cache guard
-is checked; new promotion is discovered only on a cache miss. Returning to a
-cached finite specialization after an infinity/NaN-only interlude retains that
-specialization, while shape misses still consult the full binding history.
+Logical guards are checked from most recently selected to oldest before any new
+promotion. An existing runtime specialization accepts earlier floats and nonfinite
+values when its other guards match; a rank miss can instead select an older
+static specialization. Only a complete guard miss consults successful source
+history for new promotion. New traces specialize nonfinite values even after
+runtime promotion. Reset clears this history. Integer and Boolean bindings retain
+their scalar kinds.
 At most 64 runtime scalar parameters are supported in total across captures and
 positional arguments, by the existing single promotion pass. Their current values are
 passed by value at launch and are never retained in graph or code cache keys.
@@ -163,21 +165,31 @@ The binding regressions keep both wrappers alive across changes without
 resetting the reference. Persistent default-Inductor tests independently check
 positional, global and closure histories, repeated bindings, slot changes,
 nonfinite values, overflow, signed zeros and Boolean transitions. These tests
-characterize binding policy; additional persistent shape-history regressions
-fail on the shared-cache mismatch described above.
+characterize binding policy and logical specialization selection across shape
+histories, including signed-zero revisits.
 See the [positional binding evidence](diagnostics/compile-pointwise-positional/README.md).
 
 ### Recompilation and reset
 
-A changed shape creates a graph cache entry. Same-shape inputs reuse linear-load
-code for the same expression and device; broadcasts specialize address formulas
-to the input shapes and recheck numerical admission and those formulas before
-allocation or launch. Equal-shape modules cannot bypass unequal-shape admission
-through direct execution with matching linear address maps.
-Failed admission,
-compilation or execution does not consume a cache slot. `recompile_limit`
-retains the existing default of eight metadata/binding specializations.
-`torch.compiler.reset()` clears these caches; the next call recompiles.
+Each wrapper keeps logical specializations and concrete native executors under
+one reset owner. A source's changed dimensions generalize after a guard miss;
+zero and singleton dimensions remain static. Rank, stride relations, broadcast
+equalities and applicable 32-bit upper bounds constrain reuse. Unused tensors
+create no logical shape guards but still participate in all native validation.
+A generalized specialization retains its frozen constants when an older shape
+returns, including the sign of zero.
+
+Native executors specialize the full filtered tensor ABI, device and exact
+broadcast address formulas. Equal-shaped inputs share linear-load code. A logical
+hit may compile a new concrete executor without consuming a logical slot or
+updating promotion history. Every launch rechecks original-IR numerical admission
+on actual shapes, including unused tensors and singleton-only linear maps.
+
+`recompile_limit` defaults to eight logical specializations. The executable LRU
+and each specialization's ABI-lowering LRU are independently bounded by the same
+limit. Failed admission, compilation or execution publishes no entry, history or
+LRU change. `torch.compiler.reset()` clears both cache levels; the next call
+recompiles.
 
 ## Storage and device ownership
 

@@ -7,7 +7,7 @@ from unittest.mock import patch
 import torch_rs as native
 from torch_rs import _compile_pointwise as frontend
 from torch_rs import torch_rs as bridge
-from test_compile_pointwise_jit import Hardware, available, cache, program
+from test_compile_pointwise_jit import Hardware, available, cache, kernels, program
 
 
 @unittest.skipUnless(available(), 'requires native CUDA and reference PyTorch CUDA')
@@ -64,9 +64,9 @@ class BroadcastPrimitives(unittest.TestCase):
                         self.compare(base, self.upload(data, (len(data),), self.torch), exact=True)
         # These sources contain no second arithmetic stage or competing product;
         # generated lowering must not introduce an FMA with another stage.
-        for entry in cache(compiled).graphs.values():
-            self.assertNotIn('fmaf(', entry[1].source)
-            self.assertEqual(entry[1].ptx.count('.visible .entry'), 1)
+        for entry in kernels(compiled):
+            self.assertNotIn('fmaf(', entry.source)
+            self.assertEqual(entry.ptx.count('.visible .entry'), 1)
         native.compiler.reset()
         self.torch.compiler.reset()
 
@@ -105,7 +105,7 @@ class BroadcastPrimitives(unittest.TestCase):
                     args, refs, _ = self.inputs(pattern, value != 1.137)
                     with self.subTest(expression=expression, value=value, shapes=pattern):
                         self.compare(self.without_replay(fn, compiled, args), reference(*refs))
-            self.assertTrue(any('float s0' in entry[1].source for entry in cache(compiled).graphs.values()))
+            self.assertTrue(any('float s0' in entry.source for entry in kernels(compiled)))
             self.assertLessEqual(len(cache(compiled).graphs), 6)
             native.compiler.reset()
             self.torch.compiler.reset()

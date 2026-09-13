@@ -1,9 +1,17 @@
 # Positional scalar binding validation
 
-**Incomplete milestone: do not qualify this candidate.** The source binding
-implementation and broad regression checks are present, but additional
-persistent-default tests found numerical failures requiring a shared-cache
-prerequisite. The failure evidence is retained below.
+The shared-cache review fix passes its focused H100 regressions. Logical guards now select
+frozen scalar semantics before concrete native executable lookup. The original
+18 signed-zero subtest failures pass on H100 without changing their assertions
+or resetting the reference within a history.
+
+**Clean evidence refresh remains required after Burner commits this fix.** The
+existing candidate reports and CUDA/PTX capture measure `4ed105f5`, which predates
+the revised compiler. They are stale for the current implementation and remain
+unchanged to preserve their measurements and failures. They cannot qualify this
+revision. Burner must regenerate current-candidate clean coverage, CUDA timings
+and dispatched-module provenance through its post-commit phase; actual clean-main
+baseline records retain their measured identities.
 
 This development implementation accepts one or two exact tensors plus
 exact built-in float/Boolean arguments in arbitrary positional slots. Positional
@@ -18,7 +26,7 @@ and reset owner. Tensor filtering happens once and preserves unused and repeated
 tensors. Parameters never read, or overwritten before their first read, have no
 value guards; all public arguments still receive exact-type admission.
 
-## Unresolved prerequisite
+## Retained pre-fix failures
 
 The [shape revisit probe](zero-shape-probe.py) retains
 [all 20 observations](zero-shape-probe.json.gz), including eight numerical
@@ -44,7 +52,7 @@ first exact-shape graph. Native's exact metadata lookup instead selects the old
 graph. This is an observable sign-bit mismatch within the admitted language,
 not an excluded expression or a harmless difference in compilation counts.
 
-Completing this increment requires one shared representation of logical graph
+The review required one shared representation of logical graph
 specializations, source guards and their selection order, with native executable
 specialization beneath it. A generalized logical graph must retain its constants
 even when another exact broadcast executable is needed. Shape/stride history,
@@ -52,16 +60,70 @@ rank changes, zero/singleton dimensions, used/unused sources and tensor
 relationships need persistent-default verification. Original-IR admission on
 every actual tensor shape must remain unchanged. A zero-specific replacement
 rule or a separate positional-argument history would not solve that ownership
-problem. No such approximation was installed.
+problem. The revision implements the shared owner described below.
 
 Five permanent tests in `ScalarShapeSpecializationHardware` exercise parameters,
 globals and closures in both sign orders through one-dimensional revisits, rank,
 singleton/empty, unused-tensor and broadcast histories. They retain complete
 observations before asserting and do not reset the reference within a history.
 Their results, including failing assertions, remain in the validation archive.
-Three test methods fail with 18 subtest failures; the rank-transition and
-broadcast methods pass. These are unresolved numerical failures, including
-existing captured-scalar behavior, not reference infrastructure errors.
+In the pre-fix capture, three test methods fail with 18 subtest failures; the
+rank-transition and broadcast methods pass. These were numerical failures,
+including existing captured-scalar behavior, not reference infrastructure errors.
+The revised implementation passes all five unchanged methods.
+
+## Shared-cache revision
+
+The existing reset-owned cache contains logical specializations plus a bounded
+native executable LRU. Source-identified guards use successful shape/stride and
+scalar history, with static zero/singleton dimensions, broadcast relationships
+and conditional 32-bit upper bounds. Lookup checks the most recently selected
+logical entry first. Generalized entries retain their constants when an older
+shape returns. Scalar promotion runs only after every logical guard misses;
+nonfinite values specialize on a new trace but remain accepted by a matching
+runtime-float guard.
+
+Concrete executors retain the complete filtered tensor tuple, operand indexing
+and exact broadcast address formulas. An unused tensor or a changed native ABI
+can require a new executable without changing logical scalar semantics. Every
+native call still validates actual shapes against the original IR. Successful
+execution publishes both cache levels together; failures change neither history
+nor selection order. Reset clears both levels. The
+[cache contract](../../compile-pointwise-jit.md#cache-behavior) documents bounds.
+
+New regression cases exercise rank/precision selection, nonfinite shape misses,
+reversed alias realization, unused scalar/tensor role changes, frozen zero through
+new executable compilation, singleton strides and transactional failure. Ten hardware-free
+metadata tests cover dimensions above the 32-bit boundary without large GPU
+allocations, source history, failed publication, reset and bounded ABI/executable
+eviction at a one-specialization limit. These are independent non-corpus tests; evaluator definitions and
+numerical assertions remain unchanged.
+
+Current-wheel validation passes 156 pointwise tests in 19 disjoint processes
+(four single-GPU reservation skips, all four passed separately on GPUs 0 and 1).
+Python 3.14 passes both scalar owners: 58 tests with two reservation skips.
+Hardware-free execution runs 19 scalar tests and clearly skips 39 GPU tests.
+Both Rust configurations pass 31 pointwise tests; default/Python-bindings builds,
+both Clippy configurations, formatting and documentation checks pass.
+
+The [revision validation archive](review-fix-validation.json.gz) retains the full
+948-test compiler sweep across 87 disjoint processes and the current-wheel
+pointwise rerun. Combining their disjoint owners covers all 965 tests in the
+final compiler selection. The earlier sweep wheel differs from the current wheel
+only by added contract docstrings and removal of an unused private argument;
+both identities and their exact difference are archived. Its neg/add diagnostic
+correctly refused those mismatching source bytes, then passed all five tests after
+installing the current wheel in the required `.venv`, without changing its harness
+or assertions. The initial failure, documentation-anchor and import-path setup
+errors, successful reruns, commands and complete selection remain in the archive.
+No numerical failure occurred in the revision checks.
+
+The [development CUDA/PTX capture](review-fix-dispatched/provenance.json) uses the
+revised wheel and records dirty sources based on `66f4acdd`. Its
+[source manifest](review-fix-dispatched/source-manifest.json.gz) identifies the
+actual compiler and test bytes. It is a new development capture, not a replacement
+for the required clean post-commit capture. The original measured evidence below
+remains byte-for-byte preserved.
 
 ## Reference characterization
 
@@ -139,7 +201,7 @@ PYO3_PYTHON="$PWD/.venv/bin/python" cargo clippy --locked --all-targets --featur
 cargo fmt --check
 ```
 
-The [validation archive](validation.json.gz) retains commands, logs, exhaustive
+The pre-fix [validation archive](validation.json.gz) retains commands, logs, exhaustive
 disjoint compiler-test selection, supplemental review cases and failed attempts.
 The initial sweep collected 941 unique tests in 87 disjoint processes, with
 25 hardware/reservation skips. Seven supplemental tests complete the final
@@ -153,15 +215,15 @@ matmul isolation test then required installation under `.venv`; its initial
 failure and successful rerun in that local environment are both retained. These
 were infrastructure failures. Subsequent numerical failures from the shared
 shape-history cache are also retained; no failure was removed or hidden by a
-reference-only reset. Passing earlier suites does not establish this milestone.
+reference-only reset. Those results describe the pre-fix implementation; they do not qualify the revision.
 
 ## Dispatched code and post-commit evidence
 
 [CUDA source](kernel.cu), [PTX](kernel.ptx.gz),
 [source manifest](source-manifest.json.gz) and [provenance](provenance.json)
 come from [capture.py](capture.py), an independent non-corpus example. The final
-call returns to an earlier scalar value after promotion. The capture resolves
-its actual guard key and verifies the dispatched module differs from both the
+call returns to an earlier scalar value after promotion. The capture observes
+the executor selected by successful dispatch and verifies it differs from both the
 first static module and the last inserted Boolean specialization. The wheel's
 frontend/native bytes are checked against the checkout/loaded extension.
 
@@ -171,11 +233,12 @@ CUDA_VISIBLE_DEVICES=0 .venv/bin/python \
   "$PWD/target/positional-codegen" "$PWD/target/wheels/torch_rs-WHEEL.whl"
 ```
 
-The module capture now records clean implementation commit
+The retained module capture records clean implementation commit
 `4ed105f5aa80b619b874d594f5ec3ae84a1fba13`. The [post-commit record](postcommit-4ed105f5/README.md)
 adds fresh full candidate and actual clean-main coverage/CUDA measurements,
 source/build/wheel verification, and a clean-commit rerun retaining all 18
 shape-history subtest failures. The earlier development validation and historical
-baseline reports above remain unchanged. The milestone is still incomplete.
+baseline reports above remain unchanged. These candidate captures are stale for
+the shared-cache revision and must be refreshed after its clean commit.
 Burner owns independent review, artifact commits, exact-head qualification and
 publication. Fixed-corpus scores do not establish general Inductor parity.
