@@ -370,9 +370,12 @@ def implementation(model, recompile_limit):
                 if len(cache.graphs) >= recompile_limit:
                     unsupported(f"hit recompile_limit={recompile_limit}")
                 graph = lower(program, values, len(args), input_ids)
-                # Code specializes expressions and device, not shapes, values or pointers.
+                # Linear loads share code across shapes. Broadcast address formulas
+                # specialize shapes, never storage offsets, values or pointers.
                 # Keep this map inside reset-owned cache entries, so reset releases modules.
-                code_key = (graph, metadata[0][4])
+                shapes = tuple(m[0] for m in metadata)
+                indexing_key = None if all(s == shapes[0] for s in shapes) else shapes
+                code_key = (graph, metadata[0][4], indexing_key)
                 executor = next((entry for entry in cache.graphs.values()
                                  if entry[0] == code_key), None)
                 if executor is None:

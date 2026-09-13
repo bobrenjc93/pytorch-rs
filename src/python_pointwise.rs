@@ -99,10 +99,24 @@ pub(super) fn validate_inputs(inputs: &Bound<'_, PyTuple>) -> PyResult<usize> {
 }
 
 #[pyfunction(name = "_pointwise_source")]
-pub(super) fn source(nodes: &Bound<'_, PyTuple>, output: usize, arity: usize) -> PyResult<String> {
-    graph(nodes, output, arity)?
-        .source()
-        .map_err(|e| tensor_error(&e))
+#[pyo3(signature = (nodes, output, arity, shapes=None))]
+pub(super) fn source(
+    nodes: &Bound<'_, PyTuple>,
+    output: usize,
+    arity: usize,
+    shapes: Option<Vec<Vec<usize>>>,
+) -> PyResult<String> {
+    let graph = graph(nodes, output, arity)?;
+    if let Some(shapes) = shapes {
+        let indexing = graph
+            .indexing(&shapes.iter().map(Vec::as_slice).collect::<Vec<_>>())
+            .map_err(|e| tensor_error(&e))?;
+        graph
+            .indexed_source(&indexing.addresses)
+            .map_err(|e| tensor_error(&e))
+    } else {
+        graph.source().map_err(|e| tensor_error(&e))
+    }
 }
 
 #[pyfunction(name = "_pointwise_compile")]
@@ -113,7 +127,13 @@ pub(super) fn compile(
 ) -> PyResult<Compiled> {
     let graph = graph(nodes, output, inputs.len())?;
     let device = validate_inputs(inputs)?;
-    let kernel = Kernel::compile(&graph, device).map_err(|e| tensor_error(&e))?;
+    let indexing = with_inputs(inputs, |tensors| {
+        graph
+            .indexing(&tensors.iter().map(|x| x.shape()).collect::<Vec<_>>())
+            .map_err(|e| PyNotImplementedError::new_err(e.to_string()))
+    })?;
+    let kernel = Kernel::compile_indexed(&graph, device, indexing.addresses)
+        .map_err(|e| tensor_error(&e))?;
     Ok(Compiled {
         kernel,
         arity: graph.inputs,

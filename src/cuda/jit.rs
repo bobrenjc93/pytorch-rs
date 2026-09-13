@@ -136,6 +136,8 @@ impl Nvrtc {
 }
 
 pub(crate) struct Kernel {
+    pub(crate) graph: Graph,
+    pub(crate) addresses: Vec<crate::pointwise_ir::indexing::Address>,
     pub(crate) device: usize,
     scalar_count: usize,
     context: usize,
@@ -147,8 +149,20 @@ pub(crate) struct Kernel {
     pub(crate) options: Vec<String>,
 }
 impl Kernel {
+    #[cfg(test)]
     pub(crate) fn compile(graph: &Graph, device: usize) -> Result<Self, TensorError> {
-        let source = graph.source()?;
+        Self::compile_indexed(
+            graph,
+            device,
+            vec![crate::pointwise_ir::indexing::Address::Linear; graph.inputs],
+        )
+    }
+    pub(crate) fn compile_indexed(
+        graph: &Graph,
+        device: usize,
+        addresses: Vec<crate::pointwise_ir::indexing::Address>,
+    ) -> Result<Self, TensorError> {
+        let source = graph.indexed_source(&addresses)?;
         let _guard = runtime()?.guard(device)?;
         let context = current_context()?;
         let driver = driver()?;
@@ -196,6 +210,8 @@ impl Kernel {
             }
         }
         Ok(Self {
+            graph: graph.clone(),
+            addresses,
             device,
             scalar_count: graph.scalar_count(),
             context,
@@ -213,8 +229,8 @@ impl Kernel {
         }
         Ok(())
     }
-    /// Pointers must reference count live contiguous float32 elements on this
-    /// device. Output must be disjoint. Synchronize before releasing owners.
+    /// Input pointers must cover the validated broadcast address maps on this
+    /// device. Output covers count disjoint elements. Synchronize before releasing owners.
     pub(crate) unsafe fn launch(
         &self,
         mut x0: u64,

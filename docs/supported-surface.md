@@ -1,9 +1,9 @@
 # Supported surface
 
 Ordinary default `torch_rs.compile(fn)` supports the [native fused CUDA float32
-pointwise subset](compile-pointwise-jit.md): same-shape contiguous no-grad
+pointwise subset](compile-pointwise-jit.md): broadcast-compatible contiguous no-grad
 inputs, add/subtract/multiply, negation/ReLU/sin/cos and scalar constants.
-CPU lowering, broadcasting, control flow and training remain unsupported by
+CPU lowering, strided inputs, control flow and training remain unsupported by
 this JIT; explicit eager capture retains its separate contract.
 
 This is the exhaustive feature tour and observable Python API contract for the
