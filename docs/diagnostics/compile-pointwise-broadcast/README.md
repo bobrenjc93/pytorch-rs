@@ -231,3 +231,8 @@ their original commit, script hash and call sequence.
 Full historical test commands and local environment settings are retained
 in the validation bundle. Burner still owns final independent review,
 exact-head evaluation, delivery and managed progress artifacts.
+
+The [clean capture after the operator repairs](../compile-pointwise-positional/postcommit-779e512c/bounded-codegen/provenance.json)
+measures `779e512c`; its [evidence record](../compile-pointwise-positional/postcommit-779e512c/README.md)
+preserves the exact wheel, commands and regression results. Earlier measured
+artifacts above remain unchanged.

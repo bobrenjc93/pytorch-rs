@@ -27,7 +27,7 @@ result = torch.compile(pointwise)(x, y)
 ## Supported programs
 
 The positional-scalar extension and shared specialization fix have
-[clean-commit measurements](diagnostics/compile-pointwise-positional/postcommit-7a74596b/README.md)
+[clean-commit measurements](diagnostics/compile-pointwise-positional/postcommit-779e512c/README.md)
 and passing persistent default-Inductor regressions for the formerly failing
 signed-zero shape histories. The
 [validation record](diagnostics/compile-pointwise-positional/README.md) preserves
@@ -36,8 +36,8 @@ qualification remain pending. This bounded surface does not establish
 general Inductor parity.
 
 The subsequent [NaN-guard and capture-consumer repairs](diagnostics/compile-pointwise-positional/operator-review-fix/README.md)
-have development validation; the earlier clean measurements predate these repairs
-and must be refreshed after Burner commits them.
+now have clean-commit measurements at `779e512c`, including all three dispatched
+module captures. Earlier failures and development records remain preserved.
 
 The function accepts one or two exact native CUDA float32 Tensor inputs on the
 same device with contiguous storage, plus exact built-in `float` and `bool`

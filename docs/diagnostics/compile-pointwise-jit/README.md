@@ -120,3 +120,8 @@ each successful call through the executor LRU, without assuming the first module
 remains selected. The [repair validation](../compile-pointwise-positional/operator-review-fix/README.md)
 records a separate development capture. Existing measurements above retain their
 original source/build identities and are unchanged.
+
+The [clean capture after the operator repairs](../compile-pointwise-positional/postcommit-779e512c/jit-codegen/provenance.json)
+measures `779e512c`; its [evidence record](../compile-pointwise-positional/postcommit-779e512c/README.md)
+preserves the exact wheel, commands and regression results. Earlier measured
+artifacts above remain unchanged.

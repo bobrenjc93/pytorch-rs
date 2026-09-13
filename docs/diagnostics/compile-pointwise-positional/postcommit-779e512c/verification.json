@@ -1,0 +1,480 @@
+{
+  "verified_utc": "2026-09-13T11:52:36.045377+00:00",
+  "kind": "post-commit evidence verification; not branch qualification",
+  "measurements": {
+    "candidate": {
+      "commit": "779e512cf87f8774c103dedf255eb76ad52f0508",
+      "source_sha256": "e0669c8be2f5943b5b4bd982c2bb5543d0357a26ba7c205c007c95f1b7a3350f",
+      "scores": {
+        "coverage": {
+          "categories": {
+            "broadcasting": {
+              "contribution": 2.0,
+              "eligible": 8,
+              "passed": 2,
+              "weight": 8
+            },
+            "containers_pytrees": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 6
+            },
+            "custom_functions": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 6
+            },
+            "decompositions": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 6
+            },
+            "dtype_device_transitions": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 4
+            },
+            "dynamic_shapes": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "graph_breaks": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "inference": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 6
+            },
+            "modules_parameters_buffers": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "mutation_aliasing_views": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "python_control_flow": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "recompilation_guards": {
+              "contribution": 1.0,
+              "eligible": 8,
+              "passed": 2,
+              "weight": 4
+            },
+            "tensor_arithmetic": {
+              "contribution": 6.0,
+              "eligible": 8,
+              "passed": 4,
+              "weight": 12
+            },
+            "training_autograd": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            }
+          },
+          "common_success_geomean_ratio": 1.266226495501903,
+          "eligible": 112,
+          "passed": 8,
+          "score": 9.0
+        },
+        "cuda-perf": {
+          "categories": {
+            "broadcasting": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 2,
+              "weight": 8
+            },
+            "containers_pytrees": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 6
+            },
+            "custom_functions": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 6
+            },
+            "decompositions": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 6
+            },
+            "dtype_device_transitions": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 4
+            },
+            "dynamic_shapes": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "graph_breaks": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "inference": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 6
+            },
+            "modules_parameters_buffers": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "mutation_aliasing_views": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "python_control_flow": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "recompilation_guards": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 2,
+              "weight": 4
+            },
+            "tensor_arithmetic": {
+              "contribution": 12.0,
+              "eligible": 4,
+              "passed": 4,
+              "weight": 12
+            },
+            "training_autograd": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            }
+          },
+          "common_success_geomean_ratio": 1.266226495501903,
+          "eligible": 56,
+          "passed": 8,
+          "score": 12.0
+        }
+      },
+      "report_sha256": "8a7b2ad438d412f4df5d7793723eba0c6d1235d92715fd5501fd2d55fde83486",
+      "wheel": {
+        "build_command": "maturin build --release --locked",
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/default-compile-eval/wheels.JXw0FN/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+        "profile": "release",
+        "sha256": "566734313df61e62eb1a932fc5ac09029a0b526c5a9fd4774ce6a9126190b839"
+      },
+      "run_directory": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/default-compile-eval/run-20260913T105956Z-cc9e4ca4"
+    },
+    "main": {
+      "commit": "a281503f3391bbd98a0ab6de2ff8f0c0a55a12d4",
+      "source_sha256": "6047babf37c578031a0ef8ce76f2d74b2ad5a3e97b144f727c2e81dfd78a6243",
+      "scores": {
+        "coverage": {
+          "categories": {
+            "broadcasting": {
+              "contribution": 2.0,
+              "eligible": 8,
+              "passed": 2,
+              "weight": 8
+            },
+            "containers_pytrees": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 6
+            },
+            "custom_functions": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 6
+            },
+            "decompositions": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 6
+            },
+            "dtype_device_transitions": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 4
+            },
+            "dynamic_shapes": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "graph_breaks": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "inference": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 6
+            },
+            "modules_parameters_buffers": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "mutation_aliasing_views": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "python_control_flow": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            },
+            "recompilation_guards": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 4
+            },
+            "tensor_arithmetic": {
+              "contribution": 6.0,
+              "eligible": 8,
+              "passed": 4,
+              "weight": 12
+            },
+            "training_autograd": {
+              "contribution": 0.0,
+              "eligible": 8,
+              "passed": 0,
+              "weight": 8
+            }
+          },
+          "common_success_geomean_ratio": 1.8206806529655328,
+          "eligible": 112,
+          "passed": 6,
+          "score": 8.0
+        },
+        "cuda-perf": {
+          "categories": {
+            "broadcasting": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 2,
+              "weight": 8
+            },
+            "containers_pytrees": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 6
+            },
+            "custom_functions": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 6
+            },
+            "decompositions": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 6
+            },
+            "dtype_device_transitions": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 4
+            },
+            "dynamic_shapes": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "graph_breaks": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "inference": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 6
+            },
+            "modules_parameters_buffers": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "mutation_aliasing_views": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "python_control_flow": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            },
+            "recompilation_guards": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 4
+            },
+            "tensor_arithmetic": {
+              "contribution": 12.0,
+              "eligible": 4,
+              "passed": 4,
+              "weight": 12
+            },
+            "training_autograd": {
+              "contribution": 0.0,
+              "eligible": 4,
+              "passed": 0,
+              "weight": 8
+            }
+          },
+          "common_success_geomean_ratio": 1.8206806529655328,
+          "eligible": 56,
+          "passed": 6,
+          "score": 12.0
+        }
+      },
+      "report_sha256": "f0e8d00163ccb1504eab7747e2947c9e9ce1117201c9b74694a7d1dd124d3769",
+      "wheel": {
+        "build_command": "maturin build --release --locked",
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-main/target/default-compile-eval/wheels.HYd6dx/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+        "profile": "release",
+        "sha256": "c2f7c349c58780676572e67433ef2ce0dfcbae6e7d18204118db6ab95554072e"
+      },
+      "run_directory": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-main/target/default-compile-eval/run-20260913T114712Z-aac8ca01"
+    }
+  },
+  "raw_observation_files_retained_in_worktree": [
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/default-compile-eval/run-20260913T105956Z-cc9e4ca4/cpu-0-reference.json.gz",
+      "sha256": "ee64d43dbd7c8408a15001429b132048994f7cc21532d5b84cb9973de50e8ad8",
+      "bytes": 45415221
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/default-compile-eval/run-20260913T105956Z-cc9e4ca4/cpu-0-candidate.json.gz",
+      "sha256": "52c8f0a061bd25a9570b3b727bdd7a4e234ef237bb8f081bb09b4907e8607cfb",
+      "bytes": 2146
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/default-compile-eval/run-20260913T105956Z-cc9e4ca4/cuda-0-reference.json.gz",
+      "sha256": "47b859ef1806a14bd9ff9ed4d38f18d878597e5057705b9138229e718966e46b",
+      "bytes": 45417474
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/default-compile-eval/run-20260913T105956Z-cc9e4ca4/cuda-0-candidate.json.gz",
+      "sha256": "1a883c22086810ef6388fd007e2f36c3ec9fcfe108ac0fc1407c67fd523cc233",
+      "bytes": 4338191
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/default-compile-eval/run-20260913T105956Z-cc9e4ca4/cuda-1-candidate.json.gz",
+      "sha256": "42fdfacc49eec34e84248e55804bb26c633be9fca559863f8cc4bc89e6eef3f2",
+      "bytes": 4338194
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/default-compile-eval/run-20260913T105956Z-cc9e4ca4/cuda-1-reference.json.gz",
+      "sha256": "489a3340ee48ce50b42df171d313bcc26f01ead0978d256005cd2634a2370b58",
+      "bytes": 45417551
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-main/target/default-compile-eval/run-20260913T114712Z-aac8ca01/cpu-0-reference.json.gz",
+      "sha256": "82043ace4d61aa9890f798341370d4f891020ef168359a8f79bbb6866baff6d4",
+      "bytes": 45415274
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-main/target/default-compile-eval/run-20260913T114712Z-aac8ca01/cpu-0-candidate.json.gz",
+      "sha256": "08f788b8a6a628ec76a4794f2e0532c059f754d50fd7a4a2cc844bf575c31e9c",
+      "bytes": 2128
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-main/target/default-compile-eval/run-20260913T114712Z-aac8ca01/cuda-0-reference.json.gz",
+      "sha256": "7e98ddc847c1b3d5c75a842b1cf34bfb07224db7162bcbb730fdb40be4fd99d8",
+      "bytes": 45417597
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-main/target/default-compile-eval/run-20260913T114712Z-aac8ca01/cuda-0-candidate.json.gz",
+      "sha256": "31e17c4c48848358a3f0d045bb79f14e3b793c6e64edb75c939b1b8daced6ef0",
+      "bytes": 2830572
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-main/target/default-compile-eval/run-20260913T114712Z-aac8ca01/cuda-1-candidate.json.gz",
+      "sha256": "6a0af6a84fbb614c418837a2de386a848b1df24c40aa93dfdef15369d677d870",
+      "bytes": 2830577
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-main/target/default-compile-eval/run-20260913T114712Z-aac8ca01/cuda-1-reference.json.gz",
+      "sha256": "cbd0f73c61408845b34ad94a3fb768c0eeee37ce7f8f740f8dee5b4c0524c2f7",
+      "bytes": 45417536
+    }
+  ],
+  "checks": [
+    "clean source and build commits",
+    "source and wheel hashes",
+    "112 fixed coverage cells and 56 CUDA cells",
+    "both CUDA implementation orders",
+    "5 warmups and 17 samples",
+    "unsupported and failed outcomes retained",
+    "worker output and log hashes",
+    "three actually dispatched CUDA/PTX modules and source manifests",
+    "16 focused binding, shape-history and consumer tests passed"
+  ],
+  "remaining_gates": "Burner independent review and exact-head qualification",
+  "resources": [
+    "gpu",
+    "cpu-heavy"
+  ]
+}

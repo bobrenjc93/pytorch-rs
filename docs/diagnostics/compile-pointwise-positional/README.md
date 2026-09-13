@@ -5,20 +5,14 @@ frozen scalar semantics before concrete native executable lookup. The original
 18 signed-zero subtest failures pass on H100 without changing their assertions
 or resetting the reference within a history.
 
-The [clean post-commit refresh](postcommit-7a74596b/README.md) measures candidate
-`7a74596b` and actual main `a281503f` with the unchanged full coverage/CUDA gate.
-It also refreshes the actually dispatched CUDA/PTX capture and passes all 12
-focused persistent-specialization tests against the clean candidate wheel.
-Earlier measurements and their failures remain pinned to their original commits.
-Burner's independent review and exact-head qualification remain separate gates.
-
-**The operator-review repairs require a new clean evidence refresh.** Static NaN
-guard identity and the two maintained diagnostic consumers changed after
-`7a74596b`. Those clean reports and root CUDA/PTX provenance remain unchanged,
-but are stale for this repair. The [repair record](operator-review-fix/README.md)
-retains the reproduced ninth-NaN rejection, fresh development validation and
-separately identified dispatched captures. Burner must regenerate final clean
-candidate/main measurements and capture provenance after committing the repairs.
+The [clean post-commit refresh](postcommit-779e512c/README.md) measures candidate
+`779e512c` and actual main `a281503f` with the unchanged full coverage/CUDA gate.
+It refreshes all three actually dispatched CUDA/PTX captures and passes 16 focused
+binding, shape-history and diagnostic-consumer tests against the clean candidate
+wheel. The [operator repair record](operator-review-fix/README.md) retains the
+ninth-NaN rejection and consumer failures alongside development checks. Earlier
+measurements remain pinned to their original commits. Burner's independent review
+and exact-head qualification remain separate gates.
 
 This implementation accepts one or two exact tensors plus
 exact built-in float/Boolean arguments in arbitrary positional slots. Positional
@@ -241,9 +235,9 @@ CUDA_VISIBLE_DEVICES=0 .venv/bin/python \
 ```
 
 The current module capture records clean implementation commit
-`7a74596b5fa7fc17843eda8d90c885dc8cd72f12`. The [post-commit record](postcommit-7a74596b/README.md)
+`779e512cf87f8774c103dedf255eb76ad52f0508`. The [post-commit record](postcommit-779e512c/README.md)
 adds fresh full candidate and actual clean-main coverage/CUDA measurements,
-source/build/wheel verification, and 12 passing persistent-specialization tests.
+source/build/wheel verification, and 16 passing focused regression tests.
 The [earlier clean record](postcommit-4ed105f5/README.md) retains the pre-fix
 measurements and all 18 failures; its CUDA/PTX capture is archived byte-for-byte
 under that record. Earlier development validation and historical baseline reports

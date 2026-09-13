@@ -1,11 +1,12 @@
-# Clean post-commit evidence
+# Earlier clean post-commit evidence
 
 The candidate at `7a74596b5fa7fc17843eda8d90c885dc8cd72f12` and actual main at
 `a281503f3391bbd98a0ab6de2ff8f0c0a55a12d4` were measured from clean checkouts with
 the unchanged `public-default-compile-v2` gate. The focused H100 rerun passes all
 12 persistent-specialization tests, including the 18 formerly failing signed-zero
 subtests with their original assertions. These measurements do not replace
-Burner's independent review or exact-head qualification.
+Burner's independent review or exact-head qualification. The later NaN and diagnostic
+repairs are measured in the [current clean record](../postcommit-779e512c/README.md).
 
 | Build | Measured commit | Weighted coverage | CUDA performance | Common-success reference/native latency ratio |
 | --- | --- | ---: | ---: | ---: |
@@ -42,13 +43,13 @@ capture used NVRTC 13.0 and CUDA runtime 13000. Installed nvcc 12.6 was recorded
 but did not compile the generated pointwise kernel. Burner held the `gpu` and
 `cpu-heavy` resources. Exact hashes, setup durations, timestamps, runtime paths,
 GPU inventories and before/after snapshots are retained in the reports and the
-[module provenance](../provenance.json).
+[module provenance](codegen/provenance.json).
 
 ## Capture and verification
 
 The committed [capture tool](../capture.py) was run using the exact wheel from the
-candidate gate. The refreshed [CUDA](../kernel.cu), [PTX](../kernel.ptx.gz),
-[source manifest](../source-manifest.json.gz) and [provenance](../provenance.json)
+candidate gate. The refreshed [CUDA](codegen/kernel.cu), [PTX](codegen/kernel.ptx.gz),
+[source manifest](codegen/source-manifest.json.gz) and [provenance](codegen/provenance.json)
 identify the actually dispatched module of the independent positional-scalar
 example. Source/native wheel bytes and all 128 source/test manifest entries were
 verified. The final call selects the earlier runtime specialization, distinct

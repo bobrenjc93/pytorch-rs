@@ -3,10 +3,10 @@
 The NaN guard and diagnostic-consumer repairs address the two operator findings
 against `b9d5fd1a6f1d493e7e26aa3f2db32fcfb3b99444`. This directory records development
 validation from that commit plus the recorded working-tree changes. It does not
-claim a clean candidate measurement. Burner must commit the repairs, then refresh
-clean candidate and actual clean-main coverage/CUDA evidence and dispatched-module
-provenance. The previous clean reports remain unchanged and cannot qualify this
-revision; no evaluator, corpus, tolerance, denominator or managed artifact changed.
+claim a clean candidate measurement. The subsequent [clean refresh](../postcommit-779e512c/README.md)
+measures committed repairs at `779e512c` and actual main, including dispatched-module
+provenance. This development archive and previous measurements remain unchanged;
+no evaluator, corpus, tolerance, denominator or managed artifact changed.
 
 ## NaN guard
 
