@@ -6,6 +6,10 @@ Evidence for the bounded native CUDA pointwise compiler. Start with the
 [original-IR numerical admission](../../compile-pointwise-numerics.md).
 Fixed-corpus scores do not establish general Inductor parity.
 
+The warm-dispatch repair has [development evidence](warm-dispatch/README.md).
+Its clean candidate/main refresh and balanced H100 comparison are required after
+Burner commits the correction. The clean measurements below predate this code change.
+
 ## Clean measurements
 
 Each record retains its measured commit, source/build/wheel identities, commands,

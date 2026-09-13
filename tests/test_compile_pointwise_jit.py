@@ -3,12 +3,16 @@ import ast
 import concurrent.futures
 from contextlib import ExitStack
 import gc
+import hashlib
+import importlib.util
+import json
 import math
 import os
 from pathlib import Path
 import random
 import subprocess
 import sys
+import tempfile
 import types
 import unittest
 import weakref
@@ -118,6 +122,107 @@ class Admission(unittest.TestCase):
                 self.assertIs(select(compiled), second)
         actual_cache.clear()
         self.assertFalse(actual_cache.executors)
+
+    def _gpu_dispatch_diagnostic(self):
+        root = Path(__file__).resolve().parents[1]
+        path = root / 'docs/diagnostics/compile-pointwise-positional/warm-dispatch/gpu-dispatch.py'
+        spec = importlib.util.spec_from_file_location('_synthetic_gpu_dispatch_check', path)
+        diagnostic = importlib.util.module_from_spec(spec)
+        # The stdlib-only consumer has no import-time GPU execution. Keep the
+        # isolated module out of sys.modules and do not replace production owners.
+        spec.loader.exec_module(diagnostic)
+        return diagnostic, path
+
+    def _verify_synthetic_gpu_dispatch_reports(self, mismatches):
+        root = Path(__file__).resolve().parents[1]
+        diagnostic, path = self._gpu_dispatch_diagnostic()
+        script_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        target = root / 'target'
+        target.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='dispatch-verifier-', dir=target) as temporary:
+            directory = Path(temporary)
+            reports = []
+            for index, (build, implementation) in enumerate(diagnostic.ORDER):
+                cases = []
+                for name, program_text, _ in diagnostic.CASES:
+                    traversals = []
+                    for phase, count in (('setup', 2), ('warmup', 5), ('sample', 17)):
+                        for traversal_index in range(count):
+                            traversals.append({'phase': phase, 'index': traversal_index,
+                                               'outputs': [{'shape': [1], 'stride': [1],
+                                                            'dtype': 'torch.float32', 'device': 'cuda:0',
+                                                            'requiresGrad': False, 'values': [float(1.0).hex()]}]})
+                    cases.append({'name': name, 'program': program_text,
+                                  'inputs': [{'synthetic': True}], 'states': [{}],
+                                  'traversals': traversals, 'medianNsPerCall': 1})
+                for leg_index, case_index, traversal_index in mismatches:
+                    if index == leg_index:
+                        cases[case_index]['traversals'][traversal_index]['outputs'][0]['values'] = [float(2.0).hex()]
+                report = {'passed': True, 'legIndex': index, 'buildLabel': build,
+                          'implementation': implementation, 'scriptSha256': script_hash,
+                          'gpuUuid': 'GPU-synthetic-fixture', 'source': {'commit': build},
+                          'startedAt': f'{index:02d}:00', 'finishedAt': f'{index:02d}:01',
+                          'cases': cases}
+                output = directory / f'leg-{index}.json'
+                output.write_text(json.dumps(report))
+                reports.append(output)
+            record = {'scriptSha256': script_hash}
+            args = types.SimpleNamespace(reports=reports)
+            if mismatches:
+                with self.assertRaisesRegex(AssertionError, 'retained comparison/contract failures'):
+                    diagnostic.verify(args, record, directory)
+            else:
+                diagnostic.verify(args, record, directory)
+            self.assertEqual(len(record['reports']), 16)
+            self.assertEqual([item['sha256'] for item in record['reports']],
+                             [hashlib.sha256(path.read_bytes()).hexdigest() for path in reports])
+            self.assertEqual(len(record['pairs']), 56)
+            self.assertEqual(sum(row['outputsCompared'] for row in record['pairs']), 56 * 24)
+            self.assertTrue(record['pairs'][-1]['passed'])
+            return record
+
+    def test_gpu_dispatch_verifier_preserves_ieee_values_and_jit_tolerance(self):
+        diagnostic, _ = self._gpu_dispatch_diagnostic()
+        def observation(values):
+            return {'shape': [len(values)], 'stride': [1], 'dtype': 'torch.float32',
+                    'device': 'cuda:0', 'requiresGrad': False,
+                    'values': diagnostic.encoded_values(values)}
+        values = [0.0, -0.0, float('nan'), float('inf'), -float('inf')]
+        record = observation(values)
+        restored = json.loads(json.dumps(record, allow_nan=False))
+        self.assertEqual(restored, record)
+        self.assertEqual(restored['values'][:2], ['0x0.0p+0', '-0x0.0p+0'])
+        diagnostic.close_outputs(restored, record)
+        for actual, expected in ((0.0, -0.0), (-0.0, 0.0), (float('inf'), -float('inf')),
+                                 (float('nan'), 1.0), (1.0, float('nan')), (1.0, float('inf'))):
+            with self.subTest(actual=actual, expected=expected), self.assertRaises(AssertionError):
+                diagnostic.close_outputs(observation([actual]), observation([expected]))
+        # This lies above max(atol, rtol*abs(ref)) but below the existing JIT
+        # atol+rtol*abs(ref) bound. A nearby value above that sum must fail.
+        diagnostic.close_outputs(observation([1.0 + 1.05e-5]), observation([1.0]))
+        with self.assertRaises(AssertionError):
+            diagnostic.close_outputs(observation([1.0 + 1.11e-5]), observation([1.0]))
+        changed_metadata = dict(record, stride=[2])
+        with self.assertRaises(AssertionError):
+            diagnostic.close_outputs(changed_metadata, record)
+
+    def test_gpu_dispatch_verifier_checks_all_synthetic_pairs(self):
+        record = self._verify_synthetic_gpu_dispatch_reports(())
+        self.assertTrue(record['passed'])
+        self.assertEqual(record['comparisonFailures'], [])
+        self.assertTrue(all(row['passed'] for row in record['pairs']))
+
+    def test_gpu_dispatch_verifier_retains_all_synthetic_numerical_failures(self):
+        # Two mismatches in the first history and one in a different pair must
+        # not hide later outputs, histories or a final passing comparison.
+        record = self._verify_synthetic_gpu_dispatch_reports(((0, 0, 7), (0, 0, 8), (5, 3, 9)))
+        self.assertFalse(record['passed'])
+        self.assertEqual(len(record['comparisonFailures']), 3)
+        self.assertEqual(sum(not row['passed'] for row in record['pairs']), 2)
+        locations = [failure['location'] for failure in record['comparisonFailures']]
+        self.assertIn('pair[0,1].literal_unary.traversal[7].output[0]', locations)
+        self.assertIn('pair[0,1].literal_unary.traversal[8].output[0]', locations)
+        self.assertIn('pair[4,5].repeated_alias.traversal[9].output[0]', locations)
 
     def test_two_device_reservation_accepts_explicit_distinct_pairs(self):
         for mask, expected in (('0,1', True), ('6,7', True), ('GPU-a,GPU-b', True),

@@ -4,7 +4,7 @@ The frontend never invokes the function, Tensor methods, or a Python operator
 on user objects. Warm calls resolve binding/metadata guards and enter one native
 kernel. It deliberately has no graph breaks or eager fallback.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import dis
 import math
 import struct
@@ -82,6 +82,15 @@ class Graph:
     inputs: int
     nodes: tuple
     output: int
+    _hash: int = field(init=False, compare=False, repr=False)
+
+    def __post_init__(self):
+        # Executable lookup uses structural equality across specializations;
+        # hashing immutable IR need not walk every node again on each launch.
+        object.__setattr__(self, "_hash", hash((self.inputs, self.nodes, self.output)))
+
+    def __hash__(self):
+        return self._hash
 
 
 @dataclass(frozen=True)
@@ -98,6 +107,11 @@ class Program:
     code: object
     instructions: tuple
     dependencies: tuple
+    positions: object = field(init=False, compare=False, repr=False)
+
+    def __post_init__(self):
+        object.__setattr__(self, "positions", types.MappingProxyType(
+            {source: index for index, source in enumerate(self.dependencies)}))
 
 
 @dataclass(frozen=True)
@@ -162,6 +176,10 @@ class Specialization:
     observed: tuple
     observations: dict
     lowerings: dict
+    # Immutable projections retain source semantics without repeating dependency
+    # searches for each guard candidate. Tensor indices always come from the call.
+    binding_checks: tuple = ()
+    tensor_positions: tuple = ()
 
 
 def _broadcast_elements(shapes):
@@ -229,7 +247,7 @@ def _logical_keys(program, bindings, values, observed, tensors):
         if type(value) is Value:
             tensor = tensors[value.index]
             owner = next((s for s, index in first.items() if tensors[index] is tensor), None)
-            position = program.dependencies.index(source)
+            position = program.positions[source]
             if owner is None:
                 first[source] = value.index
                 keys[position] = ("tensor", None)
@@ -290,19 +308,37 @@ def _select_specialization(program, bindings, values, tensors, metadata, graphs)
     broadcast executable is absent. Conversely, a rank miss can expose an older
     static scalar entry beneath a newer runtime entry.
     """
+    resolved = tuple(values.values())  # resolve preserves dependency order.
+    by_source = None
     for key, entry in reversed(graphs.items()):
         if key[0] is not program.code:
             continue
-        actual, _, aliases = _logical_keys(program, bindings, values, entry.observed, tensors)
         scalars = []
-        for source, expected, current in zip(program.dependencies, key[1], actual):
-            if expected[0] == "runtime_float" and type(values[source]) is float:
-                scalars.append(values[source])
+        for position, expected in entry.binding_checks:
+            current = bindings[position]
+            if expected[0] == "runtime_float" and type(resolved[position]) is float:
+                scalars.append(resolved[position])
+            elif expected[0] in ("tensor", "alias"):
+                if current[0] != "tensor":
+                    break
             elif expected != current:
                 break
         else:
-            by_source = {s: metadata[v.index][:5] for s, v in values.items() if type(v) is Value}
-            if aliases == key[3] and key[2].matches(by_source):
+            # Source realization order defines aliases, not public slot order.
+            # Tensor kind checks above precede every current operand lookup.
+            first, aliases = [], []
+            for position in entry.tensor_positions:
+                tensor = tensors[resolved[position].index]
+                owner = next((i for i, previous in enumerate(first) if previous is tensor), None)
+                if owner is None:
+                    owner = len(first)
+                    first.append(tensor)
+                aliases.append(owner)
+            if tuple(aliases) != key[3]:
+                continue
+            if by_source is None:
+                by_source = {s: metadata[v.index][:5] for s, v in values.items() if type(v) is Value}
+            if key[2].matches(by_source):
                 return key, entry, tuple(scalars)
     return None
 
@@ -642,7 +678,11 @@ def implementation(model, recompile_limit):
                 observations.update((s, "scalar") for s in observed
                                     if type(static_values[s]) is float or type(static_values[s]) is int)
                 key = (program.code, bindings, guards, aliases)
-                entry = Specialization(values, tuple(observed), observations, {})
+                entry = Specialization(
+                    values, tuple(observed), observations, {},
+                    tuple((position, expected) for position, expected in enumerate(bindings)
+                          if expected[0] != "ignored"),
+                    tuple(program.positions[source] for source in observed if type(values[source]) is Value))
             else:
                 key, entry, scalars = selected
                 graph = entry.lowerings.get(abi)
@@ -667,6 +707,11 @@ def implementation(model, recompile_limit):
             for mapping, item_key, item in ((entry.lowerings, abi, graph),
                                             (cache.executors, code_key, executor),
                                             (cache.graphs, key, entry)):
+                # Recency belongs to each map independently: a shared executor
+                # can already be newest while its logical entry/lowering is not.
+                if (mapping and next(reversed(mapping)) == item_key
+                        and next(reversed(mapping.values())) is item):
+                    continue
                 mapping.pop(item_key, None)
                 mapping[item_key] = item
                 while len(mapping) > recompile_limit:

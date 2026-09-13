@@ -396,6 +396,191 @@ class SharedCacheGuards(unittest.TestCase):
     def compiled(self, source='def f(scale,x):\n return x*scale'):
         return frontend.implementation(program(source), recompile_limit=8)
 
+    class MutationDict(dict):
+        def __init__(self, contents):
+            super().__init__(contents)
+            self.mutations = []
+
+        def pop(self, key, *default):
+            self.mutations.append(('pop', key))
+            return super().pop(key, *default)
+
+        def __setitem__(self, key, value):
+            self.mutations.append(('set', key))
+            super().__setitem__(key, value)
+
+        def __delitem__(self, key):
+            self.mutations.append(('delete', key))
+            super().__delitem__(key)
+
+    def ordered_contents(self, owner):
+        def contents(mapping):
+            return tuple((key, id(value)) for key, value in mapping.items())
+        return (contents(owner.graphs), contents(owner.executors),
+                tuple(contents(entry.lowerings) for entry in owner.graphs.values()))
+
+    def test_newest_hits_do_not_mutate_any_recency_map_or_recompile(self):
+        fn = program('def f(scale,x):\n return x*scale')
+        compiled = frontend.implementation(fn, recompile_limit=8)
+        x = self.argument((2,))
+        expected = compiled(0.375, x)
+        owner = cache(compiled)
+        owner.graphs = self.MutationDict(owner.graphs)
+        owner.executors = self.MutationDict(owner.executors)
+        entry = next(iter(owner.graphs.values()))
+        entry.lowerings = self.MutationDict(entry.lowerings)
+        before = self.ordered_contents(owner)
+        with mock.patch.object(frontend, 'analyze', side_effect=AssertionError('warm analyze')), \
+                mock.patch.object(frontend, 'lower', side_effect=AssertionError('warm lower')):
+            for _ in range(3):
+                self.assertEqual(compiled(0.375, x), expected)
+        self.assertEqual(self.compile_bridge.call_count, 1)
+        self.assertEqual(self.ordered_contents(owner), before)
+        for mapping in (owner.graphs, owner.executors, entry.lowerings):
+            self.assertEqual(mapping.mutations, [])
+        # Code objects can compare equal while identity requires a new parsed
+        # program. An equal newest key must not suppress replacing its entry.
+        previous_code = fn.__code__
+        fn.__code__ = previous_code.replace()
+        self.assertIsNot(fn.__code__, previous_code)
+        self.assertEqual(fn.__code__, previous_code)
+        self.assertEqual(compiled(0.375, x), expected)
+        self.assertIs(next(iter(owner.graphs))[0], fn.__code__)
+        self.assertIsNot(next(iter(owner.graphs.values())), entry)
+        self.assertEqual(len(owner.graphs), 1)
+        with mock.patch.object(frontend, 'analyze', side_effect=AssertionError('warm analyze')), \
+                mock.patch.object(frontend, 'lower', side_effect=AssertionError('warm lower')):
+            self.assertEqual(compiled(0.375, x), expected)
+        self.assertEqual(self.compile_bridge.call_count, 1)
+
+    def test_older_logical_revisit_updates_recency_with_an_already_newest_shared_executor(self):
+        compiled = self.compiled()
+        x, singleton = self.argument((2,)), self.argument((1,))
+        compiled(0.375, x)
+        compiled(0.375, singleton)
+        owner = cache(compiled)
+        first, second = tuple(owner.graphs)
+        entries = tuple(owner.graphs.values())
+        graphs = [next(iter(entry.lowerings.values())) for entry in entries]
+        self.assertIsNot(graphs[0], graphs[1])
+        self.assertEqual(graphs[0], graphs[1])
+        self.assertEqual(len(owner.executors), 1)
+        owner.executors = self.MutationDict(owner.executors)
+        lowerings = [tuple(entry.lowerings.items()) for entry in entries]
+        compiled(0.375, x)
+        self.assertEqual(tuple(owner.graphs), (second, first))
+        self.assertEqual(owner.executors.mutations, [])
+        self.assertEqual([tuple(entry.lowerings.items()) for entry in entries], lowerings)
+        self.assertEqual(self.compile_bridge.call_count, 1)
+
+    def test_lowering_recency_and_eviction_are_independent_of_shared_executor_recency(self):
+        compiled = frontend.implementation(program(
+            'def f(a,x,b):\n local=a\n other=b\n return x*1.125'), recompile_limit=2)
+        x, other, singleton = (self.argument(shape) for shape in ((2,), (2,), (1,)))
+        compiled(False, x, 0.)
+        owner = cache(compiled)
+        first = next(iter(owner.graphs))
+        entry = owner.graphs[first]
+        compiled(False, x, other)
+        abi_a, abi_b = tuple(entry.lowerings)
+        executable_a, executable_b = tuple(owner.executors)
+        # Another logical specialization reuses A's executable, making it
+        # newest without visiting the first specialization's lowering A.
+        compiled(False, singleton, 0.)
+        second = next(reversed(owner.graphs))
+        self.assertEqual(tuple(entry.lowerings), (abi_a, abi_b))
+        self.assertEqual(tuple(owner.executors), (executable_b, executable_a))
+        owner.executors = self.MutationDict(owner.executors)
+        compiled(False, x, 0.)
+        self.assertEqual(tuple(owner.graphs), (second, first))
+        self.assertEqual(tuple(entry.lowerings), (abi_b, abi_a))
+        self.assertEqual(tuple(owner.executors), (executable_b, executable_a))
+        self.assertEqual(owner.executors.mutations, [])
+        compiled(other, x, False)
+        abi_c, executable_c = next(reversed(entry.lowerings)), next(reversed(owner.executors))
+        self.assertNotIn(abi_c, (abi_a, abi_b))
+        self.assertNotIn(executable_c, (executable_a, executable_b))
+        self.assertEqual(tuple(entry.lowerings), (abi_a, abi_c))
+        self.assertEqual(tuple(owner.executors), (executable_a, executable_c))
+        self.assertEqual(tuple(owner.graphs), (second, first))
+        self.assertEqual(self.compile_bridge.call_count, 3)
+
+    def test_graph_hash_collisions_keep_structural_equality_and_executor_sharing(self):
+        compiled = self.compiled('def f(enabled,x):\n return x*enabled')
+        x, singleton = self.argument((2,)), self.argument((1,))
+        with mock.patch.object(frontend.Graph, '__hash__', return_value=7):
+            disabled = compiled(False, x)
+            enabled = compiled(True, x)
+            self.assertNotEqual(disabled, enabled)
+            self.assertEqual(compiled(False, singleton), disabled)
+            owner = cache(compiled)
+            graphs = [next(iter(entry.lowerings.values())) for entry in owner.graphs.values()]
+            self.assertEqual([hash(graph) for graph in graphs], [7, 7, 7])
+            self.assertIsNot(graphs[0], graphs[2])
+            self.assertEqual(graphs[0], graphs[2])
+            self.assertNotEqual(graphs[0], graphs[1])
+            self.assertEqual(len(owner.executors), 2)
+            self.assertEqual(compiled(True, x), enabled)
+            self.assertEqual(compiled(False, x), disabled)
+            self.assertEqual(self.compile_bridge.call_count, 2)
+
+    def test_unused_role_changes_validate_the_entire_filtered_tensor_abi(self):
+        compiled = frontend.implementation(program(
+            'def f(a,x,b):\n local=a\n other=b\n return -x'), recompile_limit=1)
+        x, unused = self.argument((2,)), self.argument((2,))
+        history = (((False, x, 0.), (x,), 0),
+                   ((unused, x, False), (unused, x), 1),
+                   ((True, x, unused), (x, unused), 0))
+        with mock.patch.object(frontend._native, '_pointwise_validate_inputs') as validate:
+            for args, tensors, input_index in history:
+                for _ in range(2):
+                    nodes, _ = compiled(*args)
+                    validate.assert_called_with(tensors)
+                    output = nodes[-1]
+                    self.assertEqual(output[0], 'neg')
+                    self.assertEqual(nodes[output[1]][:2], ('input', input_index))
+                    executor = next(reversed(cache(compiled).executors.values()))
+                    executor.run.assert_called_with(tensors, ())
+            before = self.ordered_contents(cache(compiled))
+            validate.side_effect = RuntimeError('unused tensor admission failure')
+            with self.assertRaisesRegex(RuntimeError, 'unused tensor admission failure'):
+                compiled(unused, x, False)
+            validate.assert_called_with((unused, x))
+            self.assertEqual(self.ordered_contents(cache(compiled)), before)
+        self.assertEqual(len(cache(compiled).graphs), 1)
+
+    def test_failed_older_revisits_preserve_ordered_contents_before_reset(self):
+        compiled = self.compiled('def f(a,x):\n local=a\n return x*1.125')
+        x, unused, singleton = (self.argument(shape) for shape in ((2,), (2,), (1,)))
+        compiled(False, x)
+        compiled(False, singleton)
+        owner = cache(compiled)
+        before = self.ordered_contents(owner)
+        executor = next(iter(owner.executors.values()))
+        successful_run = executor.run.side_effect
+        executor.run.side_effect = RuntimeError('cached launch failure')
+        with self.assertRaisesRegex(RuntimeError, 'cached launch failure'):
+            compiled(False, x)
+        self.assertEqual(self.ordered_contents(owner), before)
+        executor.run.side_effect = successful_run
+        self.compile_bridge.side_effect = RuntimeError('new ABI compile failure')
+        with self.assertRaisesRegex(RuntimeError, 'new ABI compile failure'):
+            compiled(unused, x)
+        self.assertEqual(self.ordered_contents(owner), before)
+        self.compile_bridge.side_effect = self.make_executor
+        self.launch_failure = RuntimeError('new ABI launch failure')
+        with self.assertRaisesRegex(RuntimeError, 'new ABI launch failure'):
+            compiled(unused, x)
+        self.assertEqual(self.ordered_contents(owner), before)
+        self.launch_failure = None
+        compiled(unused, x)
+        self.assertEqual(tuple(owner.graphs), tuple(reversed(tuple(key for key, _ in before[0]))))
+        native.compiler.reset()
+        self.assertEqual(self.ordered_contents(owner), ((), (), ()))
+        compiled(False, x)
+        self.assertEqual(len(owner.graphs), 1)
+        self.assertEqual(len(owner.executors), 1)
+
     def test_nan_payloads_share_static_guard_without_rewriting_frozen_values(self):
         for origin in ('parameter', 'global', 'closure'):
             for reverse in (False, True):

@@ -1,5 +1,5 @@
 {
-  "README.md": "fe344ee172d0ab20dfcc95606457f93d5e38a904baafda87e42f4a9e221b629a",
+  "README.md": "e4f5300c6bb6eaad18bd017923ef35bcb2ff02494df7da20f585b24ad5117494",
   "capture.py": "7d4eb23eb51485231aa647cd2a65614b3447d5a54c0803b8656102c9d0869fb0",
   "kernel.cu": "eaa0f2ddcf94f6d90beb79d6a7a2a235f66bd58909bf407735945e3e6fcf8117",
   "kernel.ptx.gz": "6b3dd0cce225554aaa76d1f8fb4d70110cd73deed246ccd905098e8cf72c4ba2",
@@ -75,5 +75,23 @@
   "source-manifest.json.gz": "fb362f01a800a4ad9d5e89fb305916a10395a28e24e81d239bb79487072247da",
   "validation.json.gz": "96a55e488d0b45a2d03c69401c0b02e3adf5ba8ddc9980b8439ba541b399e76b",
   "zero-shape-probe.json.gz": "9af7cca9d5356a2d9dbf33e5057743597d1d6e2ce69206e6aac2abd8ed0ad7d3",
-  "zero-shape-probe.py": "bfda0bcd3e7ea00ce419aaad39f983bed0f61fe1542b5791a447beacc552962d"
+  "zero-shape-probe.py": "bfda0bcd3e7ea00ce419aaad39f983bed0f61fe1542b5791a447beacc552962d",
+  "warm-dispatch/README.md": "a82f889b60b4ef14c61f39b9ab6c9bf1d41cc2b4edf989608b574019d2555a7a",
+  "warm-dispatch/cpu-v2-execution.json": "03383bd3f11bf2de3a78939b1d735807b33bbc50d872752f081a45e2f019dd3b",
+  "warm-dispatch/cpu-v2-final-execution.json": "5d4933c0225b95db142554c250518f59f7410a232801439e6ff49eff8ae40b21",
+  "warm-dispatch/cpu-v2-final-result.json": "73655f543fb50c80490825f9aef1f0e0e526a3fa7c1f976b8d6208ee6621d351",
+  "warm-dispatch/cpu-v2-final-source-snapshot.json.gz": "154d540069e6de1f1e175eb6deb7f4fd0db20a4b94c3dfd34623cdd170686ab7",
+  "warm-dispatch/cpu-v2-result.json": "cfd32dee58eede7bf43dccc15bc3842a2652d87a3461bbbc0f68eea5d5f9fcea",
+  "warm-dispatch/cpu-v2-source-snapshot.json.gz": "768cd6c2f3dea4f8c2cc5ff95db0dd16b881d5d645332cdd5d695beb7dc39536",
+  "warm-dispatch/gpu-dispatch.py": "b42412dbd50527f199a208f0991f07ee771a0196e3caf9d8710bf401c4e57aee",
+  "warm-dispatch/manifest.json": "0a79d113efa162905a5dca813268f826efce41e98b874f0b9a10065139c2b51d",
+  "warm-dispatch/measurement-plan.md": "a00fcef6b82026399d0298b858092224c4f1bcb8a093cd8a69e36ffbf7b2136a",
+  "warm-dispatch/original/manifest.json": "418aa322fe12de2b109bbf6fa086f9a740e11b036d2936d65f00055122941966",
+  "warm-dispatch/original/profile-scalar-dispatch.py": "bb708311bdd4e2c59430e794658cc58782253b8e8a34ea77e447d713810fda39",
+  "warm-dispatch/original/scalar-dispatch-profile-design.md": "abd3a0a8242a8ec0d2c673958663935d6fd4016fd2fcdc5f6e61161eb401c795",
+  "warm-dispatch/original/scalar-dispatch-profile-execution.json": "d80d66d59e3e6b817cc4c1065fa4c7f5c3224265a5353f0650037efe3424ff30",
+  "warm-dispatch/original/scalar-dispatch-profile-result.json": "acd022c9c0cf09b4b4c056bd8dfe401deed3f3727dbb542d82eaff7f67c62109",
+  "warm-dispatch/original/scalar-dispatch-profile-review.md": "ffae4608c126a8e84799f17d8b04f02c395a226aed9798dda5ec0382432bc8af",
+  "warm-dispatch/profile-dispatch-v2.py": "7f2bd2d9b79f142be18c813419e14ecab41865f86b54359520eb8b55ac66e6a8",
+  "warm-dispatch/validation.json.gz": "7798f4d6343e8bbef9a7e6562bb84bc25191dd02610bd8167201d1927e7894f8"
 }

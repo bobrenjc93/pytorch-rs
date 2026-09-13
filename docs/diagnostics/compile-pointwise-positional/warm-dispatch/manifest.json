@@ -1,0 +1,19 @@
+{
+  "README.md": "a82f889b60b4ef14c61f39b9ab6c9bf1d41cc2b4edf989608b574019d2555a7a",
+  "cpu-v2-execution.json": "03383bd3f11bf2de3a78939b1d735807b33bbc50d872752f081a45e2f019dd3b",
+  "cpu-v2-final-execution.json": "5d4933c0225b95db142554c250518f59f7410a232801439e6ff49eff8ae40b21",
+  "cpu-v2-final-result.json": "73655f543fb50c80490825f9aef1f0e0e526a3fa7c1f976b8d6208ee6621d351",
+  "cpu-v2-final-source-snapshot.json.gz": "154d540069e6de1f1e175eb6deb7f4fd0db20a4b94c3dfd34623cdd170686ab7",
+  "cpu-v2-result.json": "cfd32dee58eede7bf43dccc15bc3842a2652d87a3461bbbc0f68eea5d5f9fcea",
+  "cpu-v2-source-snapshot.json.gz": "768cd6c2f3dea4f8c2cc5ff95db0dd16b881d5d645332cdd5d695beb7dc39536",
+  "gpu-dispatch.py": "b42412dbd50527f199a208f0991f07ee771a0196e3caf9d8710bf401c4e57aee",
+  "measurement-plan.md": "a00fcef6b82026399d0298b858092224c4f1bcb8a093cd8a69e36ffbf7b2136a",
+  "original/manifest.json": "418aa322fe12de2b109bbf6fa086f9a740e11b036d2936d65f00055122941966",
+  "original/profile-scalar-dispatch.py": "bb708311bdd4e2c59430e794658cc58782253b8e8a34ea77e447d713810fda39",
+  "original/scalar-dispatch-profile-design.md": "abd3a0a8242a8ec0d2c673958663935d6fd4016fd2fcdc5f6e61161eb401c795",
+  "original/scalar-dispatch-profile-execution.json": "d80d66d59e3e6b817cc4c1065fa4c7f5c3224265a5353f0650037efe3424ff30",
+  "original/scalar-dispatch-profile-result.json": "acd022c9c0cf09b4b4c056bd8dfe401deed3f3727dbb542d82eaff7f67c62109",
+  "original/scalar-dispatch-profile-review.md": "ffae4608c126a8e84799f17d8b04f02c395a226aed9798dda5ec0382432bc8af",
+  "profile-dispatch-v2.py": "7f2bd2d9b79f142be18c813419e14ecab41865f86b54359520eb8b55ac66e6a8",
+  "validation.json.gz": "7798f4d6343e8bbef9a7e6562bb84bc25191dd02610bd8167201d1927e7894f8"
+}
