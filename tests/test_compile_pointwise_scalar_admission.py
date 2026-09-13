@@ -1,4 +1,5 @@
 """Typed scalars, callback-free admission, and signed product provenance."""
+import struct
 import unittest
 from unittest import mock
 
@@ -23,6 +24,27 @@ def callback_scalar(effects):
 
 def replace_constant(fn, value):
     fn.__code__ = fn.__code__.replace(co_consts=(None, value))
+
+
+def scalar_source(origin):
+    """Independent functions/setters for persistent scalar-source histories."""
+    if origin == 'parameter':
+        return program('def f(scale,x):\n return x*scale'), lambda value: None
+    if origin == 'global':
+        fn = program('def f(x):\n return x*scale', scale=0.)
+        return fn, lambda value: fn.__globals__.__setitem__('scale', value)
+    scale = 0.
+    def fn(x):
+        return x * scale
+    def setter(value):
+        nonlocal scale
+        scale = value
+    return fn, setter
+
+
+def signed_payload_nans():
+    return [struct.unpack('=d', struct.pack('=Q', sign | 0x7ff8000000000000 | payload))[0]
+            for sign in (0, 1 << 63) for payload in range(1, 7)]
 
 
 class ScalarAdmission(unittest.TestCase):
@@ -373,6 +395,47 @@ class SharedCacheGuards(unittest.TestCase):
 
     def compiled(self, source='def f(scale,x):\n return x*scale'):
         return frontend.implementation(program(source), recompile_limit=8)
+
+    def test_nan_payloads_share_static_guard_without_rewriting_frozen_values(self):
+        for origin in ('parameter', 'global', 'closure'):
+            for reverse in (False, True):
+                fn, setter = scalar_source(origin)
+                compiled = native.compile(fn)
+                values = signed_payload_nans()[::(-1 if reverse else 1)]
+                x = self.argument((2,))
+                initial = None
+                for value in values:
+                    with self.subTest(origin=origin, bits=frontend.scalar_bits(value)):
+                        key, retained = frontend.binding(value)
+                        self.assertEqual(key, frontend.binding(values[0])[0])
+                        self.assertEqual(frontend.scalar_bits(retained), frontend.scalar_bits(value))
+                        setter(value)
+                        args = (value, x) if origin == 'parameter' else (x,)
+                        cold = compiled(*args)
+                        self.assertEqual(compiled(*args), cold)
+                        if initial is None:
+                            initial = cold
+                        self.assertEqual(cold, initial)
+                owner = cache(compiled)
+                self.assertIn(('constant', 0, 0, frontend.scalar_bits(values[0])), initial[0])
+                self.assertEqual(len(owner.graphs), 1)
+                self.assertEqual(len(owner.executors), 1)
+                frozen = next(iter(owner.graphs.values()))
+                scalar = next(v for v in frozen.values.values() if type(v) is float)
+                self.assertEqual(frontend.scalar_bits(scalar), frontend.scalar_bits(values[0]))
+                # NaN history promotes the next finite binding. Later NaNs hit
+                # that runtime graph, retaining their actual ABI bits.
+                for value in (16777217., 16777218., *values):
+                    setter(value)
+                    args = (value, x) if origin == 'parameter' else (x,)
+                    nodes, scalars = compiled(*args)
+                    self.assertEqual(len(scalars), 1)
+                    self.assertEqual(frontend.scalar_bits(scalars[0]), frontend.scalar_bits(value))
+                    self.assertEqual(len(owner.graphs), 2)
+                self.assertEqual(len(owner.executors), 2)
+                native.compiler.reset()
+                self.assertFalse(owner.graphs)
+                self.assertFalse(owner.executors)
 
     def test_generalized_selection_keeps_zero_singleton_and_rank_zero_separate(self):
         compiled = self.compiled()

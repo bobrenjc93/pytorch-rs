@@ -35,6 +35,10 @@ those failures alongside revision checks. Burner's independent review and exact-
 qualification remain pending. This bounded surface does not establish
 general Inductor parity.
 
+The subsequent [NaN-guard and capture-consumer repairs](diagnostics/compile-pointwise-positional/operator-review-fix/README.md)
+have development validation; the earlier clean measurements predate these repairs
+and must be refreshed after Burner commits them.
+
 The function accepts one or two exact native CUDA float32 Tensor inputs on the
 same device with contiguous storage, plus exact built-in `float` and `bool`
 arguments in any positional slots. For equal-shaped tensors:
@@ -151,7 +155,10 @@ Used positional and captured scalars are initially constant
 specializations. Static float guards equate positive and negative
 zero: a cache hit retains the sign captured by that graph, while a new graph
 uses the current value. Literal zeros and promoted runtime parameters retain
-their actual sign. A changed finite float becomes a runtime float32
+their actual sign. Static NaN guards accept all exact-float NaN signs and payloads
+as one specialization, matching the reference's `isnan` guard. The frozen scalar
+value and IR bits remain those of the selected graph; runtime arguments keep their
+actual bits. A changed finite float becomes a runtime float32
 kernel parameter, matching the reference's warm-call materialization boundary.
 Logical guards are checked from most recently selected to oldest before any new
 promotion. An existing runtime specialization accepts earlier floats and nonfinite

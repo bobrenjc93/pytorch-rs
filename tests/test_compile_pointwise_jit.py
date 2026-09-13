@@ -1,9 +1,11 @@
 """Independent expression generation and native default-JIT regression evidence."""
+import ast
 import concurrent.futures
 from contextlib import ExitStack
 import gc
 import math
 import os
+from pathlib import Path
 import random
 import subprocess
 import sys
@@ -39,6 +41,21 @@ def kernels(compiled):
 
 def kernel(compiled):
     return next(iter(cache(compiled).executors.values()))
+
+
+def diagnostic_capture_selectors():
+    # Load only the capture accessor; importing a capture script launches CUDA
+    # and writes artifacts. These are the exact maintained script definitions.
+    root = Path(__file__).resolve().parents[1]
+    for relative in ('docs/diagnostics/compile-pointwise-broadcast/capture_bounded.py',
+                     'docs/diagnostics/compile-pointwise-jit/capture.py'):
+        source = ast.parse((root / relative).read_text(), filename=relative)
+        selected = [node for node in source.body
+                    if isinstance(node, ast.FunctionDef) and node.name == 'dispatched_kernel']
+        assert len(selected) == 1
+        namespace = {}
+        exec(compile(ast.Module(body=selected, type_ignores=[]), relative, 'exec'), namespace)
+        yield relative, namespace['dispatched_kernel']
 
 
 def custom_globals_program(source):
@@ -82,6 +99,25 @@ def two_device_reservation():
 class Admission(unittest.TestCase):
     def tearDown(self):
         native.compiler.reset()
+
+    def test_diagnostic_capture_selectors_follow_successful_executor_lru(self):
+        actual_cache = frontend._state.NativeEagerCompileCache()
+        compiled = types.SimpleNamespace(_torch_rs_pointwise_cache=actual_cache)
+        # Logical entries deliberately have the current non-tuple value layout.
+        actual_cache.graphs[object()] = frontend.Specialization({}, (), {}, {})
+        first, second, third = object(), object(), object()
+        actual_cache.executors.update(first=first, second=second, third=third)
+        for path, select in diagnostic_capture_selectors():
+            with self.subTest(capture=path, call='new module'):
+                self.assertIs(select(compiled), third)
+        # Successful warm use moves an older module to the end. The selected
+        # module is neither the first entry nor the most recently created one.
+        actual_cache.executors['second'] = actual_cache.executors.pop('second')
+        for path, select in diagnostic_capture_selectors():
+            with self.subTest(capture=path, call='warm revisit'):
+                self.assertIs(select(compiled), second)
+        actual_cache.clear()
+        self.assertFalse(actual_cache.executors)
 
     def test_two_device_reservation_accepts_explicit_distinct_pairs(self):
         for mask, expected in (('0,1', True), ('6,7', True), ('GPU-a,GPU-b', True),
@@ -250,6 +286,22 @@ class Hardware(unittest.TestCase):
                 return compiled(*args)
         finally:
             sys.setprofile(old)
+
+    def test_diagnostic_capture_selectors_follow_actual_shape_revisit(self):
+        fn = program('def f(x, y):\n return (x.relu() - y.relu()).relu()')
+        compiled = native.compile(fn)
+        dispatched = []
+        for rows, columns in ((7, 11), (3, 17), (7, 11)):
+            x = self.upload([1.] * rows, (rows, 1))
+            y = self.upload([0.25] * columns, (columns,))
+            actual = self.without_replay(fn, compiled, (x, y))
+            self.assertEqual(actual.cpu().tolist(), [[0.75] * columns] * rows)
+            selected = [select(compiled) for _, select in diagnostic_capture_selectors()]
+            self.assertIs(selected[0], selected[1])
+            dispatched.append(selected[0])
+        self.assertIsNot(dispatched[0], dispatched[1])
+        self.assertIs(dispatched[0], dispatched[2])
+        self.assertEqual(len(cache(compiled).executors), 2)
 
     def test_generated_expression_trees_default_inductor_and_fresh_data(self):
         rng = random.Random(926317)

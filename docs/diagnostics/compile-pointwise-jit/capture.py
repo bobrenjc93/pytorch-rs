@@ -25,6 +25,12 @@ def sha(data):
 def command(*args):
     return subprocess.check_output(args, text=True).strip()
 
+def dispatched_kernel(compiled):
+    # Successful calls move their executable to the end, including cache hits.
+    # Logical graph entries do not identify the concrete module just dispatched.
+    return next(reversed(compiled._torch_rs_pointwise_cache.executors.values()))
+
+
 def program(x, y):
     wave = torch.sin(x * 0.71359)
     square = wave * wave
@@ -33,19 +39,29 @@ def program(x, y):
 before = command('nvidia-smi', '--query-gpu=index,uuid,name,driver_version,utilization.gpu,memory.used', '--format=csv')
 compiled = torch.compile(program)
 observations = []
+dispatched = []
 for count, offset in [(41, 0.125), (41, -0.375), (17, 0.713)]:
     x = torch.tensor([i * 0.017 + offset for i in range(count)]).to('cuda:0')
     y = torch.tensor([offset - i * 0.13 for i in range(count)]).to('cuda:0')
     result = compiled(x, y)
     assert result.data_ptr() not in (x.data_ptr(), y.data_ptr())
-    observations.append({'shape': list(result.shape), 'values': result.cpu().tolist()})
+    kernel = dispatched_kernel(compiled)
+    dispatched.append(kernel)
+    observations.append({
+        'shape': list(result.shape), 'values': result.cpu().tolist(),
+        'source_kernel_sha256': sha(kernel.source.encode()),
+        'ptx_sha256': sha(kernel.ptx.encode()),
+    })
 entries = list(compiled._torch_rs_pointwise_cache.graphs.values())
-kernel = entries[0][1]
-assert all(entry[1] is kernel for entry in entries)
+modules = list(compiled._torch_rs_pointwise_cache.executors.values())
+# Equal-shape linear indexing currently shares one module across these calls.
+# Capture the observed dispatch even if later specialization changes that reuse.
+kernel = dispatched[-1]
 (out / 'kernel.cu').write_text(kernel.source)
 (out / 'kernel.ptx.gz').write_bytes(gzip.compress(kernel.ptx.encode(), mtime=0))
 paths = command('rg', '--files', 'src', 'python', '-g', '*.rs', '-g', '*.py', '-g', '*.ptx').splitlines()
 paths += ['Cargo.toml', 'Cargo.lock', 'pyproject.toml', 'uv.lock', 'rust-toolchain.toml']
+paths += [str(Path(__file__).resolve().relative_to(root))]
 manifest = {p: sha(Path(p).read_bytes()) for p in sorted(paths)}
 (out / 'source-manifest.json.gz').write_bytes(gzip.compress(json.dumps(manifest, sort_keys=True).encode(), mtime=0))
 runtimes = sorted({line.split()[-1] for line in Path('/proc/self/maps').read_text().splitlines() if 'libcudart.so' in line})
@@ -69,8 +85,9 @@ record = {
     'visible_devices': os.environ.get('CUDA_VISIBLE_DEVICES'),
     'gpu_before': before,
     'gpu_after': command('nvidia-smi', '--query-gpu=index,uuid,name,driver_version,utilization.gpu,memory.used', '--format=csv'),
-    'graph_entries': len(entries), 'code_modules': len({id(entry[1]) for entry in entries}),
+    'graph_entries': len(entries), 'code_modules': len({id(module) for module in modules}),
     'source_kernel_sha256': sha(kernel.source.encode()), 'ptx_sha256': sha(kernel.ptx.encode()),
+    'captured_observation': len(observations) - 1,
     'observations': observations,
 }
 assert 'torch' not in sys.modules

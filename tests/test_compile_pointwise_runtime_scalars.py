@@ -10,6 +10,7 @@ from torch_rs import _compile_pointwise as frontend
 from torch_rs import torch_rs as bridge
 from tests.test_compile_pointwise_jit import available, cache, kernels, program, two_device_reservation
 from tests import test_compile_pointwise_jit as jit_tests
+from tests.test_compile_pointwise_scalar_admission import scalar_source, signed_payload_nans
 
 
 class RuntimeScalarAdmission(unittest.TestCase):
@@ -656,6 +657,44 @@ class PersistentSpecializationHardware(unittest.TestCase):
                 self.assertNotEqual(actual.data_ptr(), previous.data_ptr())
         self.outputs.append(actual)
         return actual
+
+    def test_signed_nan_payloads_reuse_static_guard_then_promote_for_all_sources(self):
+        for origin in ('parameter', 'global', 'closure'):
+            for reverse in (False, True):
+                # Resets separate independent histories; both ordinary default
+                # wrappers stay alive across every value and warm call below.
+                native.compiler.reset()
+                self.torch.compiler.reset()
+                fn, setter = scalar_source(origin)
+                ref_fn, ref_setter = scalar_source(origin)
+                pair = (fn, native.compile(fn), self.torch.compile(ref_fn))
+                self.outputs = []
+                values = signed_payload_nans()[::(-1 if reverse else 1)]
+                x = self.upload([1., -1., 0., -0.], (4,))
+                tx = self.upload([1., -1., 0., -0.], (4,), self.torch)
+                static = runtime = None
+                history = values + [16777217., 16777218., 16777217., *values, 0., -0.]
+                for step, value in enumerate(history):
+                    setter(value)
+                    ref_setter(value)
+                    args = (value, x) if origin == 'parameter' else (x,)
+                    refs = (value, tx) if origin == 'parameter' else (tx,)
+                    with self.subTest(origin=origin, reverse=reverse, step=step,
+                                      bits=frontend.scalar_bits(value)):
+                        for warm in range(2):
+                            self.check(pair, args, refs)
+                        selected = kernels(pair[1])[-1]
+                        if step == 0:
+                            static = selected
+                        elif step < len(values):
+                            self.assertIs(selected, static)
+                        elif step == len(values):
+                            runtime = selected
+                            self.assertIsNot(runtime, static)
+                            self.assertIn('float s0', runtime.source)
+                        else:
+                            self.assertIs(selected, runtime)
+                        self.assertEqual(len(cache(pair[1]).graphs), 1 if step < len(values) else 2)
 
     def test_older_static_precision_guard_survives_other_rank_runtime_graph(self):
         pair = self.pair('def f(s,x):\n return ((x*0)+s)-16777216.0')

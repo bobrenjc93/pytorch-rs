@@ -114,3 +114,9 @@ start separately fresh; dependency/native build caches may be warm as recorded.
 No implementation, dependency, test, evaluator, corpus or managed progress
 artifact changed during capture. Independent review, CI and merge qualification
 remain required.
+
+The maintained `capture.py` now selects the executable actually dispatched by
+each successful call through the executor LRU, without assuming the first module
+remains selected. The [repair validation](../compile-pointwise-positional/operator-review-fix/README.md)
+records a separate development capture. Existing measurements above retain their
+original source/build identities and are unchanged.

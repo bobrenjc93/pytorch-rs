@@ -362,10 +362,13 @@ def analyze(model, arity):
 
 def binding(value):
     if is_scalar(value):
-        # Static float guards equate signed zeros, retaining the first graph's
-        # sign. Keep the actual value for new graphs and runtime parameters;
-        # literal scalar bits and distinct nonzero float values remain intact.
-        key = struct.pack("=d", 0.0 if value == 0.0 else value) if type(value) is float else value
+        # Reference static float guards equate signed zeros and guard NaNs by
+        # exact float type plus isnan, independent of sign/payload. Canonicalize
+        # only guard identity; frozen values, IR bits and runtime inputs retain
+        # the original scalar. Packed NaNs still participate in finite promotion.
+        key = value
+        if type(value) is float:
+            key = struct.pack("=d", math.nan if math.isnan(value) else 0.0 if value == 0.0 else value)
         return (type(value), key), value
     if value is _ROOT:
         # Attribute identities are checked when resolving this guard on every call.

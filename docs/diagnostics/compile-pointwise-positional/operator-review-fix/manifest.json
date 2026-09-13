@@ -1,0 +1,17 @@
+{
+  "README.md": "3975c20c8e042f0373b6e2397a44ab919477d4aac576f2be4f53bdae68c2952a",
+  "bounded-capture/kernel.cu": "b2ba6f06ae0851dcf29fe015950374551792b3b7258df84570fbba5ca39e1950",
+  "bounded-capture/kernel.ptx.gz": "b3814299b312f2bd1a9920f51dfcadc302bb9e9de34314e00dceebc9ba07fca0",
+  "bounded-capture/provenance.json": "1bb8e3b51b9fcef1daee3d3266c8bf66e631ac505785360fcfb0c71bedfb917a",
+  "bounded-capture/source-manifest.json.gz": "cdf3e0a51d6511798285f978fd1bf73150da78e4aecf22cdb034617e6489a51b",
+  "jit-capture/kernel.cu": "75907bb5087f81e847b8690c02ab137e0fe49554572497bbade8da6adefc50fd",
+  "jit-capture/kernel.ptx.gz": "05f09228a0721c3d8412c1ec4794f4fd833172c2b00abc3e1e7912c0fbe18436",
+  "jit-capture/provenance.json": "076ac3f422b8c38d28e251527fe0b04969f723252cb86845e34855ea11b55063",
+  "jit-capture/source-manifest.json.gz": "8703ba7af3d5b3ca29cb23a4140774052f96deffd870706ad4ca5aa5e523d98c",
+  "positional-capture/kernel.cu": "eaa0f2ddcf94f6d90beb79d6a7a2a235f66bd58909bf407735945e3e6fcf8117",
+  "positional-capture/kernel.ptx.gz": "6b3dd0cce225554aaa76d1f8fb4d70110cd73deed246ccd905098e8cf72c4ba2",
+  "positional-capture/provenance.json": "ed28421f41f3dfbcb3fc3c820658b614a61fbdab4623e7fe421d0e3f429bd641",
+  "positional-capture/source-manifest.json.gz": "fb362f01a800a4ad9d5e89fb305916a10395a28e24e81d239bb79487072247da",
+  "review-native-nan-guard-repro.py": "fcdc50711e4f55501e8122a99172d01f48ae8bae039ed1dec209296963248397",
+  "validation.json.gz": "e0d68fb2144cd85c6d82ff83eff6f5639f41cca9c1c0a460ca6fb1128b9cb12e"
+}

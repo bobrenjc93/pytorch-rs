@@ -12,6 +12,14 @@ focused persistent-specialization tests against the clean candidate wheel.
 Earlier measurements and their failures remain pinned to their original commits.
 Burner's independent review and exact-head qualification remain separate gates.
 
+**The operator-review repairs require a new clean evidence refresh.** Static NaN
+guard identity and the two maintained diagnostic consumers changed after
+`7a74596b`. Those clean reports and root CUDA/PTX provenance remain unchanged,
+but are stale for this repair. The [repair record](operator-review-fix/README.md)
+retains the reproduced ninth-NaN rejection, fresh development validation and
+separately identified dispatched captures. Burner must regenerate final clean
+candidate/main measurements and capture provenance after committing the repairs.
+
 This implementation accepts one or two exact tensors plus
 exact built-in float/Boolean arguments in arbitrary positional slots. Positional
 integers remain unsupported; literal/captured integer behavior is unchanged.
