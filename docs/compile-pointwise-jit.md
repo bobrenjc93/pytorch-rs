@@ -177,10 +177,10 @@ keep both frameworks' wrappers alive across IEEE inputs and shape changes;
 [admission regressions](../tests/test_compile_pointwise_broadcast_priority.py)
 check original-IR rejection through compilation and direct kernel execution.
 Their [validation record](diagnostics/compile-pointwise-broadcast/README.md)
-retains historical full compiler sweeps and clean measurements of the broad
-candidate, including its failures. New clean measurements of the narrowed
-candidate and main are deferred to Burner's post-commit evidence phase; the old
-broadcast scores do not describe the narrowed domain.
+retains historical full compiler sweeps and broad-candidate failures alongside
+new clean measurements of the narrowed candidate and main. The old broadcast
+scores do not describe the narrowed domain; the current record identifies each
+measured source and build separately.
 
 The unchanged [public-default compiler gates](torch-compile-default-evaluator.md)
 remain the scoring authority with all 112 coverage and 56 CUDA performance

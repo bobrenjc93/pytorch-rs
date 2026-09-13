@@ -7,13 +7,54 @@ shape equality applies even for unused inputs or linear address maps. Equal-shap
 support is unchanged. See the [compiler contract](../../compile-pointwise-jit.md)
 and [numerical boundary](../../compile-pointwise-numerics.md#unequal-shape-numerical-boundary).
 
-New clean candidate and clean-main coverage/performance captures are deferred to
-Burner's post-commit evidence phase. **The 10%/20% results below measure the old
-broad candidate, not the narrowed implementation.** Excluded cells remain zero
-under the unchanged gates. The new [bounded capture program](capture_bounded.py)
-captures an accepted non-corpus expression and identifies the module dispatched
-for each observation. No narrowed-domain measurement is claimed by the historical
-files in this directory.
+## Clean bounded-domain captures
+
+The unchanged public-default-compile-v2 gates measured clean candidate
+`846a76a0e2c859c6efdc2bb7af6a4fb4ed6ce447` and clean main
+`166687a730a86235fa38decfa364703b60ebc595` on 2026-09-13 UTC, using H100 GPU 0
+and PyTorch 2.13.0+cu130 default Inductor. All four reports have `valid: true`
+and `diagnostic: false`.
+
+| Measurement | Fresh main baseline | Bounded candidate |
+| --- | ---: | ---: |
+| Weighted coverage | 6% (4/112) | 8% (6/112) |
+| Weighted CUDA performance | 12% (4/56) | 12% (6/56) |
+| Performance common-success geometric mean, reference/candidate | 1.8483459820398416 | 1.9362626082807843 |
+
+[Candidate coverage](bounded-candidate-coverage.json.gz),
+[candidate performance](bounded-candidate-cuda-perf.json.gz),
+[baseline coverage](bounded-baseline-coverage.json.gz) and
+[baseline performance](bounded-baseline-cuda-perf.json.gz) retain every fixed
+cell, both CUDA orders, five warmups, 17 samples, cold/steady timings and
+unsupported outcomes. Row broadcasting passes; the multi-stage rank-3 broadcast
+program is explicitly unsupported. Its zero cells make the broadcasting
+category's geometric performance contribution zero. Common-success ratios
+describe different successful subsets and do not measure whole-corpus speed.
+**The historical broad candidate's 10%/20% results below do not describe this
+narrowed implementation.**
+
+[Gate receipts](bounded-gates-receipt.json) and the
+[post-commit bundle](bounded-post-commit-validation.json.gz) retain exact commands,
+clean source/build identities, setup timings, GPU snapshots and worker logs.
+An initial baseline setup requested an output in the enclosing worktree;
+the evaluator requires the baseline checkout's own subtree. It rejected that
+path before starting workers and emitted no score. The original invalid report
+and log are retained alongside the corrected, complete baseline runs.
+
+The clean candidate's 21-test focused broadcast selection passes with one explicit
+two-device skip; with CUDA hidden, six metadata tests pass and 15 hardware tests
+explicitly skip. The bundle also preserves the earlier clean review recheck's
+12 focused tests and 31 Rust tests at this same commit, with their actual times.
+
+[Generated CUDA](bounded-kernel.cu), [PTX](bounded-kernel.ptx.gz),
+[provenance](bounded-provenance.json) and [source manifest](bounded-source-manifest.json.gz)
+were refreshed from clean `846a76a` using the unchanged
+[bounded capture program](capture_bounded.py). They describe the actually
+dispatched final module for `(x.relu()-y.relu()).relu()`, after a warm cache hit
+and a later shape specialization. Source/PTX hashes match that final observation.
+Native execution selected NVRTC 13.0, runtime 13000 and `compute_90`; queried
+nvcc 12.6 was not the JIT compiler. The release extension SHA256 is
+`0aaf69050b98f1a7ad757ced29ba5a7a6409723d6d4d5883fcdfb7328038ac4b`.
 
 ## Bounded-domain development validation
 
@@ -38,19 +79,11 @@ with CUDA hidden, six metadata tests pass and 15 hardware tests explicitly skip.
 The independent admission review and a separately recorded hardware-free probe
 of 1,232 accepted generated sources are retained in the bundle.
 
-[Bounded generated CUDA](bounded-kernel.cu), [PTX](bounded-kernel.ptx.gz),
-[provenance](bounded-provenance.json) and [source manifest](bounded-source-manifest.json.gz)
-describe the actually dispatched final module for `(x.relu()-y.relu()).relu()`.
-The capture observes a warm hit and a later shape specialization, matching each
-to its cache guard and source/PTX hashes. H100 execution selected NVRTC 13.0,
-runtime 13000 and `compute_90`; queried nvcc 12.6 was not the JIT compiler.
-The release extension SHA256 is
-`0aaf69050b98f1a7ad757ced29ba5a7a6409723d6d4d5883fcdfb7328038ac4b`.
-
-Burner's post-commit phase must refresh these development captures and add new
-bounded-candidate and clean-main coverage/performance reports using the unchanged
-commands below. Preserve the historical reports and failures separately; excluded
-cells receive zero in the fixed denominator.
+The original development source/PTX/provenance files are retained byte-for-byte
+in `previous_development_capture_files` in the post-commit bundle. The development
+validation archive and all historical reports and failures remain unchanged;
+the clean captures above supply current measured evidence. Independent review
+and exact-head qualification remain separate Burner gates.
 
 ## Historical broad candidate and review failures
 

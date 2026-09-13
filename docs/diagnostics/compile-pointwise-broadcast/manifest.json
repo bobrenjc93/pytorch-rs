@@ -1,7 +1,7 @@
 {
   "README.md": {
-    "bytes": 12333,
-    "sha256": "5711368e9ea06b972d2911e9a88b2bc879f2d99573b76d8a799457eec0a98d0d"
+    "bytes": 14215,
+    "sha256": "236e5512907ee87ef74531424918a5926e5b0e6a7ca92e77b5d5a13ebe0dfbba"
   },
   "baseline-coverage.json.gz": {
     "bytes": 45723,
@@ -11,6 +11,26 @@
     "bytes": 32912,
     "sha256": "9ed2180be38910802d5d28a3c6f6164a6fb32c806c6119289a02a9259f38771c"
   },
+  "bounded-baseline-coverage.json.gz": {
+    "bytes": 45754,
+    "sha256": "d1b4cf8bd703cd8333911f07326a03585886ed0197faffc0aafa2e1a58c48927"
+  },
+  "bounded-baseline-cuda-perf.json.gz": {
+    "bytes": 32829,
+    "sha256": "8b6e77f4bb61a240eec43f1751e11d54ecefd1a4f3dbe9e5b3f5591136e5dc5d"
+  },
+  "bounded-candidate-coverage.json.gz": {
+    "bytes": 46135,
+    "sha256": "62aa86b5f816bcf6cebc7e9ea3b57b3369d4b9c61b575051b56801d8a28ecd8b"
+  },
+  "bounded-candidate-cuda-perf.json.gz": {
+    "bytes": 33257,
+    "sha256": "d379d8fc98bb78946f8dba1b7845b1f813836c94d5d8d1d0b461c71cab41afab"
+  },
+  "bounded-gates-receipt.json": {
+    "bytes": 17227,
+    "sha256": "d1796e490bee79e6428b49fb6ccfe96af3d5afdecb1063ed5b45ed7b96c56c5e"
+  },
   "bounded-kernel.cu": {
     "bytes": 599,
     "sha256": "84b7100a52ba3cc4f9f3c3de9f09065cbe42db336e10c114223f2451fb06c813"
@@ -19,9 +39,13 @@
     "bytes": 726,
     "sha256": "376ec9e505e5cca19e7cf800c08d5d29d3085bbfa3d3c01e32dbeb3b0b40cc72"
   },
+  "bounded-post-commit-validation.json.gz": {
+    "bytes": 33593,
+    "sha256": "c1ec464531f7332abc9bc562afbad0c1685a8b509f6a17e7514a1c4fd7681af5"
+  },
   "bounded-provenance.json": {
-    "bytes": 10083,
-    "sha256": "421c69091eea4ed5a852d529a96e74eda2fafdce13e1bc56f833e69736c2f84e"
+    "bytes": 10080,
+    "sha256": "d6812a4e112ff105ab2a47b45851507e3d933f353f26069e5e00563e54c9ce56"
   },
   "bounded-source-manifest.json.gz": {
     "bytes": 6030,
