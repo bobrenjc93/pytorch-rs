@@ -1,0 +1,50 @@
+{
+  "README.md": {
+    "bytes": 5739,
+    "sha256": "a7b8be6f37074eb8973e158802c47cb99ccb6668910b49e77211663d37faba17"
+  },
+  "baseline-coverage.json.gz": {
+    "bytes": 45723,
+    "sha256": "637a7bcf1e9cc8508954934d5a67ca95fa154a6eac597d1e8f04ff9ae3a10e70"
+  },
+  "baseline-cuda-perf.json.gz": {
+    "bytes": 32912,
+    "sha256": "9ed2180be38910802d5d28a3c6f6164a6fb32c806c6119289a02a9259f38771c"
+  },
+  "candidate-coverage.json.gz": {
+    "bytes": 46657,
+    "sha256": "aad03c3662d978fcc3e33c9b6f1a5abf91d7624855f86d481c4315d90fe054ff"
+  },
+  "candidate-cuda-perf.json.gz": {
+    "bytes": 33601,
+    "sha256": "2ede60048abd5dc75c3776b8c56ee9960263a83dbecad81f912558d3bc8e59d9"
+  },
+  "capture.py": {
+    "bytes": 3691,
+    "sha256": "06a160ba9071465b5eae5b3c9472b092f3d68d2c62680df250c371c4939176d4"
+  },
+  "gates-receipt.json": {
+    "bytes": 10468,
+    "sha256": "f536a9d29528aa498584be11faafe64c6ded1f30e7dfc7eb8a7bdf98c90b7d3a"
+  },
+  "kernel.cu": {
+    "bytes": 911,
+    "sha256": "07089bf24458b10649c6a11d2d59868b207a051264a502c8d2c0ad70971d727d"
+  },
+  "kernel.ptx.gz": {
+    "bytes": 2743,
+    "sha256": "342c5c91a367d8d1b1fe90c61f7d142202492a138650fc0e46306f8f9794a8d5"
+  },
+  "provenance.json": {
+    "bytes": 7253,
+    "sha256": "ed3cec5dfa5d50cd03b96dbf1488d5a32be7e67a6310aef248c4e66212f60fec"
+  },
+  "source-manifest.json.gz": {
+    "bytes": 5959,
+    "sha256": "f308ed4fa92f4452c24f994e983c3ff78853cea8653078d1ec52710d99d15b77"
+  },
+  "validation.json.gz": {
+    "bytes": 115565,
+    "sha256": "63fc500b92356dde356ea749f235290ae7faad691fb153c26dc9dea264036012"
+  }
+}

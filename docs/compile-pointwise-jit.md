@@ -150,6 +150,8 @@ records the local commands, failures and generated-kernel evidence.
 The [broadcast regressions](../tests/test_compile_pointwise_broadcast.py) add
 independently generated ranks, singleton patterns and expression graphs, both
 operand orders, empty/scalar/offset inputs and cache/lifetime checks.
+Their [validation record](diagnostics/compile-pointwise-broadcast/README.md)
+includes the full compiler sweep and clean baseline/candidate measurements.
 
 The unchanged [public-default compiler gates](torch-compile-default-evaluator.md)
 remain the scoring authority with all 112 coverage and 56 CUDA performance
