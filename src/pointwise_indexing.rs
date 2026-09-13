@@ -10,14 +10,6 @@ pub(crate) enum Address {
 }
 
 impl Address {
-    pub(super) fn materialization_steps(&self) -> usize {
-        // The pinned reference emits an immovable cache-policy instruction
-        // before each nonconstant broadcast load. Linear and scalar loads
-        // have only the load itself. These instructions affect Reassociate's
-        // ordering even though the native kernel needs no cache hint.
-        1 + usize::from(matches!(self, Self::Broadcast(terms) if !terms.is_empty()))
-    }
-
     pub(super) fn source(&self) -> String {
         match self {
             Self::Linear => "i".into(),
@@ -105,6 +97,11 @@ impl Graph {
         // Dependency masks also distinguish unused parameters from broadcast loads.
         let mut layouts: Vec<Layout> = Vec::with_capacity(self.nodes.len());
         let mut dependencies = Vec::with_capacity(self.nodes.len());
+        // Original-IR capability, before identities, CSE or sign rewriting.
+        // Propagating only through operands makes the returned node authoritative:
+        // dead expressions still validate their shapes but do not restrict numerics.
+        let mut depth: Vec<usize> = Vec::with_capacity(self.nodes.len());
+        let mut transcendental: Vec<bool> = Vec::with_capacity(self.nodes.len());
         for node in &self.nodes {
             let (shape, mask) = match *node {
                 Node::Input(i) => (shapes[i].to_vec(), 1u8 << i),
@@ -122,6 +119,32 @@ impl Graph {
             };
             layouts.push(Layout::new(&shape)?);
             dependencies.push(mask);
+            let (stages, has_transcendental) = match *node {
+                Node::Input(_)
+                | Node::Constant(_)
+                | Node::Integer(_)
+                | Node::Boolean(_)
+                | Node::RuntimeScalar(_, _) => (0, false),
+                Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b) => (
+                    1 + depth[a].max(depth[b]),
+                    transcendental[a] || transcendental[b],
+                ),
+                Node::Neg(a) => (1 + depth[a], transcendental[a]),
+                Node::Relu(a) => (depth[a], transcendental[a]),
+                Node::Sin(a) | Node::Cos(a) => (depth[a], true),
+            };
+            depth.push(stages);
+            transcendental.push(has_transcendental);
+        }
+        // Argument shape equality, not address equality: unequal singleton-only
+        // reshapes and unused arguments must not bypass this admission rule.
+        // Graph validation bounds depth by the 4096-node limit.
+        if shapes.windows(2).any(|pair| pair[0] != pair[1])
+            && (depth[self.output] > 1 || transcendental[self.output])
+        {
+            return Err(invalid(
+                "unequal input shapes require at most one arithmetic stage and no live sin/cos",
+            ));
         }
         let output = layouts.swap_remove(self.output);
         let addresses = inputs
@@ -129,7 +152,7 @@ impl Graph {
             .enumerate()
             .map(|(i, input)| {
                 // Adding/removing singleton axes without expanding elements
-                // still has a linear address (and no broadcast cache policy).
+                // still has a linear address.
                 if input.shape == output.shape
                     || (dependencies[self.output] & (1 << i) != 0
                         && input.elements == output.elements)
@@ -240,25 +263,68 @@ mod tests {
     }
 
     #[test]
-    fn materialization_distinguishes_expansion_from_singleton_reshaping() {
-        for (left, right, steps) in [
-            (vec![2, 1], vec![1, 2], [2, 2]),
-            (vec![2, 1], vec![2, 2], [2, 1]),
-            (vec![2, 2], vec![1, 2], [1, 2]),
-            (vec![], vec![2, 2], [1, 1]),
-            (vec![1, 1], vec![2, 2], [1, 1]),
-            (vec![2], vec![1, 2], [1, 1]),
-            (vec![2, 1], vec![1, 2, 1], [1, 1]),
-            (vec![0, 1], vec![1, 2], [1, 1]),
+    fn original_depth_rejects_live_stages_before_numeric_simplification() {
+        for scalar in [
+            Node::Constant(0f64.to_bits()),
+            Node::Integer(1f64.to_bits()),
+            Node::Boolean(true),
+            Node::RuntimeScalar(0, true),
         ] {
-            let plan = graph().indexing(&[&left, &right]).unwrap();
-            let actual: Vec<_> = plan
-                .addresses
-                .iter()
-                .map(Address::materialization_steps)
-                .collect();
-            assert_eq!(actual, steps, "{left:?}, {right:?}");
+            let mut g = graph();
+            g.nodes = vec![Node::Input(0), Node::Input(1), scalar, Node::Mul(0, 2)];
+            g.output = 3;
+            assert!(g.indexing(&[&[2, 1], &[1, 3]]).is_ok());
+            for second in [Node::Add(3, 2), Node::Sub(3, 3), Node::Neg(3)] {
+                g.nodes.truncate(4);
+                g.nodes.push(second);
+                g.output = 4;
+                // Includes unused input 1, linear singleton reshapes, and empties.
+                for shapes in [
+                    (&[2, 1][..], &[1, 3][..]),
+                    (&[2][..], &[1, 2][..]),
+                    (&[0][..], &[1, 0][..]),
+                ] {
+                    assert!(g.indexing(&[shapes.0, shapes.1]).is_err());
+                }
+                assert!(g.indexing(&[&[2], &[2]]).is_ok());
+            }
         }
+    }
+
+    #[test]
+    fn relu_preserves_depth_and_only_live_transcendentals_restrict_admission() {
+        let mut g = graph();
+        g.nodes = vec![
+            Node::Input(0),
+            Node::Input(1),
+            Node::Relu(0),
+            Node::Relu(1),
+            Node::Mul(2, 3),
+            Node::Relu(4),
+        ];
+        g.output = 5;
+        assert!(g.indexing(&[&[2, 1], &[1, 3]]).is_ok());
+        for op in [Node::Add(2, 3), Node::Sub(2, 3), Node::Neg(2)] {
+            g.nodes[4] = op;
+            assert!(g.indexing(&[&[2, 1], &[1, 3]]).is_ok());
+        }
+        for op in [Node::Sin(0), Node::Cos(0)] {
+            g.nodes[2] = op;
+            assert!(g.indexing(&[&[2, 1], &[1, 3]]).is_err());
+            assert!(g.indexing(&[&[2], &[2]]).is_ok());
+            g.output = 3; // All arithmetic and sin/cos are dead; ReLU(y) is live.
+            assert!(g.indexing(&[&[2, 1], &[1, 3]]).is_ok());
+            g.output = 5;
+        }
+        g.nodes[4] = Node::Add(0, 1);
+        g.output = 3;
+        assert!(
+            g.indexing(&[&[2], &[3]])
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("incompatible")
+        );
     }
 
     #[test]

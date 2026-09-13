@@ -27,10 +27,8 @@ result = torch.compile(pointwise)(x, y)
 ## Supported programs
 
 The function must have one or two positional exact native CUDA float32 Tensor
-inputs, on the same device, with contiguous storage. Tensor expressions use
-trailing-dimension broadcasting: dimensions must match or one must be singleton,
-including scalar tensors, leading/interior singleton dimensions and empty outputs. The
-language supports local intermediate variables, reused expressions, binary
+inputs, on the same device, with contiguous storage. Equal-shape inputs support
+local intermediate variables, reused expressions, binary
 add/subtract/multiply (tensor/tensor or tensor/scalar in either order), and
 unary negation/ReLU/sin/cos. Operator syntax, positional Tensor methods, and
 positional native top-level functions are accepted. Exact bool/int/float
@@ -48,6 +46,18 @@ are bounded to 4096 nodes and 16384 bytecode instructions. Return one computed T
 Scalars and empty tensor shapes and contiguous views with storage offsets are
 supported. Outputs have fresh storage and canonical contiguous strides;
 inputs are unchanged. Returning an input unchanged is outside this subset.
+
+Unequal input shapes additionally require the returned expression to have at most
+one arithmetic stage and no live sin/cos. Input and scalar nodes start at depth
+zero; add/subtract/multiply add one to the maximum operand depth, tensor negation
+adds one, and ReLU preserves depth. Scalar sign metadata adds no tensor operation.
+This rule applies to the original typed expression before simplification, even
+when one input is unused or singleton-only reshaping yields linear addresses.
+Broadcast dimensions must match or one must be singleton, including scalar
+tensors, leading/interior singleton dimensions and empty outputs. For example,
+`(x.relu() - y.relu()).relu()` and `x * scale` are supported; `x * scale + scale`,
+`x*y + (x+1.0)*(x+1.0)` and live sin/cos are rejected with unequal input shapes.
+Equal-shape support retains the full pointwise language above.
 
 Strided inputs, other dtypes, gradients (even inside no-grad),
 mutation, control flow, containers, helper calls, module calls, keyword operator
@@ -74,7 +84,11 @@ constructs typed SSA nodes with float32 tensor values and scalar kinds.
 `pointwise_ir.rs` independently validates node topology; `pointwise_lowering.rs` canonicalizes expressions and emits CUDA
 C from operator rules, retaining intermediates.
 `pointwise_indexing.rs` checks every expression's broadcast shape and size before
-numerical rewriting, including dead expressions. It derives the returned shape
+numerical rewriting, including dead expressions. The same Rust admission check
+enforces the unequal-shape arithmetic-depth boundary during compilation and direct
+cached-kernel execution, before NVRTC, output allocation or launch. Only live
+returned nodes determine numerical capability; dead expressions still receive
+full graph and shape validation. It derives the returned shape
 and each live input's address from row-major coordinates; unused inputs do not
 expand the result. Singleton axes contribute no address increment. The same
 generated kernel fuses all supported pointwise operations.
@@ -84,11 +98,12 @@ is involved.
 
 The [numerical contract](compile-pointwise-numerics.md) explains expression
 rewriting, FMA selection, constant precision, signed zeros and libdevice rounding.
-Broadcast arithmetic has unresolved finite cancellation and IEEE failures,
-including fresh large shapes and persistent shape transitions. Default Inductor
-also varies contraction choices across timing-selected configurations. See the
-[review blocker](diagnostics/compile-pointwise-broadcast/review-autotune-blocker.md);
-general broadcast numerical parity is not established.
+The unequal-shape boundary excludes competing arithmetic contractions. The earlier
+broad candidate had finite cancellation and IEEE failures, including fresh large
+shapes and persistent shape transitions; default Inductor also varies contraction
+choices across timing-selected configurations. The [historical review
+record](diagnostics/compile-pointwise-broadcast/review-autotune-blocker.md)
+preserves these failures. They are excluded expressions, not numerical repairs.
 
 ## Cache behavior
 
@@ -127,7 +142,9 @@ resetting the reference.
 
 A changed shape creates a graph cache entry. Same-shape inputs reuse linear-load
 code for the same expression and device; broadcasts specialize address formulas
-to the input shapes and recheck those formulas before allocation or launch.
+to the input shapes and recheck numerical admission and those formulas before
+allocation or launch. Equal-shape modules cannot bypass unequal-shape admission
+through direct execution with matching linear address maps.
 Failed admission,
 compilation or execution does not consume a cache slot. `recompile_limit`
 retains the existing default of eight metadata/binding specializations.
@@ -155,11 +172,15 @@ records the local commands, failures and generated-kernel evidence.
 The [broadcast regressions](../tests/test_compile_pointwise_broadcast.py) add
 independently generated ranks, singleton patterns and expression graphs, both
 operand orders, empty/scalar/offset inputs and cache/lifetime checks.
+The [bounded primitive tests](../tests/test_compile_pointwise_broadcast_primitives.py)
+keep both frameworks' wrappers alive across IEEE inputs and shape changes;
+[admission regressions](../tests/test_compile_pointwise_broadcast_priority.py)
+check original-IR rejection through compilation and direct kernel execution.
 Their [validation record](diagnostics/compile-pointwise-broadcast/README.md)
-includes the full compiler sweep and clean baseline/candidate measurements.
-The [broadcast FMA repair](diagnostics/compile-pointwise-broadcast/review-broadcast-order.md)
-records subsequent regression checks; the validation record includes refreshed
-clean candidate captures from `c1f2d38` after that repair.
+retains historical full compiler sweeps and clean measurements of the broad
+candidate, including its failures. New clean measurements of the narrowed
+candidate and main are deferred to Burner's post-commit evidence phase; the old
+broadcast scores do not describe the narrowed domain.
 
 The unchanged [public-default compiler gates](torch-compile-default-evaluator.md)
 remain the scoring authority with all 112 coverage and 56 CUDA performance

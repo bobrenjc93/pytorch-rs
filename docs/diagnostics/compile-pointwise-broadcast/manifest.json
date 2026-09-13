@@ -1,7 +1,7 @@
 {
   "README.md": {
-    "bytes": 8524,
-    "sha256": "0c2a44837f3ffe178b71e072f1a8f4e91f3783a3c6936ac5dc720e8ca0617eb2"
+    "bytes": 12333,
+    "sha256": "5711368e9ea06b972d2911e9a88b2bc879f2d99573b76d8a799457eec0a98d0d"
   },
   "baseline-coverage.json.gz": {
     "bytes": 45723,
@@ -10,6 +10,26 @@
   "baseline-cuda-perf.json.gz": {
     "bytes": 32912,
     "sha256": "9ed2180be38910802d5d28a3c6f6164a6fb32c806c6119289a02a9259f38771c"
+  },
+  "bounded-kernel.cu": {
+    "bytes": 599,
+    "sha256": "84b7100a52ba3cc4f9f3c3de9f09065cbe42db336e10c114223f2451fb06c813"
+  },
+  "bounded-kernel.ptx.gz": {
+    "bytes": 726,
+    "sha256": "376ec9e505e5cca19e7cf800c08d5d29d3085bbfa3d3c01e32dbeb3b0b40cc72"
+  },
+  "bounded-provenance.json": {
+    "bytes": 10083,
+    "sha256": "421c69091eea4ed5a852d529a96e74eda2fafdce13e1bc56f833e69736c2f84e"
+  },
+  "bounded-source-manifest.json.gz": {
+    "bytes": 6030,
+    "sha256": "d1732061442d9c36dc0fa3a5f21fc3de15e93867d3eb0593d4854bcb091fcabf"
+  },
+  "bounded-validation.json.gz": {
+    "bytes": 113768,
+    "sha256": "2a13593b5e3a9f997adbd9d0cdddc63341f10f48d27454825f6b1d1eaa0b07dd"
   },
   "candidate-coverage.json.gz": {
     "bytes": 46466,
@@ -22,6 +42,10 @@
   "capture.py": {
     "bytes": 3691,
     "sha256": "06a160ba9071465b5eae5b3c9472b092f3d68d2c62680df250c371c4939176d4"
+  },
+  "capture_bounded.py": {
+    "bytes": 4996,
+    "sha256": "c908e60fb207a2ea89613865db85f9e3c514804c32e31265f2690a52a037f3f0"
   },
   "gates-receipt.json": {
     "bytes": 12951,

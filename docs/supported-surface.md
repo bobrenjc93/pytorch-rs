@@ -2,7 +2,12 @@
 
 Ordinary default `torch_rs.compile(fn)` supports the [native fused CUDA float32
 pointwise subset](compile-pointwise-jit.md): broadcast-compatible contiguous no-grad
-inputs, add/subtract/multiply, negation/ReLU/sin/cos and scalar constants.
+inputs and scalar constants. Equal-shape inputs support add/subtract/multiply and
+negation/ReLU/sin/cos. Unequal input shapes require at most one arithmetic stage
+and no live sin/cos in the returned original expression; ReLU preserves depth,
+while tensor negation adds a stage. This includes unused inputs and unequal
+shapes with linear address maps. Multi-stage broadcast expressions are rejected
+before compilation or execution because numerical equivalence is not established.
 CPU lowering, strided inputs, control flow and training remain unsupported by
 this JIT; explicit eager capture retains its separate contract.
 

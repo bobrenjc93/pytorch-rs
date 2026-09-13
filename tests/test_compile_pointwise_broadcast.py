@@ -16,11 +16,12 @@ from test_compile_pointwise_jit import (
 
 class Metadata(unittest.TestCase):
     def test_codegen_uses_metadata_coordinates_and_keeps_numeric_lowering(self):
-        graph = lower(program('def f(x, y):\n return x * 1.137 - y.cos()'), 2)
+        graph = lower(program('def f(x, y):\n return x.relu() - y.relu()'), 2)
         source = bridge._pointwise_source(graph.nodes, graph.output, 2, ((3, 1), (2, 1, 5)))
         self.assertIn('x0[((i / 5ull) % 3ull) * 1ull]', source)
         self.assertIn('x1[((i / 15ull) % 2ull) * 5ull + ((i / 1ull) % 5ull) * 1ull]', source)
-        self.assertIn('fmaf(', source)
+        self.assertIn('__fsub_rn(', source)
+        self.assertNotIn('fmaf(', source)
         self.assertEqual(source.count('__global__'), 1)
         scalar = bridge._pointwise_source(graph.nodes, graph.output, 2, ((), (2, 3)))
         self.assertIn('x0[0]', scalar)
@@ -53,15 +54,17 @@ class Broadcast(unittest.TestCase):
     def test_generated_graphs_shapes_orders_values_and_offsets(self):
         rng = random.Random(8570123)
         for case in range(10):
-            terms = ['x', 'y']
-            lines = ['def f(x, y):']
-            for step in range(5):
-                left, right = rng.choice(terms), rng.choice(terms + ['0.71327', '-1.137'])
-                expression = (f'{left}.{rng.choice(["sin", "cos", "relu", "neg"])}()'
-                              if step % 3 == 0 else f'{left} {rng.choice(["+", "-", "*"])} {right}')
-                lines.append(f' v{step} = {expression}')
-                terms.append(f'v{step}')
-            lines.append(' return (v4 + x) - y * 0.137')
+            # Generate arbitrary ReLU placements around exactly one arithmetic
+            # stage. Dead multi-stage/transcendental nodes still validate shapes.
+            lines = ['def f(x, y):', ' dead = (x + y).sin() * 1.137']
+            terms = []
+            for name in ('x', 'y'):
+                expression = name + '.relu()' * rng.randrange(4)
+                lines.append(f' {name}r = {expression}')
+                terms.append(f'{name}r')
+            rng.shuffle(terms)
+            expression = f'({terms[0]} {rng.choice(["+", "-", "*"])} {terms[1]})'
+            lines.append(' return ' + expression + '.relu()' * rng.randrange(4))
             source = '\n'.join(lines)
             fn, ref_fn = program(source), program(source, self.torch)
             compiled, reference = native.compile(fn), self.torch.compile(ref_fn)
@@ -101,7 +104,7 @@ class Broadcast(unittest.TestCase):
             self.torch.compiler.reset()
 
     def test_shape_guards_rebindings_warm_execution_and_module_lifetime(self):
-        source = 'def f(x, y):\n return fw.sin(x) * scale - y'
+        source = 'def f(x, y):\n return fw.relu(x) * scale'
         fn = program(source, scale=0.713)
         ref_fn = program(source, self.torch, scale=0.713)
         compiled, reference = native.compile(fn), self.torch.compile(ref_fn)
@@ -115,18 +118,20 @@ class Broadcast(unittest.TestCase):
         with patch.object(frontend, 'lower', side_effect=AssertionError('warm lowering')), \
              patch.object(bridge, '_pointwise_compile', side_effect=AssertionError('warm compile')):
             self.compare(self.without_replay(fn, compiled, (x, y)), reference(tx, ty))
+        guarded = native.compile(program('def f(x, y):\n return x - y'))
+        guarded(x, y)
         with self.assertRaisesRegex(RuntimeError, 'indexing guard'):
-            old.run((y, x))
+            kernel(guarded).run((y, x))
         fn.__globals__['fw'] = object()
         with self.assertRaises(NotImplementedError):
             compiled(x, y)
         fn.__globals__['fw'] = native
         native.compiler.reset()
         self.assertFalse(cache(compiled).graphs)
-        self.compare(old.run((x, y)), tx.sin() * 0.713 - ty)
+        self.compare(old.run((x, y)), tx.relu() * 0.713)
         del compiled, old, x, y
         gc.collect()
-        self.compare(first, tx.sin() * 0.713 - ty)
+        self.compare(first, tx.relu() * 0.713)
 
     def test_dead_expressions_unused_inputs_repetition_and_zero_tensor_shape(self):
         for source in ('def f(x, y):\n dead = x + y\n return -x',
@@ -141,7 +146,11 @@ class Broadcast(unittest.TestCase):
                 args = [self.upload([0.] * math.prod(s), s) for s in shapes]
                 refs = [self.upload([0.] * math.prod(s), s, self.torch) for s in shapes]
                 with self.subTest(source=source, shapes=shapes):
-                    self.compare(compiled(*args), reference(*refs), exact=True)
+                    if source.endswith(('x + y * 0', '(x + y) - (x + y)', '-(x * y)')):
+                        with self.assertRaisesRegex(NotImplementedError, 'one arithmetic stage'):
+                            compiled(*args)
+                    else:
+                        self.compare(compiled(*args), reference(*refs), exact=True)
         fn = program('def f(x, y):\n return x * 1.137 - y * 1.137')
         x = self.upload([1., -0., 3.], (3, 1))
         tx = self.upload([1., -0., 3.], (3, 1), self.torch)
@@ -165,15 +174,22 @@ class Broadcast(unittest.TestCase):
 
     def test_ieee_broadcast_contraction(self):
         values = [0., -0., float('inf'), -float('inf'), float('nan'), 2e38, -2e38, 1e-38, -1e-38, 1.0000001192092896]
-        for expression in ('x * 2.0 - y * 2.0', 'y * 2.0 - x * 2.0', '-(x * y)',
-                           '(x * y).relu()', 'x.sin() - y.cos()', '(x + y) - (x + y)'):
+        for expression in ('x + y', 'x - y', 'y - x', 'x * y', '-x', '-y',
+                           '(x * y).relu()', 'x * 2.0 - y * 2.0',
+                           'y * 2.0 - x * 2.0', '-(x * y)',
+                           'x.sin() - y.cos()', '(x + y) - (x + y)'):
             source = 'def f(x, y):\n return ' + expression
             compiled, reference = native.compile(program(source)), self.torch.compile(program(source, self.torch))
             for shapes in [((len(values), 1), (1, len(values))), ((1, len(values)), (len(values), 1))]:
                 args = [self.upload(values, s) for s in shapes]
                 refs = [self.upload(values, s, self.torch) for s in shapes]
                 with self.subTest(expression=expression, shapes=shapes):
-                    self.compare(compiled(*args), reference(*refs))
+                    if expression in ('x * 2.0 - y * 2.0', 'y * 2.0 - x * 2.0',
+                                      '-(x * y)', 'x.sin() - y.cos()', '(x + y) - (x + y)'):
+                        with self.assertRaisesRegex(NotImplementedError, 'one arithmetic stage'):
+                            compiled(*args)
+                    else:
+                        self.compare(compiled(*args), reference(*refs))
 
     def test_failures_before_nvrtc_and_retry(self):
         x = self.upload([1., 2., 3.], (3,))
@@ -200,7 +216,7 @@ class Broadcast(unittest.TestCase):
     @unittest.skipUnless(two_device_reservation(), 'requires explicit reservation of two CUDA devices')
     def test_device_restoration_on_compile_run_failure_and_module_release(self):
         torch = self.torch
-        compiled = native.compile(program('def f(x, y):\n return x.sin() - y'))
+        compiled = native.compile(program('def f(x, y):\n return x.relu() - y'))
         x, y = self.upload([1., 2., 3.], (3, 1)), self.upload([0.1, 0.2], (2,))
         with torch.cuda.device(1):
             result = compiled(x, y)
