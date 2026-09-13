@@ -182,6 +182,7 @@ class Admission(unittest.TestCase):
             with self.subTest(kind=type(value).__name__), self.assertRaises(NotImplementedError) as caught:
                 compiled(value)
             message = str(caught.exception)
+            self.assertTrue(message.startswith('torch.compile():'), message)
             self.assertIn('default backend', message)
             self.assertIn('docs/compile-pointwise-jit.md', message)
             self.assertNotIn("only backend='eager'", message)
