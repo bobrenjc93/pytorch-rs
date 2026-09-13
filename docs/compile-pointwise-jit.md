@@ -26,19 +26,6 @@ result = torch.compile(pointwise)(x, y)
 
 ## Supported programs
 
-The positional-scalar extension and shared specialization fix have
-[clean-commit measurements](diagnostics/compile-pointwise-positional/postcommit-779e512c/README.md)
-and passing persistent default-Inductor regressions for the formerly failing
-signed-zero shape histories. The
-[validation record](diagnostics/compile-pointwise-positional/README.md) preserves
-those failures alongside revision checks. Burner's independent review and exact-head
-qualification remain pending. This bounded surface does not establish
-general Inductor parity.
-
-The subsequent [NaN-guard and capture-consumer repairs](diagnostics/compile-pointwise-positional/operator-review-fix/README.md)
-now have clean-commit measurements at `779e512c`, including all three dispatched
-module captures. Earlier failures and development records remain preserved.
-
 The function accepts one or two exact native CUDA float32 Tensor inputs on the
 same device with contiguous storage, plus exact built-in `float` and `bool`
 arguments in any positional slots. For equal-shaped tensors:
@@ -211,6 +198,13 @@ restores the caller's device on compilation, execution and module destruction.
 Wrapper locks serialize cache publication and reset.
 
 ## Validation and campaign evidence
+
+The [positional binding evidence index](diagnostics/compile-pointwise-positional/README.md)
+links the clean `779e512c` measurements against main `a281503f`, 16 passing focused
+regressions and three dispatched-module captures. It separates earlier clean
+snapshots, retained signed-zero and NaN-guard failures, and development-only
+repair checks. These bounded regressions and fixed-corpus measurements do not
+establish general Inductor parity.
 
 [Independent regression tests](../tests/test_compile_pointwise_jit.py) cover
 hardware-free admission/codegen, generated expression trees against default
