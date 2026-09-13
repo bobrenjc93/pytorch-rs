@@ -57,7 +57,7 @@ documented in [review-zero-boundaries.md](review-zero-boundaries.md) and its
 [receipt](postcommit-42959e/postcommit.json) and
 [logs](postcommit-42959e/postcommit-logs.json.gz) remain directly accessible.
 These reports predate the rejection-message clarification in `74602c07`;
-the current evidence index links the fresh capture of that revision.
+the subsequent `74602c07` capture is linked below.
 
 ## Initial implementation
 
@@ -81,3 +81,13 @@ original build or raw observations after cleanup. Checked-in reports, manifests,
 generated code and compressed logs are the durable record. Consolidation does
 not recreate missing temporary artifacts, relabel a failed measurement, or
 replace independent review and merge qualification.
+
+## Public compile error-prefix compatibility
+
+The clean `74602c07` [coverage](postcommit-74602c/candidate-coverage.json.gz),
+[performance](postcommit-74602c/candidate-cuda-perf.json.gz),
+[receipt](postcommit-74602c/postcommit.json) and
+[logs](postcommit-74602c/postcommit-logs.json.gz) predate the prefix restoration.
+They remain unchanged. [Repair validation](review-error-prefix.md) preserves the
+original failure and distinguishes the implementation repair from the subsequent
+regression assertion and fresh `08e37fe5` capture linked by the current index.

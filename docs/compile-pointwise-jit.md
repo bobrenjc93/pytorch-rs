@@ -192,10 +192,8 @@ remain the scoring authority with all 112 coverage and 56 CUDA performance
 cells. These focused tests do not change their denominator. Unsupported
 categories remain zero. The [post-commit evidence](diagnostics/compile-pointwise-jit/README.md)
 records fresh clean-commit coverage, CUDA-performance and generated-code captures
-for `74602c07`, including clarified default-backend rejection messages and the
-preceding numerical/cache repairs, alongside the unchanged source-bound baseline
+for `08e37fe5`, including public error-prefix compatibility and its regression
+assertion, alongside the unchanged source-bound baseline
 and original failures.
-This capture predates the [error-prefix compatibility repair](diagnostics/compile-pointwise-jit/review-error-prefix.md);
-fresh campaign capture awaits Burner's next clean implementation commit.
 [Repair validation](diagnostics/compile-pointwise-jit/review-zero-boundaries.md) records
 the development checks separately from these clean campaign measurements.
