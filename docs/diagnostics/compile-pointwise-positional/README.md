@@ -6,9 +6,9 @@ Evidence for the bounded native CUDA pointwise compiler. Start with the
 [original-IR numerical admission](../../compile-pointwise-numerics.md).
 Fixed-corpus scores do not establish general Inductor parity.
 
-The warm-dispatch repair has [development evidence](warm-dispatch/README.md).
-Its clean candidate/main refresh and balanced H100 comparison are required after
-Burner commits the correction. The clean measurements below predate this code change.
+The [clean warm-dispatch record](postcommit-ab6a3acd/README.md) includes refreshed
+fixed gates and captures. Its balanced H100 comparison is blocked by the committed
+diagnostic's missing native synchronization API; all 16 attempts are retained.
 
 ## Clean measurements
 
@@ -18,12 +18,15 @@ credit; documentation changes do not change their attribution.
 
 | Record | Scope and result |
 | --- | --- |
-| **Latest: [779e512c](postcommit-779e512c/README.md)** | Candidate and actual main `a281503f`; full unchanged coverage/CUDA gates, three dispatched-module captures and 16 passing focused tests, including the former signed-zero failures, NaN histories and diagnostic consumers. |
+| **Latest: [ab6a3acd](postcommit-ab6a3acd/README.md)** | Clean candidate/actual-main gates, three dispatched-module captures and 36 passing focused tests; retains the failed 16-leg warm-dispatch comparison. |
+| [779e512c](postcommit-779e512c/README.md) | Candidate and actual main `a281503f`; full unchanged coverage/CUDA gates, three dispatched-module captures and 16 passing focused tests, including the former signed-zero failures, NaN histories and diagnostic consumers. |
 | [7a74596b](postcommit-7a74596b/README.md) | Earlier clean shared-cache revision; 12 persistent tests pass, before the NaN-guard and diagnostic-consumer repairs. |
 | [4ed105f5](postcommit-4ed105f5/README.md) | Original clean positional extension; preserves all 18 failing signed-zero subtests and its original CUDA/PTX capture. |
 
-The latest positional [CUDA](kernel.cu), [PTX](kernel.ptx.gz),
-[source manifest](source-manifest.json.gz) and [provenance](provenance.json) come
+The latest positional [CUDA](postcommit-ab6a3acd/positional-codegen/kernel.cu),
+[PTX](postcommit-ab6a3acd/positional-codegen/kernel.ptx.gz),
+[source manifest](postcommit-ab6a3acd/positional-codegen/source-manifest.json.gz) and
+[provenance](postcommit-ab6a3acd/positional-codegen/provenance.json) come
 from the independent non-corpus [capture](capture.py). Its final call revisits an
 earlier scalar after promotion and verifies that the dispatched executor differs
 from both the first static module and the last inserted Boolean specialization.
@@ -140,6 +143,6 @@ checks on GPUs 0 and 1. Installed nvcc was 12.6; generated kernels used NVRTC 13
 
 For later NaN-guard and diagnostic-consumer development checks, commands, build
 identities and captures, see the [operator repair record](operator-review-fix/README.md).
-For clean reproduction, use the [latest measured record](postcommit-779e512c/README.md#reproduce).
+For clean reproduction, use the [latest measured record](postcommit-ab6a3acd/README.md#reproduction-and-provenance).
 Burner's independent review and unchanged full evaluation gates remain separate
 from these focused diagnostics.

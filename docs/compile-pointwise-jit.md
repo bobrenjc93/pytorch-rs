@@ -200,9 +200,10 @@ Wrapper locks serialize cache publication and reset.
 ## Validation and campaign evidence
 
 The [positional binding evidence index](diagnostics/compile-pointwise-positional/README.md)
-links the clean `779e512c` measurements against main `a281503f`, 16 passing focused
-regressions and three dispatched-module captures. It separates earlier clean
-snapshots, retained signed-zero and NaN-guard failures, and development-only
+links the clean `ab6a3acd` fixed measurements against main `a281503f`, 36 passing
+focused regressions and three dispatched-module captures. The separate balanced
+warm-dispatch comparison retains its diagnostic API failure. The index separates
+earlier clean snapshots, retained signed-zero and NaN-guard failures, and development-only
 repair checks. These bounded regressions and fixed-corpus measurements do not
 establish general Inductor parity.
 

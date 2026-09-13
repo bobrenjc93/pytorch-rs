@@ -87,9 +87,11 @@ These mocked CPU reductions neither prove the cause of the CUDA regression nor
 qualify the corrected implementation.
 
 The [GPU consumer](gpu-dispatch.py) provides clean-build recording, one public
-native/reference leg, and verification of all 16 ordered legs. It has only had
-syntax and CLI smoke checks in this revision; no hardware timings were run.
-Reproduction commands are part of the plan below. Each leg retains all cold,
+native/reference leg, and verification of all 16 ordered legs. Its
+[first clean hardware execution](../postcommit-ab6a3acd/README.md#balanced-comparison-blocker)
+retains all 16 legs: reference legs completed, while every native history failed
+before timing at the missing `torch_rs.cuda.synchronize()` API.
+Reproduction commands are part of the plan below. Successful legs retain all cold,
 warmup and sample observations, with numerical comparison deferred until the
 separate-process pair is available. The verifier compares every output; an
 unverified leg is not a correctness result. Verification records every input
@@ -103,9 +105,11 @@ No-replay evidence comes from the separate unchanged CPU diagnostic and compiler
 regressions; timing traversals are not instrumented with a profiler.
 
 The [balanced hardware plan](measurement-plan.md) fixes the clean-wheel comparison
-before any new hardware timing. Corrected clean-commit timings and refreshed
-current-candidate captures await Burner's commit/evidence phase; the preserved
-`779e512c` measurements remain attributed to that earlier source.
+before any new hardware timing. The
+[clean `ab6a3acd` record](../postcommit-ab6a3acd/README.md) refreshes the fixed
+gates and captures and retains the failed comparison. A committed diagnostic
+repair is required before the bounded hardware comparison can complete; the
+preserved `779e512c` measurements remain attributed to that earlier source.
 
 ## Development validation
 

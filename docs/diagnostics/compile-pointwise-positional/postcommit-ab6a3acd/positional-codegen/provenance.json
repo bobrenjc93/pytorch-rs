@@ -1,0 +1,247 @@
+{
+  "kind": "non-scoring positional binding dispatched-module evidence",
+  "started_utc": "2026-09-13T14:16:07.102010+00:00",
+  "finished_utc": "2026-09-13T14:16:07.818983+00:00",
+  "commit": "ab6a3acd82c681d6e02ad56f4458decb1384ae42",
+  "status": "",
+  "source_manifest_sha256": "d03dcac4cb175893dc3f0ecca68643d779005aab2a922318d0aa0342b0d1f9a3",
+  "wheel": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/default-compile-eval/wheels.Q1lj5b/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+  "wheel_sha256": "552bd67424809b81685f5c8a866f56c83a2e9ead016729d2f08a11f0a228bb40",
+  "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/uv-python/cpython-3.12.12-linux-x86_64-gnu/bin/python3.12",
+  "executable_sha256": "e674e17d8c28be2ebb880557392dd830f041dd723ac2402a84d51a9a75a97e47",
+  "native_extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/default-compile-eval/venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+  "native_sha256": "6f9d5af7d9d8755fa0baae76a3ec96b1d7079177e0b573b0f4293ab46b3d3c6e",
+  "pytorch_distribution": "2.13.0",
+  "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)\nbinary: rustc\ncommit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234\ncommit-date: 2025-12-08\nhost: x86_64-unknown-linux-gnu\nrelease: 1.92.0\nLLVM version: 21.1.3",
+  "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0",
+  "nvrtc_version": [
+    13,
+    0
+  ],
+  "options": [
+    "--gpu-architecture=compute_90",
+    "--fmad=true",
+    "--ftz=false",
+    "--prec-div=true",
+    "--prec-sqrt=true"
+  ],
+  "runtime": [
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/default-compile-eval/venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+      "version": 13000,
+      "sha256": "96c42e418cec19054186b9429c321603cc190bf26a18104e19408117a2a817b0"
+    }
+  ],
+  "visible_devices": "0",
+  "device": 0,
+  "gpu_before": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 4 MiB",
+  "gpu_after": "index, uuid, name, driver_version, utilization.gpu [%], memory.used [MiB]\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 580.82.07, 0 %, 559 MiB\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 580.82.07, 0 %, 4 MiB\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 580.82.07, 0 %, 4 MiB",
+  "observations": [
+    {
+      "scale": 0.375,
+      "enabled": false,
+      "shape": [
+        2,
+        17
+      ],
+      "offset": 0,
+      "output": [
+        [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.01171875,
+          0.0234375,
+          0.03515625,
+          0.046875,
+          0.05859375,
+          0.0703125,
+          0.08203125,
+          0.09375,
+          0.10546875,
+          0.1171875,
+          0.12890625,
+          0.140625,
+          0.15234375,
+          0.1640625,
+          0.17578125,
+          0.1875,
+          0.19921875
+        ]
+      ],
+      "source_sha256": "411e0b4f68521bb5034f930f5a148657b37d77450735a62afabd792b3a69ff80",
+      "ptx_sha256": "084bde3342b7a2be825da6eafbd7dac08a5f51fc5c858750cd58d41557f623bb"
+    },
+    {
+      "scale": -0.75,
+      "enabled": false,
+      "shape": [
+        2,
+        17
+      ],
+      "offset": 1,
+      "output": [
+        [
+          0.3515625,
+          0.328125,
+          0.3046875,
+          0.28125,
+          0.2578125,
+          0.234375,
+          0.2109375,
+          0.1875,
+          0.1640625,
+          0.140625,
+          0.1171875,
+          0.09375,
+          0.0703125,
+          0.046875,
+          0.0234375,
+          -0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "source_sha256": "eaa0f2ddcf94f6d90beb79d6a7a2a235f66bd58909bf407735945e3e6fcf8117",
+      "ptx_sha256": "3863e304ca4021e5336b37bcf09c20e1e7c84e23731844a85c8b2c422f48e1f5"
+    },
+    {
+      "scale": 0.375,
+      "enabled": true,
+      "shape": [
+        2,
+        17
+      ],
+      "offset": 0,
+      "output": [
+        [
+          0.0625,
+          0.05859375,
+          0.0546875,
+          0.05078125,
+          0.046875,
+          0.04296875,
+          0.0390625,
+          0.03515625,
+          0.03125,
+          0.02734375,
+          0.0234375,
+          0.01953125,
+          0.015625,
+          0.01171875,
+          0.0078125,
+          0.00390625,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "source_sha256": "1c8078a74dedb7586077b7abdc164bd240d912355287810656871264971e0121",
+      "ptx_sha256": "6eec4e4c22a524160192dbaab462b631c8aa2a3a44adb009f5ef4c7430298aad"
+    },
+    {
+      "scale": 0.375,
+      "enabled": false,
+      "shape": [
+        2,
+        17
+      ],
+      "offset": 1,
+      "output": [
+        [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.01171875
+        ],
+        [
+          0.0234375,
+          0.03515625,
+          0.046875,
+          0.05859375,
+          0.0703125,
+          0.08203125,
+          0.09375,
+          0.10546875,
+          0.1171875,
+          0.12890625,
+          0.140625,
+          0.15234375,
+          0.1640625,
+          0.17578125,
+          0.1875,
+          0.19921875,
+          0.2109375
+        ]
+      ],
+      "source_sha256": "eaa0f2ddcf94f6d90beb79d6a7a2a235f66bd58909bf407735945e3e6fcf8117",
+      "ptx_sha256": "3863e304ca4021e5336b37bcf09c20e1e7c84e23731844a85c8b2c422f48e1f5"
+    }
+  ],
+  "captured_observation": 3
+}
