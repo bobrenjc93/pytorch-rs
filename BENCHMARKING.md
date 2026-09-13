@@ -47,6 +47,10 @@ versioned CPU/CUDA program corpus. Both are executable commands checked into
 available one for actual CUDA testing. Legacy 100 scores from the eager/custom-
 backend coverage gate or private CUDA kernel are not comparable to these gates.
 
+The [native default CUDA pointwise JIT](docs/compile-pointwise-jit.md) has
+independent generated semantic/codegen tests. Those tests are implementation
+regressions; only the unchanged full gates establish corpus scores.
+
 ## Historical release timing reports
 
 These reports are historical release evidence snapshots: they record the code,

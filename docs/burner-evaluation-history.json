@@ -33,11 +33,11 @@
       "color": "#2589bd"
     },
     "eval_a61c0e71": {
-      "name": "torch.compile program coverage parity",
+      "name": "Default torch.compile program coverage",
       "color": "#5b8c36"
     },
     "eval_6f98c42d": {
-      "name": "torch.compile CUDA performance parity",
+      "name": "Default torch.compile CUDA performance",
       "color": "#9c6644"
     },
     "eval_d4c0b71e": {
@@ -11444,6 +11444,46 @@
         "eval_6f98c42d": 100,
         "eval_d4c0b71e": 97,
         "eval_b7f2a91c": 5.6
+      }
+    },
+    {
+      "key": "base:76738b39fd6884ffd43b4dff2f5292257a1c6e6b",
+      "commit": "76738b39fd6884ffd43b4dff2f5292257a1c6e6b",
+      "recordedAt": "2026-09-13T03:34:52.560Z",
+      "label": "base 76738b3",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 90,
+        "eval_8417a4a8": 23,
+        "eval_63a24994": 60,
+        "eval_39340456": 25,
+        "eval_b4945d15": 79,
+        "eval_c8a1bfb9": 64,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 83,
+        "eval_b7f2a91c": 5.5
+      }
+    },
+    {
+      "key": "pr:1990",
+      "recordedAt": "2026-09-13T03:34:52.560Z",
+      "label": "PR #1990",
+      "kind": "leaf",
+      "prNumber": 1990,
+      "title": "Compile general CUDA pointwise graphs through the default backend",
+      "scores": {
+        "eval_7af648fb": 90,
+        "eval_8417a4a8": 23.3,
+        "eval_63a24994": 60,
+        "eval_39340456": 26,
+        "eval_b4945d15": 79,
+        "eval_c8a1bfb9": 66,
+        "eval_a61c0e71": 6,
+        "eval_6f98c42d": 12,
+        "eval_d4c0b71e": 83,
+        "eval_b7f2a91c": 5.5
       }
     }
   ]

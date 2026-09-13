@@ -1,0 +1,235 @@
+{
+  "schema": 1,
+  "source_commit": "ed6ad9eaaea17ee500f5464183c00984115e7fb3",
+  "archive": {
+    "path": "history.tar.gz",
+    "size": 757690,
+    "sha256": "97d13cba98fd8a83be34e90722614c72fb692598f692bd4a36be0090420fa625"
+  },
+  "files": {
+    "postcommit-0c836a/candidate-coverage.json.gz": {
+      "size": 47834,
+      "sha256": "ad8db336cbbccd3afa08c2dbb9b25be1956f076c4e9762aa35fbff2baceb23e2"
+    },
+    "postcommit-0c836a/candidate-cuda-perf.json.gz": {
+      "size": 33291,
+      "sha256": "28e19bfa31c9196d8f68014cd5314bf7bf361a7730b972eddc64e91eb51aa0e2"
+    },
+    "postcommit-0c836a/kernel.cu": {
+      "size": 759,
+      "sha256": "2bd144a59f3f472f829e7bbd8a728d0bdf156b9a9ca80f50c9c73dac2d43d6dc"
+    },
+    "postcommit-0c836a/kernel.ptx.gz": {
+      "size": 2525,
+      "sha256": "67ae986ef972defd9d3259d7e4764ba0d9384d6e758e75e37a739c90d5f23242"
+    },
+    "postcommit-0c836a/postcommit-logs.json.gz": {
+      "size": 8118,
+      "sha256": "1b005f1cd15f9fe5b37881208200ea10829bed8f04f24dff5f0bca798e64fa03"
+    },
+    "postcommit-0c836a/postcommit.json": {
+      "size": 18347,
+      "sha256": "1398be318369f074a723ec3f804ba6cc5a770d0615b94fb4b4ed1e3804106f03"
+    },
+    "postcommit-0c836a/provenance.json": {
+      "size": 5624,
+      "sha256": "9bd6d8ffad895db93e9645916e0c4a1868aec2c1c79059f753936eb1cfd80594"
+    },
+    "postcommit-0c836a/source-manifest.json.gz": {
+      "size": 5911,
+      "sha256": "3f829e93de32da898aa80155d774e6bc661de22c5111916089a9187c371e953b"
+    },
+    "postcommit-40a57b/candidate-coverage.json.gz": {
+      "size": 47831,
+      "sha256": "c840c1609669e62b2cfdc82e7921956669785de451ecf92014add578ae61d062"
+    },
+    "postcommit-40a57b/candidate-cuda-perf.json.gz": {
+      "size": 33391,
+      "sha256": "24a6659004c5ed7e824a65047d4dfc20d40d6c248876b3f094e4c8afe34411ec"
+    },
+    "postcommit-40a57b/kernel.cu": {
+      "size": 763,
+      "sha256": "f49da1364c02cc13c1dc3a4f1fc651a5d437ac71cabe4ac0f2f1378cef213064"
+    },
+    "postcommit-40a57b/kernel.ptx.gz": {
+      "size": 2525,
+      "sha256": "67ae986ef972defd9d3259d7e4764ba0d9384d6e758e75e37a739c90d5f23242"
+    },
+    "postcommit-40a57b/postcommit-logs.json.gz": {
+      "size": 12324,
+      "sha256": "61df7fe8c814504ee53316a4b2005bc789b3b3f6903cc19e5d97df41372ced73"
+    },
+    "postcommit-40a57b/postcommit.json": {
+      "size": 19789,
+      "sha256": "c5527d0f034afedeef04911dd4f7749a8c865304776d81a057f26655201c0cc8"
+    },
+    "postcommit-40a57b/provenance.json": {
+      "size": 5624,
+      "sha256": "79e78251dd3d699749df41a29542359e7cbb9338e0acd7ebf01e64b8575e124a"
+    },
+    "postcommit-40a57b/source-manifest.json.gz": {
+      "size": 5909,
+      "sha256": "1e0dfb1d6757400a978b3812da734f3b8d4c87efb1be03d2c400e83a0c19d9c4"
+    },
+    "postcommit-53c100/candidate-coverage.json.gz": {
+      "size": 47907,
+      "sha256": "4040eb382d3870d9c087dac33c282c3ccd5f189d2ef5a47cb5d5872f6eb0e0b8"
+    },
+    "postcommit-53c100/candidate-cuda-perf.json.gz": {
+      "size": 33384,
+      "sha256": "a848af1d4fd011016f9ea682980efaaf1bd21670ac7150d8cac31e82991c107f"
+    },
+    "postcommit-53c100/kernel.cu": {
+      "size": 759,
+      "sha256": "2bd144a59f3f472f829e7bbd8a728d0bdf156b9a9ca80f50c9c73dac2d43d6dc"
+    },
+    "postcommit-53c100/kernel.ptx.gz": {
+      "size": 2525,
+      "sha256": "67ae986ef972defd9d3259d7e4764ba0d9384d6e758e75e37a739c90d5f23242"
+    },
+    "postcommit-53c100/postcommit-logs.json.gz": {
+      "size": 7688,
+      "sha256": "990efc0b3e550372b88b2b7284b3eb01906853e788c7f9c457dfc49db87e05fb"
+    },
+    "postcommit-53c100/postcommit.json": {
+      "size": 15763,
+      "sha256": "192d45ff244fcee1f357b7d5833b2c97a906951463d9a865a9e5096077401e40"
+    },
+    "postcommit-53c100/provenance.json": {
+      "size": 5624,
+      "sha256": "814ce82180eb6b478e1db5730e8cc4e1a031b9f1a035226a1860839b5d1c715c"
+    },
+    "postcommit-53c100/source-manifest.json.gz": {
+      "size": 5908,
+      "sha256": "9e9ec12bcc97920157901798d8ae4bdc77819b2e39f61d31e2a089199958fc0c"
+    },
+    "postcommit-5fc75c/candidate-coverage.json.gz": {
+      "size": 47707,
+      "sha256": "23fce85d8dd54de1b3fa484780a83266df9e107f054822b2e2c60d5a3a218d90"
+    },
+    "postcommit-5fc75c/candidate-cuda-perf.json.gz": {
+      "size": 33323,
+      "sha256": "eb61336193c34e75c3093f75b723694b09cc07943057f0b19e843706c05a3ccc"
+    },
+    "postcommit-5fc75c/kernel.cu": {
+      "size": 859,
+      "sha256": "75907bb5087f81e847b8690c02ab137e0fe49554572497bbade8da6adefc50fd"
+    },
+    "postcommit-5fc75c/kernel.ptx.gz": {
+      "size": 2622,
+      "sha256": "05f09228a0721c3d8412c1ec4794f4fd833172c2b00abc3e1e7912c0fbe18436"
+    },
+    "postcommit-5fc75c/postcommit-logs.json.gz": {
+      "size": 13746,
+      "sha256": "b292eeb83b845aa12336e819879252eeb1494bf3c14dee26a268a422479e3a79"
+    },
+    "postcommit-5fc75c/postcommit.json": {
+      "size": 23948,
+      "sha256": "dd1206ac350e63875390af55408b1b8a707f82aeb1972713b952e3f53ff05277"
+    },
+    "postcommit-5fc75c/provenance.json": {
+      "size": 5624,
+      "sha256": "b1a367284ea6f170178ea4d2c5e916701901fe1064dcc01ceb33649b003f54c2"
+    },
+    "postcommit-5fc75c/source-manifest.json.gz": {
+      "size": 5908,
+      "sha256": "ee35aebfc83329627b08e6ebb155bb471bd2469a6a0d2b03f3db946cff1f8160"
+    },
+    "postcommit-60abd/candidate-coverage.json.gz": {
+      "size": 47914,
+      "sha256": "c18acc8ff3eab79166758b6d4ed36257b93e39c9f2fea9e5a293757881550985"
+    },
+    "postcommit-60abd/candidate-cuda-perf.json.gz": {
+      "size": 33160,
+      "sha256": "f19d5310f8d07cd0d65e2b412d8015d69ea847e2934e1492d9efe77ffc9ef0c8"
+    },
+    "postcommit-60abd/kernel.cu": {
+      "size": 735,
+      "sha256": "ed7b5bf3c6d3aee5168880df33de40a9a36bcd7778320a1a28c04b38f35570cd"
+    },
+    "postcommit-60abd/kernel.ptx.gz": {
+      "size": 2525,
+      "sha256": "b622cda451d36340a80cef5bcdf4958707e34b1c7d6440ef57ac6b53858380f0"
+    },
+    "postcommit-60abd/postcommit-logs.json.gz": {
+      "size": 7504,
+      "sha256": "03a6a4d2bcb330977d4b9d1434add956a4e6537f367531f4fa9eb0e436745ecc"
+    },
+    "postcommit-60abd/postcommit.json": {
+      "size": 13658,
+      "sha256": "2158c7e61e7bee96d70c45251b14101b2825816f4e1b86a490c5103b06161d8c"
+    },
+    "postcommit-60abd/provenance.json": {
+      "size": 5624,
+      "sha256": "3de49c5bf8c6ca3b4ccb98b45d7b4601e7e3be28d99e7c14382c8d1c8486ddd2"
+    },
+    "postcommit-60abd/source-manifest.json.gz": {
+      "size": 5856,
+      "sha256": "c620390c6414827919d8d02f94587dfd435d4175fbe30eff12e1c44e734c147d"
+    },
+    "postcommit-dbd1a0/candidate-coverage.json.gz": {
+      "size": 47735,
+      "sha256": "36674517775530fe8c46996cde7a5848985a72a05d31c5cb444fb30489846f43"
+    },
+    "postcommit-dbd1a0/candidate-cuda-perf.json.gz": {
+      "size": 33277,
+      "sha256": "8de0c50ccdc9b3972f069e72af48181f265ed93ee777bbae8e99b664306acb87"
+    },
+    "postcommit-dbd1a0/kernel.cu": {
+      "size": 759,
+      "sha256": "2bd144a59f3f472f829e7bbd8a728d0bdf156b9a9ca80f50c9c73dac2d43d6dc"
+    },
+    "postcommit-dbd1a0/kernel.ptx.gz": {
+      "size": 2525,
+      "sha256": "67ae986ef972defd9d3259d7e4764ba0d9384d6e758e75e37a739c90d5f23242"
+    },
+    "postcommit-dbd1a0/postcommit-logs.json.gz": {
+      "size": 8004,
+      "sha256": "749e72b3026d80893d4e85e089f86b381191972b454fe02266f786ecd9229033"
+    },
+    "postcommit-dbd1a0/postcommit.json": {
+      "size": 16945,
+      "sha256": "5a61eb6fae4f3783035b382f2edb1230d89e6d57bb15f568d2a0be1da9ae77a2"
+    },
+    "postcommit-dbd1a0/provenance.json": {
+      "size": 5624,
+      "sha256": "721eb16ed33031652d07e73b8f34e11a9036b458d31b170a76093b3965628c58"
+    },
+    "postcommit-dbd1a0/source-manifest.json.gz": {
+      "size": 5910,
+      "sha256": "37659aeb3d0a7f43a301a7bc2648aba1511e3537d30e01fba1e4d9e268b6f430"
+    },
+    "postcommit-f745c4/candidate-coverage.json.gz": {
+      "size": 47708,
+      "sha256": "cd68b0a9e3a069d303598702fe36415a3b6c8c613c4272a9a846802415e6a94b"
+    },
+    "postcommit-f745c4/candidate-cuda-perf.json.gz": {
+      "size": 33309,
+      "sha256": "11f1bddbbade79b3d50f89c3057a78fdda4188834ce489a88aa96b337d86e0f4"
+    },
+    "postcommit-f745c4/kernel.cu": {
+      "size": 859,
+      "sha256": "75907bb5087f81e847b8690c02ab137e0fe49554572497bbade8da6adefc50fd"
+    },
+    "postcommit-f745c4/kernel.ptx.gz": {
+      "size": 2622,
+      "sha256": "05f09228a0721c3d8412c1ec4794f4fd833172c2b00abc3e1e7912c0fbe18436"
+    },
+    "postcommit-f745c4/postcommit-logs.json.gz": {
+      "size": 13582,
+      "sha256": "6e9bd4571afdc2a2d94847dce7a60a69e5d4a0cf97a025f5d2b30867da94d91c"
+    },
+    "postcommit-f745c4/postcommit.json": {
+      "size": 22677,
+      "sha256": "2edfb87d0d26823b55e712843c930d566b21d37e15befc0ac5ff842e8292d6cf"
+    },
+    "postcommit-f745c4/provenance.json": {
+      "size": 5624,
+      "sha256": "fb679d54af1796adf546c2faacb96c1e9c409c8006f9ed4fe2deffa2d9e6e371"
+    },
+    "postcommit-f745c4/source-manifest.json.gz": {
+      "size": 5909,
+      "sha256": "fdb95477f4592582dcd4ac205d394fd16d23fe002efdf1ca6b034e8b7e5659c8"
+    }
+  }
+}

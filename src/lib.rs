@@ -12,6 +12,8 @@ mod dtype;
 mod grad_mode;
 mod memory_format;
 mod parallel;
+#[cfg(any(feature = "python-bindings", test))]
+mod pointwise_ir;
 // Python API docstrings intentionally contain Python examples and are tested
 // through the Python suite. They are private Rust implementation modules, so
 // omit them while rustdoc is collecting Rust doctests.
