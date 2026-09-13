@@ -35,6 +35,12 @@ def verify(directory):
     return manifest
 
 
+def verify_all(directory):
+    """Verify both required historical collections; a missing one is an error."""
+    directory = Path(directory)
+    return [verify(directory), verify(directory / "history-later")]
+
+
 if __name__ == "__main__":
-    result = verify(Path(__file__).resolve().parent)
-    print(f"Verified {len(result['files'])} unchanged evidence files from {result['source_commit']}")
+    for result in verify_all(Path(__file__).resolve().parent):
+        print(f"Verified {len(result['files'])} unchanged evidence files from {result['source_commit']}")

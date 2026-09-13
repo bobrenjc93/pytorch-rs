@@ -74,7 +74,7 @@ The [baseline](baseline.json.gz) remains unchanged. The
 [evidence archive](archive.md) catalogs earlier captures, repair validations
 and original failures at their actual source/build identities. The preceding
 `08e37fe5` captures remain intact and receive no current-candidate performance
-credit. The [libdevice repair](review-libdevice-order.md) preserves original
+credit in the verified archive. The [libdevice repair](review-libdevice-order.md) preserves original
 failures and development checks. Additional
 [operator observations](operator-libdevice-compositions.json.gz) preserve the
 32-program check, build attestation, reproduction script and original regression

@@ -4,6 +4,8 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -38,6 +40,25 @@ class EvidenceArchive(unittest.TestCase):
         manifest = ARCHIVE.verify(EVIDENCE)
         self.assertEqual(manifest["source_commit"], "ed6ad9eaaea17ee500f5464183c00984115e7fb3")
         self.assertEqual(len(manifest["files"]), 56)
+
+    def test_committed_later_archive(self):
+        manifest = ARCHIVE.verify(EVIDENCE / "history-later")
+        self.assertEqual(manifest["source_commit"], "91fd9524fb15a8d46e7c165dd3c87de763826921")
+        self.assertEqual(len(manifest["files"]), 56)
+
+    def test_default_command_verifies_both_archives(self):
+        result = subprocess.run([sys.executable, str(EVIDENCE / "verify_archive.py")],
+                                capture_output=True, text=True, check=True)
+        self.assertEqual(len(result.stdout.splitlines()), 2)
+        self.assertIn("56 unchanged evidence files from ed6ad9eaaea17ee500f5464183c00984115e7fb3", result.stdout)
+        self.assertIn("56 unchanged evidence files from 91fd9524fb15a8d46e7c165dd3c87de763826921", result.stdout)
+
+    def test_collection_requires_later_archive(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            self.fixture(directory)
+            with self.assertRaises(FileNotFoundError):
+                ARCHIVE.verify_all(directory)
 
     def test_archive_corruption_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:

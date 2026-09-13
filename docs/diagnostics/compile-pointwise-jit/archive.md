@@ -1,106 +1,84 @@
 # Pointwise compiler evidence archive
 
-Start at the [current evidence index](README.md) for the supported contract,
-latest measurements and reproduction commands. This page is the historical
-record, not another compiler guide or a current performance claim.
+The [current evidence index](README.md) owns the latest results and reproduction
+commands. Baseline and current reports remain directly accessible there.
+Superseded captures and development records are consolidated below, with their
+original paths, bytes, failures and measured source identities intact.
 
-Seven superseded clean captures are consolidated in the checked-in
-[history.tar.gz](history.tar.gz). The [manifest](history-manifest.json) lists
-each original relative path, byte count and SHA-256, plus the archive hash.
-Every member is byte-for-byte identical to its file in source commit
-`ed6ad9eaaea17ee500f5464183c00984115e7fb3`, verified before consolidation.
-The original gzip payloads, failures, measured commits and provenance are
-unchanged. No evidence was moved to an external service or dropped.
+## Collections
 
-## Read an archived capture
+| Collection | Original files | Stored from commit | Manifest |
+| --- | ---: | --- | --- |
+| [Early captures](history.tar.gz) | 56 | `ed6ad9ea` | [Paths and hashes](history-manifest.json) |
+| [Later captures and repair history](history-later/history.tar.gz) | 56 | `91fd9524` | [Paths and hashes](history-later/history-manifest.json) |
 
-From the repository root, verify the archive without extracting or executing
-any member (Python standard library only):
+“Stored from” identifies the checkout whose files were archived, not the source
+measured by each report. The manifests pin each member's size and SHA-256 and
+the container's hash. All members were compared byte-for-byte with their source
+commit before the duplicate checkout copies were removed. The early archive
+and manifest themselves are unchanged.
+
+## Verify and read
+
+From the repository root, verify **both** collections using only the Python
+standard library. Missing collections, corrupt data, duplicate paths and unsafe
+archive members fail verification. Nothing is extracted or executed.
 
 ```bash
 python3 docs/diagnostics/compile-pointwise-jit/verify_archive.py
 ```
 
-Use a prefix from the table below to read a report directly, for example:
+Use a manifest's original relative path to read a member. For example, inspect a
+repair narrative or decode an earlier complete coverage report:
 
 ```bash
+tar -xOf docs/diagnostics/compile-pointwise-jit/history-later/history.tar.gz \
+  review-product-priority.md
 tar -xOf docs/diagnostics/compile-pointwise-jit/history.tar.gz \
   postcommit-5fc75c/candidate-coverage.json.gz | gzip -dc
 ```
 
-Each prefix contains the same eight original files: `candidate-coverage.json.gz`,
-`candidate-cuda-perf.json.gz`, `postcommit.json`, `postcommit-logs.json.gz`,
-`kernel.cu`, `kernel.ptx.gz`, `provenance.json` and `source-manifest.json.gz`.
-The archive preserves these logical paths; they are no longer separate checkout
-directories. Git history also retains their original locations.
+Archived Markdown retains its original relative links as historical provenance;
+use the manifests to locate those members. Git history also retains every
+original checkout path.
 
-| Measured clean source | Archive prefix | Development record for that repair |
+## Clean-capture map
+
+Each prefix contains coverage and CUDA-performance reports, a receipt, logs,
+generated CUDA/PTX, provenance and a source manifest. “Root” means no prefix
+inside that archive.
+
+| Measured source | Collection | Prefix |
 | --- | --- | --- |
-| `60abd863` | `postcommit-60abd/` | [First review](review-fixes.md), [bundle](review-fixes.json.gz) |
-| `53c10058` | `postcommit-53c100/` | [Second review](review-round2.md), [bundle](review-round2.json.gz) |
-| `dbd1a0f6` | `postcommit-dbd1a0/` | [Third review](review-round3.md), [bundle](review-round3.json.gz) |
-| `0c836a49` | `postcommit-0c836a/` | [Composed constants](review-constant-tensors.md), [bundle](review-constant-tensors.json.gz) |
-| `40a57b36` | `postcommit-40a57b/` | [Precision and zero origins](review-folding.md), [bundle](review-folding.json.gz) |
-| `f745c45c` | `postcommit-f745c4/` | [Shared products, sine and scalar histories](review-boundaries.md), [bundle](review-boundaries.json.gz) |
-| `5fc75c41` | `postcommit-5fc75c/` | [Globals, zero guards and constant unary precision](review-static-guards.md), [bundle](review-static-guards.json.gz) |
+| `5b93c983` | Later | Root |
+| `60abd863` | Early | `postcommit-60abd/` |
+| `53c10058` | Early | `postcommit-53c100/` |
+| `dbd1a0f6` | Early | `postcommit-dbd1a0/` |
+| `0c836a49` | Early | `postcommit-0c836a/` |
+| `40a57b36` | Early | `postcommit-40a57b/` |
+| `f745c45c` | Early | `postcommit-f745c4/` |
+| `5fc75c41` | Early | `postcommit-5fc75c/` |
+| `42959e14` | Later | `postcommit-42959e/` |
+| `74602c07` | Later | `postcommit-74602c/` |
+| `08e37fe5` | Later | `postcommit-08e37f/` |
 
-These historical captures scored 6/12 on the frozen weighted coverage/CUDA
-performance gates. Their timings belong only to their recorded source and build
-identities. The development records preserve original and intermediate failing
-cases, numerical probes and repair checks; dirty-source runs remain unscored.
+These captures predate the current libdevice-order repair. Their timings and
+scores belong only to their recorded revisions and builds; none is credited as
+a measurement of the current candidate.
 
-The later scalar-zero contraction, nonfinite binding and offset-cache repair is
-documented in [review-zero-boundaries.md](review-zero-boundaries.md) and its
-[bundle](review-zero-boundaries.json.gz). Its clean `42959e14`
-[coverage](postcommit-42959e/candidate-coverage.json.gz),
-[performance](postcommit-42959e/candidate-cuda-perf.json.gz),
-[receipt](postcommit-42959e/postcommit.json) and
-[logs](postcommit-42959e/postcommit-logs.json.gz) remain directly accessible.
-These reports predate the rejection-message clarification in `74602c07`;
-the subsequent `74602c07` capture is linked below.
+## Development records
 
-## Initial implementation
+The later collection also preserves the initial diagnostic, validation
+inventory, logs and IEEE probes, plus the ten earlier `review-*.md` narratives
+and their matching JSON bundles. They retain original/intermediate failures,
+dirty-source checks and repair histories; development diagnostics are not scores.
 
-The initial clean `5b93c983` capture predates every review repair and remains
-directly accessible for comparison:
+The [latest repair narrative](review-libdevice-order.md),
+[repair bundle](review-libdevice-order.json.gz) and
+[independent operator observations](operator-libdevice-compositions.json.gz)
+remain directly accessible alongside the current capture.
 
-- [Coverage](candidate-coverage.json.gz), [CUDA performance](candidate-cuda-perf.json.gz),
-  [receipt](postcommit.json), and [logs](postcommit-logs.json.gz).
-- [Generated CUDA](kernel.cu), [PTX](kernel.ptx.gz),
-  [provenance](provenance.json), and [source manifest](source-manifest.json.gz).
-- The [original development diagnostic](candidate-diagnostic.json.gz),
-  [author inventory](validation.json), [logs](logs.json.gz), and
-  [IEEE probes](initial-ieee-probes.json.gz) retain initial observations,
-  failures and repairs at their original source identities. These development
-  diagnostics are not scores.
-
-## Retention limits
-
-Temporary worktree paths recorded inside captures may no longer contain the
-original build or raw observations after cleanup. Checked-in reports, manifests,
-generated code and compressed logs are the durable record. Consolidation does
-not recreate missing temporary artifacts, relabel a failed measurement, or
-replace independent review and merge qualification.
-
-## Public compile error-prefix compatibility
-
-The clean `74602c07` [coverage](postcommit-74602c/candidate-coverage.json.gz),
-[performance](postcommit-74602c/candidate-cuda-perf.json.gz),
-[receipt](postcommit-74602c/postcommit.json) and
-[logs](postcommit-74602c/postcommit-logs.json.gz) predate the prefix restoration.
-They remain unchanged. [Repair validation](review-error-prefix.md) preserves the
-original failure and distinguishes the implementation repair from the subsequent
-regression assertion and fresh `08e37fe5` capture linked below.
-
-
-## Before product-contraction repairs
-
-The clean `08e37fe5` [coverage](postcommit-08e37f/candidate-coverage.json.gz),
-[performance](postcommit-08e37f/candidate-cuda-perf.json.gz),
-[receipt](postcommit-08e37f/postcommit.json),
-[logs](postcommit-08e37f/postcommit-logs.json.gz) and
-[generated-code provenance](postcommit-08e37f/provenance.json) predate the
-product-contraction and libdevice-order repairs. All remain byte-identical.
-Their 6/12 weighted coverage/performance scores and common-success ratio
-1.9202617174174663 describe that measured revision only. The current
-[evidence index](README.md) links the fresh committed repair capture.
+Temporary wheel, interpreter and raw-observation paths recorded inside old
+reports may disappear during worktree cleanup. The checked-in artifacts are the
+durable record. Archive verification proves preservation; it does not rerun
+historical tests or replace independent review and merge qualification.
