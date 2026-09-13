@@ -200,12 +200,12 @@ Wrapper locks serialize cache publication and reset.
 ## Validation and campaign evidence
 
 The [positional binding evidence index](diagnostics/compile-pointwise-positional/README.md)
-links the clean `ab6a3acd` fixed measurements against main `a281503f`, 36 passing
-focused regressions and three dispatched-module captures. The separate balanced
-warm-dispatch comparison retains its diagnostic API failure. The index separates
-earlier clean snapshots, retained signed-zero and NaN-guard failures, and development-only
-repair checks. These bounded regressions and fixed-corpus measurements do not
-establish general Inductor parity.
+links the clean `7dd1a811` fixed measurements against main `a281503f`, 37 passing
+focused regressions and three dispatched-module captures. The separate 16-leg
+v2 warm-dispatch comparison passes all 56 paired histories. The index preserves
+earlier clean snapshots, the failed v1 comparison, signed-zero and NaN-guard
+failures, and development-only repair checks. These bounded regressions and
+fixed-corpus measurements do not establish general Inductor parity.
 
 [Independent regression tests](../tests/test_compile_pointwise_jit.py) cover
 hardware-free admission/codegen, generated expression trees against default

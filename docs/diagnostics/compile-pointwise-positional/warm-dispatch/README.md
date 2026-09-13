@@ -106,10 +106,10 @@ regressions; timing traversals are not instrumented with a profiler.
 
 The [balanced hardware plan](measurement-plan.md) fixes the clean-wheel comparison
 before any new hardware timing. The
-[clean `ab6a3acd` record](../postcommit-ab6a3acd/README.md) refreshes the fixed
-gates and captures and retains the failed v1 comparison. The v2 synchronization
-repair below is ready for a clean 16-leg rerun after Burner commits it. Existing
-clean measurements keep their original source and harness attribution.
+[clean `7dd1a811` record](../postcommit-7dd1a811/README.md) completes all 16 v2
+legs and refreshes the fixed gates and captures. It preserves every planned
+round and sample; earlier measurements keep their original source and harness
+attribution, including the failed v1 comparison.
 
 ## Synchronization repair
 
@@ -130,9 +130,9 @@ native/reference processes: 168 traversals and 336 barriers per process, with
 execution and correctness; its instrumented timings are not performance evidence.
 
 The [failed clean v1 record](../postcommit-ab6a3acd/README.md#balanced-comparison-blocker)
-remains byte-identical. A new clean, source-bound execution of all 16 v2 legs is
-still required through Burner's post-commit evidence phase. Do not reuse the v1
-reference legs or attribute these dirty-tooling smoke results to a clean commit.
+remains byte-identical. The [clean v2 comparison](../postcommit-7dd1a811/README.md#balanced-h100-comparison)
+uses new source-bound builds and reference legs and passes all 56 paired
+histories. These earlier dirty-tooling smoke results retain their own attribution.
 
 ## Development validation
 

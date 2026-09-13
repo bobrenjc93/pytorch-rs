@@ -1,0 +1,859 @@
+{
+  "started": 1789311026.130036,
+  "commit": "7dd1a811bfbc8936a3f9bf25fade6f71c9a25af3",
+  "checks": [
+    {
+      "historical_entries_unchanged": 132,
+      "tracked_changes": [
+        "docs/compile-pointwise-jit.md",
+        "docs/diagnostics/compile-pointwise-positional/README.md",
+        "docs/diagnostics/compile-pointwise-positional/manifest.json",
+        "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+        "docs/diagnostics/compile-pointwise-positional/warm-dispatch/manifest.json"
+      ],
+      "production_and_corpus_unchanged": true
+    },
+    {
+      "affected_and_inbound_links": [
+        {
+          "from": "docs/compile-pointwise-jit.md",
+          "link": "#supported-programs"
+        },
+        {
+          "from": "docs/compile-pointwise-jit.md",
+          "link": "#runtime-requirements"
+        },
+        {
+          "from": "docs/compile-pointwise-jit.md",
+          "link": "#cache-behavior"
+        },
+        {
+          "from": "docs/compile-pointwise-jit.md",
+          "link": "#compiler-pipeline"
+        },
+        {
+          "from": "docs/compile-pointwise-jit.md",
+          "link": "compile-pointwise-numerics.md"
+        },
+        {
+          "from": "docs/compile-pointwise-jit.md",
+          "link": "compile-pointwise-numerics.md"
+        },
+        {
+          "from": "docs/compile-pointwise-jit.md",
+          "link": "diagnostics/compile-pointwise-broadcast/review-autotune-blocker.md"
+        },
+        {
+          "from": "docs/compile-pointwise-jit.md",
+          "link": "diagnostics/compile-pointwise-positional/README.md"
+        },
+        {
+          "from": "docs/compile-pointwise-jit.md",
+          "link": "diagnostics/compile-pointwise-positional/README.md"
+        },
+        {
+          "from": "docs/compile-pointwise-jit.md",
+          "link": "../tests/test_compile_pointwise_jit.py"
+        },
+        {
+          "from": "docs/compile-pointwise-jit.md",
+          "link": "diagnostics/compile-pointwise-jit/README.md"
+        },
+        {
+          "from": "docs/compile-pointwise-jit.md",
+          "link": "../tests/test_compile_pointwise_broadcast.py"
+        },
+        {
+          "from": "docs/compile-pointwise-jit.md",
+          "link": "../tests/test_compile_pointwise_broadcast_primitives.py"
+        },
+        {
+          "from": "docs/compile-pointwise-jit.md",
+          "link": "../tests/test_compile_pointwise_broadcast_priority.py"
+        },
+        {
+          "from": "docs/compile-pointwise-jit.md",
+          "link": "diagnostics/compile-pointwise-broadcast/README.md"
+        },
+        {
+          "from": "docs/compile-pointwise-jit.md",
+          "link": "torch-compile-default-evaluator.md"
+        },
+        {
+          "from": "docs/compile-pointwise-jit.md",
+          "link": "diagnostics/compile-pointwise-jit/README.md"
+        },
+        {
+          "from": "docs/compile-pointwise-jit.md",
+          "link": "diagnostics/compile-pointwise-jit/review-libdevice-order.md"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "../../compile-pointwise-jit.md#supported-programs"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "../../compile-pointwise-jit.md#cache-behavior"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "../../compile-pointwise-numerics.md"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "postcommit-7dd1a811/README.md"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "postcommit-ab6a3acd/README.md#balanced-comparison-blocker"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "postcommit-7dd1a811/README.md"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "postcommit-ab6a3acd/README.md"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "postcommit-779e512c/README.md"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "postcommit-7a74596b/README.md"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "postcommit-4ed105f5/README.md"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "postcommit-7dd1a811/positional-codegen/kernel.cu"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "postcommit-7dd1a811/positional-codegen/kernel.ptx.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "postcommit-7dd1a811/positional-codegen/source-manifest.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "postcommit-7dd1a811/positional-codegen/provenance.json"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "capture.py"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "zero-shape-probe.py"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "zero-shape-probe.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "main-capture-shape-probe.py"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "main-capture-shape-probe.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "shape-guard-inspect.py"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "shape-guards.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "../../../tests/test_compile_pointwise_runtime_scalars.py"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "operator-review-fix/README.md"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "operator-review-fix/review-native-nan-guard-repro.py"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "operator-review-fix/validation.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "../../compile-pointwise-jit.md#cache-behavior"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "review-fix-validation.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "review-fix-dispatched/kernel.cu"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "review-fix-dispatched/kernel.ptx.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "review-fix-dispatched/provenance.json"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "review-fix-dispatched/source-manifest.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "reference-probe.py"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "reference-probe.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "../../../tests/test_compile_pointwise_scalar_admission.py"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "../../../tests/test_compile_pointwise_runtime_scalars.py"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "main-coverage.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "main-cuda-perf.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "validation.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "operator-review-fix/README.md"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/README.md",
+          "link": "postcommit-7dd1a811/README.md#reproduction-and-provenance"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "../../../compile-pointwise-jit.md#cache-behavior"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "original/manifest.json"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "original/scalar-dispatch-profile-design.md"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "original/scalar-dispatch-profile-review.md"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "original/profile-scalar-dispatch.py"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "original/scalar-dispatch-profile-result.json"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "original/scalar-dispatch-profile-execution.json"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "profile-dispatch-v2.py"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "cpu-v2-result.json"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "cpu-v2-execution.json"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "cpu-v2-source-snapshot.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "cpu-v2-final-result.json"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "cpu-v2-final-execution.json"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "cpu-v2-final-source-snapshot.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "gpu-dispatch.py"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "../postcommit-ab6a3acd/README.md#balanced-comparison-blocker"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "measurement-plan.md"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "../postcommit-7dd1a811/README.md"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "sync-repair-validation.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "../postcommit-ab6a3acd/README.md#balanced-comparison-blocker"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "../postcommit-7dd1a811/README.md#balanced-h100-comparison"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/warm-dispatch/README.md",
+          "link": "validation.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "main.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "candidate.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "candidate.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "main.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "../warm-dispatch/measurement-plan.md"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "comparison/build-B.json"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "comparison/build-C.json"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "comparison/verification.json"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "comparison/summary.json"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "../warm-dispatch/README.md"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "../postcommit-ab6a3acd/README.md#balanced-comparison-blocker"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "positional-codegen/kernel.cu"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "positional-codegen/kernel.ptx.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "positional-codegen/provenance.json"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "positional-codegen/source-manifest.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "bounded-codegen/kernel.cu"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "bounded-codegen/kernel.ptx.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "bounded-codegen/provenance.json"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "jit-codegen/kernel.cu"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "jit-codegen/kernel.ptx.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "jit-codegen/provenance.json"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "verification.json"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-7dd1a811/README.md",
+          "link": "logs.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-4ed105f5/README.md",
+          "link": "../postcommit-7a74596b/README.md"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-4ed105f5/README.md",
+          "link": "main.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-4ed105f5/README.md",
+          "link": "candidate.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-4ed105f5/README.md",
+          "link": "codegen/provenance.json"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-4ed105f5/README.md",
+          "link": "../capture.py"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-4ed105f5/README.md",
+          "link": "codegen/kernel.cu"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-4ed105f5/README.md",
+          "link": "codegen/kernel.ptx.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-4ed105f5/README.md",
+          "link": "codegen/source-manifest.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-4ed105f5/README.md",
+          "link": "codegen/provenance.json"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-4ed105f5/README.md",
+          "link": "capture-checks.json"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-4ed105f5/README.md",
+          "link": "logs.json.gz"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-4ed105f5/README.md",
+          "link": "../README.md#retained-pre-fix-failures"
+        },
+        {
+          "from": "docs/diagnostics/compile-pointwise-positional/postcommit-4ed105f5/README.md",
+          "link": "verification.json"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "compile-pointwise-jit.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "../FEATURES.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "../BENCHMARKING.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "../README.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#jit-and-compiler"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "compile-cuda-matmul.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "compile-cuda-add.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#tensors"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#creation"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#metadata-and-views"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#elementwise-and-reductions"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#nn-and-data-helpers"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#elementwise-and-reductions"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#nn-and-data-helpers"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#metadata-and-views"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#backend-and-compiler-metadata"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "cuda-matmul.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "compile-pointwise-jit.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "compile-cuda-add.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#backend-and-compiler-metadata"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#metadata-and-views"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#backend-and-compiler-metadata"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#backend-and-compiler-metadata"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "compile-cuda-add.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "compile-pointwise-jit.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#backend-and-compiler-metadata"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#current-baseline"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#tensors"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#creation"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#metadata-and-views"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#metadata-and-views"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#elementwise-and-reductions"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#metadata-and-views"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#backend-and-compiler-metadata"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#backend-and-compiler-metadata"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#metadata-and-views"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#metadata-and-views"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#elementwise-and-reductions"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#backend-and-compiler-metadata"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#nn-and-data-helpers"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#elementwise-and-reductions"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#nn-and-data-helpers"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#nn-and-data-helpers"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#backend-and-compiler-metadata"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#backend-and-compiler-metadata"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#backend-and-compiler-metadata"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#backend-and-compiler-metadata"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#backend-and-compiler-metadata"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#backend-and-compiler-metadata"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#backend-and-compiler-metadata"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#backend-and-compiler-metadata"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#backend-and-compiler-metadata"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#backend-and-compiler-metadata"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#backend-and-compiler-metadata"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#nn-and-data-helpers"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#nn-and-data-helpers"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#nn-and-data-helpers"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#tensors"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#creation-and-math"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#nn-and-data"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#backends-compiler-and-distributed"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#unsupported-boundaries"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "troubleshooting.md#optional-native-cuda-runtime"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "cuda-contiguous-validation.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "cuda-same-device-copy-validation.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "cuda-add-trailing-vector.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "compile-cuda-add.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "#elementwise-and-reductions"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "cuda-mul-scalar-validation.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "compile-cuda-add.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "cuda-relu.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "cuda-neg-validation.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "compile-cuda-matmul.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "cuda-matmul.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "../tests/test_top_level_column_stack_reference.py"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "../tests/test_top_level_dstack_reference.py"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "cuda-sum-rows.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "cuda-matmul.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "compile-cuda-add.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "compile-cuda-contiguous.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "compile-cuda-t.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "compile-cuda-reshape.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "compile-cuda-squeeze.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "compile-cuda-view.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "compile-pointwise-jit.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "diagnostics/compile-pointwise-positional/README.md#shared-cache-revision"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "compile-cuda-add.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "compile-cuda-sum-rows.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "compile-cuda-add.md"
+        },
+        {
+          "from": "docs/supported-surface.md",
+          "link": "compile-cuda-matmul.md"
+        }
+      ]
+    },
+    "All existing/new evidence manifest relationships verified"
+  ],
+  "documentation_smoke": {
+    "command": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/default-compile-eval/venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_readme_quickstart"
+    ],
+    "returncode": 0,
+    "log_sha256": "0c242f36d10e0e1c4fb4d327b0216b1af50b8505bb09da002cdd85a233434607"
+  },
+  "passed": true,
+  "finished": 1789311026.5857658
+}
