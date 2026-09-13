@@ -86,7 +86,7 @@ current-device restoration, and no body/eager/per-node execution. Actual-shape
 admission includes unused tensors and singleton-only linear maps; scalar slots do
 not restrict one-tensor expressions. Existing large-integer regressions remain.
 
-## Fresh main baseline
+## Pre-implementation main baseline
 
 Before implementation, both unchanged public-default-compile-v2 gates ran from
 clean main `a281503f3391bbd98a0ab6de2ff8f0c0a55a12d4` with source identity
@@ -112,7 +112,8 @@ rejected the managed interpreter download; installed standalone Python 3.12.12
 and 3.14.5 trees were copied read-only into `target/uv-python` instead. Dependency
 resolution remained locked. Rust 1.92.0 and release ABI3 wheels were used.
 GPU tests used H100 GPU 0; restoration tests explicitly selected GPUs 0 and 1.
-NVRTC and runtime identities are recorded in [provenance](provenance.json).
+The original runtime checks remain in the development validation archive; the
+refreshed clean-commit NVRTC/runtime identities are in [provenance](provenance.json).
 The installed `nvcc` is CUDA 12.6; generated code uses NVRTC 13.0 rather than nvcc.
 
 Use the worktree-local interpreter and cache paths from the validation receipt.
@@ -154,7 +155,7 @@ were infrastructure failures. Subsequent numerical failures from the shared
 shape-history cache are also retained; no failure was removed or hidden by a
 reference-only reset. Passing earlier suites does not establish this milestone.
 
-## Dispatched code and post-commit handoff
+## Dispatched code and post-commit evidence
 
 [CUDA source](kernel.cu), [PTX](kernel.ptx.gz),
 [source manifest](source-manifest.json.gz) and [provenance](provenance.json)
@@ -170,9 +171,11 @@ CUDA_VISIBLE_DEVICES=0 .venv/bin/python \
   "$PWD/target/positional-codegen" "$PWD/target/wheels/torch_rs-WHEEL.whl"
 ```
 
-These are uncommitted development captures. Burner owns independent final review,
-commit, clean candidate and actual clean-main coverage/CUDA captures, exact-head
-qualification and publication. Refresh the capture with the final installed
-wheel and both unchanged gates in that post-commit phase. No worker commit,
-publication or candidate scoring claim is made here. Fixed-corpus scores do not
-establish general Inductor parity.
+The module capture now records clean implementation commit
+`4ed105f5aa80b619b874d594f5ec3ae84a1fba13`. The [post-commit record](postcommit-4ed105f5/README.md)
+adds fresh full candidate and actual clean-main coverage/CUDA measurements,
+source/build/wheel verification, and a clean-commit rerun retaining all 18
+shape-history subtest failures. The earlier development validation and historical
+baseline reports above remain unchanged. The milestone is still incomplete.
+Burner owns independent review, artifact commits, exact-head qualification and
+publication. Fixed-corpus scores do not establish general Inductor parity.
