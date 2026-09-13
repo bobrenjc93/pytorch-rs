@@ -1,0 +1,721 @@
+{
+  "diagnosticVersion": "warm-dispatch-gpu-v2",
+  "commandKind": "verify",
+  "startedAt": "2026-09-13T14:40:07.834044+00:00",
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/.venv/bin/python",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/docs/diagnostics/compile-pointwise-positional/warm-dispatch/gpu-dispatch.py",
+    "verify",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-00/report.json.gz",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-01/report.json.gz",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-02/report.json.gz",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-03/report.json.gz",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-04/report.json.gz",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-05/report.json.gz",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-06/report.json.gz",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-07/report.json.gz",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-08/report.json.gz",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-09/report.json.gz",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-10/report.json.gz",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-11/report.json.gz",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-12/report.json.gz",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-13/report.json.gz",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-14/report.json.gz",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-15/report.json.gz",
+    "--output",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/comparison/verification.json"
+  ],
+  "scriptPath": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/docs/diagnostics/compile-pointwise-positional/warm-dispatch/gpu-dispatch.py",
+  "scriptSha256": "de002c8bf7c2c1fc46936b0a7b03273822f362897bdc6f22ea1d4a7b7043c811",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/uv-python/cpython-3.12.12-linux-x86_64-gnu/bin/python3.12",
+  "executableSha256": "e674e17d8c28be2ebb880557392dd830f041dd723ac2402a84d51a9a75a97e47",
+  "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
+  "qualificationOrScoreProduced": false,
+  "passed": true,
+  "reports": [
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-00/report.json.gz",
+      "sha256": "38902833e977bf6368d136a0bbfb161180639340e8a1d4b3d8b45e03275f0d92"
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-01/report.json.gz",
+      "sha256": "f82efb5d353ed07bd7d34de55c0fd815f70d5fd0ead6d8c086a996905f48132d"
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-02/report.json.gz",
+      "sha256": "5c7a8e2a32aa38cebcf4c50825fe776fbed51592f14f85d3beee94ea0aa87512"
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-03/report.json.gz",
+      "sha256": "a05bf4e1e5a0b77e7243f2d935bea775c7d3897110208ecff4c17f62a108441a"
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-04/report.json.gz",
+      "sha256": "732870e02bf8dadcc333acb18eae348dc702095efb6658586242587da9e9b581"
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-05/report.json.gz",
+      "sha256": "9078044a2fb53bdde59d9ee6480e78fcc5ad3e207e786aacddd57007b5cb34fa"
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-06/report.json.gz",
+      "sha256": "099ff9a0a44abd422cd407b9f08f37dbac9b6be32aa20f60ccc03e0808c363b3"
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-07/report.json.gz",
+      "sha256": "4da3b5bfca5a20003cd31d4b79fab795e5189d4bec2bbe60e78fb088d277402e"
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-08/report.json.gz",
+      "sha256": "c23a7d550c6dc02851ca07a5ccbe0636949a2c335d39f209ada287e3275d2350"
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-09/report.json.gz",
+      "sha256": "cfad7d0092e995d1918de9e2352acd1aa060811100e8dc1b7a578b695518ec3a"
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-10/report.json.gz",
+      "sha256": "327048a3db8ef905ea54e1f49e355feed08ea554dd8b50660c52f87ae4388428"
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-11/report.json.gz",
+      "sha256": "a92760a384d664d4f0993064f99632e5a160df5d2e6198d48a15c91ce92bfcf0"
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-12/report.json.gz",
+      "sha256": "9adc6a6272b5d9f63b9d31e38c9a08d0ca0e874a3c7cb5bfb7f352682230e0ee"
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-13/report.json.gz",
+      "sha256": "69ae0168c24fb4b0d22d58712392a0a40655ba291b30459dbdbe47f69542f0e2"
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-14/report.json.gz",
+      "sha256": "e155c10aa40eccd2a3349659195630e607d49dc94f21e180dce70b51013e9fd7"
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/postcommit-7dd1a811/leg-15/report.json.gz",
+      "sha256": "dfa914344c637d6629f76ad40e89da4344164bd37f013c8d8ea1725aaee9b102"
+    }
+  ],
+  "pairs": [
+    {
+      "legIndices": [
+        0,
+        1
+      ],
+      "history": "literal_unary",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 32309.0,
+      "referenceMedianNsPerCall": 46810.0
+    },
+    {
+      "legIndices": [
+        0,
+        1
+      ],
+      "history": "tensor_arithmetic",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 40962.0,
+      "referenceMedianNsPerCall": 48763.0
+    },
+    {
+      "legIndices": [
+        0,
+        1
+      ],
+      "history": "broadcast_add",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 41382.0,
+      "referenceMedianNsPerCall": 63796.0
+    },
+    {
+      "legIndices": [
+        0,
+        1
+      ],
+      "history": "repeated_alias",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 35654.0,
+      "referenceMedianNsPerCall": 56425.0
+    },
+    {
+      "legIndices": [
+        0,
+        1
+      ],
+      "history": "shape_revisit",
+      "outputsCompared": 48,
+      "passed": true,
+      "nativeMedianNsPerCall": 39865.0,
+      "referenceMedianNsPerCall": 48218.0
+    },
+    {
+      "legIndices": [
+        0,
+        1
+      ],
+      "history": "promoted_capture",
+      "outputsCompared": 72,
+      "passed": true,
+      "nativeMedianNsPerCall": 28483.0,
+      "referenceMedianNsPerCall": 46166.333333333336
+    },
+    {
+      "legIndices": [
+        0,
+        1
+      ],
+      "history": "eight_boolean_entries",
+      "outputsCompared": 192,
+      "passed": true,
+      "nativeMedianNsPerCall": 51956.0,
+      "referenceMedianNsPerCall": 37181.25
+    },
+    {
+      "legIndices": [
+        2,
+        3
+      ],
+      "history": "literal_unary",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 30356.0,
+      "referenceMedianNsPerCall": 45599.0
+    },
+    {
+      "legIndices": [
+        2,
+        3
+      ],
+      "history": "tensor_arithmetic",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 36255.0,
+      "referenceMedianNsPerCall": 48314.0
+    },
+    {
+      "legIndices": [
+        2,
+        3
+      ],
+      "history": "broadcast_add",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 35784.0,
+      "referenceMedianNsPerCall": 48313.0
+    },
+    {
+      "legIndices": [
+        2,
+        3
+      ],
+      "history": "repeated_alias",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 33050.0,
+      "referenceMedianNsPerCall": 47892.0
+    },
+    {
+      "legIndices": [
+        2,
+        3
+      ],
+      "history": "shape_revisit",
+      "outputsCompared": 48,
+      "passed": true,
+      "nativeMedianNsPerCall": 35063.0,
+      "referenceMedianNsPerCall": 41888.5
+    },
+    {
+      "legIndices": [
+        2,
+        3
+      ],
+      "history": "promoted_capture",
+      "outputsCompared": 72,
+      "passed": true,
+      "nativeMedianNsPerCall": 26106.333333333332,
+      "referenceMedianNsPerCall": 50757.0
+    },
+    {
+      "legIndices": [
+        2,
+        3
+      ],
+      "history": "eight_boolean_entries",
+      "outputsCompared": 192,
+      "passed": true,
+      "nativeMedianNsPerCall": 29187.875,
+      "referenceMedianNsPerCall": 35006.75
+    },
+    {
+      "legIndices": [
+        4,
+        5
+      ],
+      "history": "literal_unary",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 30506.0,
+      "referenceMedianNsPerCall": 45119.0
+    },
+    {
+      "legIndices": [
+        4,
+        5
+      ],
+      "history": "tensor_arithmetic",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 37858.0,
+      "referenceMedianNsPerCall": 47712.0
+    },
+    {
+      "legIndices": [
+        4,
+        5
+      ],
+      "history": "broadcast_add",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 37957.0,
+      "referenceMedianNsPerCall": 47852.0
+    },
+    {
+      "legIndices": [
+        4,
+        5
+      ],
+      "history": "repeated_alias",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 34302.0,
+      "referenceMedianNsPerCall": 47412.0
+    },
+    {
+      "legIndices": [
+        4,
+        5
+      ],
+      "history": "shape_revisit",
+      "outputsCompared": 48,
+      "passed": true,
+      "nativeMedianNsPerCall": 38167.5,
+      "referenceMedianNsPerCall": 49124.0
+    },
+    {
+      "legIndices": [
+        4,
+        5
+      ],
+      "history": "promoted_capture",
+      "outputsCompared": 72,
+      "passed": true,
+      "nativeMedianNsPerCall": 26366.666666666668,
+      "referenceMedianNsPerCall": 48540.0
+    },
+    {
+      "legIndices": [
+        4,
+        5
+      ],
+      "history": "eight_boolean_entries",
+      "outputsCompared": 192,
+      "passed": true,
+      "nativeMedianNsPerCall": 32744.5,
+      "referenceMedianNsPerCall": 36805.625
+    },
+    {
+      "legIndices": [
+        6,
+        7
+      ],
+      "history": "literal_unary",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 35363.0,
+      "referenceMedianNsPerCall": 44227.0
+    },
+    {
+      "legIndices": [
+        6,
+        7
+      ],
+      "history": "tensor_arithmetic",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 44638.0,
+      "referenceMedianNsPerCall": 44548.0
+    },
+    {
+      "legIndices": [
+        6,
+        7
+      ],
+      "history": "broadcast_add",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 41933.0,
+      "referenceMedianNsPerCall": 53941.0
+    },
+    {
+      "legIndices": [
+        6,
+        7
+      ],
+      "history": "repeated_alias",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 38058.0,
+      "referenceMedianNsPerCall": 44777.0
+    },
+    {
+      "legIndices": [
+        6,
+        7
+      ],
+      "history": "shape_revisit",
+      "outputsCompared": 48,
+      "passed": true,
+      "nativeMedianNsPerCall": 42849.5,
+      "referenceMedianNsPerCall": 43370.5
+    },
+    {
+      "legIndices": [
+        6,
+        7
+      ],
+      "history": "promoted_capture",
+      "outputsCompared": 72,
+      "passed": true,
+      "nativeMedianNsPerCall": 30773.333333333332,
+      "referenceMedianNsPerCall": 44994.666666666664
+    },
+    {
+      "legIndices": [
+        6,
+        7
+      ],
+      "history": "eight_boolean_entries",
+      "outputsCompared": 192,
+      "passed": true,
+      "nativeMedianNsPerCall": 52645.875,
+      "referenceMedianNsPerCall": 37891.125
+    },
+    {
+      "legIndices": [
+        8,
+        9
+      ],
+      "history": "literal_unary",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 30185.0,
+      "referenceMedianNsPerCall": 46360.0
+    },
+    {
+      "legIndices": [
+        8,
+        9
+      ],
+      "history": "tensor_arithmetic",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 39560.0,
+      "referenceMedianNsPerCall": 48323.0
+    },
+    {
+      "legIndices": [
+        8,
+        9
+      ],
+      "history": "broadcast_add",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 63025.0,
+      "referenceMedianNsPerCall": 47272.0
+    },
+    {
+      "legIndices": [
+        8,
+        9
+      ],
+      "history": "repeated_alias",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 33350.0,
+      "referenceMedianNsPerCall": 47501.0
+    },
+    {
+      "legIndices": [
+        8,
+        9
+      ],
+      "history": "shape_revisit",
+      "outputsCompared": 48,
+      "passed": true,
+      "nativeMedianNsPerCall": 37747.0,
+      "referenceMedianNsPerCall": 43000.0
+    },
+    {
+      "legIndices": [
+        8,
+        9
+      ],
+      "history": "promoted_capture",
+      "outputsCompared": 72,
+      "passed": true,
+      "nativeMedianNsPerCall": 26456.666666666668,
+      "referenceMedianNsPerCall": 43823.0
+    },
+    {
+      "legIndices": [
+        8,
+        9
+      ],
+      "history": "eight_boolean_entries",
+      "outputsCompared": 192,
+      "passed": true,
+      "nativeMedianNsPerCall": 33831.125,
+      "referenceMedianNsPerCall": 37112.375
+    },
+    {
+      "legIndices": [
+        10,
+        11
+      ],
+      "history": "literal_unary",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 33481.0,
+      "referenceMedianNsPerCall": 46640.0
+    },
+    {
+      "legIndices": [
+        10,
+        11
+      ],
+      "history": "tensor_arithmetic",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 62324.0,
+      "referenceMedianNsPerCall": 46721.0
+    },
+    {
+      "legIndices": [
+        10,
+        11
+      ],
+      "history": "broadcast_add",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 44978.0,
+      "referenceMedianNsPerCall": 46671.0
+    },
+    {
+      "legIndices": [
+        10,
+        11
+      ],
+      "history": "repeated_alias",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 39320.0,
+      "referenceMedianNsPerCall": 47062.0
+    },
+    {
+      "legIndices": [
+        10,
+        11
+      ],
+      "history": "shape_revisit",
+      "outputsCompared": 48,
+      "passed": true,
+      "nativeMedianNsPerCall": 44477.5,
+      "referenceMedianNsPerCall": 44587.5
+    },
+    {
+      "legIndices": [
+        10,
+        11
+      ],
+      "history": "promoted_capture",
+      "outputsCompared": 72,
+      "passed": true,
+      "nativeMedianNsPerCall": 30072.0,
+      "referenceMedianNsPerCall": 44290.333333333336
+    },
+    {
+      "legIndices": [
+        10,
+        11
+      ],
+      "history": "eight_boolean_entries",
+      "outputsCompared": 192,
+      "passed": true,
+      "nativeMedianNsPerCall": 51968.625,
+      "referenceMedianNsPerCall": 36874.5
+    },
+    {
+      "legIndices": [
+        12,
+        13
+      ],
+      "history": "literal_unary",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 32189.0,
+      "referenceMedianNsPerCall": 44217.0
+    },
+    {
+      "legIndices": [
+        12,
+        13
+      ],
+      "history": "tensor_arithmetic",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 42714.0,
+      "referenceMedianNsPerCall": 47242.0
+    },
+    {
+      "legIndices": [
+        12,
+        13
+      ],
+      "history": "broadcast_add",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 41293.0,
+      "referenceMedianNsPerCall": 44707.0
+    },
+    {
+      "legIndices": [
+        12,
+        13
+      ],
+      "history": "repeated_alias",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 35914.0,
+      "referenceMedianNsPerCall": 46721.0
+    },
+    {
+      "legIndices": [
+        12,
+        13
+      ],
+      "history": "shape_revisit",
+      "outputsCompared": 48,
+      "passed": true,
+      "nativeMedianNsPerCall": 40871.5,
+      "referenceMedianNsPerCall": 46795.5
+    },
+    {
+      "legIndices": [
+        12,
+        13
+      ],
+      "history": "promoted_capture",
+      "outputsCompared": 72,
+      "passed": true,
+      "nativeMedianNsPerCall": 29684.666666666668,
+      "referenceMedianNsPerCall": 48256.333333333336
+    },
+    {
+      "legIndices": [
+        12,
+        13
+      ],
+      "history": "eight_boolean_entries",
+      "outputsCompared": 192,
+      "passed": true,
+      "nativeMedianNsPerCall": 52076.25,
+      "referenceMedianNsPerCall": 34810.125
+    },
+    {
+      "legIndices": [
+        14,
+        15
+      ],
+      "history": "literal_unary",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 30476.0,
+      "referenceMedianNsPerCall": 47932.0
+    },
+    {
+      "legIndices": [
+        14,
+        15
+      ],
+      "history": "tensor_arithmetic",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 39100.0,
+      "referenceMedianNsPerCall": 47511.0
+    },
+    {
+      "legIndices": [
+        14,
+        15
+      ],
+      "history": "broadcast_add",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 37827.0,
+      "referenceMedianNsPerCall": 48062.0
+    },
+    {
+      "legIndices": [
+        14,
+        15
+      ],
+      "history": "repeated_alias",
+      "outputsCompared": 24,
+      "passed": true,
+      "nativeMedianNsPerCall": 34662.0,
+      "referenceMedianNsPerCall": 46340.0
+    },
+    {
+      "legIndices": [
+        14,
+        15
+      ],
+      "history": "shape_revisit",
+      "outputsCompared": 48,
+      "passed": true,
+      "nativeMedianNsPerCall": 37782.5,
+      "referenceMedianNsPerCall": 42214.0
+    },
+    {
+      "legIndices": [
+        14,
+        15
+      ],
+      "history": "promoted_capture",
+      "outputsCompared": 72,
+      "passed": true,
+      "nativeMedianNsPerCall": 27344.666666666668,
+      "referenceMedianNsPerCall": 47501.666666666664
+    },
+    {
+      "legIndices": [
+        14,
+        15
+      ],
+      "history": "eight_boolean_entries",
+      "outputsCompared": 192,
+      "passed": true,
+      "nativeMedianNsPerCall": 31212.25,
+      "referenceMedianNsPerCall": 35228.25
+    }
+  ],
+  "comparisonFailures": [],
+  "finishedAt": "2026-09-13T14:40:08.484271+00:00"
+}

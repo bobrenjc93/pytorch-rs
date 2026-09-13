@@ -1,0 +1,25 @@
+{
+  "result": "cpu-v2-final-result.json",
+  "resultSha256": "73655f543fb50c80490825f9aef1f0e0e526a3fa7c1f976b8d6208ee6621d351",
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/uv-python/cpython-3.12.12-linux-x86_64-gnu/bin/python3.12",
+    "-I",
+    "-S",
+    "-B",
+    "docs/diagnostics/compile-pointwise-positional/warm-dispatch/profile-dispatch-v2.py",
+    "--output",
+    "target/warm-dispatch/cpu-v2-final.json"
+  ],
+  "startedAt": "2026-09-13T13:47:08.783980+00:00",
+  "finishedAt": "2026-09-13T13:47:10.610697+00:00",
+  "toolExecution": {
+    "chunk_id": "21ae5e",
+    "wall_time_seconds": 1.727495136,
+    "exit_code": 0,
+    "original_token_count": 0,
+    "output": ""
+  },
+  "qualificationProduced": false,
+  "executionCount": 1,
+  "reasonForAdditionalExecution": "Production LRU success-path correction requires value identity as well as newest-key equality before skipping a map mutation. First run retained in cpu-v2-result.json; this is a different source comparison, not timing selection."
+}

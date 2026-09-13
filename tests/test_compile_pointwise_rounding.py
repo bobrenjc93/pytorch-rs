@@ -3,7 +3,7 @@ import unittest
 
 import torch_rs as native
 from torch_rs import torch_rs as bridge
-from tests.test_compile_pointwise_jit import available, cache, kernel, lower, program
+from tests.test_compile_pointwise_jit import available, cache, kernel, kernels, lower, program
 
 
 class RoundingAdmission(unittest.TestCase):
@@ -75,7 +75,7 @@ class RoundingHardware(unittest.TestCase):
                 with self.subTest(first_same=first_same, same=same, view=view, value=value):
                     self.compare(compiled(x, y), reference(tx, ty))
             self.assertEqual(len(cache(compiled).graphs), 2)
-            self.assertEqual(len({id(entry[1]) for entry in cache(compiled).graphs.values()}), 2)
+            self.assertEqual(len({id(entry) for entry in kernels(compiled)}), 2)
             native.compiler.reset()
             self.assertEqual(cache(compiled).graphs, {})
             self.compare(compiled(x, x), reference(tx, tx))

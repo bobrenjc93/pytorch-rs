@@ -1,0 +1,24 @@
+{
+  "result": "cpu-v2-result.json",
+  "resultSha256": "cfd32dee58eede7bf43dccc15bc3842a2652d87a3461bbbc0f68eea5d5f9fcea",
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_14879886/target/uv-python/cpython-3.12.12-linux-x86_64-gnu/bin/python3.12",
+    "-I",
+    "-S",
+    "-B",
+    "docs/diagnostics/compile-pointwise-positional/warm-dispatch/profile-dispatch-v2.py",
+    "--output",
+    "target/warm-dispatch/cpu-v2.json"
+  ],
+  "startedAt": "2026-09-13T13:46:11.039812+00:00",
+  "finishedAt": "2026-09-13T13:46:12.877815+00:00",
+  "toolExecution": {
+    "chunk_id": "b52794",
+    "wall_time_seconds": 1.7429548929999998,
+    "exit_code": 0,
+    "original_token_count": 0,
+    "output": ""
+  },
+  "qualificationProduced": false,
+  "executionCount": 1
+}

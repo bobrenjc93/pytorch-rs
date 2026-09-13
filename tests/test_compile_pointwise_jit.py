@@ -1,12 +1,18 @@
 """Independent expression generation and native default-JIT regression evidence."""
+import ast
 import concurrent.futures
 from contextlib import ExitStack
 import gc
+import hashlib
+import importlib.util
+import json
 import math
 import os
+from pathlib import Path
 import random
 import subprocess
 import sys
+import tempfile
 import types
 import unittest
 import weakref
@@ -33,8 +39,38 @@ def cache(compiled):
     return compiled._torch_rs_pointwise_cache
 
 
+def kernels(compiled):
+    return list(cache(compiled).executors.values())
+
+
 def kernel(compiled):
-    return next(iter(cache(compiled).graphs.values()))[1]
+    return next(iter(cache(compiled).executors.values()))
+
+
+def diagnostic_capture_selectors():
+    # Load only the capture accessor; importing a capture script launches CUDA
+    # and writes artifacts. These are the exact maintained script definitions.
+    root = Path(__file__).resolve().parents[1]
+    for relative in ('docs/diagnostics/compile-pointwise-broadcast/capture_bounded.py',
+                     'docs/diagnostics/compile-pointwise-jit/capture.py'):
+        source = ast.parse((root / relative).read_text(), filename=relative)
+        selected = [node for node in source.body
+                    if isinstance(node, ast.FunctionDef) and node.name == 'dispatched_kernel']
+        assert len(selected) == 1
+        namespace = {}
+        exec(compile(ast.Module(body=selected, type_ignores=[]), relative, 'exec'), namespace)
+        yield relative, namespace['dispatched_kernel']
+
+
+def gpu_dispatch_diagnostic():
+    root = Path(__file__).resolve().parents[1]
+    path = root / 'docs/diagnostics/compile-pointwise-positional/warm-dispatch/gpu-dispatch.py'
+    spec = importlib.util.spec_from_file_location('_synthetic_gpu_dispatch_check', path)
+    diagnostic = importlib.util.module_from_spec(spec)
+    # The stdlib-only consumer has no import-time GPU execution. Keep the
+    # isolated module out of sys.modules and do not replace production owners.
+    spec.loader.exec_module(diagnostic)
+    return diagnostic, path
 
 
 def custom_globals_program(source):
@@ -78,6 +114,139 @@ def two_device_reservation():
 class Admission(unittest.TestCase):
     def tearDown(self):
         native.compiler.reset()
+
+    def test_diagnostic_capture_selectors_follow_successful_executor_lru(self):
+        actual_cache = frontend._state.NativeEagerCompileCache()
+        compiled = types.SimpleNamespace(_torch_rs_pointwise_cache=actual_cache)
+        # Logical entries deliberately have the current non-tuple value layout.
+        actual_cache.graphs[object()] = frontend.Specialization({}, (), {}, {})
+        first, second, third = object(), object(), object()
+        actual_cache.executors.update(first=first, second=second, third=third)
+        for path, select in diagnostic_capture_selectors():
+            with self.subTest(capture=path, call='new module'):
+                self.assertIs(select(compiled), third)
+        # Successful warm use moves an older module to the end. The selected
+        # module is neither the first entry nor the most recently created one.
+        actual_cache.executors['second'] = actual_cache.executors.pop('second')
+        for path, select in diagnostic_capture_selectors():
+            with self.subTest(capture=path, call='warm revisit'):
+                self.assertIs(select(compiled), second)
+        actual_cache.clear()
+        self.assertFalse(actual_cache.executors)
+
+    def _verify_synthetic_gpu_dispatch_reports(self, mismatches):
+        root = Path(__file__).resolve().parents[1]
+        diagnostic, path = gpu_dispatch_diagnostic()
+        script_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        target = root / 'target'
+        target.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='dispatch-verifier-', dir=target) as temporary:
+            directory = Path(temporary)
+            reports = []
+            for index, (build, implementation) in enumerate(diagnostic.ORDER):
+                cases = []
+                for name, program_text, _ in diagnostic.CASES:
+                    traversals = []
+                    for phase, count in (('setup', 2), ('warmup', 5), ('sample', 17)):
+                        for traversal_index in range(count):
+                            traversals.append({'phase': phase, 'index': traversal_index,
+                                               'outputs': [{'shape': [1], 'stride': [1],
+                                                            'dtype': 'torch.float32', 'device': 'cuda:0',
+                                                            'requiresGrad': False, 'values': [float(1.0).hex()]}]})
+                    cases.append({'name': name, 'program': program_text,
+                                  'inputs': [{'synthetic': True}], 'states': [{}],
+                                  'traversals': traversals, 'medianNsPerCall': 1})
+                for leg_index, case_index, traversal_index in mismatches:
+                    if index == leg_index:
+                        cases[case_index]['traversals'][traversal_index]['outputs'][0]['values'] = [float(2.0).hex()]
+                report = {'passed': True, 'legIndex': index, 'buildLabel': build,
+                          'implementation': implementation, 'scriptSha256': script_hash,
+                          'diagnosticVersion': diagnostic.VERSION,
+                          'synchronization': {'path': 'synthetic-runtime', 'sha256': 'a' * 64,
+                                              'version': 13000, 'api': 'cudaDeviceSynchronize',
+                                              'logicalDevice': 0},
+                          'gpuUuid': 'GPU-synthetic-fixture', 'source': {'commit': build},
+                          'startedAt': f'{index:02d}:00', 'finishedAt': f'{index:02d}:01',
+                          'cases': cases}
+                output = directory / f'leg-{index}.json'
+                output.write_text(json.dumps(report))
+                reports.append(output)
+            record = {'scriptSha256': script_hash}
+            args = types.SimpleNamespace(reports=reports)
+            if mismatches:
+                with self.assertRaisesRegex(AssertionError, 'retained comparison/contract failures'):
+                    diagnostic.verify(args, record, directory)
+            else:
+                diagnostic.verify(args, record, directory)
+            self.assertEqual(len(record['reports']), 16)
+            self.assertEqual([item['sha256'] for item in record['reports']],
+                             [hashlib.sha256(path.read_bytes()).hexdigest() for path in reports])
+            self.assertEqual(len(record['pairs']), 56)
+            self.assertEqual(sum(row['outputsCompared'] for row in record['pairs']), 56 * 24)
+            self.assertTrue(record['pairs'][-1]['passed'])
+            return record
+
+    def test_gpu_dispatch_verifier_preserves_ieee_values_and_jit_tolerance(self):
+        diagnostic, _ = gpu_dispatch_diagnostic()
+        def observation(values):
+            return {'shape': [len(values)], 'stride': [1], 'dtype': 'torch.float32',
+                    'device': 'cuda:0', 'requiresGrad': False,
+                    'values': diagnostic.encoded_values(values)}
+        values = [0.0, -0.0, float('nan'), float('inf'), -float('inf')]
+        record = observation(values)
+        restored = json.loads(json.dumps(record, allow_nan=False))
+        self.assertEqual(restored, record)
+        self.assertEqual(restored['values'][:2], ['0x0.0p+0', '-0x0.0p+0'])
+        diagnostic.close_outputs(restored, record)
+        for actual, expected in ((0.0, -0.0), (-0.0, 0.0), (float('inf'), -float('inf')),
+                                 (float('nan'), 1.0), (1.0, float('nan')), (1.0, float('inf'))):
+            with self.subTest(actual=actual, expected=expected), self.assertRaises(AssertionError):
+                diagnostic.close_outputs(observation([actual]), observation([expected]))
+        # This lies above max(atol, rtol*abs(ref)) but below the existing JIT
+        # atol+rtol*abs(ref) bound. A nearby value above that sum must fail.
+        diagnostic.close_outputs(observation([1.0 + 1.05e-5]), observation([1.0]))
+        with self.assertRaises(AssertionError):
+            diagnostic.close_outputs(observation([1.0 + 1.11e-5]), observation([1.0]))
+        changed_metadata = dict(record, stride=[2])
+        with self.assertRaises(AssertionError):
+            diagnostic.close_outputs(changed_metadata, record)
+
+    def test_gpu_dispatch_verifier_checks_all_synthetic_pairs(self):
+        record = self._verify_synthetic_gpu_dispatch_reports(())
+        self.assertTrue(record['passed'])
+        self.assertEqual(record['comparisonFailures'], [])
+        self.assertTrue(all(row['passed'] for row in record['pairs']))
+
+    def test_gpu_dispatch_verifier_retains_all_synthetic_numerical_failures(self):
+        # Two mismatches in the first history and one in a different pair must
+        # not hide later outputs, histories or a final passing comparison.
+        record = self._verify_synthetic_gpu_dispatch_reports(((0, 0, 7), (0, 0, 8), (5, 3, 9)))
+        self.assertFalse(record['passed'])
+        self.assertEqual(len(record['comparisonFailures']), 3)
+        self.assertEqual(sum(not row['passed'] for row in record['pairs']), 2)
+        locations = [failure['location'] for failure in record['comparisonFailures']]
+        self.assertIn('pair[0,1].literal_unary.traversal[7].output[0]', locations)
+        self.assertIn('pair[0,1].literal_unary.traversal[8].output[0]', locations)
+        self.assertIn('pair[4,5].repeated_alias.traversal[9].output[0]', locations)
+
+    def test_gpu_dispatch_synchronizer_propagates_runtime_errors(self):
+        diagnostic, _ = gpu_dispatch_diagnostic()
+        synchronizer = object.__new__(diagnostic.CudaSynchronizer)
+        from unittest.mock import Mock
+        synchronizer.runtime = types.SimpleNamespace(cudaSetDevice=Mock(return_value=0),
+                                                     cudaDeviceSynchronize=Mock(return_value=0))
+        synchronizer()
+        synchronizer.runtime.cudaSetDevice.assert_called_once_with(0)
+        synchronizer.runtime.cudaDeviceSynchronize.assert_called_once_with()
+        synchronizer.runtime.cudaSetDevice.return_value = 10
+        with self.assertRaisesRegex(RuntimeError, 'synchronization error 10'):
+            synchronizer()
+        # A failed device selection must not synchronize another device.
+        self.assertEqual(synchronizer.runtime.cudaDeviceSynchronize.call_count, 1)
+        synchronizer.runtime.cudaSetDevice.return_value = 0
+        synchronizer.runtime.cudaDeviceSynchronize.return_value = 700
+        with self.assertRaisesRegex(RuntimeError, 'synchronization error 700'):
+            synchronizer()
 
     def test_two_device_reservation_accepts_explicit_distinct_pairs(self):
         for mask, expected in (('0,1', True), ('6,7', True), ('GPU-a,GPU-b', True),
@@ -247,6 +416,93 @@ class Hardware(unittest.TestCase):
         finally:
             sys.setprofile(old)
 
+    def test_gpu_dispatch_real_native_and_default_histories(self):
+        diagnostic, path = gpu_dispatch_diagnostic()
+        root = Path(__file__).resolve().parents[1]
+        # Preserve all observations, including failures, beneath the worktree.
+        (root / 'target').mkdir(exist_ok=True)
+        directory = Path(tempfile.mkdtemp(prefix='dispatch-smoke-', dir=root / 'target'))
+        script = r"""
+import importlib, importlib.util, sys, traceback
+from pathlib import Path
+path, directory, implementation = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+spec = importlib.util.spec_from_file_location('dispatch_smoke', path)
+diagnostic = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(diagnostic)
+directory.mkdir()
+diagnostic.environment(diagnostic.ROOT, directory)
+fw = importlib.import_module('torch_rs' if implementation == 'native' else 'torch')
+fw.set_num_threads(1)
+barrier = diagnostic.CudaSynchronizer()
+record = {'implementation': implementation, 'scriptSha256': diagnostic.sha(path.read_bytes()),
+          'synchronization': barrier.metadata, 'gpuBefore': diagnostic.inventory(),
+          'cases': [], 'frameworkPath': fw.__file__, 'executable': sys.executable}
+calls = 0
+def synchronize():
+    global calls
+    calls += 1
+    barrier()
+for name, source, kind in diagnostic.CASES:
+    row = {'name': name, 'passed': False}
+    record['cases'].append(row)
+    try:
+        diagnostic.history(fw, source, kind, row, synchronize)
+        row['passed'] = True
+    except Exception:
+        row['failure'] = traceback.format_exc()
+record.update(synchronizationCalls=calls, torchImported='torch' in sys.modules,
+              gpuAfter=diagnostic.inventory(), runtime=diagnostic.runtime_identity())
+diagnostic.write(directory/'report.json.gz', record)
+"""
+        reports = []
+        for implementation in ('native', 'reference'):
+            child = directory / implementation
+            env = os.environ.copy()
+            env.pop('PYTHONPATH', None)
+            env.pop('PYTHONHOME', None)
+            result = subprocess.run([sys.executable, '-I', '-B', '-c', script,
+                                     str(path), str(child), implementation], env=env,
+                                    text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            (directory / (implementation + '.log')).write_text(result.stdout)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            reports.append(diagnostic.read(child / 'report.json.gz'))
+        print(f'Diagnostic smoke observations retained at {directory}', flush=True)
+        self.assertFalse(reports[0]['torchImported'])
+        self.assertEqual(reports[0]['synchronization'], reports[1]['synchronization'])
+        for report in reports:
+            self.assertEqual(report['synchronizationCalls'], 7 * 24 * 2)
+            self.assertEqual(len(report['cases']), 7)
+            for row in report['cases']:
+                with self.subTest(implementation=report['implementation'], history=row['name']):
+                    self.assertTrue(row['passed'], row.get('failure'))
+                    self.assertEqual(len(row['traversals']), 24)
+                    self.assertEqual(len(row['sampleNs']), 17)
+        for left, right in zip(reports[0]['cases'], reports[1]['cases']):
+            self.assertEqual(left['inputs'], right['inputs'])
+            self.assertEqual(left['states'], right['states'])
+            self.assertEqual(len(left['traversals']), len(right['traversals']))
+            for a, b in zip(left['traversals'], right['traversals']):
+                self.assertEqual((a['phase'], a['index']), (b['phase'], b['index']))
+                self.assertEqual(len(a['outputs']), len(b['outputs']))
+                for actual, expected in zip(a['outputs'], b['outputs']):
+                    diagnostic.close_outputs(actual, expected)
+
+    def test_diagnostic_capture_selectors_follow_actual_shape_revisit(self):
+        fn = program('def f(x, y):\n return (x.relu() - y.relu()).relu()')
+        compiled = native.compile(fn)
+        dispatched = []
+        for rows, columns in ((7, 11), (3, 17), (7, 11)):
+            x = self.upload([1.] * rows, (rows, 1))
+            y = self.upload([0.25] * columns, (columns,))
+            actual = self.without_replay(fn, compiled, (x, y))
+            self.assertEqual(actual.cpu().tolist(), [[0.75] * columns] * rows)
+            selected = [select(compiled) for _, select in diagnostic_capture_selectors()]
+            self.assertIs(selected[0], selected[1])
+            dispatched.append(selected[0])
+        self.assertIsNot(dispatched[0], dispatched[1])
+        self.assertIs(dispatched[0], dispatched[2])
+        self.assertEqual(len(cache(compiled).executors), 2)
+
     def test_generated_expression_trees_default_inductor_and_fresh_data(self):
         rng = random.Random(926317)
         sources = []
@@ -284,8 +540,13 @@ class Hardware(unittest.TestCase):
                             self.assertIsNot(actual, arg)
                             if count:
                                 self.assertNotEqual(actual.data_ptr(), arg.data_ptr())
-            self.assertEqual(len(cache(compiled).graphs), 6)
-            self.assertEqual(len({id(entry[1]) for entry in cache(compiled).graphs.values()}), 1)
+            # The generalized rank-two guard accepts the later (11, 263)
+            # shape. Compare logical entries with this persistent reference,
+            # rather than counting every distinct concrete metadata tuple.
+            reference_entries = self.torch._dynamo.eval_frame._debug_get_cache_entry_list(reference_fn.__code__)
+            self.assertEqual(len(reference_entries), 5)
+            self.assertEqual(len(cache(compiled).graphs), len(reference_entries))
+            self.assertEqual(len({id(entry) for entry in kernels(compiled)}), 1)
             generated = kernel(compiled)
             self.assertIn('torch_rs_pointwise', generated.ptx)
             self.assertEqual(generated.ptx.count('.visible .entry'), 1)
@@ -525,7 +786,7 @@ assert 'torch' not in sys.modules
             with torch.cuda.device(1 - target):
                 self.compare(compiled(x), torch.tensor([1., 2.], device=f'cuda:{target}').mul(0.7).sin())
                 self.assertEqual(torch.cuda.current_device(), 1 - target)
-        self.assertEqual({entry[1].device for entry in cache(compiled).graphs.values()}, {0, 1})
+        self.assertEqual({entry.device for entry in kernels(compiled)}, {0, 1})
         with torch.cuda.device(1):
             with self.assertRaisesRegex(RuntimeError, 'device guard'):
                 kernel(compiled).run((inputs[1],))

@@ -29,6 +29,12 @@ def sha(data):
 def command(*args):
     return subprocess.check_output(args, text=True).strip()
 
+def dispatched_kernel(compiled):
+    # Successful calls move their executable to the end, including cache hits.
+    # Logical graph entries do not identify the concrete module just dispatched.
+    return next(reversed(compiled._torch_rs_pointwise_cache.executors.values()))
+
+
 def program(x, y):
     return (x.relu() - y.relu()).relu()
 
@@ -36,19 +42,13 @@ before = command('nvidia-smi', '--query-gpu=index,uuid,name,driver_version,utili
 compiled = torch.compile(program)
 observations = []
 dispatched = []
-for rows, columns, offset in [(7, 11, 0.125), (7, 11, -0.375), (3, 17, 0.713)]:
+for rows, columns, offset in [(7, 11, 0.125), (7, 11, -0.375), (3, 17, 0.713), (7, 11, 0.231)]:
     x = torch.tensor([i * 0.017 + offset for i in range(rows)]).reshape(rows, 1).to('cuda:0')
     y = torch.tensor([offset - i * 0.13 for i in range(columns)]).to('cuda:0')
     result = compiled(x, y)
     assert tuple(result.shape) == (rows, columns)
     assert result.data_ptr() not in (x.data_ptr(), y.data_ptr())
-    # Match the actual guarded call, including its shapes and device. Cache
-    # insertion order does not identify the last module dispatched on a hit.
-    metadata = tuple(native._compile_trace_tensor_metadata(arg)[:5] for arg in (x, y))
-    matching = [entry for key, entry in compiled._torch_rs_pointwise_cache.graphs.items()
-                if key[2] == metadata and key[3] == (0, 1)]
-    assert len(matching) == 1
-    kernel = matching[0][1]
+    kernel = dispatched_kernel(compiled)
     dispatched.append(kernel)
     observations.append({
         'input_shapes': [list(x.shape), list(y.shape)],
@@ -57,8 +57,10 @@ for rows, columns, offset in [(7, 11, 0.125), (7, 11, -0.375), (3, 17, 0.713)]:
         'ptx_sha256': sha(kernel.ptx.encode()),
     })
 entries = list(compiled._torch_rs_pointwise_cache.graphs.values())
-assert len(entries) == 2 and len({id(entry[1]) for entry in entries}) == 2
-assert dispatched[0] is dispatched[1] and dispatched[1] is not dispatched[2]
+modules = list(compiled._torch_rs_pointwise_cache.executors.values())
+assert len(entries) == 2 and len({id(module) for module in modules}) == 2
+assert dispatched[0] is dispatched[1] is dispatched[3]
+assert dispatched[1] is not dispatched[2]
 # The files describe the last observed output's module, not the first cache entry.
 kernel = dispatched[-1]
 (out / 'kernel.cu').write_text(kernel.source)
@@ -91,7 +93,7 @@ record = {
     'visible_devices': os.environ.get('CUDA_VISIBLE_DEVICES'),
     'gpu_before': before,
     'gpu_after': command('nvidia-smi', '--query-gpu=index,uuid,name,driver_version,utilization.gpu,memory.used', '--format=csv'),
-    'graph_entries': len(entries), 'code_modules': len({id(entry[1]) for entry in entries}),
+    'graph_entries': len(entries), 'code_modules': len({id(module) for module in modules}),
     'source_kernel_sha256': sha(kernel.source.encode()), 'ptx_sha256': sha(kernel.ptx.encode()),
     'captured_observation': len(observations) - 1,
     'observations': observations,

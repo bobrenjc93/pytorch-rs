@@ -1,0 +1,331 @@
+{
+  "kind": "Non-scoring bounded diagnostic; no qualification or causal attribution",
+  "formula": "For each history, geometric mean over all four paired-round ratios B_native_median_ns_per_call / C_native_median_ns_per_call; values above one favor corrected source. No round selection.",
+  "histories": [
+    {
+      "history": "literal_unary",
+      "rounds": [
+        {
+          "round": 1,
+          "median_ns_per_call": {
+            "B_native": 32309.0,
+            "B_reference": 46810.0,
+            "C_native": 30356.0,
+            "C_reference": 45599.0
+          },
+          "native_before_over_corrected": 1.0643365397285545
+        },
+        {
+          "round": 2,
+          "median_ns_per_call": {
+            "C_reference": 45119.0,
+            "C_native": 30506.0,
+            "B_reference": 44227.0,
+            "B_native": 35363.0
+          },
+          "native_before_over_corrected": 1.1592145807382155
+        },
+        {
+          "round": 3,
+          "median_ns_per_call": {
+            "C_native": 30185.0,
+            "C_reference": 46360.0,
+            "B_native": 33481.0,
+            "B_reference": 46640.0
+          },
+          "native_before_over_corrected": 1.1091933079344045
+        },
+        {
+          "round": 4,
+          "median_ns_per_call": {
+            "B_reference": 44217.0,
+            "B_native": 32189.0,
+            "C_reference": 47932.0,
+            "C_native": 30476.0
+          },
+          "native_before_over_corrected": 1.0562081638010237
+        }
+      ],
+      "native_before_over_corrected_geomean_all_four_rounds": 1.096477923438812
+    },
+    {
+      "history": "tensor_arithmetic",
+      "rounds": [
+        {
+          "round": 1,
+          "median_ns_per_call": {
+            "B_native": 40962.0,
+            "B_reference": 48763.0,
+            "C_native": 36255.0,
+            "C_reference": 48314.0
+          },
+          "native_before_over_corrected": 1.1298303682250723
+        },
+        {
+          "round": 2,
+          "median_ns_per_call": {
+            "C_reference": 47712.0,
+            "C_native": 37858.0,
+            "B_reference": 44548.0,
+            "B_native": 44638.0
+          },
+          "native_before_over_corrected": 1.1790902847482698
+        },
+        {
+          "round": 3,
+          "median_ns_per_call": {
+            "C_native": 39560.0,
+            "C_reference": 48323.0,
+            "B_native": 62324.0,
+            "B_reference": 46721.0
+          },
+          "native_before_over_corrected": 1.5754297269969666
+        },
+        {
+          "round": 4,
+          "median_ns_per_call": {
+            "B_reference": 47242.0,
+            "B_native": 42714.0,
+            "C_reference": 47511.0,
+            "C_native": 39100.0
+          },
+          "native_before_over_corrected": 1.0924296675191816
+        }
+      ],
+      "native_before_over_corrected_geomean_all_four_rounds": 1.230518667879229
+    },
+    {
+      "history": "broadcast_add",
+      "rounds": [
+        {
+          "round": 1,
+          "median_ns_per_call": {
+            "B_native": 41382.0,
+            "B_reference": 63796.0,
+            "C_native": 35784.0,
+            "C_reference": 48313.0
+          },
+          "native_before_over_corrected": 1.1564386317907445
+        },
+        {
+          "round": 2,
+          "median_ns_per_call": {
+            "C_reference": 47852.0,
+            "C_native": 37957.0,
+            "B_reference": 53941.0,
+            "B_native": 41933.0
+          },
+          "native_before_over_corrected": 1.1047501119688068
+        },
+        {
+          "round": 3,
+          "median_ns_per_call": {
+            "C_native": 63025.0,
+            "C_reference": 47272.0,
+            "B_native": 44978.0,
+            "B_reference": 46671.0
+          },
+          "native_before_over_corrected": 0.7136533121777072
+        },
+        {
+          "round": 4,
+          "median_ns_per_call": {
+            "B_reference": 44707.0,
+            "B_native": 41293.0,
+            "C_reference": 48062.0,
+            "C_native": 37827.0
+          },
+          "native_before_over_corrected": 1.091627673355011
+        }
+      ],
+      "native_before_over_corrected_geomean_all_four_rounds": 0.9988197402817507
+    },
+    {
+      "history": "repeated_alias",
+      "rounds": [
+        {
+          "round": 1,
+          "median_ns_per_call": {
+            "B_native": 35654.0,
+            "B_reference": 56425.0,
+            "C_native": 33050.0,
+            "C_reference": 47892.0
+          },
+          "native_before_over_corrected": 1.0787897125567323
+        },
+        {
+          "round": 2,
+          "median_ns_per_call": {
+            "C_reference": 47412.0,
+            "C_native": 34302.0,
+            "B_reference": 44777.0,
+            "B_native": 38058.0
+          },
+          "native_before_over_corrected": 1.1094979884554836
+        },
+        {
+          "round": 3,
+          "median_ns_per_call": {
+            "C_native": 33350.0,
+            "C_reference": 47501.0,
+            "B_native": 39320.0,
+            "B_reference": 47062.0
+          },
+          "native_before_over_corrected": 1.1790104947526237
+        },
+        {
+          "round": 4,
+          "median_ns_per_call": {
+            "B_reference": 46721.0,
+            "B_native": 35914.0,
+            "C_reference": 46340.0,
+            "C_native": 34662.0
+          },
+          "native_before_over_corrected": 1.036120246956321
+        }
+      ],
+      "native_before_over_corrected_geomean_all_four_rounds": 1.099633056088151
+    },
+    {
+      "history": "shape_revisit",
+      "rounds": [
+        {
+          "round": 1,
+          "median_ns_per_call": {
+            "B_native": 39865.0,
+            "B_reference": 48218.0,
+            "C_native": 35063.0,
+            "C_reference": 41888.5
+          },
+          "native_before_over_corrected": 1.1369534837292872
+        },
+        {
+          "round": 2,
+          "median_ns_per_call": {
+            "C_reference": 49124.0,
+            "C_native": 38167.5,
+            "B_reference": 43370.5,
+            "B_native": 42849.5
+          },
+          "native_before_over_corrected": 1.122669810702823
+        },
+        {
+          "round": 3,
+          "median_ns_per_call": {
+            "C_native": 37747.0,
+            "C_reference": 43000.0,
+            "B_native": 44477.5,
+            "B_reference": 44587.5
+          },
+          "native_before_over_corrected": 1.1783055607068111
+        },
+        {
+          "round": 4,
+          "median_ns_per_call": {
+            "B_reference": 46795.5,
+            "B_native": 40871.5,
+            "C_reference": 42214.0,
+            "C_native": 37782.5
+          },
+          "native_before_over_corrected": 1.081757427380401
+        }
+      ],
+      "native_before_over_corrected_geomean_all_four_rounds": 1.1293944221552783
+    },
+    {
+      "history": "promoted_capture",
+      "rounds": [
+        {
+          "round": 1,
+          "median_ns_per_call": {
+            "B_native": 28483.0,
+            "B_reference": 46166.333333333336,
+            "C_native": 26106.333333333332,
+            "C_reference": 50757.0
+          },
+          "native_before_over_corrected": 1.0910379346007995
+        },
+        {
+          "round": 2,
+          "median_ns_per_call": {
+            "C_reference": 48540.0,
+            "C_native": 26366.666666666668,
+            "B_reference": 44994.666666666664,
+            "B_native": 30773.333333333332
+          },
+          "native_before_over_corrected": 1.1671302149178255
+        },
+        {
+          "round": 3,
+          "median_ns_per_call": {
+            "C_native": 26456.666666666668,
+            "C_reference": 43823.0,
+            "B_native": 30072.0,
+            "B_reference": 44290.333333333336
+          },
+          "native_before_over_corrected": 1.1366511276300868
+        },
+        {
+          "round": 4,
+          "median_ns_per_call": {
+            "B_reference": 48256.333333333336,
+            "B_native": 29684.666666666668,
+            "C_reference": 47501.666666666664,
+            "C_native": 27344.666666666668
+          },
+          "native_before_over_corrected": 1.0855742740814784
+        }
+      ],
+      "native_before_over_corrected_geomean_all_four_rounds": 1.1195963483600293
+    },
+    {
+      "history": "eight_boolean_entries",
+      "rounds": [
+        {
+          "round": 1,
+          "median_ns_per_call": {
+            "B_native": 51956.0,
+            "B_reference": 37181.25,
+            "C_native": 29187.875,
+            "C_reference": 35006.75
+          },
+          "native_before_over_corrected": 1.78005421771883
+        },
+        {
+          "round": 2,
+          "median_ns_per_call": {
+            "C_reference": 36805.625,
+            "C_native": 32744.5,
+            "B_reference": 37891.125,
+            "B_native": 52645.875
+          },
+          "native_before_over_corrected": 1.607777642046756
+        },
+        {
+          "round": 3,
+          "median_ns_per_call": {
+            "C_native": 33831.125,
+            "C_reference": 37112.375,
+            "B_native": 51968.625,
+            "B_reference": 36874.5
+          },
+          "native_before_over_corrected": 1.5361187368141025
+        },
+        {
+          "round": 4,
+          "median_ns_per_call": {
+            "B_reference": 34810.125,
+            "B_native": 52076.25,
+            "C_reference": 35228.25,
+            "C_native": 31212.25
+          },
+          "native_before_over_corrected": 1.6684554942370384
+        }
+      ],
+      "native_before_over_corrected_geomean_all_four_rounds": 1.6456961650009576
+    }
+  ],
+  "all_rounds": 4,
+  "all_history_rounds": 28,
+  "all_28_native_ratios_geomean": 1.1745419664360517
+}

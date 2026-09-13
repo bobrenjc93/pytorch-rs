@@ -1,0 +1,13 @@
+{
+  "README.md": "f4fa09c8f20863d13a08b95500484627e3b950dc9c24d39889059776a308eaf1",
+  "artifact-checks.json": "37bfaba3d95beca5b4fd50915b3cf8bc32ce022255e718eb58e5062242845ad1",
+  "candidate.json.gz": "d27ddd952a4d6b968d51c4167ff95665b77c50a68cff40ea45511b0203bf036a",
+  "capture-checks.json": "c1f2387d97fa0ac78236a97ed69bdd85f3ba3f4f91dcac9288e2fa9a84a875da",
+  "codegen/kernel.cu": "eaa0f2ddcf94f6d90beb79d6a7a2a235f66bd58909bf407735945e3e6fcf8117",
+  "codegen/kernel.ptx.gz": "6b3dd0cce225554aaa76d1f8fb4d70110cd73deed246ccd905098e8cf72c4ba2",
+  "codegen/provenance.json": "85d9431e3da453bcf7436abcf7bed7f21c7bd5c16a0a573c2dc4d9cd7c8fce29",
+  "codegen/source-manifest.json.gz": "c8f99ee0d848cb9058d269bab96ab315d6a279b1f3fe7f23408127eee0c390b5",
+  "logs.json.gz": "8c12a76ed1e5d127558837eb8f3e08e2f83868f05bc220bc7baedc3f5d7b4a98",
+  "main.json.gz": "897ccc751e0a6606ecfbba41ca843f126c57a9f1643160cb7fa40cbfda448bef",
+  "verification.json": "810fa4aae9cf193af624c07e357b33a871cbc70192bbb352fab99054d3e79fd9"
+}

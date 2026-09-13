@@ -1,0 +1,17 @@
+{
+  "README.md": "922799bd5d0db0de33b3f9e7ca4ae63e1fc9650d30ec1da491bd2e056080340b",
+  "artifact-checks.json": "e199dafd60c8da9d7686662ebc3c79d3acb2ad5a3bf71fdc4fc456313d201587",
+  "bounded-codegen/kernel.cu": "b2ba6f06ae0851dcf29fe015950374551792b3b7258df84570fbba5ca39e1950",
+  "bounded-codegen/kernel.ptx.gz": "b3814299b312f2bd1a9920f51dfcadc302bb9e9de34314e00dceebc9ba07fca0",
+  "bounded-codegen/provenance.json": "535529716a99cf4c2a4fd0bd66b08288849a0ab3032c42d8625268a92d7fe1c0",
+  "bounded-codegen/source-manifest.json.gz": "cdf3e0a51d6511798285f978fd1bf73150da78e4aecf22cdb034617e6489a51b",
+  "candidate.json.gz": "993683b2d19fe872e053456c369e94fc9285d2064a731d1d09761d5233212d41",
+  "capture-checks.json": "406e71817d490d8b7f68fbdf05e4b186a1200c316c2670803deeab2fc2b7cc26",
+  "jit-codegen/kernel.cu": "75907bb5087f81e847b8690c02ab137e0fe49554572497bbade8da6adefc50fd",
+  "jit-codegen/kernel.ptx.gz": "05f09228a0721c3d8412c1ec4794f4fd833172c2b00abc3e1e7912c0fbe18436",
+  "jit-codegen/provenance.json": "7e923b3385334c78021fb86dc61814b0380e00ab87aff9d7057e33f246d576b9",
+  "jit-codegen/source-manifest.json.gz": "8703ba7af3d5b3ca29cb23a4140774052f96deffd870706ad4ca5aa5e523d98c",
+  "logs.json.gz": "a96a2766e767e195ff728fa17f2214cdb112822b8a26b4ef5f9eaabd37b19c43",
+  "main.json.gz": "7313975be13be1c28865fa64f08b6677b9a67d89a7a2bb8f07f9a112de5d8f3c",
+  "verification.json": "58541f99d4902b77268f110b999076ffc167b9c5007d5d15c41602f1f8dcdbd3"
+}

@@ -1,0 +1,552 @@
+{
+  "scope": "Mocked production Python frontend/cache only; not native validation, public-entrypoint parity or GPU latency",
+  "omittedLifecycle": "Direct cache construction bypasses the WeakSet registry and global reset lifecycle",
+  "cpuTimingIncludes": "Harness iteration, namespace updates, sentinel assertion and mocked native bookkeeping; not GPU latency",
+  "python": "3.12.12 (main, Jan 13 2026, 17:38:09) [Clang 21.1.4 ]",
+  "sources": {
+    "main": {
+      "commit": "a281503f3391bbd98a0ab6de2ff8f0c0a55a12d4",
+      "python/torch_rs/_compile_pointwise.py": "919adb3bc6e6518395a0eab05067f199cefe29e286b3c507b53409000e2da24a",
+      "python/torch_rs/_compiler_state.py": "368627af1e2771d80206ec6a7cd16e103c3cbcf8718a8b22190db536d91b467f",
+      "python/torch_rs/__init__.py": "d8841a4c0960808f2996188eb4269e0e7eeff8270f4f9beddcf0667598f79532"
+    },
+    "candidate": {
+      "commit": "885264b5319d76165e6be8d6df405450b3830c47",
+      "python/torch_rs/_compile_pointwise.py": "6da5e0e7ce54fcb9b8443536e19e17e98258b706432214c2a55caee7e402fbe2",
+      "python/torch_rs/_compiler_state.py": "6d4499841eebf52fbb762fcf91d21636c1f3a2e1cc17abdc5ecaa6bd60e028b3",
+      "python/torch_rs/__init__.py": "d8841a4c0960808f2996188eb4269e0e7eeff8270f4f9beddcf0667598f79532"
+    }
+  },
+  "profileCalls": 128,
+  "timingCallsPerBatch": 1024,
+  "timingOrders": [
+    [
+      "main",
+      "candidate"
+    ],
+    [
+      "candidate",
+      "main"
+    ],
+    [
+      "candidate",
+      "main"
+    ],
+    [
+      "main",
+      "candidate"
+    ]
+  ],
+  "cases": [
+    {
+      "name": "literal_unary",
+      "program": "def f(x):\n return x*1.25+0.75",
+      "sourceResults": {
+        "main": {
+          "cacheCardinality": [
+            1,
+            0
+          ],
+          "states": 1,
+          "productionCallCounts": {
+            "<genexpr>": 1408,
+            "compiled": 128,
+            "resolve": 128,
+            "runtime_bindings": 128,
+            "validate_signature_containers": 128
+          },
+          "mockBoundaryCallCounts": {
+            "metadata": 128,
+            "validate": 128,
+            "launch": 128,
+            "compile": 0
+          },
+          "unprofiledCpuBatchUsPerCall": [
+            6.667560546875,
+            6.7334404296875,
+            6.6284091796875,
+            6.614892578125
+          ],
+          "medianUnprofiledCpuUsPerCall": 6.64798486328125
+        },
+        "candidate": {
+          "cacheCardinality": [
+            1,
+            1
+          ],
+          "states": 1,
+          "productionCallCounts": {
+            "<genexpr>": 3584,
+            "BindingSource.__hash__": 1664,
+            "Graph.__hash__": 384,
+            "ShapeGuards.__hash__": 256,
+            "ShapeGuards.matches": 128,
+            "TensorGuard.__hash__": 256,
+            "TensorGuard.matches": 128,
+            "Value.__init__": 128,
+            "_broadcast_elements": 128,
+            "_logical_keys": 128,
+            "_select_specialization": 128,
+            "bind_arguments": 128,
+            "compiled": 128,
+            "resolve": 128,
+            "validate_signature_containers": 128
+          },
+          "mockBoundaryCallCounts": {
+            "metadata": 128,
+            "validate": 128,
+            "launch": 128,
+            "compile": 0
+          },
+          "unprofiledCpuBatchUsPerCall": [
+            17.1597490234375,
+            14.482068359375,
+            14.607052734375,
+            14.555060546875
+          ],
+          "medianUnprofiledCpuUsPerCall": 14.581056640625
+        }
+      }
+    },
+    {
+      "name": "tensor_arithmetic",
+      "program": "def f(x,y):\n return x*y+x",
+      "sourceResults": {
+        "main": {
+          "cacheCardinality": [
+            1,
+            0
+          ],
+          "states": 1,
+          "productionCallCounts": {
+            "<genexpr>": 1920,
+            "compiled": 128,
+            "resolve": 128,
+            "runtime_bindings": 128,
+            "validate_signature_containers": 128
+          },
+          "mockBoundaryCallCounts": {
+            "metadata": 256,
+            "validate": 128,
+            "launch": 128,
+            "compile": 0
+          },
+          "unprofiledCpuBatchUsPerCall": [
+            7.0201044921875,
+            7.142125,
+            7.0329853515625,
+            7.020232421875
+          ],
+          "medianUnprofiledCpuUsPerCall": 7.0266088867187495
+        },
+        "candidate": {
+          "cacheCardinality": [
+            1,
+            1
+          ],
+          "states": 1,
+          "productionCallCounts": {
+            "<genexpr>": 7680,
+            "BindingSource.__eq__": 256,
+            "BindingSource.__hash__": 5632,
+            "Graph.__hash__": 384,
+            "ShapeGuards.__hash__": 256,
+            "ShapeGuards.matches": 128,
+            "TensorGuard.__hash__": 512,
+            "TensorGuard.matches": 256,
+            "Value.__init__": 256,
+            "_broadcast_elements": 384,
+            "_logical_keys": 128,
+            "_select_specialization": 128,
+            "bind_arguments": 128,
+            "compiled": 128,
+            "resolve": 128,
+            "validate_signature_containers": 128
+          },
+          "mockBoundaryCallCounts": {
+            "metadata": 256,
+            "validate": 128,
+            "launch": 128,
+            "compile": 0
+          },
+          "unprofiledCpuBatchUsPerCall": [
+            23.8762216796875,
+            24.384373046875,
+            23.93128515625,
+            23.6679482421875
+          ],
+          "medianUnprofiledCpuUsPerCall": 23.90375341796875
+        }
+      }
+    },
+    {
+      "name": "broadcast_add",
+      "program": "def f(x,y):\n return x+y",
+      "sourceResults": {
+        "main": {
+          "cacheCardinality": [
+            1,
+            0
+          ],
+          "states": 1,
+          "productionCallCounts": {
+            "<genexpr>": 1920,
+            "compiled": 128,
+            "resolve": 128,
+            "runtime_bindings": 128,
+            "validate_signature_containers": 128
+          },
+          "mockBoundaryCallCounts": {
+            "metadata": 256,
+            "validate": 128,
+            "launch": 128,
+            "compile": 0
+          },
+          "unprofiledCpuBatchUsPerCall": [
+            7.162771484375,
+            7.0495048828125,
+            6.94843359375,
+            6.956091796875
+          ],
+          "medianUnprofiledCpuUsPerCall": 7.00279833984375
+        },
+        "candidate": {
+          "cacheCardinality": [
+            1,
+            1
+          ],
+          "states": 1,
+          "productionCallCounts": {
+            "<genexpr>": 7168,
+            "BindingSource.__eq__": 256,
+            "BindingSource.__hash__": 4864,
+            "Graph.__hash__": 384,
+            "ShapeGuards.__hash__": 256,
+            "ShapeGuards.matches": 128,
+            "TensorGuard.__hash__": 512,
+            "TensorGuard.matches": 256,
+            "Value.__init__": 256,
+            "_broadcast_elements": 384,
+            "_logical_keys": 128,
+            "_select_specialization": 128,
+            "bind_arguments": 128,
+            "compiled": 128,
+            "resolve": 128,
+            "validate_signature_containers": 128
+          },
+          "mockBoundaryCallCounts": {
+            "metadata": 256,
+            "validate": 128,
+            "launch": 128,
+            "compile": 0
+          },
+          "unprofiledCpuBatchUsPerCall": [
+            23.065591796875,
+            23.0286611328125,
+            22.8558896484375,
+            22.842353515625
+          ],
+          "medianUnprofiledCpuUsPerCall": 22.942275390625
+        }
+      }
+    },
+    {
+      "name": "repeated_alias",
+      "program": "def f(x,y):\n return x+y",
+      "sourceResults": {
+        "main": {
+          "cacheCardinality": [
+            1,
+            0
+          ],
+          "states": 1,
+          "productionCallCounts": {
+            "<genexpr>": 1920,
+            "compiled": 128,
+            "resolve": 128,
+            "runtime_bindings": 128,
+            "validate_signature_containers": 128
+          },
+          "mockBoundaryCallCounts": {
+            "metadata": 256,
+            "validate": 128,
+            "launch": 128,
+            "compile": 0
+          },
+          "unprofiledCpuBatchUsPerCall": [
+            7.08433203125,
+            6.916853515625,
+            6.882513671875,
+            6.8562041015625
+          ],
+          "medianUnprofiledCpuUsPerCall": 6.89968359375
+        },
+        "candidate": {
+          "cacheCardinality": [
+            1,
+            1
+          ],
+          "states": 1,
+          "productionCallCounts": {
+            "<genexpr>": 4480,
+            "BindingSource.__eq__": 256,
+            "BindingSource.__hash__": 2688,
+            "Graph.__hash__": 384,
+            "ShapeGuards.__hash__": 256,
+            "ShapeGuards.matches": 128,
+            "TensorGuard.__hash__": 256,
+            "TensorGuard.matches": 128,
+            "Value.__init__": 256,
+            "_broadcast_elements": 128,
+            "_logical_keys": 128,
+            "_select_specialization": 128,
+            "bind_arguments": 128,
+            "compiled": 128,
+            "resolve": 128,
+            "validate_signature_containers": 128
+          },
+          "mockBoundaryCallCounts": {
+            "metadata": 256,
+            "validate": 128,
+            "launch": 128,
+            "compile": 0
+          },
+          "unprofiledCpuBatchUsPerCall": [
+            17.28703125,
+            17.275119140625,
+            17.2720087890625,
+            17.3556220703125
+          ],
+          "medianUnprofiledCpuUsPerCall": 17.2810751953125
+        }
+      }
+    },
+    {
+      "name": "shape_revisit",
+      "program": "def f(x,y):\n return x*y+y",
+      "sourceResults": {
+        "main": {
+          "cacheCardinality": [
+            2,
+            0
+          ],
+          "states": 2,
+          "productionCallCounts": {
+            "<genexpr>": 1920,
+            "compiled": 128,
+            "resolve": 128,
+            "runtime_bindings": 128,
+            "validate_signature_containers": 128
+          },
+          "mockBoundaryCallCounts": {
+            "metadata": 256,
+            "validate": 128,
+            "launch": 128,
+            "compile": 0
+          },
+          "unprofiledCpuBatchUsPerCall": [
+            7.0624541015625,
+            7.09543359375,
+            7.111267578125,
+            7.8700126953125
+          ],
+          "medianUnprofiledCpuUsPerCall": 7.1033505859375
+        },
+        "candidate": {
+          "cacheCardinality": [
+            2,
+            1
+          ],
+          "states": 2,
+          "productionCallCounts": {
+            "<genexpr>": 7680,
+            "BindingSource.__eq__": 256,
+            "BindingSource.__hash__": 5632,
+            "Graph.__hash__": 384,
+            "ShapeGuards.__hash__": 256,
+            "ShapeGuards.matches": 128,
+            "TensorGuard.__hash__": 512,
+            "TensorGuard.matches": 256,
+            "Value.__init__": 256,
+            "_broadcast_elements": 384,
+            "_logical_keys": 128,
+            "_select_specialization": 128,
+            "bind_arguments": 128,
+            "compiled": 128,
+            "resolve": 128,
+            "validate_signature_containers": 128
+          },
+          "mockBoundaryCallCounts": {
+            "metadata": 256,
+            "validate": 128,
+            "launch": 128,
+            "compile": 0
+          },
+          "unprofiledCpuBatchUsPerCall": [
+            23.8467626953125,
+            23.7820263671875,
+            23.92996484375,
+            25.9374228515625
+          ],
+          "medianUnprofiledCpuUsPerCall": 23.88836376953125
+        }
+      }
+    },
+    {
+      "name": "promoted_capture",
+      "program": "def f(x):\n return x*scale+x",
+      "sourceResults": {
+        "main": {
+          "cacheCardinality": [
+            2,
+            0
+          ],
+          "states": 3,
+          "productionCallCounts": {
+            "<genexpr>": 1920,
+            "RuntimeScalar.__init__": 128,
+            "binding": 128,
+            "compiled": 128,
+            "is_scalar": 128,
+            "resolve": 128,
+            "runtime_bindings": 128,
+            "validate_signature_containers": 128
+          },
+          "mockBoundaryCallCounts": {
+            "metadata": 128,
+            "validate": 128,
+            "launch": 128,
+            "compile": 0
+          },
+          "unprofiledCpuBatchUsPerCall": [
+            8.3154814453125,
+            8.220435546875,
+            8.3417119140625,
+            8.3315302734375
+          ],
+          "medianUnprofiledCpuUsPerCall": 8.323505859375
+        },
+        "candidate": {
+          "cacheCardinality": [
+            2,
+            2
+          ],
+          "states": 3,
+          "productionCallCounts": {
+            "<genexpr>": 3712,
+            "BindingSource.__eq__": 384,
+            "BindingSource.__hash__": 2176,
+            "Graph.__hash__": 384,
+            "ShapeGuards.__hash__": 256,
+            "ShapeGuards.matches": 128,
+            "TensorGuard.__hash__": 256,
+            "TensorGuard.matches": 128,
+            "Value.__init__": 128,
+            "_broadcast_elements": 128,
+            "_logical_keys": 128,
+            "_select_specialization": 128,
+            "bind_arguments": 128,
+            "binding": 128,
+            "compiled": 128,
+            "is_scalar": 128,
+            "resolve": 128,
+            "validate_signature_containers": 128
+          },
+          "mockBoundaryCallCounts": {
+            "metadata": 128,
+            "validate": 128,
+            "launch": 128,
+            "compile": 0
+          },
+          "unprofiledCpuBatchUsPerCall": [
+            15.901431640625,
+            15.847462890625,
+            15.9577177734375,
+            15.880833984375
+          ],
+          "medianUnprofiledCpuUsPerCall": 15.8911328125
+        }
+      }
+    },
+    {
+      "name": "eight_boolean_entries",
+      "program": "def f(x):\n return x*a+x*b+x*c",
+      "sourceResults": {
+        "main": {
+          "cacheCardinality": [
+            8,
+            0
+          ],
+          "states": 8,
+          "productionCallCounts": {
+            "<genexpr>": 1792,
+            "binding": 384,
+            "compiled": 128,
+            "is_scalar": 384,
+            "resolve": 128,
+            "runtime_bindings": 128,
+            "validate_signature_containers": 128
+          },
+          "mockBoundaryCallCounts": {
+            "metadata": 128,
+            "validate": 128,
+            "launch": 128,
+            "compile": 0
+          },
+          "unprofiledCpuBatchUsPerCall": [
+            8.066197265625,
+            8.100888671875,
+            8.086912109375,
+            8.1890693359375
+          ],
+          "medianUnprofiledCpuUsPerCall": 8.093900390624999
+        },
+        "candidate": {
+          "cacheCardinality": [
+            8,
+            8
+          ],
+          "states": 8,
+          "productionCallCounts": {
+            "<genexpr>": 4864,
+            "BindingSource.__eq__": 12288,
+            "BindingSource.__hash__": 6912,
+            "Graph.__hash__": 384,
+            "ShapeGuards.__hash__": 256,
+            "ShapeGuards.matches": 128,
+            "TensorGuard.__hash__": 256,
+            "TensorGuard.matches": 128,
+            "Value.__init__": 128,
+            "_broadcast_elements": 128,
+            "_logical_keys": 1024,
+            "_select_specialization": 128,
+            "bind_arguments": 128,
+            "binding": 384,
+            "compiled": 128,
+            "is_scalar": 384,
+            "resolve": 128,
+            "validate_signature_containers": 128
+          },
+          "mockBoundaryCallCounts": {
+            "metadata": 128,
+            "validate": 128,
+            "launch": 128,
+            "compile": 0
+          },
+          "unprofiledCpuBatchUsPerCall": [
+            40.4407744140625,
+            40.3544619140625,
+            40.16631640625,
+            40.1204169921875
+          ],
+          "medianUnprofiledCpuUsPerCall": 40.26038916015625
+        }
+      }
+    }
+  ],
+  "qualificationOrScoreProduced": false,
+  "realFrameworkOrGpuUsed": false,
+  "scriptSha256": "bb708311bdd4e2c59430e794658cc58782253b8e8a34ea77e447d713810fda39",
+  "sourceHashesRechecked": true
+}
+
