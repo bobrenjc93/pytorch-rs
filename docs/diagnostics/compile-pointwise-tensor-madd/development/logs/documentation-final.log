@@ -1,0 +1,6 @@
+docs/compile-pointwise-jit.md local file links valid
+docs/compile-pointwise-numerics.md local file links valid
+docs/diagnostics/compile-pointwise-tensor-madd/README.md local file links valid
+public compile change is documentation only; executable Python AST unchanged
+tests/test_compile_pointwise_tensor_madd.py syntax valid
+docs/diagnostics/compile-pointwise-tensor-madd/capture.py syntax valid

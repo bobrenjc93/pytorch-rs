@@ -139,11 +139,28 @@ impl Graph {
         // Argument shape equality, not address equality: unequal singleton-only
         // reshapes and unused arguments must not bypass this admission rule.
         // Graph validation bounds depth by the 4096-node limit.
+        // The sole two-stage exception is an original tensor-leaf product plus
+        // an input, in either add order. Match nodes directly: identities, CSE,
+        // scalar leaves and wrappers must not turn a different graph into it.
+        let tensor_product = |id| match self.nodes[id] {
+            Node::Mul(a, b) => {
+                matches!(self.nodes[a], Node::Input(_)) && matches!(self.nodes[b], Node::Input(_))
+            }
+            _ => false,
+        };
+        let tensor_madd = match self.nodes[self.output] {
+            Node::Add(a, b) => {
+                (tensor_product(a) && matches!(self.nodes[b], Node::Input(_)))
+                    || (matches!(self.nodes[a], Node::Input(_)) && tensor_product(b))
+            }
+            _ => false,
+        };
         if shapes.windows(2).any(|pair| pair[0] != pair[1])
             && (depth[self.output] > 1 || transcendental[self.output])
+            && !tensor_madd
         {
             return Err(invalid(
-                "unequal input shapes require at most one arithmetic stage and no live sin/cos",
+                "unequal input shapes require at most one arithmetic stage and no live sin/cos, or a tensor-leaf multiply-add",
             ));
         }
         let output = layouts.swap_remove(self.output);
@@ -325,6 +342,143 @@ mod tests {
                 .to_string()
                 .contains("incompatible")
         );
+    }
+
+    #[test]
+    fn tensor_leaf_madd_accepts_both_orders_all_input_ids_and_broadcasts() {
+        for a in 0..2 {
+            for b in 0..2 {
+                for c in 0..2 {
+                    for reversed in [false, true] {
+                        let g = Graph {
+                            inputs: 2,
+                            // Separate input nodes deliberately include repeated IDs.
+                            nodes: vec![
+                                Node::Input(a),
+                                Node::Input(b),
+                                Node::Input(c),
+                                Node::Mul(0, 1),
+                                if reversed {
+                                    Node::Add(2, 3)
+                                } else {
+                                    Node::Add(3, 2)
+                                },
+                            ],
+                            output: 4,
+                        };
+                        for (left, right) in [
+                            (&[3, 1][..], &[2, 1, 5][..]),
+                            (&[2, 1, 5][..], &[3, 1][..]),
+                            (&[7][..], &[1, 7][..]),
+                            (&[][..], &[1][..]),
+                            (&[0, 1][..], &[1, 3][..]),
+                        ] {
+                            let indexing = g.indexing(&[left, right]).unwrap();
+                            let code = g.indexed_source(&indexing.addresses).unwrap();
+                            assert_eq!(code.matches("fmaf(").count(), 1);
+                            assert!(!code.contains("/ 0ull"));
+                            assert!(!code.contains("% 0ull"));
+                            if a == b && b == c {
+                                assert_eq!(indexing.output.shape, [left, right][a]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn tensor_madd_does_not_admit_wrappers_other_leaves_or_products() {
+        let mut g = graph();
+        g.nodes.push(Node::Add(2, 0));
+        g.output = 3;
+        let original = g.clone();
+        let mut negatives = Vec::new();
+        for wrapper in [
+            Node::Relu(3),
+            Node::Neg(3),
+            Node::Sin(3),
+            Node::Cos(3),
+            Node::Add(3, 0),
+            Node::Mul(3, 0),
+            Node::Sub(3, 0),
+        ] {
+            let mut g = original.clone();
+            g.nodes.push(wrapper);
+            g.output = 4;
+            negatives.push(g);
+        }
+        for leaf in [
+            Node::Constant(1f64.to_bits()),
+            Node::Integer(1f64.to_bits()),
+            Node::Boolean(true),
+            Node::RuntimeScalar(0, false),
+            Node::Neg(1),
+            Node::Relu(1),
+            Node::Sin(1),
+            Node::Cos(1),
+        ] {
+            for replacement in [2, 3] {
+                let mut g = graph();
+                g.nodes.insert(2, leaf.clone());
+                g.nodes[3] = if replacement == 2 {
+                    Node::Mul(0, 2)
+                } else {
+                    Node::Mul(0, 1)
+                };
+                g.nodes.push(if replacement == 2 {
+                    Node::Add(3, 0)
+                } else {
+                    Node::Add(3, 2)
+                });
+                g.output = 4;
+                negatives.push(g);
+            }
+        }
+        for output in [Node::Add(2, 2), Node::Sub(2, 0), Node::Sub(0, 2)] {
+            let mut g = original.clone();
+            g.nodes[3] = output;
+            negatives.push(g);
+        }
+        // A dead qualifying expression must not admit the actual output.
+        let mut g = original;
+        g.nodes.extend([Node::Neg(0), Node::Neg(4)]);
+        g.output = 5;
+        negatives.push(g);
+        for g in negatives {
+            for shapes in [
+                [&[2, 1][..], &[1, 3][..]],
+                [&[2][..], &[1, 2][..]],
+                [&[][..], &[1][..]],
+                [&[0][..], &[1, 0][..]],
+            ] {
+                assert!(g.indexing(&shapes).is_err(), "{g:?}");
+            }
+            assert!(g.indexing(&[&[2], &[2]]).is_ok(), "{g:?}");
+        }
+    }
+
+    #[test]
+    fn tensor_madd_still_checks_dead_nodes_unused_inputs_and_overflow() {
+        let mut g = graph();
+        g.nodes[2] = Node::Mul(0, 0);
+        g.nodes.push(Node::Add(2, 0));
+        g.output = 3;
+        assert_eq!(g.indexing(&[&[3], &[5]]).unwrap().output.shape, [3]);
+        for unused in [
+            &[usize::MAX, 2][..],
+            &[isize::MAX as usize][..],
+            &[0, usize::MAX, 2][..],
+        ] {
+            assert!(g.indexing(&[&[3], unused]).is_err());
+        }
+        g.nodes.push(Node::Add(0, 1));
+        assert!(g.indexing(&[&[3], &[5]]).is_err());
+        let large = 1usize << (usize::BITS / 2);
+        assert!(g.indexing(&[&[large, 1], &[1, large]]).is_err());
+        g.nodes.push(Node::Add(0, 99));
+        assert!(g.indexing(&[&[3], &[1]]).is_err());
     }
 
     #[test]

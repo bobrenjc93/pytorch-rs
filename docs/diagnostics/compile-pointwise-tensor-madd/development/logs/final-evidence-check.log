@@ -1,0 +1,10 @@
+Verified build source still matches checkout
+All 85 compiler modules retained, successful and source-matched
+paired-0-native all source/build/report/dispatched-code identities verified
+paired-1-reference all source/build/report/dispatched-code identities verified
+paired-2-reference all source/build/report/dispatched-code identities verified
+paired-3-native all source/build/report/dispatched-code identities verified
+docs/compile-pointwise-jit.md all local file links valid
+docs/compile-pointwise-numerics.md all local file links valid
+docs/diagnostics/compile-pointwise-tensor-madd/README.md all local file links valid
+No clean-head or scoring claim: Burner owns those phases

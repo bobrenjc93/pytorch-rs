@@ -979,7 +979,11 @@ def compile(
     at most one arithmetic stage and no live sin/cos in the original returned
     expression, before simplification: add/subtract/multiply and tensor negation
     add a stage; ReLU preserves depth. The rule includes unused inputs and unequal
-    shapes with linear addresses. CPU compilation, mutation,
+    shapes with linear addresses. The sole two-stage exception is ``a*b+c`` or
+    ``c+a*b`` with all three leaves tensor inputs (IDs may repeat within the
+    one/two-tensor limit). Scalar leaves, identity wrappers, subtraction,
+    negation, ReLU/sin/cos and extra live arithmetic do not qualify for this
+    exception. CPU compilation, mutation,
     control flow, module calls and training are outside this default JIT subset.
     NVRTC and the CUDA driver compile/cache code; no PyTorch forwarding or eager
     replay is used. See docs/compile-pointwise-jit.md for guards and scope.

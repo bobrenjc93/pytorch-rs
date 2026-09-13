@@ -1,0 +1,14 @@
+verified-build 0
+verified-provenance 0
+tensor-madd-final-two-devices 0
+existing-two-device-guards 0
+portable-metadata 0
+paired-0-native 0
+paired-1-reference 0
+paired-2-reference 0
+paired-3-native 0
+compare-0-native-1-reference 0
+compare-2-reference-3-native 0
+default-clippy 0
+default-rust 0
+final-format 0

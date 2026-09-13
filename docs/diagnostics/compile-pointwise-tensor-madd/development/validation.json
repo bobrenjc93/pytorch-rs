@@ -1,0 +1,81 @@
+{
+  "compiler": {
+    "passed": true,
+    "modules": 85,
+    "uniqueTests": 892,
+    "passedTests": 867,
+    "singleGpuReservationSkips": [
+      "test_ordinals_captures_and_current_device_restoration (test_compile_cuda_boundary.CompileCudaDeviceTests.test_ordinals_captures_and_current_device_restoration) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+      "test_device_and_context_restored (test_compile_cuda_contiguous.CompileContiguousDeviceTests.test_device_and_context_restored) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+      "test_composed_restoration_and_mixed_devices (test_compile_cuda_graph.CudaGraphDeviceTests.test_composed_restoration_and_mixed_devices) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+      "test_device_restore_cache_and_mixed_device_errors (test_compile_cuda_matmul.CompileCudaMatmulDeviceTests.test_device_restore_cache_and_mixed_device_errors) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+      "test_restoration_success_rejection_unused_input_and_lifetime (test_compile_cuda_module_arithmetic.ModuleArithmeticDeviceTests.test_restoration_success_rejection_unused_input_and_lifetime) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+      "test_restoration_success_rejection_unused_inputs_and_lifetime (test_compile_cuda_module_relu.ModuleReluDeviceTests.test_restoration_success_rejection_unused_inputs_and_lifetime) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+      "test_view_pack_restoration_unused_inputs_and_captures (test_compile_cuda_module_reshape.ModuleReshapeDeviceTests.test_view_pack_restoration_unused_inputs_and_captures) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+      "test_restoration_unused_inputs_captures_and_lifetime (test_compile_cuda_module_squeeze.ModuleSqueezeDeviceTests.test_restoration_unused_inputs_captures_and_lifetime) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+      "test_restoration_unused_inputs_captures_and_lifetime (test_compile_cuda_module_t.ModuleTDeviceTests.test_restoration_unused_inputs_captures_and_lifetime) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+      "test_restoration_unused_inputs_captures_and_lifetime (test_compile_cuda_module_transpose.ModuleTransposeDeviceTests.test_restoration_unused_inputs_captures_and_lifetime) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+      "test_ownership_restoration_and_cache_separation (test_compile_cuda_mul_scalar.CompileCudaMulScalarDeviceTests.test_ownership_restoration_and_cache_separation) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+      "test_ownership_captures_and_device_restoration (test_compile_cuda_neg.CompileCudaNegDeviceTests.test_ownership_captures_and_device_restoration) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+      "test_context_captures_mixed_devices_and_restoration (test_compile_cuda_relu.CompileCudaReluDeviceTests.test_context_captures_mixed_devices_and_restoration) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+      "test_context_restoration_and_unused_mixed_capture (test_compile_cuda_reshape.ReshapeDeviceTests.test_context_restoration_and_unused_mixed_capture) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+      "test_restoration_and_unused_input_capture_device_guards (test_compile_cuda_squeeze.SqueezeDeviceTests.test_restoration_and_unused_input_capture_device_guards) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+      "test_current_device_restored_for_single_and_composed_reductions (test_compile_cuda_sum_rows.CompileCudaSumDeviceTests.test_current_device_restored_for_single_and_composed_reductions) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+      "test_device_context_and_unused_capture (test_compile_cuda_t.CompileTDeviceTests.test_device_context_and_unused_capture) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+      "test_ordinals_and_restoration (test_compile_cuda_trailing_vector.CompileCudaTrailingVectorDeviceTests.test_ordinals_and_restoration) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+      "test_restore_device_context_and_unused_capture (test_compile_cuda_transpose.TransposeDeviceTests.test_restore_device_context_and_unused_capture) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+      "test_context_restoration_and_unused_mixed_capture (test_compile_cuda_view.ViewDeviceTests.test_context_restoration_and_unused_mixed_capture) ... skipped 'requires real CUDA with CUDA_VISIBLE_DEVICES=0,1'",
+      "test_device_restoration_on_compile_run_failure_and_module_release (test_compile_pointwise_broadcast.Broadcast.test_device_restoration_on_compile_run_failure_and_module_release) ... skipped 'requires explicit reservation of two CUDA devices'",
+      "test_two_device_restoration_and_module_ownership (test_compile_pointwise_jit.Hardware.test_two_device_restoration_and_module_ownership) ... skipped 'requires explicit two-device reservation'",
+      "test_positional_runtime_parameters_restore_device_on_success_and_failure (test_compile_pointwise_runtime_scalars.PositionalScalarHardware.test_positional_runtime_parameters_restore_device_on_success_and_failure) ... skipped 'requires explicit two-device reservation'",
+      "test_runtime_parameters_restore_current_device (test_compile_pointwise_runtime_scalars.RuntimeScalarHardware.test_runtime_parameters_restore_current_device) ... skipped 'requires explicit two-device validation'",
+      "test_both_devices_restore_current_device_on_success_failure_and_reset (test_compile_pointwise_tensor_madd.TensorMadd.test_both_devices_restore_current_device_on_success_failure_and_reset) ... skipped 'requires explicit reservation of two CUDA devices'"
+    ],
+    "testSourcesUnchanged": true
+  },
+  "focusedTwoDeviceTests": 10,
+  "existingPointwiseTwoDeviceGuards": 4,
+  "portableMetadata": {
+    "passed": 3,
+    "skippedHardware": 7
+  },
+  "rust": {
+    "defaultLib": 210,
+    "pythonBindingsLib": 237,
+    "pointwiseIrSubset": 28,
+    "defaultClippy": "passed",
+    "pythonBindingsClippy": "passed",
+    "format": "passed",
+    "rustdoc": 0
+  },
+  "paired": [
+    {
+      "order": [
+        "0-native",
+        "1-reference"
+      ],
+      "passed": true,
+      "statesCompared": 42,
+      "callsPerState": 23,
+      "warmupsPerState": 5,
+      "samplesPerState": 17,
+      "comparison": "exact finite bits, signed zeros and nonfinite classes; NaN payloads coalesce"
+    },
+    {
+      "order": [
+        "2-reference",
+        "3-native"
+      ],
+      "passed": true,
+      "statesCompared": 42,
+      "callsPerState": 23,
+      "warmupsPerState": 5,
+      "samplesPerState": 17,
+      "comparison": "exact finite bits, signed zeros and nonfinite classes; NaN payloads coalesce"
+    }
+  ],
+  "productionFileSha256": "3dc1a0ebbb87731d37d9da5fdaf10e65235c2922b0564cb7c6cabe31e3c9a2c7",
+  "focusedTestSha256": "33ae55a40f8a8eb4f8ef1dcc3466625a30b12d71275684baf4707244318ef32b",
+  "captureSha256": "27e3c3ecc14fce14b57999bdd6b79061183d1eb4b6c13c2876a4139e7ca94e0a",
+  "qualification": "Development evidence only. Clean candidate/main captures and frozen scoring remain Burner-owned post-commit work."
+}

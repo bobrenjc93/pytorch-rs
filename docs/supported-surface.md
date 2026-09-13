@@ -6,8 +6,11 @@ inputs and scalar constants. Equal-shape inputs support add/subtract/multiply an
 negation/ReLU/sin/cos. Unequal input shapes require at most one arithmetic stage
 and no live sin/cos in the returned original expression; ReLU preserves depth,
 while tensor negation adds a stage. This includes unused inputs and unequal
-shapes with linear address maps. Multi-stage broadcast expressions are rejected
-before compilation or execution because numerical equivalence is not established.
+shapes with linear address maps. The sole two-stage exception is original
+`a*b+c` or `c+a*b` with all leaves tensor inputs (IDs may repeat); scalar leaves,
+identity wrappers, signed expressions, ReLU/sin/cos and extra arithmetic do not
+qualify. Other multi-stage broadcast expressions are rejected before compilation
+or execution because numerical equivalence is not established.
 CPU lowering, strided inputs, control flow and training remain unsupported by
 this JIT; explicit eager capture retains its separate contract.
 
