@@ -1,5 +1,9 @@
 # Bounded direct Python helper capture
 
+Clean post-commit candidate/main measurements and two-H100 helper captures are
+recorded in [postcommit-a8211b07](postcommit-a8211b07/README.md). The development
+records below retain their original source identities and outcomes.
+
 This is development evidence for the frontend change based on
 `fe7537251a53b54e1064309d28db2631605fb720`. It is not a clean-head evaluation,
 a corpus score, or evidence of general Python/Inductor equivalence. Production
