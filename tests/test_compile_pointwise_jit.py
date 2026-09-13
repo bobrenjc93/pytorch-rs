@@ -378,7 +378,7 @@ class Hardware(unittest.TestCase):
         compiled = native.compile(fn)
         x = self.upload([1., 2., 3., 4.], (2, 2))
         with patch.object(bridge, '_pointwise_compile', side_effect=AssertionError('compiled invalid graph')):
-            for args in [(x, x[0]), (x, x.t()), (x, native.ones(2, 2))]:
+            for args in [(x, x.t()), (x, native.ones(2, 2))]:
                 with self.assertRaises(NotImplementedError):
                     compiled(*args)
         self.assertFalse(cache(compiled).graphs)

@@ -972,10 +972,14 @@ def compile(
 ):
     """Compile the bounded native pointwise language, or an explicit backend.
 
-    With untouched defaults, straight-line functions over one or two same-shape
+    With untouched defaults, straight-line functions over one or two broadcast-compatible
     contiguous no-grad native CUDA float32 inputs lower to generated fused CUDA
-    code. Supported operations are add/subtract/multiply, negation/ReLU/sin/cos,
-    scalar constants and reused local intermediates. CPU, broadcasting, mutation,
+    code. Equal-shape inputs support add/subtract/multiply, negation/ReLU/sin/cos,
+    scalar constants and reused local intermediates. Unequal input shapes require
+    at most one arithmetic stage and no live sin/cos in the original returned
+    expression, before simplification: add/subtract/multiply and tensor negation
+    add a stage; ReLU preserves depth. The rule includes unused inputs and unequal
+    shapes with linear addresses. CPU compilation, mutation,
     control flow, module calls and training are outside this default JIT subset.
     NVRTC and the CUDA driver compile/cache code; no PyTorch forwarding or eager
     replay is used. See docs/compile-pointwise-jit.md for guards and scope.

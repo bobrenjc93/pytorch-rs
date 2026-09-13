@@ -606,7 +606,7 @@ fn consumer_analysis(
     (last, uses)
 }
 
-pub(super) fn source(graph: &Graph) -> String {
+pub(super) fn source(graph: &Graph, addresses: &[super::indexing::Address]) -> String {
     let mut lower = Lowering::default();
     let mut mapped = Vec::with_capacity(graph.nodes.len());
     let (aliases, zeros) = early_aliases(graph);
@@ -653,7 +653,7 @@ pub(super) fn source(graph: &Graph) -> String {
             continue;
         }
         let expression = match *node {
-            Expr::Node(Node::Input(i)) => format!("x{i}[i]"),
+            Expr::Node(Node::Input(i)) => format!("x{i}[{}]", addresses[i].source()),
             Expr::Node(Node::RuntimeScalar(i, negative)) => {
                 format!("{}s{i}", if negative { "-" } else { "" })
             }

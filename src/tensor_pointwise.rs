@@ -1,5 +1,5 @@
 //! Whole-input admission and fresh output construction for the pointwise JIT.
-use super::{Arc, DType, Device, Tensor, contiguous_strides, requires_grad_flag};
+use super::{Arc, DType, Device, Tensor, requires_grad_flag};
 use crate::{cuda::jit::Kernel, pointwise_ir::invalid, tensor_error::TensorError};
 
 impl Tensor {
@@ -18,11 +18,14 @@ impl Tensor {
                 || input.dtype() != DType::Float32
                 || input.requires_grad()
                 || !input.is_contiguous()
-                || input.shape != first.shape
             {
                 return Err(invalid(
-                    "requires same-shape, same-device contiguous CUDA float32 tensors without gradients",
+                    "requires same-device contiguous CUDA float32 tensors without gradients",
                 ));
+            }
+            let layout = crate::pointwise_ir::indexing::Layout::new(&input.shape)?;
+            if layout.elements != input.elements {
+                return Err(invalid("inconsistent pointwise input element count"));
             }
             // Empty offset views are valid without forming a pointer.
             if input.elements != 0
@@ -34,8 +37,6 @@ impl Tensor {
                 return Err(invalid("input storage bounds exceeded"));
             }
         }
-        // Validate output layout before compilation, allocation or launch.
-        contiguous_strides(&first.shape, first.elements)?;
         Ok(device)
     }
 
@@ -51,13 +52,30 @@ impl Tensor {
         }
         let first = inputs[0];
         let second = inputs.get(1).copied().unwrap_or(first);
-        let shape = first.shape.clone();
-        let strides = contiguous_strides(&shape, first.elements)?;
+        let indexing = kernel.graph.indexing(
+            &inputs
+                .iter()
+                .map(|x| x.shape.as_slice())
+                .collect::<Vec<_>>(),
+        )?;
+        if indexing.addresses != kernel.addresses {
+            return Err(invalid("kernel broadcast indexing guard mismatch"));
+        }
+        let elements = indexing.output.elements;
+        let shape = indexing.output.shape;
+        let strides = indexing.output.strides;
+        let counts = [
+            indexing.input_elements[0],
+            *indexing
+                .input_elements
+                .get(1)
+                .unwrap_or(&indexing.input_elements[0]),
+        ];
         let storage = first.storage.cuda_pointwise_jit(
-            first.offset,
             &second.storage,
-            second.offset,
-            first.elements,
+            [first.offset, second.offset],
+            elements,
+            counts,
             kernel,
             scalars,
         )?;
@@ -66,7 +84,7 @@ impl Tensor {
             shape,
             strides,
             offset: 0,
-            elements: first.elements,
+            elements,
             output_nr: 0,
             leaf_requires_grad: requires_grad_flag(false),
             view_requires_grad: None,
@@ -93,6 +111,9 @@ mod tests {
         input.view_requires_grad = Some(requires_grad_flag(true));
         assert!(Tensor::validate_pointwise_inputs(&[&input]).is_err());
         input.view_requires_grad = None;
+        input.elements = 3;
+        assert!(Tensor::validate_pointwise_inputs(&[&input]).is_err());
+        input.elements = 4;
         input.offset = usize::MAX;
         assert!(Tensor::validate_pointwise_inputs(&[&input]).is_err());
         input.offset = 0;

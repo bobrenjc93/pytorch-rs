@@ -1,5 +1,7 @@
 //! Typed, shape-independent pointwise SSA and CUDA C lowering. No device access.
 use crate::tensor_error::TensorError;
+#[path = "pointwise_indexing.rs"]
+pub(crate) mod indexing;
 #[path = "pointwise_lowering.rs"]
 mod lowering;
 
@@ -92,8 +94,18 @@ impl Graph {
     }
 
     pub(crate) fn source(&self) -> Result<String, TensorError> {
+        self.indexed_source(&vec![indexing::Address::Linear; self.inputs])
+    }
+
+    pub(crate) fn indexed_source(
+        &self,
+        addresses: &[indexing::Address],
+    ) -> Result<String, TensorError> {
         self.validate()?;
-        Ok(lowering::source(self))
+        if addresses.len() != self.inputs {
+            return Err(invalid("pointwise address arity mismatch"));
+        }
+        Ok(lowering::source(self, addresses))
     }
 }
 

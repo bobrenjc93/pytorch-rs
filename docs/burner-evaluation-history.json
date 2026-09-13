@@ -11485,6 +11485,26 @@
         "eval_d4c0b71e": 83,
         "eval_b7f2a91c": 5.5
       }
+    },
+    {
+      "key": "pr:1991",
+      "recordedAt": "2026-09-13T07:27:11.845Z",
+      "label": "PR #1991",
+      "kind": "leaf",
+      "prNumber": 1991,
+      "title": "Lower numerically bounded broadcast indexing in the default CUDA JIT",
+      "scores": {
+        "eval_7af648fb": 90,
+        "eval_8417a4a8": 23.4,
+        "eval_63a24994": 60,
+        "eval_39340456": 27,
+        "eval_b4945d15": 79,
+        "eval_c8a1bfb9": 67,
+        "eval_a61c0e71": 8,
+        "eval_6f98c42d": 12,
+        "eval_d4c0b71e": 83,
+        "eval_b7f2a91c": 5.5
+      }
     }
   ]
 }

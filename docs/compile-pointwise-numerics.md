@@ -1,8 +1,9 @@
 # CUDA pointwise numerical semantics
 
 This is the numerical contract for the [default CUDA pointwise compiler](compile-pointwise-jit.md).
-It follows the measured PyTorch 2.13 Inductor behavior for the supported subset;
-the usage guide owns input restrictions, runtime setup and cache behavior.
+It describes the lowering and measured PyTorch 2.13 Inductor compatibility,
+including the unequal-shape admission boundary below. The usage guide owns input
+restrictions, runtime setup and cache behavior.
 
 ## Rounding and library functions
 
@@ -44,6 +45,34 @@ inherits that region. This models the pinned reference's join/PHI ordering
 without reproducing libdevice's internal arithmetic. Constant-only expressions
 have rank zero, and their products are excluded from contraction candidates:
 the reference folds those products before FMA selection.
+
+## Unequal-shape numerical boundary
+
+Unequal input shapes admit at most one arithmetic stage and no live sin/cos in
+the returned original typed IR. Input/scalar depth is zero; add/subtract/multiply
+add one to the maximum operand depth, tensor negation adds one, and ReLU preserves
+depth. Scalar signs are metadata, not tensor negation. This check precedes
+numerical simplification, so zero/one identities cannot hide a second stage.
+Actual input shape equality controls admission, including unused inputs and
+unequal shapes whose address maps are linear. Full graph and shape validation
+still includes dead expressions; numerical capability depends on the returned
+live expression only. Equal-shape admission and lowering remain unchanged.
+
+The accepted graph cannot supply a product to a second arithmetic consumer.
+ReLU contributes comparison/selection, and scalar identities, sign normalization
+and constant materialization do not introduce another live add/multiply stage.
+Consequently this subset has no competing product contraction to select. Address
+calculation only chooses input elements; it no longer changes numerical
+materialization ranks to approximate a reference autotuner.
+
+The earlier broad candidate's `a=x+1.0; x*y+a*a` failures are now explicit
+unsupported cases for unequal shapes. H100 runs found finite cancellation errors
+on large fresh shapes and persistent shape transitions, as well as wrong infinity
+signs. Identical fresh default-Inductor runs could also select different
+contractions by timing. The [review record](diagnostics/compile-pointwise-broadcast/review-autotune-blocker.md)
+and [earlier repair record](diagnostics/compile-pointwise-broadcast/review-broadcast-order.md)
+retain the original measurements and source identities. Narrowing admission does
+not repair those numerical discrepancies or establish arbitrary broadcast parity.
 
 ## Sign normalization and live uses
 
@@ -125,3 +154,5 @@ when subsequent arithmetic amplifies the result. Constant-only sine expressions
 retain gradual underflow, as does other native arithmetic; no global fast-math
 or flush-to-zero option is enabled. Regression tests include amplified
 subnormal values and exact zero-sign assertions.
+Numerical comparisons retain the existing `rtol=1e-5`, `atol=1e-6` contract;
+small subnormal comparisons alone do not establish bit-exact preservation.

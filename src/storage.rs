@@ -212,20 +212,20 @@ impl Storage {
     #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn cuda_pointwise_jit(
         &self,
-        offset: usize,
         other: &Self,
-        other_offset: usize,
+        offsets: [usize; 2],
         elements: usize,
+        input_elements: [usize; 2],
         kernel: &crate::cuda::jit::Kernel,
         scalars: &[f32],
     ) -> Result<Self, TensorError> {
         match (&self.payload, &other.payload) {
             (StoragePayload::CudaFloat32(left), StoragePayload::CudaFloat32(right)) => Ok(Self {
                 payload: StoragePayload::CudaFloat32(left.pointwise_jit(
-                    offset,
                     right,
-                    other_offset,
+                    offsets,
                     elements,
+                    input_elements,
                     kernel,
                     scalars,
                 )?),

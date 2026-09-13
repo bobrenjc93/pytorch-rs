@@ -549,26 +549,31 @@ impl CudaFloat32Storage {
     #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn pointwise_jit(
         &self,
-        offset: usize,
         other: &Self,
-        other_offset: usize,
+        offsets: [usize; 2],
         elements: usize,
+        input_elements: [usize; 2],
         kernel: &jit::Kernel,
         scalars: &[f32],
     ) -> Result<Self, TensorError> {
+        let [offset, other_offset] = offsets;
         kernel.validate_scalars(scalars)?;
         if self.device_index != other.device_index || self.device_index != kernel.device {
             return Err(crate::pointwise_ir::invalid("mixed CUDA JIT devices"));
         }
-        if elements != 0
+        if input_elements[1] != 0
             && other_offset
-                .checked_add(elements)
+                .checked_add(input_elements[1])
                 .is_none_or(|end| end > other.elements)
         {
             return Err(TensorError::IndexCalculationOverflow);
         }
-        self.unary_output(offset, elements, elements, |left, output| {
-            let right = (other.data_ptr + other_offset * 4) as u64;
+        self.unary_output(offset, input_elements[0], elements, |left, output| {
+            let right = if input_elements[1] == 0 {
+                0
+            } else {
+                (other.data_ptr + other_offset * 4) as u64
+            };
             // SAFETY: both checked contiguous ranges and the fresh output remain
             // live through unary_output's completion, including launch errors.
             unsafe { kernel.launch(left, right, output, elements as u64, scalars) }
