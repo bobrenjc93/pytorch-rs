@@ -37,7 +37,7 @@ _METHOD_GUARDS = tuple((cls, name, cls.__dict__.get(name, _MISSING))
 
 
 def unsupported(reason):
-    raise NotImplementedError("torch.compile native CUDA pointwise: " + reason)
+    raise NotImplementedError("torch.compile(): native CUDA pointwise: " + reason)
 
 
 def is_scalar(value):

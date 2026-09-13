@@ -10,6 +10,10 @@ baseline remains pinned to campaign base
 `76738b39fd6884ffd43b4dff2f5292257a1c6e6b`, verified as the merge base with main.
 See the [implementation contract](../../compile-pointwise-jit.md).
 
+This capture predates the [error-prefix compatibility repair](review-error-prefix.md).
+Its fresh campaign capture awaits Burner's next clean implementation commit;
+the retained reports below keep their original measured identity.
+
 | Unchanged public-default-compile-v2 gate | Clean baseline | Clean candidate `74602c07` |
 | --- | ---: | ---: |
 | Weighted coverage | 0% (0/112 cells) | 6% (4/112 cells) |
@@ -24,7 +28,7 @@ remain zero. The uncapped ratio describes only those four cells; the baseline
 has no common successes, so its ratio is null. These are fixed-corpus results,
 not general Inductor parity.
 
-## Current committed evidence
+## Latest clean capture (preceding the prefix repair)
 
 - [Coverage](postcommit-74602c/candidate-coverage.json.gz) and
   [CUDA performance](postcommit-74602c/candidate-cuda-perf.json.gz) are

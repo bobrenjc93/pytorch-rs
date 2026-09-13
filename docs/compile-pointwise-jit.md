@@ -195,5 +195,7 @@ records fresh clean-commit coverage, CUDA-performance and generated-code capture
 for `74602c07`, including clarified default-backend rejection messages and the
 preceding numerical/cache repairs, alongside the unchanged source-bound baseline
 and original failures.
+This capture predates the [error-prefix compatibility repair](diagnostics/compile-pointwise-jit/review-error-prefix.md);
+fresh campaign capture awaits Burner's next clean implementation commit.
 [Repair validation](diagnostics/compile-pointwise-jit/review-zero-boundaries.md) records
 the development checks separately from these clean campaign measurements.
