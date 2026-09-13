@@ -6,6 +6,10 @@ Identical fresh default-Inductor runs also select numerically different kernels.
 The [second review record](review-autotune-blocker.md) preserves these results
 and the unresolved external numerical-contract dependency. The measurements
 below remain valid for their fixed corpus; they do not resolve these findings.
+The subsequent [regression run](review-regressions.json.gz) removes per-shape
+reference resets and adds cancellation-sensitive large-shape and persistent
+IEEE cases. The H100 run now fails eight subtests; the earlier passing test
+records below describe the earlier test selection, not the strengthened suite.
 
 The unchanged public-default-compile-v2 gates measured clean implementation
 `c1f2d380abd012313741e629a5139c651be14cc6`, including the

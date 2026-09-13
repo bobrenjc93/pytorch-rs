@@ -3,8 +3,24 @@
 Both second-round reviewer findings reproduce on H100. They remain **unfixed**;
 this branch is not ready for numerical approval. The earlier passing focused
 tests and fixed-corpus scores do not establish the requested broadcast parity.
-No implementation, tests, evaluator, tolerance, or external producer changed
-during this investigation.
+No implementation, evaluator, tolerance, or external producer changed during
+this investigation.
+
+The subsequent review adds blocking regression tests rather than changing the
+lowering: `test_compile_pointwise_broadcast_priority.py` now keeps both wrappers
+alive throughout every shape sequence, uses cancellation-sensitive finite
+values, checks the reported IEEE sequence, and exercises fresh large shapes
+in both argument orders. Initial bindings are ordinary contiguous tensors;
+changed bindings are offset-contiguous views. No failures are marked expected
+or skipped on CUDA-capable hosts.
+
+The [regression results](review-regressions.json.gz) preserve the development
+test diff, exact sources, commands, and original logs. On H100, seven tests
+completed with **eight failing subtests**, including both reported blockers.
+With CUDA hidden, the two metadata tests passed and five hardware tests skipped
+explicitly. The test changes remove the masking behavior; they do **not** fix
+numerical lowering. The implementation and fixed evaluation artifacts remain
+unchanged, and the branch remains blocked.
 
 The [capture bundle](review-autotune-blocker.json.gz) records clean HEAD
 `9155d4dd0e82e4c344f0be66e99e4397d1745bda`, whose implementation is unchanged

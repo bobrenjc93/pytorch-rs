@@ -36,33 +36,29 @@ class BroadcastPriority(unittest.TestCase):
     compare = Hardware.compare
     without_replay = Hardware.without_replay
 
-    def check_graph(self, source, patterns, *, finite_history=False):
-        """Check cached native shapes against static IEEE or finite warm references."""
+    def check_graph(self, source, patterns, *, input_values=None):
+        """Keep both wrappers alive across all shapes and changed bindings."""
         torch = self.torch
         fn = program(source)
         compiled, reference = native.compile(fn), torch.compile(program(source, torch))
         values = [2e38, -2e38, 0., -0., float('inf'), -float('inf'),
                   float('nan'), 1.0000001192092896, 1e-38, -1e-38, 1.137, -1.137]
-        if finite_history:
-            values = [1.137, -1.137, 0., -0., 0.713, -0.337]
+        if input_values is None:
+            input_values = (values, values)
         for shapes in patterns:
-            if not finite_history:
-                # Native modules specialize concrete shapes. Reference automatic
-                # symbolic recompilation can change FMA order after shape changes;
-                # compare exceptional values with a fresh default specialization.
-                # Keep the native wrapper alive to exercise its shape/code guards.
-                torch.compiler.reset()
-                reference = torch.compile(program(source, torch))
             for changed in (False, True):
                 args, refs = [], []
-                for shape in shapes:
+                for shape, values in zip(shapes, input_values, strict=True):
                     data = [values[i % len(values)] for i in range(math.prod(shape))]
                     if changed:
                         data = [-v for v in data[::-1]]
                     for fw, destination in ((native, args), (torch, refs)):
-                        # Changed calls use fresh offset-contiguous bindings.
-                        base = self.upload([91.] + data + [92.], (len(data) + 2,), fw)
-                        destination.append(base[1:len(data) + 1].reshape(shape))
+                        if changed:
+                            # Changed calls use fresh offset-contiguous bindings.
+                            base = self.upload([91.] + data + [92.], (len(data) + 2,), fw)
+                            destination.append(base[1:len(data) + 1].reshape(shape))
+                        else:
+                            destination.append(self.upload(data, shape, fw))
                 with self.subTest(source=source, shapes=shapes, changed=changed):
                     expected = reference(*refs)
                     actual = self.without_replay(fn, compiled, args)
@@ -107,7 +103,21 @@ class BroadcastPriority(unittest.TestCase):
         self.check_graph('def f(x, y):\n a=x+1.0\n return x*y+a*a',
                          [((2, 1), (1, 2)), ((1, 2), (2, 1)),
                           ((2, 1), (2, 2)), ((3, 1), (1, 5))],
-                         finite_history=True)
+                         input_values=((4096.,), (-4098.,)))
+
+    def test_ieee_shape_history_without_reference_reset(self):
+        self.check_graph('def f(x, y):\n a=x+1.0\n return x*y+a*a',
+                         [((2, 1), (1, 2)), ((1, 2), (2, 1)),
+                          ((2, 1), (2, 2))],
+                         input_values=((2e38, -2e38), (2e38, -2e38)))
+
+    def test_fresh_large_broadcast_cancellation(self):
+        for shapes in (((257, 1), (257, 257)),
+                       ((257, 257), (257, 1)),
+                       ((259, 1), (259, 263))):
+            with self.subTest(shapes=shapes):
+                self.check_graph('def f(x, y):\n a=x+1.0\n return x*y+a*a',
+                                 [shapes], input_values=((4096.,), (-4098.,)))
 
 
 del Hardware
