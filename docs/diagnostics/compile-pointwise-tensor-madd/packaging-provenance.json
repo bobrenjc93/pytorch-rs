@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "observed_at": "2026-09-13T19:05:12.207771+00:00",
+  "source_commit": "48fb3588c692db5b2a4f69033b5bf8a2bebb2019",
+  "inventory_sha256": "08da41c49c979077c67d2305341e149f41bccb28d984e4a045b714584b96905a",
+  "original_files": 137,
+  "archived_non_wheels": 134,
+  "historical_wheels": 3,
+  "branch": "burner/admit-tensor-leaf-multiply-add-broadcasts-16ac18",
+  "local_remote_tracking_head": "48fb3588c692db5b2a4f69033b5bf8a2bebb2019",
+  "full_history": true,
+  "source_is_ancestor": true,
+  "all_original_git_blob_bytes_verified": true,
+  "pushed_commit_verification": {
+    "basis": "Canonical retry owner admission attests a fresh GitHub PR head read before this same-run retry. Verified helper hash and local remote-tracking ref; live worker GitHub reads are destination-filter blocked.",
+    "receipt": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-polish-recovery-started.json",
+    "receipt_sha256": "d59698815b25f807141620c3a5cb842529a03185a6fccc8ee0daca6a835f1765",
+    "helper_sha256": "8db509ae9a3661c4dfe5c17f26b6a08bcd4c551f1d6feb9631f33032e792f37b",
+    "attested_at": "2026-09-13T19:01:49.244Z",
+    "pr_number": 1993,
+    "head": "48fb3588c692db5b2a4f69033b5bf8a2bebb2019",
+    "originalCommitPushedAndRetained": true
+  },
+  "historical_external_records": {
+    "operator-result.json": {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature-result.json",
+      "sha256": "143f9b2c29d5eac47b32f55b9843d7d0cdc85cee43943f0852fe699a755c6807"
+    },
+    "operator-audit.json": {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature-raw-archive-audit.json",
+      "sha256": "0f982e2b4c8229a7f0436517a93638ed9be245446c25ac26b78d9e49f55a6338"
+    }
+  },
+  "measured_implementation": "bf9085787aca29e523a7a38773f20f965167e734",
+  "measured_to_packaging_diff_is_evidence_only": true,
+  "unchanged_production_build_dependency_evaluator_files": 128,
+  "unchanged_capture_sha256": "27e3c3ecc14fce14b57999bdd6b79061183d1eb4b6c13c2876a4139e7ca94e0a",
+  "checks": {
+    "portable_archive_tests": "13 passed, including source-archive checks without Git and explicit missing/shallow skips",
+    "readme_smoke_tests": "12 passed after completing local test environment",
+    "local_navigation_links": 40,
+    "existing_archive_owner_and_cli": "unchanged; original two collections only",
+    "independent_packaging_review": "No actionable findings, including final operator evidence/sample bindings"
+  }
+}

@@ -1,9 +1,0 @@
-All 69 historical diagnostic files unchanged
-Frozen unchanged: scripts/evaluate_torch_compile_default.py
-Frozen unchanged: scripts/evaluate_torch_compile_default.sh
-Frozen unchanged: scripts/torch_compile_default_corpus.py
-Traceback (most recent call last):
-  File "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/target/tensor-madd/postcommit/check-package.py", line 12, in <module>
-    if '://' not in link and not link.startswith('#'): assert (doc.parent/link.split('#')[0]).resolve().exists(),link
-                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AssertionError: sha256.json

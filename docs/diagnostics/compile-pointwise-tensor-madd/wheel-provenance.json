@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "source_commit": "48fb3588c692db5b2a4f69033b5bf8a2bebb2019",
+  "inventory_sha256": "08da41c49c979077c67d2305341e149f41bccb28d984e4a045b714584b96905a",
+  "purpose": "Historical build artifacts retained in ancestor Git objects; not binaries to install.",
+  "wheels": [
+    {
+      "path": "postcommit-bf908578/build/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+      "gitBlob": "753b55dc40aebce21ea422b3c086d725eb9d7b1f",
+      "size": 1584331,
+      "sha256": "c29e39adc6d4a7509013e79966c7744d84e247c873bbae1abbd2e76a78da6672",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/48fb3588c692db5b2a4f69033b5bf8a2bebb2019/docs/diagnostics/compile-pointwise-tensor-madd/postcommit-bf908578/build/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+      "source_commit": "48fb3588c692db5b2a4f69033b5bf8a2bebb2019"
+    },
+    {
+      "path": "postcommit-bf908578/fixed/candidate/wheel/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+      "gitBlob": "85e7294bdecdb4244dcb917e7d57a89f5a320b62",
+      "size": 1584286,
+      "sha256": "612b3156283ee05f4d8cefa6fd3a61bbf19c87fc61a2363350da292c4780d227",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/48fb3588c692db5b2a4f69033b5bf8a2bebb2019/docs/diagnostics/compile-pointwise-tensor-madd/postcommit-bf908578/fixed/candidate/wheel/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+      "source_commit": "48fb3588c692db5b2a4f69033b5bf8a2bebb2019"
+    },
+    {
+      "path": "postcommit-bf908578/fixed/main/wheel/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+      "gitBlob": "0af55fe0872aab6c0b32415953daae61df914675",
+      "size": 1583931,
+      "sha256": "da54979a0a83802929e831d3fbc4c4ef079e9c4c87364bcbb5457b793b84cb75",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/48fb3588c692db5b2a4f69033b5bf8a2bebb2019/docs/diagnostics/compile-pointwise-tensor-madd/postcommit-bf908578/fixed/main/wheel/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+      "source_commit": "48fb3588c692db5b2a4f69033b5bf8a2bebb2019"
+    }
+  ]
+}

@@ -1,148 +1,110 @@
-# Tensor-leaf multiply-add broadcast diagnostic
+# Tensor-leaf multiply-add evidence
 
-This increment admits only original `Add(Mul(Input(a), Input(b)), Input(c))`
-and `Add(Input(c), Mul(Input(a), Input(b)))` for unequal input shapes. All leaves
-are tensor inputs; IDs may repeat in the existing one/two-tensor ABI. The old
-equal-shape language and one-stage/no-live-sin-or-cos broadcasting remain intact.
-Scalar leaves, identity wrappers, competing products, signed expressions,
-additional arithmetic and outer ReLU/sin/cos do not enter the exception.
+This collection documents the original tensor-input-only `a*b+c` / `c+a*b`
+broadcast exception. The [compiler contract](../../compile-pointwise-jit.md)
+owns the supported boundary. This repair changes packaging only; it does not
+change compilation, capture behavior, numerical expectations or evaluation rules.
 
-The sole production change is the capability predicate in
-[`Graph::indexing`](../../../src/pointwise_indexing.rs). Compilation and direct
-cached-kernel execution both use this original-IR owner and its checked shapes,
-sizes and addresses. Numerical lowering, NVRTC execution and cache ownership
-are unchanged. The [focused tests](../../../tests/test_compile_pointwise_tensor_madd.py)
-exercise acceptance/rejection, all ordered input-ID triples, genuine CUDA direct
-execution, persistent wrapper histories, offsets, unchanged inputs, fresh outputs,
-cache failures, reset and current-device restoration on both visible ordinals.
+## Evidence and outcomes
 
-## Reproduction
-
-Use a worktree-local interpreter, dependencies and freshly built release wheel.
-Hold Burner's canonical `gpu` and `cpu-heavy` resources; these commands do not
-allocate resources. Run ordinary checks with `CUDA_VISIBLE_DEVICES=0`, and the
-two-device test with an explicit `CUDA_VISIBLE_DEVICES=0,1` reservation.
-Keep Cargo, uv, temporary, Python, CUDA, Inductor and Triton caches inside the
-worktree. The default nvcc on this host is not the pointwise JIT compiler;
-the dispatched kernel records the NVRTC version and options actually used.
-
-```bash
-cargo fmt --all -- --check
-cargo clippy --locked --offline --all-targets --features python-bindings -- -D warnings
-cargo test --locked --offline --lib --features python-bindings -- --test-threads=1
-.venv/bin/maturin build --release --locked --offline --out target/tensor-madd/wheels-final
-uv pip install --python .venv/bin/python --no-deps --force-reinstall target/tensor-madd/wheels-final/*.whl
-.venv/bin/python .github/scripts/verify_native_extension.py
-.venv/bin/python -m unittest discover -s tests -p 'test_compile*.py' -v
-CUDA_VISIBLE_DEVICES=0,1 .venv/bin/python -m unittest discover -s tests -p test_compile_pointwise_tensor_madd.py -v
-```
-
-[`capture.py`](capture.py) runs an unscored fresh-process diagnostic with untouched
-`framework.compile(fn)` defaults. The `--build` command creates a source/build manifest containing
-`source` (relative source file paths to SHA256), `wheel` and `extension` (each
-with absolute `path` and `sha256`). Record the source hashes immediately around
-the release build and verify the wheel's installed Python and extension bytes.
-The capture rejects mismatched source, wheel or installed package bytes.
-The build command archives its source, uses a fresh Cargo target, verifies that source
-hashes remain unchanged, installs the resulting wheel and verifies installed bytes.
-It preserves command logs and failures. The development manifest below records
-the concrete build used.
-
-```bash
-# With worktree-local cache variables set as above:
-.venv/bin/python docs/diagnostics/compile-pointwise-tensor-madd/capture.py --build target/madd-build
-# Each output directory must be new. Run serially, in both measurement orders.
-.venv/bin/python docs/diagnostics/compile-pointwise-tensor-madd/capture.py native target/madd-native-first target/madd-build/build.json
-.venv/bin/python docs/diagnostics/compile-pointwise-tensor-madd/capture.py reference target/madd-reference-second target/madd-build/build.json
-.venv/bin/python docs/diagnostics/compile-pointwise-tensor-madd/capture.py reference target/madd-reference-first target/madd-build/build.json
-.venv/bin/python docs/diagnostics/compile-pointwise-tensor-madd/capture.py native target/madd-native-second target/madd-build/build.json
-.venv/bin/python docs/diagnostics/compile-pointwise-tensor-madd/capture.py --compare target/madd-native-first/report.json.gz target/madd-reference-second/report.json.gz target/madd-order-one.json
-.venv/bin/python docs/diagnostics/compile-pointwise-tensor-madd/capture.py --compare target/madd-reference-first/report.json.gz target/madd-native-second/report.json.gz target/madd-order-two.json
-```
-
-Every case keeps its wrapper through shape/value/identity changes. Each state
-records one initial call, five warmups and 17 samples, with identical real CUDA
-runtime synchronization and output materialization outside timing. Raw reports
-retain full inputs/outputs, exact hexadecimal IEEE values (including signed
-zeros; NaN payloads coalesce), every timing and failure. Each native call must
-invoke the module identified by the executor LRU; its actual CUDA and PTX are
-captured. The profiler and patched eager bridges reject original-body or per-node
-replay. These timings are diagnostic observations, not a performance score.
-
-## Development evidence
-
-Validation passed on an uncommitted worktree based on
-`77aa16fc2d0cbd258f0fa309140dc75708cf2ee3` (merged PR #1992).
-The [validation summary](development/validation.json) and
-[command receipts](development/final-commands.json) retain results and GPU snapshots.
-
-| Check | Result |
+| Record | Identity and outcome |
 | --- | --- |
-| Existing compiler selection | 892 unique tests across all 85 modules: 867 passed, 25 explicit two-device reservation skips; all processes exited zero and test-source hashes remained unchanged |
-| Focused multiply-add suite, GPUs 0 and 1 | All 10 tests passed, including real NVRTC/direct execution, both device ordinals and exact overflowing-product cancellation |
-| Existing pointwise/scalar device guards | All four tests passed under the same two-device reservation |
-| CUDA hidden | Three metadata tests passed; seven hardware tests explicitly skipped |
-| Rust library | 210 default-feature tests and 237 Python-binding tests passed; the 28-test pointwise IR subset also passed |
-| Formatting, Clippy and docs | Both default and binding all-target Clippy checks passed with warnings denied; formatting, local documentation links and Python syntax passed; executable Python AST unchanged; Rust doc-tests completed with zero examples |
-| Separate-process ordinary-default comparisons | Both native/reference and reference/native orders passed exact comparisons for all 42 states per order |
+| Development | Uncommitted work based on main `77aa16fc2d0cbd258f0fa309140dc75708cf2ee3`; original tests, exploratory failures and interrupted runs are archived unchanged. |
+| Clean post-commit measurements | Implementation `bf9085787aca29e523a7a38773f20f965167e734` versus main `77aa16fc2d0cbd258f0fa309140dc75708cf2ee3`; see the [measurement index](postcommit-bf908578/README.md), unchanged [candidate report](postcommit-bf908578/fixed/candidate/run-20260913T173018Z-d4056067/report.json) and [main report](postcommit-bf908578/fixed/main/run-20260913T173516Z-6151e3a3/report.json). |
+| Canonical evaluation | Packaging/evaluated source `48fb3588c692db5b2a4f69033b5bf8a2bebb2019`: Repository polish fell from 83 to 82 in **all three** actual samples: `evalrun_a9316d55`, `evalrun_7f0fe688`, `evalrun_53ed1eb0`. The [sealed producer result](operator-result.json) and [original audit with complete samples](operator-audit.json) are preserved byte-for-byte. Helper PID 1742628 exited 2, unqualified, without submission to the full gate. This was a polish regression, not a fabricated kernel execution failure. |
+| Later operator GPU QA | A separate normal gate; neither historical measurements nor this packaging repair establish its completion or authorize merge. |
 
-The five pointwise reservation skips in the broad selection are covered by the
-focused and existing two-device runs. The other 20 reservation skips belong to
-unchanged compiler owners. The complete
-[module receipt](development/module-results.json),
-[module logs](development/compiler-module-logs.tar.gz) and
-[serial module runner](development/run-modules.py) preserve the full selection.
+Normal independent review, exact-head evaluation, median-of-three confirmation,
+full merge qualification and operator GPU QA remain separate. No sample is
+replaced or waived here. Historical captures are not measurements of this
+packaging repair and do not establish broad default-Inductor equivalence.
 
-Each of the four comparison legs executes six programs and 42 shape/value/identity
-states, with one initial call, five warmups and 17 samples per state: 966 calls per
-leg. Both orders preserve exact finite results, signed zeros and nonfinite classes;
-NaN payload equality is not required. Wrappers persist throughout each case.
-No numerical mismatch was observed. These are diagnostic observations, not scores.
+## One archive, complete original inventory
 
-| Order | Raw reports and dispatched CUDA/PTX | Exact comparison |
-| --- | --- | --- |
-| Native, reference | [Native report](development/paired-0-native.json.gz), [native code archive](development/paired-0-native.tar.gz), [reference report](development/paired-1-reference.json.gz) | [42 states passed](development/comparison-0-native-1-reference.json) |
-| Reference, native | [Reference report](development/paired-2-reference.json.gz), [native report](development/paired-3-native.json.gz), [native code archive](development/paired-3-native.tar.gz) | [42 states passed](development/comparison-2-reference-3-native.json) |
+[history.tar.gz](history.tar.gz) contains **all 134 original non-wheel files**
+from Git tree `48fb3588c692db5b2a4f69033b5bf8a2bebb2019`, under their exact original
+relative names. [history-manifest.json](history-manifest.json) uses the existing
+archive schema and records every size/hash and the full source commit.
+The byte-identical [operator inventory](original-inventory.json), SHA256
+`08da41c49c979077c67d2305341e149f41bccb28d984e4a045b714584b96905a`, partitions the
+original 137 files into those 134 members and exactly three historical wheels.
 
-The [fresh build manifest](development/verified-build/build.json),
-[build log](development/verified-build/build.log),
-[source archive](development/verified-build/source.tar.gz) and
-[execution driver](development/run-final.py) bind these captures to the installed
-wheel and extension. The wheel SHA256 is
-`a1572c62a14ed6698c804f58234379a4a3834059cda7017e04a9f64f0e2a5b36`;
-the extension SHA256 is
-`932a5ae9cd1759d987141ceb9d3fa2c50ddc6fd52b44329861c4a6c0f49a7d84`.
-The build uses Rust 1.92.0, Python 3.12.12, release/thin LTO/codegen-units=1 and
-ABI3 Python bindings. Reference PyTorch is `2.13.0+cu130`. Kernels actually
-compiled with NVRTC 13.0, `compute_90`, FMA enabled and FTZ disabled; both legs
-used CUDA runtime 13000 from the worktree-local CUDA 13 package. The host nvcc
-reports 12.6 and was not the JIT compiler.
+Members include `README.md`, `sha256.json`, `development/validation.json`,
+`development/exploratory-status.json`, `development/compiler-module-logs.tar.gz`,
+`development/verified-build/source.tar.gz`, `postcommit-bf908578/README.md`,
+`postcommit-bf908578/sha256.json`, `postcommit-bf908578/audit.json`, and every
+original timing, CUDA/PTX archive, source snapshot, duplicate, log and failure.
+Old self-manifests describe only that original inventory; they are archive
+members, not manifests of today's checkout. [capture.py](capture.py) and both
+fixed summary reports remain byte-identical at their original paths.
 
-The H100s report driver 580.82.07. The paired runs use GPU 0
-(`GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1`); the explicit two-device tests also
-use GPU 1 (`GPU-11979b85-93e3-21d3-e68f-df37b8a4c296`). Burner assigned this run
-both canonical `gpu` and `cpu-heavy` resources. Interpreters, dependencies, builds
-and writable caches stayed in this worktree. See the retained
-[environment setup](development/environment.sh).
+Verify from the repository root, offline, without extracting or executing members:
 
-The [exploratory status record](development/exploratory-status.json) preserves
-setup and fixture failures, the interrupted all-in-one compiler attempt, and the
-[earlier smoke capture](development/smoke.tar.gz). That smoke used an earlier
-extension before verified build-manifest enforcement and is excluded from the
-paired evidence. Its raw report and script are retained unchanged. No fixed
-tolerance, compiler limit, reference setting, scoring corpus or historical
-operator expectation was changed to obtain the passing results.
+```bash
+python - <<'PY'
+import importlib.util
+from pathlib import Path
+p = Path('docs/diagnostics')
+spec = importlib.util.spec_from_file_location('archive', p / 'compile-pointwise-jit/verify_archive.py')
+archive = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(archive)
+manifest = archive.verify(p / 'compile-pointwise-tensor-madd')
+print(manifest['source_commit'], len(manifest['files']))
+PY
+python -m unittest discover -s tests -p test_compile_evidence_archive.py -v
+```
 
-## Burner-owned follow-up
+Safe inspection: list `manifest['files']` in the snippet above, or read an exact
+ordinary member in memory with `tarfile.open(..., 'r:gz').extractfile(name).read()`
+after verification. Do not unpack or execute archived scripts. The verifier's
+existing CLI still verifies only its original two pointwise-JIT collections.
 
-Clean candidate/main captures, exact-head qualification and frozen-corpus
-measurement belong to Burner's later post-commit phase. This worker does not
-commit, run a replacement evaluator, alter denominators or expectation catalogs,
-or install the operator's scoped pre-cleanup observer. The operator must retain
-frozen-command detailed reports through that separately reviewed observer.
+## Historical wheels stay in Git history
 
-The historical competing-product default-autotune failure remains an unsupported
-boundary, not a numerical defect repaired here. See the immutable
-[broadcast review record](../compile-pointwise-broadcast/review-autotune-blocker.md).
-Neither these bounded tests nor the fixed corpus establish broad Inductor
-equivalence or an all-program percentage.
+[wheel-provenance.json](wheel-provenance.json) binds each of the three original
+paths to its byte count, SHA256, Git blob ID, full source commit and immutable
+same-repository GitHub URL. They are historical build artifacts, **not binaries
+to install**. Only their current checkout copies were removed; no wheel is
+hidden inside this archive or a renamed payload, and no Git history/blob was
+deleted. This reduces checkout clutter, not historical clone size. The later
+normal merge must retain ancestor `48fb3588c692db5b2a4f69033b5bf8a2bebb2019`.
+
+[Packaging provenance](packaging-provenance.json) records the full-history,
+ancestor and original-blob checks performed before removal. The canonical retry
+owner had freshly verified the pushed PR head; its pinned helper/receipt and the
+local remote-tracking head were checked here. Live worker GitHub reads were
+blocked by the destination filter; that limitation is explicit in the receipt.
+The [packaging check log](packaging-checks.txt) retains 13 passing archive tests,
+12 passing README smoke tests and the initial local-environment setup failure.
+
+For an existing clone missing that commit, explicitly fetch it yourself (tests
+never fetch). A shallow clone can retrieve the objects without claiming full
+history; `git fetch --unshallow origin` is needed to run full-history checks.
+
+```bash
+git fetch --no-tags origin 48fb3588c692db5b2a4f69033b5bf8a2bebb2019
+# Example: stream the original diagnostic wheel into a worktree-local file.
+mkdir -p target/historical-evidence
+git cat-file blob 753b55dc40aebce21ea422b3c086d725eb9d7b1f > target/historical-evidence/tensor-madd.whl
+```
+
+Check the result against its size and SHA256 in `wheel-provenance.json` before
+inspection. Source-archive readers without `.git` can use each immutable GitHub
+URL's **Raw/Download raw file** action, or create a separate clone and perform
+the explicit retrieval above. Offline archive/schema/summary tests still run;
+unavailable historical Git-byte checks explicitly skip, never silently pass.
+
+Reproduction builds from pinned source with worktree-local tools/caches and
+source/installed-wheel identity checks; see the preserved original reproduction
+instructions in archive members `README.md` and `postcommit-bf908578/README.md`.
+Do not install historical wheels or recreate wheel/build-output clutter here.
+The normal Burner post-commit evidence step remains intact: this packaging-only
+repair needs identity checks, not new GPU measurements. Genuinely required new
+evidence must retain truthful attribution without rewriting these records.
+
+The detailed frozen-worker reports are **separate** operator-retained evidence,
+not contents of this inventory archive. Their original external archive paths,
+manifest hashes and complete audit remain in [operator-audit.json](operator-audit.json)
+and [operator-result.json](operator-result.json); the original staging references
+also survive in member `postcommit-bf908578/raw-retention.json`. No external
+archive, observer, audit or expectation catalog was changed.

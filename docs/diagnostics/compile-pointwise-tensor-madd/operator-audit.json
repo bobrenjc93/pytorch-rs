@@ -1,0 +1,668 @@
+{
+  "kind": "tensor-madd-original-producer-raw-archive-audit-v1",
+  "passed": true,
+  "complete": true,
+  "auditScope": "Byte completeness and identity only. Original producer is unqualified; this audit does not authorize QA or merge.",
+  "observedAt": "2026-09-13T18:02:43.928Z",
+  "producerReceipt": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature-result.json",
+  "producerReceiptSha256": "143f9b2c29d5eac47b32f55b9843d7d0cdc85cee43943f0852fe699a755c6807",
+  "producerDirectory": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx",
+  "producerPid": 1742628,
+  "producerExit": {
+    "pid": 1742628,
+    "exited": true,
+    "exitCode": 2
+  },
+  "runId": "agent_4e16ac18",
+  "ideaId": "idea_695d794b",
+  "candidateCommit": "48fb3588c692db5b2a4f69033b5bf8a2bebb2019",
+  "prNumber": 1993,
+  "producerQualified": false,
+  "reportArchiveSha256": "f0747ea110efac75d99b3491fe05d7d6baad55386cd60a13af76790a8c39f8b1",
+  "manifests": [
+    {
+      "manifest": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/manifest.json",
+      "manifestSha256": "d9693c7af0abe34d302240396784f36296bd38164e43e1db0a2dce46f143c82a"
+    }
+  ],
+  "totalReports": 4,
+  "totalFiles": 48,
+  "totalBytes": 537767589,
+  "reports": [
+    {
+      "run": "run-20260913T173018Z-d4056067",
+      "report": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173018Z-d4056067/report.json",
+      "reportSha256": "1663051d2799fc13cba5075e819181a434f2776c9e470e5e2d746b71eca58155",
+      "headerPresent": true,
+      "valid": true,
+      "diagnostic": false,
+      "metric": "both",
+      "commit": "bf9085787aca29e523a7a38773f20f965167e734",
+      "sourceSha256": "cba81e556c19f1bda14787ba1b2e3c54e0f236d79551dd591c6c3dd4f33ec35d",
+      "scores": {
+        "coverage": {
+          "score": 11,
+          "passed": 10,
+          "eligible": 112,
+          "commonSuccessRatio": 1.2832686449519584
+        },
+        "cuda-perf": {
+          "score": 20,
+          "passed": 10,
+          "eligible": 56,
+          "commonSuccessRatio": 1.2832686449519584
+        }
+      },
+      "workerArtifactChecks": [
+        {
+          "file": "cpu-0-reference.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cpu-0-reference.log",
+          "kind": "log",
+          "matches": true
+        },
+        {
+          "file": "cpu-0-candidate.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cpu-0-candidate.log",
+          "kind": "log",
+          "matches": true
+        },
+        {
+          "file": "cuda-0-reference.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cuda-0-reference.log",
+          "kind": "log",
+          "matches": true
+        },
+        {
+          "file": "cuda-0-candidate.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cuda-0-candidate.log",
+          "kind": "log",
+          "matches": true
+        },
+        {
+          "file": "cuda-1-candidate.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cuda-1-candidate.log",
+          "kind": "log",
+          "matches": true
+        },
+        {
+          "file": "cuda-1-reference.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cuda-1-reference.log",
+          "kind": "log",
+          "matches": true
+        }
+      ]
+    },
+    {
+      "run": "run-20260913T173516Z-6151e3a3",
+      "report": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173516Z-6151e3a3/report.json",
+      "reportSha256": "1e42460ac4949171bdbde83ee179639e7af2fd301c3b842ea05bcfb1092e9e56",
+      "headerPresent": true,
+      "valid": true,
+      "diagnostic": false,
+      "metric": "both",
+      "commit": "77aa16fc2d0cbd258f0fa309140dc75708cf2ee3",
+      "sourceSha256": "0eaf6c6330b38a63d06bb2a5c09da9be71f2534e39180d3cbb62710b038dcbc1",
+      "scores": {
+        "coverage": {
+          "score": 9,
+          "passed": 8,
+          "eligible": 112,
+          "commonSuccessRatio": 1.2763391165958593
+        },
+        "cuda-perf": {
+          "score": 12,
+          "passed": 8,
+          "eligible": 56,
+          "commonSuccessRatio": 1.2763391165958593
+        }
+      },
+      "workerArtifactChecks": [
+        {
+          "file": "cpu-0-reference.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cpu-0-reference.log",
+          "kind": "log",
+          "matches": true
+        },
+        {
+          "file": "cpu-0-candidate.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cpu-0-candidate.log",
+          "kind": "log",
+          "matches": true
+        },
+        {
+          "file": "cuda-0-reference.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cuda-0-reference.log",
+          "kind": "log",
+          "matches": true
+        },
+        {
+          "file": "cuda-0-candidate.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cuda-0-candidate.log",
+          "kind": "log",
+          "matches": true
+        },
+        {
+          "file": "cuda-1-candidate.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cuda-1-candidate.log",
+          "kind": "log",
+          "matches": true
+        },
+        {
+          "file": "cuda-1-reference.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cuda-1-reference.log",
+          "kind": "log",
+          "matches": true
+        }
+      ]
+    },
+    {
+      "run": "run-20260913T174558Z-cd511386",
+      "report": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174558Z-cd511386/report.json",
+      "reportSha256": "da66a7b3c021d09b3682a143c007f4041685520ae411daa97dc7096201b3ccce",
+      "headerPresent": true,
+      "valid": true,
+      "diagnostic": false,
+      "metric": "coverage",
+      "commit": "48fb3588c692db5b2a4f69033b5bf8a2bebb2019",
+      "sourceSha256": "cba81e556c19f1bda14787ba1b2e3c54e0f236d79551dd591c6c3dd4f33ec35d",
+      "scores": {
+        "coverage": {
+          "score": 11,
+          "passed": 10,
+          "eligible": 112,
+          "commonSuccessRatio": 1.1580561060964925
+        },
+        "cuda-perf": {
+          "score": 19.82822315564058,
+          "passed": 10,
+          "eligible": 56,
+          "commonSuccessRatio": 1.1580561060964925
+        }
+      },
+      "workerArtifactChecks": [
+        {
+          "file": "cpu-0-reference.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cpu-0-reference.log",
+          "kind": "log",
+          "matches": true
+        },
+        {
+          "file": "cpu-0-candidate.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cpu-0-candidate.log",
+          "kind": "log",
+          "matches": true
+        },
+        {
+          "file": "cuda-0-reference.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cuda-0-reference.log",
+          "kind": "log",
+          "matches": true
+        },
+        {
+          "file": "cuda-0-candidate.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cuda-0-candidate.log",
+          "kind": "log",
+          "matches": true
+        },
+        {
+          "file": "cuda-1-candidate.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cuda-1-candidate.log",
+          "kind": "log",
+          "matches": true
+        },
+        {
+          "file": "cuda-1-reference.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cuda-1-reference.log",
+          "kind": "log",
+          "matches": true
+        }
+      ]
+    },
+    {
+      "run": "run-20260913T174952Z-b7513bbc",
+      "report": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174952Z-b7513bbc/report.json",
+      "reportSha256": "c0ae1e36067d26c33785508b24be36ac942c95ae440a5e773a5cc1440f25ec03",
+      "headerPresent": true,
+      "valid": true,
+      "diagnostic": false,
+      "metric": "cuda-perf",
+      "commit": "48fb3588c692db5b2a4f69033b5bf8a2bebb2019",
+      "sourceSha256": "cba81e556c19f1bda14787ba1b2e3c54e0f236d79551dd591c6c3dd4f33ec35d",
+      "scores": {
+        "cuda-perf": {
+          "score": 20,
+          "passed": 10,
+          "eligible": 56,
+          "commonSuccessRatio": 1.2195620299404177
+        }
+      },
+      "workerArtifactChecks": [
+        {
+          "file": "cuda-0-reference.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cuda-0-reference.log",
+          "kind": "log",
+          "matches": true
+        },
+        {
+          "file": "cuda-0-candidate.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cuda-0-candidate.log",
+          "kind": "log",
+          "matches": true
+        },
+        {
+          "file": "cuda-1-candidate.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cuda-1-candidate.log",
+          "kind": "log",
+          "matches": true
+        },
+        {
+          "file": "cuda-1-reference.json.gz",
+          "kind": "output",
+          "matches": true
+        },
+        {
+          "file": "cuda-1-reference.log",
+          "kind": "log",
+          "matches": true
+        }
+      ]
+    }
+  ],
+  "verifiedFiles": [
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173018Z-d4056067/cpu-0-candidate.json.gz",
+      "bytes": 2142,
+      "sha256": "d8c05edd3ade1b3afaed592b2e41eecf105e45181f93137faac7926a18301484"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173018Z-d4056067/cpu-0-candidate.log",
+      "bytes": 823,
+      "sha256": "425c342763d99e2789b8a29851cdc6f34b002e58bac0348f87e258427076d072"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173018Z-d4056067/cpu-0-reference.json.gz",
+      "bytes": 45415249,
+      "sha256": "d2d28972b2a6779950fa0117419999f717f3c44d7955fb4e0b10bdf9d238f424"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173018Z-d4056067/cpu-0-reference.log",
+      "bytes": 2174,
+      "sha256": "665dcf1084fcf9a8d33bbbe61b96c1776d9d9ba7586ed61b25eb652efc4ce2b3"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173018Z-d4056067/cuda-0-candidate.json.gz",
+      "bytes": 4679005,
+      "sha256": "6227d728c824178c0286edfc7bb84b2f068802f49fa89e6f6d1951b8692d2235"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173018Z-d4056067/cuda-0-candidate.log",
+      "bytes": 851,
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173018Z-d4056067/cuda-0-reference.json.gz",
+      "bytes": 45417639,
+      "sha256": "0d9126d9f761632016ac4e090c4eeb3369b98f98249a49a7cc1a680331d89450"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173018Z-d4056067/cuda-0-reference.log",
+      "bytes": 2575,
+      "sha256": "476b6918573b5e0a65f643d326b7fcc12eb95764d10e44d5d848b1e5f085938e"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173018Z-d4056067/cuda-1-candidate.json.gz",
+      "bytes": 4679014,
+      "sha256": "2b599a361b28776f0709509adff55ffd17b7c640732e1c2e61e0851629861d90"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173018Z-d4056067/cuda-1-candidate.log",
+      "bytes": 851,
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173018Z-d4056067/cuda-1-reference.json.gz",
+      "bytes": 45417595,
+      "sha256": "088bd059bd4ce0c3c9a25dcbe5a1affcefb1a530fe1b8682399454b2c84c5493"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173018Z-d4056067/cuda-1-reference.log",
+      "bytes": 2575,
+      "sha256": "a0980f95d46ce1b4a79ef2327ba0acc14d1ad53c23e70bd794f4f625e3f65bde"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173018Z-d4056067/report.json",
+      "bytes": 377440,
+      "sha256": "1663051d2799fc13cba5075e819181a434f2776c9e470e5e2d746b71eca58155"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173516Z-6151e3a3/cpu-0-candidate.json.gz",
+      "bytes": 2213,
+      "sha256": "a74f577979793bd7c15eb6d51eb1cd613fb55469fe8f67c005c7ea336a214bb3"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173516Z-6151e3a3/cpu-0-candidate.log",
+      "bytes": 823,
+      "sha256": "425c342763d99e2789b8a29851cdc6f34b002e58bac0348f87e258427076d072"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173516Z-6151e3a3/cpu-0-reference.json.gz",
+      "bytes": 45415287,
+      "sha256": "4cd953ae6aa5d6f7c5b367b5639d22107384805db7fe9453604a7c2862392dea"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173516Z-6151e3a3/cpu-0-reference.log",
+      "bytes": 2209,
+      "sha256": "fffa00a78850573e2c55057aedeba4db829415e19e0dc347ccb11e15cf74e676"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173516Z-6151e3a3/cuda-0-candidate.json.gz",
+      "bytes": 4338404,
+      "sha256": "e7277d0b05856b8a131da2ad2e493116ca7cf4aa82a2381c5e05ab2317f78770"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173516Z-6151e3a3/cuda-0-candidate.log",
+      "bytes": 851,
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173516Z-6151e3a3/cuda-0-reference.json.gz",
+      "bytes": 45417627,
+      "sha256": "7955653e2cbfc1c4183f077bc5a3ea39a7ef4dacf8ea33d74755765ba75988a9"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173516Z-6151e3a3/cuda-0-reference.log",
+      "bytes": 2645,
+      "sha256": "e33c1095a637782526d664cd592d7e3a97fd4519702cbc721bc5cfe513ff5378"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173516Z-6151e3a3/cuda-1-candidate.json.gz",
+      "bytes": 4338382,
+      "sha256": "67f3575c502f16705e6594799ad3c666882cbc6c44d73a5797e6f8606f9f8810"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173516Z-6151e3a3/cuda-1-candidate.log",
+      "bytes": 851,
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173516Z-6151e3a3/cuda-1-reference.json.gz",
+      "bytes": 45417353,
+      "sha256": "15367c642687fdf480671e325d112c3878c0eb9a6d31383393f616e309a9fcaa"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173516Z-6151e3a3/cuda-1-reference.log",
+      "bytes": 2645,
+      "sha256": "8c5f887416a817449970688d1b288e9ce131a92420b957a7d5725055a5cf2888"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T173516Z-6151e3a3/report.json",
+      "bytes": 376206,
+      "sha256": "1e42460ac4949171bdbde83ee179639e7af2fd301c3b842ea05bcfb1092e9e56"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174558Z-cd511386/cpu-0-candidate.json.gz",
+      "bytes": 2142,
+      "sha256": "78e0d7ca1311b51923e7ed25df4bacbf3e2d396626f0b30d863da5881df86458"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174558Z-cd511386/cpu-0-candidate.log",
+      "bytes": 823,
+      "sha256": "425c342763d99e2789b8a29851cdc6f34b002e58bac0348f87e258427076d072"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174558Z-cd511386/cpu-0-reference.json.gz",
+      "bytes": 45415262,
+      "sha256": "daefc7fab49428b3cb36f2f8776a55eedccda57ebb3a71ad1b027c3d3badae80"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174558Z-cd511386/cpu-0-reference.log",
+      "bytes": 2174,
+      "sha256": "b5c667807fbe1daf3d042be4f4262ecb01f9808f17de6308daab21640fedfe98"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174558Z-cd511386/cuda-0-candidate.json.gz",
+      "bytes": 4679030,
+      "sha256": "d3f4fb32826f4ec95130b20af68c01901113b4ea6f748a9f32d2a6ef6955c873"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174558Z-cd511386/cuda-0-candidate.log",
+      "bytes": 851,
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174558Z-cd511386/cuda-0-reference.json.gz",
+      "bytes": 45417395,
+      "sha256": "b25b9defca86d410c350bac3d3ea03f38922cddda600b3489da588d7099a3603"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174558Z-cd511386/cuda-0-reference.log",
+      "bytes": 2575,
+      "sha256": "8155b7195584c4d1fc65b1435fae6d594d702e74746f7a3a6d052624a8695a0a"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174558Z-cd511386/cuda-1-candidate.json.gz",
+      "bytes": 4679020,
+      "sha256": "4d1a8825b97d7ae98bc183567875058cc70e7eddce669b972b12c7687cb872f9"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174558Z-cd511386/cuda-1-candidate.log",
+      "bytes": 851,
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174558Z-cd511386/cuda-1-reference.json.gz",
+      "bytes": 45417568,
+      "sha256": "567eb4bcd9338ef901315ed17c1b89fc77237dd6848f765b4eaf89993a9e5682"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174558Z-cd511386/cuda-1-reference.log",
+      "bytes": 2575,
+      "sha256": "6e172f8581aa2d372a90e896c7afdddd1959079c1ae701a9ee74df75f3fa6cc3"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174558Z-cd511386/report.json",
+      "bytes": 377333,
+      "sha256": "da66a7b3c021d09b3682a143c007f4041685520ae411daa97dc7096201b3ccce"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174952Z-b7513bbc/cuda-0-candidate.json.gz",
+      "bytes": 4679004,
+      "sha256": "6773aa9e4ad54f73c03a7df09bcaa25d9efce9436c78a308839b9a4ba0727ef4"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174952Z-b7513bbc/cuda-0-candidate.log",
+      "bytes": 851,
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174952Z-b7513bbc/cuda-0-reference.json.gz",
+      "bytes": 45417526,
+      "sha256": "ca30893c3fb19abaecfd5be813f6e1e8460c7b3079d82c6ff4fcd25195b33e4e"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174952Z-b7513bbc/cuda-0-reference.log",
+      "bytes": 2575,
+      "sha256": "08f73299d9952dae865f6e66031f9edd960ff7d10461dd0cf05ef5c2dc85025d"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174952Z-b7513bbc/cuda-1-candidate.json.gz",
+      "bytes": 4679016,
+      "sha256": "4e6ba71b9092ba03a22c8e939d88626122229c7a0917a6ab159dd52ef81f00ea"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174952Z-b7513bbc/cuda-1-candidate.log",
+      "bytes": 851,
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174952Z-b7513bbc/cuda-1-reference.json.gz",
+      "bytes": 45417384,
+      "sha256": "36e3f2be25737603cfc285c62c7493bbfa37b96f899135daccd057ff8c37e9bc"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174952Z-b7513bbc/cuda-1-reference.log",
+      "bytes": 2575,
+      "sha256": "60acb48b97f1f54bbfdf19955f31be040da570a21be4de9006f5a59022637390"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/tensor-madd-feature.d0y9sx/default-compile-agent_4e16ac18-b5b18ece-6b48-4046-87ec-549aa450e39f/run-20260913T174952Z-b7513bbc/report.json",
+      "bytes": 256779,
+      "sha256": "c0ae1e36067d26c33785508b24be36ac942c95ae440a5e773a5cc1440f25ec03"
+    }
+  ],
+  "confirmedRegressions": [
+    {
+      "evaluationId": "eval_d4c0b71e",
+      "name": "Repository polish",
+      "before": 83,
+      "after": 82,
+      "delta": -1,
+      "summary": "Strong onboarding and accurate scope documentation preserve most of the valid 83-point baseline. A one-point hygiene deduction reflects newly tracked wheels and duplicated diagnostic artifacts.",
+      "screening": false
+    }
+  ],
+  "polishSamples": [
+    {
+      "id": "evalrun_a9316d55",
+      "score": 82,
+      "summary": "Strong onboarding and accurate scope documentation preserve most of the valid 83-point baseline. Deduct one point for additional tracked build artifacts and repetitive diagnostic records; other areas retain their calibration.",
+      "evidence": [
+        "Inspected the exact 77aa16fc..48fb3588c692 change inventory: 143 files; working tree clean. Excluded Burner-managed progress artifacts.",
+        "Unchanged README, CONTRIBUTING, architecture map, locked setup, examples, provenance-checking scripts and macOS/Linux CI preserve onboarding, navigation and tooling credit.",
+        "Verified package and native extension resolve under /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/.venv/lib/python3.12/site-packages/torch_rs/. Installed __init__.py matches current source. All 12 README tests passed, including executable first success.",
+        "Checked 323 local link destinations across 11 representative documents; none were missing. All 21 added gzip archives were readable.",
+        "Updated compiler documentation matches the original-IR admission predicate in src/pointwise_indexing.rs and focused acceptance/rejection tests. Diagnostics use public compile defaults and explicitly retain the 112/56-cell denominators without claiming general Inductor equivalence.",
+        "Hygiene regression: 137 new diagnostic files add 9.67 MB, including three platform-specific wheels totaling 4.75 MB, source archives and repeated audit/build logs. Indexes aid discovery, but these tracked artifacts increase repository clutter."
+      ],
+      "suggestions": [
+        "Store platform wheels and redundant diagnostic payloads in durable artifact storage; retain concise indexes, reproduction commands and checksummed manifests in git.",
+        "Consolidate repeated audit and build records while preserving failure evidence and provenance."
+      ]
+    },
+    {
+      "id": "evalrun_7f0fe688",
+      "score": 82,
+      "summary": "Strong onboarding and accurate scope documentation preserve most of the valid 83-point baseline. A one-point hygiene deduction reflects newly tracked wheels and duplicated diagnostic artifacts.",
+      "evidence": [
+        "Inspected the complete 143-file change inventory from 77aa16fc2d0cbd258f0fa309140dc75708cf2ee3 to 48fb3588c692db5b2a4f69033b5bf8a2bebb2019. Working tree remained clean; Burner-managed artifacts were excluded.",
+        "README, contributor workflow, architecture map, documentation index, locked setup, examples and CI are unchanged, preserving their baseline credit.",
+        "All 12 README tests passed, including first-success execution. Checked 323 local link destinations across 11 representative documents; none were missing.",
+        "Package and extension resolved under /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/.venv/lib/python3.12/site-packages/torch_rs/. Installed Python sources matched this tree; all 125 build-manifest source hashes and the installed extension hash matched.",
+        "Updated compiler contracts match the original-IR admission predicate. An untouched-default broadcast multiply-add passed on H100 GPU 0. Documented test discovery passed three metadata tests and clearly skipped seven hardware cases with CUDA hidden.",
+        "Diagnostic documentation distinguishes narrow comparisons from the fixed 112/56-cell compiler denominators. However, 137 added diagnostic files include three built wheels, two identical source archives and repeated logs. All 21 gzip artifacts were readable; their indexing helps navigation but adds substantial repository clutter."
+      ],
+      "suggestions": [
+        "Keep concise diagnostic summaries and provenance manifests in git; retain wheels, duplicate source archives and repetitive logs in durable artifact storage.",
+        "Preserve the current README hierarchy and explicit boundaries between default compilation, eager capture and private benchmarks."
+      ]
+    },
+    {
+      "id": "evalrun_53ed1eb0",
+      "score": 82,
+      "summary": "Strong onboarding and accurate scope documentation preserve the supplied 83-point baseline’s credit. A one-point hygiene deduction reflects newly tracked binary wheels and duplicated diagnostic artifacts; other polish areas remain unchanged.",
+      "evidence": [
+        "Inspected the complete 143-file range from 77aa16fc2d0cbd258f0fa309140dc75708cf2ee3 to 48fb3588c692db5b2a4f69033b5bf8a2bebb2019. Working tree remained clean; Burner-managed progress artifacts were excluded.",
+        "Unchanged README, CONTRIBUTING, architecture map, documentation index, lockfiles and macOS/Linux CI retain clear installation, naming, ownership, contribution and testing guidance. Dense architecture and supported-surface references remain existing limitations.",
+        "Before execution, verified torch_rs and torch_rs.abi3.so resolve under /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4e16ac18/.venv/lib/python3.12/site-packages/torch_rs/. Installed Python files match this checkout; extension and source hashes match the retained build manifest.",
+        "All 12 README quickstart tests passed, including executable first-success assertions. Checked 863 local link destinations outside code fences across 77 documents; none were missing.",
+        "Updated compiler documentation matches the original-IR admission predicate in src/pointwise_indexing.rs. Three new metadata tests passed; a real H100 public-default smoke test accepted broadcast x*y+x and rejected its documented identity-wrapper near miss. Execution loaded current-worktree CUDA 13 runtime/NVRTC libraries.",
+        "Diagnostic documentation separates six-program comparisons from the fixed 112 coverage/56 CUDA-cell evaluator and disclaims broad Inductor equivalence. All 21 added gzip artifacts were readable.",
+        "Hygiene regression: the candidate adds 137 diagnostic files, including the repository’s first three tracked wheels totaling 4.75 MB, plus three identical copies of audit content. These additions increase checkout noise without improving contributor navigation."
+      ],
+      "suggestions": [
+        "Retain wheels and bulky diagnostic bundles in durable artifact storage, with checksummed manifests and concise indexes in git.",
+        "Keep one canonical audit report and link receipts to it instead of tracking identical copies."
+      ]
+    }
+  ],
+  "fullGateSubmitted": false,
+  "main": "77aa16fc2d0cbd258f0fa309140dc75708cf2ee3",
+  "burner": "0b734e84a7e978494d992186acce81b783d58a55",
+  "workerAndOwnerExited": true,
+  "resourceLeasesEmpty": true,
+  "measuredResultsNotPromoted": true
+}

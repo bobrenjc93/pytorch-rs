@@ -1,8 +1,0 @@
-All 69 historical diagnostic files unchanged
-Frozen unchanged: scripts/evaluate_torch_compile_default.py
-Frozen unchanged: scripts/evaluate_torch_compile_default.sh
-Frozen unchanged: scripts/torch_compile_default_corpus.py
-Local documentation links valid: docs/diagnostics/compile-pointwise-tensor-madd/postcommit-bf908578/README.md
-Local documentation links valid: docs/compile-pointwise-jit.md
-Operator staging verified: 26 files, 291313429 bytes; no hardlinks; within frozen observer bounds
-Evidence-only diff and whitespace checks passed; HEAD/main unchanged
