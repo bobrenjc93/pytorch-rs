@@ -77,12 +77,58 @@ identity wrappers do not qualify, even if later simplification removes them.
 This exception reuses the existing single-FMA lowering and checked addresses.
 
 Strided inputs, other dtypes, gradients (even inside no-grad),
-mutation, control flow, containers, helper calls, module calls, keyword operator
+mutation, control flow, containers, module calls, keyword operator
 arguments, reductions, matrix operations, and device/dtype conversions are
 explicitly rejected. No original body or Python operator is run during
 admission or warm execution. Unsupported configurations keep their existing
 contracts; `disable=True`, configured/custom backend resolution, and the
 explicit `backend="eager"` capture implementation remain separate.
+
+### Direct Python helpers
+
+A root global or closure binding may be an exact Python function with one or
+more positional parameters. Calls must match its positional arity. Helpers may
+use parameters, admitted scalar literals, local assignments, native Tensor
+methods and the arithmetic above. Repeated calls, multiple helpers and calls
+composed in the root all emit operations into the same graph:
+
+```python
+def wave(x):
+    return x.sin() * 0.5
+
+def pointwise(x):
+    return wave(x) + wave(x + 0.25)
+```
+
+Helpers cannot read globals or closures, look up other helpers, branch, mutate,
+handle exceptions, yield or await. Keyword-only/variadic parameters, nonempty
+defaults and closures, and compiler directive attributes (`_torchdynamo_inline`,
+`_dynamo_marked_constant`, `_torchdynamo_disable`) are rejected. Container types,
+attribute keys and the entire constant pool are validated without callbacks,
+including unused constants and warm calls. Strings and `None` are metadata only.
+
+Arguments and returns must be tensor expressions or admitted scalars; functions,
+native call objects and modules cannot pass through helpers even as ignored
+arguments. Identity and scalar-literal returns may feed later tensor operations;
+the root must still return one computed tensor. Scalar binary arithmetic remains
+unsupported. Both `RETURN_VALUE` and Python 3.12 `RETURN_CONST` use this data-only
+boundary. Passing an ignored input through a helper creates no scalar value guard,
+and all tensor inputs still undergo native validation.
+
+Each helper binding freezes only its code identity in the existing logical
+specialization. Rebinding to another function with the same code reuses that
+guard; structurally equal but distinct code does not. A new concrete tensor ABI
+lowers the retained code, even if the original function has since changed.
+Defaults, closures, constants and directive presence are revalidated on every
+call. Helpers share root source realization, runtime scalar slots, SSA nodes and
+budgets: every call charges its full instruction count toward the 16384 expanded
+instruction limit, with the same 4096-node limit. Parsing is local to lowering;
+ordinary warm hits do not disassemble helpers. Neither Python body executes.
+Original-IR numerical admission, executor sharing, failure-atomic publication,
+LRU bounds and reset ownership remain unchanged.
+
+See the [helper diagnostics](diagnostics/compile-pointwise-helpers/README.md) for
+source-bound checks and their limits.
 
 ## Runtime requirements
 

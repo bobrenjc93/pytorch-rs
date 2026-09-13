@@ -26,7 +26,7 @@ _ALLOWED = _IGNORED | {"LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_FAST_BORROW", "LOAD
     "LOAD_FAST_BORROW_LOAD_FAST_BORROW", "STORE_FAST", "STORE_FAST_LOAD_FAST", "STORE_FAST_STORE_FAST",
     "LOAD_CONST", "LOAD_SMALL_INT", "LOAD_GLOBAL", "LOAD_DEREF", "LOAD_ATTR", "LOAD_METHOD", "BINARY_OP",
     "BINARY_ADD", "BINARY_SUBTRACT", "BINARY_MULTIPLY", "UNARY_NEGATIVE", "CALL", "CALL_FUNCTION",
-    "CALL_METHOD", "RETURN_VALUE", "COPY", "DUP_TOP", "SWAP"}
+    "CALL_METHOD", "RETURN_VALUE", "RETURN_CONST", "COPY", "DUP_TOP", "SWAP"}
 _METHODS = tuple(_UNARY) + tuple(_BINARY) + ("__getattribute__",)
 _MISSING = object()
 # Imported during package initialization, before public bindings can be patched.
@@ -75,6 +75,18 @@ class Call:
     op: str
     receiver: Value | None = None
     reverse: bool = False
+
+
+@dataclass(frozen=True, eq=False)
+class Helper:
+    """Validated code identity, never the function or its mutable containers."""
+    code: types.CodeType
+
+    def __eq__(self, other):
+        return type(other) is Helper and self.code is other.code
+
+    def __hash__(self):
+        return id(self.code)
 
 
 @dataclass(frozen=True)
@@ -355,27 +367,55 @@ def validate_signature_containers(model):
         unsupported("closure must be an exact tuple")
 
 
+def validate_code(code, arity, *, helper=False):
+    if (arity < 1 or code.co_argcount != arity or code.co_kwonlyargcount
+            or code.co_flags & (0x04 | 0x08 | 0x20 | 0x80 | 0x200)
+            or code.co_cellvars or (helper and code.co_freevars)
+            or getattr(code, "co_exceptiontable", b"")):
+        unsupported("requires a straight-line function with positional inputs and no defaults")
+    # dis formats co_consts with repr, before yielding even a LOAD_CONST.
+    # Validate before retaining helper code too: unused constants stay alive in it.
+    # None and exact strings are metadata only, never data operands or returns.
+    for constant in code.co_consts:
+        if constant is not None and type(constant) is not str:
+            scalar_bits(constant)
+
+
+def instructions_for(code, *, helper=False):
+    instructions = tuple(dis.get_instructions(code))
+    if len(instructions) > 16384:
+        unsupported("function exceeds pointwise instruction limit")
+    for instruction in instructions:
+        if (instruction.opname not in _ALLOWED
+                or (helper and instruction.opname in ("LOAD_GLOBAL", "LOAD_DEREF"))):
+            unsupported(f"unsupported bytecode {instruction.opname}; control flow, mutation and non-pointwise graphs are unsupported")
+    return instructions
+
+
+def freeze_helper(model):
+    validate_signature_containers(model)
+    if model.__closure__ is not None and len(model.__closure__):
+        unsupported("helpers must not have closures")
+    attributes = model.__dict__
+    if type(attributes) is not dict:
+        unsupported("helper attributes must be an exact dict")
+    if any(type(key) is not str for key in attributes):
+        unsupported("helper attribute keys must be exact strings")
+    for directive in ("_torchdynamo_inline", "_dynamo_marked_constant", "_torchdynamo_disable"):
+        if directive in attributes:
+            unsupported("helper compiler directives are unsupported")
+    code = model.__code__
+    validate_code(code, code.co_argcount, helper=True)
+    return Helper(code)
+
+
 def analyze(model, arity):
     if type(model) is not types.FunctionType or arity < 1:
         unsupported("expected an exact Python function and positional inputs")
     validate_signature_containers(model)
     code = model.__code__
-    if (code.co_argcount != arity or code.co_kwonlyargcount or code.co_flags & (0x04 | 0x08 | 0x20 | 0x80 | 0x200)
-            or code.co_cellvars
-            or getattr(code, "co_exceptiontable", b"")):
-        unsupported("requires a straight-line function with positional inputs and no defaults")
-    # dis formats co_consts with repr, before yielding even a LOAD_CONST.
-    # Admit the entire pool first; None and exact strings also hold compiler
-    # metadata (implicit returns and docstrings), but cannot be scalar operands.
-    for constant in code.co_consts:
-        if constant is not None and type(constant) is not str:
-            scalar_bits(constant)
-    instructions = tuple(dis.get_instructions(code))
-    if len(instructions) > 16384:
-        unsupported("function exceeds pointwise instruction limit")
-    for instruction in instructions:
-        if instruction.opname not in _ALLOWED:
-            unsupported(f"unsupported bytecode {instruction.opname}; control flow, mutation and non-pointwise graphs are unsupported")
+    validate_code(code, arity)
+    instructions = instructions_for(code)
     # Only initial parameter values read by the bytecode have scalar guards.
     # Unused/overwritten tensors still remain in the complete native input tuple.
     initial, read = set(code.co_varnames[:arity]), set()
@@ -415,7 +455,10 @@ def binding(value):
     for name, expected in _FUNCTIONS:
         if value is expected and expected is not None:
             return ("function", name, id(value)), Call((_UNARY | _BINARY)[name])
-    unsupported("only native operator bindings and scalar constants may be captured")
+    if type(value) is types.FunctionType:
+        helper = freeze_helper(value)
+        return ("helper", helper), helper
+    unsupported("only native operators, exact Python helpers and scalar constants may be captured")
 
 
 def bind_arguments(args):
@@ -513,9 +556,16 @@ def lower(program, values, arity, input_ids=None, *, observed=None):
     nodes = [("input", i, 0, 0) for i in input_ids]
     runtime = sorted(value.index for value in values.values() if type(value) is RuntimeScalar)
     nodes.extend(("scalar", index, 0, 0) for index in runtime)
-    locals_ = {source.name: BoundValue(source, values[source]) for source in program.dependencies
-               if source.kind == "parameter"}
-    stack = []
+    remaining = 16384
+    helper_instructions = {}  # Per lowering only; warm hits never parse helpers.
+
+    def data(obj):
+        # Validate without realizing a lazy root source. Ignored parameters must
+        # not acquire guards, but cannot carry callable/module/higher-order data.
+        item = obj.value if type(obj) is BoundValue else obj
+        if type(item) is not Value and type(item) is not RuntimeScalar:
+            scalar_bits(item)
+        return obj
 
     def realize(obj):
         if type(obj) is BoundValue:
@@ -548,83 +598,106 @@ def lower(program, values, arity, input_ids=None, *, observed=None):
             unsupported("graph exceeds 4096-node limit")
         return Value(len(nodes) - 1)
 
-    def load(name):
-        if name not in locals_:
-            unsupported("unbound local: " + name)
-        stack.append(locals_[name])
+    def frame(instructions, locals_):
+        nonlocal remaining
+        remaining -= len(instructions)
+        if remaining < 0:
+            unsupported("expanded function exceeds pointwise instruction limit")
+        stack = []
 
-    for instruction in program.instructions:
-        op, arg = instruction.opname, instruction.argval
-        if op in _IGNORED:
-            continue
-        if op in ("LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_FAST_BORROW"):
-            load(arg)
-        elif op in ("LOAD_FAST_LOAD_FAST", "LOAD_FAST_BORROW_LOAD_FAST_BORROW"):
-            for name in arg:
-                load(name)
-        elif op == "STORE_FAST":
-            locals_[arg] = stack.pop()
-        elif op == "STORE_FAST_LOAD_FAST":
-            locals_[arg[0]] = stack.pop()
-            load(arg[1])
-        elif op == "STORE_FAST_STORE_FAST":
-            for name in arg:
-                locals_[name] = stack.pop()
-        elif op in ("LOAD_CONST", "LOAD_SMALL_INT"):
-            scalar_bits(arg)  # Validate before retaining; never invoke user conversion.
-            stack.append(arg)
-        elif op in ("LOAD_GLOBAL", "LOAD_DEREF"):
-            source = BindingSource(op, arg)
-            stack.append(BoundValue(source, values[source]))
-        elif op in ("LOAD_ATTR", "LOAD_METHOD"):
-            owner = realize(stack.pop())
-            if owner is _ROOT:
-                if arg not in dict(_FUNCTIONS):
-                    unsupported("unsupported native function: " + arg)
-                stack.append(binding(_ROOT.__dict__.get(arg))[1])
-            elif isinstance(owner, Value) and owner.tensor and arg in (_UNARY | _BINARY):
-                stack.append(Call((_UNARY | _BINARY)[arg], owner, arg == "__rsub__"))
-            else:
-                unsupported("unsupported attribute: " + str(arg))
-        elif op == "UNARY_NEGATIVE":
-            operand = realize(stack.pop())
-            if type(operand) is RuntimeScalar:
-                stack.append(RuntimeScalar(operand.index, not operand.negative))
-            elif isinstance(operand, Value):
-                stack.append(emit("neg", [operand]))
-            else:
-                scalar_bits(operand)
-                stack.append(-operand)
-        elif op in ("BINARY_OP", "BINARY_ADD", "BINARY_SUBTRACT", "BINARY_MULTIPLY"):
-            symbol = instruction.argrepr if op == "BINARY_OP" else {"BINARY_ADD": "+", "BINARY_SUBTRACT": "-", "BINARY_MULTIPLY": "*"}[op]
-            if symbol not in ("+", "-", "*"):
-                unsupported("unsupported binary operator: " + symbol)
-            right, left = stack.pop(), stack.pop()
-            stack.append(emit({"+": "add", "-": "sub", "*": "mul"}[symbol], [left, right]))
-        elif op in ("CALL", "CALL_FUNCTION", "CALL_METHOD"):
-            operands = [stack.pop() for _ in range(instruction.arg)][::-1]
-            target = realize(stack.pop())
-            if not isinstance(target, Call):
-                unsupported("only native pointwise operators may be called")
-            if target.receiver is not None:
-                operands.insert(0, target.receiver)
-            if len(operands) != (1 if target.op in set(_UNARY.values()) else 2):
-                unsupported("operator argument count mismatch")
-            if target.reverse:
-                operands.reverse()
-            stack.append(emit(target.op, operands))
-        elif op == "COPY":
-            stack.append(stack[-instruction.arg])
-        elif op == "DUP_TOP":
-            stack.append(stack[-1])
-        elif op == "SWAP":
-            stack[-1], stack[-instruction.arg] = stack[-instruction.arg], stack[-1]
-        elif op == "RETURN_VALUE":
-            result = stack.pop()
-            if stack or not isinstance(result, Value) or not result.tensor or result.index < arity:
-                unsupported("return one computed pointwise tensor")
-            return Graph(arity, tuple(nodes), result.index)
-    unsupported("missing tensor return")
+        def load(name):
+            if name not in locals_:
+                unsupported("unbound local: " + name)
+            stack.append(locals_[name])
+
+        for instruction in instructions:
+            op, arg = instruction.opname, instruction.argval
+            if op in _IGNORED:
+                continue
+            if op in ("LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_FAST_BORROW"):
+                load(arg)
+            elif op in ("LOAD_FAST_LOAD_FAST", "LOAD_FAST_BORROW_LOAD_FAST_BORROW"):
+                for name in arg:
+                    load(name)
+            elif op == "STORE_FAST":
+                locals_[arg] = stack.pop()
+            elif op == "STORE_FAST_LOAD_FAST":
+                locals_[arg[0]] = stack.pop()
+                load(arg[1])
+            elif op == "STORE_FAST_STORE_FAST":
+                for name in arg:
+                    locals_[name] = stack.pop()
+            elif op in ("LOAD_CONST", "LOAD_SMALL_INT"):
+                scalar_bits(arg)  # Validate before retaining; never invoke user conversion.
+                stack.append(arg)
+            elif op in ("LOAD_GLOBAL", "LOAD_DEREF"):
+                source = BindingSource(op, arg)
+                stack.append(BoundValue(source, values[source]))
+            elif op in ("LOAD_ATTR", "LOAD_METHOD"):
+                owner = realize(stack.pop())
+                if owner is _ROOT:
+                    if arg not in dict(_FUNCTIONS):
+                        unsupported("unsupported native function: " + arg)
+                    stack.append(binding(_ROOT.__dict__.get(arg))[1])
+                elif isinstance(owner, Value) and owner.tensor and arg in (_UNARY | _BINARY):
+                    stack.append(Call((_UNARY | _BINARY)[arg], owner, arg == "__rsub__"))
+                else:
+                    unsupported("unsupported attribute: " + str(arg))
+            elif op == "UNARY_NEGATIVE":
+                operand = realize(stack.pop())
+                if type(operand) is RuntimeScalar:
+                    stack.append(RuntimeScalar(operand.index, not operand.negative))
+                elif isinstance(operand, Value):
+                    stack.append(emit("neg", [operand]))
+                else:
+                    scalar_bits(operand)
+                    stack.append(-operand)
+            elif op in ("BINARY_OP", "BINARY_ADD", "BINARY_SUBTRACT", "BINARY_MULTIPLY"):
+                symbol = instruction.argrepr if op == "BINARY_OP" else {"BINARY_ADD": "+", "BINARY_SUBTRACT": "-", "BINARY_MULTIPLY": "*"}[op]
+                if symbol not in ("+", "-", "*"):
+                    unsupported("unsupported binary operator: " + symbol)
+                right, left = stack.pop(), stack.pop()
+                stack.append(emit({"+": "add", "-": "sub", "*": "mul"}[symbol], [left, right]))
+            elif op in ("CALL", "CALL_FUNCTION", "CALL_METHOD"):
+                operands = [stack.pop() for _ in range(instruction.arg)][::-1]
+                target = realize(stack.pop())
+                if type(target) is Helper:
+                    if len(operands) != target.code.co_argcount:
+                        unsupported("helper argument count mismatch")
+                    parameters = [data(operand) for operand in operands]
+                    if target not in helper_instructions:
+                        helper_instructions[target] = instructions_for(target.code, helper=True)
+                    stack.append(frame(helper_instructions[target],
+                                       dict(zip(target.code.co_varnames, parameters))))
+                    continue
+                if type(target) is not Call:
+                    unsupported("only native pointwise operators and direct helpers may be called")
+                if target.receiver is not None:
+                    operands.insert(0, target.receiver)
+                if len(operands) != (1 if target.op in set(_UNARY.values()) else 2):
+                    unsupported("operator argument count mismatch")
+                if target.reverse:
+                    operands.reverse()
+                stack.append(emit(target.op, operands))
+            elif op == "COPY":
+                stack.append(stack[-instruction.arg])
+            elif op == "DUP_TOP":
+                stack.append(stack[-1])
+            elif op == "SWAP":
+                stack[-1], stack[-instruction.arg] = stack[-instruction.arg], stack[-1]
+            elif op in ("RETURN_VALUE", "RETURN_CONST"):
+                result = data(stack.pop() if op == "RETURN_VALUE" else arg)
+                if stack:
+                    unsupported("return one data value")
+                return result
+        unsupported("missing data return")
+
+    locals_ = {source.name: BoundValue(source, values[source]) for source in program.dependencies
+               if source.kind == "parameter"}
+    result = realize(frame(program.instructions, locals_))
+    if type(result) is not Value or not result.tensor or result.index < arity:
+        unsupported("return one computed pointwise tensor")
+    return Graph(arity, tuple(nodes), result.index)
 
 
 def implementation(model, recompile_limit):
