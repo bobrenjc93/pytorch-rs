@@ -132,14 +132,13 @@ any cache publication or LRU update. Inputs and all output allocations remain
 owned through launch, synchronization and Python conversion, including failures.
 Single-Tensor functions use this same path and still return a Tensor.
 
-[Clean measurements at `4554bbe8`](diagnostics/compile-pointwise-structured-outputs/postcommit-4554bbe8/README.md)
-record the sibling-product repair's H100 and portable checks, source/wheel/runtime
-provenance, and the still-failing nonlinear signed-zero diagnostic. The numerical
-milestone remains incomplete in that capture. The subsequent
-[nonlinear repair record](diagnostics/compile-pointwise-structured-outputs/review-nonlinear-regions.md)
-documents region-local contraction, current-shape partitioning within one native
-kernel, and the remaining reference compilation-history limitation. Earlier
-captures and development failures retain their original provenance.
+[Clean measurements at `c504a49b`](diagnostics/compile-pointwise-structured-outputs/postcommit-c504a49b/README.md)
+record the H100 and portable checks, source/wheel/runtime provenance, the passing
+three-size nonlinear reproducer and the remaining compilation-history-dependent
+signed-zero failure. The numerical milestone remains incomplete. The
+[repair record](diagnostics/compile-pointwise-structured-outputs/review-nonlinear-regions.md)
+describes region-local contraction within one native kernel. Earlier captures
+and development failures retain their original provenance.
 
 ### Bounded root shape branches
 
