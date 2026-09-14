@@ -132,9 +132,9 @@ any cache publication or LRU update. Inputs and all output allocations remain
 owned through launch, synchronization and Python conversion, including failures.
 Single-Tensor functions use this same path and still return a Tensor.
 
-[Clean measurements at `c504a49b`](diagnostics/compile-pointwise-structured-outputs/postcommit-c504a49b/README.md)
-record the H100 and portable checks, source/wheel/runtime provenance, the passing
-three-size nonlinear reproducer and its compilation-history-dependent failure.
+[Clean measurements at `69a73844`](diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/README.md)
+record the H100 and CPython 3.10–3.14 checks, source/wheel/runtime provenance,
+passing persistent-wrapper regressions and the remaining numerical failures.
 The [history repair](diagnostics/compile-pointwise-structured-outputs/review-history/README.md)
 freezes numerical hints on successful logical specializations and tests persistent
 wrappers. Larger graphs still have a finite-result failure; reference output order

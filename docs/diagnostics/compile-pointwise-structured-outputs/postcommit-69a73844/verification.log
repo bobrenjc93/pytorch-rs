@@ -1,0 +1,168 @@
+{
+  "commit": "69a738444ee7c71044730d2bccecb735cad8b161",
+  "clean_capture": true,
+  "checks": {
+    "pointwise": {
+      "total": 300,
+      "passed": 291,
+      "skipped": 8,
+      "failures": 1,
+      "errors": 0,
+      "seconds": 281.789
+    },
+    "two-device": {
+      "total": 8,
+      "passed": 8,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 5.243
+    },
+    "portable-3.10.19": {
+      "total": 300,
+      "passed": 145,
+      "skipped": 155,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 1.218
+    },
+    "portable-3.11.15": {
+      "total": 300,
+      "passed": 145,
+      "skipped": 155,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 0.86
+    },
+    "portable-3.12.12": {
+      "total": 300,
+      "passed": 145,
+      "skipped": 155,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 1.192
+    },
+    "portable-3.13.13": {
+      "total": 300,
+      "passed": 145,
+      "skipped": 155,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 0.93
+    },
+    "portable-3.14.5": {
+      "total": 300,
+      "passed": 145,
+      "skipped": 155,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 0.977
+    },
+    "native-pointwise": {
+      "passed": 48,
+      "failed": 0
+    },
+    "native-conversion": {
+      "passed": 1,
+      "failed": 0
+    }
+  },
+  "raw_comparisons": 1959,
+  "raw_files_verified": 5960,
+  "cache_files_verified": 15710,
+  "nested_files_verified": 290,
+  "prior_files_unchanged": 37,
+  "wheel_sha256": "55d7aceaaf9aadfa791e6e2450b3d9c00f33a41be660bd45ada7b42463550524",
+  "milestone_complete": false
+}
+
+Final evidence and documentation verification:
+{
+  "commit": "69a738444ee7c71044730d2bccecb735cad8b161",
+  "clean_capture": true,
+  "checks": {
+    "pointwise": {
+      "total": 300,
+      "passed": 291,
+      "skipped": 8,
+      "failures": 1,
+      "errors": 0,
+      "seconds": 281.789
+    },
+    "two-device": {
+      "total": 8,
+      "passed": 8,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 5.243
+    },
+    "portable-3.10.19": {
+      "total": 300,
+      "passed": 145,
+      "skipped": 155,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 1.218
+    },
+    "portable-3.11.15": {
+      "total": 300,
+      "passed": 145,
+      "skipped": 155,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 0.86
+    },
+    "portable-3.12.12": {
+      "total": 300,
+      "passed": 145,
+      "skipped": 155,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 1.192
+    },
+    "portable-3.13.13": {
+      "total": 300,
+      "passed": 145,
+      "skipped": 155,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 0.93
+    },
+    "portable-3.14.5": {
+      "total": 300,
+      "passed": 145,
+      "skipped": 155,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 0.977
+    },
+    "native-pointwise": {
+      "passed": 48,
+      "failed": 0
+    },
+    "native-conversion": {
+      "passed": 1,
+      "failed": 0
+    }
+  },
+  "prior_files_unchanged": 37,
+  "archived_files_verified": 5960,
+  "large_artifacts_verified": 5,
+  "raw_comparisons": 1959,
+  "wheel_sha256": "55d7aceaaf9aadfa791e6e2450b3d9c00f33a41be660bd45ada7b42463550524",
+  "tracked_changes": [
+    "docs/compile-pointwise-jit.md",
+    "docs/compile-pointwise-numerics.md"
+  ],
+  "new_evidence_files": [
+    "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/README.md",
+    "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/measurements.json.gz",
+    "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/raw-captures.tar.gz",
+    "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/raw-retention-manifest.json.gz",
+    "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/verification.log"
+  ],
+  "milestone_complete": false,
+  "documentation_links_valid": true,
+  "diff_check_passed": true
+}

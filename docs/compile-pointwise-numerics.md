@@ -41,10 +41,12 @@ replaces its product use with direct factor uses before inner choices are made;
 an outer contraction can therefore make an inner product single-use.
 
 The [sibling-product repair investigation](diagnostics/compile-pointwise-structured-outputs/review-sibling-products.md)
-also found a remaining limitation: reference kernel partitioning can change
+found that reference kernel partitioning can change
 contraction and zero signs across shapes when products feed nonlinear calls.
-The current shape-invariant numerical plan does not model that behavior; the
-broader structured-output numerical milestone remains incomplete.
+The [clean history-repair capture](diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/README.md)
+verifies numerical hints retained by successful logical specializations across
+shape changes. Larger graphs still fail finite-result and output-order checks;
+the broader structured-output numerical milestone remains incomplete.
 
 When a sum has two direct positive products with equal use priority,
 contraction selection follows the reference's arithmetic/select
