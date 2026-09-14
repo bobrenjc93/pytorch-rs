@@ -547,6 +547,7 @@ impl CudaFloat32Storage {
     }
 
     #[cfg(any(feature = "python-bindings", test))]
+    #[allow(clippy::too_many_arguments)] // Mirrors the validated pointwise launch ABI.
     pub(crate) fn pointwise_jit(
         &self,
         other: &Self,
@@ -555,6 +556,7 @@ impl CudaFloat32Storage {
         input_elements: [usize; 2],
         kernel: &jit::Kernel,
         scalars: &[f32],
+        numerical_hint: u64,
     ) -> Result<Vec<Self>, TensorError> {
         kernel.validate_scalars(scalars)?;
         if self.device_index != other.device_index || self.device_index != kernel.device {
@@ -593,6 +595,7 @@ impl CudaFloat32Storage {
                         pointer(other, offsets[1], input_elements[1]),
                         &pointers,
                         elements as u64,
+                        numerical_hint,
                         scalars,
                     )
                 }

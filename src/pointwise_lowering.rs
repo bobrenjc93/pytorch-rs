@@ -879,7 +879,7 @@ pub(super) fn source(graph: &Graph, addresses: &[super::indexing::Address]) -> S
     for index in 0..graph.outputs.len() {
         write!(source, ", float* out{index}").unwrap();
     }
-    source.push_str(", unsigned long long n");
+    source.push_str(", unsigned long long n, unsigned long long numerical_hint");
     for index in 0..graph.scalar_count() {
         write!(source, ", float s{index}").unwrap();
     }
@@ -892,13 +892,18 @@ pub(super) fn source(graph: &Graph, addresses: &[super::indexing::Address]) -> S
     for (index, (minimum, groups)) in plans.iter().enumerate() {
         if plans.len() > 1 {
             if index == 0 {
-                writeln!(source, "if (n < {}ull) {{", plans[index + 1].0).unwrap();
+                writeln!(source, "if (numerical_hint < {}ull) {{", plans[index + 1].0).unwrap();
             } else if index + 1 < plans.len() {
-                writeln!(source, "else if (n < {}ull) {{", plans[index + 1].0).unwrap();
+                writeln!(
+                    source,
+                    "else if (numerical_hint < {}ull) {{",
+                    plans[index + 1].0
+                )
+                .unwrap();
             } else {
                 source.push_str("else {\n");
             }
-            writeln!(source, "// numerical plan for n >= {minimum}").unwrap();
+            writeln!(source, "// numerical plan for hint >= {minimum}").unwrap();
         }
         for slots in groups {
             if groups.len() > 1 {

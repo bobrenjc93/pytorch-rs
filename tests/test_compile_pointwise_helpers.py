@@ -354,7 +354,7 @@ class HelperCache(unittest.TestCase):
         def compile_(tensors, nodes, output):
             # Use the actual hardware-free native IR/codegen boundary.
             bridge._pointwise_source(nodes, output, len(tensors))
-            return types.SimpleNamespace(run=lambda tensors, scalars: ((nodes, output, scalars),))
+            return types.SimpleNamespace(run=lambda tensors, scalars, numerical_hint: ((nodes, output, scalars),))
         self.codegen = self.stack.enter_context(patch.object(bridge, '_pointwise_compile', side_effect=compile_))
         self.x = native.tensor([1.0, -2.0])
 

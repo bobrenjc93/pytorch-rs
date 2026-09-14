@@ -193,8 +193,10 @@ class StructuredCache(unittest.TestCase):
         self.stack.enter_context(patch.object(bridge, '_compile_trace_tensor_metadata', metadata))
         self.stack.enter_context(patch.object(bridge, '_pointwise_validate_inputs', lambda tensors: None))
         self.launches = []
+        self.hints = []
         def compile_(tensors, nodes, outputs):
-            def run(tensors, scalars):
+            def run(tensors, scalars, numerical_hint):
+                self.hints.append(numerical_hint)
                 result = tuple(object() for _ in outputs)
                 self.launches.append(result)
                 return result
@@ -203,8 +205,36 @@ class StructuredCache(unittest.TestCase):
 
     def snapshot(self, compiled):
         state = cache(compiled)
-        return ([(key, id(entry), tuple(entry.lowerings.items()), dict(entry.observations))
+        return ([(key, id(entry), tuple(entry.lowerings.items()), dict(entry.observations), entry.numerical_hint)
                  for key, entry in state.graphs.items()], list(state.executors.items()))
+
+    def test_numerical_hint_follows_successful_specialization_history(self):
+        fn = program('def f(x):\n p=x*x\n return (-p,p.sin())')
+        compiled = native.compile(fn)
+        compiled(native.ones(1))
+        before = self.snapshot(compiled)
+        with patch.object(frontend.ResultSpec, 'reconstruct', side_effect=MemoryError('result')):
+            with self.assertRaises(MemoryError):
+                compiled(native.ones(2))
+        self.assertEqual(self.snapshot(compiled), before)
+        for size in (3, 2, 257):
+            compiled(native.ones(size))
+        self.assertEqual(self.hints, [1, 2, 3, 3, 3])
+        self.assertEqual([entry.numerical_hint for entry in cache(compiled).graphs.values()], [1, 3])
+        self.assertEqual(len(cache(compiled).executors), 1)
+        native.compiler.reset()
+        compiled(native.ones(2))
+        self.assertEqual(self.hints[-1], 2)
+        self.assertEqual(len(cache(compiled).graphs), 1)
+
+    def test_numerical_hint_uses_live_source_after_tensor_abi_rebinding(self):
+        fn = program('def f(unused,x):\n return -x')
+        compiled = native.compile(fn)
+        compiled(False, native.ones(13))
+        compiled(native.ones(1), native.ones(13))
+        compiled(True, native.ones(13))
+        self.assertEqual(self.hints, [13, 13, 13])
+        self.assertEqual(len(cache(compiled).graphs), 1)
 
     def test_identity_freshness_current_metadata_and_no_input_retention(self):
         fn = program('def f(x):\n a=-x\n equal=-x\n shared=[a,x,x.shape[-1]]\n return {"a":shared,"b":shared,"equal":[equal],"meta":[None,True,7,0.25,"s",a]}')
@@ -533,13 +563,11 @@ class StructuredHardware(unittest.TestCase):
         for case, body in enumerate(bodies):
             for order, result in enumerate(('(q,r)', '(r,q)', '(p,q,r)', 'r')):
                 source = 'def f(x,y):\n ' + body + '\n return ' + result
+                self.torch.compiler.reset()
                 fn = program(source)
                 compiled = native.compile(fn)
+                reference = self.torch.compile(program(source, self.torch))
                 for size in (1, 2, 3, 13, 257):
-                    # Cold default reference per shape: automatic dynamism can
-                    # retain an earlier shape hint and its fusion partition.
-                    self.torch.compiler.reset()
-                    reference = self.torch.compile(program(source, self.torch))
                     for history, (left, right) in enumerate(histories):
                         args = [self.upload([v]*size, (size,)) for v in (left, right)]
                         refs = [self.upload([v]*size, (size,), self.torch) for v in (left, right)]
@@ -553,6 +581,47 @@ class StructuredHardware(unittest.TestCase):
                                 self.compare_tree(actual, expected)
                                 self.assertEqual(kernel(compiled).ptx.count('.visible .entry'), 1)
                     self.assertEqual(len(cache(compiled).executors), 1)
+
+    def test_nonlinear_single_input_cold_and_persistent_histories(self):
+        for order, result in enumerate(('(q,r)', '(r,q)')):
+            source = 'def f(x):\n p=x*x\n q=-p\n r=p.sin()\n return ' + result
+            # Singleton sequences are fresh-compile controls. Longer sequences
+            # keep BOTH ordinary wrappers alive, including the promoted hint.
+            for sequence in ((1,), (13,), (257,), (1,2,3,13,257), (13,1,2,3,257)):
+                self.torch.compiler.reset()
+                fn = program(source)
+                compiled = native.compile(fn)
+                reference = self.torch.compile(program(source, self.torch))
+                for size in sequence:
+                    args = (self.upload([1e-38]*size, (size,)),)
+                    refs = (self.upload([1e-38]*size, (size,), self.torch),)
+                    for repeat in range(2):
+                        with self.subTest(order=order, sequence=sequence, size=size, repeat=repeat):
+                            actual = self.without_replay(fn, compiled, args)
+                            expected = reference(*refs)
+                            self.retain(f'history-{order}-{sequence}-{size}-{repeat}',
+                                        compiled, actual, expected)
+                            self.compare_tree(actual, expected)
+                            self.assertEqual(len(cache(compiled).executors), 1)
+                            self.assertEqual(kernel(compiled).ptx.count('.visible .entry'), 1)
+
+    def test_private_numerical_hint_admission_never_calls_integer_hooks(self):
+        x = self.upload([1e-38]*13, (13,))
+        compiled = native.compile(program('def f(x):\n p=x*x\n return (-p,p.sin())'))
+        compiled(x)
+        generated = kernel(compiled)
+        effects = []
+        class Integer(int):
+            def __index__(self):
+                effects.append('index')
+                return 1
+            def __int__(self):
+                effects.append('int')
+                return 1
+        for invalid in (True, Integer(1), 1.0, -1, 2**64):
+            with self.subTest(invalid=type(invalid)), self.assertRaises((TypeError, OverflowError)):
+                generated.run((x,), (), invalid)
+        self.assertEqual(effects, [])
 
     def test_nonlinear_large_and_zero_read_producers(self):
         # Returned runtime producers connect regions even beyond the small-graph
@@ -580,6 +649,25 @@ class StructuredHardware(unittest.TestCase):
                         self.retain(f'region-controls-{case}-{size}-{step}', compiled, actual, expected)
                         self.compare_tree(actual, expected)
                         self.assertEqual(kernel(compiled).ptx.count('.visible .entry'), 1)
+
+    def test_nonlinear_large_unreturned_producer(self):
+        # Keep the open numerical-planning blocker executable. Returning p too
+        # would force vertical fusion and conceal the finite rounding failure.
+        source = ('def f(x,y):\n p=x*y\n q=p-x\n'
+                  ' r=p.sin().sin().sin().sin().sin().sin().sin()\n return (q,r)')
+        for size in (1, 13, 257):
+            self.torch.compiler.reset()
+            fn = program(source)
+            compiled = native.compile(fn)
+            reference = self.torch.compile(program(source, self.torch))
+            args = tuple(self.upload([v]*size, (size,)) for v in (1e10, 1.0000001192092896))
+            refs = tuple(self.upload([v]*size, (size,), self.torch)
+                         for v in (1e10, 1.0000001192092896))
+            with self.subTest(size=size):
+                actual = self.without_replay(fn, compiled, args)
+                expected = reference(*refs)
+                self.retain(f'large-unreturned-{size}', compiled, actual, expected)
+                self.compare_tree(actual, expected)
 
     def test_maximum_output_and_runtime_scalar_abi(self):
         def balanced(names):

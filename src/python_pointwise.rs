@@ -178,12 +178,25 @@ pub(super) struct Compiled {
 }
 #[pymethods]
 impl Compiled {
-    #[pyo3(signature = (inputs, scalars=None))]
+    #[pyo3(signature = (inputs, scalars=None, numerical_hint=None))]
     fn run<'py>(
         &self,
         inputs: &Bound<'py, PyTuple>,
         scalars: Option<&Bound<'_, PyTuple>>,
+        numerical_hint: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Bound<'py, PyTuple>> {
+        // Validate before input borrowing or any conversion can call Python.
+        // A specialization hint controls numerical planning, never storage bounds.
+        let numerical_hint = numerical_hint
+            .map(|hint| {
+                if !hint.is_exact_instance_of::<PyInt>() {
+                    return Err(PyTypeError::new_err(
+                        "numerical hint must be an exact integer",
+                    ));
+                }
+                hint.extract::<u64>()
+            })
+            .transpose()?;
         // Exact types are checked before conversion; no user float hooks run.
         let values = scalars.map_or_else(
             || Ok(Vec::new()),
@@ -216,7 +229,7 @@ impl Compiled {
             ));
         }
         with_inputs(inputs, |tensors| {
-            let outputs = CoreTensor::pointwise_jit(tensors, &self.kernel, &values)
+            let outputs = CoreTensor::pointwise_jit(tensors, &self.kernel, &values, numerical_hint)
                 .map_err(|e| tensor_error(&e))?;
             // Keep every storage owner and input borrow through fallible Python
             // conversion. A partial conversion only drops local, unpublished owners.

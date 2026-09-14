@@ -339,6 +339,9 @@ class Specialization:
     # Sources passed through data boundaries need admission even if ignored by
     # the helper. These positions impose no scalar-value or tensor-shape guard.
     data_positions: tuple = ()
+    # Non-guarding iteration hint from this successful specialization. Dynamic
+    # shape hits retain its numerical partition without changing executable keys.
+    numerical_hint: int = 1
 
 
 def _broadcast_elements(shapes):
@@ -457,7 +460,9 @@ def _shape_guards(program, graph, first, metadata, history, predicates=()):
     # A 64-bit specialization has no inverse bound and can accept small shapes.
     bounds = groups if all(_broadcast_elements([observations[s][0] for s in group]) <= 2147483647
                            for group in groups) else ()
-    return ShapeGuards(tuple(guards), tuple(equal_axes), bounds, tuple(predicates)), observations
+    numerical_hint = _broadcast_elements([observations[s][0] for s in live])
+    return (ShapeGuards(tuple(guards), tuple(equal_axes), bounds, tuple(predicates)),
+            observations, numerical_hint)
 
 
 def _select_specialization(program, bindings, values, tensors, metadata, graphs):
@@ -1301,7 +1306,8 @@ def implementation(model, recompile_limit):
                     lowering = lower(program, values, len(tensors), input_ids, metadata=metadata)
                 graph = lowering.graph
                 bindings, first, aliases = _logical_keys(program, bindings, values, observed, tensors)
-                guards, observations = _shape_guards(program, graph, first, metadata, cache.graphs, predicates)
+                guards, observations, numerical_hint = _shape_guards(
+                    program, graph, first, metadata, cache.graphs, predicates)
                 observations.update((s, "scalar") for s in observed
                                     if type(static_values[s]) is float or type(static_values[s]) is int)
                 key = (program.code, bindings, guards, aliases)
@@ -1311,7 +1317,7 @@ def implementation(model, recompile_limit):
                           if expected[0] != "ignored"),
                     tuple(program.positions[source] for source in observed if type(values[source]) is Value),
                     tuple(position for position, source in enumerate(program.dependencies)
-                          if source in data_sources))
+                          if source in data_sources), numerical_hint)
             else:
                 key, entry, scalars = selected
                 # A cached graph omits ignored sources, but helper argument
@@ -1335,7 +1341,7 @@ def implementation(model, recompile_limit):
             executor = cache.executors.get(code_key)
             if executor is None:
                 executor = _native._pointwise_compile(tensors, graph.nodes, graph.outputs)
-            outputs = executor.run(tensors, scalars)
+            outputs = executor.run(tensors, scalars, entry.numerical_hint)
             result = lowering.result.reconstruct(outputs, static_values, tensors, metadata)
             # Publish both levels only after success. Executable and lowering LRU
             # eviction bounds retained modules without consuming logical slots.

@@ -134,8 +134,11 @@ Single-Tensor functions use this same path and still return a Tensor.
 
 [Clean measurements at `c504a49b`](diagnostics/compile-pointwise-structured-outputs/postcommit-c504a49b/README.md)
 record the H100 and portable checks, source/wheel/runtime provenance, the passing
-three-size nonlinear reproducer and the remaining compilation-history-dependent
-signed-zero failure. The numerical milestone remains incomplete. The
+three-size nonlinear reproducer and its compilation-history-dependent failure.
+The [history repair](diagnostics/compile-pointwise-structured-outputs/review-history/README.md)
+freezes numerical hints on successful logical specializations and tests persistent
+wrappers. Larger graphs still have a finite-result failure; reference output order
+also affects numerical planning. The numerical milestone remains incomplete. The
 [repair record](diagnostics/compile-pointwise-structured-outputs/review-nonlinear-regions.md)
 describes region-local contraction within one native kernel. Earlier captures
 and development failures retain their original provenance.

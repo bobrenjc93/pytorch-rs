@@ -44,6 +44,7 @@ impl Tensor {
         inputs: &[&Self],
         kernel: &Kernel,
         scalars: &[f32],
+        numerical_hint: Option<u64>,
     ) -> Result<Vec<Self>, TensorError> {
         kernel.validate_scalars(scalars)?;
         let device = Self::validate_pointwise_inputs(inputs)?;
@@ -62,6 +63,7 @@ impl Tensor {
             return Err(invalid("kernel broadcast indexing guard mismatch"));
         }
         let elements = indexing.output.elements;
+        let numerical_hint = numerical_hint.unwrap_or(elements as u64);
         let shape = indexing.output.shape;
         let strides = indexing.output.strides;
         let counts = [
@@ -78,6 +80,7 @@ impl Tensor {
             counts,
             kernel,
             scalars,
+            numerical_hint,
         )?;
         Ok(storages
             .into_iter()
@@ -150,12 +153,12 @@ mod tests {
             outputs: vec![1, 2, 3],
         };
         let kernel = Kernel::compile(&graph, 0).unwrap();
-        let first = Tensor::pointwise_jit(&[&input], &kernel, &[]).unwrap();
+        let first = Tensor::pointwise_jit(&[&input], &kernel, &[], None).unwrap();
         let changed = Tensor::from_vec(vec![4., 5., -6.], [3])
             .unwrap()
             .try_copy_cpu_to_cuda(Device::Cuda(0))
             .unwrap();
-        let second = Tensor::pointwise_jit(&[&changed], &kernel, &[]).unwrap();
+        let second = Tensor::pointwise_jit(&[&changed], &kernel, &[], None).unwrap();
         for (call, expected) in [(&first, [-1., 2., -3.]), (&second, [-4., -5., 6.])] {
             for (i, output) in call.iter().enumerate() {
                 assert!(!input.shares_storage_with(output));
@@ -176,6 +179,46 @@ mod tests {
                     output.try_copy_cuda_to_cpu().unwrap().try_to_vec().unwrap(),
                     expected
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn numerical_hint_selects_plan_without_changing_output_extent() {
+        if crate::cuda::device_count() == 0 {
+            eprintln!("skipping pointwise numerical hint: CUDA unavailable");
+            return;
+        }
+        let graph = Graph {
+            inputs: 1,
+            nodes: vec![Node::Input(0), Node::Mul(0, 0), Node::Neg(1), Node::Sin(1)],
+            outputs: vec![2, 3],
+        };
+        let kernel = Kernel::compile(&graph, 0).unwrap();
+        for elements in [1, 13] {
+            let input = Tensor::from_vec(vec![1e-38; elements], [elements])
+                .unwrap()
+                .try_copy_cpu_to_cuda(Device::Cuda(0))
+                .unwrap();
+            for hint in [None, Some(1), Some(13)] {
+                let outputs = Tensor::pointwise_jit(&[&input], &kernel, &[], hint).unwrap();
+                assert_eq!(outputs.len(), 2);
+                let negative_zero = hint.unwrap_or(elements as u64) < 3;
+                for (slot, output) in outputs.iter().enumerate() {
+                    assert_eq!(output.shape(), &[elements]);
+                    let values = output.try_copy_cuda_to_cpu().unwrap().try_to_vec().unwrap();
+                    assert_eq!(values.len(), elements);
+                    let expected = if slot == 0 && negative_zero {
+                        -0.0f32
+                    } else {
+                        0.0f32
+                    };
+                    assert!(
+                        values
+                            .iter()
+                            .all(|value| value.to_bits() == expected.to_bits())
+                    );
+                }
             }
         }
     }
@@ -208,7 +251,7 @@ mod tests {
             outputs: vec![1],
         };
         let kernel = Kernel::compile(&graph, 0).unwrap();
-        let output = Tensor::pointwise_jit(&[&input], &kernel, &[])
+        let output = Tensor::pointwise_jit(&[&input], &kernel, &[], None)
             .unwrap()
             .remove(0);
         assert!(!input.shares_storage_with(&output));
@@ -220,7 +263,7 @@ mod tests {
         input.shape = vec![0];
         input.strides = vec![1];
         input.offset = usize::MAX;
-        let empty = Tensor::pointwise_jit(&[&input], &kernel, &[])
+        let empty = Tensor::pointwise_jit(&[&input], &kernel, &[], None)
             .unwrap()
             .remove(0);
         assert!(!input.shares_storage_with(&empty));

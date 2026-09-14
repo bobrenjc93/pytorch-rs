@@ -193,7 +193,7 @@ mod tests {
             );
             let source = graph.source().unwrap();
             assert_eq!(source.matches("__global__ void").count(), 1);
-            assert!(source.contains(&format!("if (n < {boundary}ull)")));
+            assert!(source.contains(&format!("if (numerical_hint < {boundary}ull)")));
         }
     }
 

@@ -237,6 +237,7 @@ impl Kernel {
         mut x1: u64,
         outputs: &[u64],
         mut count: u64,
+        mut numerical_hint: u64,
         scalars: &[f32],
     ) -> Result<(), TensorError> {
         self.validate_scalars(scalars)?;
@@ -255,6 +256,7 @@ impl Kernel {
                 .map(|value| std::ptr::from_mut(value).cast()),
         );
         args.push((&raw mut count).cast());
+        args.push((&raw mut numerical_hint).cast());
         // Driver arguments reference stable host values until cuLaunchKernel
         // has copied them. No scalar device buffer or cached value is retained.
         let mut scalar_values = scalars.to_vec();
