@@ -26,7 +26,7 @@ class RuntimeScalarAdmission(unittest.TestCase):
         graph = frontend.lower(parsed, values, 1).graph
         source = bridge._pointwise_source(graph.nodes, graph.outputs, 1)
         self.assertIn('float s0', source)
-        self.assertIn('= s0;', source)
+        self.assertIn('= s0;', bridge._pointwise_plan(graph.nodes, graph.outputs, 1))
         history[(parsed.code, dynamic, (), (0,))] = None
         fn.__globals__['scale'] = 16777216.0
         keys, values = frontend.resolve(fn, parsed)

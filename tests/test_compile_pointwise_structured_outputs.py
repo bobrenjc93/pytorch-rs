@@ -50,6 +50,8 @@ class StructuredAdmission(unittest.TestCase):
         self.assertEqual(len(left.graph.outputs), 2)
         self.assertEqual(left.graph.outputs, tuple(sorted(left.graph.outputs)))
         self.assertNotEqual(left.result, right.result)
+        self.assertEqual(left.result.output_order, (0, 1))
+        self.assertEqual(right.result.output_order, (1, 0))
         self.assertEqual(len(shape_lower(program('def f(x):\n a=-x\n return [a,a]')).graph.outputs), 1)
 
     def test_all_small_constructors_literal_metadata_and_duplicates(self):
@@ -194,9 +196,11 @@ class StructuredCache(unittest.TestCase):
         self.stack.enter_context(patch.object(bridge, '_pointwise_validate_inputs', lambda tensors: None))
         self.launches = []
         self.hints = []
+        self.orders = []
         def compile_(tensors, nodes, outputs):
-            def run(tensors, scalars, numerical_hint):
+            def run(tensors, scalars, numerical_hint, output_order):
                 self.hints.append(numerical_hint)
+                self.orders.append(output_order)
                 result = tuple(object() for _ in outputs)
                 self.launches.append(result)
                 return result
@@ -404,8 +408,26 @@ class StructuredHardware(unittest.TestCase):
         import uuid
         prefix = directory / (label+'-'+uuid.uuid4().hex)
         prefix.with_suffix('.json').write_text(json.dumps({'actual':encode(actual),'expected':encode(expected)},allow_nan=True))
-        prefix.with_suffix('.cu').write_text(kernel(compiled).source)
-        prefix.with_suffix('.ptx').write_text(kernel(compiled).ptx)
+        generated = kernel(compiled)
+        prefix.with_suffix('.cu').write_text(generated.source)
+        prefix.with_suffix('.ptx').write_text(generated.ptx)
+        entry = next(reversed(cache(compiled).graphs.values()))
+        lowering = next(reversed(entry.lowerings.values()))
+        pending = [(actual, lowering.result.root)]
+        scalar_output = False
+        while pending:
+            value, index = pending.pop()
+            kind, payload = lowering.result.entries[index]
+            if kind == 'output':
+                scalar_output = tuple(value.shape) == ()
+                break
+            if kind in ('tuple', 'list'):
+                pending.extend(zip(value, payload))
+            elif kind == 'dict':
+                pending.extend((value[key], child) for key, child in payload)
+        prefix.with_suffix('.plan').write_text(generated.plan(
+            entry.numerical_hint, lowering.result.output_order,
+            scalar_output=scalar_output))
 
     def test_joint_numerics_shared_signed_competing_products_and_order(self):
         bodies = (
@@ -623,6 +645,37 @@ class StructuredHardware(unittest.TestCase):
                 generated.run((x,), (), invalid)
         self.assertEqual(effects, [])
 
+    def test_private_output_order_admission_preserves_executor(self):
+        fn = program('def f(x):\n p=x*x\n return (-p,p.sin())')
+        x = self.upload([1e-38]*13, (13,))
+        compiled = native.compile(fn)
+        expected = compiled(x)
+        generated = kernel(compiled)
+        effects = []
+        class Integer(int):
+            def __index__(self):
+                effects.append('index')
+                return 0
+        class Tuple(tuple):
+            def __iter__(self):
+                effects.append('iter')
+                return super().__iter__()
+        for invalid in ([0, 1], Tuple((0, 1)), (), (0,), (0, 0),
+                        (0, 2), (-1, 0), (True, 1), (Integer(0), 1)):
+            with self.subTest(invalid=type(invalid)), self.assertRaises((TypeError, ValueError, OverflowError)):
+                generated.run((x,), (), 13, invalid)
+        SpoofBoolean = type('bool', (), {
+            '__module__': 'numpy',
+            '__bool__': lambda self: effects.append('bool') or True,
+        })
+        with self.assertRaises(TypeError):
+            generated.plan(13, (0, 1), scalar_output=SpoofBoolean())
+        self.assertEqual(effects, [])
+        actual = compiled(x)
+        self.assertIs(kernel(compiled), generated)
+        for before, after in zip(expected, actual):
+            self.assertEqual(before.cpu().tolist(), after.cpu().tolist())
+
     def test_nonlinear_large_and_zero_read_producers(self):
         # Returned runtime producers connect regions even beyond the small-graph
         # certificate. Zero-read tensors, including scalar-bound expressions,
@@ -651,7 +704,7 @@ class StructuredHardware(unittest.TestCase):
                         self.assertEqual(kernel(compiled).ptx.count('.visible .entry'), 1)
 
     def test_nonlinear_large_unreturned_producer(self):
-        # Keep the open numerical-planning blocker executable. Returning p too
+        # Returning p too
         # would force vertical fusion and conceal the finite rounding failure.
         source = ('def f(x,y):\n p=x*y\n q=p-x\n'
                   ' r=p.sin().sin().sin().sin().sin().sin().sin()\n return (q,r)')
@@ -668,6 +721,96 @@ class StructuredHardware(unittest.TestCase):
                 expected = reference(*refs)
                 self.retain(f'large-unreturned-{size}', compiled, actual, expected)
                 self.compare_tree(actual, expected)
+
+    def test_large_realization_return_order_reuses_native_executable(self):
+        self.check_large_realization_order(duplicate_product=False)
+
+    def test_canonical_product_alias_preserves_realized_import(self):
+        self.check_large_realization_order(duplicate_product=True)
+
+    def check_large_realization_order(self, duplicate_product):
+        # Cross the ordinary reference's realized-unit fusion limit. Only the
+        # return expression changes; arithmetic SSA and native code stay shared.
+        lines = ['def f(x,y):', ' p=x*y',
+                 ' q=x*y-x' if duplicate_product else ' q=p-x', ' r=p']
+        for _ in range(64):
+            lines.extend([' r=r.sin()'] * 30)
+            lines.append(' r=r.sin()+r.cos()')
+        lines.append(' r=r.sin()')
+        sources = ['\n'.join(lines + [' return '+order])
+                   for order in ('(q,r)', '(r,q)')]
+        functions = [program(source) for source in sources]
+        self.assertEqual(shape_lower(functions[0], ((2,), (2,))).graph,
+                         shape_lower(functions[1], ((2,), (2,))).graph)
+        fn = functions[0]
+        compiled = native.compile(fn)
+        generated = None
+        prior = []
+        old_limit = sys.getrecursionlimit()
+        sys.setrecursionlimit(max(old_limit, 20000))
+        try:
+            for order, source in enumerate(sources):
+                self.torch.compiler.reset()
+                fn.__code__ = program(source).__code__
+                reference = self.torch.compile(program(source, self.torch))
+                for repeat, values in enumerate(((1e10, 1.0000001192092896),
+                                                  (2e38, 2.0), (1e-38, 1e-38))):
+                    args = tuple(self.upload([v]*2, (2,)) for v in values)
+                    refs = tuple(self.upload([v]*2, (2,), self.torch) for v in values)
+                    with self.subTest(order=order, repeat=repeat):
+                        actual = self.without_replay(fn, compiled, args)
+                        expected = reference(*refs)
+                        self.retain(f'realization-order-{duplicate_product}-{order}-{repeat}', compiled, actual, expected)
+                        self.compare_tree(actual, expected)
+                        current = kernel(compiled)
+                        if generated is None:
+                            generated = current
+                        self.assertIs(current, generated)
+                        self.assertEqual(len(cache(compiled).executors), 1)
+                        self.assertEqual(current.ptx.count('.visible .entry'), 1)
+                        for old_actual, old_expected in prior:
+                            self.compare_tree(old_actual, old_expected)
+                            for old in old_actual:
+                                for new in actual:
+                                    self.assertIsNot(new, old)
+                        prior.append((actual, expected))
+        finally:
+            sys.setrecursionlimit(old_limit)
+
+    def test_nonlinear_rank_and_nested_observable_order(self):
+        for operation, values in (('p-x', (1e10, 1.0000001192092896)),
+                                  ('-p', (1e-38, 1e-38))):
+            body = ('def f(x,y):\n p=x*y\n q='+operation+'\n'
+                    ' r=p.sin().sin().sin().sin().sin().sin().sin()\n')
+            returns = (' shared=[q,r,q]\n return {"first":shared,"again":shared,"r":r}',
+                       ' shared=[r,q,r]\n return {"first":shared,"again":shared,"q":q}')
+            for shape in ((), (1,), (13,), (257,)):
+                compiled = None
+                generated = None
+                for order, result in enumerate(returns):
+                    self.torch.compiler.reset()
+                    source = body+result
+                    if compiled is None:
+                        fn = program(source)
+                        compiled = native.compile(fn)
+                    else:
+                        fn.__code__ = program(source).__code__
+                    reference = self.torch.compile(program(source, self.torch))
+                    size = math.prod(shape)
+                    args = tuple(self.upload([v]*size, shape) for v in values)
+                    refs = tuple(self.upload([v]*size, shape, self.torch) for v in values)
+                    for repeat in range(2):
+                        with self.subTest(operation=operation, shape=shape, order=order, repeat=repeat):
+                            actual = self.without_replay(fn, compiled, args)
+                            expected = reference(*refs)
+                            self.retain(f'nested-order-{operation}-{shape}-{order}-{repeat}', compiled, actual, expected)
+                            self.compare_tree(actual, expected)
+                            self.assertIs(actual['first'], actual['again'])
+                            self.assertIs(actual['first'][0], actual['first'][2])
+                            if generated is None:
+                                generated = kernel(compiled)
+                            self.assertIs(kernel(compiled), generated)
+                            self.assertEqual(len(cache(compiled).executors), 1)
 
     def test_maximum_output_and_runtime_scalar_abi(self):
         def balanced(names):

@@ -261,9 +261,9 @@ class Admission(unittest.TestCase):
     def test_typed_ir_retains_reused_nodes_and_rounds_constants(self):
         fn = program('def f(x, y):\n a = fw.sin(x)\n b = a * a\n return (b - y.cos()) + 0.10000000000001')
         graph = lower(fn, 2)
-        source = bridge._pointwise_source(graph.nodes, graph.outputs, graph.inputs)
+        source = bridge._pointwise_plan(graph.nodes, graph.outputs, graph.inputs)
         self.assertEqual(source.count('sinf('), 1)
-        self.assertIn('__fmul_rn(v2, v2)', source)
+        self.assertIn('fmaf(v2, v2, -v4)', source)
         self.assertIn('cosf(', source)
         self.assertNotIn('__sinf', source)
         self.assertIn('0x3dcccccdu', source)
@@ -319,7 +319,7 @@ class Admission(unittest.TestCase):
     def test_positional_operator_spellings_and_integer_bytecode(self):
         fn = program('def f(x, y):\n a = b = fw.add(x, y)\n return fw.subtract(a, -3).mul(2) + b.__rsub__(0.713)')
         graph = lower(fn, 2)
-        source = bridge._pointwise_source(graph.nodes, graph.outputs, 2)
+        source = bridge._pointwise_plan(graph.nodes, graph.outputs, 2)
         self.assertEqual(sum(node[0] == 'add' for node in graph.nodes), 2)
         self.assertEqual(sum(node[0] == 'sub' for node in graph.nodes), 2)
         self.assertIn('0x40000000u', source)
@@ -681,7 +681,7 @@ diagnostic.write(directory/'report.json.gz', record)
                 refs = [self.upload(v, (len(v),), self.torch) for v in values]
                 with self.subTest(expression=expression, values=values):
                     self.compare(self.without_replay(fn, compiled, args), reference(*refs), exact=True)
-            self.assertIn('fmaf(', kernel(compiled).source)
+            self.assertIn('fmaf(', kernel(compiled).plan(1))
             self.assertIn('fma.rn.f32', kernel(compiled).ptx)
 
     def test_negated_product_underflow_and_exact_zero_signs(self):
@@ -697,7 +697,7 @@ diagnostic.write(directory/'report.json.gz', record)
             with self.subTest(body=body):
                 expected = reference(*refs)
                 self.compare(self.without_replay(fn, compiled, args), expected, exact=True)
-                self.assertIn('fmaf(', kernel(compiled).source)
+                self.assertIn('fmaf(', kernel(compiled).plan(1))
                 if body == 'return -(x * y)':
                     self.assertEqual(expected.signbit().tolist(),
                                      [True, False, False, True, False, False, False, False])

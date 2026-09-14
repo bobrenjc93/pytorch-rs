@@ -179,6 +179,10 @@ class ResultSpec:
     # literal metadata, output slots and earlier entry indices.
     entries: tuple
     root: int
+    # First observable occurrence of each computed root, projected onto the
+    # canonical Graph slots. Numerical planning consumes this immutable order;
+    # container kinds, keys, aliases and metadata never enter the executable key.
+    output_order: tuple = ()
 
     def reconstruct(self, outputs, values, tensors, metadata):
         """Build fresh containers from this call's owners before cache publication."""
@@ -1018,7 +1022,8 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
         slots = {value: slot for slot, value in enumerate(outputs)}
         entries = tuple((kind, slots[payload] if kind == "output" else payload)
                         for kind, payload in entries)
-        return outputs, ResultSpec(entries, root)
+        order = tuple(dict.fromkeys(payload for kind, payload in entries if kind == "output"))
+        return outputs, ResultSpec(entries, root, order)
 
     def root_result(obj):
         result_spec(obj)  # Also admit every inactive return before cache publication.
@@ -1341,7 +1346,7 @@ def implementation(model, recompile_limit):
             executor = cache.executors.get(code_key)
             if executor is None:
                 executor = _native._pointwise_compile(tensors, graph.nodes, graph.outputs)
-            outputs = executor.run(tensors, scalars, entry.numerical_hint)
+            outputs = executor.run(tensors, scalars, entry.numerical_hint, lowering.result.output_order)
             result = lowering.result.reconstruct(outputs, static_values, tensors, metadata)
             # Publish both levels only after success. Executable and lowering LRU
             # eviction bounds retained modules without consuming logical slots.

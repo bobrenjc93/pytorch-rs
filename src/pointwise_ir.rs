@@ -4,6 +4,8 @@ use crate::tensor_error::TensorError;
 pub(crate) mod indexing;
 #[path = "pointwise_lowering.rs"]
 mod lowering;
+#[path = "pointwise_program.rs"]
+pub(crate) mod program;
 #[path = "pointwise_regions.rs"]
 mod regions;
 
@@ -123,6 +125,20 @@ impl Graph {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn plan(graph: &Graph) -> String {
+        program::Program::build(
+            graph,
+            &vec![indexing::Address::Linear; graph.inputs],
+            u64::MAX,
+            &(0..graph.outputs.len()).collect::<Vec<_>>(),
+            false,
+        )
+        .unwrap()
+        .listing()
+        .to_owned()
+    }
+
     #[test]
     fn outputs_validate_canonical_distinct_computed_roots() {
         let mut graph = Graph {
@@ -130,7 +146,7 @@ mod tests {
             nodes: vec![Node::Input(0), Node::Neg(0), Node::Neg(0)],
             outputs: vec![1, 2],
         };
-        let source = graph.source().unwrap();
+        let source = plan(&graph);
         // Arithmetic CSE does not collapse the two original allocation slots.
         assert_eq!(source.matches("__fsub_rn(").count(), 1);
         assert!(source.contains("out0[i] = v1;"));
@@ -165,7 +181,7 @@ mod tests {
             ],
             outputs: vec![2, 3],
         };
-        let source = graph.source().unwrap();
+        let source = plan(&graph);
         assert!(source.contains("__fmul_rn(v0, v1)"));
         assert!(source.contains("fmaf(v0, v1, v0)"));
         assert!(source.contains("out0[i] = v2;"));
@@ -187,17 +203,17 @@ mod tests {
             outputs: vec![3, 5],
         };
         // Default Inductor rounds the observable (0-x)*y, then fuses x*y.
-        assert!(graph.source().unwrap().contains("fmaf(v0, v1, v3)"));
+        assert!(plan(&graph).contains("fmaf(v0, v1, v3)"));
         for outputs in [vec![5], vec![4, 5], vec![3, 4, 5]] {
             graph.outputs = outputs;
             // A singleton result, or two shared products, retains the previous
             // tie-breaking rule. Observable products are not rounding barriers.
-            assert!(graph.source().unwrap().contains("fmaf(v2, v1, v4)"));
+            assert!(plan(&graph).contains("fmaf(v2, v1, v4)"));
         }
         graph.nodes.push(Node::Mul(2, 1));
         graph.outputs = vec![5, 6];
         // CSE aliases carry the same observable use despite distinct SSA slots.
-        assert!(graph.source().unwrap().contains("fmaf(v0, v1, v3)"));
+        assert!(plan(&graph).contains("fmaf(v0, v1, v3)"));
     }
 
     #[test]
@@ -215,7 +231,7 @@ mod tests {
             ],
             outputs: vec![6],
         };
-        let source = graph.source().unwrap();
+        let source = plan(&graph);
         // The outer FMA consumes x/y directly. The remaining inner multiply
         // uses are then tied, so it too contracts x*y rather than (0-x)*y.
         assert!(source.contains("fmaf(v0, v1, v5)"));
@@ -238,7 +254,7 @@ mod tests {
             ],
             outputs: vec![2, 7],
         };
-        let source = graph.source().unwrap();
+        let source = plan(&graph);
         assert!(source.contains("fmaf(v3, v1, v2)"));
         assert!(source.contains("fmaf(-v3, v1, v2)"));
     }
@@ -257,17 +273,17 @@ mod tests {
             ],
             outputs: vec![5],
         };
-        let source = graph.source().unwrap();
+        let source = plan(&graph);
         assert_eq!(source.matches("fmaf(").count(), 1);
         assert!(source.contains("fmaf(v0,"));
         assert!(!source.contains("fmaf(-v0,"));
         // Addition of zero retains the opposite contraction orientation.
         graph.nodes[4] = Node::Add(2, 3);
-        assert!(graph.source().unwrap().contains("fmaf(-v0,"));
+        assert!(plan(&graph).contains("fmaf(-v0,"));
         // Repeated identical expressions still share their rounded value.
         graph.nodes[4] = Node::Sub(2, 3);
         graph.nodes[5] = Node::Sub(4, 4);
-        let source = graph.source().unwrap();
+        let source = plan(&graph);
         assert!(!source.contains("fmaf("));
         assert!(source.contains("__fsub_rn("));
         // Signed doubling keeps the left contraction in both orientations,
@@ -275,7 +291,7 @@ mod tests {
         graph.nodes[1] = Node::Constant((-2.0_f64).to_bits());
         for operands in [(4, 2), (2, 4)] {
             graph.nodes[5] = Node::Sub(operands.0, operands.1);
-            assert!(graph.source().unwrap().contains("fmaf(-v0,"));
+            assert!(plan(&graph).contains("fmaf(-v0,"));
         }
     }
 
@@ -292,13 +308,13 @@ mod tests {
             ],
             outputs: vec![4],
         };
-        let source = graph.source().unwrap();
+        let source = plan(&graph);
         assert_eq!(source.matches("fmaf(").count(), 1);
         assert!(source.contains("__fadd_rn("));
         assert!(source.contains("__fmul_rn("));
         // A dead consumer cannot make the product shared in emitted code.
         graph.outputs = vec![3];
-        let source = graph.source().unwrap();
+        let source = plan(&graph);
         assert_eq!(source.matches("fmaf(").count(), 1);
         assert!(!source.contains("__fadd_rn("));
     }
@@ -318,13 +334,13 @@ mod tests {
             ],
             outputs: vec![6],
         };
-        let constant = graph.source().unwrap();
+        let constant = plan(&graph);
         assert!(constant.contains("(float)sin((double)"));
         assert!(!constant.contains("0x7f800000u"));
         graph.nodes[3] = Node::RuntimeScalar(0, false);
-        assert!(graph.source().unwrap().contains("0x7f800000u"));
+        assert!(plan(&graph).contains("0x7f800000u"));
         graph.nodes[6] = Node::Sin(0);
-        let runtime = graph.source().unwrap();
+        let runtime = plan(&graph);
         assert!(runtime.contains("0x7f800000u"));
         assert!(!runtime.contains("__sinf("));
     }
@@ -344,8 +360,8 @@ mod tests {
             ],
             outputs: vec![6],
         };
-        let source = graph.source().unwrap();
-        assert!(source.contains("float s0"));
+        let source = plan(&graph);
+        assert!(graph.source().unwrap().contains("float s0"));
         assert!(source.contains("= s0;"));
         assert!(source.contains("__fsub_rn"));
         assert_eq!(graph.scalar_count(), 1);
@@ -368,7 +384,7 @@ mod tests {
             ],
             outputs: vec![2],
         };
-        let source = graph.source().unwrap();
+        let source = plan(&graph);
         assert!(source.contains("= -s0;"));
         assert!(!source.contains("__fsub_rn(0.0f"));
     }
@@ -394,7 +410,7 @@ mod tests {
                 ],
                 outputs: vec![8],
             };
-            let source = graph.source().unwrap();
+            let source = plan(&graph);
             assert!(source.contains(&format!("0x{:08x}u", expected.to_bits())));
             assert!(!source.contains("x0[i]"));
             assert!(!source.contains("__fadd_rn"));
@@ -415,9 +431,9 @@ mod tests {
             ],
             outputs: vec![5],
         };
-        assert!(graph.source().unwrap().contains("__fadd_rn"));
+        assert!(plan(&graph).contains("__fadd_rn"));
         graph.nodes[5] = Node::Add(0, 2);
-        let source = graph.source().unwrap();
+        let source = plan(&graph);
         assert!(source.contains("x0[i]"));
         assert!(!source.contains("__fadd_rn"));
     }
@@ -440,7 +456,7 @@ mod tests {
             ],
             outputs: vec![9],
         };
-        let source = graph.source().unwrap();
+        let source = plan(&graph);
         assert_eq!(source.matches("fmaf(").count(), 1);
         assert!(!source.contains("__fsub_rn"));
     }
@@ -452,15 +468,15 @@ mod tests {
             nodes: vec![Node::Input(0), Node::Boolean(false), Node::Mul(0, 1)],
             outputs: vec![2],
         };
-        let source = graph.source().unwrap();
+        let source = plan(&graph);
         assert!(source.contains("0x00000000u"));
         assert!(!source.contains("x0[i]"));
         graph.nodes[1] = Node::Integer(0);
-        assert_eq!(graph.source().unwrap(), source);
+        assert_eq!(plan(&graph), source);
         graph.nodes[1] = Node::Constant(0);
-        assert!(graph.source().unwrap().contains("__fmul_rn("));
+        assert!(plan(&graph).contains("__fmul_rn("));
         graph.nodes[1] = Node::Boolean(true);
-        let source = graph.source().unwrap();
+        let source = plan(&graph);
         assert!(source.contains("x0[i]"));
         assert!(!source.contains("__fmul_rn("));
     }
@@ -482,7 +498,7 @@ mod tests {
                     ],
                     outputs: vec![6],
                 };
-                let source = graph.source().unwrap();
+                let source = plan(&graph);
                 assert!(source.contains("0x80000000u"));
                 assert!(!source.contains("x0[i]"));
                 assert!(!source.contains("fmaf("));
@@ -505,9 +521,9 @@ mod tests {
             ],
             outputs: vec![5],
         };
-        assert!(graph.source().unwrap().contains("fmaf("));
+        assert!(plan(&graph).contains("fmaf("));
         graph.nodes[5] = Node::Sub(2, 2);
-        let source = graph.source().unwrap();
+        let source = plan(&graph);
         assert!(!source.contains("fmaf("));
         assert!(source.contains("__fsub_rn(v2, v2)"));
     }
@@ -531,12 +547,7 @@ mod tests {
                     ],
                     outputs: vec![4],
                 };
-                assert!(
-                    graph
-                        .source()
-                        .unwrap()
-                        .contains(&format!("fmaf(v{first}, v{first}, v3)"))
-                );
+                assert!(plan(&graph).contains(&format!("fmaf(v{first}, v{first}, v3)")));
                 graph.nodes = vec![
                     Node::Input(0),
                     Node::Input(1),
@@ -550,12 +561,12 @@ mod tests {
                     },
                 ];
                 graph.outputs = vec![5];
-                let source = graph.source().unwrap();
+                let source = plan(&graph);
                 assert!(source.contains("__fmul_rn(v2, v2)"));
                 assert!(source.contains(&format!("fmaf(v{first}, v{second}, v3)")));
                 // Subtraction retains its original, noncommutative orientation.
                 graph.nodes[5] = Node::Sub(3, 4);
-                assert!(graph.source().unwrap().contains("fmaf(v2, v2, -v4)"));
+                assert!(plan(&graph).contains("fmaf(v2, v2, -v4)"));
             }
         }
     }
@@ -581,7 +592,7 @@ mod tests {
                     ],
                     outputs: vec![6],
                 };
-                let source = graph.source().unwrap();
+                let source = plan(&graph);
                 assert!(source.contains("fmaf(v0, v1, v4)"));
                 assert!(!source.contains("fmaf(v3, v3,"));
             }
@@ -602,9 +613,9 @@ mod tests {
             ],
             outputs: vec![5],
         };
-        assert!(graph.source().unwrap().contains("fmaf(v0, v2, -v4)"));
+        assert!(plan(&graph).contains("fmaf(v0, v2, -v4)"));
         graph.nodes[5] = Node::Add(3, 4);
-        assert!(graph.source().unwrap().contains("fmaf(v0, v2, v4)"));
+        assert!(plan(&graph).contains("fmaf(v0, v2, v4)"));
     }
 
     #[test]
@@ -622,7 +633,7 @@ mod tests {
             ],
             outputs: vec![6],
         };
-        let source = graph.source().unwrap();
+        let source = plan(&graph);
         assert!(source.contains("fmaf(v0, v2, -v4)"));
         assert!(!source.contains("const float v5"));
         graph.nodes[5] = Node::Sin(2); // Invalid even though not returned.
@@ -641,14 +652,14 @@ mod tests {
             ],
             outputs: vec![3],
         };
-        assert!(graph.source().unwrap().contains("fmaf(-v0, v1, 0.0f)"));
+        assert!(plan(&graph).contains("fmaf(-v0, v1, 0.0f)"));
         graph.nodes.push(Node::Add(3, 2));
         graph.outputs = vec![4];
         // The negation consumes factors directly; the remaining product use
         // can contract without losing the separately rounded negation result.
-        assert!(graph.source().unwrap().contains("fmaf(v0, v1, v3)"));
+        assert!(plan(&graph).contains("fmaf(v0, v1, v3)"));
         graph.nodes[3] = Node::Neg(0);
-        assert!(graph.source().unwrap().contains("__fsub_rn(0.0f, v0)"));
+        assert!(plan(&graph).contains("__fsub_rn(0.0f, v0)"));
     }
 
     #[test]
@@ -683,9 +694,11 @@ mod tests {
             ],
             outputs: vec![4],
         };
-        let code = graph.source().unwrap();
+        let code = plan(&graph);
         assert_eq!(code.matches("sinf(").count(), 1);
-        assert!(code.contains("__fmul_rn(v1, v1)"));
+        // The FMA reads the shared sine twice; its now-dead product need not
+        // occupy a program register.
+        assert!(code.contains("fmaf(v1, v1,"));
         assert!(code.contains("0x80000000u"));
         assert!(!code.contains("__sinf"));
     }
@@ -703,12 +716,12 @@ mod tests {
             ],
             outputs: vec![4],
         };
-        let code = graph.source().unwrap();
+        let code = plan(&graph);
         assert_eq!(code.matches("__fmul_rn(").count(), 1);
         assert!(code.contains("__fsub_rn(v2, v2)"));
         assert!(!code.contains("fmaf("));
         graph.nodes[3] = Node::Mul(1, 0);
-        assert!(graph.source().unwrap().contains("fmaf("));
+        assert!(plan(&graph).contains("fmaf("));
     }
 
     #[test]
@@ -725,7 +738,7 @@ mod tests {
             ],
             outputs: vec![5],
         };
-        let code = graph.source().unwrap();
+        let code = plan(&graph);
         assert!(code.contains("fmaf(v0, v2, -v1)"));
         assert!(code.contains("fmaf(v0, v2, v4)"));
     }
@@ -745,7 +758,7 @@ mod tests {
             ],
             outputs: vec![6],
         };
-        let code = graph.source().unwrap();
+        let code = plan(&graph);
         assert!(code.contains("fmaf(v1, v2, -v3)"));
         assert!(code.contains("__fadd_rn("));
         assert!(!code.contains("fmaf(v0, v2, -v4)"));

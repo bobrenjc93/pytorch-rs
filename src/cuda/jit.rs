@@ -135,6 +135,55 @@ impl Nvrtc {
     }
 }
 
+/// Scratch is register-major and bounded independently of tensor extent.
+/// The VM uses grid-stride iteration, so fewer workers never change indexing.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct LaunchLayout {
+    pub(crate) blocks: u32,
+    pub(crate) threads: u32,
+    pub(crate) workers: usize,
+    pub(crate) scratch_elements: usize,
+}
+impl LaunchLayout {
+    const SCRATCH_BYTES: usize = 64 * 1024 * 1024;
+
+    pub(crate) fn new(elements: usize, registers: usize) -> Result<Self, TensorError> {
+        let register_bytes = registers
+            .checked_mul(std::mem::size_of::<f32>())
+            .filter(|bytes| *bytes != 0)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        if elements == 0 {
+            return Ok(Self {
+                blocks: 0,
+                threads: 0,
+                workers: 0,
+                scratch_elements: 0,
+            });
+        }
+        let budget_workers = Self::SCRATCH_BYTES / register_bytes;
+        let threads = budget_workers.min(256);
+        if threads == 0 {
+            return Err(invalid("pointwise register storage exceeds scratch budget"));
+        }
+        let blocks = elements
+            .div_ceil(threads)
+            .min(65535)
+            .min(budget_workers / threads);
+        let workers = blocks
+            .checked_mul(threads)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let scratch_elements = workers
+            .checked_mul(registers)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        Ok(Self {
+            blocks: u32::try_from(blocks).map_err(|_| TensorError::IndexCalculationOverflow)?,
+            threads: u32::try_from(threads).map_err(|_| TensorError::IndexCalculationOverflow)?,
+            workers,
+            scratch_elements,
+        })
+    }
+}
+
 pub(crate) struct Kernel {
     pub(crate) graph: Graph,
     pub(crate) addresses: Vec<crate::pointwise_ir::indexing::Address>,
@@ -231,13 +280,17 @@ impl Kernel {
     }
     /// Input pointers must cover the validated broadcast address maps on this
     /// device. Each output covers count disjoint elements. Synchronize before releasing owners.
+    #[allow(clippy::too_many_arguments)] // One checked native launch ABI.
     pub(crate) unsafe fn launch(
         &self,
         mut x0: u64,
         mut x1: u64,
         outputs: &[u64],
         mut count: u64,
-        mut numerical_hint: u64,
+        mut program: u64,
+        mut instruction_count: u64,
+        mut scratch: u64,
+        layout: LaunchLayout,
         scalars: &[f32],
     ) -> Result<(), TensorError> {
         self.validate_scalars(scalars)?;
@@ -256,7 +309,11 @@ impl Kernel {
                 .map(|value| std::ptr::from_mut(value).cast()),
         );
         args.push((&raw mut count).cast());
-        args.push((&raw mut numerical_hint).cast());
+        args.push((&raw mut program).cast());
+        args.push((&raw mut instruction_count).cast());
+        args.push((&raw mut scratch).cast());
+        let mut scratch_stride = layout.workers as u64;
+        args.push((&raw mut scratch_stride).cast());
         // Driver arguments reference stable host values until cuLaunchKernel
         // has copied them. No scalar device buffer or cached value is retained.
         let mut scalar_values = scalars.to_vec();
@@ -265,16 +322,15 @@ impl Kernel {
                 .iter_mut()
                 .map(|value| std::ptr::from_mut(value).cast()),
         );
-        let blocks = u32::try_from(count.div_ceil(256).min(65535)).unwrap();
         // SAFETY: caller holds all checked storage through legacy-stream completion.
         driver.check(
             unsafe {
                 (driver.launch)(
                     self.function as *mut c_void,
-                    blocks,
+                    layout.blocks,
                     1,
                     1,
-                    256,
+                    layout.threads,
                     1,
                     1,
                     0,
@@ -305,6 +361,24 @@ impl Drop for Kernel {
 mod tests {
     use super::*;
     use crate::pointwise_ir::Node;
+
+    #[test]
+    fn vm_scratch_is_bounded_for_large_graphs_and_extents() {
+        for registers in [1, 4096, 4096 * 64] {
+            for elements in [0, 1, 257, usize::MAX] {
+                let layout = LaunchLayout::new(elements, registers).unwrap();
+                assert_eq!(
+                    layout.workers,
+                    layout.blocks as usize * layout.threads as usize
+                );
+                assert_eq!(layout.scratch_elements, layout.workers * registers);
+                assert!(layout.scratch_elements * 4 <= LaunchLayout::SCRATCH_BYTES);
+                assert_eq!(layout.workers == 0, elements == 0);
+            }
+        }
+        assert!(LaunchLayout::new(1, usize::MAX).is_err());
+        assert!(LaunchLayout::new(1, 0).is_err());
+    }
 
     #[test]
     fn failed_nvrtc_compilation_destroys_program_and_allows_retry() {

@@ -19,7 +19,7 @@ CANCELLATION = 'def f(x, y):\n a=x+1.0\n return x*y+a*a'
 class Metadata(unittest.TestCase):
     def source(self, source, shapes):
         graph = lower(program(source), 2)
-        return bridge._pointwise_source(graph.nodes, graph.outputs, 2, shapes)
+        return bridge._pointwise_plan(graph.nodes, graph.outputs, 2, shapes)
 
     def test_original_depth_precedes_simplification_and_address_canonicalization(self):
         for expression in ('(x*1)*1', '(x+0)-0', '-(-x)', '(x-x)*0',
@@ -30,7 +30,7 @@ class Metadata(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, BOUNDARY):
                         self.source('def f(x,y):\n return '+expression, shapes)
             # The pre-existing equal-shape numerical domain is unchanged.
-            self.assertIn('torch_rs_pointwise', self.source(
+            self.assertIn('out0[i]', self.source(
                 'def f(x,y):\n return '+expression, ((2,), (2,))))
 
     def test_relu_is_depth_neutral_and_dead_nodes_do_not_limit_live_capability(self):
@@ -56,8 +56,8 @@ class Metadata(unittest.TestCase):
     def test_runtime_scalar_sign_is_metadata_not_tensor_negation(self):
         nodes = (('input', 0, 0, 0), ('input', 1, 0, 0),
                  ('scalar', 0, 1, 0), ('mul', 0, 2, 0), ('relu', 3, 0, 0))
-        code = bridge._pointwise_source(nodes, (4,), 2, ((2,1), (1,3)))
-        self.assertIn('float s0', code)
+        code = bridge._pointwise_plan(nodes, (4,), 2, ((2,1), (1,3)))
+        self.assertIn('float s0', bridge._pointwise_source(nodes, (4,), 2, ((2,1), (1,3))))
         self.assertNotIn('fmaf(', code)
 
 

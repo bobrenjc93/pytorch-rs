@@ -44,7 +44,7 @@ def snapshot(compiled):
 class Metadata(unittest.TestCase):
     def source(self, body, shapes):
         graph = lower(program('def f(x,y):\n '+body), 2)
-        return bridge._pointwise_source(graph.nodes, graph.outputs, 2, shapes)
+        return bridge._pointwise_plan(graph.nodes, graph.outputs, 2, shapes)
 
     def test_all_ordered_tensor_leaves_single_fma_and_unused_arguments(self):
         for expression in EXPRESSIONS:
@@ -53,7 +53,8 @@ class Metadata(unittest.TestCase):
                 with self.subTest(expression=expression, shapes=shapes):
                     source = self.source('return '+expression, shapes)
                     self.assertEqual(source.count('fmaf('), 1)
-                    self.assertEqual(source.count('__global__'), 1)
+                    graph = lower(program('def f(x,y):\n return '+expression), 2)
+                    self.assertEqual(bridge._pointwise_source(graph.nodes, graph.outputs, 2, shapes).count('__global__'), 1)
                     self.assertNotIn('/ 0ull', source)
                     self.assertNotIn('% 0ull', source)
         source = self.source('dead=y.sin()*y+y\n return x*x+x', ((3,), (5,)))
@@ -76,7 +77,7 @@ class Metadata(unittest.TestCase):
                          ('mul', 0, 1, 0), ('add', 3, 2, 0)]
                 nodes[index] = ('scalar', 0, sign, 0)
                 with self.assertRaisesRegex(RuntimeError, 'unequal input shapes'):
-                    bridge._pointwise_source(tuple(nodes), (4,), 2, ((2,), (1,2)))
+                    bridge._pointwise_plan(tuple(nodes), (4,), 2, ((2,), (1,2)))
         for shapes in (((3,),(5,)), ((1 << 32,1),(1,1 << 32)), ((0,),(2,))):
             with self.subTest(shapes=shapes), self.assertRaisesRegex(RuntimeError, 'broadcast'):
                 self.source('dead=x+y\n return x*x+x', shapes)
@@ -85,7 +86,7 @@ class Metadata(unittest.TestCase):
                 self.source('return x*x+x', ((3,),shape))
         nodes = (('input',0,0,0), ('mul',0,0,0), ('add',1,0,0), ('add',0,99,0))
         with self.assertRaisesRegex(ValueError, 'earlier SSA node'):
-            bridge._pointwise_source(nodes, (2,), 2, ((2,), (1,2)))
+            bridge._pointwise_plan(nodes, (2,), 2, ((2,), (1,2)))
 
 
 @unittest.skipUnless(available(), 'requires native CUDA and reference PyTorch CUDA')
@@ -125,9 +126,11 @@ class TensorMadd(unittest.TestCase):
                     self.assertEqual(self.torch.cuda.current_device(), caller_device)
                     self.compare(actual, expected, exact=True)
                     selected = dispatched(compiled)
-                    self.assertEqual(selected.source.count('fmaf('), 1)
+                    self.assertEqual(selected.plan(math.prod(actual.shape)).count('fmaf('), 1)
                     self.assertEqual(selected.ptx.count('.visible .entry'), 1)
-                    self.assertEqual(selected.ptx.count('fma.rn.f32'), 1)
+                    # The shared interpreter also contains libdevice branches;
+                    # the dispatched plan above must contain exactly one FMA.
+                    self.assertIn('fma.rn.f32', selected.ptx)
                     with patch.object(frontend, 'analyze', side_effect=AssertionError('warm analysis')), \
                          patch.object(frontend, 'lower', side_effect=AssertionError('warm lowering')), \
                          patch.object(bridge, '_pointwise_compile', side_effect=AssertionError('warm compile')):

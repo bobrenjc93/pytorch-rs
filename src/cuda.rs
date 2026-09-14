@@ -556,7 +556,7 @@ impl CudaFloat32Storage {
         input_elements: [usize; 2],
         kernel: &jit::Kernel,
         scalars: &[f32],
-        numerical_hint: u64,
+        program: &crate::pointwise_ir::program::Program,
     ) -> Result<Vec<Self>, TensorError> {
         kernel.validate_scalars(scalars)?;
         if self.device_index != other.device_index || self.device_index != kernel.device {
@@ -571,6 +571,53 @@ impl CudaFloat32Storage {
                 return Err(TensorError::IndexCalculationOverflow);
             }
         }
+        // Validate every count before allocation. These local owners span plan
+        // upload, launch and completion, including any failure. Output owners
+        // remain unpublished until all work completes successfully.
+        let layout = jit::LaunchLayout::new(elements, program.register_count())?;
+        let instruction_words = program
+            .instructions()
+            .len()
+            .checked_mul(6)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let instruction_bytes = instruction_words
+            .checked_mul(std::mem::size_of::<u32>())
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let _guard = self.runtime.guard(self.device_index)?;
+        let temporary_owners = if elements != 0 {
+            Some(self.pointwise_plan_buffers(
+                |slot| {
+                    Self::allocate(
+                        [instruction_words, layout.scratch_elements][slot],
+                        self.device_index,
+                    )
+                    .map(|(storage, _guard)| storage)
+                },
+                |plan, _scratch| {
+                    // SAFETY: six-u32 arrays have no padding; checked byte count
+                    // equals destination capacity. Preserve bits without float casts.
+                    self.runtime.check(
+                        unsafe {
+                            (self.runtime.memcpy)(
+                                plan.data_ptr as *mut c_void,
+                                program.instructions().as_ptr().cast(),
+                                instruction_bytes,
+                                1,
+                            )
+                        },
+                        "cudaMemcpy",
+                    )
+                },
+                |_plan, _scratch| {
+                    self.runtime.check(
+                        unsafe { (self.runtime.stream_synchronize)(std::ptr::null_mut()) },
+                        "cudaStreamSynchronize",
+                    )
+                },
+            )?)
+        } else {
+            None
+        };
         self.pointwise_outputs(
             elements,
             kernel.graph.outputs.len(),
@@ -587,6 +634,9 @@ impl CudaFloat32Storage {
                         (input.data_ptr + offset * 4) as u64
                     }
                 };
+                let (plan, scratch) = temporary_owners
+                    .as_ref()
+                    .expect("nonempty launch owns buffers");
                 // SAFETY: checked input ranges and all distinct output owners
                 // remain live through pointwise_outputs' completion boundary.
                 unsafe {
@@ -595,7 +645,10 @@ impl CudaFloat32Storage {
                         pointer(other, offsets[1], input_elements[1]),
                         &pointers,
                         elements as u64,
-                        numerical_hint,
+                        plan.data_ptr as u64,
+                        program.instruction_count() as u64,
+                        scratch.data_ptr as u64,
+                        layout,
                         scalars,
                     )
                 }
@@ -609,6 +662,30 @@ impl CudaFloat32Storage {
                 )
             },
         )
+    }
+
+    /// Keep both temporary owners live through upload completion, including a
+    /// failed copy. This single boundary also supports hermetic fault injection.
+    #[cfg(any(feature = "python-bindings", test))]
+    fn pointwise_plan_buffers<T>(
+        &self,
+        mut allocate: impl FnMut(usize) -> Result<T, TensorError>,
+        upload: impl FnOnce(&T, &T) -> Result<(), TensorError>,
+        complete: impl FnOnce(&T, &T) -> Result<(), TensorError>,
+    ) -> Result<(T, T), TensorError> {
+        let _guard = self.runtime.guard(self.device_index)?;
+        let plan = allocate(0)?;
+        let scratch = allocate(1)?;
+        let copied = upload(&plan, &scratch);
+        // Pageable H2D copies may return after staging. A copy error still
+        // requires completion before any CPU or GPU storage can be released.
+        let completed = complete(&plan, &scratch);
+        if copied.is_err() || completed.is_err() {
+            CACHE_HEALTHY.store(false, Ordering::Relaxed);
+        }
+        copied?;
+        completed?;
+        Ok((plan, scratch))
     }
 
     #[cfg(any(feature = "python-bindings", test))]
@@ -1007,6 +1084,153 @@ fn contiguous_layout(
 #[cfg(test)]
 mod tests {
     use crate::{Device, Tensor};
+    #[test]
+    #[allow(clippy::too_many_lines)] // Keep the complete injected ownership lifecycle in one test.
+    fn pointwise_plan_upload_failures_keep_owners_and_restore_device() {
+        use super::{CACHE_HEALTHY, CudaFloat32Storage, Ordering};
+        use std::{
+            cell::{Cell, RefCell},
+            sync::{Arc, Weak},
+        };
+        if super::device_count() == 0 {
+            eprintln!("skipping numerical plan ownership: CUDA unavailable");
+            return;
+        }
+        let input = CudaFloat32Storage::from_host(&[1., -2., 3.], 0).unwrap();
+        let runtime = super::runtime().unwrap();
+        let current = usize::from(
+            std::env::var("CUDA_VISIBLE_DEVICES").as_deref() == Ok("0,1")
+                && super::device_count() >= 2,
+        );
+        let _guard = runtime.guard(current).unwrap();
+        let words = [0u32, 1, 2, 3];
+        for phase in [
+            "plan allocation",
+            "scratch allocation",
+            "upload",
+            "completion",
+            "both",
+            "success",
+        ] {
+            let owners: RefCell<Vec<Weak<CudaFloat32Storage>>> = RefCell::new(Vec::new());
+            let uploads = Cell::new(0);
+            let completions = Cell::new(0);
+            let error = crate::TensorError::CudaRuntimeError {
+                operation: "numerical plan ownership test",
+                message: phase.into(),
+            };
+            let assert_live = || {
+                assert!(
+                    owners
+                        .borrow()
+                        .iter()
+                        .all(|owner| owner.strong_count() == 1)
+                );
+                let mut active = -1;
+                runtime
+                    .check(
+                        unsafe { (runtime.get_device)(&raw mut active) },
+                        "cudaGetDevice",
+                    )
+                    .unwrap();
+                assert_eq!(active, 0);
+            };
+            let result = input.pointwise_plan_buffers(
+                |slot| {
+                    assert_live();
+                    if (phase == "plan allocation" && slot == 0)
+                        || (phase == "scratch allocation" && slot == 1)
+                    {
+                        return Err(error.clone());
+                    }
+                    let (owner, _guard) = CudaFloat32Storage::allocate(4, 0)?;
+                    let owner = Arc::new(owner);
+                    owners.borrow_mut().push(Arc::downgrade(&owner));
+                    Ok(owner)
+                },
+                |plan, scratch| {
+                    uploads.set(uploads.get() + 1);
+                    assert_eq!(owners.borrow().len(), 2);
+                    assert_live();
+                    runtime.check(
+                        unsafe {
+                            (runtime.memcpy)(
+                                plan.data_ptr as *mut super::c_void,
+                                words.as_ptr().cast(),
+                                std::mem::size_of_val(&words),
+                                1,
+                            )
+                        },
+                        "cudaMemcpy",
+                    )?;
+                    runtime.check(
+                        unsafe { (runtime.memset)(scratch.data_ptr as *mut super::c_void, 0, 16) },
+                        "cudaMemset",
+                    )?;
+                    if phase == "upload" || phase == "both" {
+                        Err(error.clone())
+                    } else {
+                        Ok(())
+                    }
+                },
+                |_plan, _scratch| {
+                    completions.set(completions.get() + 1);
+                    assert_live();
+                    runtime.check(
+                        unsafe { (runtime.stream_synchronize)(std::ptr::null_mut()) },
+                        "cudaStreamSynchronize",
+                    )?;
+                    if phase == "completion" || phase == "both" {
+                        Err(error.clone())
+                    } else {
+                        Ok(())
+                    }
+                },
+            );
+            let executed = usize::from(!phase.ends_with("allocation"));
+            assert_eq!(uploads.get(), executed);
+            assert_eq!(completions.get(), executed);
+            if phase == "success" {
+                let (plan, scratch) = result.unwrap();
+                assert!(
+                    owners
+                        .borrow()
+                        .iter()
+                        .all(|owner| owner.strong_count() == 1)
+                );
+                assert_eq!(
+                    plan.copy_range(0, 4)
+                        .unwrap()
+                        .iter()
+                        .map(|v| v.to_bits())
+                        .collect::<Vec<_>>(),
+                    words
+                );
+                drop((plan, scratch));
+            } else {
+                assert!(matches!(result, Err(actual) if actual == error));
+                if executed != 0 {
+                    assert!(!CACHE_HEALTHY.load(Ordering::Relaxed));
+                }
+            }
+            assert!(
+                owners
+                    .borrow()
+                    .iter()
+                    .all(|owner| owner.upgrade().is_none())
+            );
+            let mut restored = -1;
+            runtime
+                .check(
+                    unsafe { (runtime.get_device)(&raw mut restored) },
+                    "cudaGetDevice",
+                )
+                .unwrap();
+            assert_eq!(usize::try_from(restored).unwrap(), current);
+            assert_eq!(input.copy_range(0, 3).unwrap(), [1., -2., 3.]);
+        }
+    }
+
     #[test]
     fn pointwise_multiple_output_failures_keep_owners_and_restore_device() {
         use super::{CACHE, CACHE_HEALTHY, CudaFloat32Storage, Ordering};

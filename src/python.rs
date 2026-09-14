@@ -25982,6 +25982,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
     module.add_function(wrap_pyfunction!(compile_trace_reduction, module)?)?;
     module.add_class::<pointwise::Compiled>()?;
     module.add_function(wrap_pyfunction!(pointwise::source, module)?)?;
+    module.add_function(wrap_pyfunction!(pointwise::plan, module)?)?;
     module.add_function(wrap_pyfunction!(pointwise::compile, module)?)?;
     module.add_function(wrap_pyfunction!(pointwise::validate_inputs, module)?)?;
     module.add_function(wrap_pyfunction!(compile_cuda_graph::execute, module)?)?;

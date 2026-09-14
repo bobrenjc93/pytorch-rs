@@ -14,8 +14,31 @@ This avoids amplifying single-precision library rounding errors in later
 cancellation. `--ftz=false` is used;
 fast math is not enabled. Arithmetic explicitly allows FMA contraction
 (`--fmad=true`) to match default Inductor, including cancellation and overflow
-cases where CUDA eager's separately rounded operations differ. SSA variables
-retain expression dependencies and reuse through native compiler optimization.
+cases where CUDA eager's separately rounded operations differ. Declarative
+instructions retain dependencies and reuse; register allocation removes dead
+products after their consumers contract.
+
+## Realization and observable order
+
+Numerical planning uses the first observable order of computed roots and the
+logical specialization's retained iteration hint. It models expression CSE,
+operation/read counts, locality ordering and fusion over internal realized
+values as well as public outputs. Realization alone is not a rounding barrier:
+fused units can inline each other. Values crossing regions become rounded
+imports and exports in the native scalar program. Scheduling and lowering share
+one canonical SSA map so an equivalent original computation cannot bypass an import.
+
+The version-sensitive reference rules come from PyTorch 2.13
+`torch/_inductor/fx_passes/post_grad.py::reorder_for_locality`,
+`graph.py::GraphLowering.run_node`, `ir.py::StorageBox`,
+`ops_handler.py::OpCounterCSE`, `choices.py::InductorChoices`, and
+`scheduler.py::Scheduler`. The repair evidence retains the inspected reference
+identity and detailed symbol pointers alongside generated FX and scheduler IR.
+
+One graph-keyed CUDA kernel interprets that bounded program in one launch.
+Container topology does not create additional native executables. Instruction
+validation and register allocation precede device allocation; invocation-owned
+plan and register buffers survive upload, launch, completion and failure.
 
 ## Expression sharing and contraction
 
@@ -28,7 +51,7 @@ including for commutative operators.
 
 ## Competing products and dependency order
 
-When products compete, the direct product with fewer remaining uses takes priority.
+Within each numerical region, the direct product with fewer remaining uses takes priority.
 This includes two products shared by sibling consumers, not only single-use
 products. Output stores count as observable uses after expression
 deduplication, independently of result-container order or repeated result aliases.
@@ -43,10 +66,11 @@ an outer contraction can therefore make an inner product single-use.
 The [sibling-product repair investigation](diagnostics/compile-pointwise-structured-outputs/review-sibling-products.md)
 found that reference kernel partitioning can change
 contraction and zero signs across shapes when products feed nonlinear calls.
-The [clean history-repair capture](diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/README.md)
-verifies numerical hints retained by successful logical specializations across
-shape changes. Larger graphs still fail finite-result and output-order checks;
-the broader structured-output numerical milestone remains incomplete.
+The [historical history-repair capture](diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/README.md)
+records persistent-specialization hints and the remaining failures at that revision.
+The [realization repair](diagnostics/compile-pointwise-structured-outputs/review-realization/README.md)
+adds large-graph and observable-order regressions without changing numerical
+tolerances; its development measurements do not replace clean qualification.
 
 When a sum has two direct positive products with equal use priority,
 contraction selection follows the reference's arithmetic/select

@@ -219,7 +219,7 @@ impl Storage {
         input_elements: [usize; 2],
         kernel: &crate::cuda::jit::Kernel,
         scalars: &[f32],
-        numerical_hint: u64,
+        program: &crate::pointwise_ir::program::Program,
     ) -> Result<Vec<Self>, TensorError> {
         match (&self.payload, &other.payload) {
             (StoragePayload::CudaFloat32(left), StoragePayload::CudaFloat32(right)) => Ok(left
@@ -230,7 +230,7 @@ impl Storage {
                     input_elements,
                     kernel,
                     scalars,
-                    numerical_hint,
+                    program,
                 )?
                 .into_iter()
                 .map(|storage| Self {

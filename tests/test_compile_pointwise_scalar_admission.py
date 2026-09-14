@@ -378,7 +378,7 @@ class SharedCacheGuards(unittest.TestCase):
         if self.launch_failure is not None:
             executor.run.side_effect = self.launch_failure
         else:
-            executor.run.side_effect = lambda args, scalars, numerical_hint: ((nodes, tuple(scalars)),)
+            executor.run.side_effect = lambda args, scalars, numerical_hint, output_order: ((nodes, tuple(scalars)),)
         return executor
 
     def argument(self, shape, strides=None):
@@ -540,7 +540,7 @@ class SharedCacheGuards(unittest.TestCase):
                     self.assertEqual(output[0], 'neg')
                     self.assertEqual(nodes[output[1]][:2], ('input', input_index))
                     executor = next(reversed(cache(compiled).executors.values()))
-                    executor.run.assert_called_with(tensors, (), 2)
+                    executor.run.assert_called_with(tensors, (), 2, (0,))
             before = self.ordered_contents(cache(compiled))
             validate.side_effect = RuntimeError('unused tensor admission failure')
             with self.assertRaisesRegex(RuntimeError, 'unused tensor admission failure'):

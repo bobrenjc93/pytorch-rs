@@ -7,7 +7,7 @@ use crate::{
 use pyo3::{
     exceptions::{PyNotImplementedError, PyTypeError, PyValueError},
     prelude::*,
-    types::{PyFloat, PyInt, PyString, PyTuple},
+    types::{PyBool, PyFloat, PyInt, PyString, PyTuple},
 };
 
 type Payload = (String, usize, usize, u64);
@@ -117,6 +117,85 @@ pub(super) fn validate_inputs(inputs: &Bound<'_, PyTuple>) -> PyResult<usize> {
     })
 }
 
+fn parse_numerical_hint(hint: Option<&Bound<'_, PyAny>>) -> PyResult<Option<u64>> {
+    hint.map(|hint| {
+        if !hint.is_exact_instance_of::<PyInt>() {
+            return Err(PyTypeError::new_err(
+                "numerical hint must be an exact integer",
+            ));
+        }
+        hint.extract::<u64>()
+    })
+    .transpose()
+}
+
+fn parse_output_order(order: Option<&Bound<'_, PyAny>>, count: usize) -> PyResult<Vec<usize>> {
+    let Some(order) = order else {
+        return Ok((0..count).collect());
+    };
+    if !order.is_exact_instance_of::<PyTuple>() {
+        return Err(PyTypeError::new_err("output order must be an exact tuple"));
+    }
+    let order = order.cast::<PyTuple>()?;
+    if order.len() != count
+        || order
+            .iter()
+            .any(|slot| !slot.is_exact_instance_of::<PyInt>())
+    {
+        return Err(PyValueError::new_err("expected an output-slot permutation"));
+    }
+    let slots = order.extract::<Vec<usize>>()?;
+    let mut seen = vec![false; slots.len()];
+    for &slot in &slots {
+        if slot >= seen.len() || std::mem::replace(&mut seen[slot], true) {
+            return Err(PyValueError::new_err("expected an output-slot permutation"));
+        }
+    }
+    Ok(slots)
+}
+
+/// Diagnostic rendering of the same immutable program executed by the VM.
+/// This never compiles or retains a topology-specific executable.
+#[pyfunction(name = "_pointwise_plan")]
+#[pyo3(signature = (nodes, outputs, arity, shapes=None, numerical_hint=None, output_order=None))]
+pub(super) fn plan(
+    nodes: &Bound<'_, PyTuple>,
+    outputs: &Bound<'_, PyTuple>,
+    arity: usize,
+    shapes: Option<Vec<Vec<usize>>>,
+    numerical_hint: Option<&Bound<'_, PyAny>>,
+    output_order: Option<&Bound<'_, PyAny>>,
+) -> PyResult<String> {
+    let graph = graph(nodes, outputs, arity)?;
+    let numerical_hint = parse_numerical_hint(numerical_hint)?;
+    let order = parse_output_order(output_order, graph.outputs.len())?;
+    let (addresses, default_hint, scalar_output) = if let Some(shapes) = shapes {
+        let indexing = graph
+            .indexing(&shapes.iter().map(Vec::as_slice).collect::<Vec<_>>())
+            .map_err(|error| tensor_error(&error))?;
+        (
+            indexing.addresses,
+            indexing.output.elements as u64,
+            indexing.output.shape.is_empty(),
+        )
+    } else {
+        (
+            vec![crate::pointwise_ir::indexing::Address::Linear; arity],
+            u64::MAX,
+            false,
+        )
+    };
+    crate::pointwise_ir::program::Program::build(
+        &graph,
+        &addresses,
+        numerical_hint.unwrap_or(default_hint),
+        &order,
+        scalar_output,
+    )
+    .map(|program| program.listing().to_owned())
+    .map_err(|error| tensor_error(&error))
+}
+
 #[pyfunction(name = "_pointwise_source")]
 #[pyo3(signature = (nodes, outputs, arity, shapes=None))]
 pub(super) fn source(
@@ -178,25 +257,18 @@ pub(super) struct Compiled {
 }
 #[pymethods]
 impl Compiled {
-    #[pyo3(signature = (inputs, scalars=None, numerical_hint=None))]
+    #[pyo3(signature = (inputs, scalars=None, numerical_hint=None, output_order=None))]
     fn run<'py>(
         &self,
         inputs: &Bound<'py, PyTuple>,
         scalars: Option<&Bound<'_, PyTuple>>,
         numerical_hint: Option<&Bound<'_, PyAny>>,
+        output_order: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Bound<'py, PyTuple>> {
         // Validate before input borrowing or any conversion can call Python.
         // A specialization hint controls numerical planning, never storage bounds.
-        let numerical_hint = numerical_hint
-            .map(|hint| {
-                if !hint.is_exact_instance_of::<PyInt>() {
-                    return Err(PyTypeError::new_err(
-                        "numerical hint must be an exact integer",
-                    ));
-                }
-                hint.extract::<u64>()
-            })
-            .transpose()?;
+        let numerical_hint = parse_numerical_hint(numerical_hint)?;
+        let output_order = parse_output_order(output_order, self.kernel.graph.outputs.len())?;
         // Exact types are checked before conversion; no user float hooks run.
         let values = scalars.map_or_else(
             || Ok(Vec::new()),
@@ -229,14 +301,48 @@ impl Compiled {
             ));
         }
         with_inputs(inputs, |tensors| {
-            let outputs = CoreTensor::pointwise_jit(tensors, &self.kernel, &values, numerical_hint)
-                .map_err(|e| tensor_error(&e))?;
+            let outputs = CoreTensor::pointwise_jit(
+                tensors,
+                &self.kernel,
+                &values,
+                numerical_hint,
+                Some(&output_order),
+            )
+            .map_err(|e| tensor_error(&e))?;
             // Keep every storage owner and input borrow through fallible Python
             // conversion. A partial conversion only drops local, unpublished owners.
             convert_outputs(inputs.py(), outputs, |output| {
                 Py::new(inputs.py(), PyTensor::new(output))
             })
         })
+    }
+    #[pyo3(signature = (numerical_hint, output_order=None, scalar_output=None))]
+    fn plan(
+        &self,
+        numerical_hint: &Bound<'_, PyAny>,
+        output_order: Option<&Bound<'_, PyAny>>,
+        scalar_output: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<String> {
+        let scalar_output = scalar_output
+            .map(|value| {
+                if !value.is_exact_instance_of::<PyBool>() {
+                    return Err(PyTypeError::new_err("scalar output must be an exact bool"));
+                }
+                value.extract::<bool>()
+            })
+            .transpose()?
+            .unwrap_or(false);
+        let hint = parse_numerical_hint(Some(numerical_hint))?.expect("required hint");
+        let order = parse_output_order(output_order, self.kernel.graph.outputs.len())?;
+        crate::pointwise_ir::program::Program::build(
+            &self.kernel.graph,
+            &self.kernel.addresses,
+            hint,
+            &order,
+            scalar_output,
+        )
+        .map(|program| program.listing().to_owned())
+        .map_err(|error| tensor_error(&error))
     }
     #[getter]
     fn source(&self) -> &str {

@@ -132,16 +132,22 @@ any cache publication or LRU update. Inputs and all output allocations remain
 owned through launch, synchronization and Python conversion, including failures.
 Single-Tensor functions use this same path and still return a Tensor.
 
-[Clean measurements at `69a73844`](diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/README.md)
-record the H100 and CPython 3.10–3.14 checks, source/wheel/runtime provenance,
-passing persistent-wrapper regressions and the remaining numerical failures.
-The [history repair](diagnostics/compile-pointwise-structured-outputs/review-history/README.md)
-freezes numerical hints on successful logical specializations and tests persistent
-wrappers. Larger graphs still have a finite-result failure; reference output order
-also affects numerical planning. The numerical milestone remains incomplete. The
-[repair record](diagnostics/compile-pointwise-structured-outputs/review-nonlinear-regions.md)
-describes region-local contraction within one native kernel. Earlier captures
-and development failures retain their original provenance.
+The result specification also projects the first observable occurrence of each
+computed root into native numerical planning. Realization and fusion determine
+logical regions, including rounded intermediate imports and exports. A native
+scalar instruction plan executes those regions within one generated CUDA kernel;
+changing return order supplies different plan data to the same graph-keyed
+executable. Invocation-owned plan and register storage survive synchronization
+and failure. Register scratch is capped at 64 MiB by limiting active workers and
+using a grid-stride loop. This execution strategy adds instruction-dispatch and
+scratch traffic; correctness captures do not establish a performance improvement.
+
+The [realization repair record](diagnostics/compile-pointwise-structured-outputs/review-realization/README.md)
+records development validation of large graphs, observable return order and
+persistent wrappers, with source/wheel/runtime identities and generated plans,
+CUDA and PTX. Clean post-commit qualification remains separate. Earlier
+[measurements at `69a73844`](diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/README.md)
+retain the numerical failures and original provenance of that revision.
 
 ### Bounded root shape branches
 
@@ -302,8 +308,12 @@ options and device for regression evidence.
 `_compile_pointwise.py` resolves bounded root branches and literal loops on
 original bytecode regions before loop expansion, then lowers the selected path and
 constructs typed SSA nodes with float32 tensor values and scalar kinds.
-`pointwise_ir.rs` independently validates node topology; `pointwise_lowering.rs` canonicalizes expressions and emits CUDA
-C from operator rules, retaining intermediates.
+`pointwise_ir.rs` independently validates node topology. `pointwise_regions.rs`
+plans realization, locality ordering and fusion over the admitted graph.
+`pointwise_lowering.rs` canonicalizes each region into declarative scalar
+instructions with explicit rounding and FMA decisions. `pointwise_program.rs`
+allocates registers, validates instruction dataflow and emits the shared CUDA
+instruction kernel. Plan disassembly is separate from actual kernel source/PTX.
 `pointwise_indexing.rs` checks every expression's broadcast shape and size before
 numerical rewriting, including dead expressions. The same Rust admission check
 enforces the unequal-shape original-IR boundary during compilation and direct
@@ -404,7 +414,7 @@ recompiles.
 
 A native bridge revalidates input layouts, ranges and device before allocation
 or launch. Storage owners remain borrowed through legacy-stream completion,
-including errors. One fused launch produces a fresh output; empty outputs need
+including errors. One launch produces fresh computed outputs; empty outputs need
 no launch or input pointer. Modules are owned by cache entries, keyed by device
 and checked against the active driver context. The existing device guard
 restores the caller's device on compilation, execution and module destruction.
