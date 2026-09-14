@@ -441,6 +441,8 @@ def _builtin_target(value):
     if value is _NATIVE_TRANSPOSE:
         return _BytecodeBuiltin("transpose", 3)
     owner = _NATIVE_FUNCTION_OWNER
+    if value is owner.sum:
+        return _BytecodeBuiltin("sum", 2)
     if value is owner.reshape:
         return _BytecodeBuiltin("reshape", 2)
     if value is owner.mul or value is owner.multiply:
@@ -471,7 +473,7 @@ def _global_value_dependency(name, value, module_attribute=None):
         # only at loads that actually use them, so unrelated mutations neither
         # reject old programs nor spend their recompile budget.
         attributes = ("mul", "multiply", "matmul")
-        if module_attribute in ("add", "neg", "negative", "relu", "squeeze", "t", "transpose", "reshape"):
+        if module_attribute in ("add", "neg", "negative", "relu", "squeeze", "t", "transpose", "reshape", "sum"):
             attributes += (module_attribute,)
         bindings = tuple((attr, vars(value).get(attr)) for attr in attributes)
         if all(_builtin_target(fn) is not None for _, fn in bindings):
@@ -1314,6 +1316,13 @@ def _handle_call(recorder, locals, stack, program, instruction, state, active):
             if any(not isinstance(axis, _BytecodeConstant) for axis in args[1:]):
                 _unsupported_bytecode(program, instruction, "native transpose requires constant axes")
             stack.append(recorder.record_transpose(operand, args[1].value, args[2].value))
+        elif target == "sum":
+            operand = _require_tensor(args[0], program, instruction, "sum operand")
+            # Top-level arity/keywords were checked above. Share the method's
+            # constant normalization and reduction validation, with keepdim=False.
+            stack.append(_record_method_call(
+                recorder, _BytecodeMethod(operand, "sum"), args[1:], program, instruction,
+            ))
         elif target == "reshape":
             operand = _require_tensor(args[0], program, instruction, "reshape operand")
             shape = _reshape_argument(args[1])

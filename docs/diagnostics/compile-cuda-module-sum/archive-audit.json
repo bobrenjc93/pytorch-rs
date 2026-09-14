@@ -1,0 +1,12 @@
+{
+  "verified": true,
+  "raw_evidence_sha256": "c8147b415f7aa6a15d607fef3a722ffbcf99faff8a2dc166fcf489d4d1481fe1",
+  "commands": 26,
+  "source_snapshots": 5,
+  "compiler_tests": 746,
+  "compiler_skips": 21,
+  "all_144_frozen_cells_pass": true,
+  "historical_failures_retained": true,
+  "final_documentation_bytes_verified": true,
+  "clean_commit_capture": "awaiting Burner-managed implementation commit"
+}

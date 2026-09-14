@@ -1,0 +1,1122 @@
+{
+  "kind": "dirty-worktree development; not clean implementation commit",
+  "base_commit": "a8ea1225406d3aaa0412d74091ecd8aef97ea1a7",
+  "final_identity": {
+    "source": {
+      "commit": "a8ea1225406d3aaa0412d74091ecd8aef97ea1a7",
+      "source_sha256": "2f136123861946289a67c58c04b007c539e168902473072d160390481a133b33",
+      "production_diff_sha256": "1abe94aa0a27b7622eb7d517e56780f28535fe9dc7d20fdaccaf1093dc6287ad"
+    },
+    "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+    "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+    "base_prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/uv-python/cpython-3.12.14-linux-x86_64-gnu",
+    "native": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+    "native_sha256": "714f0fcfc88a5a563174acf01f1e44236d01b057a7491566a8bfd4050420d63b",
+    "torch": "2.13.0+cu130",
+    "reference_cuda": "13.0",
+    "numpy": "2.5.1",
+    "native_runtime": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "native_runtime_version": 13000,
+    "cuda_visible_devices": "0",
+    "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)\n",
+    "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)\n",
+    "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0\n",
+    "cuda_libraries": [
+      "7f459c800000-7f459c966000 r--p 00000000 00:1f 332367847                  /usr/lib64/libcuda.so.580.82.07",
+      "7f459c966000-7f459d8e8000 r-xp 00166000 00:1f 332367847                  /usr/lib64/libcuda.so.580.82.07",
+      "7f459d8e8000-7f45a2293000 r--p 010e8000 00:1f 332367847                  /usr/lib64/libcuda.so.580.82.07",
+      "7f45a2293000-7f45a2294000 ---p 05a93000 00:1f 332367847                  /usr/lib64/libcuda.so.580.82.07",
+      "7f45a2294000-7f45a23c9000 r--p 05a93000 00:1f 332367847                  /usr/lib64/libcuda.so.580.82.07",
+      "7f45a23c9000-7f45a23d2000 rw-p 05bc8000 00:1f 332367847                  /usr/lib64/libcuda.so.580.82.07",
+      "7f45c8a00000-7f45c8aa6000 r-xp 00000000 00:2e 6597511057                 /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+      "7f45c8aa6000-7f45c8ca6000 ---p 000a6000 00:2e 6597511057                 /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+      "7f45c8ca6000-7f45c8cab000 r--p 000a6000 00:2e 6597511057                 /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+      "7f45c8cab000-7f45c8cac000 rw-p 000ab000 00:2e 6597511057                 /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13"
+    ]
+  },
+  "reference_compiler": {
+    "triton": "3.7.1",
+    "architecture": 90,
+    "selected_ptxas": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/triton/backends/nvidia/bin/ptxas",
+    "selected_ptxas_sha256": "c960a4f238b17d5c5d3c01ad2bbc1ebd2c5aecc459cb4d223bff10b45f9b8fca",
+    "version": "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Fri_Feb_21_20:21:21_PST_2025\nCuda compilation tools, release 12.8, V12.8.93\nBuild cuda_12.8.r12.8/compiler.35583870_0\n",
+    "overrides": {
+      "TRITON_PTXAS_PATH": null,
+      "TRITON_PTXAS_BLACKWELL_PATH": null,
+      "TRITON_MOCK_PTX_VERSION": null,
+      "PTXAS_OPTIONS": null,
+      "DISABLE_PTXAS_OPT": null
+    },
+    "native_cuda_compiler": "embedded PTX, driver JIT; no nvcc or NVRTC invocation"
+  },
+  "builds": {
+    "baseline-wheel": [
+      {
+        "path": "target/baseline-wheel/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+        "sha256": "0c15dd1ac30cf9e9592bf27f9cc04c130ce45733eee9430b35663447fc17fe16",
+        "bytes": 1525558
+      }
+    ],
+    "candidate-wheel": [
+      {
+        "path": "target/candidate-wheel/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+        "sha256": "96a3a314a60f9d1db2e959260ab64215c4551d3b71cc6c6c4eb3ca42ad8c2606",
+        "bytes": 1525659
+      }
+    ]
+  },
+  "compiler_selection": {
+    "selection": "every tests/test_compile*.py plus tests/test_top_level_compile.py; disjoint module processes",
+    "modules": 65,
+    "tests": 746,
+    "skipped": 21,
+    "failures": 0,
+    "status": 0,
+    "results": [
+      {
+        "module": "tests.test_compile_benchmark_artifact",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_benchmark_artifact"
+        ],
+        "status": 0,
+        "tests": 11,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compile_corpus",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_corpus"
+        ],
+        "status": 0,
+        "tests": 62,
+        "skipped": 0,
+        "warning_lines": [
+          "test_reference_pytorch_2_13_accepts_all_eligible_cases (tests.test_compile_corpus.TorchCompileCorpusReferenceTests.test_reference_pytorch_2_13_accepts_all_eligible_cases) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.",
+          "W0912 06:54:51.044000 3381479 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2]    function: 'cpu_float32_recompile_limit_reset' (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/tests/test_compile_corpus.py:278)",
+          "W0912 06:54:51.044000 3381479 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2]    last reason: 0/1: tensor 'x' rank mismatch. expected 1, actual 2",
+          "W0912 06:54:51.044000 3381479 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2] To log all recompilation reasons, use TORCH_LOGS=\"recompiles\".",
+          "W0912 06:54:51.044000 3381479 .venv/lib/python3.12/site-packages/torch/_dynamo/convert_frame.py:1994] [0/2] To diagnose recompilation issues, see https://docs.pytorch.org/docs/main/user_guide/torch_compiler/compile/programming_model.recompilation.html"
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_benchmark",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_benchmark"
+        ],
+        "status": 0,
+        "tests": 69,
+        "skipped": 0,
+        "warning_lines": [
+          "test_private_cuda_pointwise_reduce_matches_pytorch_compile_on_h100 (tests.test_compile_cuda_benchmark.CompileCudaBenchmarkTests.test_private_cuda_pointwise_reduce_matches_pytorch_compile_on_h100) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_boundary",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_boundary"
+        ],
+        "status": 0,
+        "tests": 11,
+        "skipped": 1,
+        "warning_lines": [
+          "test_seeded_shapes_structures_and_changed_data_against_reference (tests.test_compile_cuda_boundary.CompileCudaBoundaryTests.test_seeded_shapes_structures_and_changed_data_against_reference) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_contiguous",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_contiguous"
+        ],
+        "status": 0,
+        "tests": 13,
+        "skipped": 1,
+        "warning_lines": [
+          "test_alias_identity_metadata_and_mutations (tests.test_compile_cuda_contiguous.CompileCudaContiguousTests.test_alias_identity_metadata_and_mutations) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_graph",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_graph"
+        ],
+        "status": 0,
+        "tests": 8,
+        "skipped": 1,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compile_cuda_matmul",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_matmul"
+        ],
+        "status": 0,
+        "tests": 12,
+        "skipped": 1,
+        "warning_lines": [
+          "test_generated_capture_forms_changed_inputs_and_composition (tests.test_compile_cuda_matmul.CompileCudaMatmulTests.test_generated_capture_forms_changed_inputs_and_composition) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_matmul_diagnostic",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_matmul_diagnostic"
+        ],
+        "status": 0,
+        "tests": 10,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compile_cuda_module_arithmetic",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_module_arithmetic"
+        ],
+        "status": 0,
+        "tests": 14,
+        "skipped": 1,
+        "warning_lines": [
+          "test_inductor_reference_public_spelling_matrix (tests.test_compile_cuda_module_arithmetic.ModuleArithmeticCudaTests.test_inductor_reference_public_spelling_matrix) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_module_relu",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_module_relu"
+        ],
+        "status": 0,
+        "tests": 12,
+        "skipped": 1,
+        "warning_lines": [
+          "test_seeded_spelling_matrix_inductor_all_policies (tests.test_compile_cuda_module_relu.ModuleReluCudaTests.test_seeded_spelling_matrix_inductor_all_policies) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_module_reshape",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_module_reshape"
+        ],
+        "status": 0,
+        "tests": 12,
+        "skipped": 1,
+        "warning_lines": [
+          "test_frozen_144_cells_all_policies (tests.test_compile_cuda_module_reshape.ModuleReshapeCudaTests.test_frozen_144_cells_all_policies) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_module_squeeze",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_module_squeeze"
+        ],
+        "status": 0,
+        "tests": 15,
+        "skipped": 1,
+        "warning_lines": [
+          "test_compositions_helpers_all_policies (tests.test_compile_cuda_module_squeeze.ModuleSqueezeCudaTests.test_compositions_helpers_all_policies) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_module_sum",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_module_sum"
+        ],
+        "status": 0,
+        "tests": 13,
+        "skipped": 1,
+        "warning_lines": [
+          "test_consumers_helpers_and_special_values (tests.test_compile_cuda_module_sum.ModuleSumCudaTests.test_consumers_helpers_and_special_values) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_module_t",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_module_t"
+        ],
+        "status": 0,
+        "tests": 15,
+        "skipped": 1,
+        "warning_lines": [
+          "test_compositions_helpers_all_policies (tests.test_compile_cuda_module_t.ModuleTCudaTests.test_compositions_helpers_all_policies) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_module_transpose",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_module_transpose"
+        ],
+        "status": 0,
+        "tests": 13,
+        "skipped": 1,
+        "warning_lines": [
+          "test_compositions_helpers_and_dynamic_rectangles (tests.test_compile_cuda_module_transpose.ModuleTransposeCudaTests.test_compositions_helpers_and_dynamic_rectangles) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_mul_scalar",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_mul_scalar"
+        ],
+        "status": 0,
+        "tests": 13,
+        "skipped": 1,
+        "warning_lines": [
+          "test_generated_graphlets_and_operator_method_top_level_forms (tests.test_compile_cuda_mul_scalar.CompileCudaMulScalarTests.test_generated_graphlets_and_operator_method_top_level_forms) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_mul_scalar_diagnostic",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_mul_scalar_diagnostic"
+        ],
+        "status": 0,
+        "tests": 2,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compile_cuda_neg",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_neg"
+        ],
+        "status": 0,
+        "tests": 8,
+        "skipped": 1,
+        "warning_lines": [
+          "test_generated_shapes_lengths_and_forms (tests.test_compile_cuda_neg.CompileCudaNegTests.test_generated_shapes_lengths_and_forms) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_neg_add_diagnostic",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_neg_add_diagnostic"
+        ],
+        "status": 0,
+        "tests": 5,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compile_cuda_relu",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_relu"
+        ],
+        "status": 0,
+        "tests": 9,
+        "skipped": 1,
+        "warning_lines": [
+          "test_seeded_shapes_composition_and_real_cache_values (tests.test_compile_cuda_relu.CompileCudaReluTests.test_seeded_shapes_composition_and_real_cache_values) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_reshape",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_reshape"
+        ],
+        "status": 0,
+        "tests": 14,
+        "skipped": 1,
+        "warning_lines": [
+          "test_bits_mutation_independence_and_lifetimes (tests.test_compile_cuda_reshape.CompileCudaReshapeTests.test_bits_mutation_independence_and_lifetimes) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_squeeze",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_squeeze"
+        ],
+        "status": 0,
+        "tests": 15,
+        "skipped": 1,
+        "warning_lines": [
+          "test_compositions_all_policies (tests.test_compile_cuda_squeeze.CompileCudaSqueezeTests.test_compositions_all_policies) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_sum_rows",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_sum_rows"
+        ],
+        "status": 0,
+        "tests": 7,
+        "skipped": 1,
+        "warning_lines": [
+          "test_held_out_forms_offsets_empty_and_changed_values (tests.test_compile_cuda_sum_rows.CompileCudaSumTests.test_held_out_forms_offsets_empty_and_changed_values) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_t",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_t"
+        ],
+        "status": 0,
+        "tests": 12,
+        "skipped": 1,
+        "warning_lines": [
+          "test_packed_arithmetic_and_transposed_input_becomes_contiguous (tests.test_compile_cuda_t.CompileCudaTTests.test_packed_arithmetic_and_transposed_input_becomes_contiguous) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_trailing_vector",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_trailing_vector"
+        ],
+        "status": 0,
+        "tests": 10,
+        "skipped": 1,
+        "warning_lines": [
+          "test_all_add_forms_and_compositions_held_out (tests.test_compile_cuda_trailing_vector.CompileCudaTrailingVectorTests.test_all_add_forms_and_compositions_held_out) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_trailing_vector_diagnostic",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_trailing_vector_diagnostic"
+        ],
+        "status": 0,
+        "tests": 2,
+        "skipped": 0,
+        "warning_lines": [
+          "test_unsupported_and_ineligible_cases_never_earn_credit (tests.test_compile_cuda_trailing_vector_diagnostic.TrailingVectorDiagnosticTests.test_unsupported_and_ineligible_cases_never_earn_credit) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_transpose",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_transpose"
+        ],
+        "status": 0,
+        "tests": 11,
+        "skipped": 1,
+        "warning_lines": [
+          "test_bits_mutation_and_lifetime (tests.test_compile_cuda_transpose.CompileCudaTransposeTests.test_bits_mutation_and_lifetime) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_cuda_view",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_cuda_view"
+        ],
+        "status": 0,
+        "tests": 22,
+        "skipped": 1,
+        "warning_lines": [
+          "test_bits_shared_mutation_and_lifetimes (tests.test_compile_cuda_view.CompileCudaViewTests.test_bits_shared_mutation_and_lifetimes) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compile_static_analysis",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_static_analysis"
+        ],
+        "status": 0,
+        "tests": 6,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compile_sum_lowering",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_sum_lowering"
+        ],
+        "status": 0,
+        "tests": 6,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compile_tanh_composition",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compile_tanh_composition"
+        ],
+        "status": 0,
+        "tests": 4,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiled_with_cxx11_abi",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiled_with_cxx11_abi"
+        ],
+        "status": 0,
+        "tests": 9,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiled_with_cxx11_abi_reference",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiled_with_cxx11_abi_reference"
+        ],
+        "status": 0,
+        "tests": 7,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_assume_constant_result",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_assume_constant_result"
+        ],
+        "status": 0,
+        "tests": 10,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_assume_constant_result_reference",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_assume_constant_result_reference"
+        ],
+        "status": 0,
+        "tests": 8,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_disable",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_disable"
+        ],
+        "status": 0,
+        "tests": 15,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_disable_reference",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_disable_reference"
+        ],
+        "status": 0,
+        "tests": 12,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_get_default_backend",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_get_default_backend"
+        ],
+        "status": 0,
+        "tests": 8,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_get_default_backend_reference",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_get_default_backend_reference"
+        ],
+        "status": 0,
+        "tests": 6,
+        "skipped": 0,
+        "warning_lines": [
+          "test_setter_states_and_reset_match_pytorch_2_13 (tests.test_compiler_get_default_backend_reference.CompilerGetDefaultBackendReferenceTests.test_setter_states_and_reset_match_pytorch_2_13) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compiler_is_compiling",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_is_compiling"
+        ],
+        "status": 0,
+        "tests": 7,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_is_compiling_reference",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_is_compiling_reference"
+        ],
+        "status": 0,
+        "tests": 6,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_is_dynamo_compiling",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_is_dynamo_compiling"
+        ],
+        "status": 0,
+        "tests": 7,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_is_dynamo_compiling_reference",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_is_dynamo_compiling_reference"
+        ],
+        "status": 0,
+        "tests": 6,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_is_exporting",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_is_exporting"
+        ],
+        "status": 0,
+        "tests": 7,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_is_exporting_reference",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_is_exporting_reference"
+        ],
+        "status": 0,
+        "tests": 6,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_keep_portable_guards_unsafe",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_keep_portable_guards_unsafe"
+        ],
+        "status": 0,
+        "tests": 9,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_keep_portable_guards_unsafe_reference",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_keep_portable_guards_unsafe_reference"
+        ],
+        "status": 0,
+        "tests": 6,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_keep_tensor_guards_unsafe",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_keep_tensor_guards_unsafe"
+        ],
+        "status": 0,
+        "tests": 10,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_keep_tensor_guards_unsafe_reference",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_keep_tensor_guards_unsafe_reference"
+        ],
+        "status": 0,
+        "tests": 6,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_list_backends",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_list_backends"
+        ],
+        "status": 0,
+        "tests": 7,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_list_backends_reference",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_list_backends_reference"
+        ],
+        "status": 0,
+        "tests": 6,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_register_backend",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_register_backend"
+        ],
+        "status": 0,
+        "tests": 9,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_register_backend_reference",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_register_backend_reference"
+        ],
+        "status": 0,
+        "tests": 3,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_set_default_backend",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_set_default_backend"
+        ],
+        "status": 0,
+        "tests": 9,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_set_default_backend_reference",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_set_default_backend_reference"
+        ],
+        "status": 0,
+        "tests": 6,
+        "skipped": 0,
+        "warning_lines": [
+          "test_accepted_values_identity_reset_and_threads_match_pytorch_2_13 (tests.test_compiler_set_default_backend_reference.CompilerSetDefaultBackendReferenceTests.test_accepted_values_identity_reset_and_threads_match_pytorch_2_13) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compiler_set_enable_guard_collectives",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_set_enable_guard_collectives"
+        ],
+        "status": 0,
+        "tests": 12,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_set_enable_guard_collectives_reference",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_set_enable_guard_collectives_reference"
+        ],
+        "status": 0,
+        "tests": 9,
+        "skipped": 0,
+        "warning_lines": [
+          "test_reset_reload_and_reimport_match_pytorch_2_13 (tests.test_compiler_set_enable_guard_collectives_reference.CompilerSetEnableGuardCollectivesReferenceTests.test_reset_reload_and_reimport_match_pytorch_2_13) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`."
+        ]
+      },
+      {
+        "module": "tests.test_compiler_skip_all_guards_unsafe",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_skip_all_guards_unsafe"
+        ],
+        "status": 0,
+        "tests": 9,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_skip_all_guards_unsafe_reference",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_skip_all_guards_unsafe_reference"
+        ],
+        "status": 0,
+        "tests": 6,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_skip_guard_on_all_nn_modules_unsafe",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_skip_guard_on_all_nn_modules_unsafe"
+        ],
+        "status": 0,
+        "tests": 9,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_skip_guard_on_all_nn_modules_unsafe_reference",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_skip_guard_on_all_nn_modules_unsafe_reference"
+        ],
+        "status": 0,
+        "tests": 5,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_skip_guard_on_globals_unsafe",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_skip_guard_on_globals_unsafe"
+        ],
+        "status": 0,
+        "tests": 11,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_skip_guard_on_globals_unsafe_reference",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_skip_guard_on_globals_unsafe_reference"
+        ],
+        "status": 0,
+        "tests": 6,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_compiler_skip_guard_on_inbuilt_nn_modules_unsafe",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_compiler_skip_guard_on_inbuilt_nn_modules_unsafe"
+        ],
+        "status": 0,
+        "tests": 9,
+        "skipped": 0,
+        "warning_lines": []
+      },
+      {
+        "module": "tests.test_top_level_compile",
+        "command": [
+          "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/bin/python",
+          "-m",
+          "unittest",
+          "-v",
+          "tests.test_top_level_compile"
+        ],
+        "status": 0,
+        "tests": 49,
+        "skipped": 0,
+        "warning_lines": []
+      }
+    ],
+    "timing_credit_claimed": false
+  },
+  "candidate_closure": {
+    "verified": true,
+    "cells": 144,
+    "closed_gaps": 96,
+    "existing_controls": 48,
+    "unrelated_rebindings": 4,
+    "all_input_hashes_match_frozen_baseline": true,
+    "source_provenance": {
+      "commit": "a8ea1225406d3aaa0412d74091ecd8aef97ea1a7",
+      "source_sha256": "2f136123861946289a67c58c04b007c539e168902473072d160390481a133b33",
+      "production_diff_sha256": "1abe94aa0a27b7622eb7d517e56780f28535fe9dc7d20fdaccaf1093dc6287ad"
+    },
+    "native_sha256": "714f0fcfc88a5a563174acf01f1e44236d01b057a7491566a8bfd4050420d63b"
+  },
+  "dependency_and_build_identity": {
+    "paths": {
+      "numpy": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/numpy/__init__.py",
+      "torch": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "torch_rs": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+      "native": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so"
+    },
+    "sys_path": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-evidence",
+      "/usr/local/lib/oilfs",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python312.zip",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/uv-python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/lib-dynload",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/.venv/lib/python3.12/site-packages"
+    ],
+    "environment": {
+      "RUSTFLAGS": null,
+      "RUSTC_WRAPPER": null,
+      "RUSTC_WORKSPACE_WRAPPER": null,
+      "RUSTUP_TOOLCHAIN": null,
+      "CARGO_ENCODED_RUSTFLAGS": null,
+      "TORCH_RS_CUDART": null,
+      "CUDA_VISIBLE_DEVICES": "0",
+      "LD_LIBRARY_PATH": null,
+      "PYTHONPATH": "/usr/local/lib/oilfs",
+      "PYTHONHOME": null
+    },
+    "versions": {
+      "torch": "2.13.0",
+      "numpy": "2.5.1",
+      "maturin": "1.14.1",
+      "torch-rs": "0.1.0"
+    },
+    "build_input_sha256": {
+      "Cargo.toml": "7f8c40fb9a40c873dbb55470f8a43162e62976d85c95da0972d861bfc15e486d",
+      "Cargo.lock": "5adbfbc4753473099a887c270512ec919d8e0c53cd442750709e7a4e93d905b4",
+      "pyproject.toml": "451bb2a5f20316268a5b2a095002e77b5402844bdcd8e38322486e255fb071c9",
+      "uv.lock": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced",
+      "rust-toolchain.toml": "47ea224b44388390e7509b601af18d3c6509a8cac86a3bb51c81558949f7355e"
+    }
+  },
+  "baseline_reproduction": {
+    "verified": true,
+    "all_144_cells_and_input_hashes_identical": true,
+    "all_four_controls_identical": true,
+    "original_probe_sha256": "9e8e66df128c5b7a7d0a56811dc1d704e6f2f8e4ff3867f3dc74568836f538c6",
+    "source_sha256": "817ad8585182359fedc608246ec4c68f2562e7cc64971a9d126e6ecb482dd079",
+    "baseline_native_sha256": "714f0fcfc88a5a563174acf01f1e44236d01b057a7491566a8bfd4050420d63b",
+    "external_proof_sha256": "9e5040ec7ea30558430b29e3e7757b8d648b0db39b63829dbeaabc704f44a448"
+  },
+  "resources": [
+    "gpu",
+    "cpu-heavy"
+  ],
+  "exclusive_gpu_reservation_claimed": false,
+  "scores_changed": false,
+  "commands": "commands.json",
+  "source_history": "source-history.json",
+  "raw_evidence_sha256": "c8147b415f7aa6a15d607fef3a722ffbcf99faff8a2dc166fcf489d4d1481fe1",
+  "clean_commit_capture": {
+    "status": "pending Burner-managed implementation commit",
+    "reason": "implementation agent may not create commits or run delivery gates on a nonexistent commit"
+  }
+}
