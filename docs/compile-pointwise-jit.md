@@ -132,12 +132,11 @@ any cache publication or LRU update. Inputs and all output allocations remain
 owned through launch, synchronization and Python conversion, including failures.
 Single-Tensor functions use this same path and still return a Tensor.
 
-[The `90de52a9` clean capture](diagnostics/compile-pointwise-structured-outputs/postcommit-90de52a9/README.md)
-records the implementation before the subsequent sibling-consumer finding.
-The [sibling-product repair record](diagnostics/compile-pointwise-structured-outputs/review-sibling-products.md)
-describes that correction and its development validation. A fresh clean-commit
-capture is required after Burner commits this repair; earlier evidence and
-failures retain their original provenance.
+[Clean measurements at `4554bbe8`](diagnostics/compile-pointwise-structured-outputs/postcommit-4554bbe8/README.md)
+record the sibling-product repair's H100 and portable checks, source/wheel/runtime
+provenance, and the still-failing nonlinear signed-zero diagnostic. The numerical
+milestone remains incomplete. Earlier captures and development failures retain
+their original provenance in the linked repair records.
 
 ### Bounded root shape branches
 

@@ -1,0 +1,144 @@
+{
+  "commit": "4554bbe80adc2042f75293ed82c30d8c9cee685e",
+  "clean_capture": true,
+  "checks": {
+    "pointwise": {
+      "total": 293,
+      "skipped": 8,
+      "passed": 285,
+      "seconds": 270.784
+    },
+    "two-device": {
+      "total": 8,
+      "skipped": 0,
+      "passed": 8,
+      "seconds": 8.205
+    },
+    "portable-3.10.19": {
+      "total": 293,
+      "skipped": 150,
+      "passed": 143,
+      "seconds": 1.235
+    },
+    "portable-3.11.15": {
+      "total": 293,
+      "skipped": 150,
+      "passed": 143,
+      "seconds": 0.831
+    },
+    "portable-3.12.12": {
+      "total": 293,
+      "skipped": 150,
+      "passed": 143,
+      "seconds": 1.107
+    },
+    "portable-3.13.13": {
+      "total": 293,
+      "skipped": 150,
+      "passed": 143,
+      "seconds": 0.925
+    },
+    "portable-3.14.5": {
+      "total": 293,
+      "skipped": 150,
+      "passed": 143,
+      "seconds": 0.991
+    },
+    "native-pointwise": {
+      "passed": 42,
+      "failed": 0
+    },
+    "native-conversion": {
+      "passed": 1,
+      "failed": 0
+    }
+  },
+  "known_blocker": {
+    "argv": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/.venv/bin/python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/structured-outputs-postcommit-4554bbe8/capture_blocker.py"
+    ],
+    "environment": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/structured-outputs-postcommit-4554bbe8/cache/cuda",
+      "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/tmp",
+      "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/cache/uv",
+      "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/native-output-checks/cargo-home",
+      "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/structured-outputs-postcommit-4554bbe8/cargo-build",
+      "CARGO_BUILD_JOBS": "8",
+      "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/.venv/bin/python",
+      "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/structured-outputs-postcommit-4554bbe8/cache/inductor",
+      "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/structured-outputs-postcommit-4554bbe8/cache/triton",
+      "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/structured-outputs-postcommit-4554bbe8/cache/xdg",
+      "CUDA_VISIBLE_DEVICES": "0",
+      "TORCH_RS_STRUCTURED_EVIDENCE": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/structured-outputs-postcommit-4554bbe8/raw-blocker"
+    },
+    "start_utc": "2026-09-14T14:00:50.427361+00:00",
+    "commit": "4554bbe80adc2042f75293ed82c30d8c9cee685e",
+    "status_before": "",
+    "exit_code": 1,
+    "end_utc": "2026-09-14T14:01:03.733890+00:00",
+    "status_after": "",
+    "observations": [
+      {
+        "file": "raw-blocker/partition-1-0-1effbc6e11d64f1bb992009b183c7493.json",
+        "size": 1,
+        "actual_first": -0.0,
+        "reference_first": -0.0,
+        "matches_zero_sign": true
+      },
+      {
+        "file": "raw-blocker/partition-1-1-48edf2e573a34532be8f6f27d9fa366c.json",
+        "size": 1,
+        "actual_first": -0.0,
+        "reference_first": -0.0,
+        "matches_zero_sign": true
+      },
+      {
+        "file": "raw-blocker/partition-13-0-77d5de1754e04a9c878cfd4fe60c540a.json",
+        "size": 13,
+        "actual_first": -0.0,
+        "reference_first": 0.0,
+        "matches_zero_sign": false
+      },
+      {
+        "file": "raw-blocker/partition-13-1-c0a52374eeb842668559ed737b88e8ea.json",
+        "size": 13,
+        "actual_first": -0.0,
+        "reference_first": 0.0,
+        "matches_zero_sign": false
+      },
+      {
+        "file": "raw-blocker/partition-257-0-d1f9568f89f9467295418192f9c2fa56.json",
+        "size": 257,
+        "actual_first": -0.0,
+        "reference_first": 0.0,
+        "matches_zero_sign": false
+      },
+      {
+        "file": "raw-blocker/partition-257-1-b95c80a21460415fac6f281d8fa5b72a.json",
+        "size": 257,
+        "actual_first": -0.0,
+        "reference_first": 0.0,
+        "matches_zero_sign": false
+      }
+    ],
+    "numerical_failures": 4,
+    "scope": "Known admitted nonlinear program; unresolved correctness failure, not a passing qualification."
+  },
+  "prior_files_unchanged": 18163,
+  "archived_raw_files_verified": 2341,
+  "wheel_sha256": "9cd50382153d0d80b4df64283db66d375c48f2c7d98f086702d726070ec298e0",
+  "tracked_changes": [
+    "docs/compile-pointwise-jit.md"
+  ],
+  "new_evidence_files": [
+    "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-4554bbe8/README.md",
+    "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-4554bbe8/measurements.json.gz",
+    "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-4554bbe8/raw-captures.tar.gz",
+    "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-4554bbe8/raw-retention-manifest.json",
+    "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-4554bbe8/verification.log"
+  ],
+  "documentation_links_valid": true,
+  "diff_check_passed": true
+}
