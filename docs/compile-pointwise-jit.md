@@ -77,12 +77,51 @@ identity wrappers do not qualify, even if later simplification removes them.
 This exception reuses the existing single-FMA lowering and checked addresses.
 
 Strided inputs, other dtypes, gradients (even inside no-grad),
-mutation, control flow other than the literal loops below, containers, module calls, keyword operator
+mutation, control flow outside the bounded root branches and literal loops below, containers, module calls, keyword operator
 arguments, reductions, matrix operations, and device/dtype conversions are
 explicitly rejected. No original body or Python operator is run during
 admission or warm execution. Unsupported configurations keep their existing
 contracts; `disable=True`, configured/custom backend resolution, and the
 explicit `backend="eager"` capture implementation remain separate.
+
+### Bounded root shape branches
+
+Root `if`/`else` statements may compare an input Tensor's
+`shape[literal_integer_axis]` with an exact integer literal using
+`<`, `<=`, `==`, `!=`, `>=` or `>`, in either operand order:
+
+```python
+def shaped(x):
+    if x.shape[-1] > 9:
+        result = x.sin()
+    else:
+        result = x.cos()
+    return result + 0.5
+```
+
+Input and literal local aliases, negative axes, early returns, assignments at
+joins and sequential conditions are supported. The compiler reads native input
+metadata without running the function or a public descriptor. Source-bound
+branch outcome guards survive dimension generalization and tensor ABI rebinding;
+crossing a threshold selects or lowers the appropriate graph. Public `shape`
+descriptors on both Tensor classes remain identity-guarded.
+
+Both arms pass bounded language/type admission on each new lowering. Inactive
+locals, numerical IR and source observations do not enter the selected graph.
+Warm calls check capture/signature bindings and active helper code, without
+reparsing inactive helper bodies. A later branch crossing or new ABI lowering
+admits those bodies again; invalid bodies fail without publishing cache changes.
+
+Straight-line helpers can occur in arms, and root literal loops can occur outside
+branch regions. Nested branches, branches in loops/helpers, loops in arms,
+tensor truthiness, shape arithmetic, arbitrary attributes/subscripts, and
+runtime/captured thresholds are unsupported. Captures, helper returns, computed
+tensors and synthetic loop indices cannot acquire input/literal predicate origin
+through aliases or unary negation. Admission follows CPython 3.10–3.14 bytecode;
+source spellings optimized to identical instructions are indistinguishable.
+Both arms and all helper/loop expansion share the existing instruction/node limits.
+The conservative lazy parameter catalogue avoids separate liveness analysis; large
+signatures with many unused parameters still incur per-call binding work.
 
 ### Bounded root literal loops
 
@@ -106,7 +145,7 @@ operations and direct helpers as straight-line programs; index use adds no new
 scalar arithmetic or indexing operations.
 
 Normalization validates complete loop regions and stack cleanup, bounds expansion,
-then expands before initial-parameter dependency analysis. Index assignments and
+then expands before lazy source binding and frame lowering. Index assignments and
 carry-over locals retain frame semantics. Zero trips preserve previous locals and
 initial parameters; an index never assigned remains unbound. A zero-trip loop
 does not admit an identity-only root return. Its body still passes the existing
@@ -197,8 +236,8 @@ options and device for regression evidence.
 
 ## Compiler pipeline
 
-`_compile_pointwise.py` statically normalizes bounded root literal loops into
-CPython straight-line instructions and
+`_compile_pointwise.py` resolves bounded root branches and literal loops on
+original bytecode regions before loop expansion, then lowers the selected path and
 constructs typed SSA nodes with float32 tensor values and scalar kinds.
 `pointwise_ir.rs` independently validates node topology; `pointwise_lowering.rs` canonicalizes expressions and emits CUDA
 C from operator rules, retaining intermediates.
@@ -240,7 +279,8 @@ tensors reuse the same specialization.
 
 ### Scalar bindings
 
-Each used parameter, global and closure cell has an explicit source identity.
+Every positional parameter and captured global/closure cell has an explicit lazy
+source identity; the frame determines which values are observed.
 Public parameter positions are distinct from filtered tensor indices and runtime
 scalar operand indices. All tensors, including unused ones, enter the same
 validation, alias, shape, code-generation and launch path. Scalar parameters that are unused or overwritten before their first read have

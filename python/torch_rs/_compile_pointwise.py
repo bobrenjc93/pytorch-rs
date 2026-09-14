@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 import dis
 from itertools import islice
 import math
+import operator
 import struct
 import sys
 import types
@@ -28,11 +29,17 @@ _ALLOWED = _IGNORED | {"LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_FAST_BORROW", "LOAD
     "LOAD_CONST", "LOAD_SMALL_INT", "LOAD_GLOBAL", "LOAD_DEREF", "LOAD_ATTR", "LOAD_METHOD", "BINARY_OP",
     "BINARY_ADD", "BINARY_SUBTRACT", "BINARY_MULTIPLY", "UNARY_NEGATIVE", "CALL", "CALL_FUNCTION",
     "CALL_METHOD", "RETURN_VALUE", "RETURN_CONST", "COPY", "DUP_TOP", "SWAP"}
-_METHODS = tuple(_UNARY) + tuple(_BINARY) + ("__getattribute__",)
+_METHODS = tuple(_UNARY) + tuple(_BINARY) + ("__getattribute__", "shape")
 _MISSING = object()
 _RANGE = range
 _LOOP_OPS = {"GET_ITER", "FOR_ITER", "JUMP_ABSOLUTE", "JUMP_BACKWARD",
              "END_FOR", "POP_TOP", "POP_ITER"}
+_CONDITIONALS = {"POP_JUMP_IF_FALSE", "POP_JUMP_IF_TRUE",
+                 "POP_JUMP_FORWARD_IF_FALSE", "POP_JUMP_FORWARD_IF_TRUE"}
+_BRANCH_OPS = _CONDITIONALS | {"JUMP_FORWARD", "COMPARE_OP", "BINARY_SUBSCR", "TO_BOOL"}
+_COMPARE = {"<": operator.lt, "<=": operator.le, "==": operator.eq,
+            "!=": operator.ne, ">=": operator.ge, ">": operator.gt}
+_REVERSE_COMPARE = {"<": ">", "<=": ">=", "==": "==", "!=": "!=", ">=": "<=", ">": "<"}
 # Imported during package initialization, before public bindings can be patched.
 _FUNCTIONS = tuple((name, _ROOT.__dict__.get(name)) for name in
                    ("neg", "negative", "relu", "sin", "cos", "add", "sub", "subtract", "mul", "multiply"))
@@ -137,11 +144,64 @@ class BoundValue:
     """A lazy source read; assigning an unused local does not create a guard."""
     source: BindingSource
     value: object
+    predicate_origin: bool = True
+
+
+@dataclass(frozen=True)
+class Literal:
+    """Exact root integer origin; helpers and synthetic indices cannot mint it."""
+    value: int
+
+
+@dataclass(frozen=True)
+class ShapeValue:
+    source: BindingSource
+    axis: int | None = None
+
+
+@dataclass(frozen=True)
+class ShapePredicate:
+    source: BindingSource
+    axis: int
+    comparison: str
+    threshold: int
+    outcome: bool
+
+    def matches(self, metadata):
+        shape = metadata[self.source][0]
+        return (-len(shape) <= self.axis < len(shape)
+                and _COMPARE[self.comparison](shape[self.axis], self.threshold) == self.outcome)
+
+
+@dataclass(frozen=True)
+class Branch:
+    fallthrough: tuple
+    jumped: tuple
+    jump_when: bool
+
+
+def walk_instructions(instructions):
+    for instruction in instructions:
+        if type(instruction) is Branch:
+            yield from walk_instructions(instruction.fallthrough)
+            yield from walk_instructions(instruction.jumped)
+        else:
+            yield instruction
+
+
+def without_origin(obj):
+    if type(obj) is Literal:
+        return obj.value
+    if type(obj) is BoundValue:
+        return BoundValue(obj.source, obj.value, False)
+    return obj
 
 
 def validate_data(obj):
     """Check a data boundary without realizing or guarding a lazy source."""
     item = obj.value if type(obj) is BoundValue else obj
+    if type(item) is Literal:
+        item = item.value
     if type(item) is not Value and type(item) is not RuntimeScalar:
         scalar_bits(item)
     return obj
@@ -183,8 +243,11 @@ class ShapeGuards:
     tensors: tuple
     equal_axes: tuple
     index_bounds: tuple
+    predicates: tuple = ()
 
     def matches(self, metadata):
+        if not all(predicate.matches(metadata) for predicate in self.predicates):
+            return False
         if not all(guard.matches(metadata[source], metadata) for source, guard in self.tensors):
             return False
         if any(metadata[a][0][i] != metadata[b][0][j] for a, i, b, j in self.equal_axes):
@@ -290,7 +353,7 @@ def _logical_keys(program, bindings, values, observed, tensors):
     return tuple(keys), first, tuple(aliases)
 
 
-def _shape_guards(program, graph, first, metadata, history):
+def _shape_guards(program, graph, first, metadata, history, predicates=()):
     """Build logical guards; actual full-input admission stays with native code."""
     observations, guards, duck_strides = {}, [], {}
     for source, index in first.items():
@@ -327,7 +390,7 @@ def _shape_guards(program, graph, first, metadata, history):
     # A 64-bit specialization has no inverse bound and can accept small shapes.
     bounds = groups if all(_broadcast_elements([observations[s][0] for s in group]) <= 2147483647
                            for group in groups) else ()
-    return ShapeGuards(tuple(guards), tuple(equal_axes), bounds), observations
+    return ShapeGuards(tuple(guards), tuple(equal_axes), bounds, tuple(predicates)), observations
 
 
 def _select_specialization(program, bindings, values, tensors, metadata, graphs):
@@ -405,7 +468,7 @@ def instructions_for(code, *, helper=False):
     if len(instructions) > 16384:
         unsupported("function exceeds pointwise instruction limit")
     for instruction in instructions:
-        if (instruction.opname not in (_ALLOWED if helper else _ALLOWED | _LOOP_OPS)
+        if (instruction.opname not in (_ALLOWED if helper else _ALLOWED | _LOOP_OPS | _BRANCH_OPS)
                 or (helper and instruction.opname in ("LOAD_GLOBAL", "LOAD_DEREF"))):
             unsupported(f"unsupported bytecode {instruction.opname}; control flow, mutation and non-pointwise graphs are unsupported")
     return instructions
@@ -476,8 +539,8 @@ def validate_loop_stack(body):
         unsupported("invalid loop body stack")
 
 
-def normalize_loops(model, instructions):
-    """Validate all structured root loops, then boundedly expand wordcode.
+def normalize_control_flow(model, instructions):
+    """Resolve root branch and loop regions on original offsets, then expand.
 
     CPython 3.10/3.11 FOR_ITER removes the exhausted iterator; 3.12 END_FOR
     removes iterator and sentinel; 3.13 uses END_FOR/POP_TOP and 3.14 uses
@@ -558,28 +621,62 @@ def normalize_loops(model, instructions):
             unsupported("expanded function exceeds pointwise instruction limit")
         regions.append((start, stop, body, first, step, trips))
         covered.update(_RANGE(start, stop))
+    # Branch regions share the original target map with loops. No expanded
+    # instruction offset is ever interpreted as a control-flow target.
+    branches = []
     for position, instruction in enumerate(compact):
-        if instruction.opname in _LOOP_OPS and position not in covered:
-            unsupported("unsupported loop control flow: " + instruction.opname)
+        if instruction.opname not in _CONDITIONALS or position in covered:
+            continue
+        target = offsets.get(instruction.argval, -1)
+        if target <= position or target >= len(compact):
+            unsupported("branch requires a structured forward target")
+        stop = target
+        arm = compact[position + 1:target]
+        other = ()
+        if arm and arm[-1].opname in ("JUMP_FORWARD", "JUMP_ABSOLUTE"):
+            stop = offsets.get(arm[-1].argval, -1)
+            if stop < target or stop >= len(compact):
+                unsupported("branch requires a forward join")
+            arm, other = arm[:-1], compact[target:stop]
+        for part in (arm, other):
+            for index, item in enumerate(part):
+                if item.opname in _LOOP_OPS | _CONDITIONALS | {"JUMP_FORWARD"}:
+                    unsupported("nested branches and loops in branches are unsupported")
+                if item.opname in ("RETURN_VALUE", "RETURN_CONST") and index != len(part)-1:
+                    unsupported("unstructured branch return")
+        if any(index in covered for index in _RANGE(position, stop)):
+            unsupported("overlapping control-flow regions")
+        branches.append((position, stop, Branch(tuple(arm), tuple(other),
+                                               instruction.opname.endswith("IF_TRUE"))))
+        covered.update(_RANGE(position, stop))
+    for position, instruction in enumerate(compact):
+        if instruction.opname in _LOOP_OPS | _CONDITIONALS | {"JUMP_FORWARD"} and position not in covered:
+            unsupported("unsupported control flow: " + instruction.opname)
     validate_ranges(model, sources)
-    if not regions:
+    if not regions and not branches:
         return instructions, (), 0
-    result, cursor = [], 0
+    replacements = list(branches)
     for start, stop, body, first, step, trips in regions:
-        result.extend(compact[cursor:start])
+        expanded = []
         if not trips:
-            result.append(body[0]._replace(opname="_LOOP_CHECK_START"))
+            expanded.append(body[0]._replace(opname="_LOOP_CHECK_START"))
         for index in _RANGE(max(1, trips)):
-            # Reuse the dis instruction record; lowering only consumes opname,
-            # argval and argrepr. Original code remains the semantic owner.
-            result.append(body[0]._replace(opname="LOAD_CONST", argval=first + index * step))
-            result.extend(body)
+            # Synthetic indices remain numerical constants, never root literals.
+            expanded.append(body[0]._replace(opname="_LOOP_INDEX", argval=first + index * step))
+            expanded.extend(body)
         if not trips:
-            result.append(body[0]._replace(opname="_LOOP_CHECK_END"))
+            expanded.append(body[0]._replace(opname="_LOOP_CHECK_END"))
+        replacements.append((start, stop, tuple(expanded)))
+    result, cursor = [], 0
+    for start, stop, replacement in sorted(replacements, key=lambda region: region[0]):
+        result.extend(compact[cursor:start])
+        result.extend((replacement,) if type(replacement) is Branch else replacement)
         cursor = stop
     result.extend(compact[cursor:])
-    # Charge original setup/cleanup too, sharing lower()'s helper-call budget.
-    return tuple(result), tuple(dict.fromkeys(sources)), expanded_size - len(result)
+    # Count original instructions and repeated loop bodies, including removed
+    # setup and transparent opcodes; helper invocations share this budget.
+    size = sum(1 for _ in walk_instructions(result)) + len(branches)
+    return tuple(result), tuple(dict.fromkeys(sources)), expanded_size - size
 
 
 def freeze_helper(model):
@@ -606,26 +703,12 @@ def analyze(model, arity):
     code = model.__code__
     validate_code(code, arity)
     validate_namespaces(model)
-    instructions, range_sources, loop_overhead = normalize_loops(model, instructions_for(code))
-    # Only initial parameter values read by the bytecode have scalar guards.
-    # Unused/overwritten tensors still remain in the complete native input tuple.
-    initial, read = set(code.co_varnames[:arity]), set()
-    for instruction in instructions:
-        op, arg = instruction.opname, instruction.argval
-        if op == "_LOOP_CHECK_START":
-            saved_initial = initial.copy()
-        elif op == "_LOOP_CHECK_END":
-            initial = saved_initial
-        if op in ("STORE_FAST", "STORE_FAST_LOAD_FAST", "STORE_FAST_STORE_FAST"):
-            stored = (arg,) if op == "STORE_FAST" else arg[:1] if op == "STORE_FAST_LOAD_FAST" else arg
-            initial.difference_update(stored)
-        loaded = ((arg,) if op in ("LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_FAST_BORROW")
-                  else arg if op in ("LOAD_FAST_LOAD_FAST", "LOAD_FAST_BORROW_LOAD_FAST_BORROW")
-                  else arg[1:] if op == "STORE_FAST_LOAD_FAST" else ())
-        read.update(name for name in loaded if name in initial)
+    instructions, range_sources, loop_overhead = normalize_control_flow(model, instructions_for(code))
+    # A conservative lazy source catalogue. The frame is the sole owner of
+    # overwrites/unbound reads; observed-source projection supplies value guards.
     parameters = tuple(BindingSource("parameter", name, position)
-                       for position, name in enumerate(code.co_varnames[:arity]) if name in read)
-    captures = tuple(dict.fromkeys(BindingSource(i.opname, i.argval) for i in instructions
+                       for position, name in enumerate(code.co_varnames[:arity]))
+    captures = tuple(dict.fromkeys(BindingSource(i.opname, i.argval) for i in walk_instructions(instructions)
                                   if i.opname in ("LOAD_GLOBAL", "LOAD_DEREF")))
     dependencies = parameters + captures
     return Program(code, instructions, dependencies, range_sources, loop_overhead)
@@ -748,7 +831,8 @@ def runtime_bindings(program, bindings, values, graphs, *, observed=None):
     return tuple(keys), resolved, tuple(scalars)
 
 
-def lower(program, values, arity, input_ids=None, *, observed=None, data_sources=None):
+def lower(program, values, arity, input_ids=None, *, observed=None, data_sources=None,
+          metadata=(), predicates=None):
     if input_ids is None:
         input_ids = tuple(range(arity))
     nodes = [("input", i, 0, 0) for i in input_ids]
@@ -757,6 +841,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
     remaining = 16384 - program.loop_overhead
     checked_nodes = 0
     helper_instructions = {}  # Per lowering only; warm hits never parse helpers.
+    pending_checks = []  # Early-return continuations; no recursion per condition.
 
     def data(obj):
         # Validate without realizing a lazy root source. Ignored parameters must
@@ -771,7 +856,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
             if observed is not None and obj.source not in observed:
                 observed.append(obj.source)
             return obj.value
-        return obj
+        return obj.value if type(obj) is Literal else obj
 
     def value(obj):
         obj = realize(obj)
@@ -797,9 +882,27 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
             unsupported("graph exceeds 4096-node limit")
         return Value(len(nodes) - 1)
 
-    def frame(instructions, locals_, *, check_only=False):
+    def isolated(instructions, locals_, *, charge=True):
+        nonlocal observed, data_sources, predicates, checked_nodes
+        saved = observed, data_sources, predicates
+        observed, data_sources, predicates = None, None, None
+        node_start = len(nodes)
+        try:
+            return frame(instructions, locals_, check_only=True, charge=charge)
+        finally:
+            checked_nodes += len(nodes) - node_start
+            del nodes[node_start:]
+            observed, data_sources, predicates = saved
+
+    def root_result(obj):
+        result = realize(obj)
+        if type(result) is not Value or not result.tensor or (0 <= result.index < arity):
+            unsupported("return one computed pointwise tensor")
+        return result
+
+    def frame(instructions, locals_, *, check_only=False, helper=False, charge=True):
         nonlocal remaining, checked_nodes
-        remaining -= len(instructions)
+        remaining -= len(instructions) if charge else 0
         if remaining < 0:
             unsupported("expanded function exceeds pointwise instruction limit")
         stack = []
@@ -816,7 +919,24 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
             else:
                 stack.append(locals_[name])
 
-        for instruction in instructions:
+        for position, instruction in enumerate(instructions):
+            if type(instruction) is Branch:
+                if len(stack) != 1 or type(stack[0]) is not ShapePredicate:
+                    unsupported("branch requires an input shape comparison")
+                predicate = stack.pop()
+                if predicates is not None:
+                    predicates.append(predicate)
+                taken = predicate.outcome == instruction.jump_when
+                active = instruction.jumped if taken else instruction.fallthrough
+                inactive = instruction.fallthrough if taken else instruction.jumped
+                inactive_locals = locals_.copy()
+                inactive_result = isolated(inactive, inactive_locals)
+                result = frame(active, locals_, check_only=check_only)
+                if result is not _MISSING:
+                    if inactive_result is _MISSING:
+                        pending_checks.append((instructions[position + 1:], inactive_locals))
+                    return result
+                continue
             op, arg = instruction.opname, instruction.argval
             if op in _IGNORED:
                 continue
@@ -845,15 +965,21 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
             elif op == "STORE_FAST_STORE_FAST":
                 for name in arg:
                     locals_[name] = stack.pop()
-            elif op in ("LOAD_CONST", "LOAD_SMALL_INT"):
+            elif op in ("LOAD_CONST", "LOAD_SMALL_INT", "_LOOP_INDEX"):
                 scalar_bits(arg)  # Validate before retaining; never invoke user conversion.
-                stack.append(arg)
+                stack.append(Literal(arg) if type(arg) is int and not helper and op != "_LOOP_INDEX" else arg)
             elif op in ("LOAD_GLOBAL", "LOAD_DEREF"):
                 source = BindingSource(op, arg)
                 stack.append(BoundValue(source, values[source]))
             elif op in ("LOAD_ATTR", "LOAD_METHOD"):
-                owner = realize(stack.pop())
-                if owner is _ROOT:
+                original = stack.pop()
+                owner = realize(original)
+                if arg == "shape":
+                    if (helper or type(original) is not BoundValue or not original.predicate_origin
+                            or original.source.kind != "parameter" or type(owner) is not Value):
+                        unsupported("shape predicates require an original input Tensor")
+                    stack.append(ShapeValue(original.source))
+                elif owner is _ROOT:
                     if arg not in dict(_FUNCTIONS):
                         unsupported("unsupported native function: " + arg)
                     stack.append(binding(_ROOT.__dict__.get(arg))[1])
@@ -862,7 +988,12 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                 else:
                     unsupported("unsupported attribute: " + str(arg))
             elif op == "UNARY_NEGATIVE":
-                operand = realize(stack.pop())
+                original = stack.pop()
+                if type(original) is Literal:
+                    scalar_bits(-original.value)
+                    stack.append(Literal(-original.value))
+                    continue
+                operand = realize(original)
                 if type(operand) is RuntimeScalar:
                     stack.append(RuntimeScalar(operand.index, not operand.negative))
                 elif isinstance(operand, Value):
@@ -870,6 +1001,30 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                 else:
                     scalar_bits(operand)
                     stack.append(-operand)
+            elif op == "BINARY_SUBSCR" or (op == "BINARY_OP" and instruction.argrepr == "[]"):
+                axis, shape = stack.pop(), stack.pop()
+                if type(shape) is not ShapeValue or shape.axis is not None or type(axis) is not Literal:
+                    unsupported("only input.shape[literal integer axis] is supported")
+                stack.append(ShapeValue(shape.source, axis.value))
+            elif op == "COMPARE_OP":
+                right, left = stack.pop(), stack.pop()
+                comparison = arg  # 3.13+ argrepr may be bool(>).
+                if type(left) is Literal and type(right) is ShapeValue and comparison in _COMPARE:
+                    left, right, comparison = right, left, _REVERSE_COMPARE[comparison]
+                if (type(left) is not ShapeValue or left.axis is None or type(right) is not Literal
+                        or comparison not in _COMPARE):
+                    unsupported("condition requires input shape and exact integer literal")
+                source = values[left.source]
+                if not metadata or type(source) is not Value:
+                    unsupported("shape predicate requires input metadata")
+                shape = metadata[source.index][0]
+                if not -len(shape) <= left.axis < len(shape):
+                    unsupported("shape predicate axis is out of range")
+                stack.append(ShapePredicate(left.source, left.axis, comparison, right.value,
+                                            _COMPARE[comparison](shape[left.axis], right.value)))
+            elif op == "TO_BOOL":
+                if not stack or type(stack[-1]) is not ShapePredicate:
+                    unsupported("only shape comparison truthiness is supported")
             elif op in ("BINARY_OP", "BINARY_ADD", "BINARY_SUBTRACT", "BINARY_MULTIPLY"):
                 symbol = instruction.argrepr if op == "BINARY_OP" else {"BINARY_ADD": "+", "BINARY_SUBTRACT": "-", "BINARY_MULTIPLY": "*"}[op]
                 if symbol not in ("+", "-", "*"):
@@ -882,12 +1037,12 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                 if type(target) is Helper:
                     if len(operands) != target.code.co_argcount:
                         unsupported("helper argument count mismatch")
-                    parameters = [data(operand) for operand in operands]
+                    parameters = [without_origin(data(operand)) for operand in operands]
                     if target not in helper_instructions:
                         helper_instructions[target] = instructions_for(target.code, helper=True)
                     stack.append(frame(helper_instructions[target],
                                        dict(zip(target.code.co_varnames, parameters)),
-                                       check_only=check_only))
+                                       check_only=check_only, helper=True))
                     continue
                 if type(target) is not Call:
                     unsupported("only native pointwise operators and direct helpers may be called")
@@ -908,12 +1063,19 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                 result = data(stack.pop() if op == "RETURN_VALUE" else arg)
                 if stack:
                     unsupported("return one data value")
-                return result
-        unsupported("missing data return")
+                return without_origin(result) if helper else root_result(result)
+        if stack:
+            unsupported("unbalanced structured region stack")
+        if helper:
+            unsupported("missing data return")
+        return _MISSING
 
     locals_ = {source.name: BoundValue(source, values[source]) for source in program.dependencies
                if source.kind == "parameter"}
-    result = realize(frame(program.instructions, locals_))
+    result = root_result(frame(program.instructions, locals_))
+    while pending_checks:
+        continuation, inactive_locals = pending_checks.pop()
+        isolated(continuation, inactive_locals, charge=False)
     if type(result) is not Value or not result.tensor or result.index < arity:
         unsupported("return one computed pointwise tensor")
     return Graph(arity, tuple(nodes), result.index)
@@ -965,14 +1127,15 @@ def implementation(model, recompile_limit):
                 # including dead operations but excluding unused local bindings.
                 observed = []
                 data_sources = set()
+                predicates = []
                 graph = lower(program, static_values, len(tensors), input_ids,
-                              observed=observed, data_sources=data_sources)
+                              observed=observed, data_sources=data_sources, metadata=metadata, predicates=predicates)
                 bindings, values, scalars = runtime_bindings(
                     program, static_bindings, static_values, cache.graphs, observed=observed)
                 if scalars:
-                    graph = lower(program, values, len(tensors), input_ids)
+                    graph = lower(program, values, len(tensors), input_ids, metadata=metadata)
                 bindings, first, aliases = _logical_keys(program, bindings, values, observed, tensors)
-                guards, observations = _shape_guards(program, graph, first, metadata, cache.graphs)
+                guards, observations = _shape_guards(program, graph, first, metadata, cache.graphs, predicates)
                 observations.update((s, "scalar") for s in observed
                                     if type(static_values[s]) is float or type(static_values[s]) is int)
                 key = (program.code, bindings, guards, aliases)
@@ -995,7 +1158,7 @@ def implementation(model, recompile_limit):
                     for source in program.dependencies:
                         if type(values[source]) is Value or source not in entry.observed:
                             values[source] = static_values[source]
-                    graph = lower(program, values, len(tensors), input_ids)
+                    graph = lower(program, values, len(tensors), input_ids, metadata=metadata)
             # Logical guards choose scalar semantics. Concrete executables still
             # specialize the full native ABI and exact broadcast address formula.
             # Offsets/addresses and all original-IR admission are checked at run.

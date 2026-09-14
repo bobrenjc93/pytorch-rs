@@ -12,7 +12,9 @@ identity wrappers, signed expressions, ReLU/sin/cos and extra arithmetic do not
 qualify. Other multi-stage broadcast expressions are rejected before compilation
 or execution because numerical equivalence is not established.
 Root functions also support [bounded, non-nested literal-range
-loops](compile-pointwise-jit.md#bounded-root-literal-loops). CPU lowering, strided
+loops](compile-pointwise-jit.md#bounded-root-literal-loops) and
+[bounded input-shape branches](compile-pointwise-jit.md#bounded-root-shape-branches).
+Branch outcomes remain guarded when input dimensions generalize. CPU lowering, strided
 inputs, other control flow and training remain unsupported by this JIT; explicit
 eager capture retains its separate contract.
 
