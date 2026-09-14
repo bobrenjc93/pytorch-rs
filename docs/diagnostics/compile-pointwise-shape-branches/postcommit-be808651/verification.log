@@ -1,0 +1,2 @@
+PASS: 45 exact raw files; clean be808651 source/wheel/import provenance; H100 22/22; five portable 19-pass/3-skip runs; runtime/kernel observations; old checked-in evidence unchanged; runner differs only in expected commit assertion; evidence-only diff.
+Retention limit: previous 392 untracked development files are absent locally; no claim of recovery or external retention verification.

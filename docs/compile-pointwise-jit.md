@@ -123,7 +123,7 @@ Both arms and all helper/loop expansion share the existing instruction/node limi
 The conservative lazy parameter catalogue avoids separate liveness analysis; large
 signatures with many unused parameters still incur per-call binding work.
 
-[Clean `df50471` validation](diagnostics/compile-pointwise-shape-branches/postcommit-df50471e/README.md)
+[Clean `be808651` validation](diagnostics/compile-pointwise-shape-branches/postcommit-be808651/README.md)
 records the committed branch tests, H100 default-Inductor comparisons and portable
 CPython 3.10–3.14 checks, with source/wheel/runtime provenance and retained raw logs.
 
