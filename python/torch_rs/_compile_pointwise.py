@@ -551,7 +551,9 @@ def normalize_loops(model, instructions):
         # Ignored instructions inside the body (including PRECALL/NOP) repeat
         # too. Removing them from normalization must not relax the shared limit.
         body_size = original_positions[back.offset] - original_positions[head.offset] - 1
-        expanded_size += trips * (body_size + 1)
+        # Zero-trip bodies still receive one admission pass, isolated from the
+        # executing frame. Charge that pass and its two internal scope markers.
+        expanded_size += max(1, trips) * (body_size + 1) + (2 if not trips else 0)
         if expanded_size > 16384:
             unsupported("expanded function exceeds pointwise instruction limit")
         regions.append((start, stop, body, first, step, trips))
@@ -565,11 +567,15 @@ def normalize_loops(model, instructions):
     result, cursor = [], 0
     for start, stop, body, first, step, trips in regions:
         result.extend(compact[cursor:start])
-        for index in _RANGE(trips):
+        if not trips:
+            result.append(body[0]._replace(opname="_LOOP_CHECK_START"))
+        for index in _RANGE(max(1, trips)):
             # Reuse the dis instruction record; lowering only consumes opname,
             # argval and argrepr. Original code remains the semantic owner.
             result.append(body[0]._replace(opname="LOAD_CONST", argval=first + index * step))
             result.extend(body)
+        if not trips:
+            result.append(body[0]._replace(opname="_LOOP_CHECK_END"))
         cursor = stop
     result.extend(compact[cursor:])
     # Charge original setup/cleanup too, sharing lower()'s helper-call budget.
@@ -606,6 +612,10 @@ def analyze(model, arity):
     initial, read = set(code.co_varnames[:arity]), set()
     for instruction in instructions:
         op, arg = instruction.opname, instruction.argval
+        if op == "_LOOP_CHECK_START":
+            saved_initial = initial.copy()
+        elif op == "_LOOP_CHECK_END":
+            initial = saved_initial
         if op in ("STORE_FAST", "STORE_FAST_LOAD_FAST", "STORE_FAST_STORE_FAST"):
             stored = (arg,) if op == "STORE_FAST" else arg[:1] if op == "STORE_FAST_LOAD_FAST" else arg
             initial.difference_update(stored)
@@ -740,6 +750,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
     runtime = sorted(value.index for value in values.values() if type(value) is RuntimeScalar)
     nodes.extend(("scalar", index, 0, 0) for index in runtime)
     remaining = 16384 - program.loop_overhead
+    checked_nodes = 0
     helper_instructions = {}  # Per lowering only; warm hits never parse helpers.
 
     def data(obj):
@@ -777,12 +788,12 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
         if len(args) == 1 and not args[0].tensor or not any(arg.tensor for arg in args):
             unsupported("operators require tensor expressions")
         nodes.append((op, args[0].index, args[1].index if len(args) == 2 else 0, 0))
-        if len(nodes) > 4096:
+        if len(nodes) + checked_nodes > 4096:
             unsupported("graph exceeds 4096-node limit")
         return Value(len(nodes) - 1)
 
     def frame(instructions, locals_):
-        nonlocal remaining
+        nonlocal remaining, checked_nodes
         remaining -= len(instructions)
         if remaining < 0:
             unsupported("expanded function exceeds pointwise instruction limit")
@@ -797,7 +808,17 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
             op, arg = instruction.opname, instruction.argval
             if op in _IGNORED:
                 continue
-            if op in ("LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_FAST_BORROW"):
+            if op == "_LOOP_CHECK_START":
+                # Reuse typed operator/helper/data admission without executing
+                # Python or changing the real frame/IR. Realized sources keep
+                # the existing warm semantic and ignored-data guards.
+                saved_locals, node_start = locals_, len(nodes)
+                locals_ = locals_.copy()
+            elif op == "_LOOP_CHECK_END":
+                checked_nodes += len(nodes) - node_start
+                del nodes[node_start:]
+                locals_ = saved_locals
+            elif op in ("LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_FAST_BORROW"):
                 load(arg)
             elif op in ("LOAD_FAST_LOAD_FAST", "LOAD_FAST_BORROW_LOAD_FAST_BORROW"):
                 for name in arg:

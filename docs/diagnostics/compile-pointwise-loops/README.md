@@ -1,9 +1,11 @@
 # Bounded root literal-range normalization
 
-Fresh [clean-commit captures](postcommit-dcfeb27a/README.md) now measure candidate
-`dcfeb27a` against clean main `014fc0de`, including the two-H100 diagnostic and
-unchanged fixed gates. The development record below and its original artifacts
-are preserved as captured before the implementation commit.
+The [clean-commit captures](postcommit-dcfeb27a/README.md) measure `dcfeb27a`
+against clean main `014fc0de`. They predate the
+[zero-trip body admission review fix](review-zero-trip-admission.md) and do not
+qualify the revised implementation. A fresh committed candidate capture is
+required after Burner commits the fix; this worker cannot create that commit.
+The reports, development record below and original artifacts remain unchanged.
 
 This is development evidence on baseline
 `014fc0de304375258056c5aeb3151cfdc2bcc72a`, not clean-head qualification or a

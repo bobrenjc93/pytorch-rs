@@ -109,7 +109,12 @@ Normalization validates complete loop regions and stack cleanup, bounds expansio
 then expands before initial-parameter dependency analysis. Index assignments and
 carry-over locals retain frame semantics. Zero trips preserve previous locals and
 initial parameters; an index never assigned remains unbound. A zero-trip loop
-does not admit an identity-only root return. Original instructions, every repeated
+does not admit an identity-only root return. Its body still passes the existing
+typed operator, helper and data admission in an isolated local frame; its
+temporary assignments and IR are discarded, while helper code/binding and data
+guards remain active on warm calls. Reductions and helper-local loops therefore
+reject even in a zero-trip body. This admission pass shares the instruction/node
+budgets with executed bodies and helper calls. Original instructions, every repeated
 body/index assignment and every helper invocation share the 16384-instruction
 budget; the 4096-node limit and original-IR numerical boundary are unchanged.
 

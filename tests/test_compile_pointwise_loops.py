@@ -93,6 +93,31 @@ class LoopAdmission(unittest.TestCase):
         self.assertEqual(lower(program('def f(x):\n for i in range(1+1):\n  x=-x\n return x')),
                          lower(program('def f(x):\n return -(-x)')))
 
+    def test_zero_trip_body_operator_helper_and_data_admission(self):
+        helpers = (
+            program('def f(a):\n for j in range(2):\n  a=-a\n return a'),
+            program('def f(a):\n return a.sum()'),
+            program('def f(a, b):\n return a+b'),
+        )
+        for expression, bindings in (
+            ('x.sum()', {}), ('fw.sum(x)', {'fw': native}), ('i+i', {}),
+            ('helper(x)', {'helper': object()}),
+            *(('helper(x)', {'helper': helper}) for helper in helpers),
+            ('helper(x, helper)', {'helper': program('def f(a, ignored):\n return a')}),
+            ('helper(x, fw)', {'helper': program('def f(a, ignored):\n return a'), 'fw': native}),
+        ):
+            fn = program('def f(x):\n for i in range(0):\n  x='+expression+'\n return -x', **bindings)
+            bodies = tuple(v for v in bindings.values() if type(v) is types.FunctionType)
+            with self.subTest(expression=expression), no_bodies(fn, *bodies):
+                with self.assertRaises(NotImplementedError): lower(fn)
+
+    def test_zero_trip_validation_does_not_change_locals_or_ir(self):
+        helper = program('def f(a, ignored):\n return a.sin()')
+        fn = program('def f(x, scale):\n saved=x\n for i in range(0):\n  x=helper(x, scale)\n  saved=x\n  scale=i\n for j in range(2):\n  saved=saved*scale\n return saved+x', helper=helper)
+        expected = program('def f(x, scale):\n return x*scale*scale+x')
+        with no_bodies(fn, helper):
+            self.assertEqual(lower(fn, 2), lower(expected, 2))
+
     def test_hostile_values_containers_keys_and_constant_pool(self):
         effects = []
         class Hostile:
@@ -143,6 +168,17 @@ class LoopAdmission(unittest.TestCase):
         fn = program('def f(x):\n for i in range(6):\n  x=helper(x)\n return x', helper=helper)
         with self.assertRaisesRegex(NotImplementedError, '4096-node limit'): lower(fn)
 
+    def test_zero_trip_validation_shares_helper_and_node_budgets(self):
+        helper = program('def f(x):\n'+' y=x\n'*100+' return -x')
+        fn = program('def f(x):\n for i in range(0):\n'+'  x=helper(x)\n'*90+' return -x', helper=helper)
+        with self.assertRaisesRegex(NotImplementedError, 'instruction limit'): lower(fn)
+        helper = program('def f(x):\n'+' x=-x\n'*700+' return x')
+        for second in ('for j in range(0):', 'for j in range(1):'):
+            fn = program('def f(x):\n for i in range(0):\n'+'  x=helper(x)\n'*3+
+                         ' '+second+'\n'+'  x=helper(x)\n'*3+' return -x', helper=helper)
+            with self.subTest(second=second), self.assertRaisesRegex(NotImplementedError, '4096-node limit'):
+                lower(fn)
+
     def test_malformed_exit_backedge_and_body_stack(self):
         fn = program('def f(x):\n for i in range(2):\n  x=-x\n return x')
         instructions = frontend.instructions_for(fn.__code__)
@@ -161,6 +197,61 @@ class LoopAdmission(unittest.TestCase):
 
 class LoopCache(unittest.TestCase):
     setUp = helper_tests.HelperCache.setUp
+
+    def test_zero_trip_cold_rejections_publish_nothing(self):
+        helper = program('def f(a):\n for j in range(2):\n  a=-a\n return a')
+        for expression in ('x.sum()', 'helper(x)'):
+            fn = program('def f(x):\n for i in range(0):\n  x='+expression+'\n return -x', helper=helper)
+            compiled = native.compile(fn)
+            with (no_bodies(fn, helper), patch.object(bridge, '_pointwise_compile', side_effect=AssertionError('compile')),
+                  self.assertRaises(NotImplementedError)):
+                compiled(self.x)
+            self.assertFalse(cache(compiled).graphs)
+            self.assertFalse(cache(compiled).executors)
+
+    def test_zero_trip_warm_helper_guards_rejection_and_recovery(self):
+        effects = []
+        class Hostile:
+            def __call__(self, *args): effects.append('call')
+            def __eq__(self, other): effects.append('eq'); return False
+            def __repr__(self): effects.append('repr'); return 'hostile'
+        helper = program('def f(a, ignored):\n return a.sin()')
+        original = helper.__code__
+        fn = program('def f(x):\n for i in range(0):\n  x=helper(x, captured)\n return -x', helper=helper, captured=0.5)
+        compiled = native.compile(fn)
+        with no_bodies(fn, helper): compiled(self.x)
+        state = cache(compiled)
+        def snapshot():
+            return (list(state.graphs.items()), list(state.executors.items()),
+                    [list(entry.lowerings.items()) for entry in state.graphs.values()])
+        before = snapshot()
+        for name, replacement in (('helper', Hostile()), ('captured', native.sin),
+                                  ('captured', native), ('captured', helper),
+                                  ('captured', Hostile()), ('captured', 1 << 80)):
+            saved = fn.__globals__[name]
+            fn.__globals__[name] = replacement
+            with (patch.object(frontend, 'lower', side_effect=AssertionError('warm lower')),
+                  patch.object(frontend.dis, 'get_instructions', side_effect=AssertionError('warm dis')),
+                  patch.object(next(iter(state.executors.values())), 'run', side_effect=AssertionError('launch')),
+                  self.assertRaises(NotImplementedError)):
+                compiled(self.x)
+            self.assertEqual(snapshot(), before)
+            fn.__globals__[name] = saved
+        for body in ('return a.sum()', 'for j in range(2):\n  a=-a\n return a'):
+            helper.__code__ = program('def f(a, ignored):\n '+body).__code__
+            with (no_bodies(fn, helper), patch.object(bridge, '_pointwise_compile', side_effect=AssertionError('compile')),
+                  patch.object(next(iter(state.executors.values())), 'run', side_effect=AssertionError('launch')),
+                  self.assertRaises(NotImplementedError)):
+                compiled(self.x)
+            self.assertEqual(snapshot(), before)
+        helper.__code__ = original
+        fn.__globals__['captured'] = 1.5  # Valid ignored data needs no value guard.
+        with (no_bodies(fn, helper), patch.object(frontend, 'lower', side_effect=AssertionError('recovery lower')),
+              patch.object(frontend.dis, 'get_instructions', side_effect=AssertionError('recovery dis'))):
+            compiled(self.x)
+        self.assertEqual(effects, [])
+        native.compiler.reset()
+        with no_bodies(fn, helper): compiled(self.x)
 
     def test_direct_closure_range_identity_and_empty_cell(self):
         alias = range
@@ -271,6 +362,25 @@ class LoopCache(unittest.TestCase):
 @unittest.skipUnless(available(), 'requires native CUDA and reference PyTorch CUDA')
 class LoopHardware(unittest.TestCase):
     def tearDown(self): native.compiler.reset()
+
+    def test_zero_trip_helper_validation_and_warm_recovery(self):
+        helper = program('def f(a):\n return a.sin()')
+        original = helper.__code__
+        fn = program('def f(x):\n for i in range(0):\n  x=helper(x)\n return -x', helper=helper)
+        compiled = native.compile(fn)
+        x = native.tensor([1.0, -2.0]).to('cuda:0')
+        with no_bodies(fn, helper):
+            self.assertEqual(compiled(x).cpu().tolist(), [-1.0, 2.0])
+        helper.__code__ = program('def f(a):\n return a.sum()').__code__
+        with no_bodies(fn, helper), self.assertRaises(NotImplementedError): compiled(x)
+        fn.__globals__['helper'] = object()
+        with self.assertRaises(NotImplementedError): compiled(x)
+        helper.__code__ = original
+        fn.__globals__['helper'] = helper
+        with (no_bodies(fn, helper), patch.object(frontend, 'lower', side_effect=AssertionError('warm lower')),
+              patch.object(frontend.dis, 'get_instructions', side_effect=AssertionError('warm dis'))):
+            self.assertEqual(compiled(x).cpu().tolist(), [-1.0, 2.0])
+        self.assertEqual(x.cpu().tolist(), [1.0, -2.0])
 
     def test_default_inductor_offsets_histories_ieee_and_inputs(self):
         import torch
