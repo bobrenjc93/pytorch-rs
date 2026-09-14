@@ -56,12 +56,16 @@ class LoopAdmission(unittest.TestCase):
         with self.assertRaisesRegex(NotImplementedError, 'computed pointwise tensor'):
             lower(program('def f(x):\n for i in range(0):\n  x=-x\n return x'))
 
-    def test_overwritten_parameter_is_not_an_initial_dependency(self):
-        fn = program('def f(x, scale):\n for i in range(2):\n  scale=i\n return x*scale')
-        parsed = frontend.analyze(fn, 2)
-        self.assertEqual([s.name for s in parsed.dependencies], ['x'])
-        fn = program('def f(x, scale):\n for i in range(0):\n  scale=i\n return x*scale')
-        self.assertEqual([s.name for s in frontend.analyze(fn, 2).dependencies], ['x', 'scale'])
+    def test_overwritten_parameter_has_no_observed_value_guard(self):
+        for trips, expected in ((2, ['x']), (0, ['x', 'scale'])):
+            fn = program(f'def f(x, scale):\n for i in range({trips}):\n  scale=i\n return x*scale')
+            parsed = frontend.analyze(fn, 2)
+            keys, values = frontend.resolve(fn, parsed, (frontend.Value(0), 0.75))
+            observed = []
+            frontend.lower(parsed, values, 1, observed=observed)
+            self.assertEqual([s.name for s in observed], expected)
+            guards, _, _ = frontend._logical_keys(parsed, keys, values, observed, (object(),))
+            self.assertEqual(guards[1], ('ignored',) if trips else keys[1])
 
     def test_all_structure_rejected_before_expansion_even_zero_trip(self):
         bodies = ('if x:\n   x=-x', 'for j in range(2):\n   x=-x',

@@ -988,9 +988,13 @@ def compile(
     exact-integer bounds and a nonzero step. Zero/one/many trips and signed steps
     are supported. Bodies use the same pointwise language and approved direct,
     data-only Python helpers; even skipped bodies receive admission checks.
-    CPU compilation, mutation, reductions, conditional/early-exit control flow,
-    nested or helper-local loops, runtime range bounds, arbitrary iterators,
-    module calls and training are outside this default JIT subset.
+    Root input-shape branches with literal integer axes and thresholds support
+    early returns and assignment joins. Loops may appear outside branch arms,
+    and straight-line helpers may appear inside them.
+    CPU compilation, mutation, reductions, data-dependent or nested conditionals,
+    branches inside loops/helpers, loops inside branch arms, nested/helper-local
+    loops, runtime range bounds, arbitrary iterators, module calls and training
+    are outside this default JIT subset.
     NVRTC and the CUDA driver compile/cache code; no PyTorch forwarding or eager
     replay is used. See docs/compile-pointwise-jit.md for guards and scope.
 

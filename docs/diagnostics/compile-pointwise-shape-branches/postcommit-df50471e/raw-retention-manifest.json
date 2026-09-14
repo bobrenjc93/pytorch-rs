@@ -1,0 +1,157 @@
+{
+  "measuredCommit": "df50471e38ef73440f64545263c8f22e6c6a1125",
+  "root": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4207b2b6",
+  "rawRoot": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4207b2b6/target/default-compile-eval/shape-branches/postcommit-df50471",
+  "files": [
+    {
+      "path": "build.log",
+      "bytes": 528,
+      "sha256": "2366ffc32b6892e8c1d1ddd0c2a45530150b73d52426dc6a0a19ba7a306cdccb"
+    },
+    {
+      "path": "environment.sh",
+      "bytes": 1085,
+      "sha256": "02e261966e06468760787c48b8d5fcd0590733d7eeaa8131be83e5d0cd31e4ab"
+    },
+    {
+      "path": "gpu-py312.json",
+      "bytes": 11993,
+      "sha256": "45b02f9ca7f6d66e95e124a684d7ab9e863c36ebe76912c9614c6f9879b328bd"
+    },
+    {
+      "path": "gpu-py312.log",
+      "bytes": 4141,
+      "sha256": "8cf1b27d253ea9b60d9909ca080678ffa28a2991771cf7d3a18533005fd1861d"
+    },
+    {
+      "path": "install-py310.log",
+      "bytes": 610,
+      "sha256": "f30670ada7ed55ee7834f388c4f4c799abbcaa72a06d080b7048c310551724a8"
+    },
+    {
+      "path": "install-py311.log",
+      "bytes": 610,
+      "sha256": "851cbac7b0fe047838523d97879346f268a7a847cbf4857d6c3e17e0f920bbf7"
+    },
+    {
+      "path": "install-py312.log",
+      "bytes": 549,
+      "sha256": "d7811456589f73a4f48a110a4997bfbd1e2f0348d91ae76e1d472a58a3ecd6d5"
+    },
+    {
+      "path": "install-py313.log",
+      "bytes": 610,
+      "sha256": "938a39d0551e429819de9a88105f188de3a09c84e6d61fcbc2ed1ccd3d6cc071"
+    },
+    {
+      "path": "install-py314.log",
+      "bytes": 609,
+      "sha256": "4c1cb921c4eb37f4d71f3efa76e5a9a929fb509880a4ea6e4e92154b3792bc7b"
+    },
+    {
+      "path": "installed-packages.txt",
+      "bytes": 882,
+      "sha256": "5f28cf273721a254c088cc8257208cb273f72f5222704efaaa637c8706568975"
+    },
+    {
+      "path": "portable-commands.json",
+      "bytes": 5303,
+      "sha256": "dab7a50d6c733a0cc6e25edf13918ca4f6da5593416276ca06fce7b54c5250cc"
+    },
+    {
+      "path": "portable-driver.log",
+      "bytes": 60,
+      "sha256": "9e11f527a51565c605fb1b889e39c18e0f9ef227e3998e84b2cd6c659662dc0b"
+    },
+    {
+      "path": "portable-py310.json",
+      "bytes": 9069,
+      "sha256": "c9929b086cb703ef3a59758634cd9728689f7a313f26e2ed6e000b394984a8ec"
+    },
+    {
+      "path": "portable-py310.log",
+      "bytes": 3091,
+      "sha256": "185e2acf3d9d1c307c5bd52d114c08463eee8e7207ebc23befc693e47caf62d5"
+    },
+    {
+      "path": "portable-py311.json",
+      "bytes": 9112,
+      "sha256": "8f96a5cf7d08b7d4eef01c78ae703bdb39b8b0d5810bf2c9adf34d1a53935bd8"
+    },
+    {
+      "path": "portable-py311.log",
+      "bytes": 4317,
+      "sha256": "d569f4e161ba0a8dca7c574df6ae9d63653d9cb58d138df868d4b13b01587304"
+    },
+    {
+      "path": "portable-py312.json",
+      "bytes": 9052,
+      "sha256": "2cafa6f668919bd222d4c3c563e33ed6dc2ab43ef5b5ec6b92fd909f3519f8f4"
+    },
+    {
+      "path": "portable-py312.log",
+      "bytes": 4317,
+      "sha256": "61ac421e768aa5021f95cb13f25673656a588e3531efbeaf291b07d2bd231d56"
+    },
+    {
+      "path": "portable-py313.json",
+      "bytes": 9112,
+      "sha256": "b34ff0ba3a2b1690e01ea63046408429a0f0d9562650c8ed8fbaa89bbd0fba11"
+    },
+    {
+      "path": "portable-py313.log",
+      "bytes": 4317,
+      "sha256": "d15cd51928b121e3c87c3d29506eedfbda738639b1468b957f8679ddd64fddd5"
+    },
+    {
+      "path": "portable-py314.json",
+      "bytes": 9100,
+      "sha256": "d1eae0710ba2b357a4339bc38658638b1174ec0b08269eb41e7dbb599566d7e8"
+    },
+    {
+      "path": "portable-py314.log",
+      "bytes": 4317,
+      "sha256": "3e19d524616b1ec64022da45ca0633512a1073552583c180508ad653ebfee6de"
+    },
+    {
+      "path": "run-focused.py",
+      "bytes": 5317,
+      "sha256": "b250873d0448b45839a07867a9bd147fc202cc40aa74948a019f17a7fd187d51"
+    },
+    {
+      "path": "source-after.json",
+      "bytes": 8931,
+      "sha256": "866d216956779ccf5180f338c0d046b33933070716b9f605dc4b87dd5641302c"
+    },
+    {
+      "path": "source-before.json",
+      "bytes": 14485,
+      "sha256": "8be917d79491fe1a89ff3fd33f6bfaafbede77faca84c597311748aa70dd99aa"
+    },
+    {
+      "path": "verify-py310.log",
+      "bytes": 602,
+      "sha256": "bb445d49a2353a3e6df2654352d5803af5d1ac759ad6d50d6cf5e6ee7d4ed8b6"
+    },
+    {
+      "path": "verify-py311.log",
+      "bytes": 602,
+      "sha256": "118764b1f4032ef328c410ef1dd20d711d718d049b7a9e05fb60d94f1f2a370b"
+    },
+    {
+      "path": "verify-py312.log",
+      "bytes": 538,
+      "sha256": "ee201c045572adea3817927ebc203b3ca495a0b81cf249b556f2a8b02d9f4da9"
+    },
+    {
+      "path": "verify-py313.log",
+      "bytes": 602,
+      "sha256": "50bae5ec29287be3dafb7e107da8a7d9428d6237a5bc51e6a803920a917e6860"
+    },
+    {
+      "path": "verify-py314.log",
+      "bytes": 602,
+      "sha256": "fa4562b1bb7ddf9240ec83e3484d3a7325013ef35c40ae91520ac5a5db4e4a4f"
+    }
+  ]
+}
