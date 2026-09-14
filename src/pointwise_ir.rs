@@ -4,6 +4,8 @@ use crate::tensor_error::TensorError;
 pub(crate) mod indexing;
 #[path = "pointwise_lowering.rs"]
 mod lowering;
+#[path = "pointwise_regions.rs"]
+mod regions;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Node {

@@ -518,6 +518,69 @@ class StructuredHardware(unittest.TestCase):
                                 self.compare_tree(actual, expected)
                                 self.assertEqual(kernel(compiled).ptx.count('.visible .entry'), 1)
 
+    def test_nonlinear_regions(self):
+        bodies = (
+            'p=x*y\n q=-p\n r=p.sin()',
+            'p=x*x\n q=-p\n r=p.sin()',
+            'p=x*y\n q=-p\n r=p.cos()',
+            'p=x*y\n q=-p\n r=(p+p).sin()',
+            'p=x*y\n q=-p\n r=x.sin()',
+            'p=x*y\n q=p+x\n r=p.sin()',
+            'p=x*y\n q=-p\n r=p.sin()+q',
+        )
+        histories = ((1e-38, 1e-38), (1e-38, -1e-38),
+                     (2e38, -2e38), (1e10, 1.0000001192092896))
+        for case, body in enumerate(bodies):
+            for order, result in enumerate(('(q,r)', '(r,q)', '(p,q,r)', 'r')):
+                source = 'def f(x,y):\n ' + body + '\n return ' + result
+                fn = program(source)
+                compiled = native.compile(fn)
+                for size in (1, 2, 3, 13, 257):
+                    # Cold default reference per shape: automatic dynamism can
+                    # retain an earlier shape hint and its fusion partition.
+                    self.torch.compiler.reset()
+                    reference = self.torch.compile(program(source, self.torch))
+                    for history, (left, right) in enumerate(histories):
+                        args = [self.upload([v]*size, (size,)) for v in (left, right)]
+                        refs = [self.upload([v]*size, (size,), self.torch) for v in (left, right)]
+                        for repeat in range(2):
+                            with self.subTest(case=case, result=result, size=size,
+                                              history=history, repeat=repeat):
+                                expected = reference(*refs)
+                                actual = self.without_replay(fn, compiled, args)
+                                self.retain(f'regions-{case}-{order}-{size}-{history}-{repeat}',
+                                            compiled, actual, expected)
+                                self.compare_tree(actual, expected)
+                                self.assertEqual(kernel(compiled).ptx.count('.visible .entry'), 1)
+                    self.assertEqual(len(cache(compiled).executors), 1)
+
+    def test_nonlinear_large_and_zero_read_producers(self):
+        # Returned runtime producers connect regions even beyond the small-graph
+        # certificate. Zero-read tensors, including scalar-bound expressions,
+        # are cheap and must not acquire a tensor-buffer realization boundary.
+        bodies = (
+            'p=x*y\n q=-p\n r=p.sin()' + '\n r=r.sin()'*8,
+            'p=x*0\n q=-p\n r=p.sin()',
+            'p=x*0+scale\n q=-p\n r=p.sin()',
+        )
+        for case, body in enumerate(bodies):
+            source = 'def f(x,y,scale):\n ' + body + '\n return (p,q,r)'
+            fn = program(source)
+            compiled = native.compile(fn)
+            reference = self.torch.compile(program(source, self.torch))
+            for size in (1, 13, 257):
+                for step, (left, right, scale) in enumerate((
+                        (1e-38, 1e-38, 0.0), (2e38, -2e38, -0.0),
+                        (1.25, -2.5, 0.125))):
+                    args = [self.upload([v]*size, (size,)) for v in (left,right)]
+                    refs = [self.upload([v]*size, (size,), self.torch) for v in (left,right)]
+                    with self.subTest(case=case, size=size, step=step):
+                        actual = self.without_replay(fn, compiled, (*args,scale))
+                        expected = reference(*refs,scale)
+                        self.retain(f'region-controls-{case}-{size}-{step}', compiled, actual, expected)
+                        self.compare_tree(actual, expected)
+                        self.assertEqual(kernel(compiled).ptx.count('.visible .entry'), 1)
+
     def test_maximum_output_and_runtime_scalar_abi(self):
         def balanced(names):
             if len(names) == 1:

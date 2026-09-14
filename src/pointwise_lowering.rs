@@ -39,6 +39,13 @@ struct Contraction {
     factors: (usize, usize),
 }
 
+struct ContractionContext<'a> {
+    ranks: &'a [usize],
+    uses: &'a [usize],
+    before_call: &'a [usize],
+    consumer: usize,
+}
+
 #[derive(Default)]
 struct Lowering {
     nodes: Vec<Expr>,
@@ -96,7 +103,11 @@ impl Lowering {
         }
     }
 
-    fn contraction_product(&self, mut id: usize, uses: &[usize]) -> Option<ContractionProduct> {
+    fn contraction_product(
+        &self,
+        mut id: usize,
+        context: &ContractionContext<'_>,
+    ) -> Option<ContractionProduct> {
         // Reference constant folding removes these products before contraction.
         if self.constant_expressions[id] {
             return None;
@@ -108,7 +119,7 @@ impl Lowering {
         let (mut outer_zero, mut inner_zero) = (false, false);
         let mut product_uses = 1;
         loop {
-            product_uses += uses[id] - 1;
+            product_uses += context.uses[id] - 1;
             if let Some(value) = self.subtracts_scalar_zero(id) {
                 if flipped {
                     inner_zero = true;
@@ -123,6 +134,11 @@ impl Lowering {
             } else {
                 break;
             }
+        }
+        // A value exported across a libdevice basic-block boundary is already
+        // rounded. Only a multiply local to this consumer can contract.
+        if context.before_call[id] < context.before_call[context.consumer] {
+            return None;
         }
         self.product(id).map(|factors| ContractionProduct {
             factors,
@@ -377,20 +393,19 @@ impl Lowering {
         a: usize,
         b: usize,
         subtract: bool,
-        ranks: &[usize],
-        uses: &[usize],
+        context: &ContractionContext<'_>,
     ) -> Option<Contraction> {
-        let left = self.contraction_product(a, uses);
-        let right = self.contraction_product(b, uses);
+        let left = self.contraction_product(a, context);
+        let right = self.contraction_product(b, context);
         // Canonicalize only competing positive products of an addition. Signed
         // products have already undergone a different normalization phase, and
         // subtraction is not commutative. Ties retain the original orientation.
         if !subtract
             && left.is_some_and(|p| p.direct && !p.negative)
             && right.is_some_and(|p| p.direct && !p.negative)
-            && ranks[b] < ranks[a]
+            && context.ranks[b] < context.ranks[a]
         {
-            return self.contract(b, a, false, ranks, uses);
+            return self.contract(b, a, false, context);
         }
         // Prefer direct products, preserving left-to-right order when both
         // candidates are sign-flipped even if only the right is zero-wrapped.
@@ -447,7 +462,73 @@ impl Lowering {
         uses
     }
 
-    fn contractions(&self, ranks: &[usize], mut uses: Vec<usize>) -> Vec<Option<String>> {
+    fn call_deadlines(&self, calls: &[usize], uses: &[usize]) -> Vec<usize> {
+        let mut before = vec![usize::MAX; self.nodes.len()];
+        for id in (0..self.nodes.len()).rev() {
+            if uses[id] == 0 {
+                continue;
+            }
+            let deadline = if calls[id] == 0 {
+                before[id]
+            } else {
+                before[id].min(calls[id])
+            };
+            for operand in self.operands(id) {
+                before[operand] = before[operand].min(deadline);
+            }
+        }
+        before
+    }
+
+    fn local_uses(
+        &self,
+        outputs: &[usize],
+        calls: &[usize],
+        before: &[usize],
+        live: &[usize],
+    ) -> Vec<usize> {
+        let mut uses = vec![0; self.nodes.len()];
+        let mut exported = vec![false; self.nodes.len()];
+        let mut add_use = |operand: usize, block| {
+            if before[operand] == block {
+                uses[operand] += 1;
+            } else {
+                exported[operand] = true;
+            }
+        };
+        for &output in outputs {
+            add_use(output, usize::MAX);
+        }
+        for id in 0..self.nodes.len() {
+            if live[id] != 0 {
+                let block = if calls[id] == 0 {
+                    before[id]
+                } else {
+                    calls[id]
+                };
+                for operand in self.operands(id) {
+                    add_use(operand, block);
+                }
+            }
+        }
+        for (count, exported) in uses.iter_mut().zip(exported) {
+            // SelectionDAG exports a value once, even with multiple later users.
+            *count += usize::from(exported);
+        }
+        uses
+    }
+
+    fn contractions(
+        &self,
+        ranks: &[usize],
+        calls: &[usize],
+        live: &[usize],
+        outputs: &[usize],
+    ) -> Vec<Option<String>> {
+        // Block placement precedes local DAG combining. Later contractions can
+        // change use counts, but cannot undo an earlier libdevice materialization.
+        let before_call = self.call_deadlines(calls, live);
+        let mut uses = self.local_uses(outputs, calls, &before_call, live);
         let mut selected = vec![None; self.nodes.len()];
         // Match consumer-before-operand DAG combining: an outer FMA removes
         // its product use before an inner competing pair is considered.
@@ -455,24 +536,43 @@ impl Lowering {
             if uses[id] == 0 {
                 continue;
             }
-            let (a, b, subtract) = match self.nodes[id] {
-                Expr::Node(Node::Add(a, b)) => (a, b, false),
-                Expr::Node(Node::Sub(a, b)) if self.subtracts_scalar_zero(id).is_none() => {
-                    (a, b, true)
-                }
-                _ => continue,
+            let context = ContractionContext {
+                ranks,
+                uses: &uses,
+                before_call: &before_call,
+                consumer: id,
             };
-            if let Some(contraction) = self.contract(a, b, subtract, ranks, &uses) {
+            let contraction = match self.nodes[id] {
+                Expr::Node(Node::Add(a, b)) => self.contract(a, b, false, &context),
+                Expr::Node(Node::Sub(a, b)) if self.subtracts_scalar_zero(id).is_none() => {
+                    self.contract(a, b, true, &context)
+                }
+                Expr::Node(Node::Neg(a)) if before_call[a] == before_call[id] => {
+                    self.product(a).map(|(x, y)| Contraction {
+                        expression: format!("fmaf(-v{x}, v{y}, 0.0f)"),
+                        product: a,
+                        factors: (x, y),
+                    })
+                }
+                _ => None,
+            };
+            if let Some(contraction) = contraction {
                 // The FMA references factors directly. Keep these uses alive
                 // while removing any now-unused product/sign/zero wrappers.
                 let (x, y) = contraction.factors;
-                uses[x] += 1;
-                uses[y] += 1;
-                let mut removed = vec![contraction.product];
-                while let Some(operand) = removed.pop() {
+                for factor in [x, y] {
+                    if before_call[factor] == before_call[id] {
+                        uses[factor] += 1;
+                    }
+                }
+                let mut removed = vec![(id, contraction.product)];
+                while let Some((consumer, operand)) = removed.pop() {
+                    if before_call[operand] != before_call[consumer] {
+                        continue; // The earlier block's export remains fixed.
+                    }
                     uses[operand] -= 1;
                     if uses[operand] == 0 {
-                        removed.extend(self.operands(operand));
+                        removed.extend(self.operands(operand).into_iter().map(|id| (operand, id)));
                     }
                 }
                 selected[id] = Some(contraction.expression);
@@ -484,10 +584,7 @@ impl Lowering {
     fn operands(&self, id: usize) -> Vec<usize> {
         match self.nodes[id] {
             Expr::Node(Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b)) => vec![a, b],
-            Expr::Node(Node::Neg(a)) => {
-                self.product(a).map_or_else(|| vec![a], |(x, y)| vec![x, y])
-            }
-            Expr::Node(Node::Relu(a) | Node::Sin(a) | Node::Cos(a))
+            Expr::Node(Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a))
             | Expr::Flip(a)
             | Expr::SelfSub(a)
             | Expr::SignedDouble(a) => vec![a],
@@ -507,7 +604,7 @@ impl Lowering {
 // Reference graph identities run by operator phase, before numeric lowering.
 // Resolving every alias here avoids exposing a subtraction's zero to an
 // already-completed addition pass, while later subtractions can still use it.
-fn early_aliases(graph: &Graph) -> (Vec<usize>, Vec<bool>) {
+pub(super) fn early_aliases(graph: &Graph) -> (Vec<usize>, Vec<bool>) {
     fn resolve(aliases: &[usize], mut id: usize) -> usize {
         while aliases[id] != id {
             id = aliases[id];
@@ -556,6 +653,7 @@ fn materialization_ranks(
     zeros: &[bool],
     mapped: &[usize],
     lower: &Lowering,
+    roots: &[usize],
 ) -> (Vec<usize>, Vec<usize>) {
     // Traverse the live expression in evaluation order, before sign rewrites
     // change orientation. All tensor loads are hoisted into the entry block;
@@ -565,7 +663,7 @@ fn materialization_ranks(
     let mut inputs = vec![0; graph.inputs];
     let mut calls = vec![0; lower.nodes.len()];
     let mut seen = vec![false; graph.nodes.len()];
-    let mut pending: Vec<_> = graph.outputs.iter().rev().map(|&id| (id, false)).collect();
+    let mut pending: Vec<_> = roots.iter().rev().map(|&id| (id, false)).collect();
     let mut input_rank = LOAD_RANK_BASE;
     let mut call_rank = LOAD_RANK_BASE;
     while let Some((id, complete)) = pending.pop() {
@@ -603,7 +701,7 @@ fn float32_bits(bits: u64) -> u32 {
     (f64::from_bits(bits) as f32).to_bits()
 }
 
-fn remap(node: &Node, mapped: &[usize]) -> Node {
+pub(super) fn remap(node: &Node, mapped: &[usize]) -> Node {
     match *node {
         Node::Input(i) => Node::Input(i),
         Node::RuntimeScalar(i, negative) => Node::RuntimeScalar(i, negative),
@@ -626,6 +724,7 @@ fn consumer_analysis(
     graph: &Graph,
     aliases: &[usize],
     zeros: &[bool],
+    roots: &[usize],
 ) -> (Vec<[bool; 2]>, Vec<[usize; 2]>) {
     let mut canonical = Lowering::default();
     let mut mapped = Vec::with_capacity(graph.nodes.len());
@@ -653,7 +752,7 @@ fn consumer_analysis(
     let mut last = vec![0; canonical.nodes.len()];
     let mut uses = vec![0; canonical.nodes.len()];
     // Stores are observable uses for sign rewrites, without prohibiting FMA.
-    for &output in &graph.outputs {
+    for &output in roots {
         live[mapped[output]] = true;
         uses[mapped[output]] += 1;
     }
@@ -689,11 +788,12 @@ fn consumer_analysis(
     (last, uses)
 }
 
-pub(super) fn source(graph: &Graph, addresses: &[super::indexing::Address]) -> String {
+fn region(graph: &Graph, addresses: &[super::indexing::Address], slots: &[usize]) -> String {
+    let roots: Vec<_> = slots.iter().map(|&slot| graph.outputs[slot]).collect();
     let mut lower = Lowering::default();
     let mut mapped = Vec::with_capacity(graph.nodes.len());
     let (aliases, zeros) = early_aliases(graph);
-    let (last, uses) = consumer_analysis(graph, &aliases, &zeros);
+    let (last, uses) = consumer_analysis(graph, &aliases, &zeros, &roots);
     for (id, node) in graph.nodes.iter().enumerate() {
         if aliases[id] != id {
             mapped.push(mapped[aliases[id]]);
@@ -706,29 +806,13 @@ pub(super) fn source(graph: &Graph, addresses: &[super::indexing::Address]) -> S
         let node = remap(node, &mapped);
         mapped.push(lower.normalize(node, last[id], uses[id]));
     }
-    let outputs: Vec<_> = graph.outputs.iter().map(|&id| mapped[id]).collect();
-    let (inputs, calls) = materialization_ranks(graph, &aliases, &zeros, &mapped, &lower);
+    let outputs: Vec<_> = roots.iter().map(|&id| mapped[id]).collect();
+    let (inputs, calls) = materialization_ranks(graph, &aliases, &zeros, &mapped, &lower, &roots);
     let ranks = lower.contraction_ranks(&inputs, &calls);
     let uses = lower.live_uses(&outputs);
     let live: Vec<_> = uses.iter().map(|&count| count != 0).collect();
-    let contractions = lower.contractions(&ranks, uses);
-    let mut source = String::from(
-        "// torch_rs typed pointwise SSA v2; float32, no fast math\n\
-         extern \"C\" __global__ void torch_rs_pointwise(\n\
-         const float* x0, const float* x1",
-    );
-    for index in 0..outputs.len() {
-        write!(source, ", float* out{index}").unwrap();
-    }
-    source.push_str(", unsigned long long n");
-    for index in 0..graph.scalar_count() {
-        write!(source, ", float s{index}").unwrap();
-    }
-    source.push_str(
-        ") {\n\
-         for (unsigned long long i = (unsigned long long)blockIdx.x * blockDim.x + threadIdx.x;\n\
-         i < n; i += (unsigned long long)blockDim.x * gridDim.x) {\n",
-    );
+    let contractions = lower.contractions(&ranks, &calls, &uses, &outputs);
+    let mut source = String::new();
     for (id, node) in lower.nodes.iter().enumerate() {
         if !live[id] {
             continue;
@@ -753,10 +837,9 @@ pub(super) fn source(graph: &Graph, addresses: &[super::indexing::Address]) -> S
                 .clone()
                 .unwrap_or_else(|| format!("__fsub_rn(v{a}, v{b})")),
             Expr::Node(Node::Mul(a, b)) => format!("__fmul_rn(v{a}, v{b})"),
-            Expr::Node(Node::Neg(a)) => lower.product(a).map_or_else(
-                || format!("__fsub_rn(0.0f, v{a})"),
-                |(x, y)| format!("fmaf(-v{x}, v{y}, 0.0f)"),
-            ),
+            Expr::Node(Node::Neg(a)) => contractions[id]
+                .clone()
+                .unwrap_or_else(|| format!("__fsub_rn(0.0f, v{a})")),
             Expr::Node(Node::Relu(a)) => format!("(v{a} < 0.0f ? 0.0f : v{a})"),
             Expr::Node(Node::Sin(a)) => {
                 if lower.constant_expressions[a] {
@@ -781,8 +864,54 @@ pub(super) fn source(graph: &Graph, addresses: &[super::indexing::Address]) -> S
         };
         writeln!(source, "const float v{id} = {expression};").unwrap();
     }
-    for (slot, output) in outputs.iter().enumerate() {
+    for (&slot, output) in slots.iter().zip(&outputs) {
         writeln!(source, "out{slot}[i] = v{output};").unwrap();
+    }
+    source
+}
+
+pub(super) fn source(graph: &Graph, addresses: &[super::indexing::Address]) -> String {
+    let mut source = String::from(
+        "// torch_rs typed pointwise SSA v2; float32, no fast math\n\
+         extern \"C\" __global__ void torch_rs_pointwise(\n\
+         const float* x0, const float* x1",
+    );
+    for index in 0..graph.outputs.len() {
+        write!(source, ", float* out{index}").unwrap();
+    }
+    source.push_str(", unsigned long long n");
+    for index in 0..graph.scalar_count() {
+        write!(source, ", float s{index}").unwrap();
+    }
+    source.push_str(
+        ") {\n\
+         for (unsigned long long i = (unsigned long long)blockIdx.x * blockDim.x + threadIdx.x;\n\
+         i < n; i += (unsigned long long)blockDim.x * gridDim.x) {\n",
+    );
+    let plans = super::regions::plans(graph, addresses);
+    for (index, (minimum, groups)) in plans.iter().enumerate() {
+        if plans.len() > 1 {
+            if index == 0 {
+                writeln!(source, "if (n < {}ull) {{", plans[index + 1].0).unwrap();
+            } else if index + 1 < plans.len() {
+                writeln!(source, "else if (n < {}ull) {{", plans[index + 1].0).unwrap();
+            } else {
+                source.push_str("else {\n");
+            }
+            writeln!(source, "// numerical plan for n >= {minimum}").unwrap();
+        }
+        for slots in groups {
+            if groups.len() > 1 {
+                source.push_str("{\n");
+            }
+            source.push_str(&region(graph, addresses, slots));
+            if groups.len() > 1 {
+                source.push_str("}\n");
+            }
+        }
+        if plans.len() > 1 {
+            source.push_str("}\n");
+        }
     }
     source.push_str("}\n}\n");
     source
