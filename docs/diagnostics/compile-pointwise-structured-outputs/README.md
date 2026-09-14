@@ -1,18 +1,17 @@
 # Structured-output compiler evidence
 
 The latest measured production revision in this record set is
-[`0f68f8bde413605572ebe1aa878b474dbb90a5d9`](postcommit-0f68f8bd/README.md),
+[`c238ca63736c65d218253fea01f5301c07755e6f`](postcommit-c238ca63/README.md),
 against main `30a3b504ef4d43bf2958998cc39545996cc09970`.
-Its source-bound capture records 303 passing H100 pointwise tests with eight
+Its source-bound capture records 304 passing H100 pointwise tests with eight
 explicit two-device skips, eight separately passing two-device checks, and
-63 passing native pointwise/ownership checks. The report also records the portable
-interpreter checks, 720 duplicate-product comparisons and 16 independent/reused
-producer comparisons. Skips are not GPU passes.
+64 passing native pointwise/ownership checks and the Python conversion-failure
+check. The report also records CPython 3.10–3.14 portable checks and 1,050 signed-product
+comparisons alongside the full structured-output matrix. Skips are not GPU passes.
 
-The [signed-product use repair](review-signed-uses/README.md) records subsequent
-uncommitted development: 304 passing H100 pointwise tests, eight separate
-two-device checks and 64 native checks. Its 1,050-comparison regression and
-original failures are retained. Clean-commit qualification awaits Burner’s commit.
+The preceding [signed-product use repair](review-signed-uses/README.md) preserves
+the original failures and uncommitted development validation. It remains distinct
+from the clean-commit capture above.
 
 These are bounded correctness captures against ordinary stock `torch.compile`,
 not general Inductor equivalence, a performance result, or qualification of
@@ -42,6 +41,7 @@ uncommitted changes; later successful checks do not erase their earlier failures
 | [Clean duplicate-root capture](postcommit-232cc734/README.md) | `232cc734`: source-bound duplicate-root repair checks; evidence added at `c45b41fd`. |
 | [Clean producer-identity capture](postcommit-0f68f8bd/README.md) | `0f68f8bd`: independent and reused producers preserve their distinct realization semantics; source-bound numerical and portable checks passed. |
 | [Signed-product use repair](review-signed-uses/README.md) | Development after `cba212e3`: sign rewrites retain external uses for FMA selection; original finite/overflow failures and passing repairs retained. |
+| [Clean signed-product capture](postcommit-c238ca63/README.md) | `c238ca63`: source-bound release, H100 numerical/ownership and portable checks passed; full raw capture retained. |
 
 Each report links its measurements, raw capture, manifests and available
 verification records. Measured production revisions are distinct from the
