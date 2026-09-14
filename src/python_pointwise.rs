@@ -185,14 +185,13 @@ pub(super) fn plan(
             false,
         )
     };
-    crate::pointwise_ir::program::Program::build(
+    crate::pointwise_ir::program::Program::describe(
         &graph,
         &addresses,
         numerical_hint.unwrap_or(default_hint),
         &order,
         scalar_output,
     )
-    .map(|program| program.listing().to_owned())
     .map_err(|error| tensor_error(&error))
 }
 
@@ -334,14 +333,13 @@ impl Compiled {
             .unwrap_or(false);
         let hint = parse_numerical_hint(Some(numerical_hint))?.expect("required hint");
         let order = parse_output_order(output_order, self.kernel.graph.outputs.len())?;
-        crate::pointwise_ir::program::Program::build(
+        crate::pointwise_ir::program::Program::describe(
             &self.kernel.graph,
             &self.kernel.addresses,
             hint,
             &order,
             scalar_output,
         )
-        .map(|program| program.listing().to_owned())
         .map_err(|error| tensor_error(&error))
     }
     #[getter]

@@ -186,7 +186,7 @@ impl Operation {
 pub(crate) struct Program {
     instructions: Vec<[u32; 6]>,
     register_count: usize,
-    listing: String,
+    listing: Option<String>,
 }
 
 #[derive(Default)]
@@ -240,6 +240,44 @@ impl Program {
         output_order: &[usize],
         scalar_output: bool,
     ) -> Result<Self, TensorError> {
+        Self::build_internal(
+            graph,
+            addresses,
+            numerical_hint,
+            output_order,
+            scalar_output,
+            None,
+        )
+    }
+
+    /// Reconstruct a diagnostic listing through the same validated lowering.
+    /// Normal execution does not allocate or format this text.
+    pub(crate) fn describe(
+        graph: &Graph,
+        addresses: &[Address],
+        numerical_hint: u64,
+        output_order: &[usize],
+        scalar_output: bool,
+    ) -> Result<String, TensorError> {
+        let program = Self::build_internal(
+            graph,
+            addresses,
+            numerical_hint,
+            output_order,
+            scalar_output,
+            Some(String::new()),
+        )?;
+        Ok(program.listing.expect("diagnostic listing was requested"))
+    }
+
+    fn build_internal(
+        graph: &Graph,
+        addresses: &[Address],
+        numerical_hint: u64,
+        output_order: &[usize],
+        scalar_output: bool,
+        listing: Option<String>,
+    ) -> Result<Self, TensorError> {
         graph.validate()?;
         if addresses.len() != graph.inputs || output_order.len() != graph.outputs.len() {
             return Err(invalid("invalid numerical plan input or output count"));
@@ -267,12 +305,14 @@ impl Program {
         let mut program = Self {
             instructions: Vec::new(),
             register_count: 0,
-            listing: String::new(),
+            listing,
         };
         let mut registers = Registers::default();
         let mut exports = vec![None; nodes];
         for (region_index, region) in plan.regions.into_iter().enumerate() {
-            writeln!(program.listing, "// numerical region {region_index}").unwrap();
+            if let Some(listing) = &mut program.listing {
+                writeln!(listing, "// numerical region {region_index}").unwrap();
+            }
             program.append_region(
                 graph,
                 addresses,
@@ -330,12 +370,14 @@ impl Program {
             if last[id].is_none() {
                 continue;
             }
-            writeln!(
-                self.listing,
-                "const float v{id} = {};",
-                operation.expression(addresses)
-            )
-            .unwrap();
+            if let Some(listing) = &mut self.listing {
+                writeln!(
+                    listing,
+                    "const float v{id} = {};",
+                    operation.expression(addresses)
+                )
+                .unwrap();
+            }
             let destination = registers.allocate();
             assigned[id] = destination;
             self.instructions
@@ -355,11 +397,15 @@ impl Program {
             self.instructions
                 .push([COPY, word(destination)?, word(assigned[lowered])?, 0, 0, 0]);
             exports[original] = Some(destination);
-            writeln!(self.listing, "export{original} = v{lowered};").unwrap();
+            if let Some(listing) = &mut self.listing {
+                writeln!(listing, "export{original} = v{lowered};").unwrap();
+            }
             if let Ok(slot) = graph.outputs.binary_search(&original) {
                 self.instructions
                     .push([STORE, word(slot)?, word(destination)?, 0, 0, 0]);
-                writeln!(self.listing, "out{slot}[i] = v{lowered};").unwrap();
+                if let Some(listing) = &mut self.listing {
+                    writeln!(listing, "out{slot}[i] = v{lowered};").unwrap();
+                }
             }
         }
         // Export registers persist; the next region reuses every temporary.
@@ -379,10 +425,6 @@ impl Program {
 
     pub(crate) fn register_count(&self) -> usize {
         self.register_count
-    }
-
-    pub(crate) fn listing(&self) -> &str {
-        &self.listing
     }
 
     fn validate(&self, graph: &Graph) -> Result<(), TensorError> {
@@ -550,7 +592,7 @@ mod tests {
                 [STORE, 0, 1, 0, 0, 0],
             ],
             register_count: 2,
-            listing: String::new(),
+            listing: None,
         };
         assert!(program.validate(&graph).is_ok());
         program.instructions[1][2] = 1;
@@ -569,7 +611,97 @@ mod tests {
     fn output_order_is_validated_before_planning() {
         let graph = graph();
         for order in [vec![], vec![1], vec![0, 0]] {
-            assert!(Program::build(&graph, &[Address::Linear], 1, &order, false).is_err());
+            let execution =
+                Program::build(&graph, &[Address::Linear], 1, &order, false).unwrap_err();
+            let diagnostic =
+                Program::describe(&graph, &[Address::Linear], 1, &order, false).unwrap_err();
+            assert_eq!(execution.to_string(), diagnostic.to_string());
+        }
+    }
+
+    #[test]
+    fn listing_is_opt_in_without_changing_execution() {
+        let multiple = Graph {
+            inputs: 2,
+            nodes: vec![
+                Node::Input(0),
+                Node::Input(1),
+                Node::Mul(0, 1),
+                Node::Neg(2),
+                Node::Sin(2),
+            ],
+            outputs: vec![3, 4],
+        };
+        let check = |graph: &Graph, shapes: &[&[usize]]| {
+            let indexing = graph.indexing(shapes).unwrap();
+            let forward: Vec<_> = (0..graph.outputs.len()).collect();
+            let reverse: Vec<_> = (0..graph.outputs.len()).rev().collect();
+            for hint in [indexing.output.elements as u64, u64::MAX] {
+                for order in [&forward, &reverse] {
+                    let scalar = indexing.output.shape.is_empty();
+                    let execution =
+                        Program::build(graph, &indexing.addresses, hint, order, scalar).unwrap();
+                    let diagnostic = Program::build_internal(
+                        graph,
+                        &indexing.addresses,
+                        hint,
+                        order,
+                        scalar,
+                        Some(String::new()),
+                    )
+                    .unwrap();
+                    assert!(execution.listing.is_none());
+                    assert_eq!(execution.instructions(), diagnostic.instructions());
+                    assert_eq!(execution.register_count(), diagnostic.register_count());
+                    assert_eq!(
+                        Program::describe(graph, &indexing.addresses, hint, order, scalar).unwrap(),
+                        diagnostic.listing.unwrap()
+                    );
+                }
+            }
+        };
+        for graph in [graph(), multiple.clone()] {
+            for shape in [vec![], vec![1], vec![2], vec![13], vec![257], vec![3, 4]] {
+                check(&graph, &vec![shape.as_slice(); graph.inputs]);
+            }
+        }
+        let broadcast = Graph {
+            inputs: 2,
+            nodes: vec![Node::Input(0), Node::Input(1), Node::Mul(0, 1)],
+            outputs: vec![2],
+        };
+        check(&broadcast, &[&[3, 1], &[1, 4]]);
+    }
+
+    #[test]
+    fn diagnostic_listing_keeps_its_exact_text() {
+        let graph = Graph {
+            inputs: 1,
+            nodes: vec![Node::Input(0), Node::Relu(0)],
+            outputs: vec![1],
+        };
+        assert_eq!(
+            Program::describe(&graph, &[Address::Linear], 13, &[0], false).unwrap(),
+            "// numerical region 0\n\
+             const float v0 = x0[i];\n\
+             const float v1 = (v0 < 0.0f ? 0.0f : v0);\n\
+             export1 = v1;\n\
+             out0[i] = v1;\n"
+        );
+    }
+
+    #[test]
+    fn diagnostic_listing_keeps_graph_and_address_validation() {
+        let mut invalid_graph = graph();
+        invalid_graph.nodes[0] = Node::Input(1);
+        for (graph, addresses) in [
+            (invalid_graph, vec![Address::Linear]),
+            (graph(), vec![]),
+            (graph(), vec![Address::Linear, Address::Linear]),
+        ] {
+            let execution = Program::build(&graph, &addresses, 1, &[0], false).unwrap_err();
+            let diagnostic = Program::describe(&graph, &addresses, 1, &[0], false).unwrap_err();
+            assert_eq!(execution.to_string(), diagnostic.to_string());
         }
     }
 

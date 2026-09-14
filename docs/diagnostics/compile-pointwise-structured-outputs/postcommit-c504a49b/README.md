@@ -68,7 +68,7 @@ Runtime probes reused the report-local caches populated by the suite. No timing
 or performance credit is claimed.
 
 The [raw archive](raw-captures.tar.gz) contains successful and failed logs,
-raw outputs, CUDA/PTX and orchestration scripts. The [retention manifest](raw-retention-manifest.json)
+raw outputs, CUDA/PTX and orchestration scripts. The [retention manifest (XZ)](raw-retention-manifest.json.xz)
 identifies byte-verified wheel, committed-source, reference-cache and nested
 `target/dispatch-smoke-*` archives under
 `target/default-compile-eval/structured-outputs-postcommit-c504a49b/`.
@@ -82,3 +82,10 @@ tests, dependencies, benchmark harnesses, evaluation definitions and managed
 progress artifacts remain unchanged. No official score or unrelated repository
 suite was rerun. This capture neither approves the branch nor resolves the
 remaining numerical blocker.
+
+The current [retention manifest](raw-retention-manifest.json.xz) and
+[verification log](verification.log.xz) use lossless XZ transport; the raw archive
+and historical container hashes remain unchanged. See the dated
+[transport mapping and decode commands](../README.md#artifact-transport) for exact
+old/new hashes, and the [retention limits](../README.md#provenance-and-retention-limits)
+for corrected observer coverage and later operator custody.

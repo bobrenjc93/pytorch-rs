@@ -63,6 +63,19 @@ class StructuredAdmission(unittest.TestCase):
             with self.subTest(spelling=spelling):
                 shape_lower(program('def f(x):\n return '+spelling))
 
+    def test_noninteger_result_metadata_does_not_require_predicate_provenance(self):
+        fn = program('def f(x):\n b=True\n n=-b\n c=0.25\n return (-x,b,n,-c,False,None,"metadata")')
+        with no_bodies(fn):
+            lowering = shape_lower(fn)
+            output = object()
+            result = lowering.result.reconstruct((output,), {}, (), ())
+        self.assertIs(result[0], output)
+        self.assertIs(result[1], True)
+        self.assertIs(type(result[2]), int)
+        self.assertEqual(result[2], -1)
+        self.assertIs(type(result[3]), float)
+        self.assertEqual(result[3:], (-0.25, False, None, 'metadata'))
+
     def test_constant_key_pool_rejected_before_disassembly_without_callbacks(self):
         effects = []
         class Key(str):
@@ -777,8 +790,115 @@ class StructuredHardware(unittest.TestCase):
     def test_large_realization_return_order_reuses_native_executable(self):
         self.check_large_realization_order(duplicate_product=False)
 
-    def test_canonical_product_alias_preserves_realized_import(self):
+    def test_large_realization_duplicate_product_preserves_return_order(self):
         self.check_large_realization_order(duplicate_product=True)
+
+    def test_returned_product_independent_duplicate_preserves_realization(self):
+        self.check_returned_product_realization(reuse_product=False)
+
+    def test_returned_product_reuse_crosses_a_realized_boundary(self):
+        self.check_returned_product_realization(reuse_product=True)
+
+    def check_returned_product_realization(self, reuse_product):
+        # Independent tensor products retain separate producer identities;
+        # spelling x*y twice does not make q a consumer of returned p. The
+        # genuinely reused case must instead read p's rounded import when the
+        # long chain separates their regions. Check the selected plan below.
+        case = 'reuse' if reuse_product else 'independent'
+        lines = ['def f(x,y):', ' p=x*y',
+                 ' q=p-1e10' if reuse_product else ' q=x*y-1e10', ' r=p']
+        for _ in range(64):
+            lines.extend([' r=r.sin()'] * 30)
+            lines.append(' r=r.sin()+r.cos()')
+        lines.append(' r=r.sin()')
+        sources = ['\n'.join(lines + [' return '+order])
+                   for order in ('(p,r,q)', '(q,r,p)')]
+        functions = [program(source) for source in sources]
+        lowerings = [shape_lower(fn, ((2,), (2,))) for fn in functions]
+        self.assertEqual(lowerings[0].graph, lowerings[1].graph)
+        graph = lowerings[0].graph
+        self.assertEqual(len(graph.outputs), 3)
+        # This fixture creates p, q, then r; original SSA root order is stable.
+        product_id, q_id, r_id = graph.outputs
+        self.assertEqual(lowerings[0].result.output_order, (0, 2, 1))
+        self.assertEqual(lowerings[1].result.output_order, (1, 2, 0))
+        original_product = graph.nodes[product_id]
+        self.assertEqual(original_product[0], 'mul')
+        self.assertEqual(graph.nodes[q_id][0], 'sub')
+        self.assertEqual(graph.nodes[r_id][0], 'sin')
+        q_product_id = graph.nodes[q_id][1]
+        self.assertEqual(graph.nodes[q_product_id], original_product)
+        self.assertEqual(graph.nodes.count(original_product), 1 if reuse_product else 2)
+        if reuse_product:
+            self.assertEqual(q_product_id, product_id)
+        else:
+            self.assertNotEqual(q_product_id, product_id)
+        q_slot = 1
+        fn = functions[0]
+        compiled = native.compile(fn)
+        generated = None
+        prior = []
+        old_limit = sys.getrecursionlimit()
+        sys.setrecursionlimit(max(old_limit, 20000))
+        try:
+            for order, source in enumerate(sources):
+                self.torch.compiler.reset()
+                fn.__code__ = program(source).__code__
+                reference = self.torch.compile(program(source, self.torch))
+                for history, y in enumerate((1.0000001192092896, 1.000000238418579)):
+                    args = tuple(self.upload([v]*2, (2,)) for v in (1e10, y))
+                    refs = tuple(self.upload([v]*2, (2,), self.torch) for v in (1e10, y))
+                    for repeat in range(2):
+                        with self.subTest(case=case, order=order, history=history, repeat=repeat):
+                            actual = self.without_replay(fn, compiled, args)
+                            expected = reference(*refs)
+                            self.retain(f'returned-product-{case}-{order}-{history}-{repeat}',
+                                        compiled, actual, expected)
+                            self.compare_tree(actual, expected)
+                            current = kernel(compiled)
+                            if generated is None:
+                                generated = current
+                            self.assertIs(current, generated)
+                            self.assertEqual(len(cache(compiled).executors), 1)
+                            self.assertEqual(current.ptx.count('.visible .entry'), 1)
+                            if order == history == repeat == 0:
+                                # Diagnostic reconstruction for these exact
+                                # arguments, not a captured GPU instruction stream.
+                                listing = current.plan(
+                                    2, lowerings[order].result.output_order,
+                                    scalar_output=False)
+                                regions = listing.split('// numerical region ')[1:]
+                                q_regions = [(i, region) for i, region in enumerate(regions)
+                                             if f'out{q_slot}[i] = ' in region]
+                                self.assertEqual(len(q_regions), 1)
+                                q_index, q_region = q_regions[0]
+                                imports = [line for line in q_region.splitlines()
+                                           if line.startswith('const float ')
+                                           and line.endswith(f' = export{product_id};')]
+                                q_store = next(line for line in q_region.splitlines()
+                                               if line.startswith(f'out{q_slot}[i] = '))
+                                q_value = q_store.partition(' = ')[2].removesuffix(';')
+                                if reuse_product:
+                                    producers = [i for i, region in enumerate(regions)
+                                                 if any(line.startswith(f'export{product_id} = ')
+                                                        for line in region.splitlines())]
+                                    self.assertEqual(len(producers), 1)
+                                    self.assertLess(producers[0], q_index)
+                                    self.assertEqual(len(imports), 1)
+                                    imported = imports[0].split()[2]
+                                    self.assertIn(
+                                        f'const float {q_value} = __fsub_rn({imported}, ', q_region)
+                                else:
+                                    self.assertEqual(imports, [])
+                                    self.assertIn(f'const float {q_value} = fmaf(', q_region)
+                            for old_actual, old_expected in prior:
+                                self.compare_tree(old_actual, old_expected)
+                                for old in old_actual:
+                                    for new in actual:
+                                        self.assertIsNot(new, old)
+                            prior.append((actual, expected))
+        finally:
+            sys.setrecursionlimit(old_limit)
 
     def check_large_realization_order(self, duplicate_product):
         # Cross the ordinary reference's realized-unit fusion limit. Only the
@@ -1051,16 +1171,17 @@ print('structured native calls passed without PyTorch import or body replay')
         # Each root is individually admitted; equal numel cannot hide unequal shape.
         fn=program('def f(x,y):\n return (-x,-y)')
         compiled=native.compile(fn)
-        with self.assertRaises(Exception):
+        with self.assertRaisesRegex(NotImplementedError, 'computed outputs require the same actual shape'):
             compiled(self.upload([1.,2.],(1,2)),self.upload([3.,4.],(2,1)))
         self.assertFalse(cache(compiled).graphs)
         self.assertFalse(cache(compiled).executors)
         # Original numerical limits apply even when one root alone is shallow.
         fn=program('def f(x,y):\n return (x+y,x*y+x*2)')
         compiled=native.compile(fn)
-        with self.assertRaises(Exception):
+        with self.assertRaisesRegex(NotImplementedError, 'unequal input shapes require at most one arithmetic stage'):
             compiled(self.upload([1.,2.],(2,1)),self.upload([3.,4.],(1,2)))
         self.assertFalse(cache(compiled).graphs)
+        self.assertFalse(cache(compiled).executors)
 
 
 if __name__ == '__main__':

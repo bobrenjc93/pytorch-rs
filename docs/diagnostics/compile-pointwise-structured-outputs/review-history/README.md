@@ -41,4 +41,10 @@ Checks on the source-matched release wheel:
 
 The wheel SHA256 is `e922fe0e0e5800e304a7b648fddba1b1bfa7fe9456ed6128e3e5aa0ba4ffdfc8`. The runtime capture records PyTorch 2.13.0+cu130, native NVRTC 13.0, CUDA runtime 13000, H100 device identity and the selected nvcc/compiler versions. Production source hashes match the release build; three test files changed while that build ran, which is recorded without altering its original provenance.
 
-[Measurements](measurements.json.gz), [focused raw capture](raw-captures.tar.gz), [retention manifest](raw-retention-manifest.json.gz) and [verification](verification.log) accompany this record. The complete byte-exact archive, including compiler caches and all original raw failures, is retained at `target/default-compile-eval/structured-outputs-history-repair/full-archive/raw-captures.tar.gz`; the manifest records its hash. The checked-in capture excludes duplicate compiler caches and binaries to keep review size bounded. No disposable-worktree cleanup was performed.
+[Measurements](measurements.json.gz), [focused raw capture (XZ)](raw-captures.tar.xz), [retention manifest](raw-retention-manifest.json.gz) and [verification](verification.log) accompany this record. The complete byte-exact archive, including compiler caches and all original raw failures, is retained at `target/default-compile-eval/structured-outputs-history-repair/full-archive/raw-captures.tar.gz`; the manifest records its hash. The checked-in capture excludes duplicate compiler caches and binaries to keep review size bounded. No disposable-worktree cleanup was performed.
+
+The current checked-in capture uses lossless XZ transport; the full ignored
+archive path above and historical gzip-container hashes retain their original
+meaning. See the dated [transport mapping and decode commands](../README.md#artifact-transport)
+for exact old/new hashes, and the [retention limits](../README.md#provenance-and-retention-limits)
+for the distinction between historical capture paths and durable custody.

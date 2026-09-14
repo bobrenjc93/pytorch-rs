@@ -245,6 +245,11 @@ def walk_instructions(instructions):
 
 
 def without_origin(obj, memo=None):
+    """Remove helper-return predicate capability while preserving the result DAG.
+
+    The shared memo retains constructor aliases and original container identity;
+    literal metadata remains valid even when it cannot form a shape predicate.
+    """
     if memo is None:
         memo = {}
     if type(obj) is Literal:
@@ -982,6 +987,11 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
             observed, data_sources, predicates = saved
 
     def result_spec(obj):
+        """Separate result topology from sorted distinct computed SSA roots.
+
+        Repeated container identities are memoized; repeated computed roots map
+        to one output slot. Neither returned input owners nor dimensions are kept.
+        """
         entries, memo, roots = [], {}, set()
 
         def visit(item):
@@ -1103,7 +1113,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                 else:
                     if arg is not None and type(arg) is not str:
                         scalar_bits(arg)
-                    stack.append(Literal(arg, not helper))
+                    stack.append(Literal(arg, not helper and type(arg) is int))
             elif op in ("BUILD_TUPLE", "BUILD_LIST", "BUILD_MAP", "BUILD_CONST_KEY_MAP"):
                 count = instruction.arg
                 needed = count * 2 if op == "BUILD_MAP" else count + (op == "BUILD_CONST_KEY_MAP")

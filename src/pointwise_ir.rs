@@ -127,7 +127,7 @@ mod tests {
     use super::*;
 
     fn plan(graph: &Graph) -> String {
-        program::Program::build(
+        program::Program::describe(
             graph,
             &vec![indexing::Address::Linear; graph.inputs],
             u64::MAX,
@@ -135,8 +135,6 @@ mod tests {
             false,
         )
         .unwrap()
-        .listing()
-        .to_owned()
     }
 
     #[test]

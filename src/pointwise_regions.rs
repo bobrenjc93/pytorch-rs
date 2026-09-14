@@ -8,8 +8,9 @@
 use super::{Graph, Node, indexing::Address};
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-/// One canonical SSA interpretation shared by planning and numerical lowering.
-/// Imported representatives must not be recanonicalized after substitution.
+/// One graph-rewrite interpretation shared by planning and numerical lowering.
+/// Independent tensor producers stay distinct; only proven graph aliases map
+/// to an earlier SSA value. Scalar CSE belongs inside each numerical region.
 #[derive(Clone, Debug)]
 pub(crate) struct Canonical {
     pub mapped: Vec<usize>,
@@ -59,12 +60,13 @@ fn append_unique(target: &mut Vec<usize>, values: impl IntoIterator<Item = usize
     }
 }
 
-/// FX expression CSE precedes lowering, but original output SSA identities must
-/// remain available to the allocation/reconstruction owners.
+/// Preserve default-inference tensor dependencies through realization. Two
+/// equal operations are not the same tensor producer: merging them here can
+/// introduce an import of a rounded value where the reference recomputes it.
+/// Expression interning for operation counts and region-local CSE are separate.
 pub(crate) fn canonical_nodes(graph: &Graph) -> Canonical {
     let (aliases, zeros) = super::lowering::early_aliases(graph);
     let mut mapped = Vec::with_capacity(graph.nodes.len());
-    let mut interned = HashMap::new();
     let mut nodes = graph.nodes.clone();
     for (id, node) in graph.nodes.iter().enumerate() {
         if aliases[id] != id {
@@ -78,8 +80,7 @@ pub(crate) fn canonical_nodes(graph: &Graph) -> Canonical {
         } else {
             super::lowering::remap(node, &mapped)
         };
-        let representative = *interned.entry(key.clone()).or_insert(id);
-        mapped.push(representative);
+        mapped.push(id);
         nodes[id] = key;
     }
     Canonical { mapped, nodes }
@@ -836,7 +837,7 @@ mod tests {
     }
 
     #[test]
-    fn a_real_planner_import_preserves_duplicate_ssa_identity() {
+    fn original_producer_uses_its_real_planner_import() {
         let original = long_chain();
         let addresses = [Address::Linear, Address::Linear];
         let initial = super::plan(&original, &addresses, 2, &[0, 1], false);
@@ -849,13 +850,11 @@ mod tests {
         let mut checked = false;
         for representative in candidates {
             let mut graph = original.clone();
-            let duplicate = graph.nodes.len();
-            graph.nodes.push(graph.nodes[representative].clone());
             let consumer = graph.nodes.len();
-            graph.nodes.push(Node::Neg(duplicate));
+            graph.nodes.push(Node::Neg(representative));
             graph.outputs.push(consumer);
             let selected = super::plan(&graph, &addresses, 2, &[0, 1, 2], false);
-            let canonical = selected.canonical.mapped[duplicate];
+            let canonical = selected.canonical.mapped[representative];
             let Some(region) = selected.regions.iter().find(|region| {
                 region.imports.contains(&canonical) && region.roots.contains(&consumer)
             }) else {
@@ -883,7 +882,9 @@ mod tests {
                         assert_eq!(imported, canonical);
                         break;
                     }
-                    ref other => panic!("duplicate SSA bypassed its realized import: {other:?}"),
+                    ref other => {
+                        panic!("original producer bypassed its realized import: {other:?}")
+                    }
                 }
             }
             checked = true;
@@ -891,8 +892,33 @@ mod tests {
         }
         assert!(
             checked,
-            "expected a duplicate consumer beyond an actual realized boundary"
+            "expected a producer's consumer beyond an actual realized boundary"
         );
+    }
+
+    #[test]
+    fn independent_tensor_producers_keep_distinct_dependencies() {
+        let mut graph = Graph {
+            inputs: 2,
+            nodes: vec![
+                Node::Input(0),
+                Node::Input(1),
+                Node::Mul(0, 1),
+                Node::Mul(0, 1),
+                Node::Sub(3, 0),
+                Node::Sin(2),
+            ],
+            outputs: vec![],
+        };
+        // The distinction is required for both returned and internal tensors.
+        // It does not prevent scalar expression sharing in a fused region.
+        for outputs in [vec![4, 5], vec![2, 4, 5], vec![2, 3]] {
+            graph.outputs = outputs;
+            let canonical = canonical_nodes(&graph);
+            assert_eq!(canonical.mapped, (0..graph.nodes.len()).collect::<Vec<_>>());
+            assert_eq!(canonical.nodes[4], Node::Sub(3, 0));
+            assert_eq!(canonical.nodes[5], Node::Sin(2));
+        }
     }
 
     #[test]
@@ -904,6 +930,20 @@ mod tests {
         };
         assert_eq!(
             plan(&graph, &[Address::Linear], 1, &[1, 0], false),
+            vec![
+                Region {
+                    roots: vec![2],
+                    imports: vec![]
+                },
+                Region {
+                    roots: vec![1],
+                    imports: vec![]
+                }
+            ]
+        );
+        // Enough shared bytes permits horizontal fusion, not graph-level CSE.
+        assert_eq!(
+            plan(&graph, &[Address::Linear], 3, &[1, 0], false),
             vec![Region {
                 roots: vec![2, 1],
                 imports: vec![]

@@ -1,6 +1,6 @@
 # Clean structured-output capture at 523d51d7
 
-Measured implementation: `523d51d73bb90237f8675ee584bfb890d39c84df`, with `main` at `30a3b504ef4d43bf2958998cc39545996cc09970`. This supplies the clean-commit capture deferred in the [realization repair record](../review-realization/README.md). Every measured command began and ended with a clean checkout; all 6,787 tracked files retained their original bytes throughout measurement.
+Measured implementation: `523d51d73bb90237f8675ee584bfb890d39c84df`, with `main` at `30a3b504ef4d43bf2958998cc39545996cc09970`. This supplies the clean-commit capture deferred in the [realization repair record](../review-realization/README.md). Every measured command recorded a clean checkout before and after execution, and post-command byte fingerprints matched the capture baseline for all 6,787 tracked files.
 
 ## Results
 
@@ -37,6 +37,6 @@ The locked offline release build used a fresh Cargo target. Reference, Triton an
 
 [Measurements](measurements.json.gz) retain timestamped commands, source hashes, clean status, environments and return codes. [Raw captures](raw-captures.tar.gz) retain numerical JSON, generated native CUDA/PTX and instruction plans, logs, wheel/import/runtime/GPU identities and capture orchestration. Identical files use tar hard links while retaining every original path. The [raw manifest](raw-manifest.json.gz) and [verification](verification.json) verify all 8,073 packaged files and archive hashes.
 
-The canonical root `target/default-compile-eval/structured-outputs-postcommit-523d51d7/` additionally retains the wheel, byte-verified committed-source archive, original reference compiler caches and `retention-manifest.json.gz` covering 41,770 files. It is covered by Burner's canonical report-root observer. No cleanup or external write was performed; no external archival path is claimed. Every earlier report, development failure and historical measurement remains unchanged.
+The canonical root `target/default-compile-eval/structured-outputs-postcommit-523d51d7/` additionally retains the wheel, byte-verified committed-source archive, original reference compiler caches and `retention-manifest.json.gz` covering 41,770 files. Burner's current report-root observer does not scan this custom directory. Its wheel, source archive and compiler-cache artifacts need explicit external retention before worktree cleanup. The capture performed no cleanup or external write and records no external archival path. Every earlier report, development failure and historical measurement remains unchanged.
 
 Only this evidence and its compiler-guide link change. Implementation, tests, dependencies, benchmark harnesses, evaluation definitions and managed progress artifacts remain unchanged. No official scoring corpus or unrelated repository suite was rerun. Native scalar-program dispatch/upload/scratch costs were not benchmarked; this capture awards no performance or coverage score.

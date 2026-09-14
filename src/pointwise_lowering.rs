@@ -809,9 +809,9 @@ pub(super) fn region(
     roots: &[usize],
     imports: &[usize],
 ) -> RegionProgram {
-    // Scheduling and lowering share the original canonical identity. Replacing
-    // an import must not make a duplicate original expression independent again.
-    // Original roots stay separate only at the public allocation/store boundary.
+    // Substitute the scheduled producer, not every equivalent expression.
+    // Independent tensor producers may still CSE within this region, but a
+    // recomputed expression must not turn into another producer's rounded import.
     let mut local = Graph {
         inputs: graph.inputs + imports.len(),
         nodes: canonical.nodes.clone(),
@@ -977,7 +977,7 @@ mod tests {
     }
 
     #[test]
-    fn canonical_duplicate_uses_the_same_rounded_import() {
+    fn independent_product_remains_recomputable_beside_a_rounded_import() {
         let graph = Graph {
             inputs: 2,
             nodes: vec![
@@ -991,20 +991,21 @@ mod tests {
             outputs: vec![2, 3, 4, 5],
         };
         let canonical = super::super::regions::canonical_nodes(&graph);
-        assert_eq!(canonical.mapped[2], canonical.mapped[3]);
-        assert_eq!(canonical.mapped[4], canonical.mapped[5]);
+        assert_ne!(canonical.mapped[2], canonical.mapped[3]);
+        assert_ne!(canonical.mapped[4], canonical.mapped[5]);
+        // With no import, region-local CSE still shares equivalent expressions.
+        let fused = region(&graph, &canonical, &[4, 5], &[]);
+        assert_eq!(fused.roots[0], fused.roots[1]);
         let lowered = region(&graph, &canonical, &[4, 5], &[2]);
-        assert_eq!(lowered.roots[0], lowered.roots[1]);
-        let Operation::Sub(a, _) = lowered.operations[lowered.roots[0]] else {
-            panic!("duplicate products must not bypass a canonical rounded import");
+        assert_ne!(lowered.roots[0], lowered.roots[1]);
+        assert!(matches!(
+            lowered.operations[lowered.roots[0]],
+            Operation::Fma { .. }
+        ));
+        let Operation::Sub(a, _) = lowered.operations[lowered.roots[1]] else {
+            panic!("a true producer use must retain its rounded import");
         };
         assert!(matches!(lowered.operations[a], Operation::Import(2)));
-        assert!(
-            !lowered
-                .operations
-                .iter()
-                .any(|operation| matches!(operation, Operation::Fma { .. }))
-        );
     }
 
     #[test]

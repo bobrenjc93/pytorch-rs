@@ -21,12 +21,17 @@ products after their consumers contract.
 ## Realization and observable order
 
 Numerical planning uses the first observable order of computed roots and the
-logical specialization's retained iteration hint. It models expression CSE,
-operation/read counts, locality ordering and fusion over internal realized
-values as well as public outputs. Realization alone is not a rounding barrier:
-fused units can inline each other. Values crossing regions become rounded
-imports and exports in the native scalar program. Scheduling and lowering share
-one canonical SSA map so an equivalent original computation cannot bypass an import.
+logical specialization's retained iteration hint. After the existing early
+algebraic rewrites, independently created tensor producers keep distinct SSA
+identities through locality ordering, realization and fusion. Expression
+interning supplies operation/read counts without merging those producers.
+Realization alone is not a rounding barrier: fused units can inline each other.
+Values crossing regions become rounded imports and exports in the native scalar
+program. Scheduling and lowering share the producer map, so a consumer of an
+exported value reads its rounded import. An independently computed equivalent
+expression is not that producer: spelling `x*y` twice does not by itself make
+one tensor depend on the other. Scalar-expression CSE within each region remains
+available after partitioning.
 
 The version-sensitive reference rules come from PyTorch 2.13
 `torch/_inductor/fx_passes/post_grad.py::reorder_for_locality`,
@@ -42,10 +47,11 @@ plan and register buffers survive upload, launch, completion and failure.
 
 ## Expression sharing and contraction
 
-Numerical lowering shares identical ordered expressions before selecting
-explicit `fmaf` operations for each consumer. Self-subtraction established before
-sign rewriting uses the shared rounded value: finite values produce positive zero, while infinities and NaNs
-produce NaN. Products may contract at multiple consumers while retaining their
+Within each numerical region, lowering shares identical ordered expressions
+before selecting explicit `fmaf` operations for each consumer. Self-subtraction
+established before sign rewriting uses the shared rounded value: finite values
+produce positive zero, while infinities and NaNs produce NaN. Products may
+contract at multiple consumers while retaining their
 rounded value for other uses. Expression deduplication retains operand order,
 including for commutative operators.
 
@@ -64,14 +70,10 @@ Contractions are selected from consumers toward operands. Each selected FMA
 replaces its product use with direct factor uses before inner choices are made;
 an outer contraction can therefore make an inner product single-use.
 
-The [sibling-product repair investigation](diagnostics/compile-pointwise-structured-outputs/review-sibling-products.md)
-found that reference kernel partitioning can change
-contraction and zero signs across shapes when products feed nonlinear calls.
-The [historical history-repair capture](diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/README.md)
-records persistent-specialization hints and the remaining failures at that revision.
-The [realization repair](diagnostics/compile-pointwise-structured-outputs/review-realization/README.md)
-adds large-graph and observable-order regressions without changing numerical
-tolerances; its development measurements do not replace clean qualification.
+The [structured-output evidence index](diagnostics/compile-pointwise-structured-outputs/README.md#numerical-history)
+tracks partition-dependent rounding, retained shape-history hints and
+realization/order repairs. Historical failures remain distinct from later
+passing captures.
 
 When a sum has two direct positive products with equal use priority,
 contraction selection follows the reference's arithmetic/select

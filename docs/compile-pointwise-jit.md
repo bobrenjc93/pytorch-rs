@@ -54,8 +54,9 @@ rejected before truthiness or iteration hooks can execute. Integers must fit the
 are bounded to 4096 nodes and 16384 bytecode instructions. Return a computed Tensor
 or a bounded nested result as described below.
 Scalars and empty tensor shapes and contiguous views with storage offsets are
-supported. Outputs have fresh storage and canonical contiguous strides;
-inputs are unchanged. Input-only returns remain outside this subset.
+supported. Computed outputs have fresh storage and canonical contiguous strides;
+returned input aliases preserve their original storage and strides. Inputs are
+unchanged. Input-only returns remain outside this subset.
 
 Unequal input shapes additionally require either the tensor-leaf multiply-add
 described below, or at most one arithmetic stage and no live sin/cos. Input and scalar nodes start at depth
@@ -142,15 +143,9 @@ and failure. Register scratch is capped at 64 MiB by limiting active workers and
 using a grid-stride loop. This execution strategy adds instruction-dispatch and
 scratch traffic; correctness captures do not establish a performance improvement.
 
-[Clean measurements at `232cc734`](diagnostics/compile-pointwise-structured-outputs/postcommit-232cc734/README.md)
-record H100, two-device and CPython 3.10–3.14 checks, including duplicate computed
-roots, large-graph rounding, observable return order, executor reuse and provenance.
-The [duplicate-root development checks](diagnostics/compile-pointwise-structured-outputs/review-duplicate-roots/README.md)
-and [earlier `523d51d7` capture](diagnostics/compile-pointwise-structured-outputs/postcommit-523d51d7/README.md)
-retain their original measurements.
-The [development repair record](diagnostics/compile-pointwise-structured-outputs/review-realization/README.md)
-and [earlier `69a73844` measurements](diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/README.md)
-retain their original results, failures and provenance.
+The [structured-output evidence index](diagnostics/compile-pointwise-structured-outputs/README.md)
+links the latest clean `232cc734` measurements, historical failures and retention
+limits. Captures remain scoped to their recorded source revisions.
 
 ### Bounded root shape branches
 
