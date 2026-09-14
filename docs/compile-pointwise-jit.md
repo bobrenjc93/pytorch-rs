@@ -123,6 +123,10 @@ Both arms and all helper/loop expansion share the existing instruction/node limi
 The conservative lazy parameter catalogue avoids separate liveness analysis; large
 signatures with many unused parameters still incur per-call binding work.
 
+[Clean `df50471` validation](diagnostics/compile-pointwise-shape-branches/postcommit-df50471e/README.md)
+records the committed branch tests, H100 default-Inductor comparisons and portable
+CPython 3.10–3.14 checks, with source/wheel/runtime provenance and retained raw logs.
+
 ### Bounded root literal loops
 
 Root functions may use sequential, non-nested `for` loops with a direct global,
