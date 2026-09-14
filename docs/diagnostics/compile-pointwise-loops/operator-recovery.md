@@ -1,5 +1,9 @@
 # Operator-requested diagnostic repair
 
+The [clean `bdcfb051` capture](postcommit-bdcfb051/report.md) now measures this
+repair after commit. The development measurements and original failures below
+remain pinned to their recorded sources.
+
 This revision fixes reference-zero sign comparison, failure-side observation
 retention, timeout stopping, and the public `compile()` scope documentation.
 The approved zero-trip body admission repair remains intact. A separate narrow

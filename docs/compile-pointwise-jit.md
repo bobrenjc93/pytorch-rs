@@ -132,7 +132,9 @@ changes. Normalization adds no persistent cache or execution backend.
 See the [loop diagnostics](diagnostics/compile-pointwise-loops/README.md) for
 source-bound checks, original failures and the limits of this evidence, and the
 [operator recovery](diagnostics/compile-pointwise-loops/operator-recovery.md) for
-corrected observation retention and the outstanding clean-evidence refresh.
+corrected observation retention. The
+[clean committed-candidate capture](diagnostics/compile-pointwise-loops/postcommit-bdcfb051/report.md)
+records the refreshed evidence and its limits.
 
 ### Direct Python helpers
 
