@@ -281,7 +281,6 @@ class Admission(unittest.TestCase):
         sources = [
             'def f(x):\n effects.append(1)\n return -x',
             'def f(x):\n return x if x else -x',
-            'def f(x):\n for i in range(2):\n  x = -x\n return x',
             'def f(x):\n return x.sum()', 'def f(x):\n return x.reshape(2, 2)',
             'def f(x):\n return x + trap', 'def f(x):\n return trap.sin(x)',
             'def f(x):\n x += x\n return x', 'def f(x):\n return x, -x',

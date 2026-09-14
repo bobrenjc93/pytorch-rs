@@ -77,12 +77,66 @@ identity wrappers do not qualify, even if later simplification removes them.
 This exception reuses the existing single-FMA lowering and checked addresses.
 
 Strided inputs, other dtypes, gradients (even inside no-grad),
-mutation, control flow, containers, module calls, keyword operator
+mutation, control flow other than the literal loops below, containers, module calls, keyword operator
 arguments, reductions, matrix operations, and device/dtype conversions are
 explicitly rejected. No original body or Python operator is run during
 admission or warm execution. Unsupported configurations keep their existing
 contracts; `disable=True`, configured/custom backend resolution, and the
 explicit `backend="eager"` capture implementation remain separate.
+
+### Bounded root literal loops
+
+Root functions may use sequential, non-nested `for` loops with a direct global,
+closure or built-in lookup of the actual built-in `range`, including aliases:
+
+```python
+def recurrence(x, scale):
+    for i in range(3, -2, -2):
+        x = (x * scale + i).relu()
+    return x
+```
+
+One to three literal exact integer arguments and a nonzero step are required.
+Positive/negative steps and zero/one/many trips are supported. Bounds retain the
+existing integer scalar range. Runtime/captured bounds, iterator expressions,
+nested/helper-local loops, conditional/early-exit edges and mutation are rejected.
+Admission follows CPython 3.10–3.14 bytecode semantics; source forms optimized to
+identical bytecode are indistinguishable. Loop bodies use the same pointwise
+operations and direct helpers as straight-line programs; index use adds no new
+scalar arithmetic or indexing operations.
+
+Normalization validates complete loop regions and stack cleanup, bounds expansion,
+then expands before initial-parameter dependency analysis. Index assignments and
+carry-over locals retain frame semantics. Zero trips preserve previous locals and
+initial parameters; an index never assigned remains unbound. A zero-trip loop
+does not admit an identity-only root return. Its body still passes the existing
+typed operator, helper and data admission in an isolated local frame; its
+temporary assignments and IR are discarded, while helper code/binding and data
+guards remain active on warm calls. Unbound local reads in this skipped frame
+(including its helper calls) use temporary data placeholders, not executed-local
+lookups; no placeholder or skipped assignment escapes into the executing frame
+or native IR. A genuinely executed unbound read still rejects. Reductions and
+helper-local loops therefore reject even in a zero-trip body. This admission pass
+shares the instruction/node budgets with executed bodies and helper calls.
+Original instructions, every repeated
+body/index assignment and every helper invocation share the 16384-instruction
+budget; the 4096-node limit and original-IR numerical boundary are unchanged.
+
+The original root code remains the semantic cache owner. Every used range lookup,
+including zero-trip loops, is checked by identity on every call before lowering or
+execution. Globals and the function's actual builtins table must be exact dicts
+with exact string keys, checked before lookup or disassembly. Signature containers
+are also revalidated on warm hits. Admission of the unchanged immutable root code
+and its complete constant pool is reused by code identity; replacement repeats
+full admission before disassembly. Private `resolve()` callers still receive
+full code/constant validation. Restoring a
+valid range binding can reuse existing entries; invalid bindings publish no cache
+changes. Normalization adds no persistent cache or execution backend.
+
+See the [loop evidence index](diagnostics/compile-pointwise-loops/README.md) for
+the latest measured implementation, historical captures, original failures and
+retention limitations. Those source-bound measurements do not qualify later
+documentation commits.
 
 ### Direct Python helpers
 
@@ -143,7 +197,8 @@ options and device for regression evidence.
 
 ## Compiler pipeline
 
-`_compile_pointwise.py` statically admits CPython straight-line bytecode and
+`_compile_pointwise.py` statically normalizes bounded root literal loops into
+CPython straight-line instructions and
 constructs typed SSA nodes with float32 tensor values and scalar kinds.
 `pointwise_ir.rs` independently validates node topology; `pointwise_lowering.rs` canonicalizes expressions and emits CUDA
 C from operator rules, retaining intermediates.

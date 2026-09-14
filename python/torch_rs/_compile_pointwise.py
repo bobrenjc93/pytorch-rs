@@ -6,6 +6,7 @@ kernel. It deliberately has no graph breaks or eager fallback.
 """
 from dataclasses import dataclass, field
 import dis
+from itertools import islice
 import math
 import struct
 import sys
@@ -29,6 +30,9 @@ _ALLOWED = _IGNORED | {"LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_FAST_BORROW", "LOAD
     "CALL_METHOD", "RETURN_VALUE", "RETURN_CONST", "COPY", "DUP_TOP", "SWAP"}
 _METHODS = tuple(_UNARY) + tuple(_BINARY) + ("__getattribute__",)
 _MISSING = object()
+_RANGE = range
+_LOOP_OPS = {"GET_ITER", "FOR_ITER", "JUMP_ABSOLUTE", "JUMP_BACKWARD",
+             "END_FOR", "POP_TOP", "POP_ITER"}
 # Imported during package initialization, before public bindings can be patched.
 _FUNCTIONS = tuple((name, _ROOT.__dict__.get(name)) for name in
                    ("neg", "negative", "relu", "sin", "cos", "add", "sub", "subtract", "mul", "multiply"))
@@ -119,6 +123,8 @@ class Program:
     code: object
     instructions: tuple
     dependencies: tuple
+    range_sources: tuple = ()
+    loop_overhead: int = 0
     positions: object = field(init=False, compare=False, repr=False)
 
     def __post_init__(self):
@@ -393,14 +399,187 @@ def validate_code(code, arity, *, helper=False):
 
 
 def instructions_for(code, *, helper=False):
-    instructions = tuple(dis.get_instructions(code))
+    # Preserve the visible-instruction limit across versions with differing
+    # inline CACHE layouts, without first allocating an unbounded tuple.
+    instructions = tuple(islice(dis.get_instructions(code), 16385))
     if len(instructions) > 16384:
         unsupported("function exceeds pointwise instruction limit")
     for instruction in instructions:
-        if (instruction.opname not in _ALLOWED
+        if (instruction.opname not in (_ALLOWED if helper else _ALLOWED | _LOOP_OPS)
                 or (helper and instruction.opname in ("LOAD_GLOBAL", "LOAD_DEREF"))):
             unsupported(f"unsupported bytecode {instruction.opname}; control flow, mutation and non-pointwise graphs are unsupported")
     return instructions
+
+
+def validate_namespaces(model):
+    # Check every key before any lookup: a colliding non-string key can execute
+    # equality even in an exact dict. Use the function's actual builtins table,
+    # which CPython freezes at function creation, not globals['__builtins__'].
+    for namespace, label in ((model.__globals__, "globals"),
+                             (model.__builtins__, "builtins")):
+        if type(namespace) is not dict:
+            unsupported("function " + label + " must be an exact dict")
+        if any(type(key) is not str for key in namespace):
+            unsupported("function " + label + " keys must be exact strings")
+
+
+def validate_ranges(model, sources):
+    for source in sources:
+        name = source.name
+        if source.kind == "LOAD_DEREF":
+            cell = model.__closure__[model.__code__.co_freevars.index(name)]
+            try:
+                value = cell.cell_contents
+            except ValueError:
+                value = _MISSING
+        else:
+            value = (model.__globals__[name] if name in model.__globals__
+                     else model.__builtins__.get(name, _MISSING))
+        if value is not _RANGE:
+            unsupported("literal loop requires the actual built-in range: " + name)
+
+
+def validate_loop_stack(body):
+    # The iterator lives below the body in CPython. Our straight-line frame
+    # omits it, so no body instruction may read/swap/copy below its own stack.
+    depth = 1  # FOR_ITER's index, consumed by STORE_FAST (possibly fused).
+    for instruction in body:
+        op, arg = instruction.opname, instruction.arg
+        required, delta = 0, 0
+        if op in _IGNORED:
+            continue
+        if op.startswith("LOAD_FAST"):
+            delta = 2 if op in ("LOAD_FAST_LOAD_FAST", "LOAD_FAST_BORROW_LOAD_FAST_BORROW") else 1
+        elif op in ("LOAD_CONST", "LOAD_SMALL_INT", "LOAD_GLOBAL", "LOAD_DEREF"):
+            delta = 1
+        elif op in ("STORE_FAST", "STORE_FAST_LOAD_FAST", "STORE_FAST_STORE_FAST"):
+            required = 2 if op == "STORE_FAST_STORE_FAST" else 1
+            delta = 0 if op == "STORE_FAST_LOAD_FAST" else -required
+        elif op in ("LOAD_ATTR", "LOAD_METHOD", "UNARY_NEGATIVE"):
+            required = 1
+        elif op in ("BINARY_OP", "BINARY_ADD", "BINARY_SUBTRACT", "BINARY_MULTIPLY"):
+            if op == "BINARY_OP" and instruction.argrepr not in ("+", "-", "*"):
+                unsupported("unsupported loop binary operator")
+            required, delta = 2, -1
+        elif op in ("CALL", "CALL_FUNCTION", "CALL_METHOD"):
+            required, delta = arg + 1, -arg
+        elif op in ("COPY", "DUP_TOP"):
+            required, delta = (arg if op == "COPY" else 1), 1
+        elif op == "SWAP":
+            required = arg
+        else:
+            unsupported("unsupported loop control flow: " + op)
+        if required < 0 or depth < required:
+            unsupported("invalid loop body stack")
+        depth += delta
+    if depth:
+        unsupported("invalid loop body stack")
+
+
+def normalize_loops(model, instructions):
+    """Validate all structured root loops, then boundedly expand wordcode.
+
+    CPython 3.10/3.11 FOR_ITER removes the exhausted iterator; 3.12 END_FOR
+    removes iterator and sentinel; 3.13 uses END_FOR/POP_TOP and 3.14 uses
+    END_FOR/POP_ITER. Back edges are absolute in 3.10, relative thereafter.
+    Only these complete regions disappear; other edges always reject.
+    """
+    compact = tuple(i for i in instructions if i.opname not in _IGNORED)
+    offsets = {i.offset: n for n, i in enumerate(compact)}
+    # Labels can precede a no-op (e.g. a following `pass`) or EXTENDED_ARG
+    # prefixes on large loops. Resolve only these transparent instructions,
+    # not arbitrary ignored call/stack setup, to their next retained opcode.
+    target = None
+    for instruction in reversed(instructions):
+        if instruction.opname not in _IGNORED:
+            target = offsets[instruction.offset]
+        elif instruction.opname in ("NOP", "EXTENDED_ARG", "NOT_TAKEN"):
+            if target is not None:
+                offsets[instruction.offset] = target
+        else:
+            target = None
+    original_positions = {i.offset: n for n, i in enumerate(instructions)}
+    regions, sources, covered = [], [], set()
+    expanded_size = len(instructions)
+    for position, instruction in enumerate(compact):
+        if instruction.opname != "GET_ITER":
+            continue
+        call = compact[position - 1] if position else None
+        if call is None or call.opname not in ("CALL", "CALL_FUNCTION") or call.arg not in (1, 2, 3):
+            unsupported("loop requires a direct literal range call")
+        start = position - call.arg - 2
+        if start < 0 or compact[start].opname not in ("LOAD_GLOBAL", "LOAD_DEREF"):
+            unsupported("loop requires a direct range binding")
+        literals = compact[start + 1:position - 1]
+        if any(i.opname not in ("LOAD_CONST", "LOAD_SMALL_INT") or type(i.argval) is not int
+               for i in literals):
+            unsupported("range bounds must be literal exact integers")
+        args = tuple(i.argval for i in literals)
+        if len(args) == 3 and args[2] == 0:
+            unsupported("range step must be nonzero")
+        if position + 1 >= len(compact) or compact[position + 1].opname != "FOR_ITER":
+            unsupported("invalid loop iterator control flow")
+        head = compact[position + 1]
+        end = offsets.get(head.argval, -1)
+        if end <= position + 3 or end >= len(compact):
+            unsupported("invalid loop exit")
+        back = compact[end - 1]
+        if (back.opname not in ("JUMP_ABSOLUTE", "JUMP_BACKWARD")
+                or offsets.get(back.argval) != position + 1):
+            unsupported("invalid loop back edge")
+        body = compact[position + 2:end - 1]
+        if body[0].opname not in ("STORE_FAST", "STORE_FAST_LOAD_FAST"):
+            unsupported("loop index must be a local")
+        validate_loop_stack(body)
+        stop = end
+        if sys.version_info >= (3, 12):
+            if compact[stop].opname != "END_FOR":
+                unsupported("invalid loop cleanup")
+            stop += 1
+            if sys.version_info >= (3, 13):
+                cleanup = "POP_ITER" if sys.version_info >= (3, 14) else "POP_TOP"
+                if stop >= len(compact) or compact[stop].opname != cleanup:
+                    unsupported("invalid loop cleanup")
+                stop += 1
+        if regions and start < regions[-1][1]:
+            unsupported("nested or overlapping loops are unsupported")
+        sources.append(BindingSource(compact[start].opname, compact[start].argval))
+        # Exact integer arithmetic computes arbitrarily large trip counts
+        # without len(range), iteration, or allocating a repeated body.
+        first, limit, step = (0, args[0], 1) if len(args) == 1 else (*args, 1) if len(args) == 2 else args
+        trips = max(0, (limit - first + step - (1 if step > 0 else -1)) // step)
+        # Ignored instructions inside the body (including PRECALL/NOP) repeat
+        # too. Removing them from normalization must not relax the shared limit.
+        body_size = original_positions[back.offset] - original_positions[head.offset] - 1
+        # Zero-trip bodies still receive one admission pass, isolated from the
+        # executing frame. Charge that pass and its two internal scope markers.
+        expanded_size += max(1, trips) * (body_size + 1) + (2 if not trips else 0)
+        if expanded_size > 16384:
+            unsupported("expanded function exceeds pointwise instruction limit")
+        regions.append((start, stop, body, first, step, trips))
+        covered.update(_RANGE(start, stop))
+    for position, instruction in enumerate(compact):
+        if instruction.opname in _LOOP_OPS and position not in covered:
+            unsupported("unsupported loop control flow: " + instruction.opname)
+    validate_ranges(model, sources)
+    if not regions:
+        return instructions, (), 0
+    result, cursor = [], 0
+    for start, stop, body, first, step, trips in regions:
+        result.extend(compact[cursor:start])
+        if not trips:
+            result.append(body[0]._replace(opname="_LOOP_CHECK_START"))
+        for index in _RANGE(max(1, trips)):
+            # Reuse the dis instruction record; lowering only consumes opname,
+            # argval and argrepr. Original code remains the semantic owner.
+            result.append(body[0]._replace(opname="LOAD_CONST", argval=first + index * step))
+            result.extend(body)
+        if not trips:
+            result.append(body[0]._replace(opname="_LOOP_CHECK_END"))
+        cursor = stop
+    result.extend(compact[cursor:])
+    # Charge original setup/cleanup too, sharing lower()'s helper-call budget.
+    return tuple(result), tuple(dict.fromkeys(sources)), expanded_size - len(result)
 
 
 def freeze_helper(model):
@@ -426,12 +605,17 @@ def analyze(model, arity):
     validate_signature_containers(model)
     code = model.__code__
     validate_code(code, arity)
-    instructions = instructions_for(code)
+    validate_namespaces(model)
+    instructions, range_sources, loop_overhead = normalize_loops(model, instructions_for(code))
     # Only initial parameter values read by the bytecode have scalar guards.
     # Unused/overwritten tensors still remain in the complete native input tuple.
     initial, read = set(code.co_varnames[:arity]), set()
     for instruction in instructions:
         op, arg = instruction.opname, instruction.argval
+        if op == "_LOOP_CHECK_START":
+            saved_initial = initial.copy()
+        elif op == "_LOOP_CHECK_END":
+            initial = saved_initial
         if op in ("STORE_FAST", "STORE_FAST_LOAD_FAST", "STORE_FAST_STORE_FAST"):
             stored = (arg,) if op == "STORE_FAST" else arg[:1] if op == "STORE_FAST_LOAD_FAST" else arg
             initial.difference_update(stored)
@@ -444,7 +628,7 @@ def analyze(model, arity):
     captures = tuple(dict.fromkeys(BindingSource(i.opname, i.argval) for i in instructions
                                   if i.opname in ("LOAD_GLOBAL", "LOAD_DEREF")))
     dependencies = parameters + captures
-    return Program(code, instructions, dependencies)
+    return Program(code, instructions, dependencies, range_sources, loop_overhead)
 
 
 def binding(value):
@@ -494,13 +678,16 @@ def bind_arguments(args):
 def resolve(model, program, parameters=None):
     # FunctionType permits a dict subclass as globals. Never invoke its lookup
     # hooks, including on a warm call or before rejecting a later graph node.
+    validate_signature_containers(model)
+    validate_code(model.__code__, program.code.co_argcount)
+    return _resolve_bindings(model, program, parameters)
+
+
+def _resolve_bindings(model, program, parameters):
+    """Resolve mutable bindings after the caller validates the root/signature."""
+    validate_namespaces(model)
+    validate_ranges(model, program.range_sources)
     globals_ = model.__globals__
-    if type(globals_) is not dict:
-        unsupported("function globals must be an exact dict")
-    # Even exact dict lookup can call a colliding key's equality hook. Iteration
-    # does not hash or compare keys; validate all keys before any lookup.
-    if any(type(key) is not str for key in globals_):
-        unsupported("function globals keys must be exact strings")
     values, keys = {}, []
     closure = dict(zip(program.code.co_freevars, model.__closure__ or ()))
     if parameters is None:
@@ -567,7 +754,8 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
     nodes = [("input", i, 0, 0) for i in input_ids]
     runtime = sorted(value.index for value in values.values() if type(value) is RuntimeScalar)
     nodes.extend(("scalar", index, 0, 0) for index in runtime)
-    remaining = 16384
+    remaining = 16384 - program.loop_overhead
+    checked_nodes = 0
     helper_instructions = {}  # Per lowering only; warm hits never parse helpers.
 
     def data(obj):
@@ -605,12 +793,12 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
         if len(args) == 1 and not args[0].tensor or not any(arg.tensor for arg in args):
             unsupported("operators require tensor expressions")
         nodes.append((op, args[0].index, args[1].index if len(args) == 2 else 0, 0))
-        if len(nodes) > 4096:
+        if len(nodes) + checked_nodes > 4096:
             unsupported("graph exceeds 4096-node limit")
         return Value(len(nodes) - 1)
 
-    def frame(instructions, locals_):
-        nonlocal remaining
+    def frame(instructions, locals_, *, check_only=False):
+        nonlocal remaining, checked_nodes
         remaining -= len(instructions)
         if remaining < 0:
             unsupported("expanded function exceeds pointwise instruction limit")
@@ -618,14 +806,33 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
 
         def load(name):
             if name not in locals_:
-                unsupported("unbound local: " + name)
-            stack.append(locals_[name])
+                if not check_only:
+                    unsupported("unbound local: " + name)
+                # No value/type exists for an unexecuted local read. Treat it
+                # as pointwise data solely for body-language admission. This
+                # placeholder and every node using it are discarded before
+                # native IR validation; it is never an input or a real local.
+                stack.append(Value(-1))
+            else:
+                stack.append(locals_[name])
 
         for instruction in instructions:
             op, arg = instruction.opname, instruction.argval
             if op in _IGNORED:
                 continue
-            if op in ("LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_FAST_BORROW"):
+            if op == "_LOOP_CHECK_START":
+                # Reuse typed operator/helper/data admission without executing
+                # Python or changing the real frame/IR. Realized sources keep
+                # the existing warm semantic and ignored-data guards.
+                saved_locals, node_start, saved_check_only = locals_, len(nodes), check_only
+                locals_ = locals_.copy()
+                check_only = True
+            elif op == "_LOOP_CHECK_END":
+                checked_nodes += len(nodes) - node_start
+                del nodes[node_start:]
+                locals_ = saved_locals
+                check_only = saved_check_only
+            elif op in ("LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_FAST_BORROW"):
                 load(arg)
             elif op in ("LOAD_FAST_LOAD_FAST", "LOAD_FAST_BORROW_LOAD_FAST_BORROW"):
                 for name in arg:
@@ -679,7 +886,8 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     if target not in helper_instructions:
                         helper_instructions[target] = instructions_for(target.code, helper=True)
                     stack.append(frame(helper_instructions[target],
-                                       dict(zip(target.code.co_varnames, parameters))))
+                                       dict(zip(target.code.co_varnames, parameters)),
+                                       check_only=check_only))
                     continue
                 if type(target) is not Call:
                     unsupported("only native pointwise operators and direct helpers may be called")
@@ -740,7 +948,11 @@ def implementation(model, recompile_limit):
             validate_signature_containers(model)
             if program.code.co_argcount != len(args):
                 unsupported("function signature changed")
-            static_bindings, static_values = resolve(model, program, parameters)
+            # analyze() admitted this exact immutable code/constant pool. The
+            # identity check above repeats admission on replacement; mutable
+            # signature containers still receive their one check on every call.
+            # Private resolve() remains fully validating for independent callers.
+            static_bindings, static_values = _resolve_bindings(model, program, parameters)
             input_ids = (0, 0) if len(tensors) == 2 and tensors[0] is tensors[1] else tuple(range(len(tensors)))
             abi = (len(tensors), input_ids, tuple((s, v.index) for s, v in static_values.items()
                                                if type(v) is Value))

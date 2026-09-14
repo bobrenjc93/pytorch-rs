@@ -1,0 +1,965 @@
+{
+  "commit": "18e94de5d0177c8f67ace8d330018c5e0da3bcc2",
+  "archive_sha256": "8a004a43a69a9686f5763d34b7527bb569bf30168b6706b9a2db6d2180804b1e",
+  "files": {
+    "admission.json": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/admission.json",
+      "sha256": "294da0fe041b3fbc33a68d60759126d4e2209ba88c4f29d672ba2b56e1c92046",
+      "size": 1242
+    },
+    "commands.json": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/commands.json",
+      "sha256": "41249f36276649623647b7016ea777b2a8cbfa859a57966078ffc24e93df601a",
+      "size": 6516
+    },
+    "comparison/gpu-0-native-first-native/recurrence-0-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/recurrence-0-0-observed-0.cu",
+      "sha256": "18e93432a058344e7480d65c69ad543314244cdcf957e58db55a697e07e8240e",
+      "size": 776
+    },
+    "comparison/gpu-0-native-first-native/recurrence-0-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/recurrence-0-0-observed-0.ptx.gz",
+      "sha256": "6028c34197e4d9d3a9e8982aed949d920aae99bbbdb8f5e4687d6ebfe968c5e5",
+      "size": 645
+    },
+    "comparison/gpu-0-native-first-native/recurrence-0-2-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/recurrence-0-2-observed-0.cu",
+      "sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+      "size": 760
+    },
+    "comparison/gpu-0-native-first-native/recurrence-0-2-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/recurrence-0-2-observed-0.ptx.gz",
+      "sha256": "5a167c471b8e901e9930d07cab4d908fc4eefc243b807837377e7e582e48fb85",
+      "size": 649
+    },
+    "comparison/gpu-0-native-first-native/recurrence-1-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/recurrence-1-0-observed-0.cu",
+      "sha256": "18e93432a058344e7480d65c69ad543314244cdcf957e58db55a697e07e8240e",
+      "size": 776
+    },
+    "comparison/gpu-0-native-first-native/recurrence-1-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/recurrence-1-0-observed-0.ptx.gz",
+      "sha256": "6028c34197e4d9d3a9e8982aed949d920aae99bbbdb8f5e4687d6ebfe968c5e5",
+      "size": 645
+    },
+    "comparison/gpu-0-native-first-native/recurrence-1-1-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/recurrence-1-1-observed-0.cu",
+      "sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+      "size": 760
+    },
+    "comparison/gpu-0-native-first-native/recurrence-1-1-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/recurrence-1-1-observed-0.ptx.gz",
+      "sha256": "5a167c471b8e901e9930d07cab4d908fc4eefc243b807837377e7e582e48fb85",
+      "size": 649
+    },
+    "comparison/gpu-0-native-first-native/recurrence-2-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/recurrence-2-0-observed-0.cu",
+      "sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+      "size": 760
+    },
+    "comparison/gpu-0-native-first-native/recurrence-2-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/recurrence-2-0-observed-0.ptx.gz",
+      "sha256": "5a167c471b8e901e9930d07cab4d908fc4eefc243b807837377e7e582e48fb85",
+      "size": 649
+    },
+    "comparison/gpu-0-native-first-native/report.json.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/report.json.gz",
+      "sha256": "7d4d685dc0f81dd984a8120fa338a577e159025ba9c928156030dd2d8d8b2b26",
+      "size": 17211
+    },
+    "comparison/gpu-0-native-first-native/signed_sequential-0-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/signed_sequential-0-0-observed-0.cu",
+      "sha256": "791edc7abb1d617d20528145762734b79729c8fc039aec975a9b4777e8f5d1de",
+      "size": 792
+    },
+    "comparison/gpu-0-native-first-native/signed_sequential-0-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/signed_sequential-0-0-observed-0.ptx.gz",
+      "sha256": "5d7f61613671217a10f420f7baecf0a4e540016ef30642735bac33e6bbb331a9",
+      "size": 648
+    },
+    "comparison/gpu-0-native-first-native/signed_sequential-0-2-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/signed_sequential-0-2-observed-0.cu",
+      "sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+      "size": 776
+    },
+    "comparison/gpu-0-native-first-native/signed_sequential-0-2-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/signed_sequential-0-2-observed-0.ptx.gz",
+      "sha256": "6dd6fd449474d35a7ce706eb72ee9943f48527a1ca7e4e0a5cb55e4c4c7c0b3d",
+      "size": 651
+    },
+    "comparison/gpu-0-native-first-native/signed_sequential-1-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/signed_sequential-1-0-observed-0.cu",
+      "sha256": "791edc7abb1d617d20528145762734b79729c8fc039aec975a9b4777e8f5d1de",
+      "size": 792
+    },
+    "comparison/gpu-0-native-first-native/signed_sequential-1-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/signed_sequential-1-0-observed-0.ptx.gz",
+      "sha256": "5d7f61613671217a10f420f7baecf0a4e540016ef30642735bac33e6bbb331a9",
+      "size": 648
+    },
+    "comparison/gpu-0-native-first-native/signed_sequential-1-1-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/signed_sequential-1-1-observed-0.cu",
+      "sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+      "size": 776
+    },
+    "comparison/gpu-0-native-first-native/signed_sequential-1-1-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/signed_sequential-1-1-observed-0.ptx.gz",
+      "sha256": "6dd6fd449474d35a7ce706eb72ee9943f48527a1ca7e4e0a5cb55e4c4c7c0b3d",
+      "size": 651
+    },
+    "comparison/gpu-0-native-first-native/signed_sequential-2-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/signed_sequential-2-0-observed-0.cu",
+      "sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+      "size": 776
+    },
+    "comparison/gpu-0-native-first-native/signed_sequential-2-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/signed_sequential-2-0-observed-0.ptx.gz",
+      "sha256": "6dd6fd449474d35a7ce706eb72ee9943f48527a1ca7e4e0a5cb55e4c4c7c0b3d",
+      "size": 651
+    },
+    "comparison/gpu-0-native-first-native/stderr.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "comparison/gpu-0-native-first-native/stdout.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "comparison/gpu-0-native-first-native/zero_trip-0-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/zero_trip-0-0-observed-0.cu",
+      "sha256": "9b0254b9577a5d4f945b5dabc16899dddc6d871623438cb1c8d314b8b4d8deb1",
+      "size": 503
+    },
+    "comparison/gpu-0-native-first-native/zero_trip-0-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/zero_trip-0-0-observed-0.ptx.gz",
+      "sha256": "82472a81d056a57366943fc9f3657d8ad067ee2c86be094cfbd5e290abcdf8a2",
+      "size": 584
+    },
+    "comparison/gpu-0-native-first-native/zero_trip-0-2-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/zero_trip-0-2-observed-0.cu",
+      "sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+      "size": 487
+    },
+    "comparison/gpu-0-native-first-native/zero_trip-0-2-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/zero_trip-0-2-observed-0.ptx.gz",
+      "sha256": "db880e46a88076ec2a793f994cd30a048fc9743608a8ab476f337ce789702e05",
+      "size": 585
+    },
+    "comparison/gpu-0-native-first-native/zero_trip-1-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/zero_trip-1-0-observed-0.cu",
+      "sha256": "9b0254b9577a5d4f945b5dabc16899dddc6d871623438cb1c8d314b8b4d8deb1",
+      "size": 503
+    },
+    "comparison/gpu-0-native-first-native/zero_trip-1-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/zero_trip-1-0-observed-0.ptx.gz",
+      "sha256": "82472a81d056a57366943fc9f3657d8ad067ee2c86be094cfbd5e290abcdf8a2",
+      "size": 584
+    },
+    "comparison/gpu-0-native-first-native/zero_trip-1-1-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/zero_trip-1-1-observed-0.cu",
+      "sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+      "size": 487
+    },
+    "comparison/gpu-0-native-first-native/zero_trip-1-1-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/zero_trip-1-1-observed-0.ptx.gz",
+      "sha256": "db880e46a88076ec2a793f994cd30a048fc9743608a8ab476f337ce789702e05",
+      "size": 585
+    },
+    "comparison/gpu-0-native-first-native/zero_trip-2-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/zero_trip-2-0-observed-0.cu",
+      "sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+      "size": 487
+    },
+    "comparison/gpu-0-native-first-native/zero_trip-2-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-native/zero_trip-2-0-observed-0.ptx.gz",
+      "sha256": "db880e46a88076ec2a793f994cd30a048fc9743608a8ab476f337ce789702e05",
+      "size": 585
+    },
+    "comparison/gpu-0-native-first-reference/report.json.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-reference/report.json.gz",
+      "sha256": "625806a49a1943fb7696a15c94484957b808e16a73fa5312b2aca0c8d26ab0af",
+      "size": 18266
+    },
+    "comparison/gpu-0-native-first-reference/stderr.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-reference/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "comparison/gpu-0-native-first-reference/stdout.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-native-first-reference/stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "comparison/gpu-0-reference-first-native/recurrence-0-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/recurrence-0-0-observed-0.cu",
+      "sha256": "18e93432a058344e7480d65c69ad543314244cdcf957e58db55a697e07e8240e",
+      "size": 776
+    },
+    "comparison/gpu-0-reference-first-native/recurrence-0-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/recurrence-0-0-observed-0.ptx.gz",
+      "sha256": "6028c34197e4d9d3a9e8982aed949d920aae99bbbdb8f5e4687d6ebfe968c5e5",
+      "size": 645
+    },
+    "comparison/gpu-0-reference-first-native/recurrence-0-2-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/recurrence-0-2-observed-0.cu",
+      "sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+      "size": 760
+    },
+    "comparison/gpu-0-reference-first-native/recurrence-0-2-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/recurrence-0-2-observed-0.ptx.gz",
+      "sha256": "5a167c471b8e901e9930d07cab4d908fc4eefc243b807837377e7e582e48fb85",
+      "size": 649
+    },
+    "comparison/gpu-0-reference-first-native/recurrence-1-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/recurrence-1-0-observed-0.cu",
+      "sha256": "18e93432a058344e7480d65c69ad543314244cdcf957e58db55a697e07e8240e",
+      "size": 776
+    },
+    "comparison/gpu-0-reference-first-native/recurrence-1-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/recurrence-1-0-observed-0.ptx.gz",
+      "sha256": "6028c34197e4d9d3a9e8982aed949d920aae99bbbdb8f5e4687d6ebfe968c5e5",
+      "size": 645
+    },
+    "comparison/gpu-0-reference-first-native/recurrence-1-1-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/recurrence-1-1-observed-0.cu",
+      "sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+      "size": 760
+    },
+    "comparison/gpu-0-reference-first-native/recurrence-1-1-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/recurrence-1-1-observed-0.ptx.gz",
+      "sha256": "5a167c471b8e901e9930d07cab4d908fc4eefc243b807837377e7e582e48fb85",
+      "size": 649
+    },
+    "comparison/gpu-0-reference-first-native/recurrence-2-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/recurrence-2-0-observed-0.cu",
+      "sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+      "size": 760
+    },
+    "comparison/gpu-0-reference-first-native/recurrence-2-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/recurrence-2-0-observed-0.ptx.gz",
+      "sha256": "5a167c471b8e901e9930d07cab4d908fc4eefc243b807837377e7e582e48fb85",
+      "size": 649
+    },
+    "comparison/gpu-0-reference-first-native/report.json.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/report.json.gz",
+      "sha256": "12bfad4810827ba0559b8214509e844dd1e0ced25f50c11b7cf0f2dc7299c231",
+      "size": 17247
+    },
+    "comparison/gpu-0-reference-first-native/signed_sequential-0-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/signed_sequential-0-0-observed-0.cu",
+      "sha256": "791edc7abb1d617d20528145762734b79729c8fc039aec975a9b4777e8f5d1de",
+      "size": 792
+    },
+    "comparison/gpu-0-reference-first-native/signed_sequential-0-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/signed_sequential-0-0-observed-0.ptx.gz",
+      "sha256": "5d7f61613671217a10f420f7baecf0a4e540016ef30642735bac33e6bbb331a9",
+      "size": 648
+    },
+    "comparison/gpu-0-reference-first-native/signed_sequential-0-2-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/signed_sequential-0-2-observed-0.cu",
+      "sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+      "size": 776
+    },
+    "comparison/gpu-0-reference-first-native/signed_sequential-0-2-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/signed_sequential-0-2-observed-0.ptx.gz",
+      "sha256": "6dd6fd449474d35a7ce706eb72ee9943f48527a1ca7e4e0a5cb55e4c4c7c0b3d",
+      "size": 651
+    },
+    "comparison/gpu-0-reference-first-native/signed_sequential-1-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/signed_sequential-1-0-observed-0.cu",
+      "sha256": "791edc7abb1d617d20528145762734b79729c8fc039aec975a9b4777e8f5d1de",
+      "size": 792
+    },
+    "comparison/gpu-0-reference-first-native/signed_sequential-1-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/signed_sequential-1-0-observed-0.ptx.gz",
+      "sha256": "5d7f61613671217a10f420f7baecf0a4e540016ef30642735bac33e6bbb331a9",
+      "size": 648
+    },
+    "comparison/gpu-0-reference-first-native/signed_sequential-1-1-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/signed_sequential-1-1-observed-0.cu",
+      "sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+      "size": 776
+    },
+    "comparison/gpu-0-reference-first-native/signed_sequential-1-1-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/signed_sequential-1-1-observed-0.ptx.gz",
+      "sha256": "6dd6fd449474d35a7ce706eb72ee9943f48527a1ca7e4e0a5cb55e4c4c7c0b3d",
+      "size": 651
+    },
+    "comparison/gpu-0-reference-first-native/signed_sequential-2-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/signed_sequential-2-0-observed-0.cu",
+      "sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+      "size": 776
+    },
+    "comparison/gpu-0-reference-first-native/signed_sequential-2-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/signed_sequential-2-0-observed-0.ptx.gz",
+      "sha256": "6dd6fd449474d35a7ce706eb72ee9943f48527a1ca7e4e0a5cb55e4c4c7c0b3d",
+      "size": 651
+    },
+    "comparison/gpu-0-reference-first-native/stderr.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "comparison/gpu-0-reference-first-native/stdout.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "comparison/gpu-0-reference-first-native/zero_trip-0-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/zero_trip-0-0-observed-0.cu",
+      "sha256": "9b0254b9577a5d4f945b5dabc16899dddc6d871623438cb1c8d314b8b4d8deb1",
+      "size": 503
+    },
+    "comparison/gpu-0-reference-first-native/zero_trip-0-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/zero_trip-0-0-observed-0.ptx.gz",
+      "sha256": "82472a81d056a57366943fc9f3657d8ad067ee2c86be094cfbd5e290abcdf8a2",
+      "size": 584
+    },
+    "comparison/gpu-0-reference-first-native/zero_trip-0-2-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/zero_trip-0-2-observed-0.cu",
+      "sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+      "size": 487
+    },
+    "comparison/gpu-0-reference-first-native/zero_trip-0-2-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/zero_trip-0-2-observed-0.ptx.gz",
+      "sha256": "db880e46a88076ec2a793f994cd30a048fc9743608a8ab476f337ce789702e05",
+      "size": 585
+    },
+    "comparison/gpu-0-reference-first-native/zero_trip-1-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/zero_trip-1-0-observed-0.cu",
+      "sha256": "9b0254b9577a5d4f945b5dabc16899dddc6d871623438cb1c8d314b8b4d8deb1",
+      "size": 503
+    },
+    "comparison/gpu-0-reference-first-native/zero_trip-1-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/zero_trip-1-0-observed-0.ptx.gz",
+      "sha256": "82472a81d056a57366943fc9f3657d8ad067ee2c86be094cfbd5e290abcdf8a2",
+      "size": 584
+    },
+    "comparison/gpu-0-reference-first-native/zero_trip-1-1-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/zero_trip-1-1-observed-0.cu",
+      "sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+      "size": 487
+    },
+    "comparison/gpu-0-reference-first-native/zero_trip-1-1-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/zero_trip-1-1-observed-0.ptx.gz",
+      "sha256": "db880e46a88076ec2a793f994cd30a048fc9743608a8ab476f337ce789702e05",
+      "size": 585
+    },
+    "comparison/gpu-0-reference-first-native/zero_trip-2-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/zero_trip-2-0-observed-0.cu",
+      "sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+      "size": 487
+    },
+    "comparison/gpu-0-reference-first-native/zero_trip-2-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-native/zero_trip-2-0-observed-0.ptx.gz",
+      "sha256": "db880e46a88076ec2a793f994cd30a048fc9743608a8ab476f337ce789702e05",
+      "size": 585
+    },
+    "comparison/gpu-0-reference-first-reference/report.json.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-reference/report.json.gz",
+      "sha256": "4b45b4b6256176b0b43902f350671c0495c2197434a210469feb9a0a9755652e",
+      "size": 18285
+    },
+    "comparison/gpu-0-reference-first-reference/stderr.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-reference/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "comparison/gpu-0-reference-first-reference/stdout.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-0-reference-first-reference/stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "comparison/gpu-1-native-first-native/recurrence-0-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/recurrence-0-0-observed-0.cu",
+      "sha256": "18e93432a058344e7480d65c69ad543314244cdcf957e58db55a697e07e8240e",
+      "size": 776
+    },
+    "comparison/gpu-1-native-first-native/recurrence-0-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/recurrence-0-0-observed-0.ptx.gz",
+      "sha256": "6028c34197e4d9d3a9e8982aed949d920aae99bbbdb8f5e4687d6ebfe968c5e5",
+      "size": 645
+    },
+    "comparison/gpu-1-native-first-native/recurrence-0-2-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/recurrence-0-2-observed-0.cu",
+      "sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+      "size": 760
+    },
+    "comparison/gpu-1-native-first-native/recurrence-0-2-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/recurrence-0-2-observed-0.ptx.gz",
+      "sha256": "5a167c471b8e901e9930d07cab4d908fc4eefc243b807837377e7e582e48fb85",
+      "size": 649
+    },
+    "comparison/gpu-1-native-first-native/recurrence-1-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/recurrence-1-0-observed-0.cu",
+      "sha256": "18e93432a058344e7480d65c69ad543314244cdcf957e58db55a697e07e8240e",
+      "size": 776
+    },
+    "comparison/gpu-1-native-first-native/recurrence-1-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/recurrence-1-0-observed-0.ptx.gz",
+      "sha256": "6028c34197e4d9d3a9e8982aed949d920aae99bbbdb8f5e4687d6ebfe968c5e5",
+      "size": 645
+    },
+    "comparison/gpu-1-native-first-native/recurrence-1-1-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/recurrence-1-1-observed-0.cu",
+      "sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+      "size": 760
+    },
+    "comparison/gpu-1-native-first-native/recurrence-1-1-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/recurrence-1-1-observed-0.ptx.gz",
+      "sha256": "5a167c471b8e901e9930d07cab4d908fc4eefc243b807837377e7e582e48fb85",
+      "size": 649
+    },
+    "comparison/gpu-1-native-first-native/recurrence-2-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/recurrence-2-0-observed-0.cu",
+      "sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+      "size": 760
+    },
+    "comparison/gpu-1-native-first-native/recurrence-2-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/recurrence-2-0-observed-0.ptx.gz",
+      "sha256": "5a167c471b8e901e9930d07cab4d908fc4eefc243b807837377e7e582e48fb85",
+      "size": 649
+    },
+    "comparison/gpu-1-native-first-native/report.json.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/report.json.gz",
+      "sha256": "296235afb9a96f3fdb608ae64d5f654e20187032c768f3566f5a027956ef9216",
+      "size": 17245
+    },
+    "comparison/gpu-1-native-first-native/signed_sequential-0-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/signed_sequential-0-0-observed-0.cu",
+      "sha256": "791edc7abb1d617d20528145762734b79729c8fc039aec975a9b4777e8f5d1de",
+      "size": 792
+    },
+    "comparison/gpu-1-native-first-native/signed_sequential-0-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/signed_sequential-0-0-observed-0.ptx.gz",
+      "sha256": "5d7f61613671217a10f420f7baecf0a4e540016ef30642735bac33e6bbb331a9",
+      "size": 648
+    },
+    "comparison/gpu-1-native-first-native/signed_sequential-0-2-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/signed_sequential-0-2-observed-0.cu",
+      "sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+      "size": 776
+    },
+    "comparison/gpu-1-native-first-native/signed_sequential-0-2-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/signed_sequential-0-2-observed-0.ptx.gz",
+      "sha256": "6dd6fd449474d35a7ce706eb72ee9943f48527a1ca7e4e0a5cb55e4c4c7c0b3d",
+      "size": 651
+    },
+    "comparison/gpu-1-native-first-native/signed_sequential-1-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/signed_sequential-1-0-observed-0.cu",
+      "sha256": "791edc7abb1d617d20528145762734b79729c8fc039aec975a9b4777e8f5d1de",
+      "size": 792
+    },
+    "comparison/gpu-1-native-first-native/signed_sequential-1-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/signed_sequential-1-0-observed-0.ptx.gz",
+      "sha256": "5d7f61613671217a10f420f7baecf0a4e540016ef30642735bac33e6bbb331a9",
+      "size": 648
+    },
+    "comparison/gpu-1-native-first-native/signed_sequential-1-1-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/signed_sequential-1-1-observed-0.cu",
+      "sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+      "size": 776
+    },
+    "comparison/gpu-1-native-first-native/signed_sequential-1-1-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/signed_sequential-1-1-observed-0.ptx.gz",
+      "sha256": "6dd6fd449474d35a7ce706eb72ee9943f48527a1ca7e4e0a5cb55e4c4c7c0b3d",
+      "size": 651
+    },
+    "comparison/gpu-1-native-first-native/signed_sequential-2-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/signed_sequential-2-0-observed-0.cu",
+      "sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+      "size": 776
+    },
+    "comparison/gpu-1-native-first-native/signed_sequential-2-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/signed_sequential-2-0-observed-0.ptx.gz",
+      "sha256": "6dd6fd449474d35a7ce706eb72ee9943f48527a1ca7e4e0a5cb55e4c4c7c0b3d",
+      "size": 651
+    },
+    "comparison/gpu-1-native-first-native/stderr.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "comparison/gpu-1-native-first-native/stdout.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "comparison/gpu-1-native-first-native/zero_trip-0-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/zero_trip-0-0-observed-0.cu",
+      "sha256": "9b0254b9577a5d4f945b5dabc16899dddc6d871623438cb1c8d314b8b4d8deb1",
+      "size": 503
+    },
+    "comparison/gpu-1-native-first-native/zero_trip-0-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/zero_trip-0-0-observed-0.ptx.gz",
+      "sha256": "82472a81d056a57366943fc9f3657d8ad067ee2c86be094cfbd5e290abcdf8a2",
+      "size": 584
+    },
+    "comparison/gpu-1-native-first-native/zero_trip-0-2-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/zero_trip-0-2-observed-0.cu",
+      "sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+      "size": 487
+    },
+    "comparison/gpu-1-native-first-native/zero_trip-0-2-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/zero_trip-0-2-observed-0.ptx.gz",
+      "sha256": "db880e46a88076ec2a793f994cd30a048fc9743608a8ab476f337ce789702e05",
+      "size": 585
+    },
+    "comparison/gpu-1-native-first-native/zero_trip-1-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/zero_trip-1-0-observed-0.cu",
+      "sha256": "9b0254b9577a5d4f945b5dabc16899dddc6d871623438cb1c8d314b8b4d8deb1",
+      "size": 503
+    },
+    "comparison/gpu-1-native-first-native/zero_trip-1-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/zero_trip-1-0-observed-0.ptx.gz",
+      "sha256": "82472a81d056a57366943fc9f3657d8ad067ee2c86be094cfbd5e290abcdf8a2",
+      "size": 584
+    },
+    "comparison/gpu-1-native-first-native/zero_trip-1-1-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/zero_trip-1-1-observed-0.cu",
+      "sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+      "size": 487
+    },
+    "comparison/gpu-1-native-first-native/zero_trip-1-1-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/zero_trip-1-1-observed-0.ptx.gz",
+      "sha256": "db880e46a88076ec2a793f994cd30a048fc9743608a8ab476f337ce789702e05",
+      "size": 585
+    },
+    "comparison/gpu-1-native-first-native/zero_trip-2-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/zero_trip-2-0-observed-0.cu",
+      "sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+      "size": 487
+    },
+    "comparison/gpu-1-native-first-native/zero_trip-2-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-native/zero_trip-2-0-observed-0.ptx.gz",
+      "sha256": "db880e46a88076ec2a793f994cd30a048fc9743608a8ab476f337ce789702e05",
+      "size": 585
+    },
+    "comparison/gpu-1-native-first-reference/report.json.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-reference/report.json.gz",
+      "sha256": "8f7cb9db2224e83e044649be4d8a7ae0983980b87ae87549123aebd7779c7405",
+      "size": 18282
+    },
+    "comparison/gpu-1-native-first-reference/stderr.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-reference/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "comparison/gpu-1-native-first-reference/stdout.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-native-first-reference/stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "comparison/gpu-1-reference-first-native/recurrence-0-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/recurrence-0-0-observed-0.cu",
+      "sha256": "18e93432a058344e7480d65c69ad543314244cdcf957e58db55a697e07e8240e",
+      "size": 776
+    },
+    "comparison/gpu-1-reference-first-native/recurrence-0-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/recurrence-0-0-observed-0.ptx.gz",
+      "sha256": "6028c34197e4d9d3a9e8982aed949d920aae99bbbdb8f5e4687d6ebfe968c5e5",
+      "size": 645
+    },
+    "comparison/gpu-1-reference-first-native/recurrence-0-2-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/recurrence-0-2-observed-0.cu",
+      "sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+      "size": 760
+    },
+    "comparison/gpu-1-reference-first-native/recurrence-0-2-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/recurrence-0-2-observed-0.ptx.gz",
+      "sha256": "5a167c471b8e901e9930d07cab4d908fc4eefc243b807837377e7e582e48fb85",
+      "size": 649
+    },
+    "comparison/gpu-1-reference-first-native/recurrence-1-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/recurrence-1-0-observed-0.cu",
+      "sha256": "18e93432a058344e7480d65c69ad543314244cdcf957e58db55a697e07e8240e",
+      "size": 776
+    },
+    "comparison/gpu-1-reference-first-native/recurrence-1-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/recurrence-1-0-observed-0.ptx.gz",
+      "sha256": "6028c34197e4d9d3a9e8982aed949d920aae99bbbdb8f5e4687d6ebfe968c5e5",
+      "size": 645
+    },
+    "comparison/gpu-1-reference-first-native/recurrence-1-1-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/recurrence-1-1-observed-0.cu",
+      "sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+      "size": 760
+    },
+    "comparison/gpu-1-reference-first-native/recurrence-1-1-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/recurrence-1-1-observed-0.ptx.gz",
+      "sha256": "5a167c471b8e901e9930d07cab4d908fc4eefc243b807837377e7e582e48fb85",
+      "size": 649
+    },
+    "comparison/gpu-1-reference-first-native/recurrence-2-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/recurrence-2-0-observed-0.cu",
+      "sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+      "size": 760
+    },
+    "comparison/gpu-1-reference-first-native/recurrence-2-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/recurrence-2-0-observed-0.ptx.gz",
+      "sha256": "5a167c471b8e901e9930d07cab4d908fc4eefc243b807837377e7e582e48fb85",
+      "size": 649
+    },
+    "comparison/gpu-1-reference-first-native/report.json.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/report.json.gz",
+      "sha256": "e1ad0ef03f02bdce1e478a4cceee51710fe638d89ccea8b7fe59db0052362ec4",
+      "size": 17223
+    },
+    "comparison/gpu-1-reference-first-native/signed_sequential-0-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/signed_sequential-0-0-observed-0.cu",
+      "sha256": "791edc7abb1d617d20528145762734b79729c8fc039aec975a9b4777e8f5d1de",
+      "size": 792
+    },
+    "comparison/gpu-1-reference-first-native/signed_sequential-0-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/signed_sequential-0-0-observed-0.ptx.gz",
+      "sha256": "5d7f61613671217a10f420f7baecf0a4e540016ef30642735bac33e6bbb331a9",
+      "size": 648
+    },
+    "comparison/gpu-1-reference-first-native/signed_sequential-0-2-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/signed_sequential-0-2-observed-0.cu",
+      "sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+      "size": 776
+    },
+    "comparison/gpu-1-reference-first-native/signed_sequential-0-2-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/signed_sequential-0-2-observed-0.ptx.gz",
+      "sha256": "6dd6fd449474d35a7ce706eb72ee9943f48527a1ca7e4e0a5cb55e4c4c7c0b3d",
+      "size": 651
+    },
+    "comparison/gpu-1-reference-first-native/signed_sequential-1-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/signed_sequential-1-0-observed-0.cu",
+      "sha256": "791edc7abb1d617d20528145762734b79729c8fc039aec975a9b4777e8f5d1de",
+      "size": 792
+    },
+    "comparison/gpu-1-reference-first-native/signed_sequential-1-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/signed_sequential-1-0-observed-0.ptx.gz",
+      "sha256": "5d7f61613671217a10f420f7baecf0a4e540016ef30642735bac33e6bbb331a9",
+      "size": 648
+    },
+    "comparison/gpu-1-reference-first-native/signed_sequential-1-1-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/signed_sequential-1-1-observed-0.cu",
+      "sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+      "size": 776
+    },
+    "comparison/gpu-1-reference-first-native/signed_sequential-1-1-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/signed_sequential-1-1-observed-0.ptx.gz",
+      "sha256": "6dd6fd449474d35a7ce706eb72ee9943f48527a1ca7e4e0a5cb55e4c4c7c0b3d",
+      "size": 651
+    },
+    "comparison/gpu-1-reference-first-native/signed_sequential-2-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/signed_sequential-2-0-observed-0.cu",
+      "sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+      "size": 776
+    },
+    "comparison/gpu-1-reference-first-native/signed_sequential-2-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/signed_sequential-2-0-observed-0.ptx.gz",
+      "sha256": "6dd6fd449474d35a7ce706eb72ee9943f48527a1ca7e4e0a5cb55e4c4c7c0b3d",
+      "size": 651
+    },
+    "comparison/gpu-1-reference-first-native/stderr.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "comparison/gpu-1-reference-first-native/stdout.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "comparison/gpu-1-reference-first-native/zero_trip-0-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/zero_trip-0-0-observed-0.cu",
+      "sha256": "9b0254b9577a5d4f945b5dabc16899dddc6d871623438cb1c8d314b8b4d8deb1",
+      "size": 503
+    },
+    "comparison/gpu-1-reference-first-native/zero_trip-0-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/zero_trip-0-0-observed-0.ptx.gz",
+      "sha256": "82472a81d056a57366943fc9f3657d8ad067ee2c86be094cfbd5e290abcdf8a2",
+      "size": 584
+    },
+    "comparison/gpu-1-reference-first-native/zero_trip-0-2-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/zero_trip-0-2-observed-0.cu",
+      "sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+      "size": 487
+    },
+    "comparison/gpu-1-reference-first-native/zero_trip-0-2-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/zero_trip-0-2-observed-0.ptx.gz",
+      "sha256": "db880e46a88076ec2a793f994cd30a048fc9743608a8ab476f337ce789702e05",
+      "size": 585
+    },
+    "comparison/gpu-1-reference-first-native/zero_trip-1-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/zero_trip-1-0-observed-0.cu",
+      "sha256": "9b0254b9577a5d4f945b5dabc16899dddc6d871623438cb1c8d314b8b4d8deb1",
+      "size": 503
+    },
+    "comparison/gpu-1-reference-first-native/zero_trip-1-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/zero_trip-1-0-observed-0.ptx.gz",
+      "sha256": "82472a81d056a57366943fc9f3657d8ad067ee2c86be094cfbd5e290abcdf8a2",
+      "size": 584
+    },
+    "comparison/gpu-1-reference-first-native/zero_trip-1-1-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/zero_trip-1-1-observed-0.cu",
+      "sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+      "size": 487
+    },
+    "comparison/gpu-1-reference-first-native/zero_trip-1-1-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/zero_trip-1-1-observed-0.ptx.gz",
+      "sha256": "db880e46a88076ec2a793f994cd30a048fc9743608a8ab476f337ce789702e05",
+      "size": 585
+    },
+    "comparison/gpu-1-reference-first-native/zero_trip-2-0-observed-0.cu": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/zero_trip-2-0-observed-0.cu",
+      "sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+      "size": 487
+    },
+    "comparison/gpu-1-reference-first-native/zero_trip-2-0-observed-0.ptx.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-native/zero_trip-2-0-observed-0.ptx.gz",
+      "sha256": "db880e46a88076ec2a793f994cd30a048fc9743608a8ab476f337ce789702e05",
+      "size": 585
+    },
+    "comparison/gpu-1-reference-first-reference/report.json.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-reference/report.json.gz",
+      "sha256": "0bd169596d11cf231543fc2d4a66bb36140d8a043f3de80f4b3c0f5ddff16a8d",
+      "size": 18261
+    },
+    "comparison/gpu-1-reference-first-reference/stderr.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-reference/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "comparison/gpu-1-reference-first-reference/stdout.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/gpu-1-reference-first-reference/stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "comparison/source-manifest.json.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/source-manifest.json.gz",
+      "sha256": "ea4f2f8f8846863e936387a177a78404c4c92b928e1ad6135e82d28d1422bf5f",
+      "size": 6132
+    },
+    "comparison/summary.json.gz": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison/summary.json.gz",
+      "sha256": "50dbf0b565159866d1e21db3357894975536850008a8125ae71d1ac3d87e001d",
+      "size": 2001
+    },
+    "comparison.stderr.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "comparison.stdout.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/comparison.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "fixed.stderr.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/fixed.stderr.log",
+      "sha256": "8b9511d00c250a9738db6ae98269912e69624e293c82527febeae97ce8f21afb",
+      "size": 3126
+    },
+    "fixed.stdout.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/fixed.stdout.log",
+      "sha256": "634939076e294857d8e9cd04c3a8c1b60e25b006166ca2530032341687a0c4da",
+      "size": 2849
+    },
+    "focused-tests.stderr.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/focused-tests.stderr.log",
+      "sha256": "f2fee0a7d487874702fef973921c8d29ad6ef42e56b424c7ac3d09a07ea7279f",
+      "size": 11920
+    },
+    "focused-tests.stdout.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/focused-tests.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "python-3.10.19.stderr.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/python-3.10.19.stderr.log",
+      "sha256": "d54441aee6b466992c4451091e3aa7b3004ac47fb02855b239a81f22a5f70f28",
+      "size": 8437
+    },
+    "python-3.10.19.stdout.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/python-3.10.19.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "python-3.11.15.stderr.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/python-3.11.15.stderr.log",
+      "sha256": "f7f6a4e973a19f512e9fb43aea6a515a5d2b80514265d62ee5b93fbb726a5cdf",
+      "size": 12193
+    },
+    "python-3.11.15.stdout.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/python-3.11.15.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "python-3.13.13.stderr.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/python-3.13.13.stderr.log",
+      "sha256": "05543b0cdb2aeac9f1c43e81a7dc89ad7c0dda96b0deb965741422f77bae38a3",
+      "size": 12193
+    },
+    "python-3.13.13.stdout.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/python-3.13.13.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "python-3.14.5.stderr.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/python-3.14.5.stderr.log",
+      "sha256": "40d379e0fb4ab7ba7eba828824c54fb7f7b2f7d862b04f13c27f04723f6878b9",
+      "size": 12193
+    },
+    "python-3.14.5.stdout.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/python-3.14.5.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "warm-report.json": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/warm-report.json",
+      "sha256": "8d55369bbb6c308561dd1fdeb1326babfb9801db1c644af2b81781a35cef5111",
+      "size": 3653
+    },
+    "warm.stderr.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/warm.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "warm.stdout.log": {
+      "original_path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-operator-recovery.iJS0Kv/diagnostic-outputs/postcommit-18e94de5-01/warm.stdout.log",
+      "sha256": "f186291648fb63e03797dda093319b8692da27d6abdbaf29bf134a67bb84eca6",
+      "size": 3654
+    },
+    "canonical/cpu-0-reference.log": {
+      "original_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cpu-0-reference.log",
+      "sha256": "55c73d309930f5fccd5a62f5e66e69543adc4a43828f7818e01a292324890b9b",
+      "size": 2174
+    },
+    "canonical/cpu-0-candidate.log": {
+      "original_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cpu-0-candidate.log",
+      "sha256": "425c342763d99e2789b8a29851cdc6f34b002e58bac0348f87e258427076d072",
+      "size": 823
+    },
+    "canonical/cuda-0-reference.log": {
+      "original_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cuda-0-reference.log",
+      "sha256": "17e0ec032b73c2b187650ce96dac1eaad2339388f932c008b57b58734c6f9b6e",
+      "size": 2575
+    },
+    "canonical/cuda-0-candidate.log": {
+      "original_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cuda-0-candidate.log",
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac",
+      "size": 851
+    },
+    "canonical/cuda-1-candidate.log": {
+      "original_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cuda-1-candidate.log",
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac",
+      "size": 851
+    },
+    "canonical/cuda-1-reference.log": {
+      "original_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cuda-1-reference.log",
+      "sha256": "adac72120560b6a650b42aa3ad33b30ddc2fa4457e0c73b26c1a948ee62a4b81",
+      "size": 2575
+    },
+    "canonical/report.json": {
+      "original_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/report.json",
+      "sha256": "c9b4f6312489b7762b7b8a111c1f6a897f7dcbe1eac6cdd352d2daed7db3cd0d",
+      "size": 383112
+    }
+  },
+  "fixed_worker_files": [
+    {
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cpu-0-reference.json.gz",
+      "sha256": "482640b39c6155d9e38139302c96840d3bc67b41d2458eda0b2ab428c5239adf",
+      "size": 45415193,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cpu-0-reference.log",
+      "sha256": "55c73d309930f5fccd5a62f5e66e69543adc4a43828f7818e01a292324890b9b",
+      "size": 2174,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cpu-0-candidate.json.gz",
+      "sha256": "b0f50c921abb58d7e4bf91783b2cef51de49e4caadee0b551c59777f65a1bc79",
+      "size": 2147,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cpu-0-candidate.log",
+      "sha256": "425c342763d99e2789b8a29851cdc6f34b002e58bac0348f87e258427076d072",
+      "size": 823,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cuda-0-reference.json.gz",
+      "sha256": "c58d43e2692f0b582451db4320ecfe45579f503a6433629d366de7fee31ef945",
+      "size": 45417687,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cuda-0-reference.log",
+      "sha256": "17e0ec032b73c2b187650ce96dac1eaad2339388f932c008b57b58734c6f9b6e",
+      "size": 2575,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cuda-0-candidate.json.gz",
+      "sha256": "e8167163cc72c7be738e5f352118ecb65b06a9a593ed16566731f559093b4b82",
+      "size": 7406125,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cuda-0-candidate.log",
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac",
+      "size": 851,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cuda-1-candidate.json.gz",
+      "sha256": "e4ed19c9e5a64dec04c76486a3691968f58635fc33db06e4657f78d10172ad7f",
+      "size": 7406110,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cuda-1-candidate.log",
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac",
+      "size": 851,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cuda-1-reference.json.gz",
+      "sha256": "2990c2d1cf1ebc0b2dc747676a4afd68f979aab06162396f1669355b5856be11",
+      "size": 45417532,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cuda-1-reference.log",
+      "sha256": "adac72120560b6a650b42aa3ad33b30ddc2fa4457e0c73b26c1a948ee62a4b81",
+      "size": 2575,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    }
+  ],
+  "legacy_gap": "Earlier missing original compressed bytes remain missing; historical decoded exports are not recovered raw bytes."
+}

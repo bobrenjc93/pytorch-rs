@@ -1,0 +1,247 @@
+{
+  "files": [
+    {
+      "label": "candidate",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T012512Z-8c57dfda/cpu-0-reference.json.gz",
+      "relative_path": "target/default-compile-eval/run-20260914T012512Z-8c57dfda/cpu-0-reference.json.gz",
+      "size": 45415247,
+      "sha256": "9f8528d09418a2f6786b19a7d9e948286ca91a827d3b7f8e5b6a4af9a2542705",
+      "measured_commit": "6ef71d3acc5cac5bb71b8928acb642993f81958d",
+      "observer_path_coverage": true
+    },
+    {
+      "label": "candidate",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T012512Z-8c57dfda/cpu-0-reference.log",
+      "relative_path": "target/default-compile-eval/run-20260914T012512Z-8c57dfda/cpu-0-reference.log",
+      "size": 2174,
+      "sha256": "a6e5cedb4b0302abf10728904003d0300913b3fce6732ed0af9f0dd92c66e55c",
+      "measured_commit": "6ef71d3acc5cac5bb71b8928acb642993f81958d",
+      "observer_path_coverage": true
+    },
+    {
+      "label": "candidate",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T012512Z-8c57dfda/cpu-0-candidate.json.gz",
+      "relative_path": "target/default-compile-eval/run-20260914T012512Z-8c57dfda/cpu-0-candidate.json.gz",
+      "size": 2146,
+      "sha256": "d0729b5f4e22fbff80308c71310ed952238e762b115a34e5538c3db5258f15a4",
+      "measured_commit": "6ef71d3acc5cac5bb71b8928acb642993f81958d",
+      "observer_path_coverage": true
+    },
+    {
+      "label": "candidate",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T012512Z-8c57dfda/cpu-0-candidate.log",
+      "relative_path": "target/default-compile-eval/run-20260914T012512Z-8c57dfda/cpu-0-candidate.log",
+      "size": 823,
+      "sha256": "425c342763d99e2789b8a29851cdc6f34b002e58bac0348f87e258427076d072",
+      "measured_commit": "6ef71d3acc5cac5bb71b8928acb642993f81958d",
+      "observer_path_coverage": true
+    },
+    {
+      "label": "candidate",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T012512Z-8c57dfda/cuda-0-reference.json.gz",
+      "relative_path": "target/default-compile-eval/run-20260914T012512Z-8c57dfda/cuda-0-reference.json.gz",
+      "size": 45417623,
+      "sha256": "2482963ef917cbef79b2e9e32ca24cf66c353c800e60b2c9607193adb570b79f",
+      "measured_commit": "6ef71d3acc5cac5bb71b8928acb642993f81958d",
+      "observer_path_coverage": true
+    },
+    {
+      "label": "candidate",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T012512Z-8c57dfda/cuda-0-reference.log",
+      "relative_path": "target/default-compile-eval/run-20260914T012512Z-8c57dfda/cuda-0-reference.log",
+      "size": 2575,
+      "sha256": "be9b8806411badea04eae7936221a7035be4cc6f6fa1e5b0595a6bd1a8de99c5",
+      "measured_commit": "6ef71d3acc5cac5bb71b8928acb642993f81958d",
+      "observer_path_coverage": true
+    },
+    {
+      "label": "candidate",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T012512Z-8c57dfda/cuda-0-candidate.json.gz",
+      "relative_path": "target/default-compile-eval/run-20260914T012512Z-8c57dfda/cuda-0-candidate.json.gz",
+      "size": 7406102,
+      "sha256": "8916589c38f12a3cf3865e99e8594c45b6e030cc03874a0b43707b0e1cba8eb3",
+      "measured_commit": "6ef71d3acc5cac5bb71b8928acb642993f81958d",
+      "observer_path_coverage": true
+    },
+    {
+      "label": "candidate",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T012512Z-8c57dfda/cuda-0-candidate.log",
+      "relative_path": "target/default-compile-eval/run-20260914T012512Z-8c57dfda/cuda-0-candidate.log",
+      "size": 851,
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac",
+      "measured_commit": "6ef71d3acc5cac5bb71b8928acb642993f81958d",
+      "observer_path_coverage": true
+    },
+    {
+      "label": "candidate",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T012512Z-8c57dfda/cuda-1-candidate.json.gz",
+      "relative_path": "target/default-compile-eval/run-20260914T012512Z-8c57dfda/cuda-1-candidate.json.gz",
+      "size": 7406123,
+      "sha256": "2e50b57b90fb916328491988e6230bb831d6edb0d214fad6a28976ccfbfd8908",
+      "measured_commit": "6ef71d3acc5cac5bb71b8928acb642993f81958d",
+      "observer_path_coverage": true
+    },
+    {
+      "label": "candidate",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T012512Z-8c57dfda/cuda-1-candidate.log",
+      "relative_path": "target/default-compile-eval/run-20260914T012512Z-8c57dfda/cuda-1-candidate.log",
+      "size": 851,
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac",
+      "measured_commit": "6ef71d3acc5cac5bb71b8928acb642993f81958d",
+      "observer_path_coverage": true
+    },
+    {
+      "label": "candidate",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T012512Z-8c57dfda/cuda-1-reference.json.gz",
+      "relative_path": "target/default-compile-eval/run-20260914T012512Z-8c57dfda/cuda-1-reference.json.gz",
+      "size": 45417405,
+      "sha256": "fa824e638088c4e967d94b9291301aeb571c28d3e10d4369e876d04b44589e93",
+      "measured_commit": "6ef71d3acc5cac5bb71b8928acb642993f81958d",
+      "observer_path_coverage": true
+    },
+    {
+      "label": "candidate",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T012512Z-8c57dfda/cuda-1-reference.log",
+      "relative_path": "target/default-compile-eval/run-20260914T012512Z-8c57dfda/cuda-1-reference.log",
+      "size": 2575,
+      "sha256": "593db7d7057a7376509ab532275b28afe00d04f15c48bc17323ce0bbbdcc3e5e",
+      "measured_commit": "6ef71d3acc5cac5bb71b8928acb642993f81958d",
+      "observer_path_coverage": true
+    },
+    {
+      "label": "main",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cpu-0-reference.json.gz",
+      "relative_path": "target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cpu-0-reference.json.gz",
+      "size": 45415206,
+      "sha256": "9b88a41f1e2c5d8053a5f16b913e51205fa920d1a4676e7985de3a9bd973819b",
+      "measured_commit": "014fc0de304375258056c5aeb3151cfdc2bcc72a",
+      "observer_path_coverage": false
+    },
+    {
+      "label": "main",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cpu-0-reference.log",
+      "relative_path": "target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cpu-0-reference.log",
+      "size": 2202,
+      "sha256": "e33cb91261fb5efd1ed50a236cfb0e3b3577dbf8661b6ee9c6b5a73d5e00e23d",
+      "measured_commit": "014fc0de304375258056c5aeb3151cfdc2bcc72a",
+      "observer_path_coverage": false
+    },
+    {
+      "label": "main",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cpu-0-candidate.json.gz",
+      "relative_path": "target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cpu-0-candidate.json.gz",
+      "size": 2210,
+      "sha256": "e9f6fab8366e083c0fc4e76c48e3bceab88d2284cdd55a71cd7f47379494ff85",
+      "measured_commit": "014fc0de304375258056c5aeb3151cfdc2bcc72a",
+      "observer_path_coverage": false
+    },
+    {
+      "label": "main",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cpu-0-candidate.log",
+      "relative_path": "target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cpu-0-candidate.log",
+      "size": 823,
+      "sha256": "425c342763d99e2789b8a29851cdc6f34b002e58bac0348f87e258427076d072",
+      "measured_commit": "014fc0de304375258056c5aeb3151cfdc2bcc72a",
+      "observer_path_coverage": false
+    },
+    {
+      "label": "main",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cuda-0-reference.json.gz",
+      "relative_path": "target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cuda-0-reference.json.gz",
+      "size": 45417540,
+      "sha256": "828deb50decc906b63ef5ed357c7e0ef0eff4867c5fe126d4e296cfd255cf1f2",
+      "measured_commit": "014fc0de304375258056c5aeb3151cfdc2bcc72a",
+      "observer_path_coverage": false
+    },
+    {
+      "label": "main",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cuda-0-reference.log",
+      "relative_path": "target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cuda-0-reference.log",
+      "size": 2631,
+      "sha256": "af017fb8e961602883a6ab5c15e558325d626462bc1b6b7b13621428cef354e6",
+      "measured_commit": "014fc0de304375258056c5aeb3151cfdc2bcc72a",
+      "observer_path_coverage": false
+    },
+    {
+      "label": "main",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cuda-0-candidate.json.gz",
+      "relative_path": "target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cuda-0-candidate.json.gz",
+      "size": 6178728,
+      "sha256": "a555e1a0a3226b5494a80ba054263f6d08974b3cc5028a64a1cf9c0c32a63234",
+      "measured_commit": "014fc0de304375258056c5aeb3151cfdc2bcc72a",
+      "observer_path_coverage": false
+    },
+    {
+      "label": "main",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cuda-0-candidate.log",
+      "relative_path": "target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cuda-0-candidate.log",
+      "size": 851,
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac",
+      "measured_commit": "014fc0de304375258056c5aeb3151cfdc2bcc72a",
+      "observer_path_coverage": false
+    },
+    {
+      "label": "main",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cuda-1-candidate.json.gz",
+      "relative_path": "target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cuda-1-candidate.json.gz",
+      "size": 6178751,
+      "sha256": "69653001e4d1b77a72e771876a9ebd32f3f39f6fe81b57e989b0b9cbcbd64394",
+      "measured_commit": "014fc0de304375258056c5aeb3151cfdc2bcc72a",
+      "observer_path_coverage": false
+    },
+    {
+      "label": "main",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cuda-1-candidate.log",
+      "relative_path": "target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cuda-1-candidate.log",
+      "size": 851,
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac",
+      "measured_commit": "014fc0de304375258056c5aeb3151cfdc2bcc72a",
+      "observer_path_coverage": false
+    },
+    {
+      "label": "main",
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cuda-1-reference.json.gz",
+      "relative_path": "target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cuda-1-reference.json.gz",
+      "size": 45417601,
+      "sha256": "a1d78348a95538848ffb61ea21357ba9f98311cb828175d6913084652b889abc",
+      "measured_commit": "014fc0de304375258056c5aeb3151cfdc2bcc72a",
+      "observer_path_coverage": false
+    },
+    {
+      "label": "main",
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cuda-1-reference.log",
+      "relative_path": "target/loop-postcommit/main/target/default-compile-eval/run-20260914T010746Z-c4c212b4/cuda-1-reference.log",
+      "size": 2631,
+      "sha256": "21f5d061a2541df34c63d0d99a136d4898621f3ac2bcc5b8d970e4630a924c36",
+      "measured_commit": "014fc0de304375258056c5aeb3151cfdc2bcc72a",
+      "observer_path_coverage": false
+    }
+  ],
+  "observer_receipt_verified": false,
+  "originals_retained": true,
+  "nested_main_coverage": "Outside the fixed observer; exact directory reported to operator before cleanup. Separate retention review required. No cleanup performed."
+}

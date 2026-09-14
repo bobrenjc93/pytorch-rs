@@ -1,0 +1,992 @@
+{
+  "audited_ns": 1789354383105268044,
+  "checkout": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3",
+  "commit": "18e94de5d0177c8f67ace8d330018c5e0da3bcc2",
+  "clean_through_measurements": true,
+  "fixed_source_files_verified": 130,
+  "fixed_report_sha256": "c9b4f6312489b7762b7b8a111c1f6a897f7dcbe1eac6cdd352d2daed7db3cd0d",
+  "fixed_scores": {
+    "coverage": {
+      "categories": {
+        "broadcasting": {
+          "contribution": 4.0,
+          "eligible": 8,
+          "passed": 4,
+          "weight": 8
+        },
+        "containers_pytrees": {
+          "contribution": 0.0,
+          "eligible": 8,
+          "passed": 0,
+          "weight": 6
+        },
+        "custom_functions": {
+          "contribution": 1.5,
+          "eligible": 8,
+          "passed": 2,
+          "weight": 6
+        },
+        "decompositions": {
+          "contribution": 0.0,
+          "eligible": 8,
+          "passed": 0,
+          "weight": 6
+        },
+        "dtype_device_transitions": {
+          "contribution": 0.0,
+          "eligible": 8,
+          "passed": 0,
+          "weight": 4
+        },
+        "dynamic_shapes": {
+          "contribution": 0.0,
+          "eligible": 8,
+          "passed": 0,
+          "weight": 8
+        },
+        "graph_breaks": {
+          "contribution": 0.0,
+          "eligible": 8,
+          "passed": 0,
+          "weight": 8
+        },
+        "inference": {
+          "contribution": 0.0,
+          "eligible": 8,
+          "passed": 0,
+          "weight": 6
+        },
+        "modules_parameters_buffers": {
+          "contribution": 0.0,
+          "eligible": 8,
+          "passed": 0,
+          "weight": 8
+        },
+        "mutation_aliasing_views": {
+          "contribution": 0.0,
+          "eligible": 8,
+          "passed": 0,
+          "weight": 8
+        },
+        "python_control_flow": {
+          "contribution": 2.0,
+          "eligible": 8,
+          "passed": 2,
+          "weight": 8
+        },
+        "recompilation_guards": {
+          "contribution": 1.0,
+          "eligible": 8,
+          "passed": 2,
+          "weight": 4
+        },
+        "tensor_arithmetic": {
+          "contribution": 6.0,
+          "eligible": 8,
+          "passed": 4,
+          "weight": 12
+        },
+        "training_autograd": {
+          "contribution": 0.0,
+          "eligible": 8,
+          "passed": 0,
+          "weight": 8
+        }
+      },
+      "common_success_geomean_ratio": 1.1550354001155279,
+      "eligible": 112,
+      "passed": 14,
+      "score": 14.5
+    },
+    "cuda-perf": {
+      "categories": {
+        "broadcasting": {
+          "contribution": 8.0,
+          "eligible": 4,
+          "passed": 4,
+          "weight": 8
+        },
+        "containers_pytrees": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 0,
+          "weight": 6
+        },
+        "custom_functions": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 2,
+          "weight": 6
+        },
+        "decompositions": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 0,
+          "weight": 6
+        },
+        "dtype_device_transitions": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 0,
+          "weight": 4
+        },
+        "dynamic_shapes": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 0,
+          "weight": 8
+        },
+        "graph_breaks": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 0,
+          "weight": 8
+        },
+        "inference": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 0,
+          "weight": 6
+        },
+        "modules_parameters_buffers": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 0,
+          "weight": 8
+        },
+        "mutation_aliasing_views": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 0,
+          "weight": 8
+        },
+        "python_control_flow": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 2,
+          "weight": 8
+        },
+        "recompilation_guards": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 2,
+          "weight": 4
+        },
+        "tensor_arithmetic": {
+          "contribution": 12.0,
+          "eligible": 4,
+          "passed": 4,
+          "weight": 12
+        },
+        "training_autograd": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 0,
+          "weight": 8
+        }
+      },
+      "common_success_geomean_ratio": 1.1550354001155279,
+      "eligible": 56,
+      "passed": 14,
+      "score": 20.0
+    }
+  },
+  "wheel": {
+    "build_command": "maturin build --release --locked",
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/wheels.M8BnUR/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "profile": "release",
+    "sha256": "61ff5d4a7701c10cf84779746933bf09d7f20a5aaaab57cfee57b806d7cafdfc"
+  },
+  "native_import": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+  "extension": {
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+    "sha256": "d88258f52e1fd8296920f774340b12549d8917e14cb2dd4fe6f4f8bc55d5f76e"
+  },
+  "fixed_raw_files": [
+    {
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cpu-0-reference.json.gz",
+      "sha256": "482640b39c6155d9e38139302c96840d3bc67b41d2458eda0b2ab428c5239adf",
+      "size": 45415193,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cpu-0-reference.log",
+      "sha256": "55c73d309930f5fccd5a62f5e66e69543adc4a43828f7818e01a292324890b9b",
+      "size": 2174,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cpu-0-candidate.json.gz",
+      "sha256": "b0f50c921abb58d7e4bf91783b2cef51de49e4caadee0b551c59777f65a1bc79",
+      "size": 2147,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cpu-0-candidate.log",
+      "sha256": "425c342763d99e2789b8a29851cdc6f34b002e58bac0348f87e258427076d072",
+      "size": 823,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cuda-0-reference.json.gz",
+      "sha256": "c58d43e2692f0b582451db4320ecfe45579f503a6433629d366de7fee31ef945",
+      "size": 45417687,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cuda-0-reference.log",
+      "sha256": "17e0ec032b73c2b187650ce96dac1eaad2339388f932c008b57b58734c6f9b6e",
+      "size": 2575,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cuda-0-candidate.json.gz",
+      "sha256": "e8167163cc72c7be738e5f352118ecb65b06a9a593ed16566731f559093b4b82",
+      "size": 7406125,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cuda-0-candidate.log",
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac",
+      "size": 851,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cuda-1-candidate.json.gz",
+      "sha256": "e4ed19c9e5a64dec04c76486a3691968f58635fc33db06e4657f78d10172ad7f",
+      "size": 7406110,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cuda-1-candidate.log",
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac",
+      "size": 851,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "output",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cuda-1-reference.json.gz",
+      "sha256": "2990c2d1cf1ebc0b2dc747676a4afd68f979aab06162396f1669355b5856be11",
+      "size": 45417532,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    },
+    {
+      "kind": "log",
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/run-20260914T024649Z-42cdacb0/cuda-1-reference.log",
+      "sha256": "adac72120560b6a650b42aa3ad33b30ddc2fa4457e0c73b26c1a948ee62a4b81",
+      "size": 2575,
+      "observer_path_coverage": true,
+      "precleanup_observer_receipt_verified": false
+    }
+  ],
+  "generic_diagnostic": {
+    "legs": 8,
+    "paired_histories": 60,
+    "min_ratio": 0.5706331565395365,
+    "max_ratio": 1.5037925770441751,
+    "native_slower_histories": 42,
+    "reference_generated_attribution": 28,
+    "reference_unknown_attribution": 32,
+    "verified_observed_kernels": [
+      {
+        "leg": "gpu-0-native-first-native",
+        "case": "recurrence",
+        "variant": 0,
+        "sample": 0,
+        "source_sha256": "18e93432a058344e7480d65c69ad543314244cdcf957e58db55a697e07e8240e",
+        "ptx_sha256": "1a5dde0646fb9cdb2e2caca8a7ec5d5ef89123fae81e1d8f4fa803e2aa530e40"
+      },
+      {
+        "leg": "gpu-0-native-first-native",
+        "case": "recurrence",
+        "variant": 1,
+        "sample": 0,
+        "source_sha256": "18e93432a058344e7480d65c69ad543314244cdcf957e58db55a697e07e8240e",
+        "ptx_sha256": "1a5dde0646fb9cdb2e2caca8a7ec5d5ef89123fae81e1d8f4fa803e2aa530e40"
+      },
+      {
+        "leg": "gpu-0-native-first-native",
+        "case": "recurrence",
+        "variant": 1,
+        "sample": 1,
+        "source_sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+        "ptx_sha256": "4a47462f59231768805caa90b53f4920cf13747b099a810dcc2c88b76ba6e96d"
+      },
+      {
+        "leg": "gpu-0-native-first-native",
+        "case": "recurrence",
+        "variant": 0,
+        "sample": 2,
+        "source_sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+        "ptx_sha256": "4a47462f59231768805caa90b53f4920cf13747b099a810dcc2c88b76ba6e96d"
+      },
+      {
+        "leg": "gpu-0-native-first-native",
+        "case": "recurrence",
+        "variant": 2,
+        "sample": 0,
+        "source_sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+        "ptx_sha256": "4a47462f59231768805caa90b53f4920cf13747b099a810dcc2c88b76ba6e96d"
+      },
+      {
+        "leg": "gpu-0-native-first-native",
+        "case": "signed_sequential",
+        "variant": 0,
+        "sample": 0,
+        "source_sha256": "791edc7abb1d617d20528145762734b79729c8fc039aec975a9b4777e8f5d1de",
+        "ptx_sha256": "516bcc3b9d8292a8db91ab205014517ab8eba5bf33d5f42c6a0d082284549421"
+      },
+      {
+        "leg": "gpu-0-native-first-native",
+        "case": "signed_sequential",
+        "variant": 1,
+        "sample": 0,
+        "source_sha256": "791edc7abb1d617d20528145762734b79729c8fc039aec975a9b4777e8f5d1de",
+        "ptx_sha256": "516bcc3b9d8292a8db91ab205014517ab8eba5bf33d5f42c6a0d082284549421"
+      },
+      {
+        "leg": "gpu-0-native-first-native",
+        "case": "signed_sequential",
+        "variant": 1,
+        "sample": 1,
+        "source_sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+        "ptx_sha256": "40bde36f1ef02dfde4af25ff4f914c1935f65f28b7e4502f2454f24915bdc011"
+      },
+      {
+        "leg": "gpu-0-native-first-native",
+        "case": "signed_sequential",
+        "variant": 0,
+        "sample": 2,
+        "source_sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+        "ptx_sha256": "40bde36f1ef02dfde4af25ff4f914c1935f65f28b7e4502f2454f24915bdc011"
+      },
+      {
+        "leg": "gpu-0-native-first-native",
+        "case": "signed_sequential",
+        "variant": 2,
+        "sample": 0,
+        "source_sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+        "ptx_sha256": "40bde36f1ef02dfde4af25ff4f914c1935f65f28b7e4502f2454f24915bdc011"
+      },
+      {
+        "leg": "gpu-0-native-first-native",
+        "case": "zero_trip",
+        "variant": 0,
+        "sample": 0,
+        "source_sha256": "9b0254b9577a5d4f945b5dabc16899dddc6d871623438cb1c8d314b8b4d8deb1",
+        "ptx_sha256": "71e5b381bb3f7899f70a5118284f4ed35a674eef08e4723bc04e31c2b24a3f96"
+      },
+      {
+        "leg": "gpu-0-native-first-native",
+        "case": "zero_trip",
+        "variant": 1,
+        "sample": 0,
+        "source_sha256": "9b0254b9577a5d4f945b5dabc16899dddc6d871623438cb1c8d314b8b4d8deb1",
+        "ptx_sha256": "71e5b381bb3f7899f70a5118284f4ed35a674eef08e4723bc04e31c2b24a3f96"
+      },
+      {
+        "leg": "gpu-0-native-first-native",
+        "case": "zero_trip",
+        "variant": 1,
+        "sample": 1,
+        "source_sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+        "ptx_sha256": "5a0068539b22c95700390f156c8b633de974c86a80d061aed470df1ea104da00"
+      },
+      {
+        "leg": "gpu-0-native-first-native",
+        "case": "zero_trip",
+        "variant": 0,
+        "sample": 2,
+        "source_sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+        "ptx_sha256": "5a0068539b22c95700390f156c8b633de974c86a80d061aed470df1ea104da00"
+      },
+      {
+        "leg": "gpu-0-native-first-native",
+        "case": "zero_trip",
+        "variant": 2,
+        "sample": 0,
+        "source_sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+        "ptx_sha256": "5a0068539b22c95700390f156c8b633de974c86a80d061aed470df1ea104da00"
+      },
+      {
+        "leg": "gpu-0-reference-first-native",
+        "case": "recurrence",
+        "variant": 0,
+        "sample": 0,
+        "source_sha256": "18e93432a058344e7480d65c69ad543314244cdcf957e58db55a697e07e8240e",
+        "ptx_sha256": "1a5dde0646fb9cdb2e2caca8a7ec5d5ef89123fae81e1d8f4fa803e2aa530e40"
+      },
+      {
+        "leg": "gpu-0-reference-first-native",
+        "case": "recurrence",
+        "variant": 1,
+        "sample": 0,
+        "source_sha256": "18e93432a058344e7480d65c69ad543314244cdcf957e58db55a697e07e8240e",
+        "ptx_sha256": "1a5dde0646fb9cdb2e2caca8a7ec5d5ef89123fae81e1d8f4fa803e2aa530e40"
+      },
+      {
+        "leg": "gpu-0-reference-first-native",
+        "case": "recurrence",
+        "variant": 1,
+        "sample": 1,
+        "source_sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+        "ptx_sha256": "4a47462f59231768805caa90b53f4920cf13747b099a810dcc2c88b76ba6e96d"
+      },
+      {
+        "leg": "gpu-0-reference-first-native",
+        "case": "recurrence",
+        "variant": 0,
+        "sample": 2,
+        "source_sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+        "ptx_sha256": "4a47462f59231768805caa90b53f4920cf13747b099a810dcc2c88b76ba6e96d"
+      },
+      {
+        "leg": "gpu-0-reference-first-native",
+        "case": "recurrence",
+        "variant": 2,
+        "sample": 0,
+        "source_sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+        "ptx_sha256": "4a47462f59231768805caa90b53f4920cf13747b099a810dcc2c88b76ba6e96d"
+      },
+      {
+        "leg": "gpu-0-reference-first-native",
+        "case": "signed_sequential",
+        "variant": 0,
+        "sample": 0,
+        "source_sha256": "791edc7abb1d617d20528145762734b79729c8fc039aec975a9b4777e8f5d1de",
+        "ptx_sha256": "516bcc3b9d8292a8db91ab205014517ab8eba5bf33d5f42c6a0d082284549421"
+      },
+      {
+        "leg": "gpu-0-reference-first-native",
+        "case": "signed_sequential",
+        "variant": 1,
+        "sample": 0,
+        "source_sha256": "791edc7abb1d617d20528145762734b79729c8fc039aec975a9b4777e8f5d1de",
+        "ptx_sha256": "516bcc3b9d8292a8db91ab205014517ab8eba5bf33d5f42c6a0d082284549421"
+      },
+      {
+        "leg": "gpu-0-reference-first-native",
+        "case": "signed_sequential",
+        "variant": 1,
+        "sample": 1,
+        "source_sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+        "ptx_sha256": "40bde36f1ef02dfde4af25ff4f914c1935f65f28b7e4502f2454f24915bdc011"
+      },
+      {
+        "leg": "gpu-0-reference-first-native",
+        "case": "signed_sequential",
+        "variant": 0,
+        "sample": 2,
+        "source_sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+        "ptx_sha256": "40bde36f1ef02dfde4af25ff4f914c1935f65f28b7e4502f2454f24915bdc011"
+      },
+      {
+        "leg": "gpu-0-reference-first-native",
+        "case": "signed_sequential",
+        "variant": 2,
+        "sample": 0,
+        "source_sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+        "ptx_sha256": "40bde36f1ef02dfde4af25ff4f914c1935f65f28b7e4502f2454f24915bdc011"
+      },
+      {
+        "leg": "gpu-0-reference-first-native",
+        "case": "zero_trip",
+        "variant": 0,
+        "sample": 0,
+        "source_sha256": "9b0254b9577a5d4f945b5dabc16899dddc6d871623438cb1c8d314b8b4d8deb1",
+        "ptx_sha256": "71e5b381bb3f7899f70a5118284f4ed35a674eef08e4723bc04e31c2b24a3f96"
+      },
+      {
+        "leg": "gpu-0-reference-first-native",
+        "case": "zero_trip",
+        "variant": 1,
+        "sample": 0,
+        "source_sha256": "9b0254b9577a5d4f945b5dabc16899dddc6d871623438cb1c8d314b8b4d8deb1",
+        "ptx_sha256": "71e5b381bb3f7899f70a5118284f4ed35a674eef08e4723bc04e31c2b24a3f96"
+      },
+      {
+        "leg": "gpu-0-reference-first-native",
+        "case": "zero_trip",
+        "variant": 1,
+        "sample": 1,
+        "source_sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+        "ptx_sha256": "5a0068539b22c95700390f156c8b633de974c86a80d061aed470df1ea104da00"
+      },
+      {
+        "leg": "gpu-0-reference-first-native",
+        "case": "zero_trip",
+        "variant": 0,
+        "sample": 2,
+        "source_sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+        "ptx_sha256": "5a0068539b22c95700390f156c8b633de974c86a80d061aed470df1ea104da00"
+      },
+      {
+        "leg": "gpu-0-reference-first-native",
+        "case": "zero_trip",
+        "variant": 2,
+        "sample": 0,
+        "source_sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+        "ptx_sha256": "5a0068539b22c95700390f156c8b633de974c86a80d061aed470df1ea104da00"
+      },
+      {
+        "leg": "gpu-1-native-first-native",
+        "case": "recurrence",
+        "variant": 0,
+        "sample": 0,
+        "source_sha256": "18e93432a058344e7480d65c69ad543314244cdcf957e58db55a697e07e8240e",
+        "ptx_sha256": "1a5dde0646fb9cdb2e2caca8a7ec5d5ef89123fae81e1d8f4fa803e2aa530e40"
+      },
+      {
+        "leg": "gpu-1-native-first-native",
+        "case": "recurrence",
+        "variant": 1,
+        "sample": 0,
+        "source_sha256": "18e93432a058344e7480d65c69ad543314244cdcf957e58db55a697e07e8240e",
+        "ptx_sha256": "1a5dde0646fb9cdb2e2caca8a7ec5d5ef89123fae81e1d8f4fa803e2aa530e40"
+      },
+      {
+        "leg": "gpu-1-native-first-native",
+        "case": "recurrence",
+        "variant": 1,
+        "sample": 1,
+        "source_sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+        "ptx_sha256": "4a47462f59231768805caa90b53f4920cf13747b099a810dcc2c88b76ba6e96d"
+      },
+      {
+        "leg": "gpu-1-native-first-native",
+        "case": "recurrence",
+        "variant": 0,
+        "sample": 2,
+        "source_sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+        "ptx_sha256": "4a47462f59231768805caa90b53f4920cf13747b099a810dcc2c88b76ba6e96d"
+      },
+      {
+        "leg": "gpu-1-native-first-native",
+        "case": "recurrence",
+        "variant": 2,
+        "sample": 0,
+        "source_sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+        "ptx_sha256": "4a47462f59231768805caa90b53f4920cf13747b099a810dcc2c88b76ba6e96d"
+      },
+      {
+        "leg": "gpu-1-native-first-native",
+        "case": "signed_sequential",
+        "variant": 0,
+        "sample": 0,
+        "source_sha256": "791edc7abb1d617d20528145762734b79729c8fc039aec975a9b4777e8f5d1de",
+        "ptx_sha256": "516bcc3b9d8292a8db91ab205014517ab8eba5bf33d5f42c6a0d082284549421"
+      },
+      {
+        "leg": "gpu-1-native-first-native",
+        "case": "signed_sequential",
+        "variant": 1,
+        "sample": 0,
+        "source_sha256": "791edc7abb1d617d20528145762734b79729c8fc039aec975a9b4777e8f5d1de",
+        "ptx_sha256": "516bcc3b9d8292a8db91ab205014517ab8eba5bf33d5f42c6a0d082284549421"
+      },
+      {
+        "leg": "gpu-1-native-first-native",
+        "case": "signed_sequential",
+        "variant": 1,
+        "sample": 1,
+        "source_sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+        "ptx_sha256": "40bde36f1ef02dfde4af25ff4f914c1935f65f28b7e4502f2454f24915bdc011"
+      },
+      {
+        "leg": "gpu-1-native-first-native",
+        "case": "signed_sequential",
+        "variant": 0,
+        "sample": 2,
+        "source_sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+        "ptx_sha256": "40bde36f1ef02dfde4af25ff4f914c1935f65f28b7e4502f2454f24915bdc011"
+      },
+      {
+        "leg": "gpu-1-native-first-native",
+        "case": "signed_sequential",
+        "variant": 2,
+        "sample": 0,
+        "source_sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+        "ptx_sha256": "40bde36f1ef02dfde4af25ff4f914c1935f65f28b7e4502f2454f24915bdc011"
+      },
+      {
+        "leg": "gpu-1-native-first-native",
+        "case": "zero_trip",
+        "variant": 0,
+        "sample": 0,
+        "source_sha256": "9b0254b9577a5d4f945b5dabc16899dddc6d871623438cb1c8d314b8b4d8deb1",
+        "ptx_sha256": "71e5b381bb3f7899f70a5118284f4ed35a674eef08e4723bc04e31c2b24a3f96"
+      },
+      {
+        "leg": "gpu-1-native-first-native",
+        "case": "zero_trip",
+        "variant": 1,
+        "sample": 0,
+        "source_sha256": "9b0254b9577a5d4f945b5dabc16899dddc6d871623438cb1c8d314b8b4d8deb1",
+        "ptx_sha256": "71e5b381bb3f7899f70a5118284f4ed35a674eef08e4723bc04e31c2b24a3f96"
+      },
+      {
+        "leg": "gpu-1-native-first-native",
+        "case": "zero_trip",
+        "variant": 1,
+        "sample": 1,
+        "source_sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+        "ptx_sha256": "5a0068539b22c95700390f156c8b633de974c86a80d061aed470df1ea104da00"
+      },
+      {
+        "leg": "gpu-1-native-first-native",
+        "case": "zero_trip",
+        "variant": 0,
+        "sample": 2,
+        "source_sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+        "ptx_sha256": "5a0068539b22c95700390f156c8b633de974c86a80d061aed470df1ea104da00"
+      },
+      {
+        "leg": "gpu-1-native-first-native",
+        "case": "zero_trip",
+        "variant": 2,
+        "sample": 0,
+        "source_sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+        "ptx_sha256": "5a0068539b22c95700390f156c8b633de974c86a80d061aed470df1ea104da00"
+      },
+      {
+        "leg": "gpu-1-reference-first-native",
+        "case": "recurrence",
+        "variant": 0,
+        "sample": 0,
+        "source_sha256": "18e93432a058344e7480d65c69ad543314244cdcf957e58db55a697e07e8240e",
+        "ptx_sha256": "1a5dde0646fb9cdb2e2caca8a7ec5d5ef89123fae81e1d8f4fa803e2aa530e40"
+      },
+      {
+        "leg": "gpu-1-reference-first-native",
+        "case": "recurrence",
+        "variant": 1,
+        "sample": 0,
+        "source_sha256": "18e93432a058344e7480d65c69ad543314244cdcf957e58db55a697e07e8240e",
+        "ptx_sha256": "1a5dde0646fb9cdb2e2caca8a7ec5d5ef89123fae81e1d8f4fa803e2aa530e40"
+      },
+      {
+        "leg": "gpu-1-reference-first-native",
+        "case": "recurrence",
+        "variant": 1,
+        "sample": 1,
+        "source_sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+        "ptx_sha256": "4a47462f59231768805caa90b53f4920cf13747b099a810dcc2c88b76ba6e96d"
+      },
+      {
+        "leg": "gpu-1-reference-first-native",
+        "case": "recurrence",
+        "variant": 0,
+        "sample": 2,
+        "source_sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+        "ptx_sha256": "4a47462f59231768805caa90b53f4920cf13747b099a810dcc2c88b76ba6e96d"
+      },
+      {
+        "leg": "gpu-1-reference-first-native",
+        "case": "recurrence",
+        "variant": 2,
+        "sample": 0,
+        "source_sha256": "58747781820ed5d67a77356074dd744472185104723ee8780734e755d4481dc3",
+        "ptx_sha256": "4a47462f59231768805caa90b53f4920cf13747b099a810dcc2c88b76ba6e96d"
+      },
+      {
+        "leg": "gpu-1-reference-first-native",
+        "case": "signed_sequential",
+        "variant": 0,
+        "sample": 0,
+        "source_sha256": "791edc7abb1d617d20528145762734b79729c8fc039aec975a9b4777e8f5d1de",
+        "ptx_sha256": "516bcc3b9d8292a8db91ab205014517ab8eba5bf33d5f42c6a0d082284549421"
+      },
+      {
+        "leg": "gpu-1-reference-first-native",
+        "case": "signed_sequential",
+        "variant": 1,
+        "sample": 0,
+        "source_sha256": "791edc7abb1d617d20528145762734b79729c8fc039aec975a9b4777e8f5d1de",
+        "ptx_sha256": "516bcc3b9d8292a8db91ab205014517ab8eba5bf33d5f42c6a0d082284549421"
+      },
+      {
+        "leg": "gpu-1-reference-first-native",
+        "case": "signed_sequential",
+        "variant": 1,
+        "sample": 1,
+        "source_sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+        "ptx_sha256": "40bde36f1ef02dfde4af25ff4f914c1935f65f28b7e4502f2454f24915bdc011"
+      },
+      {
+        "leg": "gpu-1-reference-first-native",
+        "case": "signed_sequential",
+        "variant": 0,
+        "sample": 2,
+        "source_sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+        "ptx_sha256": "40bde36f1ef02dfde4af25ff4f914c1935f65f28b7e4502f2454f24915bdc011"
+      },
+      {
+        "leg": "gpu-1-reference-first-native",
+        "case": "signed_sequential",
+        "variant": 2,
+        "sample": 0,
+        "source_sha256": "ea68b9ef565152d70811ac669e922b38cfa49ad7ef1f3cdc78f984780daf18fb",
+        "ptx_sha256": "40bde36f1ef02dfde4af25ff4f914c1935f65f28b7e4502f2454f24915bdc011"
+      },
+      {
+        "leg": "gpu-1-reference-first-native",
+        "case": "zero_trip",
+        "variant": 0,
+        "sample": 0,
+        "source_sha256": "9b0254b9577a5d4f945b5dabc16899dddc6d871623438cb1c8d314b8b4d8deb1",
+        "ptx_sha256": "71e5b381bb3f7899f70a5118284f4ed35a674eef08e4723bc04e31c2b24a3f96"
+      },
+      {
+        "leg": "gpu-1-reference-first-native",
+        "case": "zero_trip",
+        "variant": 1,
+        "sample": 0,
+        "source_sha256": "9b0254b9577a5d4f945b5dabc16899dddc6d871623438cb1c8d314b8b4d8deb1",
+        "ptx_sha256": "71e5b381bb3f7899f70a5118284f4ed35a674eef08e4723bc04e31c2b24a3f96"
+      },
+      {
+        "leg": "gpu-1-reference-first-native",
+        "case": "zero_trip",
+        "variant": 1,
+        "sample": 1,
+        "source_sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+        "ptx_sha256": "5a0068539b22c95700390f156c8b633de974c86a80d061aed470df1ea104da00"
+      },
+      {
+        "leg": "gpu-1-reference-first-native",
+        "case": "zero_trip",
+        "variant": 0,
+        "sample": 2,
+        "source_sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+        "ptx_sha256": "5a0068539b22c95700390f156c8b633de974c86a80d061aed470df1ea104da00"
+      },
+      {
+        "leg": "gpu-1-reference-first-native",
+        "case": "zero_trip",
+        "variant": 2,
+        "sample": 0,
+        "source_sha256": "50f2f1a4615f6331aa50e9b6ebb42d8792589a751bcabf3db15cea99f84f2c0e",
+        "ptx_sha256": "5a0068539b22c95700390f156c8b633de974c86a80d061aed470df1ea104da00"
+      }
+    ]
+  },
+  "warm_probe": {
+    "kind": "hardware-free mocked-native warm frontend diagnostic",
+    "started_ns": 1789354307177403599,
+    "commit": "18e94de5d0177c8f67ace8d330018c5e0da3bcc2",
+    "dirty": "",
+    "frontend": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/venv/lib/python3.12/site-packages/torch_rs/_compile_pointwise.py",
+    "frontend_sha256": "a70b2059fc15c98878f3ac53ee09b53e5f427be5670bc1e7f9c7babfad59e40e",
+    "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_910598c3/target/default-compile-eval/venv/bin/python",
+    "batch_calls": 1000,
+    "warmup_batches": 5,
+    "sample_batches": 17,
+    "cases": [
+      {
+        "name": "arithmetic",
+        "warmup_ns": [
+          21573543,
+          20855007,
+          20859093,
+          20965404,
+          108919169
+        ],
+        "sample_ns": [
+          21056321,
+          20922048,
+          21049081,
+          20606050,
+          26226682,
+          20756268,
+          20910641,
+          20689937,
+          20503545,
+          20565148,
+          20521212,
+          20627042,
+          20484326,
+          20683989,
+          20997402,
+          20491978,
+          20823379
+        ],
+        "graph": [
+          [
+            [
+              "input",
+              0,
+              0,
+              0
+            ],
+            [
+              "mul",
+              0,
+              0,
+              0
+            ],
+            [
+              "add",
+              1,
+              0,
+              0
+            ]
+          ],
+          2
+        ],
+        "calls_per_100_warm_invocations": {
+          "compiled": 100,
+          "bind_arguments": 100,
+          "<genexpr>": 18400,
+          "validate_signature_containers": 100,
+          "_resolve_bindings": 100,
+          "validate_namespaces": 100,
+          "validate_ranges": 100,
+          "_select_specialization": 100,
+          "matches": 200,
+          "_broadcast_elements": 100,
+          "__hash__": 100
+        },
+        "median_ns_per_call": 20689.937
+      },
+      {
+        "name": "literal_loop",
+        "warmup_ns": [
+          21766485,
+          21654667,
+          21621756,
+          22775041,
+          21784092
+        ],
+        "sample_ns": [
+          132230151,
+          20895868,
+          20889750,
+          20893285,
+          21046176,
+          20776398,
+          21500503,
+          21543859,
+          21378428,
+          21443657,
+          21207290,
+          21149482,
+          21168191,
+          21274261,
+          21022921,
+          21187840,
+          21348163
+        ],
+        "graph": [
+          [
+            [
+              "input",
+              0,
+              0,
+              0
+            ],
+            [
+              "constant",
+              0,
+              0,
+              4593671619917905920
+            ],
+            [
+              "add",
+              0,
+              1,
+              0
+            ],
+            [
+              "constant",
+              0,
+              0,
+              4593671619917905920
+            ],
+            [
+              "add",
+              2,
+              3,
+              0
+            ],
+            [
+              "constant",
+              0,
+              0,
+              4593671619917905920
+            ],
+            [
+              "add",
+              4,
+              5,
+              0
+            ]
+          ],
+          6
+        ],
+        "calls_per_100_warm_invocations": {
+          "compiled": 100,
+          "bind_arguments": 100,
+          "<genexpr>": 18400,
+          "validate_signature_containers": 100,
+          "_resolve_bindings": 100,
+          "validate_namespaces": 100,
+          "validate_ranges": 100,
+          "_select_specialization": 100,
+          "matches": 200,
+          "_broadcast_elements": 100,
+          "__hash__": 100
+        },
+        "median_ns_per_call": 21187.84
+      }
+    ],
+    "finished_ns": 1789354308425450601
+  },
+  "new_passes_against_historical_main": [
+    [
+      "cuda",
+      "static_loop",
+      0
+    ],
+    [
+      "cuda",
+      "static_loop",
+      1
+    ]
+  ],
+  "lost_passes_against_historical_main": [],
+  "checks": {
+    "focused_gpu_tests": 66,
+    "focused_gpu_skips": 0,
+    "portable_tests_per_version": 66,
+    "portable_skips_per_version": 10,
+    "portable_versions": [
+      "3.10.19",
+      "3.11.15",
+      "3.13.13",
+      "3.14.5"
+    ],
+    "full_suites_repeated": false
+  },
+  "retention_note": "New diagnostic originals are directly durable; frozen evaluator raw payloads await the unchanged canonical precleanup observer. Earlier late-raw gap remains."
+}
