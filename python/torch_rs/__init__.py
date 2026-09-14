@@ -972,7 +972,7 @@ def compile(
 ):
     """Compile the bounded native pointwise language, or an explicit backend.
 
-    With untouched defaults, straight-line functions over one or two broadcast-compatible
+    With untouched defaults, bounded pointwise functions over one or two broadcast-compatible
     contiguous no-grad native CUDA float32 inputs lower to generated fused CUDA
     code. Equal-shape inputs support add/subtract/multiply, negation/ReLU/sin/cos,
     scalar constants and reused local intermediates. Unequal input shapes require
@@ -983,8 +983,14 @@ def compile(
     ``c+a*b`` with all three leaves tensor inputs (IDs may repeat within the
     one/two-tensor limit). Scalar leaves, identity wrappers, subtraction,
     negation, ReLU/sin/cos and extra live arithmetic do not qualify for this
-    exception. CPU compilation, mutation,
-    control flow, module calls and training are outside this default JIT subset.
+    exception. Root functions may also use sequential, non-nested loops over the
+    actual built-in range (including direct aliases), with one to three literal
+    exact-integer bounds and a nonzero step. Zero/one/many trips and signed steps
+    are supported. Bodies use the same pointwise language and approved direct,
+    data-only Python helpers; even skipped bodies receive admission checks.
+    CPU compilation, mutation, reductions, conditional/early-exit control flow,
+    nested or helper-local loops, runtime range bounds, arbitrary iterators,
+    module calls and training are outside this default JIT subset.
     NVRTC and the CUDA driver compile/cache code; no PyTorch forwarding or eager
     replay is used. See docs/compile-pointwise-jit.md for guards and scope.
 

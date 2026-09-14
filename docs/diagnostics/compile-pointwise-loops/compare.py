@@ -1,8 +1,10 @@
 """Non-scoring, source-bound literal-loop diagnostic in isolated native/reference legs.
 
 Run from the checkout root with a freshly installed wheel, reserved GPUs, and
-worktree-local writable caches. Every output/failure is retained; no evaluator
-or corpus definition is changed. See README.md for reproduction and scope.
+worktree-local writable caches. Retains initial and last available result/input
+observations, observed native receiver artifacts, timings and failures; individual
+normal warmup/sample tensor returns are not archived. No evaluator or corpus
+definition is changed. See README.md for reproduction and scope.
 """
 import argparse
 import ctypes
@@ -83,6 +85,90 @@ def make(fw, name):
     return scope['f'], tuple(scope[k] for k in ('h',) if k in scope), inputs
 
 
+def capture_observations(history, result, tensors, dispatches, out, tag):
+    """Best-effort evidence capture, without invoking the workload again."""
+    errors = history.setdefault('observation_errors', [])
+    for key, observe in (
+        ('observed_output', lambda: encode(result) if result is not None else None),
+        ('observed_inputs', lambda: [encode(t) for t in tensors]),
+    ):
+        try:
+            history[key] = observe()
+        except Exception:
+            errors.append({'observation': key, 'failure': traceback.format_exc()})
+    receivers = []
+    history['observed_kernels'] = []
+    for phase, receiver in dispatches:
+        if any(receiver is previous for previous in receivers):
+            continue
+        receivers.append(receiver)
+        record = {'phases': [p for p, k in dispatches if k is receiver]}
+        history['observed_kernels'].append(record)
+        stem = f'{tag}-observed-{len(receivers)-1}'
+        # Each artifact is saved independently: e.g. a PTX/property failure
+        # must not discard a source already obtained from an observed receiver.
+        for kind in ('source', 'ptx'):
+            try:
+                data = getattr(receiver, kind).encode()
+                path = out / (stem + ('.cu' if kind == 'source' else '.ptx.gz'))
+                with path.open('xb') as stream:
+                    stream.write(data if kind == 'source' else gzip.compress(data, mtime=0))
+                record[kind + '_path'] = path.name
+                record[kind + '_sha256'] = hashlib.sha256(data).hexdigest()
+            except Exception:
+                errors.append({'observation': stem + '/' + kind, 'failure': traceback.format_exc()})
+        for key, attribute in (('nvrtc', 'nvrtc_version'), ('options', 'options'), ('device', 'device')):
+            try:
+                record[key] = getattr(receiver, attribute)
+            except Exception:
+                errors.append({'observation': stem + '/' + key, 'failure': traceback.format_exc()})
+
+
+def measure_history(compiled, values, sync, history, save, profile=None):
+    """Keep the timing/profiling contract; checkpoint observations on every exit."""
+    result = None
+    try:
+        history['phase'] = 'cold'
+        if profile is not None:
+            sys.setprofile(profile)
+        sync()
+        start = time.perf_counter_ns()
+        result = compiled(*values)
+        sync()
+        history['cold_ns'] = time.perf_counter_ns() - start
+        history['output'] = encode(result)
+        sys.setprofile(None)
+        for i in range(5):
+            history.update(phase='warmup', phase_index=i)
+            result = None  # A throwing call has no returned output to observe.
+            sync()
+            start = time.perf_counter_ns()
+            result = compiled(*values)
+            sync()
+            history['warmup_ns'].append(time.perf_counter_ns() - start)
+        for i in range(17):
+            history.update(phase='sample', phase_index=i)
+            result = None
+            sync()
+            start = time.perf_counter_ns()
+            result = compiled(*values)
+            sync()
+            history['samples_ns'].append(time.perf_counter_ns() - start)
+        if profile is not None:
+            history.update(phase='warm_guard', phase_index=None)
+            result = None
+            sys.setprofile(profile)
+            result = compiled(*values)
+            sync()
+    except Exception:
+        history['failure'] = traceback.format_exc()
+        raise
+    finally:
+        sys.setprofile(None)
+        save(result)
+    return result
+
+
 def leg(args):
     out = args.output
     report = {'role': args.role, 'started_ns': time.time_ns(),
@@ -124,21 +210,21 @@ def leg(args):
                 fn, helpers, inputs = make(fw, name)
                 compiled = fw.compile(fn)
                 codes = (fn.__code__, *(helper.__code__ for helper in helpers))
-                dispatches, lowering_calls = [], []
-                phase = 'cold'
+                dispatches, lowering_calls, body_calls = [], [], []
                 def forbid(frame, event, arg):
                     if event == 'c_call' and getattr(arg, '__name__', '') == 'run':
                         owner = getattr(arg, '__self__', None)
                         if type(owner) is bridge._PointwiseKernel:
-                            dispatches.append((phase, owner))
+                            dispatches.append((history['phase'], owner))
                     if event == 'call' and frame.f_code is frontend.lower.__code__:
-                        lowering_calls.append(phase)
+                        lowering_calls.append(history['phase'])
                     if event == 'call' and any(frame.f_code is code for code in codes):
+                        body_calls.append(history['phase'])
                         raise AssertionError('original body executed')
                 for variant, sample in ((0, 0), (1, 0), (1, 1), (0, 2), (2, 0)):
                     dispatches.clear()
                     lowering_calls.clear()
-                    phase = 'cold'
+                    body_calls.clear()
                     values = inputs(variant, sample)
                     tensors = tuple(v for v in values if type(v) is fw.Tensor)
                     before = [encode(t) for t in tensors]
@@ -146,66 +232,40 @@ def leg(args):
                     row['histories'].append(history)
                     if args.role == 'reference':
                         history['reference_kernels_before'] = metrics.generated_kernel_count
-                    if args.role == 'native':
-                        sys.setprofile(forbid)
-                    try:
-                        sync()
-                        start = time.perf_counter_ns()
-                        result = compiled(*values)
-                        sync()
-                        history['cold_ns'] = time.perf_counter_ns() - start
-                        history['output'] = encode(result)
-                        # Body policing covers cold admission; steady timings on both
-                        # sides run without profiling instrumentation.
-                        sys.setprofile(None)
-                        for _ in range(5):
-                            sync()
-                            warm_start = time.perf_counter_ns()
-                            result = compiled(*values)
-                            sync()
-                            history['warmup_ns'].append(time.perf_counter_ns() - warm_start)
-                        for _ in range(17):
-                            sync()
-                            start = time.perf_counter_ns()
-                            result = compiled(*values)
-                            sync()
-                            history['samples_ns'].append(time.perf_counter_ns() - start)
-                        if args.role == 'native':
-                            phase = 'warm_guard'
-                            sys.setprofile(forbid)
-                            result = compiled(*values)
-                            sync()
-                        assert encode(result) == history['output']
-                        assert [encode(t) for t in tensors] == before
-                        assert not math.prod(result.shape) or all(result.data_ptr() != t.data_ptr() for t in tensors)
-                        history['median_ns'] = statistics.median(history['samples_ns'])
+                    def save(result):
+                        capture_observations(history, result, tensors, dispatches, out,
+                                             f'{name}-{variant}-{sample}')
+                        if history['samples_ns']:
+                            history['median_ns'] = statistics.median(history['samples_ns'])
                         if args.role == 'reference':
                             history['reference_kernels_after'] = metrics.generated_kernel_count
                             history['reference_counters'] = {key: dict(value) for key, value in counters.items()}
                             history['reference_attribution'] = ('generated Inductor kernel' if
                                 history['reference_kernels_after'] > history['reference_kernels_before'] else
                                 'unknown for this call; retained wrapper and aggregate counters only')
-                        if args.role == 'native':
-                            kernel = next(reversed(compiled._torch_rs_pointwise_cache.executors.values()))
-                            assert len(dispatches) == 2 and all(k is kernel for _, k in dispatches)
-                            assert [phase for phase, _ in dispatches] == ['cold', 'warm_guard']
-                            assert 'warm_guard' not in lowering_calls
+                        else:
                             history['native_dispatch'] = {
-                                'api': '_PointwiseKernel.run', 'profiled_phases': [phase for phase, _ in dispatches],
-                                'lowering_phases': lowering_calls[:], 'original_body_calls': 0,
-                                'nonempty_output': bool(math.prod(result.shape)),
+                                'api': '_PointwiseKernel.run', 'profiled_phases': [p for p, _ in dispatches],
+                                'lowering_phases': lowering_calls[:], 'original_body_calls': len(body_calls),
+                                'nonempty_output': bool(result is not None and math.prod(result.shape)),
                                 'scope': 'C-extension executor entry; no driver-level kernel trace'}
-                            assert 'torch_rs_pointwise' in kernel.ptx
-                            assert kernel.ptx.count('.visible .entry') == 1
-                            tag = f'{name}-{variant}-{sample}'
-                            (out / f'{tag}.cu').write_text(kernel.source)
-                            (out / f'{tag}.ptx.gz').write_bytes(gzip.compress(kernel.ptx.encode(), mtime=0))
-                            history['kernel'] = {'source_sha256': sha(out / f'{tag}.cu'),
-                                                 'ptx_sha256': hashlib.sha256(kernel.ptx.encode()).hexdigest(),
-                                                 'nvrtc': kernel.nvrtc_version, 'options': kernel.options,
-                                                 'device': kernel.device}
-                    finally:
-                        sys.setprofile(None)
+                        # Persist available values/artifacts before any parity or
+                        # attribution assertion; this also runs on execution errors.
+                        write(out / 'report.json.gz', report)
+                    result = measure_history(compiled, values, sync, history, save,
+                                             forbid if args.role == 'native' else None)
+                    assert not history['observation_errors'], history['observation_errors']
+                    assert history['observed_output'] == history['output']
+                    assert history['observed_inputs'] == before
+                    assert not math.prod(result.shape) or all(result.data_ptr() != t.data_ptr() for t in tensors)
+                    if args.role == 'native':
+                        assert len(dispatches) == 2 and dispatches[0][1] is dispatches[1][1]
+                        assert [p for p, _ in dispatches] == ['cold', 'warm_guard']
+                        assert 'warm_guard' not in lowering_calls
+                        kernel = dispatches[0][1]
+                        history['kernel'] = history['observed_kernels'][0]
+                        assert 'torch_rs_pointwise' in kernel.ptx
+                        assert kernel.ptx.count('.visible .entry') == 1
                 row['passed'] = True
             except Exception:
                 row['failure'] = traceback.format_exc()
@@ -250,7 +310,7 @@ def compare(left, right):
             assert a == b
         else:
             assert math.isfinite(a) and abs(a-b) <= 1e-6 + 1e-5*abs(b), (a, b)
-            if a == b == 0:
+            if b == 0:
                 assert math.copysign(1, a) == math.copysign(1, b)
 
 
@@ -270,26 +330,39 @@ def run(args):
             pair = {}
             for role in order:
                 directory = args.output / f'gpu-{gpu}-{order[0]}-first-{role}'
-                directory.mkdir()
+                directory.mkdir(mode=0o700)
+                workspace = args.workspace / 'caches' / directory.name
+                workspace.mkdir(parents=True)
                 env = dict(os.environ, CUDA_VISIBLE_DEVICES=gpu,
-                           TORCHINDUCTOR_CACHE_DIR=str(directory / 'inductor'),
-                           TRITON_CACHE_DIR=str(directory / 'triton'), CUDA_CACHE_PATH=str(directory / 'cuda'))
+                           TORCHINDUCTOR_CACHE_DIR=str(workspace / 'inductor'),
+                           TRITON_CACHE_DIR=str(workspace / 'triton'), CUDA_CACHE_PATH=str(workspace / 'cuda'),
+                           TMPDIR=str(workspace), XDG_CACHE_HOME=str(workspace / 'xdg'))
                 row = {'gpu': gpu, 'role': role, 'order': order, 'directory': directory.name}
+                timed_out = False
                 try:
                     with (directory / 'stdout.log').open('w') as stdout, (directory / 'stderr.log').open('w') as stderr:
                         result = subprocess.run([sys.executable, '-B', __file__, '--role', role,
-                                                 '--output', str(directory), '--wheel', str(args.wheel)],
+                                                 '--output', str(workspace), '--durable-raw-output', str(directory),
+                                                 '--wheel', str(args.wheel)],
                                                 env=env, stdout=stdout, stderr=stderr, timeout=600)
                     row['returncode'] = result.returncode
                 except subprocess.TimeoutExpired:
-                    row.update(returncode=None, failure='600 second child timeout')
+                    timed_out = True
+                    row.update(returncode=None, failure='600 second child timeout',
+                               descendants_quiescent=False)
                 report['legs'].append(row)
                 path = directory / 'report.json.gz'
+                row['passed'] = False
                 if path.exists():
-                    pair[role] = json.loads(gzip.decompress(path.read_bytes()))
-                    row['passed'] = row['returncode'] == 0 and pair[role]['passed']
-                else:
-                    row['passed'] = False
+                    try:
+                        pair[role] = json.loads(gzip.decompress(path.read_bytes()))
+                        row['passed'] = row['returncode'] == 0 and pair[role]['passed']
+                    except Exception:
+                        row['report_read_failure'] = traceback.format_exc()
+                if timed_out:
+                    report.update(passed=False, stopped='timeout: execution owner must establish descendant quiescence before further measurements')
+                    write(args.output / 'summary.json.gz', report)
+                    return 1
                 write(args.output / 'summary.json.gz', report)
             comparison = {'gpu': gpu, 'order': order, 'passed': False, 'histories': []}
             report['comparisons'].append(comparison)
@@ -313,18 +386,33 @@ def run(args):
     return 0 if report['passed'] else 1
 
 
+def prepare_paths(args):
+    # --output always owns the disposable, worktree-local workspace. Only raw
+    # observations may be redirected to an explicitly supplied durable location.
+    args.workspace, args.wheel = args.output.resolve(), args.wheel.resolve()
+    assert args.workspace.is_relative_to(ROOT) and args.wheel.is_relative_to(ROOT)
+    assert Path(sys.executable).resolve().is_relative_to(ROOT)
+    args.output = args.durable_raw_output.resolve() if args.durable_raw_output else args.workspace
+    if not args.role:
+        devices = args.devices.split(',')
+        assert len(devices) == 2 and len(set(devices)) == 2, 'select two explicitly reserved GPUs'
+        # Never append to another attempt, even after a failed run. Require an
+        # existing durable parent; do not create an external directory hierarchy.
+        args.workspace.mkdir(parents=True, exist_ok=False)
+        if args.output != args.workspace:
+            args.output.mkdir(mode=0o700, exist_ok=False)
+    else:
+        assert args.workspace.is_dir() and args.output.is_dir()
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--durable-raw-output', type=Path,
+                        help='new exclusive raw-output directory; caches remain under --output in the checkout')
     parser.add_argument('--wheel', type=Path, required=True)
     parser.add_argument('--devices', default='0,1')
     parser.add_argument('--role', choices=('native', 'reference'))
     args = parser.parse_args()
-    args.output, args.wheel = args.output.resolve(), args.wheel.resolve()
-    assert args.output.is_relative_to(ROOT) and args.wheel.is_relative_to(ROOT)
-    assert Path(sys.executable).resolve().is_relative_to(ROOT)
-    if not args.role:
-        devices = args.devices.split(',')
-        assert len(devices) == 2 and len(set(devices)) == 2, 'select two explicitly reserved GPUs'
-    args.output.mkdir(parents=True, exist_ok=bool(args.role))
+    prepare_paths(args)
     sys.exit(leg(args) if args.role else run(args))

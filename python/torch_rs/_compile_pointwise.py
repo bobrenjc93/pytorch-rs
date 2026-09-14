@@ -680,6 +680,11 @@ def resolve(model, program, parameters=None):
     # hooks, including on a warm call or before rejecting a later graph node.
     validate_signature_containers(model)
     validate_code(model.__code__, program.code.co_argcount)
+    return _resolve_bindings(model, program, parameters)
+
+
+def _resolve_bindings(model, program, parameters):
+    """Resolve mutable bindings after the caller validates the root/signature."""
     validate_namespaces(model)
     validate_ranges(model, program.range_sources)
     globals_ = model.__globals__
@@ -933,7 +938,11 @@ def implementation(model, recompile_limit):
             validate_signature_containers(model)
             if program.code.co_argcount != len(args):
                 unsupported("function signature changed")
-            static_bindings, static_values = resolve(model, program, parameters)
+            # analyze() admitted this exact immutable code/constant pool. The
+            # identity check above repeats admission on replacement; mutable
+            # signature containers still receive their one check on every call.
+            # Private resolve() remains fully validating for independent callers.
+            static_bindings, static_values = _resolve_bindings(model, program, parameters)
             input_ids = (0, 0) if len(tensors) == 2 and tensors[0] is tensors[1] else tuple(range(len(tensors)))
             abi = (len(tensors), input_ids, tuple((s, v.index) for s, v in static_values.items()
                                                if type(v) is Value))

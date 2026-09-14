@@ -122,12 +122,17 @@ The original root code remains the semantic cache owner. Every used range lookup
 including zero-trip loops, is checked by identity on every call before lowering or
 execution. Globals and the function's actual builtins table must be exact dicts
 with exact string keys, checked before lookup or disassembly. Signature containers
-and the complete constant pool are also revalidated on warm hits. Restoring a
+are also revalidated on warm hits. Admission of the unchanged immutable root code
+and its complete constant pool is reused by code identity; replacement repeats
+full admission before disassembly. Private `resolve()` callers still receive
+full code/constant validation. Restoring a
 valid range binding can reuse existing entries; invalid bindings publish no cache
 changes. Normalization adds no persistent cache or execution backend.
 
 See the [loop diagnostics](diagnostics/compile-pointwise-loops/README.md) for
-source-bound checks, original failures and the limits of this evidence.
+source-bound checks, original failures and the limits of this evidence, and the
+[operator recovery](diagnostics/compile-pointwise-loops/operator-recovery.md) for
+corrected observation retention and the outstanding clean-evidence refresh.
 
 ### Direct Python helpers
 
