@@ -1,0 +1,65 @@
+{
+  "base_commit": "597d1f3e1f584db7b776c573eca2c485a359fcc9",
+  "source_kind": "uncommitted numerical repair; clean-commit refresh required after Burner commit",
+  "artifacts": {
+    "source": {
+      "path": "target/default-compile-eval/structured-outputs-review-fix/repair-source.tar.gz",
+      "sha256": "1679a9519b74dbcfe6419e02f62b7c958f82791d9a07ee2af1ac8827c117895e",
+      "bytes": 620523,
+      "files": 150,
+      "verified_byte_exact": true
+    },
+    "nested_diagnostics": {
+      "path": "target/default-compile-eval/structured-outputs-review-fix/nested-dispatch-diagnostics.tar.gz",
+      "sha256": "84eb3ee6aa709929ee6dbeaa3925e628aa732104b366223e756a1683cce62e5e",
+      "bytes": 6026651,
+      "files": 1741,
+      "verified_byte_exact": true
+    },
+    "reference_caches": {
+      "path": "target/default-compile-eval/structured-outputs-review-fix/reference-caches.tar.gz",
+      "sha256": "718c1166cdb1a5aa24b032654696c79f3f9258b446462fd8ec8f8e0362b1f009",
+      "bytes": 75249251,
+      "files": 15895,
+      "verified_byte_exact": true
+    },
+    "raw": {
+      "path": "target/default-compile-eval/structured-outputs-review-fix/review-returned-products-raw.tar.gz",
+      "sha256": "d9ee7eb550dc90505da882141ccf417ba3521042ff63c39dd7e0549057df25af",
+      "bytes": 3649466,
+      "files": 2767,
+      "verified_byte_exact": true
+    },
+    "original-review.tar.gz": {
+      "path": "target/default-compile-eval/structured-outputs-review-fix/original-review.tar.gz",
+      "sha256": "d40de39488b8d8e40967171f41c20617495dc94d4bf9623ca702d909843baab0",
+      "bytes": 4428045
+    },
+    "wheels-1": {
+      "path": "target/default-compile-eval/structured-outputs-review-fix/wheels-1/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+      "sha256": "de9875e47c042f27e0834d197ad7bb6f657fdc566fac6fb4737f7394ec832e07",
+      "bytes": 1599027
+    },
+    "wheels-final": {
+      "path": "target/default-compile-eval/structured-outputs-review-fix/wheels-final/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+      "sha256": "993509b5abd53d8ef0af0a723a171087d31b92baa24037571ca07cc8866514e8",
+      "bytes": 1599021
+    },
+    "wheels-effective": {
+      "path": "target/default-compile-eval/structured-outputs-review-fix/wheels-effective/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+      "sha256": "dd71fb51846f48541264d44fdb018b70abd637b84b48e5022ac60ba3bdf2a624",
+      "bytes": 1599908
+    },
+    "wheels-ready": {
+      "path": "target/default-compile-eval/structured-outputs-review-fix/wheels-ready/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+      "sha256": "d62cb19bbcd3048adcbd72bddf960976b7841942c1f1a7e7a8461623603bf794",
+      "bytes": 1600082
+    }
+  },
+  "checked_in": {
+    "review-returned-products-measurements.json.gz": "82adc39f63bfcfa8d94417b8f9284f8b22aa1d6728386ccfd1f3f22f750671d9",
+    "review-returned-products-raw.tar.gz": "d9ee7eb550dc90505da882141ccf417ba3521042ff63c39dd7e0549057df25af"
+  },
+  "source_hashes_unchanged": true,
+  "five_installed_packages_match_final_wheel": true
+}

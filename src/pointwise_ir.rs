@@ -171,6 +171,56 @@ mod tests {
     }
 
     #[test]
+    fn output_uses_select_the_single_use_competing_product() {
+        let mut graph = Graph {
+            inputs: 2,
+            nodes: vec![
+                Node::Input(0),
+                Node::Input(1),
+                Node::Neg(0),
+                Node::Mul(2, 1),
+                Node::Mul(0, 1),
+                Node::Add(3, 4),
+            ],
+            outputs: vec![3, 5],
+        };
+        // Default Inductor rounds the observable (0-x)*y, then fuses x*y.
+        assert!(graph.source().unwrap().contains("fmaf(v0, v1, v3)"));
+        for outputs in [vec![5], vec![4, 5], vec![3, 4, 5]] {
+            graph.outputs = outputs;
+            // A singleton result, or two shared products, retains the previous
+            // tie-breaking rule. Observable products are not rounding barriers.
+            assert!(graph.source().unwrap().contains("fmaf(v2, v1, v4)"));
+        }
+        graph.nodes.push(Node::Mul(2, 1));
+        graph.outputs = vec![5, 6];
+        // CSE aliases carry the same observable use despite distinct SSA slots.
+        assert!(graph.source().unwrap().contains("fmaf(v0, v1, v3)"));
+    }
+
+    #[test]
+    fn outer_contraction_updates_inner_product_use_counts() {
+        let graph = Graph {
+            inputs: 2,
+            nodes: vec![
+                Node::Input(0),
+                Node::Input(1),
+                Node::Mul(0, 1),
+                Node::Neg(0),
+                Node::Mul(3, 1),
+                Node::Add(2, 4),
+                Node::Add(5, 2),
+            ],
+            outputs: vec![6],
+        };
+        let source = graph.source().unwrap();
+        // The outer FMA consumes x/y directly. The remaining inner multiply
+        // uses are then tied, so it too contracts x*y rather than (0-x)*y.
+        assert!(source.contains("fmaf(v0, v1, v5)"));
+        assert!(source.contains("fmaf(v0, v1, v4)"));
+    }
+
+    #[test]
     fn scalar_zero_subtraction_exposes_factors_after_identity_checks() {
         let mut graph = Graph {
             inputs: 1,

@@ -30,6 +30,13 @@ struct ContractionProduct {
     factors: (usize, usize),
     negative: bool,
     direct: bool,
+    single_use: bool,
+}
+
+struct Contraction {
+    expression: String,
+    product: usize,
+    factors: (usize, usize),
 }
 
 #[derive(Default)]
@@ -89,7 +96,7 @@ impl Lowering {
         }
     }
 
-    fn contraction_product(&self, mut id: usize) -> Option<ContractionProduct> {
+    fn contraction_product(&self, mut id: usize, uses: &[usize]) -> Option<ContractionProduct> {
         // Reference constant folding removes these products before contraction.
         if self.constant_expressions[id] {
             return None;
@@ -99,7 +106,9 @@ impl Lowering {
         // provenance is transparent here.
         let (mut negative, mut flipped) = (false, false);
         let (mut outer_zero, mut inner_zero) = (false, false);
+        let mut single_use = true;
         loop {
+            single_use &= uses[id] == 1;
             if let Some(value) = self.subtracts_scalar_zero(id) {
                 if flipped {
                     inner_zero = true;
@@ -122,6 +131,7 @@ impl Lowering {
             // effective flip over a zero-subtracted expression retains its
             // fallback priority; leading zero subtraction alone exposes it.
             direct: !negative || (outer_zero && !inner_zero),
+            single_use,
         })
     }
 
@@ -362,9 +372,16 @@ impl Lowering {
         ranks
     }
 
-    fn contract(&self, a: usize, b: usize, subtract: bool, ranks: &[usize]) -> Option<String> {
-        let left = self.contraction_product(a);
-        let right = self.contraction_product(b);
+    fn contract(
+        &self,
+        a: usize,
+        b: usize,
+        subtract: bool,
+        ranks: &[usize],
+        uses: &[usize],
+    ) -> Option<Contraction> {
+        let left = self.contraction_product(a, uses);
+        let right = self.contraction_product(b, uses);
         // Canonicalize only competing positive products of an addition. Signed
         // products have already undergone a different normalization phase, and
         // subtraction is not commutative. Ties retain the original orientation.
@@ -373,15 +390,25 @@ impl Lowering {
             && right.is_some_and(|p| p.direct && !p.negative)
             && ranks[b] < ranks[a]
         {
-            return self.contract(b, a, false, ranks);
+            return self.contract(b, a, false, ranks, uses);
         }
         // Prefer direct products, preserving left-to-right order when both
         // candidates are sign-flipped even if only the right is zero-wrapped.
         let preferred_left = left.filter(|product| {
             product.direct || (product.negative && right.is_some_and(|other| other.negative))
         });
+        // NVPTX first contracts a single-use multiply when products compete.
+        // Output stores count as uses even though they do not forbid fusion:
+        // with no single-use candidate, retain the ordinary sign/rank fallback.
         let (product, on_right) = preferred_left
+            .filter(|product| product.single_use)
             .map(|product| (product, false))
+            .or_else(|| {
+                right
+                    .filter(|product| product.direct && product.single_use)
+                    .map(|product| (product, true))
+            })
+            .or_else(|| preferred_left.map(|product| (product, false)))
             .or_else(|| {
                 right
                     .filter(|product| product.direct)
@@ -391,7 +418,7 @@ impl Lowering {
             .or_else(|| right.map(|product| (product, true)))?;
         let (x, y) = product.factors;
         let addend = if on_right { a } else { b };
-        Some(format!(
+        let expression = format!(
             "fmaf({}v{x}, v{y}, {}v{addend})",
             if product.negative ^ (on_right && subtract) {
                 "-"
@@ -399,7 +426,61 @@ impl Lowering {
                 ""
             },
             if subtract && !on_right { "-" } else { "" }
-        ))
+        );
+        Some(Contraction {
+            expression,
+            product: if on_right { b } else { a },
+            factors: (x, y),
+        })
+    }
+
+    fn live_uses(&self, outputs: &[usize]) -> Vec<usize> {
+        let mut uses = vec![0; self.nodes.len()];
+        for &output in outputs {
+            uses[output] += 1;
+        }
+        for id in (0..self.nodes.len()).rev() {
+            if uses[id] != 0 {
+                for operand in self.operands(id) {
+                    uses[operand] += 1;
+                }
+            }
+        }
+        uses
+    }
+
+    fn contractions(&self, ranks: &[usize], mut uses: Vec<usize>) -> Vec<Option<String>> {
+        let mut selected = vec![None; self.nodes.len()];
+        // Match consumer-before-operand DAG combining: an outer FMA removes
+        // its product use before an inner competing pair is considered.
+        for id in (0..self.nodes.len()).rev() {
+            if uses[id] == 0 {
+                continue;
+            }
+            let (a, b, subtract) = match self.nodes[id] {
+                Expr::Node(Node::Add(a, b)) => (a, b, false),
+                Expr::Node(Node::Sub(a, b)) if self.subtracts_scalar_zero(id).is_none() => {
+                    (a, b, true)
+                }
+                _ => continue,
+            };
+            if let Some(contraction) = self.contract(a, b, subtract, ranks, &uses) {
+                // The FMA references factors directly. Keep these uses alive
+                // while removing any now-unused product/sign/zero wrappers.
+                let (x, y) = contraction.factors;
+                uses[x] += 1;
+                uses[y] += 1;
+                let mut removed = vec![contraction.product];
+                while let Some(operand) = removed.pop() {
+                    uses[operand] -= 1;
+                    if uses[operand] == 0 {
+                        removed.extend(self.operands(operand));
+                    }
+                }
+                selected[id] = Some(contraction.expression);
+            }
+        }
+        selected
     }
 
     fn operands(&self, id: usize) -> Vec<usize> {
@@ -573,9 +654,10 @@ fn consumer_analysis(
     let mut live = vec![false; canonical.nodes.len()];
     let mut last = vec![0; canonical.nodes.len()];
     let mut uses = vec![0; canonical.nodes.len()];
-    // Stores make roots live, but are not arithmetic consumers or rounding barriers.
+    // Stores are observable uses for sign rewrites, without prohibiting FMA.
     for &output in &graph.outputs {
         live[mapped[output]] = true;
+        uses[mapped[output]] += 1;
     }
     for id in (0..canonical.nodes.len()).rev() {
         if !live[id] {
@@ -629,17 +711,9 @@ pub(super) fn source(graph: &Graph, addresses: &[super::indexing::Address]) -> S
     let outputs: Vec<_> = graph.outputs.iter().map(|&id| mapped[id]).collect();
     let (inputs, calls) = materialization_ranks(graph, &aliases, &zeros, &mapped, &lower);
     let ranks = lower.contraction_ranks(&inputs, &calls);
-    let mut live = vec![false; lower.nodes.len()];
-    for &output in &outputs {
-        live[output] = true;
-    }
-    for id in (0..lower.nodes.len()).rev() {
-        if live[id] {
-            for operand in lower.operands(id) {
-                live[operand] = true;
-            }
-        }
-    }
+    let uses = lower.live_uses(&outputs);
+    let live: Vec<_> = uses.iter().map(|&count| count != 0).collect();
+    let contractions = lower.contractions(&ranks, uses);
     let mut source = String::from(
         "// torch_rs typed pointwise SSA v2; float32, no fast math\n\
          extern \"C\" __global__ void torch_rs_pointwise(\n\
@@ -671,14 +745,14 @@ pub(super) fn source(graph: &Graph, addresses: &[super::indexing::Address]) -> S
             }
             Expr::Zero => "__uint_as_float(0x00000000u)".into(),
             Expr::Node(Node::Boolean(value)) => if value { "1.0f" } else { "0.0f" }.into(),
-            Expr::Node(Node::Add(a, b)) => lower
-                .contract(a, b, false, &ranks)
+            Expr::Node(Node::Add(a, b)) => contractions[id]
+                .clone()
                 .unwrap_or_else(|| format!("__fadd_rn(v{a}, v{b})")),
             Expr::Node(Node::Sub(a, _)) if lower.subtracts_scalar_zero(id).is_some() => {
                 format!("v{a}")
             }
-            Expr::Node(Node::Sub(a, b)) => lower
-                .contract(a, b, true, &ranks)
+            Expr::Node(Node::Sub(a, b)) => contractions[id]
+                .clone()
                 .unwrap_or_else(|| format!("__fsub_rn(v{a}, v{b})")),
             Expr::Node(Node::Mul(a, b)) => format!("__fmul_rn(v{a}, v{b})"),
             Expr::Node(Node::Neg(a)) => lower.product(a).map_or_else(

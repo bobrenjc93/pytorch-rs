@@ -28,8 +28,17 @@ including for commutative operators.
 
 ## Competing products and dependency order
 
-When a sum has two direct positive
-products, contraction selection follows the reference's arithmetic/select
+When products compete, a direct product with one live use takes priority over
+a shared direct product. Output stores count as observable uses after expression
+deduplication, independently of result-container order or repeated result aliases.
+Stores do not prohibit contraction: a shared product can still fuse when there
+is no single-use competitor. Use counts also retain their role in sign rewrites.
+Contractions are selected from consumers toward operands. Each selected FMA
+replaces its product use with direct factor uses before inner choices are made;
+an outer contraction can therefore make an inner product single-use.
+
+When a sum has two direct positive products with equal use priority,
+contraction selection follows the reference's arithmetic/select
 dependency ranking: live input loads receive successive ranks, arithmetic adds
 one dependency level, and ReLU adds comparison and selection levels. The
 lower-ranked product contracts; equal ranks retain expression order. Thus
@@ -99,7 +108,7 @@ tensor product can instead move into its factor and contract directly,
 matching the reference's
 [negation hoisting](https://github.com/llvm/llvm-project/blob/1f126a6dea50d185c0781743a667390037ae88bd/llvm/lib/Transforms/InstCombine/InstCombineAddSub.cpp#L3020).
 This counts live canonical operand uses before sign normalization rewrites
-consumers; the signed result itself may be shared.
+consumers, including output stores; the signed result itself may be shared.
 An addition or right-hand subtraction can extract the factor's sign again
 only when the signed multiplication has one use. These are separate use counts.
 Shared negative doubling retains its rounded value for earlier addition consumers;

@@ -447,6 +447,47 @@ class StructuredHardware(unittest.TestCase):
                 self.retain(f'generated-{case}',compiled,actual,expected)
                 self.compare_tree(actual,expected)
 
+    def test_returned_competing_products_select_contraction_by_live_uses(self):
+        # A stored product is observable, but can still fuse if its competitor
+        # is also shared or there is no competing product. Keep singleton and
+        # reordered returns in the same differential matrix.
+        bodies = (
+            'p=(-x)*y\n q=x*y\n r=p+q',
+            'p=x*(-y)\n q=x*y\n r=p+q',
+            'p=(-x)*(-y)\n q=x*y\n r=p-q',
+            'p=x*y\n q=x.sin()*y.cos()\n r=p+q',
+            'p=x*y\n q=x.sin()*y.cos()\n r=q+p',
+            'p=x.sin()*y.cos()\n q=x*y\n r=p-q',
+            'p=x*y\n q=x*y\n r=p+x',
+            'p=x*y\n q=p*-1.0\n r=q+x*y',
+            'p=x*y\n q=p-0.0\n r=q+x.sin()*y.cos()',
+            'p=x*y\n q=p*-1.0\n r=q+x.sin()*y.cos()',
+            'p=x*y\n q=p*-2.0\n r=q+x.sin()*y.cos()',
+            'p=x*y\n q=x.sin()*y.cos()\n r=(p+q)+p',
+            'p=x*y\n q=(-x)*y\n r=(p+q)+p',
+        )
+        returns = ('r', '(p,r)', '(r,p)', '(q,r)', '(p,q,r)', '(r,q,p)', '(p,p,r)')
+        left = [1e10, 16777216., 1.0000001192092896, 1e-38, 0., -0.,
+                2e38, -2e38, 1., -1., float('inf'), -float('inf'), float('nan')]
+        right = [1.0000001192092896, -16777215., -1., -1e-38, -0., 0.,
+                 -2e38, 2e38, -1., 1., 0., float('inf'), 1.]
+        rng = random.Random(293)
+        left += [rng.uniform(-3, 3) for _ in range(257-len(left))]
+        right += [rng.uniform(-3, 3) for _ in range(257-len(right))]
+        args = [self.upload(values, (257,)) for values in (left, right)]
+        refs = [self.upload(values, (257,), self.torch) for values in (left, right)]
+        for case, body in enumerate(bodies):
+            for order, result in enumerate(returns):
+                source = 'def f(x,y):\n ' + body + '\n return ' + result
+                fn, ref_fn = program(source), program(source, self.torch)
+                compiled, reference = native.compile(fn), self.torch.compile(ref_fn)
+                with self.subTest(body=body, result=result):
+                    expected = reference(*refs)
+                    actual = self.without_replay(fn, compiled, args)
+                    self.retain(f'competing-uses-{case}-{order}', compiled, actual, expected)
+                    self.compare_tree(actual, expected)
+                    self.assertEqual(kernel(compiled).ptx.count('.visible .entry'), 1)
+
     def test_maximum_output_and_runtime_scalar_abi(self):
         def balanced(names):
             if len(names) == 1:
