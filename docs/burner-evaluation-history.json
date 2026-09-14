@@ -11565,6 +11565,26 @@
         "eval_d4c0b71e": 83,
         "eval_b7f2a91c": 5.5
       }
+    },
+    {
+      "key": "pr:1995",
+      "recordedAt": "2026-09-14T06:12:24.750Z",
+      "label": "PR #1995",
+      "kind": "leaf",
+      "prNumber": 1995,
+      "title": "Normalize bounded literal-range loops in the default native CUDA compiler",
+      "scores": {
+        "eval_7af648fb": 91,
+        "eval_8417a4a8": 23.8,
+        "eval_63a24994": 60,
+        "eval_39340456": 31,
+        "eval_b4945d15": 80,
+        "eval_c8a1bfb9": 70,
+        "eval_a61c0e71": 14.5,
+        "eval_6f98c42d": 20,
+        "eval_d4c0b71e": 83,
+        "eval_b7f2a91c": 5.5
+      }
     }
   ]
 }
