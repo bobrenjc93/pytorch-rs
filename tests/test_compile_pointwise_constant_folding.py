@@ -12,7 +12,7 @@ class ConstantAdmission(unittest.TestCase):
         graph = lower(program('def f(x):\n return x + 16777217.0'))
         literal = next(n for n in graph.nodes if n[0] == 'constant')
         self.assertEqual(literal[3], struct.unpack('=Q', struct.pack('=d', 16777217.0))[0])
-        self.assertIn('0x4b800000u', bridge._pointwise_source(graph.nodes, graph.output, 1))
+        self.assertIn('0x4b800000u', bridge._pointwise_source(graph.nodes, graph.outputs, 1))
 
 
 @unittest.skipUnless(available(), 'requires native CUDA and reference PyTorch CUDA')

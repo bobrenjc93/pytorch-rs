@@ -230,12 +230,12 @@ impl Kernel {
         Ok(())
     }
     /// Input pointers must cover the validated broadcast address maps on this
-    /// device. Output covers count disjoint elements. Synchronize before releasing owners.
+    /// device. Each output covers count disjoint elements. Synchronize before releasing owners.
     pub(crate) unsafe fn launch(
         &self,
         mut x0: u64,
         mut x1: u64,
-        mut output: u64,
+        outputs: &[u64],
         mut count: u64,
         scalars: &[f32],
     ) -> Result<(), TensorError> {
@@ -243,13 +243,18 @@ impl Kernel {
         if current_context()? != self.context {
             return Err(invalid("generated kernel context mismatch"));
         }
+        if outputs.len() != self.graph.outputs.len() {
+            return Err(invalid("pointwise output pointer arity mismatch"));
+        }
         let driver = driver()?;
-        let mut args = vec![
-            (&raw mut x0).cast(),
-            (&raw mut x1).cast(),
-            (&raw mut output).cast(),
-            (&raw mut count).cast(),
-        ];
+        let mut output_values = outputs.to_vec();
+        let mut args = vec![(&raw mut x0).cast(), (&raw mut x1).cast()];
+        args.extend(
+            output_values
+                .iter_mut()
+                .map(|value| std::ptr::from_mut(value).cast()),
+        );
+        args.push((&raw mut count).cast());
         // Driver arguments reference stable host values until cuLaunchKernel
         // has copied them. No scalar device buffer or cached value is retained.
         let mut scalar_values = scalars.to_vec();
@@ -311,7 +316,7 @@ mod tests {
         let graph = Graph {
             inputs: 1,
             nodes: vec![Node::Input(0), Node::Sin(0)],
-            output: 1,
+            outputs: vec![1],
         };
         let kernel = Kernel::compile(&graph, 0).unwrap();
         assert!(kernel.ptx.contains("torch_rs_pointwise"));

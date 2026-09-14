@@ -12,7 +12,26 @@ use pyo3::{
 
 type Payload = (String, usize, usize, u64);
 
-fn graph(nodes: &Bound<'_, PyTuple>, output: usize, arity: usize) -> PyResult<Graph> {
+fn graph(
+    nodes: &Bound<'_, PyTuple>,
+    outputs: &Bound<'_, PyTuple>,
+    arity: usize,
+) -> PyResult<Graph> {
+    if !outputs.is_exact_instance_of::<PyTuple>()
+        || outputs
+            .iter()
+            .any(|root| !root.is_exact_instance_of::<PyInt>())
+    {
+        return Err(PyTypeError::new_err(
+            "expected an exact tuple of integer output roots",
+        ));
+    }
+    if !(1..=64).contains(&outputs.len()) {
+        return Err(PyValueError::new_err(
+            "expected 1 to 64 computed output roots",
+        ));
+    }
+    let outputs = outputs.extract::<Vec<usize>>()?;
     if nodes.len() > 4096 {
         return Err(PyValueError::new_err("pointwise graph exceeds node limit"));
     }
@@ -58,7 +77,7 @@ fn graph(nodes: &Bound<'_, PyTuple>, output: usize, arity: usize) -> PyResult<Gr
     let graph = Graph {
         nodes: parsed,
         inputs: arity,
-        output,
+        outputs,
     };
     graph
         .validate()
@@ -99,14 +118,14 @@ pub(super) fn validate_inputs(inputs: &Bound<'_, PyTuple>) -> PyResult<usize> {
 }
 
 #[pyfunction(name = "_pointwise_source")]
-#[pyo3(signature = (nodes, output, arity, shapes=None))]
+#[pyo3(signature = (nodes, outputs, arity, shapes=None))]
 pub(super) fn source(
     nodes: &Bound<'_, PyTuple>,
-    output: usize,
+    outputs: &Bound<'_, PyTuple>,
     arity: usize,
     shapes: Option<Vec<Vec<usize>>>,
 ) -> PyResult<String> {
-    let graph = graph(nodes, output, arity)?;
+    let graph = graph(nodes, outputs, arity)?;
     if let Some(shapes) = shapes {
         let indexing = graph
             .indexing(&shapes.iter().map(Vec::as_slice).collect::<Vec<_>>())
@@ -123,9 +142,9 @@ pub(super) fn source(
 pub(super) fn compile(
     inputs: &Bound<'_, PyTuple>,
     nodes: &Bound<'_, PyTuple>,
-    output: usize,
+    outputs: &Bound<'_, PyTuple>,
 ) -> PyResult<Compiled> {
-    let graph = graph(nodes, output, inputs.len())?;
+    let graph = graph(nodes, outputs, inputs.len())?;
     let device = validate_inputs(inputs)?;
     let indexing = with_inputs(inputs, |tensors| {
         graph
@@ -140,6 +159,18 @@ pub(super) fn compile(
     })
 }
 
+pub(crate) fn convert_outputs(
+    py: Python<'_>,
+    outputs: Vec<CoreTensor>,
+    convert: impl FnMut(CoreTensor) -> PyResult<Py<PyTensor>>,
+) -> PyResult<Bound<'_, PyTuple>> {
+    let objects = outputs
+        .into_iter()
+        .map(convert)
+        .collect::<PyResult<Vec<_>>>()?;
+    PyTuple::new(py, objects)
+}
+
 #[pyclass(frozen, module = "torch_rs.torch_rs", name = "_PointwiseKernel")]
 pub(super) struct Compiled {
     kernel: Kernel,
@@ -148,11 +179,11 @@ pub(super) struct Compiled {
 #[pymethods]
 impl Compiled {
     #[pyo3(signature = (inputs, scalars=None))]
-    fn run(
+    fn run<'py>(
         &self,
-        inputs: &Bound<'_, PyTuple>,
+        inputs: &Bound<'py, PyTuple>,
         scalars: Option<&Bound<'_, PyTuple>>,
-    ) -> PyResult<PyTensor> {
+    ) -> PyResult<Bound<'py, PyTuple>> {
         // Exact types are checked before conversion; no user float hooks run.
         let values = scalars.map_or_else(
             || Ok(Vec::new()),
@@ -185,9 +216,13 @@ impl Compiled {
             ));
         }
         with_inputs(inputs, |tensors| {
-            CoreTensor::pointwise_jit(tensors, &self.kernel, &values)
-                .map(PyTensor::new)
-                .map_err(|e| tensor_error(&e))
+            let outputs = CoreTensor::pointwise_jit(tensors, &self.kernel, &values)
+                .map_err(|e| tensor_error(&e))?;
+            // Keep every storage owner and input borrow through fallible Python
+            // conversion. A partial conversion only drops local, unpublished owners.
+            convert_outputs(inputs.py(), outputs, |output| {
+                Py::new(inputs.py(), PyTensor::new(output))
+            })
         })
     }
     #[getter]

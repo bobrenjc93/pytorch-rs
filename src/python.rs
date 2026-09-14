@@ -2,6 +2,8 @@
 mod compile_cuda_graph;
 #[path = "python_pointwise.rs"]
 mod pointwise;
+#[cfg(test)]
+pub(crate) use pointwise::convert_outputs;
 #[path = "python_unflatten.rs"]
 mod unflatten;
 pub(crate) use unflatten::unflatten_variable_function;

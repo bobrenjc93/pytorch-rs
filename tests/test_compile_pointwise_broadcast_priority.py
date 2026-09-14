@@ -19,7 +19,7 @@ CANCELLATION = 'def f(x, y):\n a=x+1.0\n return x*y+a*a'
 class Metadata(unittest.TestCase):
     def source(self, source, shapes):
         graph = lower(program(source), 2)
-        return bridge._pointwise_source(graph.nodes, graph.output, 2, shapes)
+        return bridge._pointwise_source(graph.nodes, graph.outputs, 2, shapes)
 
     def test_original_depth_precedes_simplification_and_address_canonicalization(self):
         for expression in ('(x*1)*1', '(x+0)-0', '-(-x)', '(x-x)*0',
@@ -47,16 +47,16 @@ class Metadata(unittest.TestCase):
     def test_dead_graph_still_validates_before_live_admission(self):
         graph = lower(program('def f(x,y):\n dead=x+y\n return -x'), 2)
         with self.assertRaisesRegex(RuntimeError, 'broadcast'):
-            bridge._pointwise_source(graph.nodes, graph.output, 2, ((2,), (3,)))
+            bridge._pointwise_source(graph.nodes, graph.outputs, 2, ((2,), (3,)))
         # Structural validation applies even to a dead invalid SSA operand.
         nodes = (('input', 0, 0, 0), ('neg', 0, 0, 0), ('add', 0, 99, 0))
         with self.assertRaisesRegex(ValueError, 'earlier SSA node'):
-            bridge._pointwise_source(nodes, 1, 2, ((2,), (1, 2)))
+            bridge._pointwise_source(nodes, (1,), 2, ((2,), (1, 2)))
 
     def test_runtime_scalar_sign_is_metadata_not_tensor_negation(self):
         nodes = (('input', 0, 0, 0), ('input', 1, 0, 0),
                  ('scalar', 0, 1, 0), ('mul', 0, 2, 0), ('relu', 3, 0, 0))
-        code = bridge._pointwise_source(nodes, 4, 2, ((2,1), (1,3)))
+        code = bridge._pointwise_source(nodes, (4,), 2, ((2,1), (1,3)))
         self.assertIn('float s0', code)
         self.assertNotIn('fmaf(', code)
 
@@ -129,7 +129,7 @@ class BroadcastPriority(unittest.TestCase):
             self.compare(result, self.torch.tensor(equal.cpu().tolist(), device='cuda:0'))
             native.compiler.reset()
             self.assertFalse(cache(compiled).graphs)
-            self.assertEqual(selected.run((x,y)).cpu().tolist(), equal.cpu().tolist())
+            self.assertEqual(selected.run((x,y))[0].cpu().tolist(), equal.cpu().tolist())
             compiled(x,y)
             self.assertIsNot(kernel(compiled), selected)
             native.compiler.reset()

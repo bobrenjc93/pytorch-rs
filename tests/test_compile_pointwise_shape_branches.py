@@ -24,7 +24,7 @@ def shape_lower(fn, shapes=((3,),), arguments=None, **kwargs):
             strides.append(stride)
             stride *= max(size, 1)
         metadata.append((shape, tuple(reversed(strides)), False, 'torch.float32', 'cuda:0'))
-    return frontend.lower(parsed, values, len(shapes), metadata=tuple(metadata), **kwargs)
+    return frontend.lower(parsed, values, len(shapes), metadata=tuple(metadata), **kwargs).graph
 
 
 class ShapeBranchAdmission(unittest.TestCase):

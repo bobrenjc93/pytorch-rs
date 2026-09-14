@@ -991,6 +991,10 @@ def compile(
     Root input-shape branches with literal integer axes and thresholds support
     early returns and assignment joins. Loops may appear outside branch arms,
     and straight-line helpers may appear inside them.
+    Bounded tuple/list/string-keyed dict constructors may return up to 64 computed
+    Tensor leaves of one actual shape, input aliases, literal metadata and current
+    input shape-axis values. Repeated leaves/containers preserve identity; dynamic
+    outputs are fresh per call. At least one computed Tensor is required.
     CPU compilation, mutation, reductions, data-dependent or nested conditionals,
     branches inside loops/helpers, loops inside branch arms, nested/helper-local
     loops, runtime range bounds, arbitrary iterators, module calls and training

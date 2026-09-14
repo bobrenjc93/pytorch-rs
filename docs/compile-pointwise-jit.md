@@ -51,10 +51,11 @@ objects cannot execute metaclass equality or representation callbacks. Signature
 defaults must be absent or empty exact containers, and closures must use an exact tuple; container subclasses are
 rejected before truthiness or iteration hooks can execute. Integers must fit the native scalar range
 `[-2**63, 2**64-1]`; float32 overflow rounds to signed infinity. Graphs
-are bounded to 4096 nodes and 16384 bytecode instructions. Return one computed Tensor.
+are bounded to 4096 nodes and 16384 bytecode instructions. Return a computed Tensor
+or a bounded nested result as described below.
 Scalars and empty tensor shapes and contiguous views with storage offsets are
 supported. Outputs have fresh storage and canonical contiguous strides;
-inputs are unchanged. Returning an input unchanged is outside this subset.
+inputs are unchanged. Input-only returns remain outside this subset.
 
 Unequal input shapes additionally require either the tensor-leaf multiply-add
 described below, or at most one arithmetic stage and no live sin/cos. Input and scalar nodes start at depth
@@ -77,12 +78,59 @@ identity wrappers do not qualify, even if later simplification removes them.
 This exception reuses the existing single-FMA lowering and checked addresses.
 
 Strided inputs, other dtypes, gradients (even inside no-grad),
-mutation, control flow outside the bounded root branches and literal loops below, containers, module calls, keyword operator
+mutation, control flow outside the bounded root branches and literal loops below, structured inputs, module calls, keyword operator
 arguments, reductions, matrix operations, and device/dtype conversions are
 explicitly rejected. No original body or Python operator is run during
 admission or warm execution. Unsupported configurations keep their existing
 contracts; `disable=True`, configured/custom backend resolution, and the
 explicit `backend="eager"` capture implementation remain separate.
+
+### Bounded nested results
+
+Small exact tuple/list/dict constructors can combine computed Tensor leaves,
+original input aliases, exact literal `None`/bool/int/float/string metadata and
+current `input.shape[literal_integer_axis]` values:
+
+```python
+def structured(x, y):
+    product = x * y
+    shared = [product, x, x.shape[-1]]
+    return {"shared": shared, "again": shared, "sum": product + x, "tag": "native"}
+```
+
+At least one computed Tensor is required, with at most 64 distinct original SSA
+roots. Every computed root must have the same actual shape; input aliases may
+retain another shape. Dict keys must be exact literal strings; insertion order
+and duplicate-key replacement follow Python. Repeated Tensor or container leaves
+preserve identity within a call. Separate equal computations get separate output
+storage, even when kernel arithmetic is shared. Computed outputs and dynamic
+containers are fresh across calls, so retaining earlier results is safe.
+
+Constructors work in direct helpers and expanded root literal loops and branches.
+They share a 4096 construction/reference-edge budget and depth limit 64, including
+overwrites and expanded iterations. Shared container DAGs are accounted and
+rebuilt without exponential expansion. The admitted constructor bytecodes are
+`BUILD_TUPLE`, `BUILD_LIST`, `BUILD_MAP` and `BUILD_CONST_KEY_MAP`; bounded exact
+string key tuples are checked before disassembly. Compiler-optimized constant
+containers (including `()`) and large literals requiring other opcodes are
+unsupported. So are container indexing/unpacking, mutation, starred forms,
+comprehensions, constructor calls, whole `torch.Size` returns and shape arithmetic.
+Forms optimized to identical admitted bytecode are indistinguishable.
+
+Positional/captured scalar metadata returns are unsupported; arithmetic scalar
+specialization is unchanged. Shape metadata must come from an original input in
+the root, with an in-range literal axis. Helper boundaries cannot create root
+shape-predicate provenance. All original nodes and inputs retain admission checks,
+and every computed root must satisfy the existing numerical domain. Returned
+intermediates do not impose eager rounding: consumers can still use fused FMA.
+
+One native graph, output-vector ABI and CUDA launch serve all computed leaves.
+The immutable Python result specification carries topology separately, so changes
+to keys or container order do not fragment native executable caching. Current
+input aliases and dimensions are reconstructed after native completion and before
+any cache publication or LRU update. Inputs and all output allocations remain
+owned through launch, synchronization and Python conversion, including failures.
+Single-Tensor functions use this same path and still return a Tensor.
 
 ### Bounded root shape branches
 
@@ -202,12 +250,12 @@ handle exceptions, yield or await. Keyword-only/variadic parameters, nonempty
 defaults and closures, and compiler directive attributes (`_torchdynamo_inline`,
 `_dynamo_marked_constant`, `_torchdynamo_disable`) are rejected. Container types,
 attribute keys and the entire constant pool are validated without callbacks,
-including unused constants and warm calls. Strings and `None` are metadata only.
+including unused constants and warm calls. Strings and `None` are literal result metadata only.
 
-Arguments and returns must be tensor expressions or admitted scalars; functions,
+Arguments and returns may also contain admitted small constructors and literal metadata; functions,
 native call objects and modules cannot pass through helpers even as ignored
 arguments. Identity and scalar-literal returns may feed later tensor operations;
-the root must still return one computed tensor. Scalar binary arithmetic remains
+the root must still contain at least one computed tensor. Scalar binary arithmetic remains
 unsupported. Both `RETURN_VALUE` and Python 3.12 `RETURN_CONST` use this data-only
 boundary. Passing an ignored input through a helper creates no scalar value guard,
 but its data admission is rechecked on warm cache hits, including global and
@@ -250,8 +298,8 @@ numerical rewriting, including dead expressions. The same Rust admission check
 enforces the unequal-shape original-IR boundary during compilation and direct
 cached-kernel execution, before NVRTC, output allocation or launch. Only live
 returned nodes determine numerical capability; dead expressions still receive
-full graph and shape validation. It derives the returned shape
-and each live input's address from row-major coordinates; unused inputs do not
+full graph and shape validation. It checks a common shape across all computed roots
+and derives each live input's address from row-major coordinates; unused inputs do not
 expand the result. Singleton axes contribute no address increment. The same
 generated kernel fuses all supported pointwise operations.
 `cuda/jit.rs` compiles it with NVRTC and loads the resulting PTX through the

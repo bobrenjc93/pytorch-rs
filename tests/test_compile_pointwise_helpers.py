@@ -305,7 +305,7 @@ class HelperAdmission(unittest.TestCase):
         parsed = frontend.analyze(fn, 1)
         _, values = frontend.resolve(fn, parsed)
         observed = []
-        graph = frontend.lower(parsed, values, 1, observed=observed)
+        graph = frontend.lower(parsed, values, 1, observed=observed).graph
         self.assertEqual(graph.nodes, (('input', 0, 0, 0), ('add', 0, 0, 0)))
         self.assertEqual([s.name for s in observed], ['helper', 'x'])
         scalar_identity = program('def f(a):\n return a')
@@ -315,7 +315,7 @@ class HelperAdmission(unittest.TestCase):
         scale = next(s for s in parsed.dependencies if s.name == 'scale')
         values[scale] = frontend.RuntimeScalar(0)
         observed = []
-        graph = frontend.lower(parsed, values, 1, observed=observed)
+        graph = frontend.lower(parsed, values, 1, observed=observed).graph
         self.assertEqual([node for node in graph.nodes if node[0] == 'scalar'], [('scalar', 0, 0, 0)])
         self.assertEqual(observed.count(scale), 1)
 
@@ -354,7 +354,7 @@ class HelperCache(unittest.TestCase):
         def compile_(tensors, nodes, output):
             # Use the actual hardware-free native IR/codegen boundary.
             bridge._pointwise_source(nodes, output, len(tensors))
-            return types.SimpleNamespace(run=lambda tensors, scalars: (nodes, output, scalars))
+            return types.SimpleNamespace(run=lambda tensors, scalars: ((nodes, output, scalars),))
         self.codegen = self.stack.enter_context(patch.object(bridge, '_pointwise_compile', side_effect=compile_))
         self.x = native.tensor([1.0, -2.0])
 

@@ -555,29 +555,86 @@ impl CudaFloat32Storage {
         input_elements: [usize; 2],
         kernel: &jit::Kernel,
         scalars: &[f32],
-    ) -> Result<Self, TensorError> {
-        let [offset, other_offset] = offsets;
+    ) -> Result<Vec<Self>, TensorError> {
         kernel.validate_scalars(scalars)?;
         if self.device_index != other.device_index || self.device_index != kernel.device {
             return Err(crate::pointwise_ir::invalid("mixed CUDA JIT devices"));
         }
-        if input_elements[1] != 0
-            && other_offset
-                .checked_add(input_elements[1])
-                .is_none_or(|end| end > other.elements)
-        {
-            return Err(TensorError::IndexCalculationOverflow);
+        for ((input, offset), count) in [self, other].into_iter().zip(offsets).zip(input_elements) {
+            if count != 0
+                && offset
+                    .checked_add(count)
+                    .is_none_or(|end| end > input.elements)
+            {
+                return Err(TensorError::IndexCalculationOverflow);
+            }
         }
-        self.unary_output(offset, input_elements[0], elements, |left, output| {
-            let right = if input_elements[1] == 0 {
-                0
-            } else {
-                (other.data_ptr + other_offset * 4) as u64
-            };
-            // SAFETY: both checked contiguous ranges and the fresh output remain
-            // live through unary_output's completion, including launch errors.
-            unsafe { kernel.launch(left, right, output, elements as u64, scalars) }
-        })
+        self.pointwise_outputs(
+            elements,
+            kernel.graph.outputs.len(),
+            || Self::allocate(elements, self.device_index).map(|(output, _guard)| output),
+            |results| {
+                let pointers: Vec<_> = results
+                    .iter()
+                    .map(|output| output.data_ptr as u64)
+                    .collect();
+                let pointer = |input: &Self, offset, count| {
+                    if count == 0 {
+                        0
+                    } else {
+                        (input.data_ptr + offset * 4) as u64
+                    }
+                };
+                // SAFETY: checked input ranges and all distinct output owners
+                // remain live through pointwise_outputs' completion boundary.
+                unsafe {
+                    kernel.launch(
+                        pointer(self, offsets[0], input_elements[0]),
+                        pointer(other, offsets[1], input_elements[1]),
+                        &pointers,
+                        elements as u64,
+                        scalars,
+                    )
+                }
+            },
+            || {
+                self.runtime.check(
+                    unsafe {
+                        (self.runtime.stream_synchronize)(std::ptr::without_provenance_mut(1))
+                    },
+                    "cudaStreamSynchronize",
+                )
+            },
+        )
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    fn pointwise_outputs(
+        &self,
+        elements: usize,
+        count: usize,
+        mut allocate: impl FnMut() -> Result<Self, TensorError>,
+        launch: impl FnOnce(&[Self]) -> Result<(), TensorError>,
+        complete: impl FnOnce() -> Result<(), TensorError>,
+    ) -> Result<Vec<Self>, TensorError> {
+        // One guard spans every allocation, launch, completion and failure. A
+        // partial allocation failure releases only local, unpublished owners.
+        let _guard = self.runtime.guard(self.device_index)?;
+        let mut outputs = Vec::with_capacity(count);
+        for _ in 0..count {
+            outputs.push(allocate()?);
+        }
+        if elements != 0 {
+            let launched = launch(&outputs);
+            // Even a failed launch must complete before any owner is released.
+            let completed = complete();
+            if launched.is_err() || completed.is_err() {
+                CACHE_HEALTHY.store(false, Ordering::Relaxed);
+            }
+            launched?;
+            completed?;
+        }
+        Ok(outputs)
     }
 
     fn unary_output(
@@ -947,6 +1004,113 @@ fn contiguous_layout(
 #[cfg(test)]
 mod tests {
     use crate::{Device, Tensor};
+    #[test]
+    fn pointwise_multiple_output_failures_keep_owners_and_restore_device() {
+        use super::{CACHE, CACHE_HEALTHY, CudaFloat32Storage, Ordering};
+        use std::cell::{Cell, RefCell};
+        if super::device_count() == 0 {
+            eprintln!("skipping multi-output failure ownership: CUDA unavailable");
+            return;
+        }
+        let input = CudaFloat32Storage::from_host(&[1., -2., 3.], 0).unwrap();
+        let runtime = super::runtime().unwrap();
+        let current = usize::from(
+            std::env::var("CUDA_VISIBLE_DEVICES").as_deref() == Ok("0,1")
+                && super::device_count() >= 2,
+        );
+        let _guard = runtime.guard(current).unwrap();
+        for phase in ["allocation", "launch", "completion", "both"] {
+            let allocated = RefCell::new(Vec::new());
+            let launches = Cell::new(0);
+            let completions = Cell::new(0);
+            let error = crate::TensorError::CudaRuntimeError {
+                operation: "pointwise failure test",
+                message: phase.into(),
+            };
+            let assert_live = || {
+                let cache = CACHE.lock().unwrap();
+                for pointer in allocated.borrow().iter() {
+                    assert!(!cache.iter().any(|entry| entry.2 == *pointer));
+                }
+            };
+            let result = input.pointwise_outputs(
+                3,
+                3,
+                || {
+                    if phase == "allocation" && allocated.borrow().len() == 1 {
+                        assert_live();
+                        return Err(error.clone());
+                    }
+                    let (output, _guard) = CudaFloat32Storage::allocate(3, 0)?;
+                    assert!(!allocated.borrow().contains(&output.data_ptr));
+                    allocated.borrow_mut().push(output.data_ptr);
+                    Ok(output)
+                },
+                |outputs| {
+                    launches.set(launches.get() + 1);
+                    assert_eq!(outputs.len(), 3);
+                    assert_live();
+                    // Issue real work to all allocations, so completion is
+                    // meaningful without inducing a device fault or GPU OOM.
+                    for output in outputs {
+                        runtime.check(
+                            unsafe {
+                                (runtime.memset)(output.data_ptr as *mut super::c_void, 0, 12)
+                            },
+                            "cudaMemset",
+                        )?;
+                    }
+                    if phase == "launch" || phase == "both" {
+                        Err(error.clone())
+                    } else {
+                        Ok(())
+                    }
+                },
+                || {
+                    completions.set(completions.get() + 1);
+                    assert_live();
+                    runtime.check(
+                        unsafe {
+                            (runtime.stream_synchronize)(std::ptr::without_provenance_mut(1))
+                        },
+                        "cudaStreamSynchronize",
+                    )?;
+                    if phase == "completion" || phase == "both" {
+                        Err(error.clone())
+                    } else {
+                        Ok(())
+                    }
+                },
+            );
+            assert!(matches!(result, Err(actual) if actual == error));
+            let executed = usize::from(phase != "allocation");
+            assert_eq!(launches.get(), executed);
+            assert_eq!(completions.get(), executed);
+            if executed != 0 {
+                assert!(!CACHE_HEALTHY.load(Ordering::Relaxed));
+                assert_live(); // Failed outputs cannot enter the healthy pool.
+            }
+            let mut restored = -1;
+            runtime
+                .check(
+                    unsafe { (runtime.get_device)(&raw mut restored) },
+                    "cudaGetDevice",
+                )
+                .unwrap();
+            assert_eq!(usize::try_from(restored).unwrap(), current);
+            assert_eq!(input.copy_range(0, 3).unwrap(), [1., -2., 3.]);
+        }
+        // A handled failure leaves future execution usable with reuse disabled.
+        assert_eq!(
+            input
+                .mul_scalar(0, 3, 2.)
+                .unwrap()
+                .copy_range(0, 3)
+                .unwrap(),
+            [2., -4., 6.]
+        );
+    }
+
     #[test]
     fn contiguous_layout_checks_without_runtime() {
         use super::contiguous_layout;

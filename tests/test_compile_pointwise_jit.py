@@ -32,7 +32,7 @@ def program(source, framework=native, **bindings):
 def lower(fn, arity=1):
     descriptor = frontend.analyze(fn, arity)
     _, values = frontend.resolve(fn, descriptor)
-    return frontend.lower(descriptor, values, arity)
+    return frontend.lower(descriptor, values, arity).graph
 
 
 def cache(compiled):
@@ -261,7 +261,7 @@ class Admission(unittest.TestCase):
     def test_typed_ir_retains_reused_nodes_and_rounds_constants(self):
         fn = program('def f(x, y):\n a = fw.sin(x)\n b = a * a\n return (b - y.cos()) + 0.10000000000001')
         graph = lower(fn, 2)
-        source = bridge._pointwise_source(graph.nodes, graph.output, graph.inputs)
+        source = bridge._pointwise_source(graph.nodes, graph.outputs, graph.inputs)
         self.assertEqual(source.count('sinf('), 1)
         self.assertIn('__fmul_rn(v2, v2)', source)
         self.assertIn('cosf(', source)
@@ -283,7 +283,7 @@ class Admission(unittest.TestCase):
             'def f(x):\n return x if x else -x',
             'def f(x):\n return x.sum()', 'def f(x):\n return x.reshape(2, 2)',
             'def f(x):\n return x + trap', 'def f(x):\n return trap.sin(x)',
-            'def f(x):\n x += x\n return x', 'def f(x):\n return x, -x',
+            'def f(x):\n x += x\n return x', 'def f(x):\n return x, x',
             'def f(x):\n return x / 2', 'def f(x):\n return x',
         ]
         for source in sources:
@@ -297,9 +297,9 @@ class Admission(unittest.TestCase):
             ((("constant", 0, 0, 0), ("sin", 0, 0, 0)), 1),
             ((("input", 0, 0, 0), ("neg", 0, 0, 0)), 7)]:
             with self.subTest(nodes=nodes), self.assertRaises((ValueError, NotImplementedError)):
-                bridge._pointwise_source(nodes, output, 1)
+                bridge._pointwise_source(nodes, (output,), 1)
         with self.assertRaises(TypeError):
-            bridge._pointwise_source((("input", True, 0, 0),), 0, 1)
+            bridge._pointwise_source((("input", True, 0, 0),), (0,), 1)
 
     def test_custom_globals_rejected_without_lookup_hooks(self):
         for expression in ('x.sum() + scale', 'x * scale', '-x'):
@@ -319,7 +319,7 @@ class Admission(unittest.TestCase):
     def test_positional_operator_spellings_and_integer_bytecode(self):
         fn = program('def f(x, y):\n a = b = fw.add(x, y)\n return fw.subtract(a, -3).mul(2) + b.__rsub__(0.713)')
         graph = lower(fn, 2)
-        source = bridge._pointwise_source(graph.nodes, graph.output, 2)
+        source = bridge._pointwise_source(graph.nodes, graph.outputs, 2)
         self.assertEqual(sum(node[0] == 'add' for node in graph.nodes), 2)
         self.assertEqual(sum(node[0] == 'sub' for node in graph.nodes), 2)
         self.assertIn('0x40000000u', source)

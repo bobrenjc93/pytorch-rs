@@ -84,6 +84,22 @@ pub(crate) struct Indexing {
 }
 
 impl Graph {
+    fn tensor_leaf_madd(&self, root: usize) -> bool {
+        let tensor_product = |id| match self.nodes[id] {
+            Node::Mul(a, b) => {
+                matches!(self.nodes[a], Node::Input(_)) && matches!(self.nodes[b], Node::Input(_))
+            }
+            _ => false,
+        };
+        match self.nodes[root] {
+            Node::Add(a, b) => {
+                (tensor_product(a) && matches!(self.nodes[b], Node::Input(_)))
+                    || (matches!(self.nodes[a], Node::Input(_)) && tensor_product(b))
+            }
+            _ => false,
+        }
+    }
+
     pub(crate) fn indexing(&self, shapes: &[&[usize]]) -> Result<Indexing, TensorError> {
         self.validate()?;
         if shapes.len() != self.inputs {
@@ -142,28 +158,29 @@ impl Graph {
         // The sole two-stage exception is an original tensor-leaf product plus
         // an input, in either add order. Match nodes directly: identities, CSE,
         // scalar leaves and wrappers must not turn a different graph into it.
-        let tensor_product = |id| match self.nodes[id] {
-            Node::Mul(a, b) => {
-                matches!(self.nodes[a], Node::Input(_)) && matches!(self.nodes[b], Node::Input(_))
+        for &root in &self.outputs {
+            if shapes.windows(2).any(|pair| pair[0] != pair[1])
+                && (depth[root] > 1 || transcendental[root])
+                && !self.tensor_leaf_madd(root)
+            {
+                return Err(invalid(
+                    "unequal input shapes require at most one arithmetic stage and no live sin/cos, or a tensor-leaf multiply-add",
+                ));
             }
-            _ => false,
-        };
-        let tensor_madd = match self.nodes[self.output] {
-            Node::Add(a, b) => {
-                (tensor_product(a) && matches!(self.nodes[b], Node::Input(_)))
-                    || (matches!(self.nodes[a], Node::Input(_)) && tensor_product(b))
-            }
-            _ => false,
-        };
-        if shapes.windows(2).any(|pair| pair[0] != pair[1])
-            && (depth[self.output] > 1 || transcendental[self.output])
-            && !tensor_madd
-        {
-            return Err(invalid(
-                "unequal input shapes require at most one arithmetic stage and no live sin/cos, or a tensor-leaf multiply-add",
-            ));
         }
-        let output = layouts.swap_remove(self.output);
+        let first = self.outputs[0];
+        if self
+            .outputs
+            .iter()
+            .any(|&root| layouts[root].shape != layouts[first].shape)
+        {
+            return Err(invalid("computed outputs require the same actual shape"));
+        }
+        let live_inputs = self
+            .outputs
+            .iter()
+            .fold(0, |mask, &root| mask | dependencies[root]);
+        let output = layouts.swap_remove(first);
         let addresses = inputs
             .iter()
             .enumerate()
@@ -171,13 +188,12 @@ impl Graph {
                 // Adding/removing singleton axes without expanding elements
                 // still has a linear address.
                 if input.shape == output.shape
-                    || (dependencies[self.output] & (1 << i) != 0
-                        && input.elements == output.elements)
+                    || (live_inputs & (1 << i) != 0 && input.elements == output.elements)
                 {
                     return Address::Linear;
                 }
                 let mut terms = Vec::new();
-                if dependencies[self.output] & (1 << i) != 0 && output.elements != 0 {
+                if live_inputs & (1 << i) != 0 && output.elements != 0 {
                     let leading = output.shape.len() - input.shape.len();
                     for (axis, &dimension) in input.shape.iter().enumerate() {
                         if dimension != 1 {
@@ -208,8 +224,36 @@ mod tests {
         Graph {
             inputs: 2,
             nodes: vec![Node::Input(0), Node::Input(1), Node::Mul(0, 1)],
-            output: 2,
+            outputs: vec![2],
         }
+    }
+
+    #[test]
+    fn multiple_roots_union_dependencies_and_preserve_original_limits() {
+        let mut graph = Graph {
+            inputs: 2,
+            nodes: vec![
+                Node::Input(0),
+                Node::Input(1),
+                Node::Relu(0),
+                Node::Add(0, 1),
+            ],
+            outputs: vec![2, 3],
+        };
+        let plan = graph.indexing(&[&[2, 3], &[1, 3]]).unwrap();
+        assert_eq!(plan.output.shape, [2, 3]);
+        assert_eq!(plan.addresses[0], Address::Linear);
+        assert_eq!(plan.addresses[1], Address::Broadcast(vec![(1, 3, 1)]));
+        // Equal element counts alone cannot supply the shared output layout.
+        graph.nodes[3] = Node::Relu(1);
+        assert!(graph.indexing(&[&[2, 3], &[6]]).is_err());
+        graph.nodes[3] = Node::Sin(1);
+        assert!(graph.indexing(&[&[2, 3], &[1, 3]]).is_err());
+        assert!(graph.indexing(&[&[2, 3], &[2, 3]]).is_ok());
+        // The second root cannot launder a forbidden original two-stage graph.
+        graph.nodes.extend([Node::Neg(0), Node::Neg(4)]);
+        graph.outputs = vec![2, 5];
+        assert!(graph.indexing(&[&[2, 3], &[1, 3]]).is_err());
     }
 
     #[test]
@@ -261,7 +305,7 @@ mod tests {
     fn validates_dead_shapes_but_does_not_expand_unrelated_output() {
         let mut graph = graph();
         graph.nodes.push(Node::Neg(0));
-        graph.output = 3;
+        graph.outputs = vec![3];
         assert_eq!(
             graph.indexing(&[&[3, 1], &[2, 1, 5]]).unwrap().output.shape,
             [3, 1]
@@ -289,12 +333,12 @@ mod tests {
         ] {
             let mut g = graph();
             g.nodes = vec![Node::Input(0), Node::Input(1), scalar, Node::Mul(0, 2)];
-            g.output = 3;
+            g.outputs = vec![3];
             assert!(g.indexing(&[&[2, 1], &[1, 3]]).is_ok());
             for second in [Node::Add(3, 2), Node::Sub(3, 3), Node::Neg(3)] {
                 g.nodes.truncate(4);
                 g.nodes.push(second);
-                g.output = 4;
+                g.outputs = vec![4];
                 // Includes unused input 1, linear singleton reshapes, and empties.
                 for shapes in [
                     (&[2, 1][..], &[1, 3][..]),
@@ -319,7 +363,7 @@ mod tests {
             Node::Mul(2, 3),
             Node::Relu(4),
         ];
-        g.output = 5;
+        g.outputs = vec![5];
         assert!(g.indexing(&[&[2, 1], &[1, 3]]).is_ok());
         for op in [Node::Add(2, 3), Node::Sub(2, 3), Node::Neg(2)] {
             g.nodes[4] = op;
@@ -329,12 +373,12 @@ mod tests {
             g.nodes[2] = op;
             assert!(g.indexing(&[&[2, 1], &[1, 3]]).is_err());
             assert!(g.indexing(&[&[2], &[2]]).is_ok());
-            g.output = 3; // All arithmetic and sin/cos are dead; ReLU(y) is live.
+            g.outputs = vec![3]; // All arithmetic and sin/cos are dead; ReLU(y) is live.
             assert!(g.indexing(&[&[2, 1], &[1, 3]]).is_ok());
-            g.output = 5;
+            g.outputs = vec![5];
         }
         g.nodes[4] = Node::Add(0, 1);
-        g.output = 3;
+        g.outputs = vec![3];
         assert!(
             g.indexing(&[&[2], &[3]])
                 .err()
@@ -364,7 +408,7 @@ mod tests {
                                     Node::Add(3, 2)
                                 },
                             ],
-                            output: 4,
+                            outputs: vec![4],
                         };
                         for (left, right) in [
                             (&[3, 1][..], &[2, 1, 5][..]),
@@ -392,7 +436,7 @@ mod tests {
     fn tensor_madd_does_not_admit_wrappers_other_leaves_or_products() {
         let mut g = graph();
         g.nodes.push(Node::Add(2, 0));
-        g.output = 3;
+        g.outputs = vec![3];
         let original = g.clone();
         let mut negatives = Vec::new();
         for wrapper in [
@@ -406,7 +450,7 @@ mod tests {
         ] {
             let mut g = original.clone();
             g.nodes.push(wrapper);
-            g.output = 4;
+            g.outputs = vec![4];
             negatives.push(g);
         }
         for leaf in [
@@ -432,7 +476,7 @@ mod tests {
                 } else {
                     Node::Add(3, 2)
                 });
-                g.output = 4;
+                g.outputs = vec![4];
                 negatives.push(g);
             }
         }
@@ -444,7 +488,7 @@ mod tests {
         // A dead qualifying expression must not admit the actual output.
         let mut g = original;
         g.nodes.extend([Node::Neg(0), Node::Neg(4)]);
-        g.output = 5;
+        g.outputs = vec![5];
         negatives.push(g);
         for g in negatives {
             for shapes in [
@@ -464,7 +508,7 @@ mod tests {
         let mut g = graph();
         g.nodes[2] = Node::Mul(0, 0);
         g.nodes.push(Node::Add(2, 0));
-        g.output = 3;
+        g.outputs = vec![3];
         assert_eq!(g.indexing(&[&[3], &[5]]).unwrap().output.shape, [3]);
         for unused in [
             &[usize::MAX, 2][..],

@@ -27,7 +27,7 @@ pub(crate) enum Node {
 pub(crate) struct Graph {
     pub(crate) inputs: usize,
     pub(crate) nodes: Vec<Node>,
-    pub(crate) output: usize,
+    pub(crate) outputs: Vec<usize>,
 }
 
 pub(crate) fn invalid(message: impl Into<String>) -> TensorError {
@@ -85,10 +85,19 @@ impl Graph {
                 }
             });
         }
-        if tensor.get(self.output) != Some(&true)
-            || matches!(self.nodes.get(self.output), Some(Node::Input(_)))
+        if !(1..=64).contains(&self.outputs.len())
+            || self.outputs.windows(2).any(|pair| pair[0] >= pair[1])
         {
-            return Err(invalid("output must be a computed tensor expression"));
+            return Err(invalid(
+                "expected 1 to 64 distinct output roots in SSA order",
+            ));
+        }
+        for &output in &self.outputs {
+            if tensor.get(output) != Some(&true)
+                || matches!(self.nodes.get(output), Some(Node::Input(_)))
+            {
+                return Err(invalid("output must be a computed tensor expression"));
+            }
         }
         Ok(())
     }
@@ -113,6 +122,55 @@ impl Graph {
 mod tests {
     use super::*;
     #[test]
+    fn outputs_validate_canonical_distinct_computed_roots() {
+        let mut graph = Graph {
+            inputs: 1,
+            nodes: vec![Node::Input(0), Node::Neg(0), Node::Neg(0)],
+            outputs: vec![1, 2],
+        };
+        let source = graph.source().unwrap();
+        // Arithmetic CSE does not collapse the two original allocation slots.
+        assert_eq!(source.matches("__fsub_rn(").count(), 1);
+        assert!(source.contains("out0[i] = v1;"));
+        assert!(source.contains("out1[i] = v1;"));
+        for outputs in [
+            vec![],
+            vec![0],
+            vec![3],
+            vec![1, 1],
+            vec![2, 1],
+            vec![1; 65],
+        ] {
+            graph.outputs = outputs;
+            assert!(graph.validate().is_err());
+        }
+        graph.nodes.extend((0..64).map(|_| Node::Neg(0)));
+        graph.outputs = (1..=64).collect();
+        assert!(graph.validate().is_ok());
+        graph.outputs.push(65);
+        assert!(graph.validate().is_err());
+    }
+
+    #[test]
+    fn returned_products_remain_fused_into_their_arithmetic_consumers() {
+        let graph = Graph {
+            inputs: 2,
+            nodes: vec![
+                Node::Input(0),
+                Node::Input(1),
+                Node::Mul(0, 1),
+                Node::Add(2, 0),
+            ],
+            outputs: vec![2, 3],
+        };
+        let source = graph.source().unwrap();
+        assert!(source.contains("__fmul_rn(v0, v1)"));
+        assert!(source.contains("fmaf(v0, v1, v0)"));
+        assert!(source.contains("out0[i] = v2;"));
+        assert!(source.contains("out1[i] = v3;"));
+    }
+
+    #[test]
     fn scalar_zero_subtraction_exposes_factors_after_identity_checks() {
         let mut graph = Graph {
             inputs: 1,
@@ -124,7 +182,7 @@ mod tests {
                 Node::Sub(2, 3),
                 Node::Sub(4, 2),
             ],
-            output: 5,
+            outputs: vec![5],
         };
         let source = graph.source().unwrap();
         assert_eq!(source.matches("fmaf(").count(), 1);
@@ -159,14 +217,14 @@ mod tests {
                 Node::Add(0, 2),
                 Node::Sub(3, 2),
             ],
-            output: 4,
+            outputs: vec![4],
         };
         let source = graph.source().unwrap();
         assert_eq!(source.matches("fmaf(").count(), 1);
         assert!(source.contains("__fadd_rn("));
         assert!(source.contains("__fmul_rn("));
         // A dead consumer cannot make the product shared in emitted code.
-        graph.output = 3;
+        graph.outputs = vec![3];
         let source = graph.source().unwrap();
         assert_eq!(source.matches("fmaf(").count(), 1);
         assert!(!source.contains("__fadd_rn("));
@@ -185,7 +243,7 @@ mod tests {
                 Node::Relu(4),
                 Node::Sin(5),
             ],
-            output: 6,
+            outputs: vec![6],
         };
         let constant = graph.source().unwrap();
         assert!(constant.contains("(float)sin((double)"));
@@ -211,7 +269,7 @@ mod tests {
                 Node::Constant(16_777_216.0_f64.to_bits()),
                 Node::Sub(4, 5),
             ],
-            output: 6,
+            outputs: vec![6],
         };
         let source = graph.source().unwrap();
         assert!(source.contains("float s0"));
@@ -222,7 +280,7 @@ mod tests {
         invalid.nodes[3] = Node::RuntimeScalar(64, false);
         assert!(invalid.validate().is_err());
         invalid.nodes[3] = Node::RuntimeScalar(0, false);
-        invalid.output = 3;
+        invalid.outputs = vec![3];
         assert!(invalid.validate().is_err());
     }
 
@@ -235,7 +293,7 @@ mod tests {
                 Node::RuntimeScalar(0, true),
                 Node::Add(0, 1),
             ],
-            output: 2,
+            outputs: vec![2],
         };
         let source = graph.source().unwrap();
         assert!(source.contains("= -s0;"));
@@ -261,7 +319,7 @@ mod tests {
                     Node::Constant(16_777_216.0_f64.to_bits()),
                     Node::Sub(6, 7),
                 ],
-                output: 8,
+                outputs: vec![8],
             };
             let source = graph.source().unwrap();
             assert!(source.contains(&format!("0x{:08x}u", expected.to_bits())));
@@ -282,7 +340,7 @@ mod tests {
                 Node::Add(2, 3),
                 Node::Add(0, 4),
             ],
-            output: 5,
+            outputs: vec![5],
         };
         assert!(graph.source().unwrap().contains("__fadd_rn"));
         graph.nodes[5] = Node::Add(0, 2);
@@ -307,7 +365,7 @@ mod tests {
                 Node::Mul(1, 5),
                 Node::Sub(7, 8),
             ],
-            output: 9,
+            outputs: vec![9],
         };
         let source = graph.source().unwrap();
         assert_eq!(source.matches("fmaf(").count(), 1);
@@ -319,7 +377,7 @@ mod tests {
         let mut graph = Graph {
             inputs: 1,
             nodes: vec![Node::Input(0), Node::Boolean(false), Node::Mul(0, 1)],
-            output: 2,
+            outputs: vec![2],
         };
         let source = graph.source().unwrap();
         assert!(source.contains("0x00000000u"));
@@ -349,7 +407,7 @@ mod tests {
                         operation,
                         Node::Neg(5),
                     ],
-                    output: 6,
+                    outputs: vec![6],
                 };
                 let source = graph.source().unwrap();
                 assert!(source.contains("0x80000000u"));
@@ -372,7 +430,7 @@ mod tests {
                 Node::Mul(0, 3),
                 Node::Add(2, 4),
             ],
-            output: 5,
+            outputs: vec![5],
         };
         assert!(graph.source().unwrap().contains("fmaf("));
         graph.nodes[5] = Node::Sub(2, 2);
@@ -398,7 +456,7 @@ mod tests {
                             Node::Add(2, 3)
                         },
                     ],
-                    output: 4,
+                    outputs: vec![4],
                 };
                 assert!(
                     graph
@@ -418,7 +476,7 @@ mod tests {
                         Node::Add(3, 4)
                     },
                 ];
-                graph.output = 5;
+                graph.outputs = vec![5];
                 let source = graph.source().unwrap();
                 assert!(source.contains("__fmul_rn(v2, v2)"));
                 assert!(source.contains(&format!("fmaf(v{first}, v{second}, v3)")));
@@ -448,7 +506,7 @@ mod tests {
                             Node::Add(4, 5)
                         },
                     ],
-                    output: 6,
+                    outputs: vec![6],
                 };
                 let source = graph.source().unwrap();
                 assert!(source.contains("fmaf(v0, v1, v4)"));
@@ -469,7 +527,7 @@ mod tests {
                 Node::Mul(1, 2),
                 Node::Sub(3, 4),
             ],
-            output: 5,
+            outputs: vec![5],
         };
         assert!(graph.source().unwrap().contains("fmaf(v0, v2, -v4)"));
         graph.nodes[5] = Node::Add(3, 4);
@@ -489,7 +547,7 @@ mod tests {
                 Node::Add(3, 3),
                 Node::Sub(3, 4),
             ],
-            output: 6,
+            outputs: vec![6],
         };
         let source = graph.source().unwrap();
         assert!(source.contains("fmaf(v0, v2, -v4)"));
@@ -508,11 +566,11 @@ mod tests {
                 Node::Mul(0, 1),
                 Node::Neg(2),
             ],
-            output: 3,
+            outputs: vec![3],
         };
         assert!(graph.source().unwrap().contains("fmaf(-v0, v1, 0.0f)"));
         graph.nodes.push(Node::Add(3, 2));
-        graph.output = 4;
+        graph.outputs = vec![4];
         // The negation consumes factors directly; the remaining product use
         // can contract without losing the separately rounded negation result.
         assert!(graph.source().unwrap().contains("fmaf(v0, v1, v3)"));
@@ -535,7 +593,7 @@ mod tests {
                 Graph {
                     inputs: 1,
                     nodes,
-                    output: 0
+                    outputs: vec![0]
                 }
                 .source()
                 .is_err()
@@ -550,7 +608,7 @@ mod tests {
                 Node::Constant(0x8000_0000_0000_0000),
                 Node::Sub(2, 3),
             ],
-            output: 4,
+            outputs: vec![4],
         };
         let code = graph.source().unwrap();
         assert_eq!(code.matches("sinf(").count(), 1);
@@ -570,7 +628,7 @@ mod tests {
                 Node::Mul(0, 1),
                 Node::Sub(2, 3),
             ],
-            output: 4,
+            outputs: vec![4],
         };
         let code = graph.source().unwrap();
         assert_eq!(code.matches("__fmul_rn(").count(), 1);
@@ -592,7 +650,7 @@ mod tests {
                 Node::Sub(3, 1),
                 Node::Add(4, 3),
             ],
-            output: 5,
+            outputs: vec![5],
         };
         let code = graph.source().unwrap();
         assert!(code.contains("fmaf(v0, v2, -v1)"));
@@ -612,7 +670,7 @@ mod tests {
                 Node::Sub(3, 4),
                 Node::Neg(5),
             ],
-            output: 6,
+            outputs: vec![6],
         };
         let code = graph.source().unwrap();
         assert!(code.contains("fmaf(v1, v2, -v3)"));

@@ -486,7 +486,7 @@ fn materialization_ranks(
     let mut inputs = vec![0; graph.inputs];
     let mut calls = vec![0; lower.nodes.len()];
     let mut seen = vec![false; graph.nodes.len()];
-    let mut pending = vec![(graph.output, false)];
+    let mut pending: Vec<_> = graph.outputs.iter().rev().map(|&id| (id, false)).collect();
     let mut input_rank = LOAD_RANK_BASE;
     let mut call_rank = LOAD_RANK_BASE;
     while let Some((id, complete)) = pending.pop() {
@@ -573,7 +573,10 @@ fn consumer_analysis(
     let mut live = vec![false; canonical.nodes.len()];
     let mut last = vec![0; canonical.nodes.len()];
     let mut uses = vec![0; canonical.nodes.len()];
-    live[mapped[graph.output]] = true;
+    // Stores make roots live, but are not arithmetic consumers or rounding barriers.
+    for &output in &graph.outputs {
+        live[mapped[output]] = true;
+    }
     for id in (0..canonical.nodes.len()).rev() {
         if !live[id] {
             continue;
@@ -623,11 +626,13 @@ pub(super) fn source(graph: &Graph, addresses: &[super::indexing::Address]) -> S
         let node = remap(node, &mapped);
         mapped.push(lower.normalize(node, last[id], uses[id]));
     }
-    let output = mapped[graph.output];
+    let outputs: Vec<_> = graph.outputs.iter().map(|&id| mapped[id]).collect();
     let (inputs, calls) = materialization_ranks(graph, &aliases, &zeros, &mapped, &lower);
     let ranks = lower.contraction_ranks(&inputs, &calls);
     let mut live = vec![false; lower.nodes.len()];
-    live[output] = true;
+    for &output in &outputs {
+        live[output] = true;
+    }
     for id in (0..lower.nodes.len()).rev() {
         if live[id] {
             for operand in lower.operands(id) {
@@ -636,10 +641,14 @@ pub(super) fn source(graph: &Graph, addresses: &[super::indexing::Address]) -> S
         }
     }
     let mut source = String::from(
-        "// torch_rs typed pointwise SSA v1; float32, no fast math\n\
+        "// torch_rs typed pointwise SSA v2; float32, no fast math\n\
          extern \"C\" __global__ void torch_rs_pointwise(\n\
-         const float* x0, const float* x1, float* out, unsigned long long n",
+         const float* x0, const float* x1",
     );
+    for index in 0..outputs.len() {
+        write!(source, ", float* out{index}").unwrap();
+    }
+    source.push_str(", unsigned long long n");
     for index in 0..graph.scalar_count() {
         write!(source, ", float s{index}").unwrap();
     }
@@ -700,6 +709,9 @@ pub(super) fn source(graph: &Graph, addresses: &[super::indexing::Address]) -> S
         };
         writeln!(source, "const float v{id} = {expression};").unwrap();
     }
-    writeln!(source, "out[i] = v{output};\n}}\n}}").unwrap();
+    for (slot, output) in outputs.iter().enumerate() {
+        writeln!(source, "out{slot}[i] = v{output};").unwrap();
+    }
+    source.push_str("}\n}\n");
     source
 }

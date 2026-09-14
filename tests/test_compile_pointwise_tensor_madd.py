@@ -44,7 +44,7 @@ def snapshot(compiled):
 class Metadata(unittest.TestCase):
     def source(self, body, shapes):
         graph = lower(program('def f(x,y):\n '+body), 2)
-        return bridge._pointwise_source(graph.nodes, graph.output, 2, shapes)
+        return bridge._pointwise_source(graph.nodes, graph.outputs, 2, shapes)
 
     def test_all_ordered_tensor_leaves_single_fma_and_unused_arguments(self):
         for expression in EXPRESSIONS:
@@ -76,7 +76,7 @@ class Metadata(unittest.TestCase):
                          ('mul', 0, 1, 0), ('add', 3, 2, 0)]
                 nodes[index] = ('scalar', 0, sign, 0)
                 with self.assertRaisesRegex(RuntimeError, 'unequal input shapes'):
-                    bridge._pointwise_source(tuple(nodes), 4, 2, ((2,), (1,2)))
+                    bridge._pointwise_source(tuple(nodes), (4,), 2, ((2,), (1,2)))
         for shapes in (((3,),(5,)), ((1 << 32,1),(1,1 << 32)), ((0,),(2,))):
             with self.subTest(shapes=shapes), self.assertRaisesRegex(RuntimeError, 'broadcast'):
                 self.source('dead=x+y\n return x*x+x', shapes)
@@ -85,7 +85,7 @@ class Metadata(unittest.TestCase):
                 self.source('return x*x+x', ((3,),shape))
         nodes = (('input',0,0,0), ('mul',0,0,0), ('add',1,0,0), ('add',0,99,0))
         with self.assertRaisesRegex(ValueError, 'earlier SSA node'):
-            bridge._pointwise_source(nodes, 2, 2, ((2,), (1,2)))
+            bridge._pointwise_source(nodes, (2,), 2, ((2,), (1,2)))
 
 
 @unittest.skipUnless(available(), 'requires native CUDA and reference PyTorch CUDA')
@@ -226,7 +226,7 @@ class TensorMadd(unittest.TestCase):
                 reference = self.torch.compile(program('def f(x,y):\n return '+expression))
                 expected = reference(self.upload([1.,-2.],(2,),self.torch),
                                      self.upload([3.,4.],(1,2),self.torch))
-                self.compare(selected.run((x,unequal)), expected, exact=True)
+                self.compare(selected.run((x,unequal))[0], expected, exact=True)
                 # Admission succeeds, but changed broadcast addressing still fails.
                 with self.assertRaisesRegex(RuntimeError, 'indexing guard'):
                     selected.run((x.reshape(2,1),y.reshape(1,2)))
@@ -236,11 +236,11 @@ class TensorMadd(unittest.TestCase):
                 with self.assertRaisesRegex(NotImplementedError, 'unequal input shapes'):
                     compiled(x,unequal)
             self.assertEqual(snapshot(compiled), before)
-            self.assertEqual(selected.run((x,y)).cpu().tolist(), equal.cpu().tolist())
+            self.assertEqual(selected.run((x,y))[0].cpu().tolist(), equal.cpu().tolist())
             native.compiler.reset()
             self.assertFalse(cache(compiled).graphs)
             self.assertFalse(cache(compiled).executors)
-            self.assertEqual(selected.run((x,y)).cpu().tolist(), equal.cpu().tolist())
+            self.assertEqual(selected.run((x,y))[0].cpu().tolist(), equal.cpu().tolist())
             compiled(x,y)
             self.assertIsNot(dispatched(compiled), selected)
             native.compiler.reset()

@@ -23,8 +23,8 @@ class RuntimeScalarAdmission(unittest.TestCase):
         changed, values = frontend.resolve(fn, parsed)
         dynamic, values, scalars = frontend.runtime_bindings(parsed, changed, values, history)
         self.assertEqual(scalars, (16777217.0,))
-        graph = frontend.lower(parsed, values, 1)
-        source = bridge._pointwise_source(graph.nodes, graph.output, 1)
+        graph = frontend.lower(parsed, values, 1).graph
+        source = bridge._pointwise_source(graph.nodes, graph.outputs, 1)
         self.assertIn('float s0', source)
         self.assertIn('= s0;', source)
         history[(parsed.code, dynamic, (), (0,))] = None
@@ -47,7 +47,7 @@ class RuntimeScalarAdmission(unittest.TestCase):
             ((('input', 0, 0, 0), ('scalar', 0, 0, 0)), 1),
         ]:
             with self.assertRaises(ValueError):
-                bridge._pointwise_source(nodes, output, 1)
+                bridge._pointwise_source(nodes, (output,), 1)
 
 
 @unittest.skipUnless(available(), 'requires native CUDA and reference PyTorch CUDA')
@@ -184,7 +184,7 @@ class RuntimeScalarHardware(unittest.TestCase):
         kernel = kernels(compiled)[-1]
         values = (1.25, -3.5, 8.0, 0.0) * 4
         def run(value):
-            result = kernel.run((x,), (value,))
+            result = kernel.run((x,), (value,))[0]
             return result.cpu().tolist()
         with ThreadPoolExecutor(max_workers=4) as pool:
             results = list(pool.map(run, values))
