@@ -11,8 +11,10 @@ shapes with linear address maps. The sole two-stage exception is original
 identity wrappers, signed expressions, ReLU/sin/cos and extra arithmetic do not
 qualify. Other multi-stage broadcast expressions are rejected before compilation
 or execution because numerical equivalence is not established.
-CPU lowering, strided inputs, control flow and training remain unsupported by
-this JIT; explicit eager capture retains its separate contract.
+Root functions also support [bounded, non-nested literal-range
+loops](compile-pointwise-jit.md#bounded-root-literal-loops). CPU lowering, strided
+inputs, other control flow and training remain unsupported by this JIT; explicit
+eager capture retains its separate contract.
 
 This is the exhaustive feature tour and observable Python API contract for the
 current baseline. See [FEATURES.md](../FEATURES.md) for the weighted coverage

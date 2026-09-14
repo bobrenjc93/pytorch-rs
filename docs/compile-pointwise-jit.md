@@ -133,15 +133,10 @@ full code/constant validation. Restoring a
 valid range binding can reuse existing entries; invalid bindings publish no cache
 changes. Normalization adds no persistent cache or execution backend.
 
-See the [loop diagnostics](diagnostics/compile-pointwise-loops/README.md) for
-source-bound checks, original failures and the limits of this evidence, and the
-[operator recovery](diagnostics/compile-pointwise-loops/operator-recovery.md) for
-corrected observation retention. The
-[capture at bdcfb051](diagnostics/compile-pointwise-loops/postcommit-bdcfb051/report.md)
-predates the subsequent
-[skipped-local repair](diagnostics/compile-pointwise-loops/review-skipped-locals.md),
-whose [clean capture at 18e94de5](diagnostics/compile-pointwise-loops/postcommit-18e94de5/report.md)
-records refreshed measurements and checks.
+See the [loop evidence index](diagnostics/compile-pointwise-loops/README.md) for
+the latest measured implementation, historical captures, original failures and
+retention limitations. Those source-bound measurements do not qualify later
+documentation commits.
 
 ### Direct Python helpers
 
