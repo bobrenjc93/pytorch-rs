@@ -11585,6 +11585,26 @@
         "eval_d4c0b71e": 83,
         "eval_b7f2a91c": 5.5
       }
+    },
+    {
+      "key": "pr:1996",
+      "recordedAt": "2026-09-14T11:16:48.927Z",
+      "label": "PR #1996",
+      "kind": "leaf",
+      "prNumber": 1996,
+      "title": "Compile native CUDA pointwise branches guarded by input shapes",
+      "scores": {
+        "eval_7af648fb": 91,
+        "eval_8417a4a8": 23.9,
+        "eval_63a24994": 60,
+        "eval_39340456": 32,
+        "eval_b4945d15": 80,
+        "eval_c8a1bfb9": 71,
+        "eval_a61c0e71": 16.5,
+        "eval_6f98c42d": 28,
+        "eval_d4c0b71e": 83,
+        "eval_b7f2a91c": 5.5
+      }
     }
   ]
 }
