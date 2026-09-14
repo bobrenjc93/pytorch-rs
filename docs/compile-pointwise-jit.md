@@ -142,12 +142,12 @@ and failure. Register scratch is capped at 64 MiB by limiting active workers and
 using a grid-stride loop. This execution strategy adds instruction-dispatch and
 scratch traffic; correctness captures do not establish a performance improvement.
 
-The [realization repair record](diagnostics/compile-pointwise-structured-outputs/review-realization/README.md)
-records development validation of large graphs, observable return order and
-persistent wrappers, with source/wheel/runtime identities and generated plans,
-CUDA and PTX. Clean post-commit qualification remains separate. Earlier
-[measurements at `69a73844`](diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/README.md)
-retain the numerical failures and original provenance of that revision.
+[Clean measurements at `523d51d7`](diagnostics/compile-pointwise-structured-outputs/postcommit-523d51d7/README.md)
+record H100, two-device and CPython 3.10–3.14 checks, including large-graph rounding,
+observable return order, executor reuse and source/wheel/runtime provenance.
+The [development repair record](diagnostics/compile-pointwise-structured-outputs/review-realization/README.md)
+and [earlier `69a73844` measurements](diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/README.md)
+retain their original results, failures and provenance.
 
 ### Bounded root shape branches
 

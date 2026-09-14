@@ -1,0 +1,41 @@
+{
+  "measured_commit": "523d51d73bb90237f8675ee584bfb890d39c84df",
+  "root": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831",
+  "source_status": "clean before and after every measured command",
+  "required_checks": [
+    "fmt",
+    "clippy",
+    "wheel-build",
+    "pointwise",
+    "native",
+    "conversion",
+    "two-device",
+    "runtime",
+    "verify-extension",
+    "interpreter-identities",
+    "portable-312",
+    "portable-3.10.19",
+    "portable-3.11.15",
+    "portable-3.13.13",
+    "portable-3.14.5"
+  ],
+  "tracked_files_verified": 6787,
+  "raw_files_verified": 8073,
+  "canonical_retained_files": 41770,
+  "canonical_report_root": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/structured-outputs-postcommit-523d51d7",
+  "retention_manifest_sha256": "da74ad86ac56a58eced727c77d21a459c8c2e5b56a91a61912c162ad5c958921",
+  "artifacts": {
+    "measurements.json.gz": {
+      "bytes": 973177,
+      "sha256": "9b51b2186151884772307eee8f79fa74836057e54ca3dd71f4b50299cc97bc75"
+    },
+    "raw-captures.tar.gz": {
+      "bytes": 2394695,
+      "sha256": "fdd9729309a23aa69395fb4596671352c3463e8699530a51de08ded0c42a283c"
+    },
+    "raw-manifest.json.gz": {
+      "bytes": 127595,
+      "sha256": "d51fa24be3b3ec7a214aa4608e196760e20a77a4c7f484071e031445603eda44"
+    }
+  }
+}
