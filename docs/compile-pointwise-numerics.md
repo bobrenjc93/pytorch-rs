@@ -28,14 +28,23 @@ including for commutative operators.
 
 ## Competing products and dependency order
 
-When products compete, a direct product with one live use takes priority over
-a shared direct product. Output stores count as observable uses after expression
+When products compete, the direct product with fewer remaining uses takes priority.
+This includes two products shared by sibling consumers, not only single-use
+products. Output stores count as observable uses after expression
 deduplication, independently of result-container order or repeated result aliases.
 Stores do not prohibit contraction: a shared product can still fuse when there
-is no single-use competitor. Use counts also retain their role in sign rewrites.
+is no less-used competitor. Transparent sign/positive-zero wrappers contribute
+their external uses to the underlying product. Use counts also retain their role
+in sign rewrites.
 Contractions are selected from consumers toward operands. Each selected FMA
 replaces its product use with direct factor uses before inner choices are made;
 an outer contraction can therefore make an inner product single-use.
+
+The [sibling-product repair investigation](diagnostics/compile-pointwise-structured-outputs/review-sibling-products.md)
+also found a remaining limitation: reference kernel partitioning can change
+contraction and zero signs across shapes when products feed nonlinear calls.
+The current shape-invariant numerical plan does not model that behavior; the
+broader structured-output numerical milestone remains incomplete.
 
 When a sum has two direct positive products with equal use priority,
 contraction selection follows the reference's arithmetic/select

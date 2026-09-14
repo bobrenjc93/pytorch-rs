@@ -221,6 +221,27 @@ mod tests {
     }
 
     #[test]
+    fn shared_siblings_contract_the_product_with_fewer_uses() {
+        let graph = Graph {
+            inputs: 2,
+            nodes: vec![
+                Node::Input(0),
+                Node::Input(1),
+                Node::Mul(0, 1),
+                Node::Neg(0),
+                Node::Mul(3, 1),
+                Node::Add(2, 4),
+                Node::Sub(2, 4),
+                Node::Add(5, 6),
+            ],
+            outputs: vec![2, 7],
+        };
+        let source = graph.source().unwrap();
+        assert!(source.contains("fmaf(v3, v1, v2)"));
+        assert!(source.contains("fmaf(-v3, v1, v2)"));
+    }
+
+    #[test]
     fn scalar_zero_subtraction_exposes_factors_after_identity_checks() {
         let mut graph = Graph {
             inputs: 1,

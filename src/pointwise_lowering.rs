@@ -30,7 +30,7 @@ struct ContractionProduct {
     factors: (usize, usize),
     negative: bool,
     direct: bool,
-    single_use: bool,
+    uses: usize,
 }
 
 struct Contraction {
@@ -106,9 +106,9 @@ impl Lowering {
         // provenance is transparent here.
         let (mut negative, mut flipped) = (false, false);
         let (mut outer_zero, mut inner_zero) = (false, false);
-        let mut single_use = true;
+        let mut product_uses = 1;
         loop {
-            single_use &= uses[id] == 1;
+            product_uses += uses[id] - 1;
             if let Some(value) = self.subtracts_scalar_zero(id) {
                 if flipped {
                     inner_zero = true;
@@ -131,7 +131,7 @@ impl Lowering {
             // effective flip over a zero-subtracted expression retains its
             // fallback priority; leading zero subtraction alone exposes it.
             direct: !negative || (outer_zero && !inner_zero),
-            single_use,
+            uses: product_uses,
         })
     }
 
@@ -397,18 +397,16 @@ impl Lowering {
         let preferred_left = left.filter(|product| {
             product.direct || (product.negative && right.is_some_and(|other| other.negative))
         });
-        // NVPTX first contracts a single-use multiply when products compete.
-        // Output stores count as uses even though they do not forbid fusion:
-        // with no single-use candidate, retain the ordinary sign/rank fallback.
+        // Prefer the product with fewer remaining uses, including stores.
+        // Shared sibling consumers still benefit from eliminating a multiply;
+        // equal use counts retain the ordinary sign/rank fallback.
         let (product, on_right) = preferred_left
-            .filter(|product| product.single_use)
-            .map(|product| (product, false))
-            .or_else(|| {
+            .filter(|product| {
                 right
-                    .filter(|product| product.direct && product.single_use)
-                    .map(|product| (product, true))
+                    .filter(|other| other.direct)
+                    .is_none_or(|other| product.uses <= other.uses)
             })
-            .or_else(|| preferred_left.map(|product| (product, false)))
+            .map(|product| (product, false))
             .or_else(|| {
                 right
                     .filter(|product| product.direct)

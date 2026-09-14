@@ -488,6 +488,36 @@ class StructuredHardware(unittest.TestCase):
                     self.compare_tree(actual, expected)
                     self.assertEqual(kernel(compiled).ptx.count('.visible .entry'), 1)
 
+    def test_shared_sibling_products_and_observable_uses(self):
+        bodies = (
+            'p=x*y\n q=(-x)*y\n r=(p+q)+(p-q)',
+            'p=x*y\n q=(-x)*y\n r=(p-q)+(p+q)',
+            'p=x*y\n q=x.sin()*y.cos()\n r=(p+q)+(p-q)',
+            'p=x*y\n q=(-x)*y\n r=((p+q)+(p-q))+q',
+            'p=x*y\n q=(-x)*y\n r=((p-0.0)+q)+((p-0.0)-q)',
+        )
+        returns = ('r', '(p,r)', '(r,p)', '(q,r)', '(p,q,r)')
+        histories = ((2e38, -2e38), (1e-38, -1e-38), (1e-38, 1e-38),
+                     (1e10, 1.0000001192092896))
+        for case, body in enumerate(bodies):
+            for order, result in enumerate(returns):
+                source = 'def f(x,y):\n ' + body + '\n return ' + result
+                for size in (1, 13, 257):
+                    fn, ref_fn = program(source), program(source, self.torch)
+                    compiled, reference = native.compile(fn), self.torch.compile(ref_fn)
+                    for history, (left, right) in enumerate(histories):
+                        args = [self.upload([v]*size, (size,)) for v in (left, right)]
+                        refs = [self.upload([v]*size, (size,), self.torch) for v in (left, right)]
+                        for repeat in range(2):
+                            with self.subTest(case=case, result=result, size=size,
+                                              history=history, repeat=repeat):
+                                expected = reference(*refs)
+                                actual = self.without_replay(fn, compiled, args)
+                                self.retain(f'siblings-{case}-{order}-{size}-{history}-{repeat}',
+                                            compiled, actual, expected)
+                                self.compare_tree(actual, expected)
+                                self.assertEqual(kernel(compiled).ptx.count('.visible .entry'), 1)
+
     def test_maximum_output_and_runtime_scalar_abi(self):
         def balanced(names):
             if len(names) == 1:
