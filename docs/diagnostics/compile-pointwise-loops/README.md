@@ -1,5 +1,10 @@
 # Bounded root literal-range normalization
 
+Fresh [clean-commit captures](postcommit-dcfeb27a/README.md) now measure candidate
+`dcfeb27a` against clean main `014fc0de`, including the two-H100 diagnostic and
+unchanged fixed gates. The development record below and its original artifacts
+are preserved as captured before the implementation commit.
+
 This is development evidence on baseline
 `014fc0de304375258056c5aeb3151cfdc2bcc72a`, not clean-head qualification or a
 fixed-corpus score. The production change stays in the existing Python frontend;
