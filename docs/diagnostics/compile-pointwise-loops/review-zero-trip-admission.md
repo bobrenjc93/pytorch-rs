@@ -1,5 +1,9 @@
 # Review fix: admit skipped bodies before discarding their effects
 
+The required [clean-commit evidence refresh](postcommit-6ef71d3a/README.md) has
+completed at `6ef71d3a`. The development checks and original handoff below remain
+pinned to their recorded sources.
+
 The reviewer reproduced an admission gap: zero-trip loops skipped typed operator,
 helper and data validation. The new cold regressions reproduced reductions,
 helper-local loops and higher-order helper arguments being accepted. The warm
