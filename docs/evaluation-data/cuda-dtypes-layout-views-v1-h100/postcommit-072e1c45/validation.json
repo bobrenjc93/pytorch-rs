@@ -1,0 +1,125 @@
+{
+  "measured_commit": "072e1c45e78b0e22a881d34807e842ce8f74b0f1",
+  "validated_at": "2026-09-11T02:06:51.548477+00:00",
+  "worktree": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd",
+  "git_status_before_publication": "",
+  "checks": {
+    "source_and_evaluator_hashes_verified": true,
+    "extension_build_binding_verified": true,
+    "exact_accounting_recomputed": true,
+    "current_worktree_import_runtime_paths_verified": true,
+    "no_candidate_torch_imports": true,
+    "all_command_statuses_clean": true,
+    "original_development_evidence_unchanged": true
+  },
+  "seeds": [
+    3293684309800391261,
+    4185734436305625061
+  ],
+  "denominator": 6,
+  "passed": 2,
+  "reference_trials_passed": 12,
+  "isolated_workers": 24,
+  "cases": [
+    {
+      "case_id": "cuda_f64_device_roundtrip",
+      "reference_eligible": true,
+      "credit": 0,
+      "candidate_statuses": [
+        "failed",
+        "failed"
+      ],
+      "candidate_errors": [
+        "AttributeError: module 'torch_rs' has no attribute 'float64'",
+        "AttributeError: module 'torch_rs' has no attribute 'float64'"
+      ]
+    },
+    {
+      "case_id": "cuda_i64_device_roundtrip",
+      "reference_eligible": true,
+      "credit": 0,
+      "candidate_statuses": [
+        "failed",
+        "failed"
+      ],
+      "candidate_errors": [
+        "AttributeError: module 'torch_rs' has no attribute 'int64'",
+        "AttributeError: module 'torch_rs' has no attribute 'int64'"
+      ]
+    },
+    {
+      "case_id": "cuda_f32_transpose_alias",
+      "reference_eligible": true,
+      "credit": 1,
+      "candidate_statuses": [
+        "passed",
+        "passed"
+      ],
+      "candidate_errors": [
+        null,
+        null
+      ]
+    },
+    {
+      "case_id": "cuda_f32_offset_slice_alias",
+      "reference_eligible": true,
+      "credit": 1,
+      "candidate_statuses": [
+        "passed",
+        "passed"
+      ],
+      "candidate_errors": [
+        null,
+        null
+      ]
+    },
+    {
+      "case_id": "cuda_f32_transposed_contiguous",
+      "reference_eligible": true,
+      "credit": 0,
+      "candidate_statuses": [
+        "unsupported",
+        "unsupported"
+      ],
+      "candidate_errors": [
+        "NotImplementedError: contiguous(): device 'cuda:0' is not supported; only 'cpu' is implemented",
+        "NotImplementedError: contiguous(): device 'cuda:0' is not supported; only 'cpu' is implemented"
+      ]
+    },
+    {
+      "case_id": "cuda_f32_transposed_reshape_copy",
+      "reference_eligible": true,
+      "credit": 0,
+      "candidate_statuses": [
+        "unsupported",
+        "unsupported"
+      ],
+      "candidate_errors": [
+        "NotImplementedError: contiguous(): device 'cuda:0' is not supported; only 'cpu' is implemented",
+        "NotImplementedError: contiguous(): device 'cuda:0' is not supported; only 'cpu' is implemented"
+      ]
+    }
+  ],
+  "artifact_sha256": {
+    "results.json": "bd90997e4f33865533130ae5045ca087c456b464c62e9880a1d2c55ebb057b1b",
+    "build-record.json": "68dde1da07e70a0ddf584d64289412054ea87b69d7138d13dd0cb76bf5fc2171",
+    "build.log": "32f716c4467f2510b2c961ae589417f269572cc869779947f8a21f593cf90ad3",
+    "run-receipt.json": "ef76dce23caf6c9ec31f58c0cf35bd7baeb79fa82a28d22d288256d403516af9",
+    "environment.json": "24041ae409a70bbc89ff1976f79c0ae9249e33a094ce8c9d7c45fab5b582853f",
+    "dependency-check.log": "613a5a72d941fb3181356ffd34bf06f6570e97c037cd6d1e87d9babcc5bd053c",
+    "accounting-tests.log": "487b80922dc6d12a74011cb3e9229257a911448270a7f8b50e8f4221e385a14f",
+    "commands.json": "67c180bd30623f124f26de51d2bf00c5eac311735a367eb4a404122805d2d55f",
+    "evaluator.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "original_development_file_hashes": {
+    "docs/evaluation-data/cuda-dtypes-layout-views-v1-h100/build.log": "3dff5a670c451e194a2dee7c11b1176f4d086e1f81f0c6f5fb552cd5b008eeac",
+    "docs/evaluation-data/cuda-dtypes-layout-views-v1-h100/build-record.json": "f8fe39b3a6df73f761468626c80a5150f93bf55714353343e21a23e62970e461",
+    "docs/evaluation-data/cuda-dtypes-layout-views-v1-h100/evaluator.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/evaluation-data/cuda-dtypes-layout-views-v1-h100/setup.log": "bcb1824828b86a6fe00c167d9add08e899fd31c2a91475ebe587bbfb1a029cd2",
+    "docs/evaluation-data/cuda-dtypes-layout-views-v1-h100/regression-tests.log": "43d1ff09ede96b4d6823864b5873671e256bf1cf490bcdea74ea005e42232ca6",
+    "docs/evaluation-data/cuda-dtypes-layout-views-v1-h100/portable-tests.log": "52be20ba280cb0d10320ed37163cd1eb1e7f411614268c165d78884c8f5a80d2",
+    "docs/evaluation-data/cuda-dtypes-layout-views-v1-h100/README.md": "0f05bd28c7c062870a7765f688fd9a9e83297bf374d5aeed04e71b951d6fcb4d",
+    "docs/evaluation-data/cuda-dtypes-layout-views-v1-h100/results.json": "e6b5f8e17107393c6da9825e257473c6f846fa5e23d6b82ef26b2ed76186665f",
+    "docs/evaluation-data/cuda-dtypes-layout-views-v1-h100/run-receipt.json": "a3b46be296fdc5ef2bb51b85b14b868d39f38a4b361091b5f81175519cf85de5"
+  }
+}

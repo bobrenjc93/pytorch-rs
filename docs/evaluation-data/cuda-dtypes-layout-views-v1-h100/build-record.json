@@ -1,0 +1,28 @@
+{
+  "commit": "37ea69ccc0db9f70fd914dc7b2277139da48f2d0",
+  "source_sha256": "2bec769fadb89e9e0f58e4a3356f26439637b49b1cf3a80b285fe6a985330d6d",
+  "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "extension_sha256": "72f40496a706ce974c218aa8646f687e7ce2e667dea104ccc9e0456a626ac78b",
+  "extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd/python/torch_rs/torch_rs.abi3.so",
+  "build_command": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd/.venv/bin/maturin build --release --locked --out /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd/target/dtypes-wheels",
+  "build_seconds": 48.25666642189026,
+  "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+  "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)",
+  "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0",
+  "nvcc_use": "not invoked by extension build or dtype/view operations",
+  "profile": "release; thin LTO; codegen-units=1; extension-module; locked dependencies",
+  "build_target": "empty local target/dtypes-fresh-release",
+  "environment": {
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd/target/cargo-home",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd/target/dtypes-fresh-release",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd/.venv/bin/python",
+    "RUSTUP_TOOLCHAIN": "1.92.0"
+  },
+  "wheel_sha256": "08045b6aac7f0af1b16160c0ae07fc2c17569b6b1b9e80e28949b91b46e9e6e9",
+  "python": "3.14.5 (main, May 10 2026, 19:28:16) [Clang 22.1.3 ]",
+  "lockfiles": {
+    "Cargo.lock": "5adbfbc4753473099a887c270512ec919d8e0c53cd442750709e7a4e93d905b4",
+    "uv.lock": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced"
+  },
+  "source_unchanged_during_build": true
+}

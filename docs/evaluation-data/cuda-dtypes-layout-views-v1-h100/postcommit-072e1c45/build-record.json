@@ -1,0 +1,28 @@
+{
+  "commit": "072e1c45e78b0e22a881d34807e842ce8f74b0f1",
+  "source_sha256": "2bec769fadb89e9e0f58e4a3356f26439637b49b1cf3a80b285fe6a985330d6d",
+  "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "extension_sha256": "72f40496a706ce974c218aa8646f687e7ce2e667dea104ccc9e0456a626ac78b",
+  "extension_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd/python/torch_rs/torch_rs.abi3.so",
+  "build_command": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd/.venv/bin/maturin build --release --locked --out /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd/target/dtypes-postcommit-072e1c45/wheels",
+  "build_seconds": 46.63995431084186,
+  "started_at": "2026-09-11T02:04:43.666290+00:00",
+  "finished_at": "2026-09-11T02:05:30.306219+00:00",
+  "git_status_before": "",
+  "git_status_after": "",
+  "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+  "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)",
+  "maturin": "maturin 1.14.1",
+  "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0",
+  "nvcc_use": "not invoked by extension build or dtype/view operations",
+  "profile": "release; thin LTO; codegen-units=1; extension-module; locked dependencies",
+  "build_target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd/target/dtypes-postcommit-072e1c45/fresh-release",
+  "cache_state": "empty Cargo target; warm worktree-local Cargo download cache; existing locked Python environment",
+  "wheel": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd/target/dtypes-postcommit-072e1c45/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+  "wheel_sha256": "57443e876b91c1204ca93b67b9b83cb3a9049f0e905fe3d7041b3292b432f70c",
+  "source_unchanged_during_build": true,
+  "lockfiles": {
+    "Cargo.lock": "5adbfbc4753473099a887c270512ec919d8e0c53cd442750709e7a4e93d905b4",
+    "uv.lock": "036ce2f2eebb98d4ed0fd5db231d473287ad1a9e222816e9713e7781dca4fced"
+  }
+}
