@@ -142,12 +142,12 @@ and failure. Register scratch is capped at 64 MiB by limiting active workers and
 using a grid-stride loop. This execution strategy adds instruction-dispatch and
 scratch traffic; correctness captures do not establish a performance improvement.
 
-[Clean measurements at `523d51d7`](diagnostics/compile-pointwise-structured-outputs/postcommit-523d51d7/README.md)
-record H100, two-device and CPython 3.10–3.14 checks, including large-graph rounding,
-observable return order, executor reuse and source/wheel/runtime provenance.
-The subsequent [duplicate-root repair checks](diagnostics/compile-pointwise-structured-outputs/review-duplicate-roots/README.md)
-verify canonical numerical use counts while preserving distinct allocations;
-clean post-commit qualification of that repair remains pending.
+[Clean measurements at `232cc734`](diagnostics/compile-pointwise-structured-outputs/postcommit-232cc734/README.md)
+record H100, two-device and CPython 3.10–3.14 checks, including duplicate computed
+roots, large-graph rounding, observable return order, executor reuse and provenance.
+The [duplicate-root development checks](diagnostics/compile-pointwise-structured-outputs/review-duplicate-roots/README.md)
+and [earlier `523d51d7` capture](diagnostics/compile-pointwise-structured-outputs/postcommit-523d51d7/README.md)
+retain their original measurements.
 The [development repair record](diagnostics/compile-pointwise-structured-outputs/review-realization/README.md)
 and [earlier `69a73844` measurements](diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/README.md)
 retain their original results, failures and provenance.
