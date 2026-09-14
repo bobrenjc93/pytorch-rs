@@ -1,12 +1,13 @@
 # Structured-output compiler evidence
 
 The latest measured production revision in this record set is
-[`232cc73423e6622aac6d16af71c5c55d3928933d`](postcommit-232cc734/README.md),
+[`0f68f8bde413605572ebe1aa878b474dbb90a5d9`](postcommit-0f68f8bd/README.md),
 against main `30a3b504ef4d43bf2958998cc39545996cc09970`.
-Its source-bound capture records 297 passing H100 pointwise tests with eight
+Its source-bound capture records 303 passing H100 pointwise tests with eight
 explicit two-device skips, eight separately passing two-device checks, and
-59 passing native pointwise/ownership checks. The report also records the portable interpreter checks
-and 720 duplicate-product comparisons. Skips are not GPU passes.
+63 passing native pointwise/ownership checks. The report also records the portable
+interpreter checks, 720 duplicate-product comparisons and 16 independent/reused
+producer comparisons. Skips are not GPU passes.
 
 These are bounded correctness captures against ordinary stock `torch.compile`,
 not general Inductor equivalence, a performance result, or qualification of
@@ -33,7 +34,8 @@ uncommitted changes; later successful checks do not erase their earlier failures
 | [Realization/order repair](review-realization/README.md) | Development after `0f7e6296`; order-aware regions and rounded imports, not clean-commit qualification. |
 | [Clean realization repair](postcommit-523d51d7/README.md) | `523d51d7`: scoped checks passed; later review found duplicate-observable-root FMA errors. |
 | [Duplicate-root repair](review-duplicate-roots/README.md) | Development after `245e91f0`; pre-fix failure and 720 passing repair comparisons retained separately. |
-| [Latest clean capture](postcommit-232cc734/README.md) | `232cc734`: source-bound duplicate-root repair checks; evidence added at `c45b41fd`. |
+| [Clean duplicate-root capture](postcommit-232cc734/README.md) | `232cc734`: source-bound duplicate-root repair checks; evidence added at `c45b41fd`. |
+| [Clean producer-identity capture](postcommit-0f68f8bd/README.md) | `0f68f8bd`: independent and reused producers preserve their distinct realization semantics; source-bound numerical and portable checks passed. |
 
 Each report links its measurements, raw capture, manifests and available
 verification records. Measured production revisions are distinct from the
@@ -41,6 +43,12 @@ commits adding evidence: for example, clean `523d51d7` was recorded in
 `245e91f0`, and clean `232cc734` in `c45b41fd`.
 
 ## Provenance and retention limits
+
+The `0f68f8bd` capture includes its full raw report tree in the candidate's
+checked-in archive, including wheel, compiler/test sources and compiler caches;
+only rebuildable Cargo output is excluded. Its initial portable setup failures
+are retained alongside successful retries. No external observer coverage is
+assumed, and this new capture does not repair the historical custody gap below.
 
 Source checks are observations, not continuous monitoring. For clean `523d51d7`
 and `232cc734`, full tracked-file fingerprints matched the baseline after each
