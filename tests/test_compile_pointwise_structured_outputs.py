@@ -540,6 +540,58 @@ class StructuredHardware(unittest.TestCase):
                     self.compare_tree(actual, expected)
                     self.assertEqual(kernel(compiled).ptx.count('.visible .entry'), 1)
 
+    def test_duplicate_computed_outputs_do_not_bias_competing_products(self):
+        bodies = (
+            ('p=x*y\n p2=x*y\n q=(-x)*y\n q2=q', True, False),
+            ('p=x*y\n p2=p\n q=(-x)*y\n q2=(-x)*y', False, True),
+            ('p=x*y\n p2=x*y\n q=(-x)*y\n q2=(-x)*y', True, True),
+            ('p=x*y\n p2=(x*1.0)*y\n q=(-x)*y\n q2=q', True, False),
+            ('p=x*1.25\n p2=x*1.25\n q=(-x)*1.25\n q2=q', True, False),
+        )
+        returns = ('(p,p2,q,q2,r,p)', '(r,q2,q,p2,p,p)',
+                   '{"left":[p,p2,p],"right":[q,q2],"value":r}')
+        histories = ((1e10, 1.0000001192092896), (2e38, -2e38),
+                     (1e-38, -1e-38), (1e-38, 1e-38), (0., -0.),
+                     (-0., 1.), (float('inf'), 0.), (float('nan'), 1.))
+        for case, (body, separate_p, separate_q) in enumerate(bodies):
+            for order, result in enumerate(returns):
+                source = 'def f(x,y):\n ' + body + '\n r=p+q\n return ' + result
+                for size in (1, 13, 257):
+                    fn, ref_fn = program(source), program(source, self.torch)
+                    compiled, reference = native.compile(fn), self.torch.compile(ref_fn)
+                    prior = None
+                    for history, values in enumerate(histories):
+                        args = [self.upload([v]*size, (size,)) for v in values]
+                        refs = [self.upload([v]*size, (size,), self.torch) for v in values]
+                        for repeat in range(2):
+                            with self.subTest(case=case, order=order, size=size,
+                                              history=history, repeat=repeat):
+                                expected = reference(*refs)
+                                actual = self.without_replay(fn, compiled, args)
+                                self.retain(f'duplicate-products-{case}-{order}-{size}-{history}-{repeat}',
+                                            compiled, actual, expected)
+                                self.compare_tree(actual, expected)
+                                if order == 0:
+                                    p, p2, q, q2, _, repeated = actual
+                                elif order == 1:
+                                    _, q2, q, p2, p, repeated = actual
+                                else:
+                                    p, p2, repeated = actual['left']
+                                    q, q2 = actual['right']
+                                self.assertIs(p, repeated)
+                                for first, second, separate in ((p,p2,separate_p),(q,q2,separate_q)):
+                                    if separate:
+                                        self.assertIsNot(first, second)
+                                        self.assertNotEqual(first.data_ptr(), second.data_ptr())
+                                    else:
+                                        self.assertIs(first, second)
+                                if prior is not None:
+                                    old_actual, old_expected, old_p = prior
+                                    self.compare_tree(old_actual, old_expected)
+                                    self.assertIsNot(p, old_p)
+                                    self.assertNotEqual(p.data_ptr(), old_p.data_ptr())
+                                prior = actual, expected, p
+
     def test_shared_sibling_products_and_observable_uses(self):
         bodies = (
             'p=x*y\n q=(-x)*y\n r=(p+q)+(p-q)',

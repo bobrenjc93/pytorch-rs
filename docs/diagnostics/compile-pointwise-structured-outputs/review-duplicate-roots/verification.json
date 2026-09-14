@@ -1,0 +1,41 @@
+{
+  "head": "245e91f00aa6e41ed6262b5f40f92ca686ffea38",
+  "source_state": "uncommitted development repair; clean post-commit qualification pending",
+  "root": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831",
+  "required_checks": [
+    "native",
+    "wheel-build",
+    "regression-after",
+    "pointwise",
+    "two-device",
+    "runtime",
+    "verify-extension",
+    "interpreter-identities",
+    "clippy",
+    "fmt",
+    "portable-312",
+    "portable-3.10.19",
+    "portable-3.11.15",
+    "portable-3.13.13",
+    "portable-3.14.5"
+  ],
+  "historical_files_unchanged": 52,
+  "raw_files_verified": 13839,
+  "canonical_retained_files": 48111,
+  "canonical_report_root": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/structured-outputs-duplicate-roots-repair",
+  "retention_manifest_sha256": "14a1ae82f5aa2a883dae0dd192e129d7125b161bf0af5c32650924bcefd050d3",
+  "artifacts": {
+    "measurements.json.gz": {
+      "bytes": 974556,
+      "sha256": "c9ff522f94300df05d80ea18916394a8ae4fd776448f127c58f044e75250fd1e"
+    },
+    "raw-manifest.json.gz": {
+      "bytes": 193525,
+      "sha256": "a0ef3448ca645d619a08fd19cab25331c5005e4ac10868604ea9d0f9e8cc5ff6"
+    },
+    "raw.tar.gz": {
+      "bytes": 2000561,
+      "sha256": "fc5d10df9bc36459784dfc49cb1917353069267ff13c8e18f2ae390c56694380"
+    }
+  }
+}

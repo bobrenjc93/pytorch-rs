@@ -446,7 +446,8 @@ impl Lowering {
     fn live_uses(&self, outputs: &[usize]) -> Vec<usize> {
         let mut uses = vec![0; self.nodes.len()];
         for &output in outputs {
-            uses[output] += 1;
+            // Distinct allocation slots can denote one CSE'd observable value.
+            uses[output] = 1;
         }
         for id in (0..self.nodes.len()).rev() {
             if uses[id] != 0 {
@@ -492,8 +493,11 @@ impl Lowering {
                 exported[operand] = true;
             }
         };
+        let mut observed = vec![false; self.nodes.len()];
         for &output in outputs {
-            add_use(output, usize::MAX);
+            if !std::mem::replace(&mut observed[output], true) {
+                add_use(output, usize::MAX);
+            }
         }
         for id in 0..self.nodes.len() {
             if live[id] != 0 {
@@ -753,10 +757,11 @@ fn consumer_analysis(
     let mut live = vec![false; canonical.nodes.len()];
     let mut last = vec![0; canonical.nodes.len()];
     let mut uses = vec![0; canonical.nodes.len()];
-    // Stores are observable uses for sign rewrites, without prohibiting FMA.
+    // Seed each canonical observable value once, independently of allocation
+    // slots. This also covers aliases introduced by constant/unit rewrites.
     for &output in roots {
         live[mapped[output]] = true;
-        uses[mapped[output]] += 1;
+        uses[mapped[output]] = 1;
     }
     for id in (0..canonical.nodes.len()).rev() {
         if !live[id] {
@@ -894,6 +899,57 @@ mod tests {
     fn lower_region(graph: &Graph, roots: &[usize], imports: &[usize]) -> RegionProgram {
         let canonical = super::super::regions::canonical_nodes(graph);
         region(graph, &canonical, roots, imports)
+    }
+
+    #[test]
+    fn duplicate_output_slots_do_not_add_canonical_numerical_uses() {
+        let graph = Graph {
+            inputs: 2,
+            nodes: vec![
+                Node::Input(0),
+                Node::Input(1),
+                Node::Mul(0, 1),
+                Node::Mul(0, 1),
+                Node::Neg(0),
+                Node::Mul(4, 1),
+                Node::Add(2, 5),
+                Node::Constant(1.0_f64.to_bits()),
+                Node::Mul(2, 7),
+            ],
+            outputs: vec![2, 3, 5, 6, 8],
+        };
+        // Include both original-expression CSE and a later unit-product rewrite.
+        for duplicate in [3, 8] {
+            let lowered = lower_region(&graph, &[2, duplicate, 5, 6], &[]);
+            assert_eq!(lowered.roots.len(), 4);
+            assert_eq!(lowered.roots[0], lowered.roots[1]);
+            assert!(matches!(
+                lowered.operations[lowered.roots[3]],
+                Operation::Fma {
+                    negative_product: false,
+                    ..
+                }
+            ));
+        }
+        let (aliases, zeros) = early_aliases(&graph);
+        let (_, unique) = consumer_analysis(&graph, &aliases, &zeros, &[2, 5, 6]);
+        for duplicate in [3, 8] {
+            let (_, repeated) = consumer_analysis(&graph, &aliases, &zeros, &[2, duplicate, 5, 6]);
+            assert_eq!(unique, repeated);
+        }
+        let mut lower = Lowering::default();
+        lower.node(Node::Input(0));
+        lower.node(Node::Input(1));
+        lower.node(Node::Mul(0, 1));
+        lower.node(Node::Add(2, 0));
+        let unique = lower.live_uses(&[2, 3]);
+        assert_eq!(unique, lower.live_uses(&[2, 2, 3]));
+        let calls = vec![0; lower.nodes.len()];
+        let before = lower.call_deadlines(&calls, &unique);
+        assert_eq!(
+            lower.local_uses(&[2, 3], &calls, &before, &unique),
+            lower.local_uses(&[2, 2, 3], &calls, &before, &unique)
+        );
     }
 
     #[test]

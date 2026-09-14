@@ -53,8 +53,9 @@ including for commutative operators.
 
 Within each numerical region, the direct product with fewer remaining uses takes priority.
 This includes two products shared by sibling consumers, not only single-use
-products. Output stores count as observable uses after expression
-deduplication, independently of result-container order or repeated result aliases.
+products. Each canonical output value counts as one observable use after
+expression deduplication, even when distinct original computations require
+separate output allocations and stores. Repeated result aliases add no uses.
 Stores do not prohibit contraction: a shared product can still fuse when there
 is no less-used competitor. Transparent sign/positive-zero wrappers contribute
 their external uses to the underlying product. Use counts also retain their role
