@@ -605,6 +605,33 @@ class StructuredHardware(unittest.TestCase):
                                     self.assertNotEqual(p.data_ptr(), old_p.data_ptr())
                                 prior = actual, expected, p
 
+    def test_returned_signed_products_preserve_contraction_uses(self):
+        returns = ('(a,b,c)', '(a,c,b)', '(b,a,c)', '(b,c,a)',
+                   '(c,a,b)', '(c,b,a)', 'c')
+        histories = ((1.0000001192092896, -1e10), (2e38, -2e38),
+                     (1e-38, 1e-38), (0., -0.), (float('inf'), 0.))
+        for case, expression in enumerate(('y*-2.0', '-2.0*y', 'y*-3.0', 'y*-1.5', 'y*-1.0')):
+            for order, result in enumerate(returns):
+                source = f'def f(x,y):\n a={expression}\n b=a*x\n c=b-a\n return ' + result
+                for size in (1, 13, 257):
+                    fn, ref_fn = program(source), program(source, self.torch)
+                    compiled, reference = native.compile(fn), self.torch.compile(ref_fn)
+                    prior = None
+                    for history, values in enumerate(histories):
+                        args = [self.upload([v]*size, (size,)) for v in values]
+                        refs = [self.upload([v]*size, (size,), self.torch) for v in values]
+                        for repeat in range(2):
+                            with self.subTest(case=case, order=order, size=size, history=history, repeat=repeat):
+                                expected = reference(*refs)
+                                actual = self.without_replay(fn, compiled, args)
+                                self.retain(f'signed-uses-{case}-{order}-{size}-{history}-{repeat}',
+                                            compiled, actual, expected)
+                                self.compare_tree(actual, expected)
+                                if prior is not None:
+                                    self.compare_tree(*prior)
+                                prior = actual, expected
+                                self.assertEqual(kernel(compiled).ptx.count('.visible .entry'), 1)
+
     def test_shared_sibling_products_and_observable_uses(self):
         bodies = (
             'p=x*y\n q=(-x)*y\n r=(p+q)+(p-q)',

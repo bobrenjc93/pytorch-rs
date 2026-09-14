@@ -64,8 +64,10 @@ expression deduplication, even when distinct original computations require
 separate output allocations and stores. Repeated result aliases add no uses.
 Stores do not prohibit contraction: a shared product can still fuse when there
 is no less-used competitor. Transparent sign/positive-zero wrappers contribute
-their external uses to the underlying product. Use counts also retain their role
-in sign rewrites.
+their external uses to the underlying product, including sibling wrappers and
+products created by extracting a negative coefficient. These relationships are
+used only to count external uses within a basic block; they do not merge values,
+allocations or rounding boundaries. Use counts also retain their role in sign rewrites.
 Contractions are selected from consumers toward operands. Each selected FMA
 replaces its product use with direct factor uses before inner choices are made;
 an outer contraction can therefore make an inner product single-use.

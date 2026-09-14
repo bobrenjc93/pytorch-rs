@@ -9,6 +9,11 @@ explicit two-device skips, eight separately passing two-device checks, and
 interpreter checks, 720 duplicate-product comparisons and 16 independent/reused
 producer comparisons. Skips are not GPU passes.
 
+The [signed-product use repair](review-signed-uses/README.md) records subsequent
+uncommitted development: 304 passing H100 pointwise tests, eight separate
+two-device checks and 64 native checks. Its 1,050-comparison regression and
+original failures are retained. Clean-commit qualification awaits Burner’s commit.
+
 These are bounded correctness captures against ordinary stock `torch.compile`,
 not general Inductor equivalence, a performance result, or qualification of
 later commits. The [usage guide](../../compile-pointwise-jit.md#bounded-nested-results)
@@ -36,6 +41,7 @@ uncommitted changes; later successful checks do not erase their earlier failures
 | [Duplicate-root repair](review-duplicate-roots/README.md) | Development after `245e91f0`; pre-fix failure and 720 passing repair comparisons retained separately. |
 | [Clean duplicate-root capture](postcommit-232cc734/README.md) | `232cc734`: source-bound duplicate-root repair checks; evidence added at `c45b41fd`. |
 | [Clean producer-identity capture](postcommit-0f68f8bd/README.md) | `0f68f8bd`: independent and reused producers preserve their distinct realization semantics; source-bound numerical and portable checks passed. |
+| [Signed-product use repair](review-signed-uses/README.md) | Development after `cba212e3`: sign rewrites retain external uses for FMA selection; original finite/overflow failures and passing repairs retained. |
 
 Each report links its measurements, raw capture, manifests and available
 verification records. Measured production revisions are distinct from the

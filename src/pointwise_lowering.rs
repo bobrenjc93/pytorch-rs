@@ -43,6 +43,8 @@ struct ContractionContext<'a> {
     uses: &'a [usize],
     before_call: &'a [usize],
     consumer: usize,
+    families: &'a [usize],
+    members: &'a [Vec<usize>],
 }
 
 #[derive(Default)]
@@ -50,6 +52,9 @@ struct Lowering {
     nodes: Vec<Expr>,
     interned: HashMap<Expr, usize>,
     constant_expressions: Vec<bool>,
+    // Sign extraction can create a second product without a connecting operand
+    // edge. Retain that relationship for use priority, never for value CSE.
+    sign_equivalences: Vec<(usize, usize)>,
 }
 
 impl Lowering {
@@ -116,9 +121,7 @@ impl Lowering {
         // provenance is transparent here.
         let (mut negative, mut flipped) = (false, false);
         let (mut outer_zero, mut inner_zero) = (false, false);
-        let mut product_uses = 1;
         loop {
-            product_uses += context.uses[id] - 1;
             if let Some(value) = self.subtracts_scalar_zero(id) {
                 if flipped {
                     inner_zero = true;
@@ -146,8 +149,59 @@ impl Lowering {
             // effective flip over a zero-subtracted expression retains its
             // fallback priority; leading zero subtraction alone exposes it.
             direct: !negative || (outer_zero && !inner_zero),
-            uses: product_uses,
+            uses: self.product_uses(id, context),
         })
+    }
+
+    fn product_uses(&self, id: usize, context: &ContractionContext<'_>) -> usize {
+        let family = context.families[id];
+        let block = context.before_call[id];
+        let mut uses = 0;
+        let mut internal = 0;
+        for &member in &context.members[family] {
+            if context.before_call[member] != block || context.uses[member] == 0 {
+                continue;
+            }
+            uses += context.uses[member];
+            internal += self
+                .operands(member)
+                .into_iter()
+                .filter(|&operand| {
+                    context.families[operand] == family && context.before_call[operand] == block
+                })
+                .count();
+        }
+        // Wrappers are implementation edges, not additional observable uses.
+        // Recompute from the current DAG after each outer contraction rather
+        // than freezing the original counts or changing liveness accounting.
+        uses - internal
+    }
+
+    fn sign_families(&self) -> (Vec<usize>, Vec<Vec<usize>>) {
+        fn root(parents: &[usize], mut id: usize) -> usize {
+            while parents[id] != id {
+                id = parents[id];
+            }
+            id
+        }
+        let mut parents: Vec<_> = (0..self.nodes.len()).collect();
+        let wrappers = self.nodes.iter().enumerate().filter_map(|(id, expr)| {
+            let operand = match *expr {
+                Expr::Flip(a) | Expr::SignedDouble(a) => Some(a),
+                _ => self.subtracts_scalar_zero(id),
+            }?;
+            Some((id, operand))
+        });
+        for (a, b) in wrappers.chain(self.sign_equivalences.iter().copied()) {
+            let (a, b) = (root(&parents, a), root(&parents, b));
+            parents[a.max(b)] = a.min(b);
+        }
+        let families: Vec<_> = (0..parents.len()).map(|id| root(&parents, id)).collect();
+        let mut members = vec![Vec::new(); parents.len()];
+        for (id, &family) in families.iter().enumerate() {
+            members[family].push(id);
+        }
+        (families, members)
     }
 
     fn float_operand(&mut self, id: usize) -> usize {
@@ -218,10 +272,14 @@ impl Lowering {
         // keeps its identity even when its original positive product had one use.
         if single_use {
             if let Expr::Flip(value) = self.nodes[a] {
-                return Some(self.node(Node::Mul(value, b)));
+                let positive = self.node(Node::Mul(value, b));
+                self.sign_equivalences.push((id, positive));
+                return Some(positive);
             }
             if let Expr::Flip(value) = self.nodes[b] {
-                return Some(self.node(Node::Mul(a, value)));
+                let positive = self.node(Node::Mul(a, value));
+                self.sign_equivalences.push((id, positive));
+                return Some(positive);
             }
         }
         let coefficient = if self.constant(a).is_some_and(|x| x < 0.0) {
@@ -233,7 +291,9 @@ impl Lowering {
         };
         let bits = self.constant(*coefficient).unwrap().to_bits() ^ 0x8000_0000_0000_0000;
         *coefficient = self.node(Node::Constant(bits));
-        Some(self.node(Node::Mul(a, b)))
+        let positive = self.node(Node::Mul(a, b));
+        self.sign_equivalences.push((id, positive));
+        Some(positive)
     }
 
     fn normalize(&mut self, node: Node, last_use: [bool; 2], uses: [usize; 2]) -> usize {
@@ -530,6 +590,7 @@ impl Lowering {
         let before_call = self.call_deadlines(calls, live);
         let mut uses = self.local_uses(outputs, calls, &before_call, live);
         let mut selected = vec![None; self.nodes.len()];
+        let (families, members) = self.sign_families();
         // Match consumer-before-operand DAG combining: an outer FMA removes
         // its product use before an inner competing pair is considered.
         for id in (0..self.nodes.len()).rev() {
@@ -541,6 +602,8 @@ impl Lowering {
                 uses: &uses,
                 before_call: &before_call,
                 consumer: id,
+                families: &families,
+                members: &members,
             };
             let contraction = match self.nodes[id] {
                 Expr::Node(Node::Add(a, b)) => self.contract(a, b, false, &context),
@@ -899,6 +962,36 @@ mod tests {
     fn lower_region(graph: &Graph, roots: &[usize], imports: &[usize]) -> RegionProgram {
         let canonical = super::super::regions::canonical_nodes(graph);
         region(graph, &canonical, roots, imports)
+    }
+
+    #[test]
+    fn signed_product_stores_keep_the_less_used_consumer_product_fused() {
+        for coefficient in [-2.0_f64, -3.0, -1.5] {
+            let graph = Graph {
+                inputs: 2,
+                nodes: vec![
+                    Node::Input(0),
+                    Node::Input(1),
+                    Node::Constant(coefficient.to_bits()),
+                    Node::Mul(1, 2),
+                    Node::Mul(3, 0),
+                    Node::Sub(4, 3),
+                    Node::Mul(1, 2),
+                ],
+                outputs: vec![3, 4, 5, 6],
+            };
+            for roots in [&[3, 4, 5][..], &[3, 4, 5, 6, 3][..]] {
+                let lowered = lower_region(&graph, roots, &[]);
+                let Operation::Fma { a, b, .. } = lowered.operations[lowered.roots[2]] else {
+                    panic!("a returned intermediate is not a rounding barrier");
+                };
+                // Contract a*x, retaining the rounded signed a as its factor.
+                // Contracting y*(-coefficient) instead loses cancellation and
+                // changes NaN/infinity behavior when a itself overflows.
+                assert_eq!(a, lowered.roots[0]);
+                assert!(matches!(lowered.operations[b], Operation::Input(0)));
+            }
+        }
     }
 
     #[test]
