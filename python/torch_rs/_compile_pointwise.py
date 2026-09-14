@@ -797,7 +797,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
             unsupported("graph exceeds 4096-node limit")
         return Value(len(nodes) - 1)
 
-    def frame(instructions, locals_):
+    def frame(instructions, locals_, *, check_only=False):
         nonlocal remaining, checked_nodes
         remaining -= len(instructions)
         if remaining < 0:
@@ -806,8 +806,15 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
 
         def load(name):
             if name not in locals_:
-                unsupported("unbound local: " + name)
-            stack.append(locals_[name])
+                if not check_only:
+                    unsupported("unbound local: " + name)
+                # No value/type exists for an unexecuted local read. Treat it
+                # as pointwise data solely for body-language admission. This
+                # placeholder and every node using it are discarded before
+                # native IR validation; it is never an input or a real local.
+                stack.append(Value(-1))
+            else:
+                stack.append(locals_[name])
 
         for instruction in instructions:
             op, arg = instruction.opname, instruction.argval
@@ -817,12 +824,14 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                 # Reuse typed operator/helper/data admission without executing
                 # Python or changing the real frame/IR. Realized sources keep
                 # the existing warm semantic and ignored-data guards.
-                saved_locals, node_start = locals_, len(nodes)
+                saved_locals, node_start, saved_check_only = locals_, len(nodes), check_only
                 locals_ = locals_.copy()
+                check_only = True
             elif op == "_LOOP_CHECK_END":
                 checked_nodes += len(nodes) - node_start
                 del nodes[node_start:]
                 locals_ = saved_locals
+                check_only = saved_check_only
             elif op in ("LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_FAST_BORROW"):
                 load(arg)
             elif op in ("LOAD_FAST_LOAD_FAST", "LOAD_FAST_BORROW_LOAD_FAST_BORROW"):
@@ -877,7 +886,8 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     if target not in helper_instructions:
                         helper_instructions[target] = instructions_for(target.code, helper=True)
                     stack.append(frame(helper_instructions[target],
-                                       dict(zip(target.code.co_varnames, parameters))))
+                                       dict(zip(target.code.co_varnames, parameters)),
+                                       check_only=check_only))
                     continue
                 if type(target) is not Call:
                     unsupported("only native pointwise operators and direct helpers may be called")

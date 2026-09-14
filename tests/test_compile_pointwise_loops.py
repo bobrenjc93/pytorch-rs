@@ -118,6 +118,30 @@ class LoopAdmission(unittest.TestCase):
         with no_bodies(fn, helper):
             self.assertEqual(lower(fn, 2), lower(expected, 2))
 
+    def test_skipped_unbound_reads_do_not_execute_or_escape(self):
+        helper = program('def f(a):\n missing=missing+a\n return missing')
+        for body in ('y=y+x', 'y=y.sin()+x', 'y=helper(y)', 'y=helper(x)'):
+            fn = program('def f(x):\n for i in range(0):\n  '+body+'\n y=x\n return -y', helper=helper)
+            with self.subTest(body=body), no_bodies(fn, helper):
+                self.assertEqual(lower(fn), lower(program('def f(x):\n return -x')))
+        for source in (
+            'for i in range(0):\n  y=y+x\n return -y',
+            'for i in range(1):\n  y=y+x\n y=x\n return -y',
+            'for i in range(0):\n  y=y+x\n for j in range(1):\n  y=y+x\n return -y',
+            'for i in range(0):\n  y=helper(x)\n return helper(x)',
+        ):
+            fn = program('def f(x):\n '+source, helper=helper)
+            with self.subTest(source=source), no_bodies(fn, helper):
+                with self.assertRaisesRegex(NotImplementedError, 'unbound local'):
+                    lower(fn)
+
+    def test_skipped_unbound_data_still_checks_body_language(self):
+        helper = program('def f(a):\n for j in range(2):\n  a=-a\n return a')
+        for body in ('y=y.sum()', 'y=y(x)', 'y=helper(y)', 'y=i+i'):
+            fn = program('def f(x):\n for i in range(0):\n  '+body+'\n y=x\n return -y', helper=helper)
+            with self.subTest(body=body), no_bodies(fn, helper):
+                with self.assertRaises(NotImplementedError): lower(fn)
+
     def test_hostile_values_containers_keys_and_constant_pool(self):
         effects = []
         class Hostile:
@@ -362,6 +386,46 @@ class LoopCache(unittest.TestCase):
 @unittest.skipUnless(available(), 'requires native CUDA and reference PyTorch CUDA')
 class LoopHardware(unittest.TestCase):
     def tearDown(self): native.compiler.reset()
+
+    def test_skipped_unbound_reads_match_default_inductor_and_stay_guarded(self):
+        import torch
+        original = 'def f(x):\n for i in range(0):\n  y=y+x\n y=x\n return -y'
+        fn = program(original)
+        x = native.tensor([1., -2.], dtype=native.float32).to('cuda:0')
+        tx = torch.tensor([1., -2.], dtype=torch.float32, device='cuda:0')
+        with no_bodies(fn): actual = native.compile(fn)(x)
+        expected = torch.compile(program(original, framework=torch))(tx)
+        torch.testing.assert_close(torch.tensor(actual.cpu().tolist()), expected.cpu())
+        helper = program('def f(a):\n return a.sin()')
+        source = 'def f(x):\n for i in range(0):\n  y=helper(y+x)\n y=x\n return -y'
+        fn = program(source, helper=helper)
+        compiled = native.compile(fn)
+        reference = torch.compile(program(source, framework=torch, helper=helper))
+        for data in ([1., -2.], [3., -4.], [5., 0., -7.]):
+            x = native.tensor(data, dtype=native.float32).to('cuda:0')
+            tx = torch.tensor(data, dtype=torch.float32, device='cuda:0')
+            with no_bodies(fn, helper): actual = compiled(x)
+            torch.testing.assert_close(torch.tensor(actual.cpu().tolist()), reference(tx).cpu())
+            self.assertEqual(x.cpu().tolist(), data)
+        state = cache(compiled)
+        before = (list(state.graphs.items()), list(state.executors.items()),
+                  [list(e.lowerings.items()) for e in state.graphs.values()])
+        fn.__globals__['helper'] = object()
+        with patch.object(frontend, 'lower', side_effect=AssertionError('warm lowering')):
+            with self.assertRaises(NotImplementedError): compiled(x)
+        self.assertEqual(before, (list(state.graphs.items()), list(state.executors.items()),
+                                 [list(e.lowerings.items()) for e in state.graphs.values()]))
+        fn.__globals__['helper'] = helper
+        with (no_bodies(fn, helper), patch.object(frontend, 'lower', side_effect=AssertionError('recovery lowering')),
+              patch.object(frontend.dis, 'get_instructions', side_effect=AssertionError('recovery disassembly'))):
+            self.assertEqual(compiled(x).cpu().tolist(), [-v for v in data])
+        fn.__code__ = program(source.replace('range(0)', 'range(1)'), helper=helper).__code__
+        with no_bodies(fn, helper), self.assertRaisesRegex(NotImplementedError, 'unbound local'):
+            compiled(x)
+        native.compiler.reset()
+        fn.__code__ = program(source, helper=helper).__code__
+        with no_bodies(fn, helper):
+            self.assertEqual(compiled(x).cpu().tolist(), [-v for v in data])
 
     def test_zero_trip_helper_validation_and_warm_recovery(self):
         helper = program('def f(a):\n return a.sin()')

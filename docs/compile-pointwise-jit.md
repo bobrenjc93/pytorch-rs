@@ -112,9 +112,13 @@ initial parameters; an index never assigned remains unbound. A zero-trip loop
 does not admit an identity-only root return. Its body still passes the existing
 typed operator, helper and data admission in an isolated local frame; its
 temporary assignments and IR are discarded, while helper code/binding and data
-guards remain active on warm calls. Reductions and helper-local loops therefore
-reject even in a zero-trip body. This admission pass shares the instruction/node
-budgets with executed bodies and helper calls. Original instructions, every repeated
+guards remain active on warm calls. Unbound local reads in this skipped frame
+(including its helper calls) use temporary data placeholders, not executed-local
+lookups; no placeholder or skipped assignment escapes into the executing frame
+or native IR. A genuinely executed unbound read still rejects. Reductions and
+helper-local loops therefore reject even in a zero-trip body. This admission pass
+shares the instruction/node budgets with executed bodies and helper calls.
+Original instructions, every repeated
 body/index assignment and every helper invocation share the 16384-instruction
 budget; the 4096-node limit and original-IR numerical boundary are unchanged.
 
@@ -133,8 +137,10 @@ See the [loop diagnostics](diagnostics/compile-pointwise-loops/README.md) for
 source-bound checks, original failures and the limits of this evidence, and the
 [operator recovery](diagnostics/compile-pointwise-loops/operator-recovery.md) for
 corrected observation retention. The
-[clean committed-candidate capture](diagnostics/compile-pointwise-loops/postcommit-bdcfb051/report.md)
-records the refreshed evidence and its limits.
+[capture at bdcfb051](diagnostics/compile-pointwise-loops/postcommit-bdcfb051/report.md)
+predates the subsequent
+[skipped-local repair](diagnostics/compile-pointwise-loops/review-skipped-locals.md),
+which has focused development checks; its clean-commit capture awaits Burner's commit.
 
 ### Direct Python helpers
 
