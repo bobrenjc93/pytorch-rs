@@ -1,0 +1,390 @@
+{
+  "kind": "read-only revalidation of unchanged historical main evidence; no new workload run",
+  "audited_ns": 1789354037795541182,
+  "report": "docs/diagnostics/compile-pointwise-loops/postcommit-dcfeb27a/main-fixed.json",
+  "report_sha256": "d360ca5b116188e3bf3e302645b5d1925d9ce7ee198fdbbd1910bb82dc03ddea",
+  "commit": "014fc0de304375258056c5aeb3151cfdc2bcc72a",
+  "valid": true,
+  "source_files_verified_against_main": [
+    ".burner/evaluations.json",
+    ".github/scripts/verify_native_extension.py",
+    "Cargo.lock",
+    "Cargo.toml",
+    "pyproject.toml",
+    "python/torch_rs/__future__.py",
+    "python/torch_rs/__init__.py",
+    "python/torch_rs/_compile_bytecode.py",
+    "python/torch_rs/_compile_pointwise.py",
+    "python/torch_rs/_compile_trace.py",
+    "python/torch_rs/_compiler_state.py",
+    "python/torch_rs/_cuda_benchmark_tensor.py",
+    "python/torch_rs/_cuda_buffer.py",
+    "python/torch_rs/_cuda_driver_probe.py",
+    "python/torch_rs/_cuda_pointwise_kernel.py",
+    "python/torch_rs/_cuda_pointwise_reduce_workload.py",
+    "python/torch_rs/_cuda_public_storage.py",
+    "python/torch_rs/_cuda_runtime_ownership.py",
+    "python/torch_rs/_cuda_runtime_roundtrip.py",
+    "python/torch_rs/_diagnostics.py",
+    "python/torch_rs/_jit_internal.py",
+    "python/torch_rs/_serialization_state.py",
+    "python/torch_rs/_tensor.py",
+    "python/torch_rs/accelerator/__init__.py",
+    "python/torch_rs/accelerator/memory.py",
+    "python/torch_rs/autograd/__init__.py",
+    "python/torch_rs/autograd/grad_mode.py",
+    "python/torch_rs/backends/__init__.py",
+    "python/torch_rs/backends/cpu/__init__.py",
+    "python/torch_rs/backends/cuda/__init__.py",
+    "python/torch_rs/backends/cudnn/__init__.py",
+    "python/torch_rs/backends/cusparselt/__init__.py",
+    "python/torch_rs/backends/kleidiai/__init__.py",
+    "python/torch_rs/backends/mha/__init__.py",
+    "python/torch_rs/backends/mkl/__init__.py",
+    "python/torch_rs/backends/nnpack/__init__.py",
+    "python/torch_rs/backends/openmp/__init__.py",
+    "python/torch_rs/compiler/__init__.py",
+    "python/torch_rs/cpu/__init__.py",
+    "python/torch_rs/cuda/__init__.py",
+    "python/torch_rs/distributed/__init__.py",
+    "python/torch_rs/distributed/distributed_c10d.py",
+    "python/torch_rs/functional.py",
+    "python/torch_rs/jit/__init__.py",
+    "python/torch_rs/jit/_fuser.py",
+    "python/torch_rs/jit/_script.py",
+    "python/torch_rs/jit/_trace.py",
+    "python/torch_rs/nn/__init__.py",
+    "python/torch_rs/nn/functional.py",
+    "python/torch_rs/nn/init.py",
+    "python/torch_rs/nn/modules/__init__.py",
+    "python/torch_rs/nn/modules/utils.py",
+    "python/torch_rs/overrides.py",
+    "python/torch_rs/serialization.py",
+    "python/torch_rs/utils/__init__.py",
+    "python/torch_rs/utils/data/__init__.py",
+    "python/torch_rs/utils/data/_utils/__init__.py",
+    "python/torch_rs/utils/data/_utils/collate.py",
+    "python/torch_rs/utils/data/_utils/worker.py",
+    "python/torch_rs/utils/data/datapipes/__init__.py",
+    "python/torch_rs/utils/data/datapipes/datapipe.py",
+    "python/torch_rs/utils/data/dataset.py",
+    "python/torch_rs/utils/data/distributed.py",
+    "python/torch_rs/utils/data/sampler.py",
+    "python/torch_rs/version.py",
+    "rust-toolchain.toml",
+    "scripts/evaluate_torch_compile_default.py",
+    "scripts/evaluate_torch_compile_default.sh",
+    "scripts/torch_compile_default_corpus.py",
+    "src/autograd_node.rs",
+    "src/cuda.rs",
+    "src/cuda/add.ptx",
+    "src/cuda/add_trailing_vector.ptx",
+    "src/cuda/blas.rs",
+    "src/cuda/contiguous.ptx",
+    "src/cuda/jit.rs",
+    "src/cuda/mul_scalar.ptx",
+    "src/cuda/neg.ptx",
+    "src/cuda/pointwise.rs",
+    "src/cuda/pool.rs",
+    "src/cuda/relu.ptx",
+    "src/cuda/replay.rs",
+    "src/cuda/sum_rows.ptx",
+    "src/cuda/sum_rows.rs",
+    "src/device.rs",
+    "src/dtype.rs",
+    "src/grad_mode.rs",
+    "src/lib.rs",
+    "src/memory_format.rs",
+    "src/parallel.rs",
+    "src/pointwise_indexing.rs",
+    "src/pointwise_ir.rs",
+    "src/pointwise_lowering.rs",
+    "src/python.rs",
+    "src/python_argument_schema.rs",
+    "src/python_compile_cuda_graph.rs",
+    "src/python_cpython_compat.rs",
+    "src/python_device.rs",
+    "src/python_dtype.rs",
+    "src/python_finfo.rs",
+    "src/python_grad_mode.rs",
+    "src/python_layout.rs",
+    "src/python_memory_format.rs",
+    "src/python_nn_functional.rs",
+    "src/python_no_argument_builtins.rs",
+    "src/python_pointwise.rs",
+    "src/python_scalar_conversions.rs",
+    "src/python_size.rs",
+    "src/python_tensor_alternate_layout.rs",
+    "src/python_tensor_data.rs",
+    "src/python_tensor_devices.rs",
+    "src/python_tensor_dtype.rs",
+    "src/python_tensor_errors.rs",
+    "src/python_tensor_lazy_bits.rs",
+    "src/python_tensor_leaf_grad.rs",
+    "src/python_tensor_name.rs",
+    "src/python_tensor_queries.rs",
+    "src/python_tensor_shape.rs",
+    "src/python_tensor_storage.rs",
+    "src/python_torch_function_mode.rs",
+    "src/python_torch_function_probe.rs",
+    "src/python_unflatten.rs",
+    "src/python_variable_functions.rs",
+    "src/reduction.rs",
+    "src/storage.rs",
+    "src/tensor.rs",
+    "src/tensor_cuda_graph.rs",
+    "src/tensor_error.rs",
+    "src/tensor_pointwise.rs",
+    "uv.lock"
+  ],
+  "retained_original_workers": [
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-nested-main-retention.XUvNOc/default-compile-main-437254ce-3324-4e0b-ade8-f9e01132e7cb/run-20260914T010746Z-c4c212b4/cpu-0-reference.json.gz",
+      "size": 45415206,
+      "sha256": "9b88a41f1e2c5d8053a5f16b913e51205fa920d1a4676e7985de3a9bd973819b"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-nested-main-retention.XUvNOc/default-compile-main-437254ce-3324-4e0b-ade8-f9e01132e7cb/run-20260914T010746Z-c4c212b4/cpu-0-reference.log",
+      "size": 2202,
+      "sha256": "e33cb91261fb5efd1ed50a236cfb0e3b3577dbf8661b6ee9c6b5a73d5e00e23d"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-nested-main-retention.XUvNOc/default-compile-main-437254ce-3324-4e0b-ade8-f9e01132e7cb/run-20260914T010746Z-c4c212b4/cpu-0-candidate.json.gz",
+      "size": 2210,
+      "sha256": "e9f6fab8366e083c0fc4e76c48e3bceab88d2284cdd55a71cd7f47379494ff85"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-nested-main-retention.XUvNOc/default-compile-main-437254ce-3324-4e0b-ade8-f9e01132e7cb/run-20260914T010746Z-c4c212b4/cpu-0-candidate.log",
+      "size": 823,
+      "sha256": "425c342763d99e2789b8a29851cdc6f34b002e58bac0348f87e258427076d072"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-nested-main-retention.XUvNOc/default-compile-main-437254ce-3324-4e0b-ade8-f9e01132e7cb/run-20260914T010746Z-c4c212b4/cuda-0-reference.json.gz",
+      "size": 45417540,
+      "sha256": "828deb50decc906b63ef5ed357c7e0ef0eff4867c5fe126d4e296cfd255cf1f2"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-nested-main-retention.XUvNOc/default-compile-main-437254ce-3324-4e0b-ade8-f9e01132e7cb/run-20260914T010746Z-c4c212b4/cuda-0-reference.log",
+      "size": 2631,
+      "sha256": "af017fb8e961602883a6ab5c15e558325d626462bc1b6b7b13621428cef354e6"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-nested-main-retention.XUvNOc/default-compile-main-437254ce-3324-4e0b-ade8-f9e01132e7cb/run-20260914T010746Z-c4c212b4/cuda-0-candidate.json.gz",
+      "size": 6178728,
+      "sha256": "a555e1a0a3226b5494a80ba054263f6d08974b3cc5028a64a1cf9c0c32a63234"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-nested-main-retention.XUvNOc/default-compile-main-437254ce-3324-4e0b-ade8-f9e01132e7cb/run-20260914T010746Z-c4c212b4/cuda-0-candidate.log",
+      "size": 851,
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-nested-main-retention.XUvNOc/default-compile-main-437254ce-3324-4e0b-ade8-f9e01132e7cb/run-20260914T010746Z-c4c212b4/cuda-1-candidate.json.gz",
+      "size": 6178751,
+      "sha256": "69653001e4d1b77a72e771876a9ebd32f3f39f6fe81b57e989b0b9cbcbd64394"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-nested-main-retention.XUvNOc/default-compile-main-437254ce-3324-4e0b-ade8-f9e01132e7cb/run-20260914T010746Z-c4c212b4/cuda-1-candidate.log",
+      "size": 851,
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-nested-main-retention.XUvNOc/default-compile-main-437254ce-3324-4e0b-ade8-f9e01132e7cb/run-20260914T010746Z-c4c212b4/cuda-1-reference.json.gz",
+      "size": 45417601,
+      "sha256": "a1d78348a95538848ffb61ea21357ba9f98311cb828175d6913084652b889abc"
+    },
+    {
+      "path": "/tmp/burner-approved-default-compile.UA2M6I/static-loop-nested-main-retention.XUvNOc/default-compile-main-437254ce-3324-4e0b-ade8-f9e01132e7cb/run-20260914T010746Z-c4c212b4/cuda-1-reference.log",
+      "size": 2631,
+      "sha256": "21f5d061a2541df34c63d0d99a136d4898621f3ac2bcc5b8d970e4630a924c36"
+    }
+  ],
+  "scores": {
+    "coverage": {
+      "categories": {
+        "broadcasting": {
+          "contribution": 4.0,
+          "eligible": 8,
+          "passed": 4,
+          "weight": 8
+        },
+        "containers_pytrees": {
+          "contribution": 0.0,
+          "eligible": 8,
+          "passed": 0,
+          "weight": 6
+        },
+        "custom_functions": {
+          "contribution": 1.5,
+          "eligible": 8,
+          "passed": 2,
+          "weight": 6
+        },
+        "decompositions": {
+          "contribution": 0.0,
+          "eligible": 8,
+          "passed": 0,
+          "weight": 6
+        },
+        "dtype_device_transitions": {
+          "contribution": 0.0,
+          "eligible": 8,
+          "passed": 0,
+          "weight": 4
+        },
+        "dynamic_shapes": {
+          "contribution": 0.0,
+          "eligible": 8,
+          "passed": 0,
+          "weight": 8
+        },
+        "graph_breaks": {
+          "contribution": 0.0,
+          "eligible": 8,
+          "passed": 0,
+          "weight": 8
+        },
+        "inference": {
+          "contribution": 0.0,
+          "eligible": 8,
+          "passed": 0,
+          "weight": 6
+        },
+        "modules_parameters_buffers": {
+          "contribution": 0.0,
+          "eligible": 8,
+          "passed": 0,
+          "weight": 8
+        },
+        "mutation_aliasing_views": {
+          "contribution": 0.0,
+          "eligible": 8,
+          "passed": 0,
+          "weight": 8
+        },
+        "python_control_flow": {
+          "contribution": 0.0,
+          "eligible": 8,
+          "passed": 0,
+          "weight": 8
+        },
+        "recompilation_guards": {
+          "contribution": 1.0,
+          "eligible": 8,
+          "passed": 2,
+          "weight": 4
+        },
+        "tensor_arithmetic": {
+          "contribution": 6.0,
+          "eligible": 8,
+          "passed": 4,
+          "weight": 12
+        },
+        "training_autograd": {
+          "contribution": 0.0,
+          "eligible": 8,
+          "passed": 0,
+          "weight": 8
+        }
+      },
+      "common_success_geomean_ratio": 1.1539725686168658,
+      "eligible": 112,
+      "passed": 12,
+      "score": 12.5
+    },
+    "cuda-perf": {
+      "categories": {
+        "broadcasting": {
+          "contribution": 8.0,
+          "eligible": 4,
+          "passed": 4,
+          "weight": 8
+        },
+        "containers_pytrees": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 0,
+          "weight": 6
+        },
+        "custom_functions": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 2,
+          "weight": 6
+        },
+        "decompositions": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 0,
+          "weight": 6
+        },
+        "dtype_device_transitions": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 0,
+          "weight": 4
+        },
+        "dynamic_shapes": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 0,
+          "weight": 8
+        },
+        "graph_breaks": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 0,
+          "weight": 8
+        },
+        "inference": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 0,
+          "weight": 6
+        },
+        "modules_parameters_buffers": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 0,
+          "weight": 8
+        },
+        "mutation_aliasing_views": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 0,
+          "weight": 8
+        },
+        "python_control_flow": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 0,
+          "weight": 8
+        },
+        "recompilation_guards": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 2,
+          "weight": 4
+        },
+        "tensor_arithmetic": {
+          "contribution": 11.299361409780278,
+          "eligible": 4,
+          "passed": 4,
+          "weight": 12
+        },
+        "training_autograd": {
+          "contribution": 0.0,
+          "eligible": 4,
+          "passed": 0,
+          "weight": 8
+        }
+      },
+      "common_success_geomean_ratio": 1.1539725686168658,
+      "eligible": 56,
+      "passed": 12,
+      "score": 19.29936140978028
+    }
+  },
+  "original_checkout_removed": true,
+  "current_import_or_build_claim": false
+}

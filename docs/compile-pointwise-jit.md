@@ -140,7 +140,8 @@ corrected observation retention. The
 [capture at bdcfb051](diagnostics/compile-pointwise-loops/postcommit-bdcfb051/report.md)
 predates the subsequent
 [skipped-local repair](diagnostics/compile-pointwise-loops/review-skipped-locals.md),
-which has focused development checks; its clean-commit capture awaits Burner's commit.
+whose [clean capture at 18e94de5](diagnostics/compile-pointwise-loops/postcommit-18e94de5/report.md)
+records refreshed measurements and checks.
 
 ### Direct Python helpers
 

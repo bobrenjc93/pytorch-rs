@@ -1,5 +1,9 @@
 # Skipped local reads remain unexecuted
 
+The [clean capture at `18e94de5`](postcommit-18e94de5/report.md) now measures
+this repair after commit. The development checks and original failure below
+remain unchanged.
+
 The reviewer reproduced a zero-trip frame error: `y = y + x` inside a skipped
 loop raised an unbound-local error even when the remaining program assigned
 `y = x` and returned `-y`. The admission-only frame was applying executed-local
