@@ -11545,6 +11545,26 @@
         "eval_d4c0b71e": 83,
         "eval_b7f2a91c": 5.5
       }
+    },
+    {
+      "key": "pr:1994",
+      "recordedAt": "2026-09-14T00:05:58.644Z",
+      "label": "PR #1994",
+      "kind": "leaf",
+      "prNumber": 1994,
+      "title": "Capture bounded straight-line Python helpers in the default native CUDA compiler",
+      "scores": {
+        "eval_7af648fb": 91,
+        "eval_8417a4a8": 23.7,
+        "eval_63a24994": 60,
+        "eval_39340456": 30,
+        "eval_b4945d15": 80,
+        "eval_c8a1bfb9": 69,
+        "eval_a61c0e71": 12.5,
+        "eval_6f98c42d": 20,
+        "eval_d4c0b71e": 83,
+        "eval_b7f2a91c": 5.5
+      }
     }
   ]
 }
