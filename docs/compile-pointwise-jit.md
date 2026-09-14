@@ -132,11 +132,12 @@ any cache publication or LRU update. Inputs and all output allocations remain
 owned through launch, synchronization and Python conversion, including failures.
 Single-Tensor functions use this same path and still return a Tensor.
 
-[The initial clean structured-output capture](diagnostics/compile-pointwise-structured-outputs/postcommit-36954660/README.md)
-records the pre-repair implementation. The
-[returned-product repair record](diagnostics/compile-pointwise-structured-outputs/review-returned-products.md)
-describes the subsequent numerical finding, regression checks and outstanding
-clean-commit refresh for the repaired implementation.
+[Clean structured-output evidence at `90de52a9`](diagnostics/compile-pointwise-structured-outputs/postcommit-90de52a9/README.md)
+records the repaired implementation's H100 comparisons, ownership/device checks,
+CPython 3.10–3.14 checks and source/wheel/runtime provenance. It completes the
+clean capture deferred in the
+[returned-product repair record](diagnostics/compile-pointwise-structured-outputs/review-returned-products.md);
+the initial capture and development failures remain preserved there.
 
 ### Bounded root shape branches
 
