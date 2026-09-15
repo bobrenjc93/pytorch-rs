@@ -289,10 +289,12 @@ impl PointwisePlan {
                 },
             )?)
         };
+        // Upload completion owns the host program's last use. Keep only
+        // the launch count; diagnostics build their own listing on demand.
+        let instruction_count = program.instruction_count();
+        drop(program);
         Ok(Self {
-            // Upload completion owns the host program's last use. Keep only
-            // the launch count; diagnostics build their own listing on demand.
-            instruction_count: program.instruction_count(),
+            instruction_count,
             instructions,
             layout,
         })
@@ -1182,8 +1184,8 @@ mod tests {
                 2,
                 || panic!("empty output allocated scratch"),
                 || CudaFloat32Storage::allocate(0, 0).map(|(storage, _guard)| storage),
-                |_, _| panic!("empty output launched"),
-                |_, _| panic!("empty output waited for a launch"),
+                |(), _| panic!("empty output launched"),
+                |(), _| panic!("empty output waited for a launch"),
             )
             .unwrap();
         assert_eq!(outputs.len(), 2);
@@ -1326,6 +1328,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)] // Keep the complete injected ownership lifecycle in one test.
     fn pointwise_multiple_output_failures_keep_owners_and_restore_device() {
         use super::{CACHE, CACHE_HEALTHY, CudaFloat32Storage, Ordering};
         use std::{
