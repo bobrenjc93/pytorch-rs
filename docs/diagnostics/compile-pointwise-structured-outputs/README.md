@@ -1,5 +1,17 @@
 # Structured-output compiler evidence
 
+The [clean `9f09bc2a` capture](postcommit-9f09bc2a.json) records 59 structured/prepared
+checks, nine separate two-H100 checks, 73 native checks, and 164 portable passes
+per CPython 3.10–3.14 interpreter. The two hardware skips in the focused run passed
+in the separate device run; each portable run skipped 168 hardware cases.
+The report identifies the release wheel, imports, runtime and 3,789 numerical
+captures with native CUDA/PTX and plans. Raw artifacts remain in the canonical
+worktree-local report root recorded there, with a verified archive hash; they are
+not another checked-in payload or an off-host backup. This capture produces no
+performance score and does not replace independent review or full qualification.
+
+## Historical captures
+
 These are historical, source-bound correctness records for the bounded CUDA
 pointwise compiler. The latest measured source here is
 [`c238ca63`](https://github.com/bobrenjc93/pytorch-rs/blob/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c238ca63/README.md);
