@@ -298,7 +298,7 @@ class DefaultCompileExportTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="default-compile-export-")
         self.addCleanup(temporary.cleanup)
-        self.temporary = Path(temporary.name)
+        self.temporary = Path(temporary.name).resolve()
         self.root = self.temporary / "worktree"
         self.root.mkdir()
         self.sink = self.temporary / "export"
