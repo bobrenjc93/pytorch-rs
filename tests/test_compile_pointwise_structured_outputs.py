@@ -103,7 +103,7 @@ class StructuredAdmission(unittest.TestCase):
     def test_metadata_provenance_and_excluded_container_language(self):
         for expression in ('(x, None)', '(1, "x")', '(x+1, x.shape)',
                            '(x+1, (x+1).shape[0])', '(x+1, x.shape[0]+1)',
-                           '(x+1, [x][0])', '(x+1, tuple([x]))',
+                           '(x+1, tuple([x]))',
                            '{1:x+1}', '{key:x+1}', '(x+1, scale)'):
             fn = program('def f(x, scale):\n return '+expression, key='v')
             with self.subTest(expression=expression), self.assertRaises(NotImplementedError):
@@ -119,8 +119,7 @@ class StructuredAdmission(unittest.TestCase):
             fn = program('def f(x):\n if ' + expression + ' < 4:\n  return -x\n return x+1', helper=helper)
             with self.assertRaises(NotImplementedError):
                 shape_lower(fn)
-        for source in ('def f(x):\n pair=(-x,x)\n a,b=pair\n return a',
-                       'def f(x):\n a=[-x]\n a.append(x)\n return a',
+        for source in ('def f(x):\n a=[-x]\n a.append(x)\n return a',
                        'def f(x):\n return [-x,*[x]]'):
             with self.assertRaises(NotImplementedError):
                 shape_lower(program(source))
@@ -179,7 +178,7 @@ class StructuredAdmission(unittest.TestCase):
                          + '):\n  result={"computed":x+1,"axis":x.shape[-1]}\n return result')
             result = shape_lower(fn)
             self.assertEqual(len(result.graph.outputs), 1)
-            for invalid in ('[x][0]', '(x+1).shape[0]', 'x.shape[i]'):
+            for invalid in ('(x+1).shape[0]', 'x.shape[i]'):
                 bad = program('def f(x):\n for i in range(' + str(trips)
                               + '):\n  result=[-x,' + invalid + ']\n return -x')
                 with self.subTest(trips=trips, invalid=invalid), self.assertRaises(NotImplementedError):

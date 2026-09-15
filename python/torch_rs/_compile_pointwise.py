@@ -29,7 +29,8 @@ _ALLOWED = _IGNORED | {"LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_FAST_BORROW", "LOAD
     "LOAD_CONST", "LOAD_SMALL_INT", "LOAD_GLOBAL", "LOAD_DEREF", "LOAD_ATTR", "LOAD_METHOD", "BINARY_OP",
     "BINARY_ADD", "BINARY_SUBTRACT", "BINARY_MULTIPLY", "UNARY_NEGATIVE", "CALL", "CALL_FUNCTION",
     "CALL_METHOD", "RETURN_VALUE", "RETURN_CONST", "COPY", "DUP_TOP", "SWAP",
-    "BUILD_TUPLE", "BUILD_LIST", "BUILD_MAP", "BUILD_CONST_KEY_MAP"}
+    "BUILD_TUPLE", "BUILD_LIST", "BUILD_MAP", "BUILD_CONST_KEY_MAP",
+    "BINARY_SUBSCR", "UNPACK_SEQUENCE"}
 _METHODS = tuple(_UNARY) + tuple(_BINARY) + ("__getattribute__", "shape")
 _MISSING = object()
 _RANGE = range
@@ -127,6 +128,10 @@ class BindingSource:
     kind: str
     name: str
     position: int | None = None
+    path: tuple = ()
+
+    def child(self, item):
+        return BindingSource(self.kind, self.name, self.position, self.path + (item,))
 
 
 @dataclass(frozen=True)
@@ -136,11 +141,6 @@ class Program:
     dependencies: tuple
     range_sources: tuple = ()
     loop_overhead: int = 0
-    positions: object = field(init=False, compare=False, repr=False)
-
-    def __post_init__(self):
-        object.__setattr__(self, "positions", types.MappingProxyType(
-            {source: index for index, source in enumerate(self.dependencies)}))
 
 
 @dataclass(frozen=True)
@@ -163,6 +163,14 @@ class ShapeValue:
     source: BindingSource
     axis: int | None = None
     predicate_origin: bool = True
+
+
+@dataclass(frozen=True)
+class InputTree:
+    """Invocation-local admitted snapshot, never retained by a specialization."""
+    kind: str
+    items: tuple
+    keys: tuple = ()
 
 
 @dataclass(frozen=True, eq=False)
@@ -272,6 +280,8 @@ def without_origin(obj, memo=None):
 def validate_data(obj):
     """Check a data boundary without realizing or guarding a lazy source."""
     item = obj.value if type(obj) is BoundValue else obj
+    if type(item) is InputTree:
+        return obj
     if type(item) is Container:
         # Constructors have already validated every edge. Do not expand DAGs.
         return obj
@@ -347,10 +357,10 @@ class Specialization:
     # Immutable projections retain source semantics without repeating dependency
     # searches for each guard candidate. Tensor indices always come from the call.
     binding_checks: tuple = ()
-    tensor_positions: tuple = ()
+    tensor_sources: tuple = ()
     # Sources passed through data boundaries need admission even if ignored by
-    # the helper. These positions impose no scalar-value or tensor-shape guard.
-    data_positions: tuple = ()
+    # the helper. These sources impose no scalar-value or tensor-shape guard.
+    data_sources: tuple = ()
     # Non-guarding iteration hint from this successful specialization. Dynamic
     # shape hits retain its numerical partition without changing executable keys.
     numerical_hint: int = 1
@@ -416,24 +426,22 @@ def _tensor_guard(metadata, previous, duck_strides, source):
 
 def _logical_keys(program, bindings, values, observed, tensors):
     """Guard realized sources and aliases without exposing native operand indices."""
-    keys, first, aliases = list(bindings), {}, []
+    keys, first, aliases = {}, {}, []
     for source in observed:
         value = values[source]
+        keys[source] = bindings[source]
         if type(value) is Value:
             tensor = tensors[value.index]
             owner = next((s for s, index in first.items() if tensors[index] is tensor), None)
-            position = program.positions[source]
             if owner is None:
                 first[source] = value.index
-                keys[position] = ("tensor", None)
+                keys[source] = ("tensor", None)
                 aliases.append(len(first)-1)
             else:
-                keys[position] = ("alias", owner)
+                keys[source] = ("alias", owner)
                 aliases.append(tuple(first).index(owner))
-    for position, source in enumerate(program.dependencies):
-        if source not in observed:
-            keys[position] = ("ignored",)
-    return tuple(keys), first, tuple(aliases)
+    # Binding check order also defines the frozen runtime scalar slot order.
+    return tuple((s, keys[s]) for s in bindings if s in keys), first, tuple(aliases)
 
 
 def _shape_guards(program, graph, first, metadata, history, predicates=()):
@@ -485,16 +493,17 @@ def _select_specialization(program, bindings, values, tensors, metadata, graphs)
     broadcast executable is absent. Conversely, a rank miss can expose an older
     static scalar entry beneath a newer runtime entry.
     """
-    resolved = tuple(values.values())  # resolve preserves dependency order.
     by_source = None
     for key, entry in reversed(graphs.items()):
         if key[0] is not program.code:
             continue
         scalars = []
-        for position, expected in entry.binding_checks:
-            current = bindings[position]
-            if expected[0] == "runtime_float" and type(resolved[position]) is float:
-                scalars.append(resolved[position])
+        for source, expected in entry.binding_checks:
+            current = bindings.get(source)
+            if current is None:
+                break
+            if expected[0] == "runtime_float" and type(values[source]) is float:
+                scalars.append(values[source])
             elif expected[0] in ("tensor", "alias"):
                 if current[0] != "tensor":
                     break
@@ -504,13 +513,15 @@ def _select_specialization(program, bindings, values, tensors, metadata, graphs)
             # Source realization order defines aliases, not public slot order.
             # Tensor kind checks above precede every current operand lookup.
             first, aliases = [], []
-            for position in entry.tensor_positions:
-                tensor = tensors[resolved[position].index]
+            for source in entry.tensor_sources:
+                tensor = tensors[values[source].index]
                 owner = next((i for i, previous in enumerate(first) if previous is tensor), None)
                 if owner is None:
                     owner = len(first)
                     first.append(tensor)
                 aliases.append(owner)
+            if any(source not in values for source in entry.data_sources):
+                continue
             if tuple(aliases) != key[3]:
                 continue
             if by_source is None:
@@ -610,8 +621,11 @@ def validate_loop_stack(body):
         elif op in ("LOAD_ATTR", "LOAD_METHOD", "UNARY_NEGATIVE"):
             required = 1
         elif op == "BINARY_SUBSCR" or (op == "BINARY_OP" and instruction.argrepr == "[]"):
-            # Only original-input shape-axis reads survive frame admission.
             required, delta = 2, -1
+        elif op == "UNPACK_SEQUENCE":
+            if not 0 <= arg <= 4096:
+                unsupported("unpack exceeds 4096 input reference limit")
+            required, delta = 1, arg - 1
         elif op in ("BINARY_OP", "BINARY_ADD", "BINARY_SUBTRACT", "BINARY_MULTIPLY"):
             if op == "BINARY_OP" and instruction.argrepr not in ("+", "-", "*"):
                 unsupported("unsupported loop binary operator")
@@ -835,22 +849,66 @@ def binding(value):
 
 
 def bind_arguments(args):
-    """Filter once, retaining every tensor (including unused and repeated ones)."""
-    tensors, parameters = [], []
-    for arg in args:
+    """Snapshot exact trees; retain every Tensor occurrence only for this call.
+
+    Flat calls retain their direct, unbounded scalar-root admission. The bounded
+    walker checks types before iteration/hash/lookup, and snapshots dict pairs
+    before validating keys so no mutable dictionary is subsequently reread.
+    """
+    tensors = []
+
+    def leaf(arg):
         kind = type(arg)
         if kind is _TENSOR_TYPE:
-            parameters.append(Value(len(tensors)))
+            value = Value(len(tensors))
             tensors.append(arg)
-        elif kind is float or kind is bool:
-            parameters.append(arg)
-        else:
-            unsupported("default backend requires exact native CUDA float32 Tensor inputs "
-                        "and exact float/bool positional scalars; positional integers and "
-                        "objects are unsupported; see docs/compile-pointwise-jit.md")
+            if len(tensors) > 2:
+                unsupported("expected one or two positional tensor occurrences")
+            return value
+        if kind is float or kind is bool:
+            return arg
+        unsupported("default backend requires exact native CUDA float32 Tensor inputs "
+                    "and exact float/bool leaves in bounded exact tuple/list/dict trees; "
+                    "see docs/compile-pointwise-jit.md")
+
+    if not any(type(arg) is tuple or type(arg) is list or type(arg) is dict for arg in args):
+        parameters = tuple(leaf(arg) for arg in args)
+    else:
+        seen, edges = set(), len(args)
+        if edges > 4096:
+            unsupported("input tree exceeds 4096 reference edges")
+
+        def snapshot(arg, depth):
+            nonlocal edges
+            kind = type(arg)
+            if kind is not tuple and kind is not list and kind is not dict:
+                return leaf(arg)
+            if depth >= 64:
+                unsupported("input tree exceeds container depth 64")
+            if id(arg) in seen:
+                unsupported("repeated input container identity or cycle")
+            seen.add(id(arg))
+            width = len(arg)
+            edges += width
+            if edges > 4096:
+                unsupported("input tree exceeds 4096 reference edges")
+            if kind is dict:
+                pairs = tuple(islice(arg.items(), 4097))
+                if any(type(key) is not str for key, _ in pairs):
+                    unsupported("input dict keys must be exact strings")
+                keys = tuple(key for key, _ in pairs)
+                children = tuple(value for _, value in pairs)
+            else:
+                keys, children = (), tuple(islice(arg, 4097))
+            # A concurrent growth cannot bypass the budget at expansion.
+            if len(children) != width:
+                unsupported("input container changed during admission")
+            return InputTree(kind.__name__, tuple(snapshot(child, depth + 1) for child in children), keys)
+
+        parameters = tuple(snapshot(arg, 0) for arg in args)
     if len(tensors) not in (1, 2):
-        unsupported("expected one or two positional tensor arguments")
-    return tuple(tensors), tuple(parameters)
+        unsupported("expected one or two positional tensor occurrences")
+    return tuple(tensors), parameters
 
 
 def resolve(model, program, parameters=None):
@@ -866,19 +924,27 @@ def _resolve_bindings(model, program, parameters):
     validate_namespaces(model)
     validate_ranges(model, program.range_sources)
     globals_ = model.__globals__
-    values, keys = {}, []
+    values, keys = {}, {}
     closure = dict(zip(program.code.co_freevars, model.__closure__ or ()))
     if parameters is None:
         # Private hardware-free lowering callers model a tensor-only signature.
         parameters = tuple(Value(i) for i in range(program.code.co_argcount))
+    def parameter(source, value):
+        values[source] = value
+        if type(value) is InputTree:
+            keys[source] = (value.kind,) if value.kind == "dict" else (value.kind, len(value.items))
+            for item, child in zip(value.keys if value.kind == "dict" else range(len(value.items)), value.items):
+                parameter(source.child(item), child)
+        elif type(value) is Value:
+            keys[source] = ("tensor", value.index)
+        else:
+            keys[source], values[source] = binding(value)
+
     for source in program.dependencies:
         kind, name = source.kind, source.name
         if kind == "parameter":
-            value = parameters[source.position]
-            if type(value) is Value:
-                keys.append(("tensor", value.index))
-                values[source] = value
-                continue
+            parameter(source, parameters[source.position])
+            continue
         elif kind == "LOAD_GLOBAL":
             if name not in globals_:
                 unsupported("unbound global: " + name)
@@ -889,16 +955,16 @@ def _resolve_bindings(model, program, parameters):
             except (KeyError, ValueError):
                 unsupported("empty closure binding: " + name)
         key, value = binding(value)
-        keys.append(key)
+        keys[source] = key
         values[source] = value
-    return tuple(keys), values
+    return keys, values
 
 
 def runtime_bindings(program, bindings, values, graphs, *, observed=None):
     """Resolve a new specialization after guard misses, from successful history."""
-    previous = [key[1] for key in graphs if key[0] is program.code]
-    keys, resolved, scalars = list(bindings), dict(values), []
-    for position, dependency in enumerate(program.dependencies):
+    previous = [dict(key[1]) for key in graphs if key[0] is program.code]
+    keys, resolved, scalars = dict(bindings), dict(values), []
+    for dependency in values:
         value = values[dependency]
         if (observed is not None and dependency not in observed) or type(value) is not float:
             continue
@@ -906,7 +972,7 @@ def runtime_bindings(program, bindings, values, graphs, *, observed=None):
         # promotion. An existing runtime guard can still accept them on a hit.
         if not math.isfinite(value):
             continue
-        observations = [keys_[position] for keys_ in previous]
+        observations = [keys_[dependency] for keys_ in previous if dependency in keys_]
         dynamic = any(key[0] in ("runtime_float", "tensor") for key in observations)
         if not dynamic:
             # Exact builtins only: numeric comparison matches the reference's
@@ -922,8 +988,8 @@ def runtime_bindings(program, bindings, values, graphs, *, observed=None):
                 unsupported("at most 64 runtime scalar bindings are supported")
             resolved[dependency] = RuntimeScalar(len(scalars))
             scalars.append(value)
-            keys[position] = ("runtime_float",)
-    return tuple(keys), resolved, tuple(scalars)
+            keys[dependency] = ("runtime_float",)
+    return keys, resolved, tuple(scalars)
 
 
 def lower(program, values, arity, input_ids=None, *, observed=None, data_sources=None,
@@ -953,6 +1019,33 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                 observed.append(obj.source)
             return obj.value
         return obj.value if type(obj) is Literal else obj
+
+    def container(obj):
+        item = realize(obj)
+        if type(item) is not InputTree and type(item) is not Container:
+            unsupported("selection/unpacking requires a tuple/list/dict container")
+        return item
+
+    def child(obj, item, index):
+        if type(item) is InputTree:
+            source = obj.source.child(item.keys[index] if item.kind == "dict" else index)
+            return data(BoundValue(source, values[source], obj.predicate_origin))
+        return item.items[index]
+
+    def select(obj, selector):
+        if type(selector) is not Literal:
+            unsupported("container selection requires a literal index/key")
+        item = container(obj)
+        key = selector.value
+        if item.kind == "dict":
+            if type(key) is not str or key not in item.keys:
+                unsupported("dict selection requires an existing exact literal string key")
+            index = item.keys.index(key)
+        else:
+            if type(key) is not int or not -len(item.items) <= key < len(item.items):
+                unsupported("sequence selection requires an in-range literal integer")
+            index = key % len(item.items)
+        return child(obj, item, index)
 
     def value(obj):
         obj = realize(obj)
@@ -1007,6 +1100,8 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                 entry = (item.kind, payload)
             elif type(item) is BoundValue:
                 resolved = realize(item)
+                if type(resolved) is InputTree:
+                    unsupported("original input container result passthrough is unsupported")
                 if type(resolved) is not Value or not resolved.tensor or item.source.kind != "parameter":
                     unsupported("result metadata must be literal or an input shape axis")
                 entry = ("input", item.source)
@@ -1185,6 +1280,9 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     stack.append(-operand)
             elif op == "BINARY_SUBSCR" or (op == "BINARY_OP" and instruction.argrepr == "[]"):
                 axis, shape = stack.pop(), stack.pop()
+                if type(shape) is not ShapeValue:
+                    stack.append(select(shape, axis))
+                    continue
                 if (type(shape) is not ShapeValue or shape.axis is not None or type(axis) is not Literal
                         or not axis.predicate_origin or type(axis.value) is not int):
                     unsupported("only input.shape[literal integer axis] is supported")
@@ -1194,6 +1292,15 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                 if not -len(metadata[source.index][0]) <= axis.value < len(metadata[source.index][0]):
                     unsupported("shape axis is out of range")
                 stack.append(ShapeValue(shape.source, axis.value, shape.predicate_origin))
+            elif op == "UNPACK_SEQUENCE":
+                count = instruction.arg
+                if not 0 <= count <= 4096 or not stack:
+                    unsupported("unpack exceeds 4096 input reference limit or invalid stack")
+                obj = stack.pop()
+                item = container(obj)
+                if item.kind == "dict" or len(item.items) != count:
+                    unsupported("fixed unpack requires a matching tuple/list length")
+                stack.extend(child(obj, item, index) for index in reversed(range(count)))
             elif op == "COMPARE_OP":
                 right, left = stack.pop(), stack.pop()
                 comparison = arg  # 3.13+ argrepr may be bool(>).
@@ -1349,8 +1456,6 @@ def implementation(model, recompile_limit):
             # Private resolve() remains fully validating for independent callers.
             static_bindings, static_values = _resolve_bindings(model, program, parameters)
             input_ids = (0, 0) if len(tensors) == 2 and tensors[0] is tensors[1] else tuple(range(len(tensors)))
-            abi = (len(tensors), input_ids, tuple((s, v.index) for s, v in static_values.items()
-                                               if type(v) is Value))
             selected = _select_specialization(program, static_bindings, static_values,
                                               tensors, metadata, cache.graphs)
             if selected is None:
@@ -1375,24 +1480,22 @@ def implementation(model, recompile_limit):
                                     if type(static_values[s]) is float or type(static_values[s]) is int)
                 key = (program.code, bindings, guards, aliases)
                 entry = Specialization(
-                    values, tuple(observed), observations, {},
-                    tuple((position, expected) for position, expected in enumerate(bindings)
-                          if expected[0] != "ignored"),
-                    tuple(program.positions[source] for source in observed if type(values[source]) is Value),
-                    tuple(position for position, source in enumerate(program.dependencies)
-                          if source in data_sources), numerical_hint)
+                    {s: values[s] for s in observed if type(values[s]) is not InputTree},
+                    tuple(observed), observations, {}, bindings,
+                    tuple(source for source in observed if type(values[source]) is Value),
+                    tuple(data_sources), numerical_hint)
             else:
                 key, entry, scalars = selected
-                # A cached graph omits ignored sources, but helper argument
-                # admission still applies to their current values on every hit.
-                for position in entry.data_positions:
-                    validate_data(static_values[program.dependencies[position]])
+                # Ignored helper data still receives current admission on hits.
+                for source in entry.data_sources:
+                    validate_data(static_values[source])
+            abi = (len(tensors), input_ids,
+                   tuple(static_values[source].index for source in entry.tensor_sources))
+            if selected is not None:
                 lowering = entry.lowerings.get(abi)
                 if lowering is None:
-                    values = dict(entry.values)
-                    for source in program.dependencies:
-                        if type(values[source]) is Value or source not in entry.observed:
-                            values[source] = static_values[source]
+                    values = dict(static_values)
+                    values.update((s, v) for s, v in entry.values.items() if type(v) is not Value)
                     lowering = lower(program, values, len(tensors), input_ids, metadata=metadata)
             # Logical guards choose scalar semantics. Concrete executables still
             # specialize the full native ABI and exact broadcast address formula.

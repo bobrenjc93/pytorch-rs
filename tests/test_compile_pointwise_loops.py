@@ -65,7 +65,11 @@ class LoopAdmission(unittest.TestCase):
             frontend.lower(parsed, values, 1, observed=observed)
             self.assertEqual([s.name for s in observed], expected)
             guards, _, _ = frontend._logical_keys(parsed, keys, values, observed, (object(),))
-            self.assertEqual(guards[1], ('ignored',) if trips else keys[1])
+            scale = parsed.dependencies[1]
+            if trips:
+                self.assertNotIn(scale, dict(guards))
+            else:
+                self.assertEqual(dict(guards)[scale], keys[scale])
 
     def test_all_structure_rejected_before_expansion_even_zero_trip(self):
         bodies = ('if x:\n   x=-x', 'for j in range(2):\n   x=-x',

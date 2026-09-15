@@ -90,8 +90,9 @@ def check_ignored_capture_admission(test, x):
                 test.assertEqual(actual.cpu().tolist(), [-v for v in x.cpu().tolist()])
             test.assertEqual(len(state.graphs), 2)
             test.assertEqual(len(state.executors), 1)
-        source = next(s for s in next(iter(state.graphs.values())).values if s.name == 'captured')
+        source = next(s for s in next(iter(state.graphs.values())).data_sources if s.name == 'captured')
         for entry in state.graphs.values():
+            test.assertNotIn(source, entry.values)
             test.assertNotIn(source, entry.observed)
             test.assertNotIn(source, entry.observations)
 

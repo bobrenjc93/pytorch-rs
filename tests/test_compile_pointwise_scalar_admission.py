@@ -272,8 +272,8 @@ class PositionalBindingAdmission(unittest.TestCase):
                           ('parameter', 'b', 2), ('parameter', 'y', 3),
                           ('parameter', 'c', 4), ('LOAD_GLOBAL', 'captured', None)])
         self.assertIn('x1[i]', bridge._pointwise_source(graph.nodes, graph.outputs, 2))
-        self.assertEqual(keys[1], ('tensor', 0))
-        self.assertEqual(keys[3], ('tensor', 1))
+        self.assertEqual(keys[parsed.dependencies[1]], ('tensor', 0))
+        self.assertEqual(keys[parsed.dependencies[3]], ('tensor', 1))
         self.assertEqual(values[parsed.dependencies[3]], frontend.Value(1))
 
     def test_positional_rejection_never_invokes_object_or_type_hooks(self):
@@ -296,7 +296,7 @@ class PositionalBindingAdmission(unittest.TestCase):
         class Integer(int):
             __int__ = Trap.__float__
         x = native.tensor([1.])
-        for value in (0, 1, 2**63, -2**100, 1+0j, None, [], {}, Trap(), Float(1), Integer(1)):
+        for value in (0, 1, 2**63, -2**100, 1+0j, None, Trap(), Float(1), Integer(1)):
             for args in ((value, x), (x, value)):
                 with self.assertRaises(NotImplementedError):
                     frontend.bind_arguments(args)
@@ -334,7 +334,7 @@ class PositionalBindingAdmission(unittest.TestCase):
             parsed = frontend.analyze(fn, 34)
             _, params = frontend.bind_arguments((x,)+(1.25,)*33)
             keys, values = frontend.resolve(fn, parsed, params)
-            history = {(parsed.code, keys, (), (0,)): None}
+            history = {(parsed.code, tuple(keys.items()), (), (0,)): None}
             fn.__globals__.update({name: 2.5 for name in captures})
             _, params = frontend.bind_arguments((x,)+(2.5,)*33)
             keys, values = frontend.resolve(fn, parsed, params)
