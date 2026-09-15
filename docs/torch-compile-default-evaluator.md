@@ -40,6 +40,41 @@ raw compressed observations, compiler logs, and timing reports under
 `target/default-compile-eval/`. On hosts using an enterprise CA, configure uv's
 system trust store (`UV_SYSTEM_CERTS=true`); do not disable TLS verification.
 
+## Evidence retention
+
+Local evidence is not durable after its worktree is removed. When
+`BURNER_EVALUATION_ARTIFACT_DIR` is set, parent report finalization also copies
+every direct regular file from the fresh run directory to that existing
+directory: `report.json`, raw worker gzip files, logs, and any additional regular
+evidence, including partial files from a failed worker. Actual subdirectories
+(including compiler caches) are skipped; symlinks and other nonregular entries
+are rejected. The wheel and files outside the run directory are not exported.
+
+Copies use bounded buffers, are independent of the originals, and never
+overwrite an existing destination. `report.json` is copied last without changing
+its contents. Its worker artifact paths still identify the original locations;
+use their basenames and recorded hashes to identify the exported raw files and
+logs. Completed copies in Burner's external sink survive removal of the source
+worktree; manual callers need an external destination for the same guarantee.
+Without the variable, standalone behavior is unchanged.
+
+An explicitly empty, missing, or non-directory destination, or any transfer
+failure, makes the parent return exit 2 without a score or successful summary
+JSON (including `both` and `--diagnostic`). It also suppresses the optional
+`--output` copy. A valid computed local report remains valid; a transfer failure
+does not change its numerical measurement. If measurement and export both fail,
+both errors remain visible. Originals and any partial destination files remain
+available for inspection; export is not retried or rolled back.
+
+This covers normal parent completion and its existing handled measurement-error
+path, not setup, worker-only/source-identity modes, unhandled interruptions, or
+abrupt termination. Report-last is ordering, not a transaction seal: a partial
+report can exist after a copy failure. Successful handoff does not establish
+later Burner collector success or override its own artifact limits. Likewise,
+an archive that completely captures a failed command's supplied files does not
+approve a score. The export changes neither the corpus nor measurement timing,
+scoring, tolerances, or provenance checks.
+
 ## Corpus v2
 
 [`torch_compile_default_corpus.py`](../scripts/torch_compile_default_corpus.py)

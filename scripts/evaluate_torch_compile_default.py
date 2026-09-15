@@ -22,7 +22,9 @@ import math
 import os
 from pathlib import Path
 import platform
+import shutil
 import signal
+import stat
 import statistics
 import subprocess
 import sys
@@ -83,6 +85,41 @@ def json_bytes(value):
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2, sort_keys=True, allow_nan=False) + "\n")
+
+
+def finalize_report(directory, report):
+    """Write local evidence and optionally copy it outside a disposable worktree.
+
+    False suppresses success publication after an export error. Local report-write
+    errors propagate; original evidence and any partial exports are retained.
+    """
+    write_json(directory / "report.json", report)
+    requested = os.environ.get("BURNER_EVALUATION_ARTIFACT_DIR")
+    if requested is None:
+        return True
+    try:
+        destination = Path(requested)
+        if not requested or not destination.is_dir():
+            raise ValueError(
+                "BURNER_EVALUATION_ARTIFACT_DIR must be an existing directory"
+            )
+        for source in sorted(
+            directory.iterdir(), key=lambda path: (path.name == "report.json", path.name)
+        ):
+            mode = source.lstat().st_mode
+            if stat.S_ISDIR(mode):
+                continue
+            if not stat.S_ISREG(mode):
+                raise ValueError(f"nonregular evaluation artifact: {source}")
+            with (
+                source.open("rb") as incoming,
+                (destination / source.name).open("xb") as outgoing,
+            ):
+                shutil.copyfileobj(incoming, outgoing, length=1024 * 1024)
+    except (OSError, ValueError) as error:
+        print(f"evaluation artifact export failed; no score: {error}", file=sys.stderr)
+        return False
+    return True
 
 
 def git(*args):
@@ -953,13 +990,14 @@ def evaluate(args):
         report["valid"] = not args.diagnostic
     except Exception as error:
         report["error"] = f"{type(error).__name__}: {error}"
-        write_json(directory / "report.json", report)
         print(
             f"invalid measurement; no score: {report['error']}; report: {directory / 'report.json'}",
             file=sys.stderr,
         )
+        finalize_report(directory, report)
         return 2
-    write_json(directory / "report.json", report)
+    if not finalize_report(directory, report):
+        return 2
     if args.output:
         destination = Path(args.output).resolve()
         if not destination.is_relative_to(ROOT):
