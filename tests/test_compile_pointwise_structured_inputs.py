@@ -2,6 +2,7 @@
 import unittest
 import types
 import dataclasses
+import builtins
 from unittest.mock import patch
 
 import torch_rs as native
@@ -12,9 +13,57 @@ from tests import test_compile_pointwise_structured_outputs as output_tests
 from tests import test_compile_pointwise_jit as jit_tests
 
 
+class SourceIdentity(unittest.TestCase):
+    def test_structural_equality_and_hash_collisions(self):
+        source = frontend.BindingSource('parameter', 'p', 0).child('items').child(1)
+        equal = frontend.BindingSource('parameter', 'p', 0, ('items', 1))
+        self.assertEqual(source, equal)
+        self.assertEqual(hash(source), hash(equal))
+        self.assertEqual({source: 'selected'}[equal], 'selected')
+        self.assertEqual(dataclasses.replace(source), source)
+        # A collision must not merge different public slots or item paths.
+        with patch.object(frontend, 'hash', return_value=17, create=True):
+            sources = [frontend.BindingSource('parameter', 'p', slot, (key,))
+                       for slot, key in ((0, 'x'), (0, 'y'), (1, 'x'))]
+            self.assertEqual([hash(s) for s in sources], [17, 17, 17])
+            mapping = dict(zip(sources, range(3)))
+            self.assertEqual(len(mapping), 3)
+            for index, source in enumerate(sources):
+                self.assertEqual(mapping[dataclasses.replace(source)], index)
+
+    def test_immutable_hash_is_computed_once(self):
+        with patch.object(frontend, 'hash', wraps=builtins.hash, create=True) as hashing:
+            source = frontend.BindingSource('parameter', 'p', 0, ('items', 1))
+            hashing.assert_called_once_with(('parameter', 'p', 0, ('items', 1)))
+            mapping = {source: 'value'}
+            for _ in range(10):
+                self.assertEqual(mapping[source], 'value')
+                self.assertEqual(hash(source), hash(source))
+            self.assertEqual(hashing.call_count, 1)
+        with self.assertRaises(dataclasses.FrozenInstanceError):
+            source.path = ()
+        with self.assertRaises(TypeError):
+            frontend.BindingSource('parameter', 'p', _hash=0)
+
+
 class InputContracts(unittest.TestCase):
     setUp = output_tests.StructuredCache.setUp
     snapshot = output_tests.StructuredCache.snapshot
+
+    def test_ignored_root_flat_tree_transitions_and_recovery(self):
+        fn = program('def f(x,ignored):\n return (-x,x)')
+        compiled = native.compile(fn)
+        x, y = native.ones(3), native.ones(3)
+        for ignored in (False, {'extra': y, 'flags': [True]}, (y, False), 0.5, []):
+            with no_bodies(fn):
+                self.assertIs(compiled(x, ignored)[1], x)
+            self.assertEqual(len(cache(compiled).graphs), 1)
+            before = self.snapshot(compiled)
+            with self.assertRaises(NotImplementedError):
+                compiled(x, {'invalid': None})
+            self.assertEqual(self.snapshot(compiled), before)
+        self.assertIs(compiled(x, True)[1], x)
+
     def test_flat_large_signature_and_nested_runtime_scalar_bound(self):
         names = [f'a{i}' for i in range(4097)]
         fn = program('def f(x,' + ','.join(names) + '):\n return -x')
@@ -47,6 +96,21 @@ class InputContracts(unittest.TestCase):
 
 
 class InputAdmission(unittest.TestCase):
+    def test_structured_restart_counts_the_flat_prefix_once(self):
+        x, y = native.ones(1), native.ones(1)
+        for second in (x, y):
+            tensors, parameters = frontend.bind_arguments((x, False, [second]))
+            self.assertEqual(len(tensors), 2)
+            self.assertIs(tensors[0], x)
+            self.assertIs(tensors[1], second)
+            self.assertEqual(parameters[0], frontend.Value(0))
+            self.assertEqual(parameters[2].items, (frontend.Value(1),))
+        frontend.bind_arguments((False,) * 4094 + ([x],))
+        with self.assertRaisesRegex(NotImplementedError, '4096'):
+            frontend.bind_arguments((False,) * 4095 + ([x],))
+        with self.assertRaises(NotImplementedError):
+            frontend.bind_arguments((x, y, [x]))
+
     def test_flat_arity_and_structured_edges(self):
         x = native.ones(1)
         tensors, _ = frontend.bind_arguments((x,) + (False,) * 4097)

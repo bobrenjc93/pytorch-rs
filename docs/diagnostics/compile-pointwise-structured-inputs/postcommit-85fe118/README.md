@@ -1,5 +1,11 @@
 # Structured input clean-commit correctness refresh
 
+**Refresh required after the performance repair:** these measurements predate
+the source-hash/flat-admission changes and retain their original worktree identity.
+They do not validate the revised candidate. The
+[repair record](../performance-repair/README.md) preserves current development
+diagnostics; Burner must commit the repair before its clean capture is refreshed.
+
 Measured implementation: `85fe11870a02349278087c5500df1146cd1bca90`
 (base `2f15b4ce53dc45918ea644a3370257f340747755`). Capture interval:
 `2026-09-15T18:13:38.356670+00:00` through `2026-09-15T18:14:07.899610+00:00`.

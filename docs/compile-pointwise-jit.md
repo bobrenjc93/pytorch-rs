@@ -137,10 +137,10 @@ shape-predicate provenance rules are unchanged: a helper cannot grant an input
 shape predicate new authority. This is a bounded frontend extension, not general
 pytree, Dynamo, Inductor or accelerator parity.
 
-The [clean-commit structured-input capture](diagnostics/compile-pointwise-structured-inputs/postcommit-85fe118/README.md)
-records the focused portable contracts and paired GPU histories, including the
-CPython 3.10 tuple-assignment fix and build/import provenance. It is correctness
-evidence, not a performance or coverage score.
+The [structured-input validation and performance repair](diagnostics/compile-pointwise-structured-inputs/performance-repair/README.md)
+links the focused contracts, paired GPU histories and frontend diagnostics.
+The current repair awaits clean-commit evidence refresh and canonical qualification;
+the diagnostic timings are not performance or coverage scores.
 
 ### Bounded nested results
 

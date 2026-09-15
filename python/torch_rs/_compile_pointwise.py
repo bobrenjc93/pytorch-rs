@@ -130,6 +130,13 @@ class BindingSource:
     name: str
     position: int | None = None
     path: tuple = ()
+    _hash: int = field(init=False, compare=False, repr=False)
+
+    def __post_init__(self):
+        object.__setattr__(self, "_hash", hash((self.kind, self.name, self.position, self.path)))
+
+    def __hash__(self):
+        return self._hash
 
     def child(self, item):
         return BindingSource(self.kind, self.name, self.position, self.path + (item,))
@@ -858,6 +865,29 @@ def bind_arguments(args):
     walker checks types before iteration/hash/lookup, and snapshots dict pairs
     before validating keys so no mutable dictionary is subsequently reread.
     """
+    tensors, parameters = [], []
+    for arg in args:
+        kind = type(arg)
+        if kind is _TENSOR_TYPE:
+            parameters.append(Value(len(tensors)))
+            tensors.append(arg)
+            if len(tensors) > 2:
+                unsupported("expected one or two positional tensor occurrences")
+        elif kind is float or kind is bool:
+            parameters.append(arg)
+        elif kind is tuple or kind is list or kind is dict:
+            break
+        else:
+            unsupported("default backend requires exact native CUDA float32 Tensor inputs "
+                        "and exact float/bool leaves in bounded exact tuple/list/dict trees; "
+                        "see docs/compile-pointwise-jit.md")
+    else:
+        if len(tensors) not in (1, 2):
+            unsupported("expected one or two positional tensor occurrences")
+        return tuple(tensors), tuple(parameters)
+
+    # A container switches this invocation to the complete bounded walker.
+    # Discard the prefix so every root and Tensor occurrence is counted once.
     tensors = []
 
     def leaf(arg):
@@ -874,41 +904,38 @@ def bind_arguments(args):
                     "and exact float/bool leaves in bounded exact tuple/list/dict trees; "
                     "see docs/compile-pointwise-jit.md")
 
-    if not any(type(arg) is tuple or type(arg) is list or type(arg) is dict for arg in args):
-        parameters = tuple(leaf(arg) for arg in args)
-    else:
-        seen, edges = set(), len(args)
+    seen, edges = set(), len(args)
+    if edges > 4096:
+        unsupported("input tree exceeds 4096 reference edges")
+
+    def snapshot(arg, depth):
+        nonlocal edges
+        kind = type(arg)
+        if kind is not tuple and kind is not list and kind is not dict:
+            return leaf(arg)
+        if depth >= 64:
+            unsupported("input tree exceeds container depth 64")
+        if id(arg) in seen:
+            unsupported("repeated input container identity or cycle")
+        seen.add(id(arg))
+        width = len(arg)
+        edges += width
         if edges > 4096:
             unsupported("input tree exceeds 4096 reference edges")
+        if kind is dict:
+            pairs = tuple(islice(arg.items(), 4097))
+            if any(type(key) is not str for key, _ in pairs):
+                unsupported("input dict keys must be exact strings")
+            keys = tuple(key for key, _ in pairs)
+            children = tuple(value for _, value in pairs)
+        else:
+            keys, children = (), tuple(islice(arg, 4097))
+        # A concurrent growth cannot bypass the budget at expansion.
+        if len(children) != width:
+            unsupported("input container changed during admission")
+        return InputTree(kind.__name__, tuple(snapshot(child, depth + 1) for child in children), keys)
 
-        def snapshot(arg, depth):
-            nonlocal edges
-            kind = type(arg)
-            if kind is not tuple and kind is not list and kind is not dict:
-                return leaf(arg)
-            if depth >= 64:
-                unsupported("input tree exceeds container depth 64")
-            if id(arg) in seen:
-                unsupported("repeated input container identity or cycle")
-            seen.add(id(arg))
-            width = len(arg)
-            edges += width
-            if edges > 4096:
-                unsupported("input tree exceeds 4096 reference edges")
-            if kind is dict:
-                pairs = tuple(islice(arg.items(), 4097))
-                if any(type(key) is not str for key, _ in pairs):
-                    unsupported("input dict keys must be exact strings")
-                keys = tuple(key for key, _ in pairs)
-                children = tuple(value for _, value in pairs)
-            else:
-                keys, children = (), tuple(islice(arg, 4097))
-            # A concurrent growth cannot bypass the budget at expansion.
-            if len(children) != width:
-                unsupported("input container changed during admission")
-            return InputTree(kind.__name__, tuple(snapshot(child, depth + 1) for child in children), keys)
-
-        parameters = tuple(snapshot(arg, 0) for arg in args)
+    parameters = tuple(snapshot(arg, 0) for arg in args)
     if len(tensors) not in (1, 2):
         unsupported("expected one or two positional tensor occurrences")
     return tuple(tensors), parameters
