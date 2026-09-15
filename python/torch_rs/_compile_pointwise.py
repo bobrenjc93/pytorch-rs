@@ -357,7 +357,8 @@ class Specialization:
 
 
 def _broadcast_elements(shapes):
-    result = ()
+    shapes = iter(shapes)
+    result = next(shapes, ())
     for shape in shapes:
         rank = max(len(result), len(shape))
         left, right = (1,) * (rank-len(result)) + result, (1,) * (rank-len(shape)) + shape
@@ -570,11 +571,8 @@ def validate_namespaces(model):
                              (model.__builtins__, "builtins")):
         if type(namespace) is not dict:
             unsupported("function " + label + " must be an exact dict")
-        for key in namespace:
-            if type(key) is not str:
-                # Do not retain a rejected key through the exception traceback.
-                del key
-                unsupported("function " + label + " keys must be exact strings")
+        if not _native._pointwise_namespace_keys_exact(namespace):
+            unsupported("function " + label + " keys must be exact strings")
 
 
 def validate_ranges(model, sources):

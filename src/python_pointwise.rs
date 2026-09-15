@@ -8,11 +8,25 @@ use crate::{
 use pyo3::{
     exceptions::{PyNotImplementedError, PyTypeError, PyValueError},
     prelude::*,
-    types::{PyBool, PyFloat, PyInt, PyString, PyTuple},
+    types::{PyBool, PyDict, PyFloat, PyInt, PyString, PyTuple},
 };
 use std::sync::Arc;
 
 type Payload = (String, usize, usize, u64);
+
+#[pyfunction(name = "_pointwise_namespace_keys_exact")]
+pub(super) fn namespace_keys_exact(value: &Bound<'_, PyAny>) -> bool {
+    let Ok(namespace) = value.cast_exact::<PyDict>() else {
+        return false;
+    };
+    // Protect iterator construction as well as traversal. Exact type checks
+    // invoke no callbacks; Python retains namespace selection and error policy.
+    pyo3::sync::critical_section::with_critical_section(value, || {
+        namespace
+            .iter()
+            .all(|(key, _)| key.is_exact_instance_of::<PyString>())
+    })
+}
 
 fn graph(
     nodes: &Bound<'_, PyTuple>,

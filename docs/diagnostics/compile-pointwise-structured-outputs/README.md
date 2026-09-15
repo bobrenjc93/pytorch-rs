@@ -1,5 +1,9 @@
 # Structured-output compiler evidence
 
+The [guard repair](guard-repair.md) records the current bounded optimization and
+its fixed paired capture plan. Clean repaired-source measurements are pending
+Burner's implementation commit; the captures below retain their original scope.
+
 The [clean `6ec4f2dd` capture](postcommit-6ec4f2dd.json) records 59 structured/prepared
 checks, nine separate two-H100 checks, 73 native checks, and 164 portable passes
 per CPython 3.10–3.14 interpreter. The two hardware skips in the focused run passed
