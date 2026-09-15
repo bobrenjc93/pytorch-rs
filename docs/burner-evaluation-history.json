@@ -11605,6 +11605,26 @@
         "eval_d4c0b71e": 83,
         "eval_b7f2a91c": 5.5
       }
+    },
+    {
+      "key": "pr:1997",
+      "recordedAt": "2026-09-15T16:33:46.435Z",
+      "label": "PR #1997",
+      "kind": "leaf",
+      "prNumber": 1997,
+      "title": "Compile bounded nested outputs through one native CUDA pointwise kernel",
+      "scores": {
+        "eval_7af648fb": 91,
+        "eval_8417a4a8": 24,
+        "eval_63a24994": 60,
+        "eval_39340456": 33,
+        "eval_b4945d15": 80,
+        "eval_c8a1bfb9": 72,
+        "eval_a61c0e71": 18,
+        "eval_6f98c42d": 28,
+        "eval_d4c0b71e": 83,
+        "eval_b7f2a91c": 5.5
+      }
     }
   ]
 }
