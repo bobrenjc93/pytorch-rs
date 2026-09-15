@@ -28,7 +28,8 @@ result = torch.compile(pointwise)(x, y)
 
 The function accepts one or two exact native CUDA float32 Tensor inputs on the
 same device with contiguous storage, plus exact built-in `float` and `bool`
-arguments in any positional slots. For equal-shaped tensors:
+arguments in any positional slots, including leaves of the bounded input trees
+below. For equal-shaped tensors:
 
 ```python
 def f(scale, x, enabled, y):
@@ -79,12 +80,68 @@ identity wrappers do not qualify, even if later simplification removes them.
 This exception reuses the existing single-FMA lowering and checked addresses.
 
 Strided inputs, other dtypes, gradients (even inside no-grad),
-mutation, control flow outside the bounded root branches and literal loops below, structured inputs, module calls, keyword operator
+mutation, control flow outside the bounded root branches and literal loops below, module calls, keyword operator
 arguments, reductions, matrix operations, and device/dtype conversions are
 explicitly rejected. No original body or Python operator is run during
 admission or warm execution. Unsupported configurations keep their existing
 contracts; `disable=True`, configured/custom backend resolution, and the
 explicit `backend="eager"` capture implementation remain separate.
+
+### Bounded positional input trees
+
+Exact `tuple`, `list` and `dict` inputs may nest existing exact native Tensor,
+`float` and `bool` leaves. Dict keys must be exact strings. Select literal integer
+sequence indices (including negative indices), literal string keys, or unpack a
+fixed tuple/list length. Local aliases, constructed containers and data-only
+helpers compose with the same frame lowerer:
+
+```python
+def scaled(payload):
+    x, gain = payload["pair"]
+    return {"scaled": x * gain, "input": x}
+
+result = torch.compile(scaled)({"pair": [x, 0.5], "unused": False})
+```
+
+Every input edge is admitted before execution, including unread leaves. A call
+containing containers permits at most 64 nested container levels and 4096
+reference edges, counting positional roots and contained values (including empty
+containers). Flat calls retain their previous scalar-argument admission without
+this edge bound. The native ABI still requires one or two Tensor **occurrences**,
+including unused or repeated Tensor leaves; it does not deduplicate input arity.
+The existing 64 runtime-float limit and all native numerical limits still apply.
+
+Caller containers must form a tree: cycles and repeated container identities
+anywhere in the arguments, including shared tuples, are rejected. Repeated Tensor
+owners and distinct storage-sharing Tensor views remain supported within native
+storage limits. Returning an original input container anywhere in the public
+result is rejected; selected input Tensor leaves may still return by identity
+alongside a computed Tensor. Helpers may pass input containers back for subsequent
+selection inside the compiled function.
+
+Observation remains lazy. Selecting/unpacking a sequence checks its exact type
+and length; dict selection checks its type and the selected path, without guarding
+unrelated keys or insertion order. Scalar history follows the public parameter
+and normalized item path: list and tuple indices share source identity under
+separate structural guards. On a logical hit, changed Tensor traversal order
+rebinds current operands while preserving the selected specialization's frozen
+scalars and runtime scalar slots. Caches retain required source projections, not
+caller containers, Tensor owners, input descriptors or unused keys. Admission
+snapshots are invocation-local; concurrent caller mutation is not an atomic
+whole-tree transaction.
+
+Container subclasses, custom mappings, positional int/None/string leaves,
+runtime or captured selectors, slices, dict iteration/unpacking, starred forms,
+mutation, and captured/default containers remain unsupported. Constant-pool and
+shape-predicate provenance rules are unchanged: a helper cannot grant an input
+shape predicate new authority. This is a bounded frontend extension, not general
+pytree, Dynamo, Inductor or accelerator parity.
+
+The [structured-input validation and performance repair](diagnostics/compile-pointwise-structured-inputs/performance-repair/README.md)
+links the focused contracts, paired GPU histories and frontend diagnostics.
+The [clean-commit repair capture](diagnostics/compile-pointwise-structured-inputs/postcommit-c648878/README.md)
+records focused correctness and build/import checks. Canonical qualification
+remains pending; the diagnostic timings are not performance or coverage scores.
 
 ### Bounded nested results
 
@@ -114,8 +171,10 @@ rebuilt without exponential expansion. The admitted constructor bytecodes are
 `BUILD_TUPLE`, `BUILD_LIST`, `BUILD_MAP` and `BUILD_CONST_KEY_MAP`; bounded exact
 string key tuples are checked before disassembly. Compiler-optimized constant
 containers (including `()`) and large literals requiring other opcodes are
-unsupported. So are container indexing/unpacking, mutation, starred forms,
-comprehensions, constructor calls, whole `torch.Size` returns and shape arithmetic.
+unsupported. Literal selection and fixed tuple/list unpacking are supported
+for these symbolic containers too. Mutation, starred forms,
+comprehensions, constructor calls, whole `torch.Size` returns and shape arithmetic
+remain unsupported.
 Forms optimized to identical admitted bytecode are indistinguishable.
 
 Positional/captured scalar metadata returns are unsupported; arithmetic scalar

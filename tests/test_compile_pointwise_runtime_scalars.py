@@ -18,7 +18,7 @@ class RuntimeScalarAdmission(unittest.TestCase):
         fn = program('def f(x):\n return x + scale', scale=16777216.0)
         parsed = frontend.analyze(fn, 1)
         keys, values = frontend.resolve(fn, parsed)
-        history = {(parsed.code, keys, (), (0,)): None}
+        history = {(parsed.code, tuple(keys.items()), (), (0,)): None}
         fn.__globals__['scale'] = 16777217.0
         changed, values = frontend.resolve(fn, parsed)
         dynamic, values, scalars = frontend.runtime_bindings(parsed, changed, values, history)
@@ -27,7 +27,7 @@ class RuntimeScalarAdmission(unittest.TestCase):
         source = bridge._pointwise_source(graph.nodes, graph.outputs, 1)
         self.assertIn('float s0', source)
         self.assertIn('= s0;', bridge._pointwise_plan(graph.nodes, graph.outputs, 1))
-        history[(parsed.code, dynamic, (), (0,))] = None
+        history[(parsed.code, tuple(dynamic.items()), (), (0,))] = None
         fn.__globals__['scale'] = 16777216.0
         keys, values = frontend.resolve(fn, parsed)
         self.assertEqual(frontend.runtime_bindings(parsed, keys, values, history)[0], dynamic)
@@ -35,8 +35,8 @@ class RuntimeScalarAdmission(unittest.TestCase):
             fn.__globals__['scale'] = scalar
             keys, values = frontend.resolve(fn, parsed)
             self.assertEqual(frontend.runtime_bindings(parsed, keys, values, history)[2], ())
-        keys = (('tensor', 0), (float, struct.pack('=d', -0.0)))
-        history = {(parsed.code, keys, (), (0,)): None}
+        keys = dict(zip(parsed.dependencies, (('tensor', 0), (float, struct.pack('=d', -0.0)))))
+        history = {(parsed.code, tuple(keys.items()), (), (0,)): None}
         fn.__globals__['scale'] = 0.0
         keys, values = frontend.resolve(fn, parsed)
         self.assertEqual(frontend.runtime_bindings(parsed, keys, values, history)[2], ())
