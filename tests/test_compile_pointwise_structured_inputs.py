@@ -117,6 +117,29 @@ class InputLanguage(unittest.TestCase):
         with no_bodies(fn, *(v for v in captures.values() if type(v) is types.FunctionType)):
             return frontend.lower(parsed, values, len(tensors), metadata=metadata)
 
+    def check_local_tuple_assignment(self, names, expression):
+        tree = [native.ones(3), 2.0, 3.0]
+        assignment = ','.join(names) + '=(' + ','.join(f'p[{i}]' for i in range(len(names))) + ')'
+        explicit = '\n '.join(f'{name}=p[{i}]' for i, name in enumerate(names))
+        expected = self.lower(f'def f(p):\n {explicit}\n return {expression}', tree)
+        source = f'def f(p):\n {assignment}\n return {expression}'
+        helper = program(source)
+        cases = ((source, {}),
+                 ('def f(p):\n return helper(p)', {'helper': helper}),
+                 (f'def f(p):\n for i in range(2):\n  {assignment}\n return {expression}', {}))
+        for source, captures in cases:
+            with self.subTest(source=source):
+                self.assertEqual(self.lower(source, tree, **captures), expected)
+        # Even zero-trip bodies must validate rotations without touching the iterator.
+        self.assertEqual(self.lower(f'def f(p):\n for i in range(0):\n  {assignment}\n return -p[0]', tree),
+                         self.lower('def f(p):\n return -p[0]', tree))
+
+    def test_two_item_local_tuple_assignment(self):
+        self.check_local_tuple_assignment(('a', 'b'), 'a-b')
+
+    def test_three_item_local_tuple_assignment(self):
+        self.check_local_tuple_assignment(('a', 'b', 'c'), '(a-b)*c')
+
     def test_local_selection_and_unpacking_moved_from_negative_contracts(self):
         x = native.ones(3)
         for source in ('def f(x):\n return (x+1,[x][0])',
@@ -410,6 +433,20 @@ class InputHardware(unittest.TestCase):
             actual = self.check(pair, ({'pair': sequence((x, 0.5 + step))},),
                                 ({'pair': sequence((rx, 0.5 + step))},))
             self.assertIs(actual[1], x)
+
+    def test_local_tuple_assignments(self):
+        for assignment, expression in (('a,b=(p[0],p[1])', 'a-b'),
+                                       ('a,b,c=(p[0],p[1],p[2])', '(a-b)*c')):
+            helper = f'def f(p):\n {assignment}\n return {expression}'
+            for source, helper_source in ((helper, None),
+                                          ('def f(p):\n return helper(p)', helper),
+                                          (f'def f(p):\n for i in range(2):\n  {assignment}\n return {expression}', None)):
+                with self.subTest(source=source, helper=helper_source):
+                    pair = self.pair(source, helper_source)
+                    for step in range(3):
+                        x, rx = self.tensors(step)
+                        self.check(pair, ([x, 2.0 + step, 3.0 + step],),
+                                   ([rx, 2.0 + step, 3.0 + step],))
 
     def test_aliased_tensor_to_scalar_keeps_realization_history(self):
         pair = self.pair('def f(p):\n b=p["b"]\n a=p["a"]\n return ((b*0)+a)-16777216.0')

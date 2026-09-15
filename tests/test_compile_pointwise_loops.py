@@ -218,6 +218,8 @@ class LoopAdmission(unittest.TestCase):
                            ('JUMP_BACKWARD', {'argval': -10}),
                            ('JUMP_ABSOLUTE', {'argval': -10}),
                            ('STORE_FAST', {'opname': 'COPY', 'arg': 2}),
+                           ('STORE_FAST', {'opname': 'ROT_TWO', 'arg': None}),
+                           ('STORE_FAST', {'opname': 'ROT_THREE', 'arg': None}),
                            ('END_FOR', {'opname': 'NOP'}),
                            ('POP_TOP', {'opname': 'NOP'}),
                            ('POP_ITER', {'opname': 'NOP'})):

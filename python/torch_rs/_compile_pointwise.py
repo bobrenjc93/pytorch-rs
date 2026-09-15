@@ -24,7 +24,8 @@ _BINARY = {"add": "add", "__add__": "add", "__radd__": "add",
            "sub": "sub", "subtract": "sub", "__sub__": "sub", "__rsub__": "sub",
            "mul": "mul", "multiply": "mul", "__mul__": "mul", "__rmul__": "mul"}
 _IGNORED = {"RESUME", "CACHE", "EXTENDED_ARG", "NOP", "NOT_TAKEN", "PUSH_NULL", "PRECALL", "COPY_FREE_VARS"}
-_ALLOWED = _IGNORED | {"LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_FAST_BORROW", "LOAD_FAST_LOAD_FAST",
+_ROTATIONS = {"ROT_TWO": 2, "ROT_THREE": 3}  # CPython 3.10 fixed tuple assignments.
+_ALLOWED = _IGNORED | _ROTATIONS.keys() | {"LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_FAST_BORROW", "LOAD_FAST_LOAD_FAST",
     "LOAD_FAST_BORROW_LOAD_FAST_BORROW", "STORE_FAST", "STORE_FAST_LOAD_FAST", "STORE_FAST_STORE_FAST",
     "LOAD_CONST", "LOAD_SMALL_INT", "LOAD_GLOBAL", "LOAD_DEREF", "LOAD_ATTR", "LOAD_METHOD", "BINARY_OP",
     "BINARY_ADD", "BINARY_SUBTRACT", "BINARY_MULTIPLY", "UNARY_NEGATIVE", "CALL", "CALL_FUNCTION",
@@ -639,6 +640,8 @@ def validate_loop_stack(body):
             required, delta = (arg if op == "COPY" else 1), 1
         elif op == "SWAP":
             required = arg
+        elif op in _ROTATIONS:
+            required = _ROTATIONS[op]
         else:
             unsupported("unsupported loop control flow: " + op)
         if required < 0 or depth < required:
@@ -1356,6 +1359,11 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                 stack.append(stack[-1])
             elif op == "SWAP":
                 stack[-1], stack[-instruction.arg] = stack[-instruction.arg], stack[-1]
+            elif op in _ROTATIONS:
+                count = _ROTATIONS[op]
+                if len(stack) < count:
+                    unsupported("invalid rotation stack")
+                stack[-count:] = stack[-1:] + stack[-count:-1]
             elif op in ("RETURN_VALUE", "RETURN_CONST"):
                 result = data(stack.pop() if op == "RETURN_VALUE" else Literal(arg, not helper))
                 if stack:
