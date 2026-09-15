@@ -1,22 +1,23 @@
 # Structured-output compiler evidence
 
-The [guard repair](guard-repair.md) records the current bounded optimization and
-its fixed paired capture plan. Clean repaired-source measurements are pending
-Burner's implementation commit; the captures below retain their original scope.
+The [clean `d0f965a2` capture](postcommit-d0f965a2.json) records 66
+structured/prepared/guard checks, nine separate two-H100 checks, 73 native checks,
+and 171 portable passes per CPython 3.10–3.14 interpreter. The two hardware skips
+in the focused run passed in the separate device run; each portable run skipped
+168 hardware cases. Formatting and both CI Clippy configurations also passed.
 
-The [clean `6ec4f2dd` capture](postcommit-6ec4f2dd.json) records 59 structured/prepared
-checks, nine separate two-H100 checks, 73 native checks, and 164 portable passes
-per CPython 3.10–3.14 interpreter. The two hardware skips in the focused run passed
-in the separate device run; each portable run skipped 168 hardware cases.
 The report identifies the release wheel, imports, runtime and 3,789 numerical
-captures with native CUDA/PTX and plans. Raw artifacts remain in the canonical
-worktree-local report root recorded there, with a verified archive hash; they are
-not another checked-in payload or an off-host backup. This capture produces no
-performance score and does not replace independent review or full qualification.
-Formatting and both CI Clippy configurations also passed. The initial incomplete
-portable setup and its successful retry are retained in the report.
-The [prior `9f09bc2a` capture](postcommit-9f09bc2a.json) remains unchanged and
-bound to that earlier source revision.
+captures with native CUDA/PTX and plans. The [guard repair](guard-repair.md)
+records the fixed A/B/B/A diagnostic: all four declared cases passed correctness,
+and the geometric-mean before/after latency ratio was 1.066. This is a bounded
+native before/after comparison, not an official performance score or qualification.
+
+Raw artifacts remain in the canonical worktree-local report root recorded there,
+with a readback-verified archive hash. They are not another checked-in payload or
+an off-host backup; preserve that root before worktree cleanup. The prior
+[`6ec4f2dd`](postcommit-6ec4f2dd.json) and [`9f09bc2a`](postcommit-9f09bc2a.json)
+captures remain unchanged and bound to their original source revisions, including
+the `6ec4f2dd` portable setup failure and successful retry.
 
 ## Historical captures
 

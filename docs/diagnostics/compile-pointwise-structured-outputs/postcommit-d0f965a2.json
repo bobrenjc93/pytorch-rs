@@ -1,0 +1,309 @@
+{
+  "schema": 1,
+  "kind": "clean-commit correctness capture and fixed non-scoring paired diagnostic",
+  "measuredCommit": "d0f965a29b2d8ad02219f746c1f5ed6a0edbe89a",
+  "worktreeCleanDuringChecks": true,
+  "sourceSha256": "75cd64be52fb5b2a453d762ab0f5b966d8c442c0966dd9aad0b2eebd14adfc9b",
+  "worktree": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831",
+  "results": {
+    "fmt": {
+      "exitCode": 0
+    },
+    "clippy": {
+      "exitCode": 0
+    },
+    "clippy-python": {
+      "exitCode": 0
+    },
+    "structured-prepared-gpu": {
+      "passed": 66,
+      "skipped": 2
+    },
+    "two-device": {
+      "passed": 9,
+      "skipped": 0
+    },
+    "portable-3.10": {
+      "passed": 171,
+      "skipped": 168
+    },
+    "portable-3.11": {
+      "passed": 171,
+      "skipped": 168
+    },
+    "portable-3.12": {
+      "passed": 171,
+      "skipped": 168
+    },
+    "portable-3.13": {
+      "passed": 171,
+      "skipped": 168
+    },
+    "portable-3.14": {
+      "passed": 171,
+      "skipped": 168
+    },
+    "native": {
+      "passed": 73,
+      "skipped": 0
+    }
+  },
+  "captureCounts": {
+    ".json": 3789,
+    ".cu": 3789,
+    ".ptx": 3789,
+    ".plan": 3789,
+    ".stdout": 1,
+    ".stderr": 1
+  },
+  "wheel": {
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "sha256": "33c7ba1935431ded87ce6fbdb8dddc3bdc771718b04ff9fded68230da267c182",
+    "bytes": 1682108
+  },
+  "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/venv-B/bin/python",
+  "reference": {
+    "torch": "2.13.0+cu130",
+    "import": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/venv-B/lib/python3.12/site-packages/torch/__init__.py",
+    "cuda": "13.0",
+    "compile": "torch.compile(fn), ordinary defaults"
+  },
+  "nativeCompiler": {
+    "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+    "nvrtcVersion": [
+      13,
+      0
+    ],
+    "nvrtcOptions": [
+      "--gpu-architecture=compute_90",
+      "--fmad=true",
+      "--ftz=false",
+      "--prec-div=true",
+      "--prec-sqrt=true"
+    ]
+  },
+  "runtimeLibraries": [
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/venv-B/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+      "sha256": "96c42e418cec19054186b9429c321603cc190bf26a18104e19408117a2a817b0"
+    },
+    {
+      "path": "/usr/lib64/libcuda.so.580.82.07",
+      "sha256": "20e6ceff0c67aa902f74c662719108677c758651d9bb1e1eff738835c681f82b"
+    }
+  ],
+  "commands": {
+    "fmt": [
+      "cargo",
+      "fmt",
+      "--check"
+    ],
+    "clippy": [
+      "cargo",
+      "clippy",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "clippy-python": [
+      "cargo",
+      "clippy",
+      "--all-targets",
+      "--features",
+      "python-bindings",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "build": [
+      "bash",
+      "target/default-compile-eval/run-postcommit-d0f965a2/build.sh"
+    ],
+    "structured-prepared-gpu": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/venv-B/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_compile_pointwise_structured_outputs",
+      "tests.test_compile_pointwise_prepared",
+      "tests.test_compile_pointwise_guards"
+    ],
+    "two-device": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/venv-B/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_compile_pointwise_broadcast.Broadcast.test_device_restoration_on_compile_run_failure_and_module_release",
+      "tests.test_compile_pointwise_helpers.HelperHardware.test_two_h100_devices_restore_context_and_share_helper_semantics",
+      "tests.test_compile_pointwise_jit.Hardware.test_two_device_restoration_and_module_ownership",
+      "tests.test_compile_pointwise_loops.LoopHardware.test_original_ir_unequal_shapes_and_device_restoration",
+      "tests.test_compile_pointwise_prepared.PreparedHardware.test_private_preparation_and_run_restore_device_and_reject_cross_device",
+      "tests.test_compile_pointwise_runtime_scalars.PositionalScalarHardware.test_positional_runtime_parameters_restore_device_on_success_and_failure",
+      "tests.test_compile_pointwise_runtime_scalars.RuntimeScalarHardware.test_runtime_parameters_restore_current_device",
+      "tests.test_compile_pointwise_structured_outputs.StructuredHardware.test_two_device_restoration_and_wrong_device_failure",
+      "tests.test_compile_pointwise_tensor_madd.TensorMadd.test_both_devices_restore_current_device_on_success_failure_and_reset"
+    ],
+    "native": [
+      "cargo",
+      "test",
+      "--release",
+      "--locked",
+      "--lib",
+      "--features",
+      "python-bindings",
+      "--",
+      "pointwise",
+      "cuda::tests::prepared_plan_retains_actual_device_allocation_without_host_instructions",
+      "--test-threads=1"
+    ],
+    "runtime-probe-run": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/venv-B/bin/python",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/runtime-probe.py"
+    ],
+    "paired-run": [
+      "python",
+      "target/default-compile-eval/run-postcommit-d0f965a2/paired-capture.py",
+      "--output",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/paired",
+      "--wheel-a",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/wheels.QdELd0/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+      "--wheel-b",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+      "--python-a",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/venv-A/bin/python",
+      "--python-b",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/venv-B/bin/python",
+      "--python-reference",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/venv-B/bin/python"
+    ],
+    "portable-3.10": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/portable/3.10/bin/python",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_compile_pointwise*.py",
+      "-v"
+    ],
+    "portable-3.11": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/portable/3.11/bin/python",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_compile_pointwise*.py",
+      "-v"
+    ],
+    "portable-3.12": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/portable/3.12/bin/python",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_compile_pointwise*.py",
+      "-v"
+    ],
+    "portable-3.13": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/portable/3.13/bin/python",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_compile_pointwise*.py",
+      "-v"
+    ],
+    "portable-3.14": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/portable/3.14/bin/python",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_compile_pointwise*.py",
+      "-v"
+    ]
+  },
+  "structuredCaptureCommand": "CUDA_VISIBLE_DEVICES=0 TORCH_RS_STRUCTURED_EVIDENCE=/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/native-captures PYTHONPATH=/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/tests:/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831 /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/venv-B/bin/python /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/check.py structured-prepared-gpu /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/venv-B/bin/python -m unittest -v tests.test_compile_pointwise_structured_outputs tests.test_compile_pointwise_prepared tests.test_compile_pointwise_guards",
+  "reportRoot": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2",
+  "limits": [
+    "Focused structured/prepared/guard and native ownership validation, not a repeat of the entire author GPU suite.",
+    "Portable hardware skips are not GPU passes.",
+    "No official qualification or timing reroll; saved evaluation rejection is unchanged.",
+    "Historical records remain bound to their original revisions."
+  ],
+  "gpuInventoryAfter": [
+    {
+      "index": "0",
+      " name": " NVIDIA H100",
+      " uuid": " GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1",
+      " driver_version": " 580.82.07",
+      " compute_cap": " 9.0",
+      " memory.total [MiB]": " 97871 MiB",
+      " utilization.gpu [%]": " 0 %",
+      " memory.used [MiB]": " 4 MiB"
+    },
+    {
+      "index": "1",
+      " name": " NVIDIA H100",
+      " uuid": " GPU-11979b85-93e3-21d3-e68f-df37b8a4c296",
+      " driver_version": " 580.82.07",
+      " compute_cap": " 9.0",
+      " memory.total [MiB]": " 97871 MiB",
+      " utilization.gpu [%]": " 0 %",
+      " memory.used [MiB]": " 4 MiB"
+    }
+  ],
+  "deviceSelections": {
+    "fmt": null,
+    "clippy": null,
+    "clippy-python": null,
+    "build": "0",
+    "structured-prepared-gpu": "0",
+    "two-device": "0,1",
+    "native": "0",
+    "runtime-probe-run": "0",
+    "paired-run": "0",
+    "portable-3.10": "",
+    "portable-3.11": "",
+    "portable-3.12": "",
+    "portable-3.13": "",
+    "portable-3.14": ""
+  },
+  "pairedDiagnostic": {
+    "status": "completed",
+    "sourceBefore": "17ccacb98c37679c7cc2d4ad320237d85cebf041",
+    "sourceAfter": "d0f965a29b2d8ad02219f746c1f5ed6a0edbe89a",
+    "summaryPath": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/paired/summary.json",
+    "summarySha256": "7e98808363c37595c62e1623bf4c0208f851d4f9f9944dda8f6ee7d1115ca52f",
+    "beforeAfterRatios": {
+      "literal": 1.0539523718450579,
+      "pair": 1.0916091606311944,
+      "broadcast": 1.0714033592347076,
+      "structured": 1.045815967036141
+    },
+    "geometricMeanRatio": 1.06555067182268,
+    "scope": "Four declared native public-call functions; not canonical default-Inductor performance or qualification."
+  },
+  "pairedBuildProvenanceSha256": "57989a636c70fa884904856d928915c48bacbd342f899e85a7ab4bc402d938d8",
+  "rawArchive": {
+    "archive": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-d0f965a2/raw-captures.tar.gz",
+    "sha256": "d62e0cb0dfd286671ba86454f14c61bc70766717de7f75959bd4d7f9b4a64b38",
+    "bytes": 193474821,
+    "files": 19882,
+    "readbackVerified": true,
+    "manifestSha256": "d2920ff1d03b5a090db630ab11bf3d20b5313e216078e73cc640b7ea0ee9999f",
+    "scope": "Worktree-local canonical report root; ignored raw evidence, not a checked-in or off-host backup. Preserve before worktree cleanup."
+  },
+  "provenanceSha256": "1d3605a72ed39b4c76fc07ef3d9f8b6c66c0783c2f0d03fca5339de515867a6f"
+}

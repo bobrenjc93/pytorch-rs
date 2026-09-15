@@ -67,7 +67,42 @@ Keep new raw reports, samples, source/PTX/plans, setup failures and checksummed
 archives under a new `target/default-compile-eval/run-*` root. Check in only a
 compact summary with exact artifact paths/hashes. This A/B diagnostic produces no
 qualification score; Burner's reviewed delivery owns frozen full qualification.
-Clean repaired-source validation and this timing capture are pending the commit.
+The clean capture below completes this plan; it was run once without retries.
+
+## Clean committed capture
+
+The [source-bound report](postcommit-d0f965a2.json) measures
+`d0f965a29b2d8ad02219f746c1f5ed6a0edbe89a` with a clean worktree and a new release
+wheel. It passed 66 structured/prepared/guard checks, nine separate two-device
+checks, 73 native tests and 171 portable tests on each CPython 3.10–3.14, plus
+Rust 1.92 formatting and both Clippy configurations. Hardware skips are recorded
+separately. The native compiler used NVRTC 13; runtime and library hashes are in
+the report and raw provenance.
+
+The declared A/B/B/A run completed on physical H100 GPU 0. A reused the sealed
+`17ccacb98` wheel; B used the clean `d0f965a2` wheel. Separate correctness processes
+matched ordinary stock PyTorch 2.13 default compilation on the declared original
+and changed inputs, including signed zeros and nonfinite values. Metadata,
+aliases, freshness, unchanged inputs and warm execution/cache audits passed.
+Timing followed the fixed plan above, including synchronization after every call.
+
+Each timing entry below is microseconds per call. Pooled columns use all 34
+samples for that implementation; all 272 samples and separate first-call times
+remain retained. Ratios above one mean lower measured latency after the repair.
+
+| Case | A1 | B1 | B2 | A2 | Pooled A | Pooled B | A/B |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| literal | 31.176 | 29.829 | 29.800 | 31.499 | 31.418 | 29.809 | 1.0540 |
+| pair | 38.166 | 35.226 | 35.750 | 38.973 | 38.918 | 35.652 | 1.0916 |
+| broadcast | 37.677 | 35.359 | 35.772 | 38.614 | 38.073 | 35.535 | 1.0714 |
+| structured | 33.562 | 32.263 | 32.677 | 34.259 | 33.937 | 32.450 | 1.0458 |
+
+The four-case geometric-mean ratio is **1.06555**. This diagnostic does not measure
+default-Inductor performance parity or change the saved negative qualification.
+The report links the exact commands, wheel/source/import/runtime identities,
+raw numerical output, generated native source/PTX/plans and readback-verified
+archive under `target/default-compile-eval/run-postcommit-d0f965a2/`. Preserve that
+canonical report root before cleanup; it is not an off-host backup.
 
 ## Development validation
 
@@ -76,7 +111,8 @@ configurations, 330 one-H100 checks plus the remaining nine two-device checks,
 and 73 native tests. CPython 3.10–3.14 each passed 171 portable checks and skipped
 168 hardware cases. The seven new guard tests are included in those counts;
 portable skips do not establish GPU behavior. Focused source review found no
-actionable issue. These results do not replace the pending clean capture.
+actionable issue. These development results remain separate from the clean
+capture above.
 
 Receipts, wheel/import/source hashes, all logs and 3,789 numerical CUDA/PTX/plan
 captures are retained at `target/default-compile-eval/run-guard-repair-17ccacb/`.

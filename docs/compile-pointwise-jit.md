@@ -147,8 +147,9 @@ using a grid-stride loop. This execution strategy adds instruction-dispatch and
 scratch traffic; correctness captures do not establish a performance improvement.
 
 The [structured-output evidence index](diagnostics/compile-pointwise-structured-outputs/README.md)
-links the clean `6ec4f2dd` correctness capture, historical failures and retention
-limits. Captures remain scoped to their recorded source revisions.
+links the clean `d0f965a2` correctness capture, bounded guard timing diagnostic,
+historical failures and retention limits. Captures remain scoped to their recorded
+source revisions.
 
 ### Bounded root shape branches
 
