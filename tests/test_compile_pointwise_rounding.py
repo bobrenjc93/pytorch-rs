@@ -9,7 +9,7 @@ from tests.test_compile_pointwise_jit import available, cache, kernel, kernels, 
 class RoundingAdmission(unittest.TestCase):
     def test_identical_expressions_share_rounding_before_contraction(self):
         graph = lower(program('def f(x, y):\n return x*y-x*y'), 2)
-        source = bridge._pointwise_source(graph.nodes, graph.output, 2)
+        source = bridge._pointwise_plan(graph.nodes, graph.outputs, 2)
         self.assertEqual(source.count('__fmul_rn('), 1)
         self.assertIn('__fsub_rn(', source)
         self.assertNotIn('fmaf(', source)

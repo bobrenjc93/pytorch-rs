@@ -28,10 +28,14 @@ _ALLOWED = _IGNORED | {"LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_FAST_BORROW", "LOAD
     "LOAD_FAST_BORROW_LOAD_FAST_BORROW", "STORE_FAST", "STORE_FAST_LOAD_FAST", "STORE_FAST_STORE_FAST",
     "LOAD_CONST", "LOAD_SMALL_INT", "LOAD_GLOBAL", "LOAD_DEREF", "LOAD_ATTR", "LOAD_METHOD", "BINARY_OP",
     "BINARY_ADD", "BINARY_SUBTRACT", "BINARY_MULTIPLY", "UNARY_NEGATIVE", "CALL", "CALL_FUNCTION",
-    "CALL_METHOD", "RETURN_VALUE", "RETURN_CONST", "COPY", "DUP_TOP", "SWAP"}
+    "CALL_METHOD", "RETURN_VALUE", "RETURN_CONST", "COPY", "DUP_TOP", "SWAP",
+    "BUILD_TUPLE", "BUILD_LIST", "BUILD_MAP", "BUILD_CONST_KEY_MAP"}
 _METHODS = tuple(_UNARY) + tuple(_BINARY) + ("__getattribute__", "shape")
 _MISSING = object()
 _RANGE = range
+# Retained numerical data per wrapper, not a process/module/allocator-pool or
+# transient allocation budget. Larger admitted plans execute without retention.
+_PREPARED_CACHE_BYTES = 32 * 1024 * 1024
 _LOOP_OPS = {"GET_ITER", "FOR_ITER", "JUMP_ABSOLUTE", "JUMP_BACKWARD",
              "END_FOR", "POP_TOP", "POP_ITER"}
 _CONDITIONALS = {"POP_JUMP_IF_FALSE", "POP_JUMP_IF_TRUE",
@@ -104,13 +108,13 @@ class Helper:
 class Graph:
     inputs: int
     nodes: tuple
-    output: int
+    outputs: tuple
     _hash: int = field(init=False, compare=False, repr=False)
 
     def __post_init__(self):
         # Executable lookup uses structural equality across specializations;
         # hashing immutable IR need not walk every node again on each launch.
-        object.__setattr__(self, "_hash", hash((self.inputs, self.nodes, self.output)))
+        object.__setattr__(self, "_hash", hash((self.inputs, self.nodes, self.outputs)))
 
     def __hash__(self):
         return self._hash
@@ -149,14 +153,68 @@ class BoundValue:
 
 @dataclass(frozen=True)
 class Literal:
-    """Exact root integer origin; helpers and synthetic indices cannot mint it."""
-    value: int
+    """Admitted literal metadata; only root integers can form shape predicates."""
+    value: object
+    predicate_origin: bool = True
 
 
 @dataclass(frozen=True)
 class ShapeValue:
     source: BindingSource
     axis: int | None = None
+    predicate_origin: bool = True
+
+
+@dataclass(frozen=True, eq=False)
+class Container:
+    """A constructor identity in the frame, never a mutable Python result."""
+    kind: str
+    items: tuple
+    keys: tuple = ()
+    depth: int = 1
+    identity: object = field(default_factory=object)
+
+
+@dataclass(frozen=True)
+class ResultSpec:
+    """Immutable topology with no runtime Tensor owners or past dimensions."""
+    # A topologically ordered DAG. Entries contain only source identities,
+    # literal metadata, output slots and earlier entry indices.
+    entries: tuple
+    root: int
+    # First observable occurrence of each computed root, projected onto the
+    # canonical Graph slots. Numerical planning consumes this immutable order;
+    # container kinds, keys, aliases and metadata never enter the executable key.
+    output_order: tuple = ()
+
+    def reconstruct(self, outputs, values, tensors, metadata):
+        """Build fresh containers from this call's owners before cache publication."""
+        objects = []
+        for kind, payload in self.entries:
+            if kind == "output":
+                obj = outputs[payload]
+            elif kind == "input":
+                obj = tensors[values[payload].index]
+            elif kind == "shape":
+                source, axis = payload
+                obj = metadata[values[source].index][0][axis]
+            elif kind == "literal":
+                obj = payload
+            elif kind == "tuple":
+                obj = tuple(objects[index] for index in payload)
+            elif kind == "list":
+                obj = [objects[index] for index in payload]
+            else:
+                obj = {key: objects[index] for key, index in payload}
+            objects.append(obj)
+        return objects[self.root]
+
+
+@dataclass(frozen=True)
+class Lowering:
+    """Pair native computation with Python topology at the lowering cache owner."""
+    graph: Graph
+    result: ResultSpec
 
 
 @dataclass(frozen=True)
@@ -189,19 +247,40 @@ def walk_instructions(instructions):
             yield instruction
 
 
-def without_origin(obj):
+def without_origin(obj, memo=None):
+    """Remove helper-return predicate capability while preserving the result DAG.
+
+    The shared memo retains constructor aliases and original container identity;
+    literal metadata remains valid even when it cannot form a shape predicate.
+    """
+    if memo is None:
+        memo = {}
     if type(obj) is Literal:
-        return obj.value
+        return Literal(obj.value, False)
     if type(obj) is BoundValue:
         return BoundValue(obj.source, obj.value, False)
+    if type(obj) is ShapeValue:
+        return ShapeValue(obj.source, obj.axis, False)
+    if type(obj) is Container:
+        if id(obj) not in memo:
+            memo[id(obj)] = Container(obj.kind, tuple(without_origin(item, memo) for item in obj.items),
+                                      obj.keys, obj.depth, obj.identity)
+        return memo[id(obj)]
     return obj
 
 
 def validate_data(obj):
     """Check a data boundary without realizing or guarding a lazy source."""
     item = obj.value if type(obj) is BoundValue else obj
+    if type(item) is Container:
+        # Constructors have already validated every edge. Do not expand DAGs.
+        return obj
     if type(item) is Literal:
+        if item.value is None or type(item.value) is str:
+            return obj
         item = item.value
+    if type(item) is ShapeValue and item.axis is not None:
+        return obj
     if type(item) is not Value and type(item) is not RuntimeScalar:
         scalar_bits(item)
     return obj
@@ -272,10 +351,14 @@ class Specialization:
     # Sources passed through data boundaries need admission even if ignored by
     # the helper. These positions impose no scalar-value or tensor-shape guard.
     data_positions: tuple = ()
+    # Non-guarding iteration hint from this successful specialization. Dynamic
+    # shape hits retain its numerical partition without changing executable keys.
+    numerical_hint: int = 1
 
 
 def _broadcast_elements(shapes):
-    result = ()
+    shapes = iter(shapes)
+    result = next(shapes, ())
     for shape in shapes:
         rank = max(len(result), len(shape))
         left, right = (1,) * (rank-len(result)) + result, (1,) * (rank-len(shape)) + shape
@@ -383,14 +466,16 @@ def _shape_guards(program, graph, first, metadata, history, predicates=()):
         for offset in range(1, min(len(ls), len(rs))+1):
             if ls[-offset] > 1 and rs[-offset] > 1:
                 equal_axes.append((left, len(ls)-offset, right, len(rs)-offset))
-    live = tuple(s for s, i in first.items() if graph.nodes[i][1] in dependencies[graph.output])
+    live = tuple(s for s, i in first.items() if graph.nodes[i][1] in set().union(*(dependencies[root] for root in graph.outputs)))
     groups = tuple((s,) for s in live) + ((live,) if len(live) == 2 else ())
     # torch/_inductor/codegen/simd.py: can_use_32bit_indexing installs an
     # upper-bound conjunction only if the whole kernel is 32-bit eligible.
     # A 64-bit specialization has no inverse bound and can accept small shapes.
     bounds = groups if all(_broadcast_elements([observations[s][0] for s in group]) <= 2147483647
                            for group in groups) else ()
-    return ShapeGuards(tuple(guards), tuple(equal_axes), bounds, tuple(predicates)), observations
+    numerical_hint = _broadcast_elements([observations[s][0] for s in live])
+    return (ShapeGuards(tuple(guards), tuple(equal_axes), bounds, tuple(predicates)),
+            observations, numerical_hint)
 
 
 def _select_specialization(program, bindings, values, tensors, metadata, graphs):
@@ -455,9 +540,13 @@ def validate_code(code, arity, *, helper=False):
         unsupported("requires a straight-line function with positional inputs and no defaults")
     # dis formats co_consts with repr, before yielding even a LOAD_CONST.
     # Validate before retaining helper code too: unused constants stay alive in it.
-    # None and exact strings are metadata only, never data operands or returns.
     for constant in code.co_consts:
-        if constant is not None and type(constant) is not str:
+        if type(constant) is tuple:
+            # CPython <=3.13 stores BUILD_CONST_KEY_MAP keys in co_consts.
+            # Check before disassembly can format even an unused object.
+            if len(constant) > 4096 or any(type(key) is not str for key in constant):
+                unsupported("constant tuples must contain bounded exact string keys")
+        elif constant is not None and type(constant) is not str:
             scalar_bits(constant)
 
 
@@ -482,7 +571,7 @@ def validate_namespaces(model):
                              (model.__builtins__, "builtins")):
         if type(namespace) is not dict:
             unsupported("function " + label + " must be an exact dict")
-        if any(type(key) is not str for key in namespace):
+        if not _native._pointwise_namespace_keys_exact(namespace):
             unsupported("function " + label + " keys must be exact strings")
 
 
@@ -520,10 +609,16 @@ def validate_loop_stack(body):
             delta = 0 if op == "STORE_FAST_LOAD_FAST" else -required
         elif op in ("LOAD_ATTR", "LOAD_METHOD", "UNARY_NEGATIVE"):
             required = 1
+        elif op == "BINARY_SUBSCR" or (op == "BINARY_OP" and instruction.argrepr == "[]"):
+            # Only original-input shape-axis reads survive frame admission.
+            required, delta = 2, -1
         elif op in ("BINARY_OP", "BINARY_ADD", "BINARY_SUBTRACT", "BINARY_MULTIPLY"):
             if op == "BINARY_OP" and instruction.argrepr not in ("+", "-", "*"):
                 unsupported("unsupported loop binary operator")
             required, delta = 2, -1
+        elif op in ("BUILD_TUPLE", "BUILD_LIST", "BUILD_MAP", "BUILD_CONST_KEY_MAP"):
+            required = arg * 2 if op == "BUILD_MAP" else arg + (op == "BUILD_CONST_KEY_MAP")
+            delta = 1 - required
         elif op in ("CALL", "CALL_FUNCTION", "CALL_METHOD"):
             required, delta = arg + 1, -arg
         elif op in ("COPY", "DUP_TOP"):
@@ -842,6 +937,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
     checked_nodes = 0
     helper_instructions = {}  # Per lowering only; warm hits never parse helpers.
     pending_checks = []  # Early-return continuations; no recursion per condition.
+    construction_edges = 0
 
     def data(obj):
         # Validate without realizing a lazy root source. Ignored parameters must
@@ -894,14 +990,61 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
             del nodes[node_start:]
             observed, data_sources, predicates = saved
 
+    def result_spec(obj):
+        """Separate result topology from sorted distinct computed SSA roots.
+
+        Repeated container identities are memoized; repeated computed roots map
+        to one output slot. Neither returned input owners nor dimensions are kept.
+        """
+        entries, memo, roots = [], {}, set()
+
+        def visit(item):
+            if type(item) is Container:
+                if item.identity in memo:
+                    return memo[item.identity]
+                children = tuple(visit(child) for child in item.items)
+                payload = tuple(zip(item.keys, children)) if item.kind == "dict" else children
+                entry = (item.kind, payload)
+            elif type(item) is BoundValue:
+                resolved = realize(item)
+                if type(resolved) is not Value or not resolved.tensor or item.source.kind != "parameter":
+                    unsupported("result metadata must be literal or an input shape axis")
+                entry = ("input", item.source)
+            elif type(item) is Value and item.tensor and (item.index >= arity or item.index == -1):
+                roots.add(item.index)
+                entry = ("output", item.index)
+            elif type(item) is Literal:
+                entry = ("literal", item.value)
+            elif type(item) is ShapeValue and item.axis is not None:
+                entry = ("shape", (item.source, item.axis))
+            else:
+                unsupported("return computed pointwise tensors with bounded literal metadata")
+            index = len(entries)
+            entries.append(entry)
+            if len(entries) > 4096:
+                unsupported("result exceeds 4096 output reference limit")
+            if type(item) is Container:
+                memo[item.identity] = index
+            return index
+
+        root = visit(obj)
+        if not roots:
+            unsupported("return at least one computed pointwise tensor")
+        if len(roots) > 64:
+            unsupported("result exceeds 64 computed output limit")
+        outputs = tuple(sorted(roots))
+        slots = {value: slot for slot, value in enumerate(outputs)}
+        entries = tuple((kind, slots[payload] if kind == "output" else payload)
+                        for kind, payload in entries)
+        order = tuple(dict.fromkeys(payload for kind, payload in entries if kind == "output"))
+        return outputs, ResultSpec(entries, root, order)
+
     def root_result(obj):
-        result = realize(obj)
-        if type(result) is not Value or not result.tensor or (0 <= result.index < arity):
-            unsupported("return one computed pointwise tensor")
-        return result
+        result_spec(obj)  # Also admit every inactive return before cache publication.
+        return obj
 
     def frame(instructions, locals_, *, check_only=False, helper=False, charge=True):
-        nonlocal remaining, checked_nodes
+        nonlocal remaining, checked_nodes, construction_edges
         remaining -= len(instructions) if charge else 0
         if remaining < 0:
             unsupported("expanded function exceeds pointwise instruction limit")
@@ -966,8 +1109,46 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                 for name in arg:
                     locals_[name] = stack.pop()
             elif op in ("LOAD_CONST", "LOAD_SMALL_INT", "_LOOP_INDEX"):
-                scalar_bits(arg)  # Validate before retaining; never invoke user conversion.
-                stack.append(Literal(arg) if type(arg) is int and not helper and op != "_LOOP_INDEX" else arg)
+                if op == "_LOOP_INDEX":
+                    scalar_bits(arg)
+                    stack.append(arg)
+                elif type(arg) is tuple:
+                    stack.append(arg)  # Admitted key tuples only; never output data.
+                else:
+                    if arg is not None and type(arg) is not str:
+                        scalar_bits(arg)
+                    stack.append(Literal(arg, not helper and type(arg) is int))
+            elif op in ("BUILD_TUPLE", "BUILD_LIST", "BUILD_MAP", "BUILD_CONST_KEY_MAP"):
+                count = instruction.arg
+                needed = count * 2 if op == "BUILD_MAP" else count + (op == "BUILD_CONST_KEY_MAP")
+                if count < 0 or len(stack) < needed:
+                    unsupported("invalid output constructor stack")
+                construction_edges += needed
+                if construction_edges > 4096:
+                    unsupported("result exceeds 4096 output construction edge limit")
+                operands = stack[-needed:] if needed else []
+                if needed:
+                    del stack[-needed:]
+                keys = ()
+                if op == "BUILD_CONST_KEY_MAP":
+                    keys = operands.pop()
+                    if type(keys) is not tuple or len(keys) != count or any(type(key) is not str for key in keys):
+                        unsupported("dict keys must be exact literal strings")
+                elif op == "BUILD_MAP":
+                    key_values = operands[::2]
+                    if any(type(key) is not Literal or type(key.value) is not str for key in key_values):
+                        unsupported("dict keys must be exact literal strings")
+                    keys, operands = tuple(key.value for key in key_values), operands[1::2]
+                items = tuple(data(item) for item in operands)
+                if op in ("BUILD_MAP", "BUILD_CONST_KEY_MAP"):
+                    # Assignment preserves the first insertion position and last value.
+                    mapping = dict(zip(keys, items))
+                    keys, items = tuple(mapping), tuple(mapping.values())
+                depth = 1 + max((item.depth for item in items if type(item) is Container), default=0)
+                if depth > 64:
+                    unsupported("result exceeds output depth 64")
+                stack.append(Container({"BUILD_TUPLE": "tuple", "BUILD_LIST": "list"}.get(op, "dict"),
+                                       items, keys, depth))
             elif op in ("LOAD_GLOBAL", "LOAD_DEREF"):
                 source = BindingSource(op, arg)
                 stack.append(BoundValue(source, values[source]))
@@ -975,10 +1156,10 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                 original = stack.pop()
                 owner = realize(original)
                 if arg == "shape":
-                    if (helper or type(original) is not BoundValue or not original.predicate_origin
+                    if (helper or type(original) is not BoundValue
                             or original.source.kind != "parameter" or type(owner) is not Value):
-                        unsupported("shape predicates require an original input Tensor")
-                    stack.append(ShapeValue(original.source))
+                        unsupported("shape queries require an original input Tensor")
+                    stack.append(ShapeValue(original.source, predicate_origin=original.predicate_origin))
                 elif owner is _ROOT:
                     if arg not in dict(_FUNCTIONS):
                         unsupported("unsupported native function: " + arg)
@@ -990,8 +1171,9 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
             elif op == "UNARY_NEGATIVE":
                 original = stack.pop()
                 if type(original) is Literal:
+                    scalar_bits(original.value)
                     scalar_bits(-original.value)
-                    stack.append(Literal(-original.value))
+                    stack.append(Literal(-original.value, original.predicate_origin))
                     continue
                 operand = realize(original)
                 if type(operand) is RuntimeScalar:
@@ -1003,15 +1185,22 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     stack.append(-operand)
             elif op == "BINARY_SUBSCR" or (op == "BINARY_OP" and instruction.argrepr == "[]"):
                 axis, shape = stack.pop(), stack.pop()
-                if type(shape) is not ShapeValue or shape.axis is not None or type(axis) is not Literal:
+                if (type(shape) is not ShapeValue or shape.axis is not None or type(axis) is not Literal
+                        or not axis.predicate_origin or type(axis.value) is not int):
                     unsupported("only input.shape[literal integer axis] is supported")
-                stack.append(ShapeValue(shape.source, axis.value))
+                source = values[shape.source]
+                if not metadata or type(source) is not Value:
+                    unsupported("shape axis requires input metadata")
+                if not -len(metadata[source.index][0]) <= axis.value < len(metadata[source.index][0]):
+                    unsupported("shape axis is out of range")
+                stack.append(ShapeValue(shape.source, axis.value, shape.predicate_origin))
             elif op == "COMPARE_OP":
                 right, left = stack.pop(), stack.pop()
                 comparison = arg  # 3.13+ argrepr may be bool(>).
                 if type(left) is Literal and type(right) is ShapeValue and comparison in _COMPARE:
                     left, right, comparison = right, left, _REVERSE_COMPARE[comparison]
-                if (type(left) is not ShapeValue or left.axis is None or type(right) is not Literal
+                if (type(left) is not ShapeValue or left.axis is None or not left.predicate_origin
+                        or type(right) is not Literal or type(right.value) is not int or not right.predicate_origin
                         or comparison not in _COMPARE):
                     unsupported("condition requires input shape and exact integer literal")
                 source = values[left.source]
@@ -1037,7 +1226,8 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                 if type(target) is Helper:
                     if len(operands) != target.code.co_argcount:
                         unsupported("helper argument count mismatch")
-                    parameters = [without_origin(data(operand)) for operand in operands]
+                    origins = {}
+                    parameters = [without_origin(data(operand), origins) for operand in operands]
                     if target not in helper_instructions:
                         helper_instructions[target] = instructions_for(target.code, helper=True)
                     stack.append(frame(helper_instructions[target],
@@ -1060,7 +1250,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
             elif op == "SWAP":
                 stack[-1], stack[-instruction.arg] = stack[-instruction.arg], stack[-1]
             elif op in ("RETURN_VALUE", "RETURN_CONST"):
-                result = data(stack.pop() if op == "RETURN_VALUE" else arg)
+                result = data(stack.pop() if op == "RETURN_VALUE" else Literal(arg, not helper))
                 if stack:
                     unsupported("return one data value")
                 return without_origin(result) if helper else root_result(result)
@@ -1076,9 +1266,52 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
     while pending_checks:
         continuation, inactive_locals = pending_checks.pop()
         isolated(continuation, inactive_locals, charge=False)
-    if type(result) is not Value or not result.tensor or result.index < arity:
-        unsupported("return one computed pointwise tensor")
-    return Graph(arity, tuple(nodes), result.index)
+    outputs, specification = result_spec(result)
+    return Lowering(Graph(arity, tuple(nodes), outputs), specification)
+
+
+def _prepared_entry_bytes(key, prepared):
+    """Conservative incremental retention charge, calculated only on a miss.
+
+    Native accounting uses actual Vec capacities and device allocation bytes.
+    Recursively charge every Python key referent, including repeated/shared
+    references (even the already-owned Graph), plus the wrapper and a 512-byte
+    allowance for the dict slot/value pair/accounting integer. This is a data
+    retention budget, not an exact Python allocator-resident-memory claim.
+    """
+    def key_bytes(value):
+        if type(value) is tuple:
+            return sys.getsizeof(value) + sum(key_bytes(item) for item in value)
+        if type(value) is Graph:
+            return (sys.getsizeof(value) + sys.getsizeof(value.__dict__)
+                    + key_bytes(value.inputs) + key_bytes(value.nodes)
+                    + key_bytes(value.outputs) + key_bytes(value._hash))
+        return sys.getsizeof(value)
+
+    return prepared.retained_bytes + sys.getsizeof(prepared) + key_bytes(key) + 512
+
+
+def _publish_preparation(cache, key, prepared, retained_bytes, recompile_limit):
+    """Called under the existing lock only after successful reconstruction."""
+    # A prepared Arc must not retain a module whose executor was evicted. The
+    # executable transaction above is authoritative, not an independent module cache.
+    for old_key in tuple(cache.prepared):
+        if old_key[0] not in cache.executors:
+            _, old_bytes = cache.prepared.pop(old_key)
+            cache.prepared_bytes -= old_bytes
+    if retained_bytes <= _PREPARED_CACHE_BYTES:
+        newest = (cache.prepared and next(reversed(cache.prepared)) == key
+                  and next(reversed(cache.prepared.values()))[0] is prepared)
+        if not newest:
+            previous = cache.prepared.pop(key, None)
+            if previous is not None:
+                cache.prepared_bytes -= previous[1]
+            cache.prepared[key] = (prepared, retained_bytes)
+            cache.prepared_bytes += retained_bytes
+    while (len(cache.prepared) > recompile_limit
+           or cache.prepared_bytes > _PREPARED_CACHE_BYTES):
+        _, old_bytes = cache.prepared.pop(next(iter(cache.prepared)))
+        cache.prepared_bytes -= old_bytes
 
 
 def implementation(model, recompile_limit):
@@ -1128,14 +1361,16 @@ def implementation(model, recompile_limit):
                 observed = []
                 data_sources = set()
                 predicates = []
-                graph = lower(program, static_values, len(tensors), input_ids,
+                lowering = lower(program, static_values, len(tensors), input_ids,
                               observed=observed, data_sources=data_sources, metadata=metadata, predicates=predicates)
                 bindings, values, scalars = runtime_bindings(
                     program, static_bindings, static_values, cache.graphs, observed=observed)
                 if scalars:
-                    graph = lower(program, values, len(tensors), input_ids, metadata=metadata)
+                    lowering = lower(program, values, len(tensors), input_ids, metadata=metadata)
+                graph = lowering.graph
                 bindings, first, aliases = _logical_keys(program, bindings, values, observed, tensors)
-                guards, observations = _shape_guards(program, graph, first, metadata, cache.graphs, predicates)
+                guards, observations, numerical_hint = _shape_guards(
+                    program, graph, first, metadata, cache.graphs, predicates)
                 observations.update((s, "scalar") for s in observed
                                     if type(static_values[s]) is float or type(static_values[s]) is int)
                 key = (program.code, bindings, guards, aliases)
@@ -1145,33 +1380,48 @@ def implementation(model, recompile_limit):
                           if expected[0] != "ignored"),
                     tuple(program.positions[source] for source in observed if type(values[source]) is Value),
                     tuple(position for position, source in enumerate(program.dependencies)
-                          if source in data_sources))
+                          if source in data_sources), numerical_hint)
             else:
                 key, entry, scalars = selected
                 # A cached graph omits ignored sources, but helper argument
                 # admission still applies to their current values on every hit.
                 for position in entry.data_positions:
                     validate_data(static_values[program.dependencies[position]])
-                graph = entry.lowerings.get(abi)
-                if graph is None:
+                lowering = entry.lowerings.get(abi)
+                if lowering is None:
                     values = dict(entry.values)
                     for source in program.dependencies:
                         if type(values[source]) is Value or source not in entry.observed:
                             values[source] = static_values[source]
-                    graph = lower(program, values, len(tensors), input_ids, metadata=metadata)
+                    lowering = lower(program, values, len(tensors), input_ids, metadata=metadata)
             # Logical guards choose scalar semantics. Concrete executables still
             # specialize the full native ABI and exact broadcast address formula.
-            # Offsets/addresses and all original-IR admission are checked at run.
+            # Preparation checks all original-IR admission. Exact native shapes
+            # certify that result on reuse; offsets/storage are checked each run.
+            graph = lowering.graph
             shapes = tuple(m[0] for m in metadata)
             indexing_key = None if all(s == shapes[0] for s in shapes) else shapes
             code_key = (graph, metadata[0][4], indexing_key)
             executor = cache.executors.get(code_key)
             if executor is None:
-                executor = _native._pointwise_compile(tensors, graph.nodes, graph.output)
-            result = executor.run(tensors, scalars)
-            # Publish both levels only after success. Executable and lowering LRU
-            # eviction bounds retained modules without consuming logical slots.
-            for mapping, item_key, item in ((entry.lowerings, abi, graph),
+                executor = _native._pointwise_compile(tensors, graph.nodes, graph.outputs)
+            prepared_key = (code_key, shapes, entry.numerical_hint, lowering.result.output_order)
+            cached_preparation = cache.prepared.get(prepared_key)
+            if cached_preparation is None:
+                prepared = executor.prepare(tensors, entry.numerical_hint, lowering.result.output_order)
+                # Metadata was read before taking this lock. Bind the published
+                # key to the same native snapshot that passed graph admission;
+                # never label an artifact with a stale Python shape signature.
+                if prepared.input_shapes != shapes:
+                    unsupported("input shapes changed during pointwise preparation")
+                retained_bytes = _prepared_entry_bytes(prepared_key, prepared)
+            else:
+                prepared, retained_bytes = cached_preparation
+            outputs = prepared.run(tensors, scalars)
+            result = lowering.result.reconstruct(outputs, static_values, tensors, metadata)
+            # Publish every cache level only after success. Executable/lowering
+            # eviction bounds retention without consuming logical slots.
+            for mapping, item_key, item in ((entry.lowerings, abi, lowering),
                                             (cache.executors, code_key, executor),
                                             (cache.graphs, key, entry)):
                 # Recency belongs to each map independently: a shared executor
@@ -1183,6 +1433,7 @@ def implementation(model, recompile_limit):
                 mapping[item_key] = item
                 while len(mapping) > recompile_limit:
                     del mapping[next(iter(mapping))]
+            _publish_preparation(cache, prepared_key, prepared, retained_bytes, recompile_limit)
             return result
 
     compiled._torch_rs_pointwise_cache = cache

@@ -210,6 +210,7 @@ impl Storage {
     }
 
     #[cfg(any(feature = "python-bindings", test))]
+    #[allow(clippy::too_many_arguments)] // Mirrors the validated pointwise launch ABI.
     pub(crate) fn cuda_pointwise_jit(
         &self,
         other: &Self,
@@ -218,18 +219,24 @@ impl Storage {
         input_elements: [usize; 2],
         kernel: &crate::cuda::jit::Kernel,
         scalars: &[f32],
-    ) -> Result<Self, TensorError> {
+        plan: &crate::cuda::PointwisePlan,
+    ) -> Result<Vec<Self>, TensorError> {
         match (&self.payload, &other.payload) {
-            (StoragePayload::CudaFloat32(left), StoragePayload::CudaFloat32(right)) => Ok(Self {
-                payload: StoragePayload::CudaFloat32(left.pointwise_jit(
+            (StoragePayload::CudaFloat32(left), StoragePayload::CudaFloat32(right)) => Ok(left
+                .pointwise_jit(
                     right,
                     offsets,
                     elements,
                     input_elements,
                     kernel,
                     scalars,
-                )?),
-            }),
+                    plan,
+                )?
+                .into_iter()
+                .map(|storage| Self {
+                    payload: StoragePayload::CudaFloat32(storage),
+                })
+                .collect()),
             _ => Err(crate::pointwise_ir::invalid("expected CUDA storage")),
         }
     }

@@ -17,30 +17,30 @@ from test_compile_pointwise_jit import (
 class Metadata(unittest.TestCase):
     def test_codegen_uses_metadata_coordinates_and_keeps_numeric_lowering(self):
         graph = lower(program('def f(x, y):\n return x.relu() - y.relu()'), 2)
-        source = bridge._pointwise_source(graph.nodes, graph.output, 2, ((3, 1), (2, 1, 5)))
+        source = bridge._pointwise_source(graph.nodes, graph.outputs, 2, ((3, 1), (2, 1, 5)))
         self.assertIn('x0[((i / 5ull) % 3ull) * 1ull]', source)
         self.assertIn('x1[((i / 15ull) % 2ull) * 5ull + ((i / 1ull) % 5ull) * 1ull]', source)
         self.assertIn('__fsub_rn(', source)
-        self.assertNotIn('fmaf(', source)
+        self.assertNotIn('fmaf(', bridge._pointwise_plan(graph.nodes, graph.outputs, 2, ((3, 1), (2, 1, 5))))
         self.assertEqual(source.count('__global__'), 1)
-        scalar = bridge._pointwise_source(graph.nodes, graph.output, 2, ((), (2, 3)))
+        scalar = bridge._pointwise_source(graph.nodes, graph.outputs, 2, ((), (2, 3)))
         self.assertIn('x0[0]', scalar)
         self.assertIn('x1[i]', scalar)
 
     def test_dead_shape_errors_are_not_removed_and_empty_codegen_has_no_zero_divisor(self):
         graph = lower(program('def f(x, y):\n dead = x + y\n return -x'), 2)
         with self.assertRaisesRegex(RuntimeError, 'incompatible.*broadcast'):
-            bridge._pointwise_source(graph.nodes, graph.output, 2, ((3,), (5,)))
-        source = bridge._pointwise_source(graph.nodes, graph.output, 2, ((3, 1), (2, 1, 5)))
+            bridge._pointwise_source(graph.nodes, graph.outputs, 2, ((3,), (5,)))
+        source = bridge._pointwise_source(graph.nodes, graph.outputs, 2, ((3, 1), (2, 1, 5)))
         self.assertIn('x0[i]', source)
-        self.assertNotIn('= x1[', source)
+        self.assertNotIn('= x1[', bridge._pointwise_plan(graph.nodes, graph.outputs, 2, ((3, 1), (2, 1, 5))))
         graph = lower(program('def f(x, y):\n return x + y'), 2)
-        source = bridge._pointwise_source(graph.nodes, graph.output, 2, ((1, 0, 3), (2, 1, 1)))
+        source = bridge._pointwise_source(graph.nodes, graph.outputs, 2, ((1, 0, 3), (2, 1, 1)))
         self.assertNotIn('/ 0ull', source)
         self.assertNotIn('% 0ull', source)
         for shapes in (((0,), (2,)), ((1 << 32, 1), (1, 1 << 32)), ((0, (1 << 64) - 1, 2), ())):
             with self.subTest(shapes=shapes), self.assertRaises(RuntimeError):
-                bridge._pointwise_source(graph.nodes, graph.output, 2, shapes)
+                bridge._pointwise_source(graph.nodes, graph.outputs, 2, shapes)
 
 
 @unittest.skipUnless(available(), 'requires native CUDA and reference PyTorch CUDA')
@@ -128,7 +128,7 @@ class Broadcast(unittest.TestCase):
         fn.__globals__['fw'] = native
         native.compiler.reset()
         self.assertFalse(cache(compiled).graphs)
-        self.compare(old.run((x, y)), tx.relu() * 0.713)
+        self.compare(old.run((x, y))[0], tx.relu() * 0.713)
         del compiled, old, x, y
         gc.collect()
         self.compare(first, tx.relu() * 0.713)

@@ -2,6 +2,8 @@
 mod compile_cuda_graph;
 #[path = "python_pointwise.rs"]
 mod pointwise;
+#[cfg(test)]
+pub(crate) use pointwise::convert_outputs;
 #[path = "python_unflatten.rs"]
 mod unflatten;
 pub(crate) use unflatten::unflatten_variable_function;
@@ -25979,9 +25981,12 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
     module.add_function(wrap_pyfunction!(compile_trace_scalar, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_reduction, module)?)?;
     module.add_class::<pointwise::Compiled>()?;
+    module.add_class::<pointwise::Prepared>()?;
     module.add_function(wrap_pyfunction!(pointwise::source, module)?)?;
+    module.add_function(wrap_pyfunction!(pointwise::plan, module)?)?;
     module.add_function(wrap_pyfunction!(pointwise::compile, module)?)?;
     module.add_function(wrap_pyfunction!(pointwise::validate_inputs, module)?)?;
+    module.add_function(wrap_pyfunction!(pointwise::namespace_keys_exact, module)?)?;
     module.add_function(wrap_pyfunction!(compile_cuda_graph::execute, module)?)?;
     module.add_function(wrap_pyfunction!(
         compile_cuda_graph::reshape_metadata,
@@ -25992,9 +25997,11 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
     let exports = module.getattr("__all__")?;
     for name in [
         "_PointwiseKernel",
+        "_PointwisePrepared",
         "_pointwise_source",
         "_pointwise_compile",
         "_pointwise_validate_inputs",
+        "_pointwise_namespace_keys_exact",
         "_MAX_BACKWARD_LEAF_ROOTS",
         "_backward_leaf_roots",
         "_compile_trace_tensor_metadata",

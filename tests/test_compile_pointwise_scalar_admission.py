@@ -5,7 +5,7 @@ from unittest import mock
 
 import torch_rs as native
 from torch_rs import _compile_pointwise as frontend
-from tests.test_compile_pointwise_jit import available, cache, lower, program
+from tests.test_compile_pointwise_jit import available, cache, lower, mock_pointwise_executor, program
 
 
 def callback_scalar(effects):
@@ -257,7 +257,7 @@ class PositionalBindingAdmission(unittest.TestCase):
         tensors, parameters = frontend.bind_arguments(args)
         parsed = frontend.analyze(fn, len(args))
         keys, values = frontend.resolve(fn, parsed, parameters)
-        return parsed, keys, values, frontend.lower(parsed, values, len(tensors))
+        return parsed, keys, values, frontend.lower(parsed, values, len(tensors)).graph
 
     def test_source_positions_are_separate_from_tensor_and_scalar_operands(self):
         from torch_rs import torch_rs as bridge
@@ -271,7 +271,7 @@ class PositionalBindingAdmission(unittest.TestCase):
                          [('parameter', 'a', 0), ('parameter', 'x', 1),
                           ('parameter', 'b', 2), ('parameter', 'y', 3),
                           ('parameter', 'c', 4), ('LOAD_GLOBAL', 'captured', None)])
-        self.assertIn('x1[i]', bridge._pointwise_source(graph.nodes, graph.output, 2))
+        self.assertIn('x1[i]', bridge._pointwise_source(graph.nodes, graph.outputs, 2))
         self.assertEqual(keys[1], ('tensor', 0))
         self.assertEqual(keys[3], ('tensor', 1))
         self.assertEqual(values[parsed.dependencies[3]], frontend.Value(1))
@@ -314,14 +314,14 @@ class PositionalBindingAdmission(unittest.TestCase):
             for shapes in (((5,), (1, 5)), ((5,), ()), ((0, 5), (1, 5))):
                 with self.subTest(body=body, shapes=shapes):
                     with self.assertRaisesRegex(RuntimeError, 'arithmetic|sin/cos'):
-                        bridge._pointwise_source(graph.nodes, graph.output, 2, shapes)
+                        bridge._pointwise_source(graph.nodes, graph.outputs, 2, shapes)
             # One tensor plus scalars retains the complete one-tensor language.
             _, _, _, graph = self.graph('def f(scale,x,flag):\n return '+body,
                                         (0.375, x, True))
-            bridge._pointwise_source(graph.nodes, graph.output, 1, ((1, 5),))
+            bridge._pointwise_source(graph.nodes, graph.outputs, 1, ((1, 5),))
         _, _, _, graph = self.graph('def f(a,x,b,y):\n return (x*a).relu()',
                                     (0.375, x, False, y))
-        bridge._pointwise_source(graph.nodes, graph.output, 2, ((5,), (1, 5)))
+        bridge._pointwise_source(graph.nodes, graph.outputs, 2, ((5,), (1, 5)))
 
     def test_captures_and_parameters_share_one_runtime_budget(self):
         from torch_rs import torch_rs as bridge
@@ -344,8 +344,8 @@ class PositionalBindingAdmission(unittest.TestCase):
             else:
                 _, values, scalars = frontend.runtime_bindings(parsed, keys, values, history)
                 self.assertEqual(len(scalars), 64)
-                graph = frontend.lower(parsed, values, 1)
-                source = bridge._pointwise_source(graph.nodes, graph.output, 1)
+                graph = frontend.lower(parsed, values, 1).graph
+                source = bridge._pointwise_source(graph.nodes, graph.outputs, 1)
                 self.assertIn('float s63', source)
                 self.assertNotIn('float s64', source)
 
@@ -374,12 +374,12 @@ class SharedCacheGuards(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def make_executor(self, tensors, nodes, output):
-        executor = mock.Mock()
+        run = mock.Mock()
         if self.launch_failure is not None:
-            executor.run.side_effect = self.launch_failure
+            run.side_effect = self.launch_failure
         else:
-            executor.run.side_effect = lambda args, scalars: (nodes, tuple(scalars))
-        return executor
+            run.side_effect = lambda args, scalars, numerical_hint, output_order: ((nodes, tuple(scalars)),)
+        return mock_pointwise_executor(run)
 
     def argument(self, shape, strides=None):
         if strides is None:
@@ -417,7 +417,8 @@ class SharedCacheGuards(unittest.TestCase):
         def contents(mapping):
             return tuple((key, id(value)) for key, value in mapping.items())
         return (contents(owner.graphs), contents(owner.executors),
-                tuple(contents(entry.lowerings) for entry in owner.graphs.values()))
+                tuple(contents(entry.lowerings) for entry in owner.graphs.values()),
+                contents(owner.prepared), owner.prepared_bytes)
 
     def test_newest_hits_do_not_mutate_any_recency_map_or_recompile(self):
         fn = program('def f(scale,x):\n return x*scale')
@@ -427,6 +428,7 @@ class SharedCacheGuards(unittest.TestCase):
         owner = cache(compiled)
         owner.graphs = self.MutationDict(owner.graphs)
         owner.executors = self.MutationDict(owner.executors)
+        owner.prepared = self.MutationDict(owner.prepared)
         entry = next(iter(owner.graphs.values()))
         entry.lowerings = self.MutationDict(entry.lowerings)
         before = self.ordered_contents(owner)
@@ -436,7 +438,7 @@ class SharedCacheGuards(unittest.TestCase):
                 self.assertEqual(compiled(0.375, x), expected)
         self.assertEqual(self.compile_bridge.call_count, 1)
         self.assertEqual(self.ordered_contents(owner), before)
-        for mapping in (owner.graphs, owner.executors, entry.lowerings):
+        for mapping in (owner.graphs, owner.executors, owner.prepared, entry.lowerings):
             self.assertEqual(mapping.mutations, [])
         # Code objects can compare equal while identity requires a new parsed
         # program. An equal newest key must not suppress replacing its entry.
@@ -515,7 +517,7 @@ class SharedCacheGuards(unittest.TestCase):
             self.assertEqual(compiled(False, singleton), disabled)
             owner = cache(compiled)
             graphs = [next(iter(entry.lowerings.values())) for entry in owner.graphs.values()]
-            self.assertEqual([hash(graph) for graph in graphs], [7, 7, 7])
+            self.assertEqual([hash(lowering.graph) for lowering in graphs], [7, 7, 7])
             self.assertIsNot(graphs[0], graphs[2])
             self.assertEqual(graphs[0], graphs[2])
             self.assertNotEqual(graphs[0], graphs[1])
@@ -540,7 +542,7 @@ class SharedCacheGuards(unittest.TestCase):
                     self.assertEqual(output[0], 'neg')
                     self.assertEqual(nodes[output[1]][:2], ('input', input_index))
                     executor = next(reversed(cache(compiled).executors.values()))
-                    executor.run.assert_called_with(tensors, ())
+                    executor.run.assert_called_with(tensors, (), 2, (0,))
             before = self.ordered_contents(cache(compiled))
             validate.side_effect = RuntimeError('unused tensor admission failure')
             with self.assertRaisesRegex(RuntimeError, 'unused tensor admission failure'):
@@ -576,7 +578,7 @@ class SharedCacheGuards(unittest.TestCase):
         compiled(unused, x)
         self.assertEqual(tuple(owner.graphs), tuple(reversed(tuple(key for key, _ in before[0]))))
         native.compiler.reset()
-        self.assertEqual(self.ordered_contents(owner), ((), (), ()))
+        self.assertEqual(self.ordered_contents(owner), ((), (), (), (), 0))
         compiled(False, x)
         self.assertEqual(len(owner.graphs), 1)
         self.assertEqual(len(owner.executors), 1)

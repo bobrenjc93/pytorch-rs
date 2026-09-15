@@ -3,16 +3,51 @@ use super::{CoreTensor, PyTensor, tensor_error};
 use crate::{
     cuda::jit::Kernel,
     pointwise_ir::{Graph, Node},
+    tensor::pointwise_jit::PreparedPointwise,
 };
 use pyo3::{
     exceptions::{PyNotImplementedError, PyTypeError, PyValueError},
     prelude::*,
-    types::{PyFloat, PyInt, PyString, PyTuple},
+    types::{PyBool, PyDict, PyFloat, PyInt, PyString, PyTuple},
 };
+use std::sync::Arc;
 
 type Payload = (String, usize, usize, u64);
 
-fn graph(nodes: &Bound<'_, PyTuple>, output: usize, arity: usize) -> PyResult<Graph> {
+#[pyfunction(name = "_pointwise_namespace_keys_exact")]
+pub(super) fn namespace_keys_exact(value: &Bound<'_, PyAny>) -> bool {
+    let Ok(namespace) = value.cast_exact::<PyDict>() else {
+        return false;
+    };
+    // Protect iterator construction as well as traversal. Exact type checks
+    // invoke no callbacks; Python retains namespace selection and error policy.
+    pyo3::sync::critical_section::with_critical_section(value, || {
+        namespace
+            .iter()
+            .all(|(key, _)| key.is_exact_instance_of::<PyString>())
+    })
+}
+
+fn graph(
+    nodes: &Bound<'_, PyTuple>,
+    outputs: &Bound<'_, PyTuple>,
+    arity: usize,
+) -> PyResult<Graph> {
+    if !outputs.is_exact_instance_of::<PyTuple>()
+        || outputs
+            .iter()
+            .any(|root| !root.is_exact_instance_of::<PyInt>())
+    {
+        return Err(PyTypeError::new_err(
+            "expected an exact tuple of integer output roots",
+        ));
+    }
+    if !(1..=64).contains(&outputs.len()) {
+        return Err(PyValueError::new_err(
+            "expected 1 to 64 computed output roots",
+        ));
+    }
+    let outputs = outputs.extract::<Vec<usize>>()?;
     if nodes.len() > 4096 {
         return Err(PyValueError::new_err("pointwise graph exceeds node limit"));
     }
@@ -58,7 +93,7 @@ fn graph(nodes: &Bound<'_, PyTuple>, output: usize, arity: usize) -> PyResult<Gr
     let graph = Graph {
         nodes: parsed,
         inputs: arity,
-        output,
+        outputs,
     };
     graph
         .validate()
@@ -98,15 +133,117 @@ pub(super) fn validate_inputs(inputs: &Bound<'_, PyTuple>) -> PyResult<usize> {
     })
 }
 
+fn parse_numerical_hint(hint: Option<&Bound<'_, PyAny>>) -> PyResult<Option<u64>> {
+    hint.map(|hint| {
+        if !hint.is_exact_instance_of::<PyInt>() {
+            return Err(PyTypeError::new_err(
+                "numerical hint must be an exact integer",
+            ));
+        }
+        hint.extract::<u64>()
+    })
+    .transpose()
+}
+
+fn parse_output_order(order: Option<&Bound<'_, PyAny>>, count: usize) -> PyResult<Vec<usize>> {
+    let Some(order) = order else {
+        return Ok((0..count).collect());
+    };
+    if !order.is_exact_instance_of::<PyTuple>() {
+        return Err(PyTypeError::new_err("output order must be an exact tuple"));
+    }
+    let order = order.cast::<PyTuple>()?;
+    if order.len() != count
+        || order
+            .iter()
+            .any(|slot| !slot.is_exact_instance_of::<PyInt>())
+    {
+        return Err(PyValueError::new_err("expected an output-slot permutation"));
+    }
+    let slots = order.extract::<Vec<usize>>()?;
+    let mut seen = vec![false; slots.len()];
+    for &slot in &slots {
+        if slot >= seen.len() || std::mem::replace(&mut seen[slot], true) {
+            return Err(PyValueError::new_err("expected an output-slot permutation"));
+        }
+    }
+    Ok(slots)
+}
+
+fn parse_scalars(scalars: Option<&Bound<'_, PyTuple>>) -> PyResult<Vec<f32>> {
+    scalars.map_or_else(
+        || Ok(Vec::new()),
+        |scalars| {
+            if !scalars.is_exact_instance_of::<PyTuple>() {
+                return Err(PyTypeError::new_err("expected an exact scalar tuple"));
+            }
+            scalars
+                .iter()
+                .map(|value| {
+                    if !value.is_exact_instance_of::<PyFloat>() {
+                        return Err(PyTypeError::new_err("runtime scalars must be exact floats"));
+                    }
+                    // Exact types precede conversion; no user float hooks run.
+                    // The runtime scalar boundary is float32 materialization.
+                    #[allow(clippy::cast_possible_truncation)]
+                    let value = value.extract::<f64>()? as f32;
+                    Ok(value)
+                })
+                .collect::<PyResult<Vec<_>>>()
+        },
+    )
+}
+
+/// Diagnostic rendering of the same immutable program executed by the VM.
+/// This never compiles or retains a topology-specific executable.
+#[pyfunction(name = "_pointwise_plan")]
+#[pyo3(signature = (nodes, outputs, arity, shapes=None, numerical_hint=None, output_order=None))]
+pub(super) fn plan(
+    nodes: &Bound<'_, PyTuple>,
+    outputs: &Bound<'_, PyTuple>,
+    arity: usize,
+    shapes: Option<Vec<Vec<usize>>>,
+    numerical_hint: Option<&Bound<'_, PyAny>>,
+    output_order: Option<&Bound<'_, PyAny>>,
+) -> PyResult<String> {
+    let graph = graph(nodes, outputs, arity)?;
+    let numerical_hint = parse_numerical_hint(numerical_hint)?;
+    let order = parse_output_order(output_order, graph.outputs.len())?;
+    let (addresses, default_hint, scalar_output) = if let Some(shapes) = shapes {
+        let indexing = graph
+            .indexing(&shapes.iter().map(Vec::as_slice).collect::<Vec<_>>())
+            .map_err(|error| tensor_error(&error))?;
+        (
+            indexing.addresses,
+            indexing.output.elements as u64,
+            indexing.output.shape.is_empty(),
+        )
+    } else {
+        (
+            vec![crate::pointwise_ir::indexing::Address::Linear; arity],
+            u64::MAX,
+            false,
+        )
+    };
+    crate::pointwise_ir::program::Program::describe(
+        &graph,
+        &addresses,
+        numerical_hint.unwrap_or(default_hint),
+        &order,
+        scalar_output,
+    )
+    .map_err(|error| tensor_error(&error))
+}
+
 #[pyfunction(name = "_pointwise_source")]
-#[pyo3(signature = (nodes, output, arity, shapes=None))]
+#[pyo3(signature = (nodes, outputs, arity, shapes=None))]
 pub(super) fn source(
     nodes: &Bound<'_, PyTuple>,
-    output: usize,
+    outputs: &Bound<'_, PyTuple>,
     arity: usize,
     shapes: Option<Vec<Vec<usize>>>,
 ) -> PyResult<String> {
-    let graph = graph(nodes, output, arity)?;
+    let graph = graph(nodes, outputs, arity)?;
     if let Some(shapes) = shapes {
         let indexing = graph
             .indexing(&shapes.iter().map(Vec::as_slice).collect::<Vec<_>>())
@@ -123,9 +260,9 @@ pub(super) fn source(
 pub(super) fn compile(
     inputs: &Bound<'_, PyTuple>,
     nodes: &Bound<'_, PyTuple>,
-    output: usize,
+    outputs: &Bound<'_, PyTuple>,
 ) -> PyResult<Compiled> {
-    let graph = graph(nodes, output, inputs.len())?;
+    let graph = graph(nodes, outputs, inputs.len())?;
     let device = validate_inputs(inputs)?;
     let indexing = with_inputs(inputs, |tensors| {
         graph
@@ -140,42 +277,64 @@ pub(super) fn compile(
     })
 }
 
+pub(crate) fn convert_outputs(
+    py: Python<'_>,
+    outputs: Vec<CoreTensor>,
+    convert: impl FnMut(CoreTensor) -> PyResult<Py<PyTensor>>,
+) -> PyResult<Bound<'_, PyTuple>> {
+    let objects = outputs
+        .into_iter()
+        .map(convert)
+        .collect::<PyResult<Vec<_>>>()?;
+    PyTuple::new(py, objects)
+}
+
 #[pyclass(frozen, module = "torch_rs.torch_rs", name = "_PointwiseKernel")]
 pub(super) struct Compiled {
-    kernel: Kernel,
+    kernel: Arc<Kernel>,
     arity: usize,
 }
 #[pymethods]
 impl Compiled {
-    #[pyo3(signature = (inputs, scalars=None))]
-    fn run(
+    #[pyo3(signature = (inputs, numerical_hint=None, output_order=None))]
+    fn prepare(
         &self,
         inputs: &Bound<'_, PyTuple>,
+        numerical_hint: Option<&Bound<'_, PyAny>>,
+        output_order: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Prepared> {
+        let numerical_hint = parse_numerical_hint(numerical_hint)?;
+        let output_order = parse_output_order(output_order, self.kernel.graph.outputs.len())?;
+        if inputs.len() != self.arity {
+            return Err(PyValueError::new_err(
+                "pointwise input arity guard mismatch",
+            ));
+        }
+        with_inputs(inputs, |tensors| {
+            CoreTensor::prepare_pointwise(
+                tensors,
+                Arc::clone(&self.kernel),
+                numerical_hint,
+                Some(&output_order),
+            )
+            .map(|invocation| Prepared { invocation })
+            .map_err(|error| tensor_error(&error))
+        })
+    }
+
+    #[pyo3(signature = (inputs, scalars=None, numerical_hint=None, output_order=None))]
+    fn run<'py>(
+        &self,
+        inputs: &Bound<'py, PyTuple>,
         scalars: Option<&Bound<'_, PyTuple>>,
-    ) -> PyResult<PyTensor> {
-        // Exact types are checked before conversion; no user float hooks run.
-        let values = scalars.map_or_else(
-            || Ok(Vec::new()),
-            |scalars| {
-                if !scalars.is_exact_instance_of::<PyTuple>() {
-                    return Err(PyTypeError::new_err("expected an exact scalar tuple"));
-                }
-                scalars
-                    .iter()
-                    .map(|value| {
-                        if !value.is_exact_instance_of::<PyFloat>() {
-                            return Err(PyTypeError::new_err(
-                                "runtime scalars must be exact floats",
-                            ));
-                        }
-                        // The graph's runtime scalar boundary is float32 materialization.
-                        #[allow(clippy::cast_possible_truncation)]
-                        let value = value.extract::<f64>()? as f32;
-                        Ok(value)
-                    })
-                    .collect::<PyResult<Vec<_>>>()
-            },
-        )?;
+        numerical_hint: Option<&Bound<'_, PyAny>>,
+        output_order: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Bound<'py, PyTuple>> {
+        // Validate before input borrowing or any conversion can call Python.
+        // A specialization hint controls numerical planning, never storage bounds.
+        let numerical_hint = parse_numerical_hint(numerical_hint)?;
+        let output_order = parse_output_order(output_order, self.kernel.graph.outputs.len())?;
+        let values = parse_scalars(scalars)?;
         self.kernel
             .validate_scalars(&values)
             .map_err(|e| tensor_error(&e))?;
@@ -185,10 +344,47 @@ impl Compiled {
             ));
         }
         with_inputs(inputs, |tensors| {
-            CoreTensor::pointwise_jit(tensors, &self.kernel, &values)
-                .map(PyTensor::new)
-                .map_err(|e| tensor_error(&e))
+            let outputs = CoreTensor::pointwise_jit(
+                tensors,
+                &self.kernel,
+                &values,
+                numerical_hint,
+                Some(&output_order),
+            )
+            .map_err(|e| tensor_error(&e))?;
+            // Keep every storage owner and input borrow through fallible Python
+            // conversion. A partial conversion only drops local, unpublished owners.
+            convert_outputs(inputs.py(), outputs, |output| {
+                Py::new(inputs.py(), PyTensor::new(output))
+            })
         })
+    }
+    #[pyo3(signature = (numerical_hint, output_order=None, scalar_output=None))]
+    fn plan(
+        &self,
+        numerical_hint: &Bound<'_, PyAny>,
+        output_order: Option<&Bound<'_, PyAny>>,
+        scalar_output: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<String> {
+        let scalar_output = scalar_output
+            .map(|value| {
+                if !value.is_exact_instance_of::<PyBool>() {
+                    return Err(PyTypeError::new_err("scalar output must be an exact bool"));
+                }
+                value.extract::<bool>()
+            })
+            .transpose()?
+            .unwrap_or(false);
+        let hint = parse_numerical_hint(Some(numerical_hint))?.expect("required hint");
+        let order = parse_output_order(output_order, self.kernel.graph.outputs.len())?;
+        crate::pointwise_ir::program::Program::describe(
+            &self.kernel.graph,
+            &self.kernel.addresses,
+            hint,
+            &order,
+            scalar_output,
+        )
+        .map_err(|error| tensor_error(&error))
     }
     #[getter]
     fn source(&self) -> &str {
@@ -209,5 +405,49 @@ impl Compiled {
     #[getter]
     fn device(&self) -> usize {
         self.kernel.device
+    }
+}
+
+#[pyclass(frozen, module = "torch_rs.torch_rs", name = "_PointwisePrepared")]
+pub(super) struct Prepared {
+    invocation: PreparedPointwise,
+}
+
+#[pymethods]
+impl Prepared {
+    #[pyo3(signature = (inputs, scalars=None))]
+    fn run<'py>(
+        &self,
+        inputs: &Bound<'py, PyTuple>,
+        scalars: Option<&Bound<'_, PyTuple>>,
+    ) -> PyResult<Bound<'py, PyTuple>> {
+        let values = parse_scalars(scalars)?;
+        with_inputs(inputs, |tensors| {
+            let outputs = self
+                .invocation
+                .run(tensors, &values)
+                .map_err(|error| tensor_error(&error))?;
+            // The borrowed preparation/kernel, inputs and every output remain
+            // owned through completion and this fallible conversion boundary.
+            convert_outputs(inputs.py(), outputs, |output| {
+                Py::new(inputs.py(), PyTensor::new(output))
+            })
+        })
+    }
+
+    #[getter]
+    fn input_shapes<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
+        let shapes = self
+            .invocation
+            .input_shapes()
+            .iter()
+            .map(|shape| PyTuple::new(py, shape.iter().copied()))
+            .collect::<PyResult<Vec<_>>>()?;
+        PyTuple::new(py, shapes)
+    }
+
+    #[getter]
+    fn retained_bytes(&self) -> usize {
+        self.invocation.retained_bytes()
     }
 }

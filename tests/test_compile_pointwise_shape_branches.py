@@ -9,7 +9,7 @@ import torch_rs as native
 from torch_rs import _compile_pointwise as frontend, torch_rs as bridge
 from tests import test_compile_pointwise_helpers as helpers
 from tests.test_compile_pointwise_helpers import no_bodies
-from tests.test_compile_pointwise_jit import available, cache, lower, program
+from tests.test_compile_pointwise_jit import available, cache, lower, mock_pointwise_executor, program
 
 
 def shape_lower(fn, shapes=((3,),), arguments=None, **kwargs):
@@ -24,7 +24,7 @@ def shape_lower(fn, shapes=((3,),), arguments=None, **kwargs):
             strides.append(stride)
             stride *= max(size, 1)
         metadata.append((shape, tuple(reversed(strides)), False, 'torch.float32', 'cuda:0'))
-    return frontend.lower(parsed, values, len(shapes), metadata=tuple(metadata), **kwargs)
+    return frontend.lower(parsed, values, len(shapes), metadata=tuple(metadata), **kwargs).graph
 
 
 class ShapeBranchAdmission(unittest.TestCase):
@@ -108,6 +108,29 @@ class ShapeBranchAdmission(unittest.TestCase):
             fn = program(source, captured=1, helper=literal, identity=identity)
             with self.subTest(source=source), no_bodies(fn, literal, identity), self.assertRaises(NotImplementedError):
                 shape_lower(fn)
+
+    def test_negated_boolean_literals_do_not_gain_predicate_provenance(self):
+        cases = (
+            ('axis=True\n axis=-axis', 'x.shape[axis] < 4', 'literal integer axis'),
+            ('axis=False\n axis=-axis', 'x.shape[axis] < 4', 'literal integer axis'),
+            ('threshold=True\n threshold=-threshold', 'x.shape[0] > threshold', 'exact integer literal'),
+            ('threshold=False\n threshold=-(-threshold)', 'x.shape[0] > threshold', 'exact integer literal'),
+        )
+        for prefix, condition, diagnostic in cases:
+            fn = program('def f(x):\n '+prefix+'\n if '+condition+':\n  return -x\n return x.relu()')
+            with self.subTest(prefix=prefix), no_bodies(fn), self.assertRaisesRegex(NotImplementedError, diagnostic):
+                shape_lower(fn)
+
+    def test_exact_integer_negation_and_folded_integer_bytecode_remain_valid(self):
+        fn = program('def f(x):\n axis=1\n axis=-axis\n threshold=4\n threshold=-(-threshold)\n if x.shape[axis]<threshold:\n  return -x\n return x.relu()')
+        for size, expression in ((3, '-x'), (7, 'x.relu()')):
+            with self.subTest(size=size), no_bodies(fn):
+                self.assertEqual(shape_lower(fn, ((size,),)), lower(program('def f(x):\n return '+expression)))
+        # CPython folds this spelling to an exact integer constant; admission
+        # must not invent source distinctions absent from the bytecode.
+        folded = program('def f(x):\n if x.shape[0] > -True:\n  return -x\n return x.relu()')
+        with no_bodies(folded):
+            self.assertEqual(shape_lower(folded), lower(program('def f(x):\n return -x')))
 
     def test_deferred_nested_regions_reject_even_in_inactive_arms(self):
         for body in ('if x.shape[0] < 2:\n   y=-x\n  else:\n   y=x.relu()',
@@ -276,7 +299,7 @@ class ShapeBranchCache(unittest.TestCase):
                 with self.assertRaises(NotImplementedError): compiled(self.x)
             self.assertEqual(self.snapshot(compiled), before)
         for failure in ('compile', 'run'):
-            executor = types.SimpleNamespace(run=lambda *args: (_ for _ in ()).throw(RuntimeError('run failure')))
+            executor = mock_pointwise_executor(lambda *args: (_ for _ in ()).throw(RuntimeError('run failure')))
             config = {'side_effect': RuntimeError('compile failure')} if failure == 'compile' else {'return_value': executor}
             with patch.object(bridge, '_pointwise_compile', **config), self.assertRaises(RuntimeError):
                 compiled(native.ones(10))
@@ -291,6 +314,38 @@ class ShapeBranchCache(unittest.TestCase):
         self.assertFalse(cache(compiled).executors)
         compiled(self.x)
         self.assertEqual(len(cache(compiled).graphs), 1)
+
+    def test_boolean_predicate_rejection_preserves_caches_and_last_valid_code(self):
+        fn = program('def f(x):\n if x.shape[0]<4:\n  return -x\n return x.relu()')
+        compiled = native.compile(fn)
+        expected = compiled(self.x)
+        original = fn.__code__
+        before, codegen_calls = self.snapshot(compiled), self.codegen.call_count
+        cases = (
+            ('axis=True\n axis=-axis', 'x.shape[axis]<4', 'literal integer axis'),
+            ('axis=False\n axis=-axis', 'x.shape[axis]<4', 'literal integer axis'),
+            ('threshold=True\n threshold=-threshold', 'x.shape[0]>threshold', 'exact integer literal'),
+            ('threshold=False\n threshold=-(-threshold)', 'x.shape[0]>threshold', 'exact integer literal'),
+        )
+        try:
+            for prefix, condition, diagnostic in cases:
+                fn.__code__ = program('def f(x):\n '+prefix+'\n if '+condition+':\n  return -x\n return x.relu()').__code__
+                with self.subTest(prefix=prefix), no_bodies(fn):
+                    with self.assertRaisesRegex(NotImplementedError, diagnostic):
+                        compiled(self.x)
+                    self.assertEqual(self.snapshot(compiled), before)
+                    fresh = native.compile(fn)
+                    with self.assertRaisesRegex(NotImplementedError, diagnostic):
+                        fresh(self.x)
+                    self.assertFalse(cache(fresh).graphs)
+                    self.assertFalse(cache(fresh).executors)
+                    self.assertEqual(self.codegen.call_count, codegen_calls)
+        finally:
+            fn.__code__ = original
+        with no_bodies(fn), patch.object(frontend, 'lower', side_effect=AssertionError('last-valid code reparsed')):
+            self.assertEqual(compiled(self.x), expected)
+        self.assertEqual(self.snapshot(compiled), before)
+        self.assertEqual(self.codegen.call_count, codegen_calls)
 
     def test_unused_heavy_signature_guards_remain_observational(self):
         names = ', '.join(f'unused{i}' for i in range(120))

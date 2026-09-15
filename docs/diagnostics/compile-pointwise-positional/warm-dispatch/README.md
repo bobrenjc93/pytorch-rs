@@ -51,8 +51,12 @@ Production functions are not rewritten; only relative imports are redirected to
 the explicitly synthetic boundary, and the actual cache class is constructed.
 The registry/global-reset lifecycle is deliberately outside this diagnostic.
 
-Use an isolated, worktree-local Python 3.12 interpreter, after the implementation
-and regression checks are ready:
+This script's mock executor implements the historical single-output ABI. For
+reproduction, use a separate detached checkout of
+`ab6a3acd82c681d6e02ad56f4458decb1384ae42` and an isolated, worktree-local Python 3.12
+interpreter. Run the command below inside that checkout, after its regression
+checks are ready. The script is not compatible with the newer structured-output
+executor ABI and must not be used to measure current dispatch:
 
 ```bash
 .venv/bin/python -I -S -B docs/diagnostics/compile-pointwise-positional/warm-dispatch/profile-dispatch-v2.py \

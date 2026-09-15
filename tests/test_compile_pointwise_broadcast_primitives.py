@@ -65,7 +65,7 @@ class BroadcastPrimitives(unittest.TestCase):
         # These sources contain no second arithmetic stage or competing product;
         # generated lowering must not introduce an FMA with another stage.
         for entry in kernels(compiled):
-            self.assertNotIn('fmaf(', entry.source)
+            self.assertNotIn('fmaf(', entry.plan(1))
             self.assertEqual(entry.ptx.count('.visible .entry'), 1)
         native.compiler.reset()
         self.torch.compiler.reset()

@@ -51,10 +51,12 @@ objects cannot execute metaclass equality or representation callbacks. Signature
 defaults must be absent or empty exact containers, and closures must use an exact tuple; container subclasses are
 rejected before truthiness or iteration hooks can execute. Integers must fit the native scalar range
 `[-2**63, 2**64-1]`; float32 overflow rounds to signed infinity. Graphs
-are bounded to 4096 nodes and 16384 bytecode instructions. Return one computed Tensor.
+are bounded to 4096 nodes and 16384 bytecode instructions. Return a computed Tensor
+or a bounded nested result as described below.
 Scalars and empty tensor shapes and contiguous views with storage offsets are
-supported. Outputs have fresh storage and canonical contiguous strides;
-inputs are unchanged. Returning an input unchanged is outside this subset.
+supported. Computed outputs have fresh storage and canonical contiguous strides;
+returned input aliases preserve their original storage and strides. Inputs are
+unchanged. Input-only returns remain outside this subset.
 
 Unequal input shapes additionally require either the tensor-leaf multiply-add
 described below, or at most one arithmetic stage and no live sin/cos. Input and scalar nodes start at depth
@@ -77,12 +79,77 @@ identity wrappers do not qualify, even if later simplification removes them.
 This exception reuses the existing single-FMA lowering and checked addresses.
 
 Strided inputs, other dtypes, gradients (even inside no-grad),
-mutation, control flow outside the bounded root branches and literal loops below, containers, module calls, keyword operator
+mutation, control flow outside the bounded root branches and literal loops below, structured inputs, module calls, keyword operator
 arguments, reductions, matrix operations, and device/dtype conversions are
 explicitly rejected. No original body or Python operator is run during
 admission or warm execution. Unsupported configurations keep their existing
 contracts; `disable=True`, configured/custom backend resolution, and the
 explicit `backend="eager"` capture implementation remain separate.
+
+### Bounded nested results
+
+Small exact tuple/list/dict constructors can combine computed Tensor leaves,
+original input aliases, exact literal `None`/bool/int/float/string metadata and
+current `input.shape[literal_integer_axis]` values:
+
+```python
+def structured(x, y):
+    product = x * y
+    shared = [product, x, x.shape[-1]]
+    return {"shared": shared, "again": shared, "sum": product + x, "tag": "native"}
+```
+
+At least one computed Tensor is required, with at most 64 distinct original SSA
+roots. Every computed root must have the same actual shape; input aliases may
+retain another shape. Dict keys must be exact literal strings; insertion order
+and duplicate-key replacement follow Python. Repeated Tensor or container leaves
+preserve identity within a call. Separate equal computations get separate output
+storage, even when kernel arithmetic is shared. Computed outputs and dynamic
+containers are fresh across calls, so retaining earlier results is safe.
+
+Constructors work in direct helpers and expanded root literal loops and branches.
+They share a 4096 construction/reference-edge budget and depth limit 64, including
+overwrites and expanded iterations. Shared container DAGs are accounted and
+rebuilt without exponential expansion. The admitted constructor bytecodes are
+`BUILD_TUPLE`, `BUILD_LIST`, `BUILD_MAP` and `BUILD_CONST_KEY_MAP`; bounded exact
+string key tuples are checked before disassembly. Compiler-optimized constant
+containers (including `()`) and large literals requiring other opcodes are
+unsupported. So are container indexing/unpacking, mutation, starred forms,
+comprehensions, constructor calls, whole `torch.Size` returns and shape arithmetic.
+Forms optimized to identical admitted bytecode are indistinguishable.
+
+Positional/captured scalar metadata returns are unsupported; arithmetic scalar
+specialization is unchanged. Shape metadata must come from an original input in
+the root, with an in-range literal axis. Helper boundaries cannot create root
+shape-predicate provenance. All original nodes and inputs retain admission checks,
+and every computed root must satisfy the existing numerical domain. Returned
+intermediates do not impose eager rounding: consumers can still use fused FMA.
+
+One native graph, output-vector ABI and CUDA launch serve all computed leaves.
+The immutable Python result specification carries topology separately, so changes
+to keys or container order do not fragment native executable caching. Current
+input aliases and dimensions are reconstructed after native completion and before
+any cache publication or LRU update. Inputs and all output allocations remain
+owned through launch, synchronization and Python conversion, including failures.
+Single-Tensor functions use this same path and still return a Tensor.
+
+The result specification also projects the first observable occurrence of each
+computed root into native numerical planning. Realization and fusion determine
+logical regions, including rounded intermediate imports and exports. A native
+scalar instruction plan executes those regions within one generated CUDA kernel;
+changing return order supplies different plan data to the same graph-keyed
+executable. An immutable preparation retains the validated plan and completed
+read-only instruction upload for matching warm calls. Register scratch and
+computed outputs remain invocation-owned through synchronization and failure;
+neither input tensors nor previous outputs are retained by preparations.
+Register scratch is capped at 64 MiB by limiting active workers and
+using a grid-stride loop. This execution strategy adds instruction-dispatch and
+scratch traffic; correctness captures do not establish a performance improvement.
+
+The [structured-output evidence index](diagnostics/compile-pointwise-structured-outputs/README.md)
+links the clean `d0f965a2` correctness capture, bounded guard timing diagnostic,
+historical failures and retention limits. Captures remain scoped to their recorded
+source revisions.
 
 ### Bounded root shape branches
 
@@ -202,12 +269,12 @@ handle exceptions, yield or await. Keyword-only/variadic parameters, nonempty
 defaults and closures, and compiler directive attributes (`_torchdynamo_inline`,
 `_dynamo_marked_constant`, `_torchdynamo_disable`) are rejected. Container types,
 attribute keys and the entire constant pool are validated without callbacks,
-including unused constants and warm calls. Strings and `None` are metadata only.
+including unused constants and warm calls. Strings and `None` are literal result metadata only.
 
-Arguments and returns must be tensor expressions or admitted scalars; functions,
+Arguments and returns may also contain admitted small constructors and literal metadata; functions,
 native call objects and modules cannot pass through helpers even as ignored
 arguments. Identity and scalar-literal returns may feed later tensor operations;
-the root must still return one computed tensor. Scalar binary arithmetic remains
+the root must still contain at least one computed tensor. Scalar binary arithmetic remains
 unsupported. Both `RETURN_VALUE` and Python 3.12 `RETURN_CONST` use this data-only
 boundary. Passing an ignored input through a helper creates no scalar value guard,
 but its data admission is rechecked on warm cache hits, including global and
@@ -243,15 +310,19 @@ options and device for regression evidence.
 `_compile_pointwise.py` resolves bounded root branches and literal loops on
 original bytecode regions before loop expansion, then lowers the selected path and
 constructs typed SSA nodes with float32 tensor values and scalar kinds.
-`pointwise_ir.rs` independently validates node topology; `pointwise_lowering.rs` canonicalizes expressions and emits CUDA
-C from operator rules, retaining intermediates.
+`pointwise_ir.rs` independently validates node topology. `pointwise_regions.rs`
+plans realization, locality ordering and fusion over the admitted graph.
+`pointwise_lowering.rs` canonicalizes each region into declarative scalar
+instructions with explicit rounding and FMA decisions. `pointwise_program.rs`
+allocates registers, validates instruction dataflow and emits the shared CUDA
+instruction kernel. Plan disassembly is separate from actual kernel source/PTX.
 `pointwise_indexing.rs` checks every expression's broadcast shape and size before
 numerical rewriting, including dead expressions. The same Rust admission check
 enforces the unequal-shape original-IR boundary during compilation and direct
 cached-kernel execution, before NVRTC, output allocation or launch. Only live
 returned nodes determine numerical capability; dead expressions still receive
-full graph and shape validation. It derives the returned shape
-and each live input's address from row-major coordinates; unused inputs do not
+full graph and shape validation. It checks a common shape across all computed roots
+and derives each live input's address from row-major coordinates; unused inputs do not
 expand the result. Singleton axes contribute no address increment. The same
 generated kernel fuses all supported pointwise operations.
 `cuda/jit.rs` compiles it with NVRTC and loads the resulting PTX through the
@@ -332,21 +403,51 @@ returns, including the sign of zero.
 Native executors specialize the full filtered tensor ABI, device and exact
 broadcast address formulas. Equal-shaped inputs share linear-load code. A logical
 hit may compile a new concrete executor without consuming a logical slot or
-updating promotion history. Every launch rechecks original-IR numerical admission
-on actual shapes, including unused tensors and singleton-only linear maps.
+updating promotion history. Preparation checks original-IR numerical admission on
+actual shapes, including unused tensors and singleton-only linear maps. A warm
+preparation requires the identical native input shapes (including rank); that
+checked signature certifies reuse of the graph's shape analysis. Every run still
+rechecks current types, device, dtype, gradients, contiguity, element/storage
+bounds and exact shapes, and uses current offsets and runtime scalar values.
 
 `recompile_limit` defaults to eight logical specializations. The executable LRU
 and each specialization's ABI-lowering LRU are independently bounded by the same
-limit. Failed admission, compilation or execution publishes no entry, history or
-LRU change. `torch.compiler.reset()` clears both cache levels; the next call
-recompiles.
+limit. Immutable preparations form a separate data LRU keyed by executor key,
+exact input shapes, the retained numerical hint and computed-root output order.
+Container-only changes do not fragment this data cache. Different exact shapes
+may prepare or evict data within one generalized logical specialization without
+consuming another logical slot or creating another module.
+
+The preparation LRU is bounded by the same entry count and a 32 MiB per-wrapper
+retained-data budget. The host instruction vector is dropped after completed
+upload. Native charges include device allocation bytes (including best-fit excess
+capacity), and owned
+signature/layout storage. Python charges conservatively count every key referent,
+including shared/repeated references and its graph, plus the wrapper and a
+512-byte per-entry bookkeeping allowance. This is not a bound on total process
+memory, CUDA allocator pools, modules, outputs, scratch or transient preparation.
+An oversized preparation executes by the same mechanism without being retained.
+Evicting an executor drops all its cached preparations.
+
+Failed admission, preparation, compilation, execution, output conversion or result
+reconstruction publishes no entry, history or LRU change. All cache publication
+happens after successful result reconstruction. `torch.compiler.reset()` clears
+all three levels under the same lock; the next call recompiles. Explicitly held
+private prepared objects have ordinary independent ownership, like held private
+kernel objects, and may outlive wrapper reset.
 
 ## Storage and device ownership
 
 A native bridge revalidates input layouts, ranges and device before allocation
-or launch. Storage owners remain borrowed through legacy-stream completion,
-including errors. One fused launch produces a fresh output; empty outputs need
-no launch or input pointer. Modules are owned by cache entries, keyed by device
+or launch. Preparation and execution both check the kernel's recorded driver
+context under the existing device guard; preparation checks before uploading
+instructions. A successful upload has its own completion boundary, which is not
+repeated on a cache hit. Storage owners remain borrowed through legacy-stream completion,
+including errors. One launch produces fresh computed outputs; empty outputs need
+no launch, instruction upload, scratch or input pointer. An empty computed output
+does not require every input to be empty; unused inputs still receive validation.
+The private legacy kernel `.run` uses the same preparation/execution mechanism
+ephemerally. Modules are shared with immutable preparations, keyed by device
 and checked against the active driver context. The existing device guard
 restores the caller's device on compilation, execution and module destruction.
 Wrapper locks serialize cache publication and reset.

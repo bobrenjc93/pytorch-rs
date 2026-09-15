@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 #[cfg(any(feature = "python-bindings", test))]
 #[path = "tensor_pointwise.rs"]
-mod pointwise_jit;
+pub(crate) mod pointwise_jit;
 
 #[cfg(feature = "python-bindings")]
 #[path = "tensor_cuda_graph.rs"]

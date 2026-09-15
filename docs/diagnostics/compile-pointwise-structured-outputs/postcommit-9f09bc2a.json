@@ -1,0 +1,239 @@
+{
+  "schema": 1,
+  "kind": "clean-commit correctness capture; no score or performance measurement",
+  "measuredCommit": "9f09bc2aa02a558276bf9bf1e7e6c2c6cfb5e491",
+  "worktreeCleanDuringChecks": true,
+  "sourceSha256": "58e6aeb5fbf2ee4b73233b2bb99395dee7bb27e92b0ea17ffb520182314eda96",
+  "worktree": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831",
+  "results": {
+    "structured-prepared-gpu": {
+      "passed": 59,
+      "skipped": 2
+    },
+    "two-device": {
+      "passed": 9,
+      "skipped": 0
+    },
+    "portable-3.10": {
+      "passed": 164,
+      "skipped": 168
+    },
+    "portable-3.11": {
+      "passed": 164,
+      "skipped": 168
+    },
+    "portable-3.12": {
+      "passed": 164,
+      "skipped": 168
+    },
+    "portable-3.13": {
+      "passed": 164,
+      "skipped": 168
+    },
+    "portable-3.14": {
+      "passed": 164,
+      "skipped": 168
+    },
+    "native": {
+      "passed": 73,
+      "skipped": 0
+    }
+  },
+  "captureCounts": {
+    ".json": 3789,
+    ".cu": 3789,
+    ".ptx": 3789,
+    ".plan": 3789,
+    ".stdout": 1,
+    ".stderr": 1
+  },
+  "wheel": {
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/wheels.xhHRE7/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "sha256": "b93efe07904c22163d0288dd6088bc7559ebff51380a6881dd5eda5becf037c6",
+    "bytes": 1681913
+  },
+  "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/venv/bin/python",
+  "reference": {
+    "torch": "2.13.0+cu130",
+    "import": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/venv/lib/python3.12/site-packages/torch/__init__.py",
+    "cuda": "13.0",
+    "compile": "torch.compile(fn), ordinary defaults"
+  },
+  "nativeCompiler": {
+    "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+    "nvrtcVersion": [
+      13,
+      0
+    ],
+    "nvrtcOptions": [
+      "--gpu-architecture=compute_90",
+      "--fmad=true",
+      "--ftz=false",
+      "--prec-div=true",
+      "--prec-sqrt=true"
+    ]
+  },
+  "runtimeLibraries": [
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+      "sha256": "96c42e418cec19054186b9429c321603cc190bf26a18104e19408117a2a817b0"
+    },
+    {
+      "path": "/usr/lib64/libcuda.so.580.82.07",
+      "sha256": "20e6ceff0c67aa902f74c662719108677c758651d9bb1e1eff738835c681f82b"
+    }
+  ],
+  "commands": {
+    "build": [
+      "bash",
+      "scripts/evaluate_torch_compile_default.sh",
+      "--setup-only"
+    ],
+    "structured-prepared-gpu": [
+      "python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_compile_pointwise_structured_outputs",
+      "tests.test_compile_pointwise_prepared"
+    ],
+    "two-device": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/venv/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "tests.test_compile_pointwise_broadcast.Broadcast.test_device_restoration_on_compile_run_failure_and_module_release",
+      "tests.test_compile_pointwise_helpers.HelperHardware.test_two_h100_devices_restore_context_and_share_helper_semantics",
+      "tests.test_compile_pointwise_jit.Hardware.test_two_device_restoration_and_module_ownership",
+      "tests.test_compile_pointwise_loops.LoopHardware.test_original_ir_unequal_shapes_and_device_restoration",
+      "tests.test_compile_pointwise_prepared.PreparedHardware.test_private_preparation_and_run_restore_device_and_reject_cross_device",
+      "tests.test_compile_pointwise_runtime_scalars.PositionalScalarHardware.test_positional_runtime_parameters_restore_device_on_success_and_failure",
+      "tests.test_compile_pointwise_runtime_scalars.RuntimeScalarHardware.test_runtime_parameters_restore_current_device",
+      "tests.test_compile_pointwise_structured_outputs.StructuredHardware.test_two_device_restoration_and_wrong_device_failure",
+      "tests.test_compile_pointwise_tensor_madd.TensorMadd.test_both_devices_restore_current_device_on_success_failure_and_reset"
+    ],
+    "native": [
+      "cargo",
+      "test",
+      "--release",
+      "--locked",
+      "--lib",
+      "--features",
+      "python-bindings",
+      "--",
+      "pointwise",
+      "cuda::tests::prepared_plan_retains_actual_device_allocation_without_host_instructions",
+      "--test-threads=1"
+    ],
+    "runtime-probe-run": [
+      "python",
+      "target/default-compile-eval/run-postcommit-9f09bc2a/runtime-probe.py"
+    ],
+    "portable-3.10": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-9f09bc2a/portable/3.10/bin/python",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_compile_pointwise*.py",
+      "-v"
+    ],
+    "portable-3.11": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-9f09bc2a/portable/3.11/bin/python",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_compile_pointwise*.py",
+      "-v"
+    ],
+    "portable-3.12": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-9f09bc2a/portable/3.12/bin/python",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_compile_pointwise*.py",
+      "-v"
+    ],
+    "portable-3.13": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-9f09bc2a/portable/3.13/bin/python",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_compile_pointwise*.py",
+      "-v"
+    ],
+    "portable-3.14": [
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-9f09bc2a/portable/3.14/bin/python",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_compile_pointwise*.py",
+      "-v"
+    ]
+  },
+  "structuredCaptureCommand": "CUDA_VISIBLE_DEVICES=0 TORCH_RS_STRUCTURED_EVIDENCE=/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-9f09bc2a/native-captures PYTHONPATH=/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/tests:/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831 python /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-9f09bc2a/check.py structured-prepared-gpu python -m unittest -v tests.test_compile_pointwise_structured_outputs tests.test_compile_pointwise_prepared",
+  "reportRoot": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-9f09bc2a",
+  "limits": [
+    "Focused structured/prepared and native ownership validation, not a repeat of the entire author GPU suite.",
+    "Portable hardware skips are not GPU passes.",
+    "No official qualification or timing reroll; saved evaluation rejection is unchanged.",
+    "Historical records remain bound to their original revisions."
+  ],
+  "gpuInventoryAfter": [
+    {
+      "index": "0",
+      " name": " NVIDIA H100",
+      " uuid": " GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1",
+      " driver_version": " 580.82.07",
+      " compute_cap": " 9.0",
+      " utilization.gpu [%]": " 0 %",
+      " memory.used [MiB]": " 4 MiB"
+    },
+    {
+      "index": "1",
+      " name": " NVIDIA H100",
+      " uuid": " GPU-11979b85-93e3-21d3-e68f-df37b8a4c296",
+      " driver_version": " 580.82.07",
+      " compute_cap": " 9.0",
+      " utilization.gpu [%]": " 0 %",
+      " memory.used [MiB]": " 4 MiB"
+    }
+  ],
+  "deviceSelections": {
+    "build": "0",
+    "structured-prepared-gpu": "0",
+    "two-device": "0,1",
+    "native": "0",
+    "runtime-probe-run": "0",
+    "portable-3.10": "",
+    "portable-3.11": "",
+    "portable-3.12": "",
+    "portable-3.13": "",
+    "portable-3.14": ""
+  },
+  "rawArchive": {
+    "archive": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_124bb831/target/default-compile-eval/run-postcommit-9f09bc2a/raw-captures.tar.gz",
+    "sha256": "bf5729a9d6b2dc9dd2cf52ed57611796ca03fa6e55a71e53712a65f5cb094527",
+    "bytes": 190403057,
+    "files": 19329,
+    "readbackVerified": true,
+    "manifestSha256": "9e8ffb273f6a50069f0f50ca9494d694c7acc706c4fb1109edf590c8c3d29379",
+    "scope": "Worktree-local canonical report root; ignored raw evidence, not a checked-in or off-host backup. Preserve before worktree cleanup."
+  },
+  "provenanceSha256": "87b49bbf31ed559ab2e28c6e69cdfa2ede6e9f1b41d9ce03acf0c721c7bc8528"
+}

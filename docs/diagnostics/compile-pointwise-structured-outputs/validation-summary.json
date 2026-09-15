@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "kind": "Historical correctness/provenance digest; not a new validation run",
+  "measuredSourceCommit": "c238ca63736c65d218253fea01f5301c07755e6f",
+  "evidenceCommit": "1315dce10e04481f3571850c35845d642b191225",
+  "baseCommit": "30a3b504ef4d43bf2958998cc39545996cc09970",
+  "report": "https://github.com/bobrenjc93/pytorch-rs/blob/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c238ca63/README.md",
+  "results": {
+    "h100Pointwise": {
+      "passed": 304,
+      "twoDeviceSkipped": 8
+    },
+    "separateTwoDeviceChecks": {
+      "passed": 8
+    },
+    "nativePointwise": {
+      "passed": 64
+    },
+    "pythonConversionFailure": {
+      "passed": 1
+    },
+    "portable": {
+      "interpreters": [
+        "3.10",
+        "3.11",
+        "3.12",
+        "3.13",
+        "3.14"
+      ],
+      "passedPerInterpreter": 149,
+      "hardwareSkippedPerInterpreter": 163
+    },
+    "signedProductComparisons": 1050
+  },
+  "measurements": {
+    "path": "postcommit-c238ca63/measurements.json.gz",
+    "bytes": 1015757,
+    "sha256": "68851aa43f18d05be88194205ab408cb17d91a98c63798c8c666ac717676c95d"
+  },
+  "rawArchive": {
+    "path": "postcommit-c238ca63/raw-captures.tar.xz",
+    "bytes": 71012112,
+    "sha256": "41d62ef29f15f9ca470ed5e9e52fcfbb53a17fc6602dcaaca0e108580035a656"
+  },
+  "wheelSha256": "a21bc2524bdf415caa1726c4dadfdc905c24f68b1c3355b8030e2b3be0d8e287",
+  "limits": [
+    "Applies only to the measured source; later implementations need their own validation.",
+    "Correctness captures do not establish default torch.compile CUDA performance parity.",
+    "Hardware skips are not GPU passes.",
+    "The historical review7 raw-custody gap remains; see README.md."
+  ]
+}

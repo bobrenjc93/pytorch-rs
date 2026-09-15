@@ -14,22 +14,79 @@ This avoids amplifying single-precision library rounding errors in later
 cancellation. `--ftz=false` is used;
 fast math is not enabled. Arithmetic explicitly allows FMA contraction
 (`--fmad=true`) to match default Inductor, including cancellation and overflow
-cases where CUDA eager's separately rounded operations differ. SSA variables
-retain expression dependencies and reuse through native compiler optimization.
+cases where CUDA eager's separately rounded operations differ. Declarative
+instructions retain dependencies and reuse; register allocation removes dead
+products after their consumers contract.
+
+## Realization and observable order
+
+Numerical planning uses the first observable order of computed roots and the
+logical specialization's retained iteration hint. After the existing early
+algebraic rewrites, independently created tensor producers keep distinct SSA
+identities through locality ordering, realization and fusion. Expression
+interning supplies operation/read counts without merging those producers.
+Realization alone is not a rounding barrier: fused units can inline each other.
+Values crossing regions become rounded imports and exports in the native scalar
+program. Scheduling and lowering share the producer map, so a consumer of an
+exported value reads its rounded import. An independently computed equivalent
+expression is not that producer: spelling `x*y` twice does not by itself make
+one tensor depend on the other. Scalar-expression CSE within each region remains
+available after partitioning.
+
+The version-sensitive reference rules come from PyTorch 2.13
+`torch/_inductor/fx_passes/post_grad.py::reorder_for_locality`,
+`graph.py::GraphLowering.run_node`, `ir.py::StorageBox`,
+`ops_handler.py::OpCounterCSE`, `choices.py::InductorChoices`, and
+`scheduler.py::Scheduler`. The repair evidence retains the inspected reference
+identity and detailed symbol pointers alongside generated FX and scheduler IR.
+
+One graph-keyed CUDA kernel interprets that bounded program in one launch.
+Container topology does not create additional native executables. Instruction
+validation and register allocation precede device allocation. Matching warm calls
+reuse an immutable validated program and completed instruction upload. Selection
+includes exact admitted input shapes, retained numerical hint and observable
+output order; rank-zero and length-one inputs are distinct signatures. The Rust
+planner remains the only numerical authority, including for oversized ephemeral
+preparations. This reuse changes neither instructions nor admission: current
+input metadata must still match the checked native signature. Register scratch
+and outputs remain fresh invocation-owned storage through launch, completion and
+failure. The usage guide describes the bounded data cache and its memory limits;
+no performance improvement is implied without a new measurement.
 
 ## Expression sharing and contraction
 
-Numerical lowering shares identical ordered expressions before selecting
-explicit `fmaf` operations for each consumer. Self-subtraction established before
-sign rewriting uses the shared rounded value: finite values produce positive zero, while infinities and NaNs
-produce NaN. Products may contract at multiple consumers while retaining their
+Within each numerical region, lowering shares identical ordered expressions
+before selecting explicit `fmaf` operations for each consumer. Self-subtraction
+established before sign rewriting uses the shared rounded value: finite values
+produce positive zero, while infinities and NaNs produce NaN. Products may
+contract at multiple consumers while retaining their
 rounded value for other uses. Expression deduplication retains operand order,
 including for commutative operators.
 
 ## Competing products and dependency order
 
-When a sum has two direct positive
-products, contraction selection follows the reference's arithmetic/select
+Within each numerical region, the direct product with fewer remaining uses takes priority.
+This includes two products shared by sibling consumers, not only single-use
+products. Each canonical output value counts as one observable use after
+expression deduplication, even when distinct original computations require
+separate output allocations and stores. Repeated result aliases add no uses.
+Stores do not prohibit contraction: a shared product can still fuse when there
+is no less-used competitor. Transparent sign/positive-zero wrappers contribute
+their external uses to the underlying product, including sibling wrappers and
+products created by extracting a negative coefficient. These relationships are
+used only to count external uses within a basic block; they do not merge values,
+allocations or rounding boundaries. Use counts also retain their role in sign rewrites.
+Contractions are selected from consumers toward operands. Each selected FMA
+replaces its product use with direct factor uses before inner choices are made;
+an outer contraction can therefore make an inner product single-use.
+
+The [structured-output evidence index](diagnostics/compile-pointwise-structured-outputs/README.md#numerical-history)
+tracks partition-dependent rounding, retained shape-history hints and
+realization/order repairs. Historical failures remain distinct from later
+passing captures.
+
+When a sum has two direct positive products with equal use priority,
+contraction selection follows the reference's arithmetic/select
 dependency ranking: live input loads receive successive ranks, arithmetic adds
 one dependency level, and ReLU adds comparison and selection levels. The
 lower-ranked product contracts; equal ranks retain expression order. Thus
@@ -73,7 +130,8 @@ product to rank. Scalar leaves of every kind, identity wrappers, subtraction,
 negation, ReLU, sin/cos and extra live arithmetic are outside this exception.
 Matching the original nodes before identities, CSE and sign normalization keeps
 those near misses excluded. Dead nodes and unused arguments still receive full
-validation, and direct execution still checks original admission and addresses.
+validation. Preparation checks original admission and addresses; reuse requires
+the same exact native shapes and revalidates current input metadata and storage.
 The [H100 diagnostic record](diagnostics/compile-pointwise-tensor-madd/README.md)
 preserves exact IEEE comparisons, including zero signs, against ordinary default
 Inductor; NaN payload equality is not required. This bounded evidence does not
@@ -99,7 +157,7 @@ tensor product can instead move into its factor and contract directly,
 matching the reference's
 [negation hoisting](https://github.com/llvm/llvm-project/blob/1f126a6dea50d185c0781743a667390037ae88bd/llvm/lib/Transforms/InstCombine/InstCombineAddSub.cpp#L3020).
 This counts live canonical operand uses before sign normalization rewrites
-consumers; the signed result itself may be shared.
+consumers, including output stores; the signed result itself may be shared.
 An addition or right-hand subtraction can extract the factor's sign again
 only when the signed multiplication has one use. These are separate use counts.
 Shared negative doubling retains its rounded value for earlier addition consumers;

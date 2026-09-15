@@ -32,7 +32,7 @@ def program(source, framework=native, **bindings):
 def lower(fn, arity=1):
     descriptor = frontend.analyze(fn, arity)
     _, values = frontend.resolve(fn, descriptor)
-    return frontend.lower(descriptor, values, arity)
+    return frontend.lower(descriptor, values, arity).graph
 
 
 def cache(compiled):
@@ -45,6 +45,28 @@ def kernels(compiled):
 
 def kernel(compiled):
     return next(iter(cache(compiled).executors.values()))
+
+
+def mock_pointwise_executor(run, metadata=None, retained_bytes=0):
+    """Adapt frontend-only launch mocks to immutable preparation, not CUDA.
+
+    The fake retains checked metadata only; preparation does not retain tensors.
+    Forward through executor.run so existing injected launch failures still test
+    the real frontend's post-run/reconstruction publication boundary.
+    """
+    executor = types.SimpleNamespace(run=run)
+
+    def prepare(tensors, numerical_hint, output_order):
+        read_metadata = metadata or bridge._compile_trace_tensor_metadata
+        shapes = tuple(read_metadata(tensor)[0] for tensor in tensors)
+        return types.SimpleNamespace(
+            input_shapes=shapes,
+            retained_bytes=retained_bytes,
+            run=lambda inputs, scalars: executor.run(inputs, scalars, numerical_hint, output_order),
+        )
+
+    executor.prepare = prepare
+    return executor
 
 
 def diagnostic_capture_selectors():
@@ -261,9 +283,9 @@ class Admission(unittest.TestCase):
     def test_typed_ir_retains_reused_nodes_and_rounds_constants(self):
         fn = program('def f(x, y):\n a = fw.sin(x)\n b = a * a\n return (b - y.cos()) + 0.10000000000001')
         graph = lower(fn, 2)
-        source = bridge._pointwise_source(graph.nodes, graph.output, graph.inputs)
+        source = bridge._pointwise_plan(graph.nodes, graph.outputs, graph.inputs)
         self.assertEqual(source.count('sinf('), 1)
-        self.assertIn('__fmul_rn(v2, v2)', source)
+        self.assertIn('fmaf(v2, v2, -v4)', source)
         self.assertIn('cosf(', source)
         self.assertNotIn('__sinf', source)
         self.assertIn('0x3dcccccdu', source)
@@ -283,7 +305,7 @@ class Admission(unittest.TestCase):
             'def f(x):\n return x if x else -x',
             'def f(x):\n return x.sum()', 'def f(x):\n return x.reshape(2, 2)',
             'def f(x):\n return x + trap', 'def f(x):\n return trap.sin(x)',
-            'def f(x):\n x += x\n return x', 'def f(x):\n return x, -x',
+            'def f(x):\n x += x\n return x', 'def f(x):\n return x, x',
             'def f(x):\n return x / 2', 'def f(x):\n return x',
         ]
         for source in sources:
@@ -297,9 +319,9 @@ class Admission(unittest.TestCase):
             ((("constant", 0, 0, 0), ("sin", 0, 0, 0)), 1),
             ((("input", 0, 0, 0), ("neg", 0, 0, 0)), 7)]:
             with self.subTest(nodes=nodes), self.assertRaises((ValueError, NotImplementedError)):
-                bridge._pointwise_source(nodes, output, 1)
+                bridge._pointwise_source(nodes, (output,), 1)
         with self.assertRaises(TypeError):
-            bridge._pointwise_source((("input", True, 0, 0),), 0, 1)
+            bridge._pointwise_source((("input", True, 0, 0),), (0,), 1)
 
     def test_custom_globals_rejected_without_lookup_hooks(self):
         for expression in ('x.sum() + scale', 'x * scale', '-x'):
@@ -310,6 +332,31 @@ class Admission(unittest.TestCase):
                     lower(fn)
                 self.assertEqual(effects, [])
 
+    def test_rejected_namespace_key_is_not_retained_by_traceback(self):
+        class Key:
+            pass
+
+        for which in ('globals', 'builtins'):
+            with self.subTest(namespace=which):
+                fn = types.FunctionType((lambda x: x).__code__, {'__builtins__': {}})
+                namespace = getattr(fn, '__' + which + '__')
+                key = Key()
+                reference = weakref.ref(key)
+                namespace[key] = None
+                # assertRaises clears tracebacks; deliberately retain this one.
+                try:
+                    frontend.validate_namespaces(fn)
+                except NotImplementedError as error:
+                    caught = error
+                else:
+                    self.fail('non-string namespace key was accepted')
+                self.assertIn(which + ' keys must be exact strings', str(caught))
+                namespace.clear()
+                del key
+                gc.collect()
+                self.assertIsNotNone(caught.__traceback__)
+                self.assertIsNone(reference())
+
     def test_custom_closure_rejected_without_container_hooks(self):
         fn, effects = custom_closure_program()
         with self.assertRaisesRegex(NotImplementedError, 'closure must be an exact tuple'):
@@ -319,7 +366,7 @@ class Admission(unittest.TestCase):
     def test_positional_operator_spellings_and_integer_bytecode(self):
         fn = program('def f(x, y):\n a = b = fw.add(x, y)\n return fw.subtract(a, -3).mul(2) + b.__rsub__(0.713)')
         graph = lower(fn, 2)
-        source = bridge._pointwise_source(graph.nodes, graph.output, 2)
+        source = bridge._pointwise_plan(graph.nodes, graph.outputs, 2)
         self.assertEqual(sum(node[0] == 'add' for node in graph.nodes), 2)
         self.assertEqual(sum(node[0] == 'sub' for node in graph.nodes), 2)
         self.assertIn('0x40000000u', source)
@@ -681,7 +728,7 @@ diagnostic.write(directory/'report.json.gz', record)
                 refs = [self.upload(v, (len(v),), self.torch) for v in values]
                 with self.subTest(expression=expression, values=values):
                     self.compare(self.without_replay(fn, compiled, args), reference(*refs), exact=True)
-            self.assertIn('fmaf(', kernel(compiled).source)
+            self.assertIn('fmaf(', kernel(compiled).plan(1))
             self.assertIn('fma.rn.f32', kernel(compiled).ptx)
 
     def test_negated_product_underflow_and_exact_zero_signs(self):
@@ -697,7 +744,7 @@ diagnostic.write(directory/'report.json.gz', record)
             with self.subTest(body=body):
                 expected = reference(*refs)
                 self.compare(self.without_replay(fn, compiled, args), expected, exact=True)
-                self.assertIn('fmaf(', kernel(compiled).source)
+                self.assertIn('fmaf(', kernel(compiled).plan(1))
                 if body == 'return -(x * y)':
                     self.assertEqual(expected.signbit().tolist(),
                                      [True, False, False, True, False, False, False, False])
