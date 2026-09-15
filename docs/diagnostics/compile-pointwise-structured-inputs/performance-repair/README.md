@@ -107,7 +107,8 @@ processes and the same ordering/counts. These diagnostics are not scoring tools.
 This is dirty-source development evidence after a recreated worktree. The
 [85fe118 correctness capture](../postcommit-85fe118/README.md) predates this source
 repair and records its original worktree; it is not current-candidate validation.
-**After Burner commits the repair, refresh focused clean-commit correctness and
-build/import evidence in the actual checkout, then run independent review and
-the unchanged canonical gates through Burner.** Preserve all earlier captures,
+The [c648878 clean-commit capture](../postcommit-c648878/README.md) now records
+focused correctness and build/import checks in this checkout. It adds no timing
+claim and does not replace these raw diagnostic records. Independent review and
+the unchanged canonical gates remain with Burner. Preserve all earlier captures,
 failed diagnostics and the negative qualification. No merge is authorized here.

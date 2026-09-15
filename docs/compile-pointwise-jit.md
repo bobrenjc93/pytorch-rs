@@ -139,8 +139,9 @@ pytree, Dynamo, Inductor or accelerator parity.
 
 The [structured-input validation and performance repair](diagnostics/compile-pointwise-structured-inputs/performance-repair/README.md)
 links the focused contracts, paired GPU histories and frontend diagnostics.
-The current repair awaits clean-commit evidence refresh and canonical qualification;
-the diagnostic timings are not performance or coverage scores.
+The [clean-commit repair capture](diagnostics/compile-pointwise-structured-inputs/postcommit-c648878/README.md)
+records focused correctness and build/import checks. Canonical qualification
+remains pending; the diagnostic timings are not performance or coverage scores.
 
 ### Bounded nested results
 
