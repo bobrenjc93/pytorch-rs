@@ -25981,6 +25981,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
     module.add_function(wrap_pyfunction!(compile_trace_scalar, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_reduction, module)?)?;
     module.add_class::<pointwise::Compiled>()?;
+    module.add_class::<pointwise::Prepared>()?;
     module.add_function(wrap_pyfunction!(pointwise::source, module)?)?;
     module.add_function(wrap_pyfunction!(pointwise::plan, module)?)?;
     module.add_function(wrap_pyfunction!(pointwise::compile, module)?)?;
@@ -25995,6 +25996,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
     let exports = module.getattr("__all__")?;
     for name in [
         "_PointwiseKernel",
+        "_PointwisePrepared",
         "_pointwise_source",
         "_pointwise_compile",
         "_pointwise_validate_inputs",

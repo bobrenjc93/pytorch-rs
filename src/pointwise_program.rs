@@ -189,6 +189,16 @@ pub(crate) struct Program {
     listing: Option<String>,
 }
 
+#[cfg(test)]
+thread_local! {
+    static BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn build_count() -> usize {
+    BUILDS.get()
+}
+
 #[derive(Default)]
 struct Registers {
     count: usize,
@@ -240,6 +250,8 @@ impl Program {
         output_order: &[usize],
         scalar_output: bool,
     ) -> Result<Self, TensorError> {
+        #[cfg(test)]
+        BUILDS.set(BUILDS.get() + 1);
         Self::build_internal(
             graph,
             addresses,

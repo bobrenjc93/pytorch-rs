@@ -3,12 +3,14 @@ use super::{CoreTensor, PyTensor, tensor_error};
 use crate::{
     cuda::jit::Kernel,
     pointwise_ir::{Graph, Node},
+    tensor::pointwise_jit::PreparedPointwise,
 };
 use pyo3::{
     exceptions::{PyNotImplementedError, PyTypeError, PyValueError},
     prelude::*,
     types::{PyBool, PyFloat, PyInt, PyString, PyTuple},
 };
+use std::sync::Arc;
 
 type Payload = (String, usize, usize, u64);
 
@@ -154,6 +156,30 @@ fn parse_output_order(order: Option<&Bound<'_, PyAny>>, count: usize) -> PyResul
     Ok(slots)
 }
 
+fn parse_scalars(scalars: Option<&Bound<'_, PyTuple>>) -> PyResult<Vec<f32>> {
+    scalars.map_or_else(
+        || Ok(Vec::new()),
+        |scalars| {
+            if !scalars.is_exact_instance_of::<PyTuple>() {
+                return Err(PyTypeError::new_err("expected an exact scalar tuple"));
+            }
+            scalars
+                .iter()
+                .map(|value| {
+                    if !value.is_exact_instance_of::<PyFloat>() {
+                        return Err(PyTypeError::new_err("runtime scalars must be exact floats"));
+                    }
+                    // Exact types precede conversion; no user float hooks run.
+                    // The runtime scalar boundary is float32 materialization.
+                    #[allow(clippy::cast_possible_truncation)]
+                    let value = value.extract::<f64>()? as f32;
+                    Ok(value)
+                })
+                .collect::<PyResult<Vec<_>>>()
+        },
+    )
+}
+
 /// Diagnostic rendering of the same immutable program executed by the VM.
 /// This never compiles or retains a topology-specific executable.
 #[pyfunction(name = "_pointwise_plan")]
@@ -251,11 +277,37 @@ pub(crate) fn convert_outputs(
 
 #[pyclass(frozen, module = "torch_rs.torch_rs", name = "_PointwiseKernel")]
 pub(super) struct Compiled {
-    kernel: Kernel,
+    kernel: Arc<Kernel>,
     arity: usize,
 }
 #[pymethods]
 impl Compiled {
+    #[pyo3(signature = (inputs, numerical_hint=None, output_order=None))]
+    fn prepare(
+        &self,
+        inputs: &Bound<'_, PyTuple>,
+        numerical_hint: Option<&Bound<'_, PyAny>>,
+        output_order: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Prepared> {
+        let numerical_hint = parse_numerical_hint(numerical_hint)?;
+        let output_order = parse_output_order(output_order, self.kernel.graph.outputs.len())?;
+        if inputs.len() != self.arity {
+            return Err(PyValueError::new_err(
+                "pointwise input arity guard mismatch",
+            ));
+        }
+        with_inputs(inputs, |tensors| {
+            CoreTensor::prepare_pointwise(
+                tensors,
+                Arc::clone(&self.kernel),
+                numerical_hint,
+                Some(&output_order),
+            )
+            .map(|invocation| Prepared { invocation })
+            .map_err(|error| tensor_error(&error))
+        })
+    }
+
     #[pyo3(signature = (inputs, scalars=None, numerical_hint=None, output_order=None))]
     fn run<'py>(
         &self,
@@ -268,29 +320,7 @@ impl Compiled {
         // A specialization hint controls numerical planning, never storage bounds.
         let numerical_hint = parse_numerical_hint(numerical_hint)?;
         let output_order = parse_output_order(output_order, self.kernel.graph.outputs.len())?;
-        // Exact types are checked before conversion; no user float hooks run.
-        let values = scalars.map_or_else(
-            || Ok(Vec::new()),
-            |scalars| {
-                if !scalars.is_exact_instance_of::<PyTuple>() {
-                    return Err(PyTypeError::new_err("expected an exact scalar tuple"));
-                }
-                scalars
-                    .iter()
-                    .map(|value| {
-                        if !value.is_exact_instance_of::<PyFloat>() {
-                            return Err(PyTypeError::new_err(
-                                "runtime scalars must be exact floats",
-                            ));
-                        }
-                        // The graph's runtime scalar boundary is float32 materialization.
-                        #[allow(clippy::cast_possible_truncation)]
-                        let value = value.extract::<f64>()? as f32;
-                        Ok(value)
-                    })
-                    .collect::<PyResult<Vec<_>>>()
-            },
-        )?;
+        let values = parse_scalars(scalars)?;
         self.kernel
             .validate_scalars(&values)
             .map_err(|e| tensor_error(&e))?;
@@ -361,5 +391,49 @@ impl Compiled {
     #[getter]
     fn device(&self) -> usize {
         self.kernel.device
+    }
+}
+
+#[pyclass(frozen, module = "torch_rs.torch_rs", name = "_PointwisePrepared")]
+pub(super) struct Prepared {
+    invocation: PreparedPointwise,
+}
+
+#[pymethods]
+impl Prepared {
+    #[pyo3(signature = (inputs, scalars=None))]
+    fn run<'py>(
+        &self,
+        inputs: &Bound<'py, PyTuple>,
+        scalars: Option<&Bound<'_, PyTuple>>,
+    ) -> PyResult<Bound<'py, PyTuple>> {
+        let values = parse_scalars(scalars)?;
+        with_inputs(inputs, |tensors| {
+            let outputs = self
+                .invocation
+                .run(tensors, &values)
+                .map_err(|error| tensor_error(&error))?;
+            // The borrowed preparation/kernel, inputs and every output remain
+            // owned through completion and this fallible conversion boundary.
+            convert_outputs(inputs.py(), outputs, |output| {
+                Py::new(inputs.py(), PyTensor::new(output))
+            })
+        })
+    }
+
+    #[getter]
+    fn input_shapes<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
+        let shapes = self
+            .invocation
+            .input_shapes()
+            .iter()
+            .map(|shape| PyTuple::new(py, shape.iter().copied()))
+            .collect::<PyResult<Vec<_>>>()?;
+        PyTuple::new(py, shapes)
+    }
+
+    #[getter]
+    fn retained_bytes(&self) -> usize {
+        self.invocation.retained_bytes()
     }
 }

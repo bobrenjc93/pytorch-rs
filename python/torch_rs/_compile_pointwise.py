@@ -33,6 +33,9 @@ _ALLOWED = _IGNORED | {"LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_FAST_BORROW", "LOAD
 _METHODS = tuple(_UNARY) + tuple(_BINARY) + ("__getattribute__", "shape")
 _MISSING = object()
 _RANGE = range
+# Retained numerical data per wrapper, not a process/module/allocator-pool or
+# transient allocation budget. Larger admitted plans execute without retention.
+_PREPARED_CACHE_BYTES = 32 * 1024 * 1024
 _LOOP_OPS = {"GET_ITER", "FOR_ITER", "JUMP_ABSOLUTE", "JUMP_BACKWARD",
              "END_FOR", "POP_TOP", "POP_ITER"}
 _CONDITIONALS = {"POP_JUMP_IF_FALSE", "POP_JUMP_IF_TRUE",
@@ -567,8 +570,11 @@ def validate_namespaces(model):
                              (model.__builtins__, "builtins")):
         if type(namespace) is not dict:
             unsupported("function " + label + " must be an exact dict")
-        if any(type(key) is not str for key in namespace):
-            unsupported("function " + label + " keys must be exact strings")
+        for key in namespace:
+            if type(key) is not str:
+                # Do not retain a rejected key through the exception traceback.
+                del key
+                unsupported("function " + label + " keys must be exact strings")
 
 
 def validate_ranges(model, sources):
@@ -1266,6 +1272,50 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
     return Lowering(Graph(arity, tuple(nodes), outputs), specification)
 
 
+def _prepared_entry_bytes(key, prepared):
+    """Conservative incremental retention charge, calculated only on a miss.
+
+    Native accounting uses actual Vec capacities and device allocation bytes.
+    Recursively charge every Python key referent, including repeated/shared
+    references (even the already-owned Graph), plus the wrapper and a 512-byte
+    allowance for the dict slot/value pair/accounting integer. This is a data
+    retention budget, not an exact Python allocator-resident-memory claim.
+    """
+    def key_bytes(value):
+        if type(value) is tuple:
+            return sys.getsizeof(value) + sum(key_bytes(item) for item in value)
+        if type(value) is Graph:
+            return (sys.getsizeof(value) + sys.getsizeof(value.__dict__)
+                    + key_bytes(value.inputs) + key_bytes(value.nodes)
+                    + key_bytes(value.outputs) + key_bytes(value._hash))
+        return sys.getsizeof(value)
+
+    return prepared.retained_bytes + sys.getsizeof(prepared) + key_bytes(key) + 512
+
+
+def _publish_preparation(cache, key, prepared, retained_bytes, recompile_limit):
+    """Called under the existing lock only after successful reconstruction."""
+    # A prepared Arc must not retain a module whose executor was evicted. The
+    # executable transaction above is authoritative, not an independent module cache.
+    for old_key in tuple(cache.prepared):
+        if old_key[0] not in cache.executors:
+            _, old_bytes = cache.prepared.pop(old_key)
+            cache.prepared_bytes -= old_bytes
+    if retained_bytes <= _PREPARED_CACHE_BYTES:
+        newest = (cache.prepared and next(reversed(cache.prepared)) == key
+                  and next(reversed(cache.prepared.values()))[0] is prepared)
+        if not newest:
+            previous = cache.prepared.pop(key, None)
+            if previous is not None:
+                cache.prepared_bytes -= previous[1]
+            cache.prepared[key] = (prepared, retained_bytes)
+            cache.prepared_bytes += retained_bytes
+    while (len(cache.prepared) > recompile_limit
+           or cache.prepared_bytes > _PREPARED_CACHE_BYTES):
+        _, old_bytes = cache.prepared.pop(next(iter(cache.prepared)))
+        cache.prepared_bytes -= old_bytes
+
+
 def implementation(model, recompile_limit):
     # Shared reset registry/lock discipline, but no eager graph evaluator.
     cache = _state.new_native_eager_compile_cache()
@@ -1348,7 +1398,8 @@ def implementation(model, recompile_limit):
                     lowering = lower(program, values, len(tensors), input_ids, metadata=metadata)
             # Logical guards choose scalar semantics. Concrete executables still
             # specialize the full native ABI and exact broadcast address formula.
-            # Offsets/addresses and all original-IR admission are checked at run.
+            # Preparation checks all original-IR admission. Exact native shapes
+            # certify that result on reuse; offsets/storage are checked each run.
             graph = lowering.graph
             shapes = tuple(m[0] for m in metadata)
             indexing_key = None if all(s == shapes[0] for s in shapes) else shapes
@@ -1356,10 +1407,22 @@ def implementation(model, recompile_limit):
             executor = cache.executors.get(code_key)
             if executor is None:
                 executor = _native._pointwise_compile(tensors, graph.nodes, graph.outputs)
-            outputs = executor.run(tensors, scalars, entry.numerical_hint, lowering.result.output_order)
+            prepared_key = (code_key, shapes, entry.numerical_hint, lowering.result.output_order)
+            cached_preparation = cache.prepared.get(prepared_key)
+            if cached_preparation is None:
+                prepared = executor.prepare(tensors, entry.numerical_hint, lowering.result.output_order)
+                # Metadata was read before taking this lock. Bind the published
+                # key to the same native snapshot that passed graph admission;
+                # never label an artifact with a stale Python shape signature.
+                if prepared.input_shapes != shapes:
+                    unsupported("input shapes changed during pointwise preparation")
+                retained_bytes = _prepared_entry_bytes(prepared_key, prepared)
+            else:
+                prepared, retained_bytes = cached_preparation
+            outputs = prepared.run(tensors, scalars)
             result = lowering.result.reconstruct(outputs, static_values, tensors, metadata)
-            # Publish both levels only after success. Executable and lowering LRU
-            # eviction bounds retained modules without consuming logical slots.
+            # Publish every cache level only after success. Executable/lowering
+            # eviction bounds retention without consuming logical slots.
             for mapping, item_key, item in ((entry.lowerings, abi, lowering),
                                             (cache.executors, code_key, executor),
                                             (cache.graphs, key, entry)):
@@ -1372,6 +1435,7 @@ def implementation(model, recompile_limit):
                 mapping[item_key] = item
                 while len(mapping) > recompile_limit:
                     del mapping[next(iter(mapping))]
+            _publish_preparation(cache, prepared_key, prepared, retained_bytes, recompile_limit)
             return result
 
     compiled._torch_rs_pointwise_cache = cache

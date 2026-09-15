@@ -4,6 +4,7 @@ use super::super::{Library, TensorError, c_char, c_int, c_void, runtime};
 use super::{current_context, driver};
 use crate::pointwise_ir::{Graph, invalid};
 use std::ffi::{CStr, CString};
+use std::sync::Arc;
 
 type Program = *mut c_void;
 struct Nvrtc {
@@ -199,7 +200,7 @@ pub(crate) struct Kernel {
 }
 impl Kernel {
     #[cfg(test)]
-    pub(crate) fn compile(graph: &Graph, device: usize) -> Result<Self, TensorError> {
+    pub(crate) fn compile(graph: &Graph, device: usize) -> Result<Arc<Self>, TensorError> {
         Self::compile_indexed(
             graph,
             device,
@@ -210,7 +211,7 @@ impl Kernel {
         graph: &Graph,
         device: usize,
         addresses: Vec<crate::pointwise_ir::indexing::Address>,
-    ) -> Result<Self, TensorError> {
+    ) -> Result<Arc<Self>, TensorError> {
         let source = graph.indexed_source(&addresses)?;
         let _guard = runtime()?.guard(device)?;
         let context = current_context()?;
@@ -258,7 +259,7 @@ impl Kernel {
                 return Err(error);
             }
         }
-        Ok(Self {
+        Ok(Arc::new(Self {
             graph: graph.clone(),
             addresses,
             device,
@@ -270,11 +271,18 @@ impl Kernel {
             ptx: ptx_text,
             version,
             options,
-        })
+        }))
     }
     pub(crate) fn validate_scalars(&self, scalars: &[f32]) -> Result<(), TensorError> {
         if scalars.len() != self.scalar_count {
             return Err(invalid("pointwise runtime scalar arity mismatch"));
+        }
+        Ok(())
+    }
+    /// Call under the runtime device guard, before uploading or using plan data.
+    pub(crate) fn validate_context(&self) -> Result<(), TensorError> {
+        if current_context()? != self.context {
+            return Err(invalid("generated kernel context mismatch"));
         }
         Ok(())
     }
@@ -294,9 +302,7 @@ impl Kernel {
         scalars: &[f32],
     ) -> Result<(), TensorError> {
         self.validate_scalars(scalars)?;
-        if current_context()? != self.context {
-            return Err(invalid("generated kernel context mismatch"));
-        }
+        self.validate_context()?;
         if outputs.len() != self.graph.outputs.len() {
             return Err(invalid("pointwise output pointer arity mismatch"));
         }
@@ -361,6 +367,36 @@ impl Drop for Kernel {
 mod tests {
     use super::*;
     use crate::pointwise_ir::Node;
+
+    #[test]
+    fn preparation_rejects_kernel_context_mismatch_before_upload() {
+        if crate::cuda::device_count() == 0 {
+            eprintln!("skipping prepared context admission: CUDA unavailable");
+            return;
+        }
+        let input = crate::Tensor::from_vec(vec![1.], [1])
+            .unwrap()
+            .try_copy_cpu_to_cuda(crate::Device::Cuda(0))
+            .unwrap();
+        let graph = Graph {
+            inputs: 1,
+            nodes: vec![Node::Input(0), Node::Neg(0)],
+            outputs: vec![1],
+        };
+        let mut kernel = Kernel::compile(&graph, 0).unwrap();
+        let context = kernel.context;
+        Arc::get_mut(&mut kernel).unwrap().context = usize::MAX;
+        let uploads = crate::cuda::pointwise_upload_count();
+        let result = crate::Tensor::prepare_pointwise(&[&input], Arc::clone(&kernel), None, None);
+        let rejected =
+            matches!(&result, Err(error) if error.to_string().contains("context mismatch"));
+        drop(result);
+        // Restore the real module context before any assertion can unwind.
+        Arc::get_mut(&mut kernel).unwrap().context = context;
+        assert!(rejected);
+        assert_eq!(crate::cuda::pointwise_upload_count(), uploads);
+        assert!(crate::Tensor::prepare_pointwise(&[&input], kernel, None, None).is_ok());
+    }
 
     #[test]
     fn vm_scratch_is_bounded_for_large_graphs_and_extents() {

@@ -1,5 +1,0 @@
-Verified 10985 focused archive members byte-for-byte.
-Verified complete archive of 25535 files before retaining it under the canonical report root.
-Verified 1944 original reviewer files byte-for-byte.
-Production source matches release-build input hashes; installed Python/extension members match the recorded wheel.
-Known finite-result regression remains failing. No evaluation score or clean-commit qualification.

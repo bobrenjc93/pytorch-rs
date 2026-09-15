@@ -5,7 +5,7 @@ from unittest import mock
 
 import torch_rs as native
 from torch_rs import _compile_pointwise as frontend
-from tests.test_compile_pointwise_jit import available, cache, lower, program
+from tests.test_compile_pointwise_jit import available, cache, lower, mock_pointwise_executor, program
 
 
 def callback_scalar(effects):
@@ -374,12 +374,12 @@ class SharedCacheGuards(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def make_executor(self, tensors, nodes, output):
-        executor = mock.Mock()
+        run = mock.Mock()
         if self.launch_failure is not None:
-            executor.run.side_effect = self.launch_failure
+            run.side_effect = self.launch_failure
         else:
-            executor.run.side_effect = lambda args, scalars, numerical_hint, output_order: ((nodes, tuple(scalars)),)
-        return executor
+            run.side_effect = lambda args, scalars, numerical_hint, output_order: ((nodes, tuple(scalars)),)
+        return mock_pointwise_executor(run)
 
     def argument(self, shape, strides=None):
         if strides is None:
@@ -417,7 +417,8 @@ class SharedCacheGuards(unittest.TestCase):
         def contents(mapping):
             return tuple((key, id(value)) for key, value in mapping.items())
         return (contents(owner.graphs), contents(owner.executors),
-                tuple(contents(entry.lowerings) for entry in owner.graphs.values()))
+                tuple(contents(entry.lowerings) for entry in owner.graphs.values()),
+                contents(owner.prepared), owner.prepared_bytes)
 
     def test_newest_hits_do_not_mutate_any_recency_map_or_recompile(self):
         fn = program('def f(scale,x):\n return x*scale')
@@ -427,6 +428,7 @@ class SharedCacheGuards(unittest.TestCase):
         owner = cache(compiled)
         owner.graphs = self.MutationDict(owner.graphs)
         owner.executors = self.MutationDict(owner.executors)
+        owner.prepared = self.MutationDict(owner.prepared)
         entry = next(iter(owner.graphs.values()))
         entry.lowerings = self.MutationDict(entry.lowerings)
         before = self.ordered_contents(owner)
@@ -436,7 +438,7 @@ class SharedCacheGuards(unittest.TestCase):
                 self.assertEqual(compiled(0.375, x), expected)
         self.assertEqual(self.compile_bridge.call_count, 1)
         self.assertEqual(self.ordered_contents(owner), before)
-        for mapping in (owner.graphs, owner.executors, entry.lowerings):
+        for mapping in (owner.graphs, owner.executors, owner.prepared, entry.lowerings):
             self.assertEqual(mapping.mutations, [])
         # Code objects can compare equal while identity requires a new parsed
         # program. An equal newest key must not suppress replacing its entry.
@@ -576,7 +578,7 @@ class SharedCacheGuards(unittest.TestCase):
         compiled(unused, x)
         self.assertEqual(tuple(owner.graphs), tuple(reversed(tuple(key for key, _ in before[0]))))
         native.compiler.reset()
-        self.assertEqual(self.ordered_contents(owner), ((), (), ()))
+        self.assertEqual(self.ordered_contents(owner), ((), (), (), (), 0))
         compiled(False, x)
         self.assertEqual(len(owner.graphs), 1)
         self.assertEqual(len(owner.executors), 1)

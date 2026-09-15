@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import torch_rs as native
 from torch_rs import _compile_pointwise as frontend, torch_rs as bridge
-from tests.test_compile_pointwise_jit import available, cache, lower, program, two_device_reservation
+from tests.test_compile_pointwise_jit import available, cache, lower, mock_pointwise_executor, program, two_device_reservation
 
 
 @contextmanager
@@ -354,7 +354,7 @@ class HelperCache(unittest.TestCase):
         def compile_(tensors, nodes, output):
             # Use the actual hardware-free native IR/codegen boundary.
             bridge._pointwise_source(nodes, output, len(tensors))
-            return types.SimpleNamespace(run=lambda tensors, scalars, numerical_hint, output_order: ((nodes, output, scalars),))
+            return mock_pointwise_executor(lambda tensors, scalars, numerical_hint, output_order: ((nodes, output, scalars),))
         self.codegen = self.stack.enter_context(patch.object(bridge, '_pointwise_compile', side_effect=compile_))
         self.x = native.tensor([1.0, -2.0])
 
@@ -426,7 +426,7 @@ class HelperCache(unittest.TestCase):
         helper.__code__ = program('def f(a):\n return a.cos()').__code__
         for failure in ('compile', 'run'):
             before = list(cache(compiled).graphs.items()), list(cache(compiled).executors.items())
-            executor = types.SimpleNamespace(run=lambda *args: (_ for _ in ()).throw(RuntimeError('run failure')))
+            executor = mock_pointwise_executor(lambda *args: (_ for _ in ()).throw(RuntimeError('run failure')))
             config = {'side_effect': RuntimeError('compile failure')} if failure == 'compile' else {'return_value': executor}
             with patch.object(bridge, '_pointwise_compile', **config), self.assertRaises(RuntimeError):
                 compiled(self.x)
@@ -488,7 +488,7 @@ class HelperCache(unittest.TestCase):
         state = cache(compiled)
         entry = next(iter(state.graphs.values()))
         before = (list(state.graphs.items()), list(state.executors.items()), list(entry.lowerings.items()))
-        executor = types.SimpleNamespace(run=lambda *args: (_ for _ in ()).throw(RuntimeError('new ABI failure')))
+        executor = mock_pointwise_executor(lambda *args: (_ for _ in ()).throw(RuntimeError('new ABI failure')))
         with patch.object(bridge, '_pointwise_compile', return_value=executor):
             with self.assertRaisesRegex(RuntimeError, 'new ABI failure'):
                 compiled(self.x, self.x)

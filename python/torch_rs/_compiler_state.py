@@ -29,18 +29,23 @@ native_cuda_compile_executors_lock = threading.Lock()
 
 
 class NativeEagerCompileCache:
-    __slots__ = ("graphs", "executors", "lock", "__weakref__")
+    __slots__ = ("graphs", "executors", "prepared", "prepared_bytes", "lock", "__weakref__")
 
     def __init__(self):
         self.graphs = {}
         # Default pointwise logical guards and concrete modules share this reset
         # owner. Eager capture continues to use graphs alone.
         self.executors = {}
+        # Immutable numerical data, not another executable or logical guard.
+        self.prepared = {}
+        self.prepared_bytes = 0
         self.lock = threading.Lock()
 
     def clear(self):
         with self.lock:
             self.graphs.clear()
+            self.prepared.clear()
+            self.prepared_bytes = 0
             self.executors.clear()
 
 

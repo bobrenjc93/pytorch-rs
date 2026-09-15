@@ -9,7 +9,7 @@ import torch_rs as native
 from torch_rs import _compile_pointwise as frontend, torch_rs as bridge
 from tests import test_compile_pointwise_helpers as helpers
 from tests.test_compile_pointwise_helpers import no_bodies
-from tests.test_compile_pointwise_jit import available, cache, lower, program
+from tests.test_compile_pointwise_jit import available, cache, lower, mock_pointwise_executor, program
 
 
 def shape_lower(fn, shapes=((3,),), arguments=None, **kwargs):
@@ -299,7 +299,7 @@ class ShapeBranchCache(unittest.TestCase):
                 with self.assertRaises(NotImplementedError): compiled(self.x)
             self.assertEqual(self.snapshot(compiled), before)
         for failure in ('compile', 'run'):
-            executor = types.SimpleNamespace(run=lambda *args: (_ for _ in ()).throw(RuntimeError('run failure')))
+            executor = mock_pointwise_executor(lambda *args: (_ for _ in ()).throw(RuntimeError('run failure')))
             config = {'side_effect': RuntimeError('compile failure')} if failure == 'compile' else {'return_value': executor}
             with patch.object(bridge, '_pointwise_compile', **config), self.assertRaises(RuntimeError):
                 compiled(native.ones(10))

@@ -217,13 +217,14 @@ class StructuredCache(unittest.TestCase):
                 result = tuple(object() for _ in outputs)
                 self.launches.append(result)
                 return result
-            return types.SimpleNamespace(run=run)
+            return jit_tests.mock_pointwise_executor(run)
         self.codegen = self.stack.enter_context(patch.object(bridge, '_pointwise_compile', side_effect=compile_))
 
     def snapshot(self, compiled):
         state = cache(compiled)
         return ([(key, id(entry), tuple(entry.lowerings.items()), dict(entry.observations), entry.numerical_hint)
-                 for key, entry in state.graphs.items()], list(state.executors.items()))
+                 for key, entry in state.graphs.items()], list(state.executors.items()),
+                list(state.prepared.items()), state.prepared_bytes)
 
     def test_numerical_hint_follows_successful_specialization_history(self):
         fn = program('def f(x):\n p=x*x\n return (-p,p.sin())')
@@ -277,7 +278,7 @@ class StructuredCache(unittest.TestCase):
         # CPython 3.14 may borrow LOAD_FAST operands, so getrefcount results
         # depend on bytecode position. Inspect the bounded cache ownership graph
         # directly instead of asserting interpreter-specific reference counts.
-        pending = [cache(compiled).graphs, cache(compiled).executors]
+        pending = [cache(compiled).graphs, cache(compiled).executors, cache(compiled).prepared]
         seen = set()
         while pending:
             owner = pending.pop()
@@ -369,7 +370,7 @@ class StructuredCache(unittest.TestCase):
             self.assertEqual(self.snapshot(compiled), before)
             cold = native.compile(fn)
             with self.assertRaises(MemoryError): cold(x)
-            self.assertEqual(self.snapshot(cold), ([], []))
+            self.assertEqual(self.snapshot(cold), ([], [], [], 0))
         executor = next(iter(cache(compiled).executors.values()))
         with patch.object(executor, 'run', side_effect=RuntimeError('launch')):
             with self.assertRaisesRegex(RuntimeError, 'launch'): compiled(x)
@@ -378,6 +379,8 @@ class StructuredCache(unittest.TestCase):
         native.compiler.reset()
         self.assertFalse(cache(compiled).graphs)
         self.assertFalse(cache(compiled).executors)
+        self.assertFalse(cache(compiled).prepared)
+        self.assertEqual(cache(compiled).prepared_bytes, 0)
 
 
 @unittest.skipUnless(available(), 'requires native CUDA and reference PyTorch CUDA')

@@ -47,6 +47,28 @@ def kernel(compiled):
     return next(iter(cache(compiled).executors.values()))
 
 
+def mock_pointwise_executor(run, metadata=None, retained_bytes=0):
+    """Adapt frontend-only launch mocks to immutable preparation, not CUDA.
+
+    The fake retains checked metadata only; preparation does not retain tensors.
+    Forward through executor.run so existing injected launch failures still test
+    the real frontend's post-run/reconstruction publication boundary.
+    """
+    executor = types.SimpleNamespace(run=run)
+
+    def prepare(tensors, numerical_hint, output_order):
+        read_metadata = metadata or bridge._compile_trace_tensor_metadata
+        shapes = tuple(read_metadata(tensor)[0] for tensor in tensors)
+        return types.SimpleNamespace(
+            input_shapes=shapes,
+            retained_bytes=retained_bytes,
+            run=lambda inputs, scalars: executor.run(inputs, scalars, numerical_hint, output_order),
+        )
+
+    executor.prepare = prepare
+    return executor
+
+
 def diagnostic_capture_selectors():
     # Load only the capture accessor; importing a capture script launches CUDA
     # and writes artifacts. These are the exact maintained script definitions.
@@ -309,6 +331,31 @@ class Admission(unittest.TestCase):
                         NotImplementedError, 'globals must be an exact dict'):
                     lower(fn)
                 self.assertEqual(effects, [])
+
+    def test_rejected_namespace_key_is_not_retained_by_traceback(self):
+        class Key:
+            pass
+
+        for which in ('globals', 'builtins'):
+            with self.subTest(namespace=which):
+                fn = types.FunctionType((lambda x: x).__code__, {'__builtins__': {}})
+                namespace = getattr(fn, '__' + which + '__')
+                key = Key()
+                reference = weakref.ref(key)
+                namespace[key] = None
+                # assertRaises clears tracebacks; deliberately retain this one.
+                try:
+                    frontend.validate_namespaces(fn)
+                except NotImplementedError as error:
+                    caught = error
+                else:
+                    self.fail('non-string namespace key was accepted')
+                self.assertIn(which + ' keys must be exact strings', str(caught))
+                namespace.clear()
+                del key
+                gc.collect()
+                self.assertIsNotNone(caught.__traceback__)
+                self.assertIsNone(reference())
 
     def test_custom_closure_rejected_without_container_hooks(self):
         fn, effects = custom_closure_program()

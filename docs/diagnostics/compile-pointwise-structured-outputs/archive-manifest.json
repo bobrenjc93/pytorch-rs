@@ -1,0 +1,645 @@
+{
+  "schema": 1,
+  "repository": "bobrenjc93/pytorch-rs",
+  "evidenceCommit": "1315dce10e04481f3571850c35845d642b191225",
+  "subtree": "docs/diagnostics/compile-pointwise-structured-outputs",
+  "objectFormat": "sha1",
+  "fileCount": 78,
+  "bytes": 301344873,
+  "retention": "Existing repository Git history; preserved descendant ancestry, not an independent archival service. Removing these files from HEAD does not reduce full-clone history size.",
+  "retainedRefAtVerification": "refs/heads/burner/compile-bounded-nested-outputs-through-one-4bb831",
+  "retainedHeadAtVerification": "1315dce10e04481f3571850c35845d642b191225",
+  "remoteVerification": {
+    "completedAt": "2026-09-15T00:46:30.730Z",
+    "method": "Independent immutable-commit HTTPS retrieval; complete byte length, SHA256 and Git blob equality for every file",
+    "files": 78,
+    "bytes": 301344873,
+    "receiptSha256": "729cfec8801017bed5bc0228944390790e25f36489d8f24f7710775f254976ae"
+  },
+  "files": [
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/README.md",
+      "mode": "100644",
+      "gitBlob": "2fb7b096334d74be585aafe809b17f5fff350b3e",
+      "bytes": 10069,
+      "sha256": "55bc9d2c53edfb8cb33a049764c450762a93a1f853aa1b29368e075c31cf83f6",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/README.md"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-0f68f8bd/README.md",
+      "mode": "100644",
+      "gitBlob": "5739a276fb8aa59b7ba4cb8ac5ce5de849fde8dc",
+      "bytes": 5462,
+      "sha256": "a74f3d7eda242a7553cc746b814e27d52f6a0b8e9515d8b10b54a909936386e2",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-0f68f8bd/README.md"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-0f68f8bd/measurements.json.gz",
+      "mode": "100644",
+      "gitBlob": "e9eff1fd196e6909765639e64f2c47782cd5d2ce",
+      "bytes": 1481606,
+      "sha256": "ecc0cb0f75b9689bc0863d1c44455d413d899c3b3f0634a47622389cc7db6c20",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-0f68f8bd/measurements.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-0f68f8bd/raw-captures.tar.xz",
+      "mode": "100644",
+      "gitBlob": "ddbdeeb89e5a85d084a9463adcfa777865be8fa1",
+      "bytes": 93804380,
+      "sha256": "dd461ba72b9c64ab698733e51130fc6812f87a0342865fb8e7d514c738f43ced",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-0f68f8bd/raw-captures.tar.xz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-0f68f8bd/raw-manifest.json.gz",
+      "mode": "100644",
+      "gitBlob": "17b505da45ed70afd06d79cf9737b69e7fc388b8",
+      "bytes": 1873047,
+      "sha256": "6a0295d76ae9b3a97994e12c6fb8ad467cbba42f45e9f7737eb070cc222d4f57",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-0f68f8bd/raw-manifest.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-0f68f8bd/verification.json",
+      "mode": "100644",
+      "gitBlob": "111edfa807a5ba6bbd14b35234443ab51b81e281",
+      "bytes": 1396,
+      "sha256": "20326ef508fecc721ca534b444640ad984623a2becd8ff8dfa82369e5d8cef6d",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-0f68f8bd/verification.json"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-232cc734/README.md",
+      "mode": "100644",
+      "gitBlob": "758785e86c9d17404df39025d7a27e8b08de660a",
+      "bytes": 4481,
+      "sha256": "6b2bb952fedf5858e54b8a460d06d5c6b2439a4b2fa022dd026278a63234e1de",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-232cc734/README.md"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-232cc734/measurements.json.gz",
+      "mode": "100644",
+      "gitBlob": "e1c78e1480a9bbf59e3ddd21406adb08ded599b8",
+      "bytes": 930924,
+      "sha256": "cdc0ea20fdef3745a0165c1614c0962c90eee4fae91e098495942f2ac4e55a1d",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-232cc734/measurements.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-232cc734/raw-captures.tar.gz",
+      "mode": "100644",
+      "gitBlob": "83223a0d541455141f493885605aef5cd596a486",
+      "bytes": 2469421,
+      "sha256": "51491d7bd4fc64da229b33053e01c2487ab695096d7fcae5f356cf2163273c31",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-232cc734/raw-captures.tar.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-232cc734/raw-manifest.json.gz",
+      "mode": "100644",
+      "gitBlob": "9f552321f4a99fd05a978e48ad0368733fd564ef",
+      "bytes": 168512,
+      "sha256": "4a962a9bd9aa131154822397e2625f0191d49fe52e88a096b4b1edb92df5f49c",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-232cc734/raw-manifest.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-232cc734/verification.json",
+      "mode": "100644",
+      "gitBlob": "eefde3468984b504cc60d442e3356b5adc6cfd83",
+      "bytes": 1363,
+      "sha256": "c2f838a594719e4981a88a9c1958623dcf099f72b5a6ec7855705219b5690f35",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-232cc734/verification.json"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-36954660/README.md",
+      "mode": "100644",
+      "gitBlob": "75adf5201ec64f65876d4d64c8a654f4df5322b7",
+      "bytes": 4499,
+      "sha256": "4c4701519a7de05e09bd6d41bf6c040925c9ed6526caa289a0a89f0a514f6cbe",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-36954660/README.md"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-36954660/measurements.json.gz",
+      "mode": "100644",
+      "gitBlob": "77958f781e6356cde45b0083c86c2f417f827b24",
+      "bytes": 290975,
+      "sha256": "807dd68f0fb4e9bda4005632d9ead37a8e2e404d908bebeb633720db07a45cd0",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-36954660/measurements.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-36954660/raw-captures.tar.gz",
+      "mode": "100644",
+      "gitBlob": "83b6bee963c3fa186bad915a6f2cc450c0f61bca",
+      "bytes": 424605,
+      "sha256": "596f2f279c541973d5d10a456d73f97732d4c889222e95c97d3cd03ce0a9a266",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-36954660/raw-captures.tar.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-36954660/raw-retention-manifest.json",
+      "mode": "100644",
+      "gitBlob": "f6064449c0047012730af7210d185111dda3cdbb",
+      "bytes": 41303,
+      "sha256": "2fe088d4c62c3d76d0abf6eb9a2b4417f0471bb1ec8e047444f2a248aaa5dc9e",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-36954660/raw-retention-manifest.json"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-36954660/verification.log",
+      "mode": "100644",
+      "gitBlob": "84f4c1eed3cdf81a6316e2c8ab2dd384e9a5d1cb",
+      "bytes": 1113,
+      "sha256": "e408808c56b2aedb4402b2668c2466f85383b85048bce584bb3cc0b141f8d4f4",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-36954660/verification.log"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-4554bbe8/README.md",
+      "mode": "100644",
+      "gitBlob": "c11d50217cee7a599bb176b304bab05994c3225a",
+      "bytes": 4315,
+      "sha256": "e4e1deb5cdb9c904c998bf53a367312a388b7b6e176c890578a78e91ad777d73",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-4554bbe8/README.md"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-4554bbe8/measurements.json.gz",
+      "mode": "100644",
+      "gitBlob": "c0df9b90dadb424264b81dcd5eef3258c1a34dc9",
+      "bytes": 292359,
+      "sha256": "b1581b1b8439772592691a4f9802bd27b71ff99451d88f4cbaee332931697ea0",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-4554bbe8/measurements.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-4554bbe8/raw-captures.tar.gz",
+      "mode": "100644",
+      "gitBlob": "f91f64d21e017fb9572176f60a8bdad151c0598c",
+      "bytes": 1575806,
+      "sha256": "bc7e4429949f507ef28904cdb732df1181fa8ba8ffefa1120671100871f69db1",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-4554bbe8/raw-captures.tar.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-4554bbe8/raw-retention-manifest.json",
+      "mode": "100644",
+      "gitBlob": "574165dc62dfeae6265e95136b7b8d84fcbf0ac2",
+      "bytes": 420406,
+      "sha256": "177d37372074d6c5157cc4913868da71e037b4a87022319ec8a80cf493f56c5c",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-4554bbe8/raw-retention-manifest.json"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-4554bbe8/verification.log",
+      "mode": "100644",
+      "gitBlob": "c19f0cfd0e3bfd37cddfc15fa81aedf2301e3f7d",
+      "bytes": 5584,
+      "sha256": "1363997196a108b4780c69f78fb30e3dab4aa152ac23224423012482e0f1147a",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-4554bbe8/verification.log"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-523d51d7/README.md",
+      "mode": "100644",
+      "gitBlob": "e46b06d1dc6a29b474239c7033a9ae0778df62ce",
+      "bytes": 4546,
+      "sha256": "86cd455254feefcf78dd31f64251d56788b978460dfb47af2a218e67d3a79575",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-523d51d7/README.md"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-523d51d7/measurements.json.gz",
+      "mode": "100644",
+      "gitBlob": "5878d77ae0bdfef5fb674377bea8a1b5336be6ea",
+      "bytes": 973177,
+      "sha256": "9b51b2186151884772307eee8f79fa74836057e54ca3dd71f4b50299cc97bc75",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-523d51d7/measurements.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-523d51d7/raw-captures.tar.gz",
+      "mode": "100644",
+      "gitBlob": "b56c5805a5f4df8f00ca12f124499fe228431ae0",
+      "bytes": 2394695,
+      "sha256": "fdd9729309a23aa69395fb4596671352c3463e8699530a51de08ded0c42a283c",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-523d51d7/raw-captures.tar.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-523d51d7/raw-manifest.json.gz",
+      "mode": "100644",
+      "gitBlob": "622b058898787247a3db8401997f4153bf7ecfff",
+      "bytes": 127595,
+      "sha256": "d51fa24be3b3ec7a214aa4608e196760e20a77a4c7f484071e031445603eda44",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-523d51d7/raw-manifest.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-523d51d7/verification.json",
+      "mode": "100644",
+      "gitBlob": "6db5bafbbcdb20852b71d2a54bffdaf74902d09b",
+      "bytes": 1362,
+      "sha256": "861d4e0835c63c09db98b10eef6a71ea5d2da2c8d44954a09afbf9cdeb4eb208",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-523d51d7/verification.json"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/README.md",
+      "mode": "100644",
+      "gitBlob": "212a90d0cc1b24ae413f3945abcaca580e12b2ae",
+      "bytes": 4602,
+      "sha256": "06b19f4dffc756f25bb217c6ff3bd6fb61369774224e12f99ce8621f4e86cab7",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/README.md"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/measurements.json.gz",
+      "mode": "100644",
+      "gitBlob": "7d2f508e043a3488624a6523ea8344a6964e6db6",
+      "bytes": 294261,
+      "sha256": "4018942b7307ee9586d802742fc4a965ff946d261acf43b9aaeb9f9a1e84d0bc",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/measurements.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/raw-captures.tar.gz",
+      "mode": "100644",
+      "gitBlob": "690fc269bc409b179e2cbfc6e5d6367c33bb5c8c",
+      "bytes": 6158821,
+      "sha256": "441496bc78d66b8794c2bb32149fe183813ed04e23585882fad2654bce7ed0c8",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/raw-captures.tar.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/raw-retention-manifest.json.gz",
+      "mode": "100644",
+      "gitBlob": "aff94560e98a26599349a9d431f031a4c5af298c",
+      "bytes": 118224,
+      "sha256": "64402b7295b4b83bc0a99e359f241c940a27ca70ec07bdec947fc55bd83e4c50",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/raw-retention-manifest.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/verification.log",
+      "mode": "100644",
+      "gitBlob": "9a27c0e99c13b3270f8c1eaedf92621480a16245",
+      "bytes": 3937,
+      "sha256": "6bf2d39017b353d97e1b87c6be83341d9dfc7812d0a0d4d91134a05b1e166afe",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-69a73844/verification.log"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-90de52a9/README.md",
+      "mode": "100644",
+      "gitBlob": "cbdcaf290c0ffc9008c3a24a906e8e78b4e6f421",
+      "bytes": 3886,
+      "sha256": "03542fe26ab9531a031c22fbde743fff806cda7c61b09650837efe662936f761",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-90de52a9/README.md"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-90de52a9/measurements.json.gz",
+      "mode": "100644",
+      "gitBlob": "5fc2f0e49f3602bb9f0f49a73406ba9b26a6f3be",
+      "bytes": 291452,
+      "sha256": "0873ca30fd11afdb53376010d96f5255fe775a4f8eb7adab1755b0defa73d54d",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-90de52a9/measurements.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-90de52a9/raw-captures.tar.gz",
+      "mode": "100644",
+      "gitBlob": "1daba678b6af3055adfa3f6eb62b88048b83ed42",
+      "bytes": 1066480,
+      "sha256": "2b334e931d2650d16a9c181c5c1dcf4c20582eb0f9600ff633696083824d87ec",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-90de52a9/raw-captures.tar.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-90de52a9/raw-retention-manifest.json",
+      "mode": "100644",
+      "gitBlob": "70d24a9d26b948f43085a627063257962b5c3603",
+      "bytes": 91967,
+      "sha256": "d73b079b84759e4be5c6b13701e6fd159a58c1678a6a50ae503f424f63fad27f",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-90de52a9/raw-retention-manifest.json"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-90de52a9/verification.log",
+      "mode": "100644",
+      "gitBlob": "7d7d16e4336d7448c085e0f84c06a319d87c666a",
+      "bytes": 1774,
+      "sha256": "a2b0b0473f2c0afb023746171ae6357b084df15a87572b204a44af14649d8b92",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-90de52a9/verification.log"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c238ca63/README.md",
+      "mode": "100644",
+      "gitBlob": "bc554a1e26654d8f2b8111522e38039004ad4796",
+      "bytes": 3645,
+      "sha256": "98cf2076884f4895814e0b4afe69fa852ceccd500b6f1cb90c06856da1183949",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c238ca63/README.md"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c238ca63/measurements.json.gz",
+      "mode": "100644",
+      "gitBlob": "802ab4dce3bf629b00efd6f51659d70a5c28bae7",
+      "bytes": 1015757,
+      "sha256": "68851aa43f18d05be88194205ab408cb17d91a98c63798c8c666ac717676c95d",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c238ca63/measurements.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c238ca63/raw-captures.tar.xz",
+      "mode": "100644",
+      "gitBlob": "0bbe8815c46a1539c02fe6f8fdb23a877d4abff5",
+      "bytes": 71012112,
+      "sha256": "41d62ef29f15f9ca470ed5e9e52fcfbb53a17fc6602dcaaca0e108580035a656",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c238ca63/raw-captures.tar.xz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c238ca63/raw-manifest.json.gz",
+      "mode": "100644",
+      "gitBlob": "f5e65c404fac25a118a9162ca80e6e2de5c8b6ca",
+      "bytes": 1978215,
+      "sha256": "8706a8884338a3a2c2debee405e6aebffb7dfdd7a1e5d2f62abf1f75b919d754",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c238ca63/raw-manifest.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c238ca63/verification.json",
+      "mode": "100644",
+      "gitBlob": "401b211b6cfbf3902cbe06a0f9cca39eb864e5b5",
+      "bytes": 1431,
+      "sha256": "86e695873b5bc92e45252ecfd7eb9f9c3c5d794aa3f5ea5eb4b4f45bd0dc05e5",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c238ca63/verification.json"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c504a49b/README.md",
+      "mode": "100644",
+      "gitBlob": "ff96faaed1b9142f17b878b44ad4d83bd3318f05",
+      "bytes": 5177,
+      "sha256": "f4fcf018ee855cef4e94cea286e0eb1d8f337055092090ad397d1659e33caaf0",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c504a49b/README.md"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c504a49b/measurements.json.gz",
+      "mode": "100644",
+      "gitBlob": "bb6006991b6c9c7dde5429ec77d1e5dc806280d7",
+      "bytes": 295365,
+      "sha256": "20695ecb7154e5a2a0dea03694267947a7736017fa6bf974ccfdc593a4272f2c",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c504a49b/measurements.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c504a49b/raw-captures.tar.gz",
+      "mode": "100644",
+      "gitBlob": "0827897f825e647aab54ef4153c97c4a2effef40",
+      "bytes": 2064829,
+      "sha256": "b8a6e46d8d37e08eba8e2dd1dde838d3c4a8748ba346ed35ccbc8596013786cb",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c504a49b/raw-captures.tar.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c504a49b/raw-retention-manifest.json.xz",
+      "mode": "100644",
+      "gitBlob": "5c266c7320147205c5a8f3369c244184c26c9664",
+      "bytes": 116252,
+      "sha256": "27f8aa81ae143de9d20368615bd5d999b321d78f6181c96b2ba4938e6b4d320d",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c504a49b/raw-retention-manifest.json.xz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c504a49b/verification.log.xz",
+      "mode": "100644",
+      "gitBlob": "1af0f0fdc1c4be31e4cf714af57ae912f1fa7fb9",
+      "bytes": 2144,
+      "sha256": "ceb40e66f5cc0ad69693e06f4a59e2f18deac78b82b2db9efdc92eb3b7ad81ef",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/postcommit-c504a49b/verification.log.xz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-duplicate-roots/README.md",
+      "mode": "100644",
+      "gitBlob": "4086ceaa1462c7b4ac6ec08f72bb3f12c09cda4d",
+      "bytes": 3385,
+      "sha256": "ecf9672d86c56ff8546ae04d56c82a3110d6b31d5b027355ffad6686738cb637",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-duplicate-roots/README.md"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-duplicate-roots/measurements.json.gz",
+      "mode": "100644",
+      "gitBlob": "968e3fc785d41aea467114cd33f24647b5950058",
+      "bytes": 974556,
+      "sha256": "c9ff522f94300df05d80ea18916394a8ae4fd776448f127c58f044e75250fd1e",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-duplicate-roots/measurements.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-duplicate-roots/raw-manifest.json.gz",
+      "mode": "100644",
+      "gitBlob": "fbbe5b3c99ec6126c1153f041c1efb36e09dd30e",
+      "bytes": 193525,
+      "sha256": "a0ef3448ca645d619a08fd19cab25331c5005e4ac10868604ea9d0f9e8cc5ff6",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-duplicate-roots/raw-manifest.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-duplicate-roots/raw.tar.gz",
+      "mode": "100644",
+      "gitBlob": "398406eef2c14d9f25d80e3b1220d3a773fffab1",
+      "bytes": 2000561,
+      "sha256": "fc5d10df9bc36459784dfc49cb1917353069267ff13c8e18f2ae390c56694380",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-duplicate-roots/raw.tar.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-duplicate-roots/verification.json",
+      "mode": "100644",
+      "gitBlob": "125eeef619b0647292d9b82bbc5c0fdac054e7f7",
+      "bytes": 1379,
+      "sha256": "de3582638b5b72c4f6860904736c69195675d8603b4fd3ffd7be4b3af193c076",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-duplicate-roots/verification.json"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-history/README.md",
+      "mode": "100644",
+      "gitBlob": "8c504f733e1a4fbb5c434e4238a42ff0ca3db046",
+      "bytes": 6318,
+      "sha256": "8399f86077c603156e22b84eebc19ed8c0295d9872e8395d650ba3c8ed9f7060",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-history/README.md"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-history/measurements.json.gz",
+      "mode": "100644",
+      "gitBlob": "5676ce98a3ecf40b8736b4e0886f1489f2b4ec50",
+      "bytes": 18537,
+      "sha256": "7462433f5da3949d2d8a5c63b985dd92859f2169393a8f042c697d72b0f6a1a6",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-history/measurements.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-history/raw-captures.tar.xz",
+      "mode": "100644",
+      "gitBlob": "40cb06b75ee732611df8b1a62610ff0c6ed072d0",
+      "bytes": 15373228,
+      "sha256": "56bf7ffaed46c76c7920469aa6f41b97a2d26609f519cc162e7f5229f601d6dd",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-history/raw-captures.tar.xz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-history/raw-retention-manifest.json.gz",
+      "mode": "100644",
+      "gitBlob": "9702a9e3c488846c1ab7463434d12928926039f3",
+      "bytes": 305247,
+      "sha256": "932c1352bf28280ede6bae151b8eec9165b64f9831ade8bf096e67cea98d9731",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-history/raw-retention-manifest.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-history/verification.log",
+      "mode": "100644",
+      "gitBlob": "32c98df266e5622ed9344816d022eb30b03005e7",
+      "bytes": 415,
+      "sha256": "c29664f0fbe3a9288cf77b36ad91e23bb3a12a4579a974a9338cd91f172af355",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-history/verification.log"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-nonlinear-regions-measurements.json.gz",
+      "mode": "100644",
+      "gitBlob": "14d0cedcba1fa0df77e85503d25256951308f14e",
+      "bytes": 27275,
+      "sha256": "1388bb28996e0b184c4f4fd44d6d58e3bcf020cfe02fca00059e9620389b4629",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-nonlinear-regions-measurements.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-nonlinear-regions-raw.tar.gz",
+      "mode": "100644",
+      "gitBlob": "c07c7df19401325a3dade8f3a46228394a740209",
+      "bytes": 4280504,
+      "sha256": "b4ca7853b1016adfe3323cf85f551628e3d8c40b04b9e868b46779b7517cabe2",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-nonlinear-regions-raw.tar.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-nonlinear-regions-retention.json",
+      "mode": "100644",
+      "gitBlob": "cdb6b40111a0250714cd811b3728c2f4546fed56",
+      "bytes": 3437,
+      "sha256": "9e118779643ec77d220ba9d19b14f11608947091bd14683401260844122e7d17",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-nonlinear-regions-retention.json"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-nonlinear-regions.md",
+      "mode": "100644",
+      "gitBlob": "1c350de730af1190acca13fd69133e7e613f369a",
+      "bytes": 6183,
+      "sha256": "0649648f5d4172c355beafb69ca6bb2badc31dc94ef53eb3d3e036eeb700fdbb",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-nonlinear-regions.md"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-realization/README.md",
+      "mode": "100644",
+      "gitBlob": "a55a71ce5942c037e0b93be4f88e6cf0e7e5384b",
+      "bytes": 5727,
+      "sha256": "299b16a8dad800071009e5cef321cc52eba73d5b67666af5071f686186d4d894",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-realization/README.md"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-realization/measurements.json.gz",
+      "mode": "100644",
+      "gitBlob": "cda29b2add73638901585b494b75e41dd3481e7c",
+      "bytes": 2126444,
+      "sha256": "c78b29cd34ab792d4df817f0383d0ec85d3b1713d16455db8cc4e36d2dfe37c7",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-realization/measurements.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-realization/raw-manifest.json.gz",
+      "mode": "100644",
+      "gitBlob": "a13b2eb6c159302f252a61265a7ad19f423d1a5f",
+      "bytes": 273578,
+      "sha256": "e04c265978908aef9746d362f7331062a5c612640d4a6d030b3e38baf90833a5",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-realization/raw-manifest.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-realization/raw.tar.gz",
+      "mode": "100644",
+      "gitBlob": "cc09f088934d3930af0d744195085501c6a4bb5b",
+      "bytes": 3877303,
+      "sha256": "e43e35dc606aa4170260b80c1f348a264a6ebac0c86bb4a7c0823e3e4792544c",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-realization/raw.tar.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-realization/verification.json",
+      "mode": "100644",
+      "gitBlob": "7259b00f9c6b5895dd1f010ae87e52261fb9e0f8",
+      "bytes": 1804,
+      "sha256": "c9f81ae8fbbb380532472f07190240501e1edab1e5973ad2f199a3a140980810",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-realization/verification.json"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-returned-products-measurements.json.gz",
+      "mode": "100644",
+      "gitBlob": "d091d9c8a8bac0f58ac1550583b85172c4acff4a",
+      "bytes": 15122,
+      "sha256": "82adc39f63bfcfa8d94417b8f9284f8b22aa1d6728386ccfd1f3f22f750671d9",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-returned-products-measurements.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-returned-products-raw.tar.gz",
+      "mode": "100644",
+      "gitBlob": "ed477efd641d6a8d77e394686968f15262f964b1",
+      "bytes": 3649466,
+      "sha256": "d9ee7eb550dc90505da882141ccf417ba3521042ff63c39dd7e0549057df25af",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-returned-products-raw.tar.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-returned-products-retention.json",
+      "mode": "100644",
+      "gitBlob": "001850676965eb407a8e7f9ed1506eb1b804aeca",
+      "bytes": 3054,
+      "sha256": "1eb77269587baab2e02552987535a33293d686d4014c290ba82278d818451ec8",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-returned-products-retention.json"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-returned-products.md",
+      "mode": "100644",
+      "gitBlob": "b71e599a5852ba9a65371089db12f8205ca47252",
+      "bytes": 5245,
+      "sha256": "f8c3dac1bb6a12bb69b8561bb7b97f25e8a16e03c892f6a2f647d4995f61ca17",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-returned-products.md"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-sibling-products-measurements.json.gz",
+      "mode": "100644",
+      "gitBlob": "f91580aedd39c132c52c5c6a73bb69f0fd3ce967",
+      "bytes": 19110,
+      "sha256": "be647d5607ee1790fe796c49f0da72aefa325409a1f702f3101064ab1358d7b8",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-sibling-products-measurements.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-sibling-products-raw.tar.gz",
+      "mode": "100644",
+      "gitBlob": "a0ea5904135d4936d144d3a61e4b783cb7c3961d",
+      "bytes": 3563138,
+      "sha256": "3b61bee146de5dad6c3c8863dde7c395d771b02f46511a6fb1aa12bc045f009d",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-sibling-products-raw.tar.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-sibling-products-retention.json",
+      "mode": "100644",
+      "gitBlob": "53c8ef215aec86b3e98799243d7a9a8e5f2cd684",
+      "bytes": 2575,
+      "sha256": "81c1c09f55a44bb01207f99290a052e4a6863bd9a6301054496af8bfd5248a18",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-sibling-products-retention.json"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-sibling-products.md",
+      "mode": "100644",
+      "gitBlob": "2418643a2aa8df7f8f3467a1b2c2075f69b693cb",
+      "bytes": 6572,
+      "sha256": "2a07c87c2115797afc60854beef098cd7455bc2ff17a395fe860310ea960e45f",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-sibling-products.md"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-signed-uses/README.md",
+      "mode": "100644",
+      "gitBlob": "c53e4ebda30539ddd89e369198fd2aca5f16501f",
+      "bytes": 3690,
+      "sha256": "6bf272423e818f639a8aa6b9b8cc1ff8ed9f8f620ce96af259eb1a69145f79d4",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-signed-uses/README.md"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-signed-uses/measurements.json.gz",
+      "mode": "100644",
+      "gitBlob": "b66f71205d54aa54fbf0c30d148a9f31f6ccca60",
+      "bytes": 1143490,
+      "sha256": "d50b1339b32d7412082373ffb85281233fc640e6b429fbba0f56b3f7ff39f3e8",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-signed-uses/measurements.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-signed-uses/raw-captures.tar.xz",
+      "mode": "100644",
+      "gitBlob": "4bcd0f8cae147dde805117d4f6c79eee8af6e855",
+      "bytes": 69534580,
+      "sha256": "81aa2588d4f39f0891971e3dc92196fbe5a84eb933eb0cc789257110ac31f2bc",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-signed-uses/raw-captures.tar.xz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-signed-uses/raw-manifest.json.gz",
+      "mode": "100644",
+      "gitBlob": "d3ab6906320bb3fe87b7cfb1d1cde02b59eca1f8",
+      "bytes": 2074809,
+      "sha256": "4c88cf1ae938ba040d6894e66772daf3ad09ce679cd32c1131c08817f28fc00d",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-signed-uses/raw-manifest.json.gz"
+    },
+    {
+      "path": "docs/diagnostics/compile-pointwise-structured-outputs/review-signed-uses/verification.json",
+      "mode": "100644",
+      "gitBlob": "14d120efe6f64ed3670f01bb918f1a1cbb129809",
+      "bytes": 1284,
+      "sha256": "2444dd0d29d28b3e35e4c485d50e5d66bbfc10be62f1595b22cf2051e4017c1a",
+      "url": "https://raw.githubusercontent.com/bobrenjc93/pytorch-rs/1315dce10e04481f3571850c35845d642b191225/docs/diagnostics/compile-pointwise-structured-outputs/review-signed-uses/verification.json"
+    }
+  ]
+}

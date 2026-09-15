@@ -42,8 +42,16 @@ identity and detailed symbol pointers alongside generated FX and scheduler IR.
 
 One graph-keyed CUDA kernel interprets that bounded program in one launch.
 Container topology does not create additional native executables. Instruction
-validation and register allocation precede device allocation; invocation-owned
-plan and register buffers survive upload, launch, completion and failure.
+validation and register allocation precede device allocation. Matching warm calls
+reuse an immutable validated program and completed instruction upload. Selection
+includes exact admitted input shapes, retained numerical hint and observable
+output order; rank-zero and length-one inputs are distinct signatures. The Rust
+planner remains the only numerical authority, including for oversized ephemeral
+preparations. This reuse changes neither instructions nor admission: current
+input metadata must still match the checked native signature. Register scratch
+and outputs remain fresh invocation-owned storage through launch, completion and
+failure. The usage guide describes the bounded data cache and its memory limits;
+no performance improvement is implied without a new measurement.
 
 ## Expression sharing and contraction
 
@@ -122,7 +130,8 @@ product to rank. Scalar leaves of every kind, identity wrappers, subtraction,
 negation, ReLU, sin/cos and extra live arithmetic are outside this exception.
 Matching the original nodes before identities, CSE and sign normalization keeps
 those near misses excluded. Dead nodes and unused arguments still receive full
-validation, and direct execution still checks original admission and addresses.
+validation. Preparation checks original admission and addresses; reuse requires
+the same exact native shapes and revalidates current input metadata and storage.
 The [H100 diagnostic record](diagnostics/compile-pointwise-tensor-madd/README.md)
 preserves exact IEEE comparisons, including zero signs, against ordinary default
 Inductor; NaN payload equality is not required. This bounded evidence does not

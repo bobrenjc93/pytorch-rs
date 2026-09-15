@@ -400,7 +400,8 @@ class PositionalScalarHardware(unittest.TestCase):
         class FailedLaunch:
             def run(self, *args):
                 raise RuntimeError('injected launch failure')
-        with mock.patch.object(bridge, '_pointwise_compile', return_value=FailedLaunch()):
+        with mock.patch.object(bridge, '_pointwise_compile',
+                               return_value=jit_tests.mock_pointwise_executor(FailedLaunch().run)):
             with self.assertRaisesRegex(RuntimeError, 'injected launch failure'):
                 compiled(16777218., x)
         self.assertEqual(cache(compiled).graphs, before)
@@ -818,7 +819,8 @@ class PersistentSpecializationHardware(unittest.TestCase):
         for scalar in (0., True):
             for failure in ('compile', 'launch'):
                 effect = ({'side_effect': RuntimeError('injected transactional compile failure')}
-                          if failure == 'compile' else {'return_value': FailedLaunch()})
+                          if failure == 'compile' else
+                          {'return_value': jit_tests.mock_pointwise_executor(FailedLaunch().run)})
                 with self.subTest(scalar=scalar, failure=failure), \
                      mock.patch.object(bridge, '_pointwise_compile', **effect):
                     with self.assertRaisesRegex(RuntimeError, 'injected transactional'):

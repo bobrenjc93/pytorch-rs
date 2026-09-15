@@ -138,8 +138,11 @@ computed root into native numerical planning. Realization and fusion determine
 logical regions, including rounded intermediate imports and exports. A native
 scalar instruction plan executes those regions within one generated CUDA kernel;
 changing return order supplies different plan data to the same graph-keyed
-executable. Invocation-owned plan and register storage survive synchronization
-and failure. Register scratch is capped at 64 MiB by limiting active workers and
+executable. An immutable preparation retains the validated plan and completed
+read-only instruction upload for matching warm calls. Register scratch and
+computed outputs remain invocation-owned through synchronization and failure;
+neither input tensors nor previous outputs are retained by preparations.
+Register scratch is capped at 64 MiB by limiting active workers and
 using a grid-stride loop. This execution strategy adds instruction-dispatch and
 scratch traffic; correctness captures do not establish a performance improvement.
 
@@ -399,21 +402,51 @@ returns, including the sign of zero.
 Native executors specialize the full filtered tensor ABI, device and exact
 broadcast address formulas. Equal-shaped inputs share linear-load code. A logical
 hit may compile a new concrete executor without consuming a logical slot or
-updating promotion history. Every launch rechecks original-IR numerical admission
-on actual shapes, including unused tensors and singleton-only linear maps.
+updating promotion history. Preparation checks original-IR numerical admission on
+actual shapes, including unused tensors and singleton-only linear maps. A warm
+preparation requires the identical native input shapes (including rank); that
+checked signature certifies reuse of the graph's shape analysis. Every run still
+rechecks current types, device, dtype, gradients, contiguity, element/storage
+bounds and exact shapes, and uses current offsets and runtime scalar values.
 
 `recompile_limit` defaults to eight logical specializations. The executable LRU
 and each specialization's ABI-lowering LRU are independently bounded by the same
-limit. Failed admission, compilation or execution publishes no entry, history or
-LRU change. `torch.compiler.reset()` clears both cache levels; the next call
-recompiles.
+limit. Immutable preparations form a separate data LRU keyed by executor key,
+exact input shapes, the retained numerical hint and computed-root output order.
+Container-only changes do not fragment this data cache. Different exact shapes
+may prepare or evict data within one generalized logical specialization without
+consuming another logical slot or creating another module.
+
+The preparation LRU is bounded by the same entry count and a 32 MiB per-wrapper
+retained-data budget. The host instruction vector is dropped after completed
+upload. Native charges include device allocation bytes (including best-fit excess
+capacity), and owned
+signature/layout storage. Python charges conservatively count every key referent,
+including shared/repeated references and its graph, plus the wrapper and a
+512-byte per-entry bookkeeping allowance. This is not a bound on total process
+memory, CUDA allocator pools, modules, outputs, scratch or transient preparation.
+An oversized preparation executes by the same mechanism without being retained.
+Evicting an executor drops all its cached preparations.
+
+Failed admission, preparation, compilation, execution, output conversion or result
+reconstruction publishes no entry, history or LRU change. All cache publication
+happens after successful result reconstruction. `torch.compiler.reset()` clears
+all three levels under the same lock; the next call recompiles. Explicitly held
+private prepared objects have ordinary independent ownership, like held private
+kernel objects, and may outlive wrapper reset.
 
 ## Storage and device ownership
 
 A native bridge revalidates input layouts, ranges and device before allocation
-or launch. Storage owners remain borrowed through legacy-stream completion,
+or launch. Preparation and execution both check the kernel's recorded driver
+context under the existing device guard; preparation checks before uploading
+instructions. A successful upload has its own completion boundary, which is not
+repeated on a cache hit. Storage owners remain borrowed through legacy-stream completion,
 including errors. One launch produces fresh computed outputs; empty outputs need
-no launch or input pointer. Modules are owned by cache entries, keyed by device
+no launch, instruction upload, scratch or input pointer. An empty computed output
+does not require every input to be empty; unused inputs still receive validation.
+The private legacy kernel `.run` uses the same preparation/execution mechanism
+ephemerally. Modules are shared with immutable preparations, keyed by device
 and checked against the active driver context. The existing device guard
 restores the caller's device on compilation, execution and module destruction.
 Wrapper locks serialize cache publication and reset.
