@@ -1,6 +1,6 @@
 # Structured-output compiler evidence
 
-The [clean `9f09bc2a` capture](postcommit-9f09bc2a.json) records 59 structured/prepared
+The [clean `6ec4f2dd` capture](postcommit-6ec4f2dd.json) records 59 structured/prepared
 checks, nine separate two-H100 checks, 73 native checks, and 164 portable passes
 per CPython 3.10–3.14 interpreter. The two hardware skips in the focused run passed
 in the separate device run; each portable run skipped 168 hardware cases.
@@ -9,6 +9,10 @@ captures with native CUDA/PTX and plans. Raw artifacts remain in the canonical
 worktree-local report root recorded there, with a verified archive hash; they are
 not another checked-in payload or an off-host backup. This capture produces no
 performance score and does not replace independent review or full qualification.
+Formatting and both CI Clippy configurations also passed. The initial incomplete
+portable setup and its successful retry are retained in the report.
+The [prior `9f09bc2a` capture](postcommit-9f09bc2a.json) remains unchanged and
+bound to that earlier source revision.
 
 ## Historical captures
 
