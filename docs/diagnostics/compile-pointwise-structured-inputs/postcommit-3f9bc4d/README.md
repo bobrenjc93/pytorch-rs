@@ -1,11 +1,10 @@
 # Structured input clean-commit correctness capture
 
-**Refresh required before final review:** this capture predates the CPython 3.10
-`ROT_TWO`/`ROT_THREE` compatibility fix and its tuple-assignment regressions.
-It does not validate the revised candidate. Preserve these measured records;
-after Burner commits the fix, repeat the clean-commit capture with the expanded
-test module and record the new source/build identities. Dirty-source development
-checks do not replace that outstanding capture.
+**Superseded by the [85fe118 clean-commit refresh](../postcommit-85fe118/README.md):**
+this capture predates the CPython 3.10 `ROT_TWO`/`ROT_THREE` compatibility fix
+and does not validate the revised candidate. The new capture reruns the expanded
+committed tests and records its actual source/build identities. The original
+measurements below and raw evidence remain unchanged.
 
 Measured implementation: `3f9bc4dc6599a9a5393a5254edb3fa5ee222473d`
 (base `2f15b4ce53dc45918ea644a3370257f340747755`). Captured on
