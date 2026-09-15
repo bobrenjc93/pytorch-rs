@@ -11625,6 +11625,26 @@
         "eval_d4c0b71e": 83,
         "eval_b7f2a91c": 5.5
       }
+    },
+    {
+      "key": "pr:1998",
+      "recordedAt": "2026-09-15T20:30:21.533Z",
+      "label": "PR #1998",
+      "kind": "leaf",
+      "prNumber": 1998,
+      "title": "Compile bounded structured input trees in the default backend",
+      "scores": {
+        "eval_7af648fb": 91,
+        "eval_8417a4a8": 24.1,
+        "eval_63a24994": 60,
+        "eval_39340456": 34,
+        "eval_b4945d15": 80,
+        "eval_c8a1bfb9": 73,
+        "eval_a61c0e71": 18,
+        "eval_6f98c42d": 28,
+        "eval_d4c0b71e": 83,
+        "eval_b7f2a91c": 5.5
+      }
     }
   ]
 }
