@@ -1,0 +1,70 @@
+{
+  "all_original_gzip_identities_verified": true,
+  "all_six_json_streams_equal_original_gzip_decompression": true,
+  "archive": {
+    "bytes": 40704005,
+    "path": "docs/diagnostics/compile-gelu-linked/postcommit-2d9e55f8/fixed-workers.tar.zst",
+    "sha256": "d898162a9c7737aced05757b83bf9b5aaea8f571d5afad4ab7ce2b1b6584ad27"
+  },
+  "checked_at": "2026-09-16T08:11:01.081882+00:00",
+  "members": {
+    "cpu-0-candidate.json": {
+      "bytes": 52616,
+      "sha256": "94fde41b61d45648d52277cefbb330d55c04872ea8b2760207a4ba4745d8eed9"
+    },
+    "cpu-0-candidate.log": {
+      "bytes": 823,
+      "sha256": "425c342763d99e2789b8a29851cdc6f34b002e58bac0348f87e258427076d072"
+    },
+    "cpu-0-reference.json": {
+      "bytes": 109147829,
+      "sha256": "e14e671593efb82536d071805fd6c1c2d417fe21e7f0c2f5188e2b2733a2b90f"
+    },
+    "cpu-0-reference.log": {
+      "bytes": 2162,
+      "sha256": "78782db0ac13d6d2e9c2076331801abc3b70121584c7c0bd66b9b5f021904c41"
+    },
+    "cuda-0-candidate.json": {
+      "bytes": 34342719,
+      "sha256": "80aa93a30e1f0a3b569eb654302ab546d27e73ff3887b7a95d23f892025a5d20"
+    },
+    "cuda-0-candidate.log": {
+      "bytes": 851,
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac"
+    },
+    "cuda-0-reference.json": {
+      "bytes": 109155377,
+      "sha256": "6a6216923d51aee1b78a2b019fdba0d5a52babfa49ccd4490bc5034108081393"
+    },
+    "cuda-0-reference.log": {
+      "bytes": 2563,
+      "sha256": "5743d8b6bb70a7ae35e079b284e0c94f6861164ac3c2dcf6db22a2032db217cb"
+    },
+    "cuda-1-candidate.json": {
+      "bytes": 34342749,
+      "sha256": "e50d63f0c408f0b87646049e903ad1aef50f7342c88a85e03491b8756a20258b"
+    },
+    "cuda-1-candidate.log": {
+      "bytes": 851,
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac"
+    },
+    "cuda-1-reference.json": {
+      "bytes": 109155442,
+      "sha256": "d299e6b2f4927522236c1c783f525deac20aaccd4cdfc8a54ee6f3662180542a"
+    },
+    "cuda-1-reference.log": {
+      "bytes": 2563,
+      "sha256": "5b66624ef7d262e1098741ff0784ce7317fe8e93ff9b11d85d03c416306c6731"
+    },
+    "report.json": {
+      "bytes": 394606,
+      "sha256": "d1823030869041ceb63cc91440446cd5eff70e83084ef9ea9f623bab79a47fb0"
+    },
+    "transport-index.json": {
+      "bytes": 6554,
+      "sha256": "2636ae37722650537814a22578b60b4f27dfb0e6f2772706a5433401748ee56d"
+    }
+  },
+  "passed": true,
+  "scope": "Read-only transport check; no measurements rerun or member provenance rewritten"
+}

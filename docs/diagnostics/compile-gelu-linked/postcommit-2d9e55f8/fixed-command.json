@@ -1,0 +1,9 @@
+{
+  "recorded_at": "2026-09-16T08:04:20.514721+00:00",
+  "command": "env -u BURNER_EVALUATION_ARTIFACT_DIR TMPDIR=\"$PWD/target/gelu-linked/postcommit-2d9e55f8/tmp\" PYTHONDONTWRITEBYTECODE=1 CUDA_VISIBLE_DEVICES=0 bash scripts/evaluate_torch_compile_default.sh --metric both --output target/gelu-linked/postcommit-2d9e55f8/fixed-report.json",
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33",
+  "observed_process_exit_code": 0,
+  "log": "fixed.log",
+  "report": "fixed-report.json",
+  "timing_note": "Exact measured setup timestamps are in report.setup; recorded_at is receipt assembly, not process completion."
+}

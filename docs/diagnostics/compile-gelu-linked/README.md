@@ -4,8 +4,10 @@ The verified direct-libNVVM provider passed the private native compiler
 prerequisite before the bounded public/eager implementation was added. The
 [supported surface](../../supported-surface.md) and
 [compiler contract](../../compile-pointwise-jit.md#functional-gelu) describe
-what is implemented. This directory records development measurements, not a
-clean-commit qualification or general numerical/performance certificate.
+what is implemented. This page preserves the staged development measurements.
+The [clean-commit capture at 2d9e55f8](postcommit-2d9e55f8/README.md) refreshes
+public correctness/timings and the unchanged fixed gate. Neither capture is
+a general numerical/performance certificate or merge approval.
 
 | Capture | Result | Essential raw record |
 | --- | --- | --- |
@@ -118,10 +120,10 @@ harness tests, both default/Python-binding clippy configurations and formatting.
 Wheel and source-package vendor/source inclusion was checked. Exact logs,
 earlier failed checks and limits accompany the supporting record.
 
-**Outstanding after Burner commits:** regenerate current public eager/compiled/
-no-NVRTC and timing evidence from the clean code commit, run the unchanged
-fixed coverage and CUDA-performance scoring gates, and complete canonical full
-qualification/independent review. The present fixed run uses `--diagnostic`
+The deferred public eager/compiled/no-NVRTC, timing and fixed-gate captures are
+now [recorded from clean commit 2d9e55f8](postcommit-2d9e55f8/README.md).
+Canonical full qualification and independent review remain outstanding.
+The development fixed run above uses `--diagnostic`
 and records `valid=false`; it is not a final score. All worker output hashes,
 logs and the full 112-cell report are retained; bulky fixed raw worker tensors
 remain at the recorded worktree-local run directory, not in this archive.
