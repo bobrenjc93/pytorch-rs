@@ -1,0 +1,74 @@
+{
+  "source": {
+    "commit": "6255306165615d9502a4aa491187bcf626e9d585",
+    "source_sha256": "7c507bde8112dbb33e3a08d1a49371956759da3891d1f462bf0bd6a34185fcf2",
+    "working_tree_changes": ""
+  },
+  "commands": [
+    {
+      "name": "rust-indexing",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "pointwise_ir::indexing",
+        "--",
+        "--test-threads=1"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0b9940d4",
+      "environment_overrides": {},
+      "cuda_visible_devices": "0",
+      "started_unix_ns": 1789517567131797098,
+      "finished_unix_ns": 1789517570312112785,
+      "exit_code": 0,
+      "log_sha256": "1bddbfddb7b43add90597420b4e70d7dcc7853baeca1f0f793c95fc0af500176"
+    },
+    {
+      "name": "focused-h100",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0b9940d4/target/default-compile-eval/venv/bin/python",
+        "-B",
+        "-c",
+        "import sys, unittest; sys.path.insert(0, 'tests'); unittest.main(module=None)",
+        "test_compile_pointwise_broadcast_trig",
+        "test_compile_pointwise_broadcast_priority",
+        "test_compile_pointwise_prepared.PreparedHardware.test_private_prepared_admission_cannot_bypass_graph_or_shape_checks",
+        "test_compile_pointwise_runtime_scalars.PositionalScalarHardware.test_unused_tensors_cannot_bypass_broadcast_boundary_and_one_tensor_is_unchanged",
+        "test_compile_pointwise_scalar_admission.PositionalBindingAdmission.test_scalar_slots_preserve_original_ir_actual_shape_admission",
+        "test_compile_pointwise_broadcast.Broadcast.test_ieee_broadcast_contraction",
+        "test_compile_pointwise_helpers.HelperHardware.test_original_ir_boundary_and_native_input_validation",
+        "-v"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0b9940d4",
+      "environment_overrides": {},
+      "cuda_visible_devices": "0",
+      "started_unix_ns": 1789517570654069619,
+      "finished_unix_ns": 1789517609813256300,
+      "exit_code": 0,
+      "log_sha256": "ea7d7f8c7ee1a75dfe3a42b56541b1116aa01a0c662cbfda78c7553b9bddbecf"
+    },
+    {
+      "name": "portable-trig",
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0b9940d4/target/default-compile-eval/venv/bin/python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_compile_pointwise_broadcast_trig.py",
+        "-v"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0b9940d4",
+      "environment_overrides": {
+        "CUDA_VISIBLE_DEVICES": ""
+      },
+      "cuda_visible_devices": "",
+      "started_unix_ns": 1789517610160602076,
+      "finished_unix_ns": 1789517613000537001,
+      "exit_code": 0,
+      "log_sha256": "123e0924ae6df1b756320b739c5f41ec1b44bce58322ccf329b8b069598fa761"
+    }
+  ]
+}

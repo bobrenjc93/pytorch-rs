@@ -1,0 +1,17 @@
+{
+  "command": [
+    "bash",
+    "scripts/evaluate_torch_compile_default.sh",
+    "--metric",
+    "both",
+    "--output",
+    "target/postcommit-6255306/full-evaluation.json"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0b9940d4",
+  "started_unix_ns": 1789517650165315298,
+  "finished_unix_ns": 1789517896172772214,
+  "exit_code": 0,
+  "CUDA_VISIBLE_DEVICES": "0",
+  "BURNER_EVALUATION_ARTIFACT_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0b9940d4/docs/diagnostics/compile-pointwise-broadcast-trig/postcommit-6255306/full-evaluation",
+  "commit": "6255306165615d9502a4aa491187bcf626e9d585"
+}

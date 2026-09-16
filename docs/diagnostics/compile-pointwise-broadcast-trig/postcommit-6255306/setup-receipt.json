@@ -1,0 +1,14 @@
+{
+  "command": [
+    "bash",
+    "scripts/evaluate_torch_compile_default.sh",
+    "--setup-only"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0b9940d4",
+  "started_unix_ns": 1789517544531673813,
+  "finished_unix_ns": 1789517546480353989,
+  "exit_code": 0,
+  "commit": "6255306165615d9502a4aa491187bcf626e9d585",
+  "status": "",
+  "cache_state": "Fresh virtualenv; worktree-local dependency and compiler caches may be warm. A new wheel is built and installed."
+}

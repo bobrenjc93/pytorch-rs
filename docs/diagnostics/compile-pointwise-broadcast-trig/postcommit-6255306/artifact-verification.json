@@ -1,0 +1,145 @@
+{
+  "measured_commit": "6255306165615d9502a4aa491187bcf626e9d585",
+  "verified_at_unix_ns": 1789517981227578253,
+  "verification_started_unix_ns": 1789517979283733583,
+  "tracked_files_unchanged_from_measured_commit": true,
+  "only_new_evidence_paths": true,
+  "source_hashes_match": true,
+  "exported_direct_regular_files": 13,
+  "export_byte_equality": true,
+  "worker_recorded_hashes_match": true,
+  "gzip_crc_and_length_checks": {
+    "cpu-0-reference.json.gz": 109147833,
+    "cpu-0-candidate.json.gz": 52616,
+    "cuda-0-reference.json.gz": 109155406,
+    "cuda-0-candidate.json.gz": 30785024,
+    "cuda-1-candidate.json.gz": 30784994,
+    "cuda-1-reference.json.gz": 109155404
+  },
+  "test_log_hashes_match": true,
+  "wheel_checks": [
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0b9940d4/target/default-compile-eval/wheels.VC1w1u/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+      "sha256": "5186c2095b84b42b6f5ad4c910522626927880b769c8c2422a9d6d6c1f5c45de",
+      "native_and_python_contents_match": true
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0b9940d4/target/default-compile-eval/wheels.eOKIFE/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+      "sha256": "3d4d42b56ca867b7ca73482eea93449a0bc99115844ed9af7d85a2ad27636453",
+      "native_and_python_contents_match": true
+    }
+  ],
+  "valid": true,
+  "diagnostic": false,
+  "coverage_cells": 112,
+  "cuda_cells": 56,
+  "workers": 6,
+  "all_reference_cases_passed": true,
+  "verification_note": "Initial verification attempt used system Python lacking hashlib.file_digest and stopped before artifact validation or output; this completed attempt used the measured Python 3.12 environment.",
+  "files_excluding_this_receipt": {
+    "README.md": {
+      "sha256": "aa0a49dd06379c3238510a404948b208b248458d80606b75621a0061822ad2a4",
+      "bytes": 7086
+    },
+    "check-receipts.json": {
+      "sha256": "77401c64ad6ed418973c6434966d97553d459b39b80623d526b18969232bf9d9",
+      "bytes": 2955
+    },
+    "env.sh": {
+      "sha256": "4c03b285db05571262c4539cab3ff1274fe14292a55a29b36298f6cf2b72e993",
+      "bytes": 877
+    },
+    "fixed-evaluation-receipt.json": {
+      "sha256": "edc79e0982da34cd8e59b59e4a03779e795c9ca447c509a3f44ceb51d2a91954",
+      "bytes": 651
+    },
+    "fixed-evaluation.log": {
+      "sha256": "d1cfbec5d1502e4bf247c66ee8983c30600afa443030b8c13cb32a16e674e709",
+      "bytes": 5816
+    },
+    "focused-h100.log": {
+      "sha256": "ea7d7f8c7ee1a75dfe3a42b56541b1116aa01a0c662cbfda78c7553b9bddbecf",
+      "bytes": 4340
+    },
+    "full-evaluation/cpu-0-candidate.json.gz": {
+      "sha256": "59e3500ae5d39df259f8ebafc7911c019e3d01ba34864ba341e2353112fcd38e",
+      "bytes": 2064
+    },
+    "full-evaluation/cpu-0-candidate.log": {
+      "sha256": "425c342763d99e2789b8a29851cdc6f34b002e58bac0348f87e258427076d072",
+      "bytes": 823
+    },
+    "full-evaluation/cpu-0-reference.json.gz": {
+      "sha256": "603b82c63670160b9f87ab16616ea735b5617289fd7309bde05fa14dc68e5aa4",
+      "bytes": 45415258
+    },
+    "full-evaluation/cpu-0-reference.log": {
+      "sha256": "e57a48e2a2e96fa502359956cc4d9d43fbde535c93a21e4dbd2b7440d7d3ccc4",
+      "bytes": 2174
+    },
+    "full-evaluation/cuda-0-candidate.json.gz": {
+      "sha256": "a8a4b85c89d91ce32982471c1017344ab32e7ae06fd66eeab7de65cf6dd1681a",
+      "bytes": 12586275
+    },
+    "full-evaluation/cuda-0-candidate.log": {
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac",
+      "bytes": 851
+    },
+    "full-evaluation/cuda-0-reference.json.gz": {
+      "sha256": "d63776dca740ba8b21f7401b4292d9fb4070017845f77ccd33a420ff65738ba0",
+      "bytes": 45417634
+    },
+    "full-evaluation/cuda-0-reference.log": {
+      "sha256": "9ca2aca87285ff48d53822543ceb66720f4c4b3aff446cd614555122088c7629",
+      "bytes": 2575
+    },
+    "full-evaluation/cuda-1-candidate.json.gz": {
+      "sha256": "8bed4a423fa5ed5023045212538f16f1704a2d7d56d72715af449731fab8e306",
+      "bytes": 12586268
+    },
+    "full-evaluation/cuda-1-candidate.log": {
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac",
+      "bytes": 851
+    },
+    "full-evaluation/cuda-1-reference.json.gz": {
+      "sha256": "53b137f26a7aecd0fee1725b39b5edaf1ca6c5e6439ba2eea5790ba954a35eea",
+      "bytes": 45417599
+    },
+    "full-evaluation/cuda-1-reference.log": {
+      "sha256": "9071478f9016ac1e2d8534593b2e3216b7837ab2003349a52b4894bc4c0d90fa",
+      "bytes": 2575
+    },
+    "full-evaluation/report.json": {
+      "sha256": "c3a4031a365595f7c423f59255c32551d5ae8ac177bb00e41f231432151e4a55",
+      "bytes": 390825
+    },
+    "gpu-after-checks.csv": {
+      "sha256": "a9633ecbc8a23867a5bc3b21f924bcb76659950f9a3437b83fc2beae0f8f827f",
+      "bytes": 714
+    },
+    "gpu-before-checks.csv": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "portable-trig.log": {
+      "sha256": "123e0924ae6df1b756320b739c5f41ec1b44bce58322ccf329b8b069598fa761",
+      "bytes": 1632
+    },
+    "provenance.json": {
+      "sha256": "b0f6de9e3c12140a54c5a40060b352591f338c1587d31288cfe9fda1a811bcef",
+      "bytes": 5995
+    },
+    "rust-indexing.log": {
+      "sha256": "1bddbfddb7b43add90597420b4e70d7dcc7853baeca1f0f793c95fc0af500176",
+      "bytes": 3806
+    },
+    "setup-receipt.json": {
+      "sha256": "95e3537798940e01359041c4a99ca1ee01e4407e426a76f075df2cb3f1ecd43e",
+      "bytes": 495
+    },
+    "setup.log": {
+      "sha256": "3b7b93afdfaf95734938225569a0d4dbded22a643a80fa83754ef44279e907f0",
+      "bytes": 2798
+    }
+  }
+}

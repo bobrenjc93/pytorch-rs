@@ -1,0 +1,12 @@
+test_cached_native_execution_and_structured_aliases (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_cached_native_execution_and_structured_aliases) ... skipped 'requires native CUDA and reference PyTorch CUDA'
+test_former_rejections_keep_the_original_shapes_and_values (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_former_rejections_keep_the_original_shapes_and_values) ... skipped 'requires native CUDA and reference PyTorch CUDA'
+test_reference_shape_value_offset_and_retained_output_histories (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_reference_shape_value_offset_and_retained_output_histories) ... skipped 'requires native CUDA and reference PyTorch CUDA'
+test_scalar_kind_zero_trig_witness_and_runtime_promotion (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_scalar_kind_zero_trig_witness_and_runtime_promotion) ... skipped 'requires native CUDA and reference PyTorch CUDA'
+test_subnormal_amplification_and_nested_runtime_trig_exact (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_subnormal_amplification_and_nested_runtime_trig_exact) ... skipped 'requires native CUDA and reference PyTorch CUDA'
+test_mixed_madd_trig_rejects_in_both_orders_even_after_identities (test_compile_pointwise_broadcast_trig.Metadata.test_mixed_madd_trig_rejects_in_both_orders_even_after_identities) ... ok
+test_unary_and_one_stage_trig_before_and_after_arithmetic (test_compile_pointwise_broadcast_trig.Metadata.test_unary_and_one_stage_trig_before_and_after_arithmetic) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.006s
+
+OK (skipped=5)

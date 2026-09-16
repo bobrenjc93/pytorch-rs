@@ -1,0 +1,87 @@
+   Compiling crossbeam-utils v0.8.23
+   Compiling crossbeam-epoch v0.9.21
+   Compiling crossbeam-deque v0.8.8
+   Compiling rayon-core v1.13.0
+   Compiling either v1.18.0
+   Compiling cfg-if v1.0.4
+   Compiling libloading v0.8.9
+   Compiling rayon v1.12.0
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_0b9940d4)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.11s
+     Running unittests src/lib.rs (target/debug/deps/pytorch_rs-a84bc75b3d7dfab2)
+
+running 11 tests
+test pointwise_ir::indexing::tests::broadcasts_scalar_empty_leading_and_interior_dimensions ... ok
+test pointwise_ir::indexing::tests::live_trig_excludes_madd_graph_wide_in_both_output_orders ... ok
+test pointwise_ir::indexing::tests::multiple_roots_union_dependencies_and_preserve_original_limits ... ok
+test pointwise_ir::indexing::tests::original_depth_rejects_live_stages_before_numeric_simplification ... ok
+test pointwise_ir::indexing::tests::rejects_output_size_and_empty_stride_overflow_before_codegen ... ok
+test pointwise_ir::indexing::tests::relu_and_trig_preserve_depth_and_dead_nodes_still_validate ... ok
+test pointwise_ir::indexing::tests::tensor_leaf_madd_accepts_both_orders_all_input_ids_and_broadcasts ... ok
+test pointwise_ir::indexing::tests::tensor_madd_does_not_admit_wrappers_other_leaves_or_products ... ok
+test pointwise_ir::indexing::tests::tensor_madd_still_checks_dead_nodes_unused_inputs_and_overflow ... ok
+test pointwise_ir::indexing::tests::trig_before_and_after_one_stage_accepts_all_scalar_kinds_and_input_orders ... ok
+test pointwise_ir::indexing::tests::validates_dead_shapes_but_does_not_expand_unrelated_output ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 238 filtered out; finished in 0.01s
+
+     Running tests/autograd.rs (target/debug/deps/autograd-f38585ca82bec9e6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 92 filtered out; finished in 0.00s
+
+     Running tests/cuda_add.rs (target/debug/deps/cuda_add-3043d5dd2af577ad)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/cuda_contiguous.rs (target/debug/deps/cuda_contiguous-19470d316c601991)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/cuda_matmul.rs (target/debug/deps/cuda_matmul-405eb25ac7669f7a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/cuda_mul_scalar.rs (target/debug/deps/cuda_mul_scalar-e969f9beb76a1936)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/cuda_native_boundaries.rs (target/debug/deps/cuda_native_boundaries-5c3fea720f3372b3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running tests/cuda_relu.rs (target/debug/deps/cuda_relu-97ded30cbb16e174)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/cuda_same_device_copy.rs (target/debug/deps/cuda_same_device_copy-8e5fcdb7d77c7d8c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/cuda_sum_rows.rs (target/debug/deps/cuda_sum_rows-9865ac5ad944ff1c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/tensor_baseline.rs (target/debug/deps/tensor_baseline-1f3bc301430510b8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 103 filtered out; finished in 0.00s
+
