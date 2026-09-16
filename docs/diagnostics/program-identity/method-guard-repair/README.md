@@ -68,12 +68,12 @@ byte accounting and recovery. GPU work used only GPU0, H100 UUID
 `GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1`, with worktree-local CUDA runtime
 and NVRTC pins. No multi-GPU support is claimed.
 
-## Required clean evidence remains pending
+## Clean post-commit evidence
 
-Burner must commit this production repair before its new clean B/C release
-wheels and **all eight** fresh ordinary-default B/C/reference legs can be
-captured using the unchanged consumer and protocol. Retain every raw sample,
-selected-invocation control and cold/churn/small-case regression. Previous
-complete and failed archives remain unchanged and do not measure this repair.
-Independent review, full qualification and exact-head CI still decide merge
-eligibility; neither development checks nor block timing clear that gate.
+Burner committed this repair as `4e291f5272b4b872ddc1704398b088b1917affc8`.
+The [new clean comparison](../postcommit-4e291f5/README.md) completed all eight
+ordinary-default B/C/reference legs and passed the unchanged verifier. Every raw
+sample, selected-invocation control and cold/churn/small-case regression is
+retained. Previous complete and failed archives remain unchanged. Independent
+review, full qualification and exact-head CI still decide merge eligibility;
+neither development checks nor block timing clear that gate.
