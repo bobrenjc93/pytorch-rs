@@ -11645,6 +11645,46 @@
         "eval_d4c0b71e": 83,
         "eval_b7f2a91c": 5.5
       }
+    },
+    {
+      "key": "base:9a36b4a4642528d5af7533b309a8562b74447084",
+      "commit": "9a36b4a4642528d5af7533b309a8562b74447084",
+      "recordedAt": "2026-09-16T02:59:50.876Z",
+      "label": "base 9a36b4a",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 88,
+        "eval_8417a4a8": 23,
+        "eval_63a24994": 55,
+        "eval_39340456": 28,
+        "eval_b4945d15": 77,
+        "eval_c8a1bfb9": 62,
+        "eval_a61c0e71": 18,
+        "eval_6f98c42d": 28,
+        "eval_d4c0b71e": 80,
+        "eval_b7f2a91c": 0
+      }
+    },
+    {
+      "key": "pr:2001",
+      "recordedAt": "2026-09-16T02:59:50.876Z",
+      "label": "PR #2001",
+      "kind": "leaf",
+      "prNumber": 2001,
+      "title": "Redeliver broadcast trig compilation with compact evidence",
+      "scores": {
+        "eval_7af648fb": 88,
+        "eval_8417a4a8": 23.1,
+        "eval_63a24994": 55,
+        "eval_39340456": 28.2,
+        "eval_b4945d15": 77,
+        "eval_c8a1bfb9": 62,
+        "eval_a61c0e71": 19.5,
+        "eval_6f98c42d": 34,
+        "eval_d4c0b71e": 80,
+        "eval_b7f2a91c": 0
+      }
     }
   ]
 }
