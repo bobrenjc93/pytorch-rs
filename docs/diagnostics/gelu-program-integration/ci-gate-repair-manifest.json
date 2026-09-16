@@ -1,0 +1,594 @@
+{
+  "archive": "ci-gate-repair.tar.gz",
+  "size": 14244866,
+  "sha256": "c610005aa867450465b7509e1738454cfb180b1978994c0560330314f8113b33",
+  "members": [
+    {
+      "path": "target/ci-gate-repair/archive-inputs.json",
+      "size": 10071,
+      "sha256": "19bb9beae85dc5afad45d5a55a3437374f89de7741b230903d23cd6c291194f9"
+    },
+    {
+      "path": "target/ci-gate-repair/inspection-failure.json",
+      "size": 803,
+      "sha256": "92a58657571771ab42880e1ef06b46142f05d098689974d999cf0092938ca53f"
+    },
+    {
+      "path": "target/ci-gate-repair/prepare-evidence.py",
+      "size": 3150,
+      "sha256": "d9d06d4517eae3b291272d53bc4fd3a683cc2985ce66a58c460cd78a8bada5e5"
+    },
+    {
+      "path": "target/ci-gate-repair/prepare.receipt.json",
+      "size": 494,
+      "sha256": "0edf192dde6b1b367ab659aa4467a77b6b8e2568d02b03aeaea9105a02bf0b54"
+    },
+    {
+      "path": "target/ci-gate-repair/prepare.stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/ci-gate-repair/prepare.stdout.log",
+      "size": 69,
+      "sha256": "b328186dea51d3bfbbfcbf05de95287c1356a915245fcaec44c64ca983ced303"
+    },
+    {
+      "path": "target/ci-gate-repair/seal-evidence.py",
+      "size": 2098,
+      "sha256": "26906db8b4f59c434cf441e5fc4017dbceaaebf85398c1d9a2345ea91632af49"
+    },
+    {
+      "path": "target/ci-gate-repair/summary.json",
+      "size": 21458,
+      "sha256": "5d5549ab68f52beca3f8e982508ef4a8409a0a2ea59fc751d4aae7b873c27d33"
+    },
+    {
+      "path": "target/ci-gate-repair/wheels314/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+      "size": 1761237,
+      "sha256": "b7deed5a08fb174ae5978b92c62967322d7aeaa6489e1743863b2234128e243f"
+    },
+    {
+      "path": "target/gelu-program-integration/1789600944640886476-ci-gate-github-checks/receipt.json",
+      "size": 122036,
+      "sha256": "20b389f306302f436057c9b3165610de2d2085eca2354e4c6a93b88185220b12"
+    },
+    {
+      "path": "target/gelu-program-integration/1789600944640886476-ci-gate-github-checks/source.patch",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789600944640886476-ci-gate-github-checks/source.tar.gz",
+      "size": 3707761,
+      "sha256": "e3ec979967344ab626de3a88581d0b9804ce8793999b7e151418ab581744135f"
+    },
+    {
+      "path": "target/gelu-program-integration/1789600944640886476-ci-gate-github-checks/stderr.log",
+      "size": 355,
+      "sha256": "c03f19dc9c1800bb0fee51cb6fcd678ac3ce4ac8571c1b7e5e44b75aa1e646a7"
+    },
+    {
+      "path": "target/gelu-program-integration/1789600944640886476-ci-gate-github-checks/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789600947834291155-ci-gate-portable-before/receipt.json",
+      "size": 122066,
+      "sha256": "d66e88308a6596b83408333ce578c9f5aa1149714b94f0ecc755f4ba43814696"
+    },
+    {
+      "path": "target/gelu-program-integration/1789600947834291155-ci-gate-portable-before/source.patch",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789600947834291155-ci-gate-portable-before/stderr.log",
+      "size": 10318,
+      "sha256": "fd00adc0d766de2fd6146160a09e5cc220a209eed5be15994c65b1f309e142e7"
+    },
+    {
+      "path": "target/gelu-program-integration/1789600947834291155-ci-gate-portable-before/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789600974080410558-ci-gate-python314-setup/receipt.json",
+      "size": 122055,
+      "sha256": "dcedebf54713cfa4325675c27fab8c96bbec47b242a3d71213de12a295aa9deb"
+    },
+    {
+      "path": "target/gelu-program-integration/1789600974080410558-ci-gate-python314-setup/source.patch",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789600974080410558-ci-gate-python314-setup/stderr.log",
+      "size": 582,
+      "sha256": "d2bfb171adba23e6523d880143497c99ccd3f88ee6c879f07b560b1a3baa5813"
+    },
+    {
+      "path": "target/gelu-program-integration/1789600974080410558-ci-gate-python314-setup/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789600975676059039-ci-gate-rust-default/receipt.json",
+      "size": 121973,
+      "sha256": "898dcaded740f7b164ebaa3e3eddfa0617aa3ccf3b2336f74d64b586882ab765"
+    },
+    {
+      "path": "target/gelu-program-integration/1789600975676059039-ci-gate-rust-default/source.patch",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789600975676059039-ci-gate-rust-default/stderr.log",
+      "size": 1409,
+      "sha256": "2bcc52406f0993a860e13d60d2e5306c1c61593738d5f36f729e5da5398cce76"
+    },
+    {
+      "path": "target/gelu-program-integration/1789600975676059039-ci-gate-rust-default/stdout.log",
+      "size": 41475,
+      "sha256": "b10321d07403058575f6350755166a5a2e91c16ade86f2970d802fbd25dec746"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601012839308524-ci-gate-python314-local/receipt.json",
+      "size": 122132,
+      "sha256": "42b88eca6e706d3fc8c3d1ef2c8b3fd19b55b3f3d92389f1b6b8011ac7ddb4f1"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601012839308524-ci-gate-python314-local/source.patch",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601012839308524-ci-gate-python314-local/stderr.log",
+      "size": 248,
+      "sha256": "bb6b671c81d59be4b42ae7d62404f8caf1bb973085c6061b14552c460ea0f18b"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601012839308524-ci-gate-python314-local/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601014349785104-ci-gate-rust-python/receipt.json",
+      "size": 122014,
+      "sha256": "8ee0d9b337e40af6e5e42af715b0c3aa8e8a8dbee19e6303b21ca093f795d536"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601014349785104-ci-gate-rust-python/source.patch",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601014349785104-ci-gate-rust-python/stderr.log",
+      "size": 1596,
+      "sha256": "5b5a304a2e73a5cd66eb2d5e3ad5e47ebe2c42749dcc73d992410564b023ca52"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601014349785104-ci-gate-rust-python/stdout.log",
+      "size": 44407,
+      "sha256": "7633cd5c947441b53781a7ee9da6fb224e97baba5d75b3709804198940a4be12"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601025683415237-ci-gate-clippy-default/receipt.json",
+      "size": 122011,
+      "sha256": "146c7ab8a1b42836c472ff08cbdef06cf32ce43719625c801425772ce62ea0b2"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601025683415237-ci-gate-clippy-default/source.patch",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601025683415237-ci-gate-clippy-default/stderr.log",
+      "size": 496,
+      "sha256": "65b838583f5e80303232fca5c93b94d9ad3e37cfed642b2efb79a791ca721cb7"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601025683415237-ci-gate-clippy-default/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601032162875519-ci-gate-python314-deps/receipt.json",
+      "size": 122079,
+      "sha256": "80e0dbd7cd1f08d6f21fac546b68161c8580e5f56b69491bf4dea51eab38d2fa"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601032162875519-ci-gate-python314-deps/source.patch",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601032162875519-ci-gate-python314-deps/stderr.log",
+      "size": 1055,
+      "sha256": "9fd03b9f48bb5aa72b8b6b000ffdec3ed9b7d0b9937e21efb8ea8c543ad1aa4e"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601032162875519-ci-gate-python314-deps/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601050313443149-ci-gate-format/receipt.json",
+      "size": 121949,
+      "sha256": "d28a6552c312e7f354d48b024a40deaedb23119f10590f869ca08061c2843661"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601050313443149-ci-gate-format/source.patch",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601050313443149-ci-gate-format/stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601050313443149-ci-gate-format/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601051919936330-ci-gate-clippy-python/receipt.json",
+      "size": 122052,
+      "sha256": "168dca2336a14333827fc11444f962851f7a0c0208928ac44f8a97a0425187e9"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601051919936330-ci-gate-clippy-python/source.patch",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601051919936330-ci-gate-clippy-python/stderr.log",
+      "size": 332,
+      "sha256": "faf1bc96cd170d49fe0f1e780eece70a1040c857b889df5bccfc80f0831d85a6"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601051919936330-ci-gate-clippy-python/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601064571680949-ci-gate-build314/receipt.json",
+      "size": 122178,
+      "sha256": "da4467486b391776d956cd2358d55030552bba0c5bd494360b361a4eae0700d2"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601064571680949-ci-gate-build314/source.patch",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601064571680949-ci-gate-build314/stderr.log",
+      "size": 1299,
+      "sha256": "8f1b60bb96cc6adf1dbba54eab57aa51f29e6064a7401cbd86d35e994a7c1f44"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601064571680949-ci-gate-build314/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601137770302367-ci-gate-install314/receipt.json",
+      "size": 122143,
+      "sha256": "fc335b4df31332687381d57dbe8a18adf1d75e7c31b1f8ec1c2fe2dcc53ab56d"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601137770302367-ci-gate-install314/source.patch",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601137770302367-ci-gate-install314/stderr.log",
+      "size": 347,
+      "sha256": "c3e49ff340ebdb3c6788a82e89bab5caf5a935e6d900c5fb76ad5074ca8c1fbb"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601137770302367-ci-gate-install314/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601174322142287-ci-gate-docs-before/receipt.json",
+      "size": 121996,
+      "sha256": "611c61f437ab44060b8c40dc3ded0e8450bd2681f80bbc3befacc4fb19de20ab"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601174322142287-ci-gate-docs-before/source.patch",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601174322142287-ci-gate-docs-before/stderr.log",
+      "size": 709,
+      "sha256": "6a0001cac1224d65c458408b174b5f54c6afc4428a8938de5aa4d73a55e857d9"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601174322142287-ci-gate-docs-before/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601209499656315-ci-gate-docs314-before/receipt.json",
+      "size": 122020,
+      "sha256": "27c43bef53f88d5534e2897e0b816e397ed33ffbe2ba04c5f46dc7700e671106"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601209499656315-ci-gate-docs314-before/source.patch",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601209499656315-ci-gate-docs314-before/stderr.log",
+      "size": 766,
+      "sha256": "be8aa74bfc815a7ff90dddf0e12fd6652bed8eb19d7cb904aff4bff19343374d"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601209499656315-ci-gate-docs314-before/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601341453371301-ci-gate-docs312-after/receipt.json",
+      "size": 122044,
+      "sha256": "5523575908bbd3dbe75f5e53c35424f9e0e7c1ef41b19598ced6626ba132326d"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601341453371301-ci-gate-docs312-after/source.patch",
+      "size": 3651,
+      "sha256": "feae816bc409ce03dd8b089555a47f4ddc962bc0f41daf0cfe0c7cc2fb19beeb"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601341453371301-ci-gate-docs312-after/source.tar.gz",
+      "size": 3707859,
+      "sha256": "d0eaacb9afdd9dd06c90d9d741a7db8300585807f4582f1a7d6dbc6c10805fdd"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601341453371301-ci-gate-docs312-after/stderr.log",
+      "size": 111,
+      "sha256": "a5be5162cba385a6a989d3e91a52b76e470268dba227d7c7dc8ebb3b100db068"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601341453371301-ci-gate-docs312-after/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601382238282487-ci-gate-activate314/receipt.json",
+      "size": 122523,
+      "sha256": "eb2182643619e119a9e372d1bfc84586bdbdf8a0e46cf50dfaacc4ba7ba2f4d0"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601382238282487-ci-gate-activate314/source.patch",
+      "size": 3649,
+      "sha256": "7597600f29d52181ceef6c574588826afdbfa733a192754ed45fb7d674b71303"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601382238282487-ci-gate-activate314/source.tar.gz",
+      "size": 3707853,
+      "sha256": "c4cd030e5428972989645124f339ac3a768f0df48971f91e1c9262bec523efbc"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601382238282487-ci-gate-activate314/stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601382238282487-ci-gate-activate314/stdout.log",
+      "size": 123,
+      "sha256": "02fb6e67868e602ba2d86ddf85f616fa09441cf691ccd1fd3622eafa2ab10eee"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601391331095294-ci-gate-provenance314/receipt.json",
+      "size": 121493,
+      "sha256": "c1350089d919605a5a71ce04563f00ab682fa1e93a27952cec7073303c38a437"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601391331095294-ci-gate-provenance314/source.patch",
+      "size": 3649,
+      "sha256": "7597600f29d52181ceef6c574588826afdbfa733a192754ed45fb7d674b71303"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601391331095294-ci-gate-provenance314/stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601391331095294-ci-gate-provenance314/stdout.log",
+      "size": 578,
+      "sha256": "f3a3fad217898e3bf85fc2acdf60309ee6173320487444806269902d1ca9e9cd"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601393012701603-ci-gate-portable314-after/receipt.json",
+      "size": 121575,
+      "sha256": "207a8e1b5b5f058a7772fbd3fe38d2afae47f256c58379c551445bc3f123100a"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601393012701603-ci-gate-portable314-after/source.patch",
+      "size": 3649,
+      "sha256": "7597600f29d52181ceef6c574588826afdbfa733a192754ed45fb7d674b71303"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601393012701603-ci-gate-portable314-after/stderr.log",
+      "size": 12961,
+      "sha256": "9da78bc29700f1592314249c712d88ab17a05e62b80333583f89d53fdbabf1cd"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601393012701603-ci-gate-portable314-after/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601412913385788-ci-gate-doc-move-verification/receipt.json",
+      "size": 122082,
+      "sha256": "01b2d9bb8a1f5dc938a313a8a4277de4f7175e5bb164954dab69737982a15d40"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601412913385788-ci-gate-doc-move-verification/source.patch",
+      "size": 3649,
+      "sha256": "7597600f29d52181ceef6c574588826afdbfa733a192754ed45fb7d674b71303"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601412913385788-ci-gate-doc-move-verification/stderr.log",
+      "size": 346,
+      "sha256": "0300445a51d6d9f8c0e703d9a1d28cf201ef57758481f1e0501b06ed08c23531"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601412913385788-ci-gate-doc-move-verification/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601432395486998-ci-gate-runtime314/receipt.json",
+      "size": 122072,
+      "sha256": "43832210dcfeaac1426e7a582a523ccae0c6a0efa664f23712f71c33d2a89cd6"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601432395486998-ci-gate-runtime314/source.patch",
+      "size": 3649,
+      "sha256": "7597600f29d52181ceef6c574588826afdbfa733a192754ed45fb7d674b71303"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601432395486998-ci-gate-runtime314/stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601432395486998-ci-gate-runtime314/stdout.log",
+      "size": 1444,
+      "sha256": "af0f5e19816179abc2df430cee7981a2fc5f11baf239404790425d76acf3c847"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601455791064402-ci-gate-doc-move-verification-explicit/receipt.json",
+      "size": 122091,
+      "sha256": "86122fbf79da42213bbfa3981bfc6f1bfc987234d2b0535449a610698c88c0e1"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601455791064402-ci-gate-doc-move-verification-explicit/source.patch",
+      "size": 3649,
+      "sha256": "7597600f29d52181ceef6c574588826afdbfa733a192754ed45fb7d674b71303"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601455791064402-ci-gate-doc-move-verification-explicit/stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601455791064402-ci-gate-doc-move-verification-explicit/stdout.log",
+      "size": 91,
+      "sha256": "f313788855b85d0080b5e51f370263a05c50cf888297a32925463a016b35c9da"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601501945672774-ci-gate-wheel314-binding/receipt.json",
+      "size": 122025,
+      "sha256": "d5233915a99a00f61ca1c23d51ce8929252dec821960b641b3747d7398276d44"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601501945672774-ci-gate-wheel314-binding/source.patch",
+      "size": 3649,
+      "sha256": "7597600f29d52181ceef6c574588826afdbfa733a192754ed45fb7d674b71303"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601501945672774-ci-gate-wheel314-binding/stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601501945672774-ci-gate-wheel314-binding/stdout.log",
+      "size": 568,
+      "sha256": "ff7726af7f11eb0bba4ff07bafb2127333f192b97fafd3409070fc3142deff1e"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601771666716972-ci-gate-restore312/receipt.json",
+      "size": 121711,
+      "sha256": "052f12cc4b33b030befd9888f8f0aa442859f6988131d94bc0625fb59231afe7"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601771666716972-ci-gate-restore312/source.patch",
+      "size": 3649,
+      "sha256": "7597600f29d52181ceef6c574588826afdbfa733a192754ed45fb7d674b71303"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601771666716972-ci-gate-restore312/stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601771666716972-ci-gate-restore312/stdout.log",
+      "size": 57,
+      "sha256": "12c4c4556374b233ee248ce996dd1601a64babc8bce3ba056bbe9f0588b86486"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601783255993945-ci-gate-docs312-final/receipt.json",
+      "size": 122102,
+      "sha256": "b17089f3c92ee92c623ebff73659c8c845cec597b097549db77f9f8beeeac9a1"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601783255993945-ci-gate-docs312-final/source.patch",
+      "size": 4863,
+      "sha256": "cb2606300a542228cf5551f0be7e9062874f9f8186c579085f813f5072789106"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601783255993945-ci-gate-docs312-final/stderr.log",
+      "size": 111,
+      "sha256": "54aa82c813776b69ae6fe91d0d7c7a5749aa9e28d109f31c01602e7533b325fb"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601783255993945-ci-gate-docs312-final/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601784878005747-ci-gate-provenance312-restored/receipt.json",
+      "size": 122090,
+      "sha256": "d59e155443ba001e1b0daaa6c07b96b3e4642d7601594d493cf0e7d8c87edd64"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601784878005747-ci-gate-provenance312-restored/source.patch",
+      "size": 4863,
+      "sha256": "cb2606300a542228cf5551f0be7e9062874f9f8186c579085f813f5072789106"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601784878005747-ci-gate-provenance312-restored/stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601784878005747-ci-gate-provenance312-restored/stdout.log",
+      "size": 578,
+      "sha256": "c4233c9bce2c04a80f98d605ee400fd656d6d740dc818c643eeb31c6e3641697"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601801945813764-ci-gate-final-diff-check/receipt.json",
+      "size": 122054,
+      "sha256": "6b4ccc2b978fc69b35d2ebf3a4f5e8d5e0b84927a6144fc415256a5caecd196e"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601801945813764-ci-gate-final-diff-check/source.patch",
+      "size": 4877,
+      "sha256": "c15976ebd5ed646ff9b204eb3cfb5e312e4562ea922c9d33408093da4d12fd1f"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601801945813764-ci-gate-final-diff-check/stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789601801945813764-ci-gate-final-diff-check/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "scope": "Executed inner commands and artifacts; no future outer-controller receipt",
+  "protocolBindings": {
+    "docs/diagnostics/gelu-program-integration/protocol.md": "24bb4d8924b821ef4a94efa1ee89c85db0af46afa138e7c814d502eec9ccbe17",
+    "docs/diagnostics/program-identity/protocol.md": "d6e8f51d024b451f8afed33d743647d46396425724b918a599f7b32274f95d5b",
+    "docs/diagnostics/program-identity/consumer.py": "1861fca73674d8c89f6285b07883ab9a83e6719c1b6a0c12cd2be1ae7c4c8b42",
+    "tests/test_program_identity_consumer.py": "b907c94b00f35fbb18e53510ec692b5fb83f94d37d509fe662418844bc2af5b3"
+  }
+}

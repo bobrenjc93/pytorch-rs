@@ -66,6 +66,14 @@ to its original sources; its completed eight-leg phase was not replayed.
 
 ## Checks and limits
 
+The required-check follow-up fixes the shared documentation smoke-test failure:
+the contributor guide exceeded its existing 120-line bound. It now links to
+the unchanged NVRTC instructions in troubleshooting. With CUDA hidden, Python
+3.14's full suite passed (6,350 run, 603 skipped); all 12 Python 3.12 documentation checks
+passed after the fix. The preceding 3.12 full run had only that one failure.
+[Command receipts, failures and the fresh wheel](../gelu-program-integration/ci-gate-repair-manifest.json)
+are retained separately from the measurements above; GitHub log access was blocked.
+
 - Default Rust tests: 486 passed; Python-enabled Rust unit tests: 303 passed.
   Formatting and Clippy passed with both feature configurations checked.
 - Pointwise Python suite: 182 passed, four explicit multi-GPU skips. Its initial

@@ -227,3 +227,27 @@ Campaign schema version 1 has `id`, `full` (explicit cell objects), and `quick`
 leaves). CUDA `zeros`, `to_cpu`, and `roundtrip` cells specify `elements`.
 The public diagnostic file illustrates the contract; it is not a held-out
 scoring corpus. Workload changes require independent campaign review.
+
+## CUDA compiler-failure tests
+
+On a CUDA host, the compiler-failure tests require `cc` on `PATH` and an
+existing, compatible NVRTC shared-library file. Set `TORCH_RS_NVRTC` to that
+real compiler library; alternatively, `TEST_PROGRAM_IDENTITY_REAL_NVRTC`
+selects it only for the failure tests. The tests build a local injected shim
+that forwards to this real library; do not point either setting at the shim.
+Both supported suite entry points inherit these settings:
+
+```bash
+export TORCH_RS_NVRTC=/absolute/path/to/libnvrtc.so.13
+test -f "$TORCH_RS_NVRTC"
+command -v cc
+CUDA_VISIBLE_DEVICES=0 ./scripts/test-python.sh
+# After the implementation is committed:
+CUDA_VISIBLE_DEVICES=0 ./scripts/test-python-exact-head.sh
+```
+
+Choose the installed NVRTC compatible with the GPU, driver and generated PTX;
+the path above is illustrative. Record the loaded NVRTC/runtime versions when
+reporting GPU checks: `nvcc --version` identifies the separate toolkit compiler,
+not the loaded NVRTC. Unavailable CUDA/reference cases keep their explicit
+skips; missing compiler prerequisites on a configured CUDA host are errors.
