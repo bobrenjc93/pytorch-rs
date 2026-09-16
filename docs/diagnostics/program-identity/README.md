@@ -11,6 +11,11 @@ passed the frozen eight-leg verifier. It retains cold/churn regressions alongsid
 repeated-call improvements. The [first failed attempt](postcommit-47b97f2/README.md)
 remains unchanged.
 
+The [warm ownership repair](warm-ownership-repair/README.md) records bounded
+call-count attribution and development checks after the canonical rejection of
+`4993a37`. Its repaired source still requires a new clean eight-leg capture after
+Burner commits it; the previous comparison does not qualify that source.
+
 `consumer.py` uses only the standard library until a worker imports its selected
 framework. Its `build`, `check`, `freeze`, `preflight`, `leg`, and `verify` subcommands create
 new attempt directories and never overwrite records. An exception retains a

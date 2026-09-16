@@ -321,6 +321,159 @@ class PreparedCache(unittest.TestCase):
         self.assertEqual(cache(compiled).prepared_bytes,
                          sum(item[1] for item in cache(compiled).prepared.values()))
 
+    def test_bind_owner_mismatch_and_query_errors_never_run_or_publish(self):
+        fn = program('def f(x):\n return -x')
+        warm = native.compile(fn)
+        warm(native.ones(3))
+        warm(native.ones(5))
+        self.assertEqual(len(cache(warm).prepared), 2)
+        build = self.host_plan.side_effect
+        for cold in (False, True):
+            for query_error in (False, True):
+                compiled = native.compile(fn) if cold else warm
+                x = native.ones(3 if cold else 7)
+                before = self.snapshot(compiled)
+                query = Mock(side_effect=RuntimeError('owner query')) if query_error else Mock(return_value=False)
+                wrong = types.SimpleNamespace(input_shapes=(tuple(x.shape),), retained_bytes=0,
+                                              belongs_to=query, run=Mock())
+                executors = []
+
+                def host_with_wrong_bind(*args):
+                    host = build(*args)
+                    compile_ = host.compile
+
+                    def wrong_compile():
+                        executor = compile_()
+                        executor.bind = Mock(return_value=wrong)
+                        executors.append(executor)
+                        return executor
+
+                    host.compile = wrong_compile
+                    return host
+
+                with self.subTest(cold=cold, query_error=query_error), ExitStack() as stack:
+                    stack.enter_context(patch.object(bridge, '_pointwise_host_plan', host_with_wrong_bind))
+                    if not cold:
+                        executor = next(iter(cache(warm).executors.values()))
+                        executors.append(executor)
+                        stack.enter_context(patch.object(executor, 'bind', return_value=wrong))
+                    accounting = stack.enter_context(patch.object(frontend, '_prepared_entry_bytes'))
+                    receipt = stack.enter_context(patch.object(frontend, '_receipt'))
+                    exception = RuntimeError if query_error else NotImplementedError
+                    message = 'owner query' if query_error else 'prepared executable owner mismatch'
+                    with self.assertRaisesRegex(exception, message):
+                        compiled._torch_rs_pointwise_receipt(x)
+                    query.assert_called_once_with(executors[0])
+                    wrong.run.assert_not_called()
+                    accounting.assert_not_called()
+                    receipt.assert_not_called()
+                    self.assertEqual(self.snapshot(compiled), before)
+
+    def test_owner_admission_once_per_bind_and_never_on_hits_or_current_pruning(self):
+        build = self.host_plan.side_effect
+        queries = []
+
+        def tracked_host(*args):
+            host = build(*args)
+            compile_ = host.compile
+
+            def tracked_compile():
+                executor = compile_()
+                bind = executor.bind
+
+                def tracked_bind(plan):
+                    prepared = bind(plan)
+                    query = Mock(wraps=prepared.belongs_to)
+                    prepared.belongs_to = query
+                    queries.append(query)
+                    return prepared
+
+                executor.bind = tracked_bind
+                return executor
+
+            host.compile = tracked_compile
+            return host
+
+        compiled = native.compile(program('def f(x):\n return -x'))
+        x, y = native.ones(3), native.ones(5)
+        with patch.object(bridge, '_pointwise_host_plan', tracked_host):
+            for value in (x, y, x):
+                compiled(value)
+        self.assertEqual(len(cache(compiled).prepared), 3)
+        self.assertEqual(len(queries), 3)
+        for query in queries:
+            self.assertEqual(query.call_count, 1)
+            # Mutable stand-ins prove absence of queries, not native immutability.
+            query.side_effect = AssertionError('repeated immutable owner query')
+        with patch.object(bridge, '_pointwise_host_plan', side_effect=AssertionError('warm build')), \
+                patch.object(frontend, '_prepared_entry_bytes', side_effect=AssertionError('warm accounting')):
+            for value in (x, y, x, y):  # Newest, older, then recency changes.
+                compiled(value)
+        self.assertEqual([query.call_count for query in queries], [1, 1, 1])
+        self.assertEqual(cache(compiled).prepared_bytes,
+                         sum(entry[1] for entry in cache(compiled).prepared.values()))
+
+    def test_nonselected_replaced_owner_prunes_all_its_preparations_only_after_success(self):
+        fn = program('def f(x):\n return -x')
+        compiled = native.compile(fn)
+        x, y = native.ones(3), native.ones(5)
+        compiled(x)
+        compiled(y)
+        state = cache(compiled)
+        old_entries = list(state.prepared.values())
+        self.assertEqual(len(old_entries), 2)
+        old_key, old_executor = next(iter(state.executors.items()))
+        fn.__code__ = program('def f(x):\n return x+x').__code__
+        compiled(y)
+        selected = newest_prepared(compiled)
+        state.executors[old_key] = jit_tests.mock_pointwise_executor(old_executor.run)
+        before = self.snapshot(compiled)
+        before_bytes = state.prepared_bytes
+        with ExitStack() as stack:
+            for prepared, _, _, _ in old_entries:
+                stack.enter_context(patch.object(prepared, 'run', side_effect=AssertionError('stale run')))
+                stack.enter_context(patch.object(prepared, 'belongs_to', side_effect=AssertionError('prune queried owner')))
+            for target, name in ((selected, 'run'), (frontend.ResultSpec, 'reconstruct')):
+                with self.subTest(phase=name), patch.object(target, name, side_effect=RuntimeError(name)):
+                    with self.assertRaisesRegex(RuntimeError, name):
+                        compiled(y)
+                    self.assertEqual(self.snapshot(compiled), before)
+            compiled(y)
+        self.assertEqual(len(state.prepared), 1)
+        self.assertIs(newest_prepared(compiled), selected)
+        self.assertEqual(state.prepared_bytes, before_bytes - sum(entry[1] for entry in old_entries))
+        self.assertEqual(state.prepared_bytes, sum(entry[1] for entry in state.prepared.values()))
+
+    def test_selected_replaced_owner_failures_leave_all_old_entries_until_success(self):
+        compiled = native.compile(program('def f(x):\n return -x'))
+        x, y = native.ones(3), native.ones(5)
+        compiled(x)
+        compiled(y)
+        state = cache(compiled)
+        old_entries = list(state.prepared.values())
+        code_key, original = next(iter(state.executors.items()))
+        replacement = jit_tests.mock_pointwise_executor(original.run)
+        state.executors[code_key] = replacement
+        before = self.snapshot(compiled)
+        old_bytes = state.prepared_bytes
+        with ExitStack() as stack:
+            for prepared, _, _, _ in old_entries:
+                stack.enter_context(patch.object(prepared, 'run', side_effect=AssertionError('stale run')))
+            for target, name in ((replacement, 'bind'), (replacement, 'run'),
+                                 (frontend.ResultSpec, 'reconstruct')):
+                with self.subTest(phase=name), patch.object(target, name, side_effect=RuntimeError(name)):
+                    with self.assertRaisesRegex(RuntimeError, name):
+                        compiled(y)
+                    self.assertEqual(self.snapshot(compiled), before)
+            compiled(y)
+        self.assertEqual(len(state.prepared), 1)
+        entry = next(iter(state.prepared.values()))
+        self.assertIs(entry[3], replacement)
+        self.assertTrue(entry[0].belongs_to(replacement))
+        self.assertTrue(all(entry[0] is not old[0] for old in old_entries))
+        self.assertEqual(state.prepared_bytes, old_bytes - sum(old[1] for old in old_entries) + entry[1])
+        self.assertEqual(state.prepared_bytes, sum(item[1] for item in state.prepared.values()))
+
     def test_actual_program_identity_controls_sharing_and_eviction(self):
         compiled = frontend.implementation(program('def f(x):\n return -x'), 2)
         build = self.host_plan.side_effect

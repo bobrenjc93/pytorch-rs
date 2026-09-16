@@ -514,8 +514,14 @@ An oversized preparation executes by the same mechanism without being retained.
 Kernel/module/source/PTX and the exact native executable identity belong to the
 count-bounded executor LRU. Construction-only host plans are dropped after bind.
 Eviction prunes preparations by their recorded actual executor identity and owner.
-A prepared hit checks the retained native Arc owner and performs no planning,
-emission, compilation, upload or retention reaccounting.
+Each newly bound preparation certifies its native Arc ownership before execution,
+accounting or publication. Frozen native owners preserve that relation in the
+frontend-admitted cache tuple. Every selected hit checks that the recorded
+executor is still the exact current map owner; it performs no native ownership
+query, planning, emission, compilation, upload or retention reaccounting. The
+existing bounded scan prunes stale map owners only after success. Executor-map
+replacement and clear remain supported; manually fabricating an inconsistent
+tuple in the private preparation dictionary is outside this contract.
 
 Failed admission, preparation, compilation, execution, output conversion or result
 reconstruction publishes no entry, history or LRU change. All cache publication

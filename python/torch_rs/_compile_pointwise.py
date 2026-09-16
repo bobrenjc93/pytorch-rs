@@ -1439,9 +1439,8 @@ def _publish_preparation(cache, key, prepared, retained_bytes, recompile_limit, 
     # A prepared Arc must not retain a module whose executor was evicted. The
     # executable transaction above is authoritative, not an independent module cache.
     for old_key in tuple(cache.prepared):
-        old_prepared, old_bytes, old_code, old_executor = cache.prepared[old_key]
-        if (cache.executors.get(old_code) is not old_executor
-                or not old_prepared.belongs_to(old_executor)):
+        _, old_bytes, old_code, old_executor = cache.prepared[old_key]
+        if cache.executors.get(old_code) is not old_executor:
             cache.prepared.pop(old_key)
             cache.prepared_bytes -= old_bytes
     if retained_bytes <= _PREPARED_CACHE_BYTES:
@@ -1552,8 +1551,7 @@ def implementation(model, recompile_limit):
             cached_preparation = cache.prepared.get(prepared_key)
             if cached_preparation is not None:
                 prepared, retained_bytes, code_key, executor = cached_preparation
-                if (cache.executors.get(code_key) is not executor
-                        or not prepared.belongs_to(executor)):
+                if cache.executors.get(code_key) is not executor:
                     cached_preparation = None
             if cached_preparation is None:
                 host = _native._pointwise_host_plan(
@@ -1568,6 +1566,10 @@ def implementation(model, recompile_limit):
                 del host
                 if prepared.input_shapes != shapes:
                     unsupported("input shapes changed during pointwise preparation")
+                # Frozen native owners preserve this relation for the lifetime
+                # of a frontend-admitted tuple. Hits still check the map owner.
+                if not prepared.belongs_to(executor):
+                    unsupported("prepared executable owner mismatch")
                 retained_bytes = _prepared_entry_bytes(prepared_key, prepared, code_key)
             outputs = prepared.run(tensors, scalars)
             result = lowering.result.reconstruct(outputs, static_values, tensors, metadata)
