@@ -1,0 +1,208 @@
+{
+  "phase": "pre-delivery working tree; canonical qualification pending",
+  "base_commit": "9a36b4a4642528d5af7533b309a8562b74447084",
+  "reviewed_commit": "6255306165615d9502a4aa491187bcf626e9d585",
+  "reviewed_tree": "de3d425c8468ab595f79efd2d11f6c3cac0c3a99",
+  "source_manifest_sha256": "b5cc3a249dde01e6bddb88e26aea8ab135c61d1f6688c8c09f85238130038c05",
+  "source_manifest_definition": "SHA256 of compact sort_keys JSON mapping each git ls-files src/python/tests/build-config path plus the new trig test to its SHA256",
+  "reviewed_files": {
+    "docs/compile-pointwise-jit.md": {
+      "sha256": "f5664d8f590ccfb7378cc9e47a2cad8b85ad0dc0057a27b3358cb6a94ae88638",
+      "matches_reviewed": false
+    },
+    "docs/compile-pointwise-numerics.md": {
+      "sha256": "06ddf6894adcd87c910472606d284b8bc790a1a13177816848d6409b9187a25a",
+      "matches_reviewed": true
+    },
+    "python/torch_rs/__init__.py": {
+      "sha256": "9a1e31a8bb9dcf1d5b21d85ddd82f98376546d84f66289797a08fa1510d12609",
+      "matches_reviewed": true
+    },
+    "src/pointwise_indexing.rs": {
+      "sha256": "35c4e9babeeb844975fcf05f8695901c048b21dd36a46adb88f841cb28ae019f",
+      "matches_reviewed": true
+    },
+    "tests/test_compile_pointwise_broadcast.py": {
+      "sha256": "5cba006df8f72692baf4beeb0c85f1beba2ae68ad6b6ca43972e885d4c55ca36",
+      "matches_reviewed": true
+    },
+    "tests/test_compile_pointwise_broadcast_priority.py": {
+      "sha256": "065bc6066f26a8d4207691edafbe58f368da1a95d8f96bc9d701da365257ee1b",
+      "matches_reviewed": true
+    },
+    "tests/test_compile_pointwise_broadcast_trig.py": {
+      "sha256": "8a4f078b7ea7369b80c67d81d4e295a4cc7f40997f7a06d769085603d2a295b6",
+      "matches_reviewed": true
+    },
+    "tests/test_compile_pointwise_helpers.py": {
+      "sha256": "777cc2702e36274c1d4ab91b90f54315a16d0f4c94c88eb29b237f3091f09578",
+      "matches_reviewed": true
+    },
+    "tests/test_compile_pointwise_prepared.py": {
+      "sha256": "45116f80c9941eeee9ffa3cfa55bb61b98ea9eea322bc9e99f15dfa676290e69",
+      "matches_reviewed": true
+    },
+    "tests/test_compile_pointwise_runtime_scalars.py": {
+      "sha256": "f28c66224c8ac27e1c1df64c72a93297874fbcc6c99a7cdabc2f62b5dbb10ec9",
+      "matches_reviewed": true
+    },
+    "tests/test_compile_pointwise_scalar_admission.py": {
+      "sha256": "9d3f746674906a68e4af70d0499f0bc2fcc88f49c91bc4651c17da48430d00bd",
+      "matches_reviewed": true
+    }
+  },
+  "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+  "interpreter": {
+    "path": "target/trig-redelivery/uv-python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+    "sha256": "f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526"
+  },
+  "native_extension": {
+    "path": ".venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+    "sha256": "248b12afb659893af07b5a019aa6f5cb05a8f228e61cc37a48b317aa32ee2806"
+  },
+  "python_package": {
+    "path": ".venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+    "sha256": "9a1e31a8bb9dcf1d5b21d85ddd82f98376546d84f66289797a08fa1510d12609"
+  },
+  "all_installed_python_sources_match": true,
+  "wheel": {
+    "path": "target/trig-redelivery/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "sha256": "6d0ab3667199f803b85ba26858d2687a66d584861969f6d3c6d08fe0e7e372d7"
+  },
+  "reference": {
+    "version": "2.13.0+cu130",
+    "cuda": "13.0",
+    "package": {
+      "path": ".venv/lib/python3.12/site-packages/torch/__init__.py",
+      "sha256": "cf40c075c95864036e835795756d69b8cccfafa76f3bcde5eba9d06065ccd3d1"
+    },
+    "inductor": {
+      "path": ".venv/lib/python3.12/site-packages/torch/_inductor/__init__.py",
+      "sha256": "9691793e63bdf6244a09b1c4c42f583160842501940f332fd4c32779a4e8d930"
+    },
+    "triton": "3.7.1"
+  },
+  "runtime": {
+    "version": 13000,
+    "selected": {
+      "path": ".venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+      "sha256": "96c42e418cec19054186b9429c321603cc190bf26a18104e19408117a2a817b0"
+    }
+  },
+  "nvrtc": {
+    "version": [
+      13,
+      0
+    ],
+    "options": [
+      "--gpu-architecture=compute_90",
+      "--fmad=true",
+      "--ftz=false",
+      "--prec-div=true",
+      "--prec-sqrt=true"
+    ],
+    "selected": {
+      "path": ".venv/lib/python3.12/site-packages/nvidia/cu13/lib/libnvrtc.so.13",
+      "sha256": "a49e67e8e74590f1e98de55c39c6287efd3f59e3c3797464d7bbe0fe01349b11"
+    }
+  },
+  "mapped_cuda_libraries": [
+    {
+      "path": ".venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+      "sha256": "96c42e418cec19054186b9429c321603cc190bf26a18104e19408117a2a817b0"
+    },
+    {
+      "path": ".venv/lib/python3.12/site-packages/nvidia/cu13/lib/libnvrtc-builtins.so.13.0",
+      "sha256": "91dcd944d01da9c0f08fff5d779db136a47f6d62bdb63bae900d2f481e92c3a2"
+    },
+    {
+      "path": ".venv/lib/python3.12/site-packages/nvidia/cu13/lib/libnvrtc.so.13",
+      "sha256": "a49e67e8e74590f1e98de55c39c6287efd3f59e3c3797464d7bbe0fe01349b11"
+    },
+    {
+      "path": "/usr/lib64/libcuda.so.580.82.07",
+      "sha256": "20e6ceff0c67aa902f74c662719108677c758651d9bb1e1eff738835c681f82b"
+    }
+  ],
+  "device": {
+    "visible": "0",
+    "native_count": 1,
+    "reference_count": 1,
+    "properties": "_CudaDeviceProperties(name='NVIDIA H100', major=9, minor=0, total_memory=97356MB, multi_processor_count=132, uuid=8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, pci_bus_id=6, pci_device_id=0, pci_domain_id=0, L2_cache_size=60MB)"
+  },
+  "toolchain": {
+    "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)\nbinary: rustc\ncommit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234\ncommit-date: 2025-12-08\nhost: x86_64-unknown-linux-gnu\nrelease: 1.92.0\nLLVM version: 21.1.3",
+    "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)",
+    "nvcc_installed": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0",
+    "nvcc_used_for_native_jit": false
+  },
+  "build": {
+    "profile": "release; thin LTO; codegen-units=1; extension-module",
+    "native_compile_occurred": true,
+    "target_initially_empty": true,
+    "dependencies": "Cargo registry copied read-only from host into local CARGO_HOME; locked Python packages downloaded locally",
+    "native_artifacts_reused": false
+  },
+  "dependencies": {
+    "cuda-toolkit": "13.0.3.0",
+    "typing_extensions": "4.16.0",
+    "nvidia-cusparse": "12.6.3.3",
+    "nvidia-cusparselt-cu13": "0.8.1",
+    "MarkupSafe": "3.0.3",
+    "nvidia-cufile": "1.15.1.6",
+    "filelock": "3.32.2",
+    "Jinja2": "3.1.6",
+    "cuda-pathfinder": "1.6.0",
+    "nvidia-nvtx": "13.0.85",
+    "maturin": "1.14.1",
+    "fsspec": "2026.7.0",
+    "mpmath": "1.3.0",
+    "cuda-bindings": "13.3.1",
+    "nvidia-nvjitlink": "13.3.33",
+    "nvidia-cuda-cupti": "13.0.85",
+    "nvidia-cuda-runtime": "13.0.96",
+    "nvidia-curand": "10.4.0.35",
+    "nvidia-cuda-nvrtc": "13.0.88",
+    "nvidia-cusolver": "12.0.4.66",
+    "setuptools": "84.0.0",
+    "nvidia-nccl-cu13": "2.29.7",
+    "networkx": "3.6.1",
+    "nvidia-cufft": "12.0.0.61",
+    "nvidia-cublas": "13.1.1.3",
+    "nvidia-nvshmem-cu13": "3.4.5",
+    "numpy": "2.5.1",
+    "sympy": "1.14.0",
+    "nvidia-cudnn-cu13": "9.20.0.48",
+    "triton": "3.7.1",
+    "torch": "2.13.0",
+    "torch-rs": "0.1.0"
+  },
+  "environment": {
+    "UV_CACHE_DIR": "$WORKTREE/target/trig-redelivery/cache/uv",
+    "UV_PYTHON_BIN_DIR": "$WORKTREE/target/trig-redelivery/uv-bin",
+    "TORCH_RS_NVRTC": "$WORKTREE/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libnvrtc.so.13",
+    "CUDA_CACHE_PATH": "$WORKTREE/target/trig-redelivery/cache/cuda",
+    "UV_PYTHON_INSTALL_DIR": "$WORKTREE/target/trig-redelivery/uv-python",
+    "CARGO_TARGET_DIR": "$WORKTREE/target/trig-redelivery/build",
+    "TORCHINDUCTOR_CACHE_DIR": "$WORKTREE/target/trig-redelivery/cache/inductor",
+    "CARGO_HOME": "$WORKTREE/target/trig-redelivery/cargo",
+    "RUSTUP_TOOLCHAIN": "1.92.0",
+    "VIRTUAL_ENV": "$WORKTREE/.venv",
+    "TMPDIR": "$WORKTREE/target/trig-redelivery/tmp",
+    "UV_LINK_MODE": "copy",
+    "TRITON_CACHE_DIR": "$WORKTREE/target/trig-redelivery/cache/triton",
+    "XDG_CACHE_HOME": "$WORKTREE/target/trig-redelivery/cache",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "PYTHONPATH": "$WORKTREE/tests",
+    "PYTHONPYCACHEPREFIX": "$WORKTREE/target/trig-redelivery/cache/pycache",
+    "TORCH_RS_CUDART": "$WORKTREE/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "OMP_NUM_THREADS": "1",
+    "PYO3_PYTHON": "$WORKTREE/.venv/bin/python",
+    "MKL_NUM_THREADS": "1"
+  },
+  "source_unchanged_through_checks": true,
+  "additional_documentation": {
+    "docs/supported-surface.md": "21604d605e11823c7caab0221f83adc249604fdace905e6ff79094fdb7409a3f"
+  },
+  "wheel_native_matches_import": true
+}
