@@ -6,7 +6,9 @@ It does not produce a qualification verdict or change the fixed evaluation.
 Historical A measurements do not qualify this implementation.
 
 [Development validation](validation.md) records the implementation checks and
-preserved failures. Clean public timing awaits Burner's canonical commit phase.
+preserved failures. The [clean post-commit attempt](postcommit-47b97f2/README.md)
+stopped at the first reference leg's runtime-provenance check; the full public
+comparison remains incomplete.
 
 `consumer.py` uses only the standard library until a worker imports its selected
 framework. Its `build`, `check`, `freeze`, `preflight`, `leg`, and `verify` subcommands create
