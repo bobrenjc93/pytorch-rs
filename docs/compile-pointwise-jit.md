@@ -60,15 +60,17 @@ returned input aliases preserve their original storage and strides. Inputs are
 unchanged. Input-only returns remain outside this subset.
 
 Unequal input shapes additionally require either the tensor-leaf multiply-add
-described below, or at most one arithmetic stage and no live sin/cos. Input and scalar nodes start at depth
+described below, or at most one arithmetic stage, including live sin/cos. Input and scalar nodes start at depth
 zero; add/subtract/multiply add one to the maximum operand depth, tensor negation
-adds one, and ReLU preserves depth. Scalar sign metadata adds no tensor operation.
+adds one, and ReLU/sin/cos preserve depth. Scalar sign metadata adds no tensor operation.
 This rule applies to the original typed expression before simplification, even
 when one input is unused or singleton-only reshaping yields linear addresses.
 Broadcast dimensions must match or one must be singleton, including scalar
 tensors, leading/interior singleton dimensions and empty outputs. For example,
-`(x.relu() - y.relu()).relu()` and `x * scale` are supported; `x * scale + scale`,
-`x*y + (x+1.0)*(x+1.0)` and live sin/cos are rejected with unequal input shapes.
+`(x.relu() - y.sin()).cos()`, `x.sin()` and `x * scale` are supported;
+`x*y + 0.5`, `(x*y).sin()+x` and `x*y + (x+1.0)*(x+1.0)` are rejected
+for unequal Tensor `x,y`; the scalar-leaf `x*y + 0.5` differs from the accepted
+tensor-leaf `x*y+y` exception below.
 Equal-shape support retains the full pointwise language above.
 
 The sole two-stage broadcast exception is `a*b+c` or `c+a*b`, where all three
@@ -77,7 +79,17 @@ leaves are tensor inputs. Input IDs may repeat within the one/two-tensor limit
 The original returned IR must have exactly this structure. Scalar leaves,
 subtraction, negation, ReLU/sin/cos, a second product, extra arithmetic and
 identity wrappers do not qualify, even if later simplification removes them.
-This exception reuses the existing single-FMA lowering and checked addresses.
+This exception additionally requires no live sin/cos in any returned root.
+For example, `p=x*y; return (p+x,p.sin())` shares a product between arithmetic
+and trig consumers and is excluded in both output orders. This graph-wide guard
+preserves the bounded single-FMA exception. Dead trig does not restrict live
+admission. The exception reuses the existing lowering and checked addresses.
+
+One-stage trig uses the existing numerical planner and generic native CUDA
+instruction executor, including its scalar-kind and shape-history behavior.
+Finite default-Inductor comparisons do not establish general Inductor coverage
+or performance parity. Generic executor PTX and reconstructed scalar plans are
+not independent device traces; empty outputs execute no trig.
 
 Strided inputs, other dtypes, gradients (even inside no-grad),
 mutation, control flow outside the bounded root branches and literal loops below, module calls, keyword operator

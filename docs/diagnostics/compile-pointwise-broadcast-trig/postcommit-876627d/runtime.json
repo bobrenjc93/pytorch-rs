@@ -1,0 +1,175 @@
+{
+  "measurement_kind": "clean implementation commit; focused regressions, not scoring",
+  "source": {
+    "commit": "876627dbc12662aa0d3357bf8055ed1ee1137b68",
+    "source_sha256": "b0e9309ad549012297eee7359d66495e82f68332cd8201011dc7dce4256a9810",
+    "production_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "git_status": "",
+  "reviewed_commit": "6255306165615d9502a4aa491187bcf626e9d585",
+  "reviewed_tree": "de3d425c8468ab595f79efd2d11f6c3cac0c3a99",
+  "reviewed_files": {
+    "docs/compile-pointwise-jit.md": {
+      "sha256": "f5664d8f590ccfb7378cc9e47a2cad8b85ad0dc0057a27b3358cb6a94ae88638",
+      "matches_reviewed": false
+    },
+    "docs/compile-pointwise-numerics.md": {
+      "sha256": "06ddf6894adcd87c910472606d284b8bc790a1a13177816848d6409b9187a25a",
+      "matches_reviewed": true
+    },
+    "python/torch_rs/__init__.py": {
+      "sha256": "9a1e31a8bb9dcf1d5b21d85ddd82f98376546d84f66289797a08fa1510d12609",
+      "matches_reviewed": true
+    },
+    "src/pointwise_indexing.rs": {
+      "sha256": "35c4e9babeeb844975fcf05f8695901c048b21dd36a46adb88f841cb28ae019f",
+      "matches_reviewed": true
+    },
+    "tests/test_compile_pointwise_broadcast.py": {
+      "sha256": "5cba006df8f72692baf4beeb0c85f1beba2ae68ad6b6ca43972e885d4c55ca36",
+      "matches_reviewed": true
+    },
+    "tests/test_compile_pointwise_broadcast_priority.py": {
+      "sha256": "065bc6066f26a8d4207691edafbe58f368da1a95d8f96bc9d701da365257ee1b",
+      "matches_reviewed": true
+    },
+    "tests/test_compile_pointwise_broadcast_trig.py": {
+      "sha256": "8a4f078b7ea7369b80c67d81d4e295a4cc7f40997f7a06d769085603d2a295b6",
+      "matches_reviewed": true
+    },
+    "tests/test_compile_pointwise_helpers.py": {
+      "sha256": "777cc2702e36274c1d4ab91b90f54315a16d0f4c94c88eb29b237f3091f09578",
+      "matches_reviewed": true
+    },
+    "tests/test_compile_pointwise_prepared.py": {
+      "sha256": "45116f80c9941eeee9ffa3cfa55bb61b98ea9eea322bc9e99f15dfa676290e69",
+      "matches_reviewed": true
+    },
+    "tests/test_compile_pointwise_runtime_scalars.py": {
+      "sha256": "f28c66224c8ac27e1c1df64c72a93297874fbcc6c99a7cdabc2f62b5dbb10ec9",
+      "matches_reviewed": true
+    },
+    "tests/test_compile_pointwise_scalar_admission.py": {
+      "sha256": "9d3f746674906a68e4af70d0499f0bc2fcc88f49c91bc4651c17da48430d00bd",
+      "matches_reviewed": true
+    }
+  },
+  "source_and_test_manifest_sha256": "b5cc3a249dde01e6bddb88e26aea8ab135c61d1f6688c8c09f85238130038c05",
+  "source_and_test_manifest_definition": "SHA256 of compact sort_keys JSON mapping git ls-files src python tests Cargo.toml Cargo.lock pyproject.toml uv.lock rust-toolchain.toml paths to SHA256",
+  "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+  "interpreter": {
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/target/trig-redelivery/uv-python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12",
+    "sha256": "f7c6210eb40fadcd3c2889dddd24a15fc2c9f926aec5a03bf9da66e12d581526"
+  },
+  "python_executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/bin/python",
+  "native_extension": {
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+    "sha256": "248b12afb659893af07b5a019aa6f5cb05a8f228e61cc37a48b317aa32ee2806"
+  },
+  "python_package": {
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+    "sha256": "9a1e31a8bb9dcf1d5b21d85ddd82f98376546d84f66289797a08fa1510d12609"
+  },
+  "all_installed_python_sources_match_commit": true,
+  "wheel_native_matches_import": true,
+  "reference": {
+    "version": "2.13.0+cu130",
+    "cuda": "13.0",
+    "package": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/lib/python3.12/site-packages/torch/__init__.py",
+      "sha256": "cf40c075c95864036e835795756d69b8cccfafa76f3bcde5eba9d06065ccd3d1"
+    },
+    "inductor": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/lib/python3.12/site-packages/torch/_inductor/__init__.py",
+      "sha256": "9691793e63bdf6244a09b1c4c42f583160842501940f332fd4c32779a4e8d930"
+    },
+    "triton": "3.7.1"
+  },
+  "runtime": {
+    "version": 13000,
+    "driver_api_version": 13000,
+    "selected": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+      "sha256": "96c42e418cec19054186b9429c321603cc190bf26a18104e19408117a2a817b0"
+    }
+  },
+  "nvrtc": {
+    "version": [
+      13,
+      0
+    ],
+    "options": [
+      "--gpu-architecture=compute_90",
+      "--fmad=true",
+      "--ftz=false",
+      "--prec-div=true",
+      "--prec-sqrt=true"
+    ],
+    "selected": {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libnvrtc.so.13",
+      "sha256": "a49e67e8e74590f1e98de55c39c6287efd3f59e3c3797464d7bbe0fe01349b11"
+    }
+  },
+  "mapped_cuda_libraries": [
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+      "sha256": "96c42e418cec19054186b9429c321603cc190bf26a18104e19408117a2a817b0"
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libnvrtc-builtins.so.13.0",
+      "sha256": "91dcd944d01da9c0f08fff5d779db136a47f6d62bdb63bae900d2f481e92c3a2"
+    },
+    {
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libnvrtc.so.13",
+      "sha256": "a49e67e8e74590f1e98de55c39c6287efd3f59e3c3797464d7bbe0fe01349b11"
+    },
+    {
+      "path": "/usr/lib64/libcuda.so.580.82.07",
+      "sha256": "20e6ceff0c67aa902f74c662719108677c758651d9bb1e1eff738835c681f82b"
+    }
+  ],
+  "device": {
+    "visible": "0",
+    "native_count": 1,
+    "reference_count": 1,
+    "executor_device": 0,
+    "name": "NVIDIA H100",
+    "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1",
+    "capability": [
+      9,
+      0
+    ],
+    "total_memory_bytes": 102085492736
+  },
+  "environment": {
+    "CARGO_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/target/trig-redelivery/cargo",
+    "CARGO_TARGET_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/target/trig-postcommit-876627d/rust-tests",
+    "RUSTUP_TOOLCHAIN": "1.92.0",
+    "UV_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/target/trig-redelivery/cache/uv",
+    "UV_PYTHON_INSTALL_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/target/trig-redelivery/uv-python",
+    "UV_PYTHON_BIN_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/target/trig-redelivery/uv-bin",
+    "UV_LINK_MODE": "copy",
+    "UV_NO_CONFIG": "1",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/target/trig-postcommit-876627d/tmp",
+    "XDG_CACHE_HOME": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/target/trig-postcommit-876627d/cache",
+    "CUDA_CACHE_PATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/target/trig-postcommit-876627d/cache/cuda",
+    "TORCHINDUCTOR_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/target/trig-postcommit-876627d/cache/inductor",
+    "TRITON_CACHE_DIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/target/trig-postcommit-876627d/cache/triton",
+    "PYTHONPYCACHEPREFIX": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/target/trig-postcommit-876627d/cache/pycache",
+    "PYTHONPATH": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/tests",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "OMP_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+    "VIRTUAL_ENV": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv",
+    "PYO3_PYTHON": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/bin/python",
+    "TORCH_RS_CUDART": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "TORCH_RS_NVRTC": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libnvrtc.so.13"
+  },
+  "build": {
+    "record": "build.json",
+    "native_compile_occurred": true,
+    "target_initially_empty": true,
+    "cache_note": "Existing worktree-local locked .venv, interpreter and Cargo registry reused; fresh build target and runtime/compiler caches for this phase; no native extension imported from another checkout."
+  },
+  "canonical_qualification": "pending"
+}

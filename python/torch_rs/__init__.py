@@ -976,14 +976,17 @@ def compile(
     contiguous no-grad native CUDA float32 inputs lower to generated fused CUDA
     code. Equal-shape inputs support add/subtract/multiply, negation/ReLU/sin/cos,
     scalar constants and reused local intermediates. Unequal input shapes require
-    at most one arithmetic stage and no live sin/cos in the original returned
-    expression, before simplification: add/subtract/multiply and tensor negation
-    add a stage; ReLU preserves depth. The rule includes unused inputs and unequal
+    every returned root to have at most one arithmetic stage, including live
+    sin/cos, in the original expression before simplification: add/subtract/multiply and tensor negation
+    add a stage; ReLU/sin/cos preserve depth. The rule includes unused inputs and unequal
     shapes with linear addresses. The sole two-stage exception is ``a*b+c`` or
     ``c+a*b`` with all three leaves tensor inputs (IDs may repeat within the
     one/two-tensor limit). Scalar leaves, identity wrappers, subtraction,
     negation, ReLU/sin/cos and extra live arithmetic do not qualify for this
-    exception. Root functions may also use sequential, non-nested loops over the
+    exception, which also requires no live sin/cos in any returned root. The
+    existing numerical planner and generic CUDA instruction executor are reused;
+    finite evidence does not establish general Inductor or performance parity.
+    Root functions may also use sequential, non-nested loops over the
     actual built-in range (including direct aliases), with one to three literal
     exact-integer bounds and a nonzero step. Zero/one/many trips and signed steps
     are supported. Bodies use the same pointwise language and approved direct,

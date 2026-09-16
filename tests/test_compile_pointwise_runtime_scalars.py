@@ -489,6 +489,13 @@ assert 'torch' not in sys.modules
             compiled = native.compile(fn)
             x = self.upload([0., -0., 1., -1.], (4,))
             for y in (x.reshape(1, 4), self.upload([2.], ())):
+                if body == 'x.sin()+s':
+                    rf = program('def f(s,x,unused,flag):\n return '+body)
+                    tx = self.upload([0., -0., 1., -1.], (4,), self.torch)
+                    ty = self.upload(y.cpu().tolist(), tuple(y.shape), self.torch)
+                    self.check(fn, compiled, self.torch.compile(rf),
+                               (0.375, x, y, False), (0.375, tx, ty, False), exact=False)
+                    continue
                 with mock.patch.dict(os.environ, TORCH_RS_NVRTC='/nonexistent/positional-boundary'):
                     with self.assertRaisesRegex(NotImplementedError, 'unequal input shapes'):
                         self.without_replay(fn, compiled, (0.375, x, y, False))

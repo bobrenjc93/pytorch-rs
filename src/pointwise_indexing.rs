@@ -158,15 +158,19 @@ impl Graph {
         // The sole two-stage exception is an original tensor-leaf product plus
         // an input, in either add order. Match nodes directly: identities, CSE,
         // scalar leaves and wrappers must not turn a different graph into it.
-        for &root in &self.outputs {
-            if shapes.windows(2).any(|pair| pair[0] != pair[1])
-                && (depth[root] > 1 || transcendental[root])
-                && !self.tensor_leaf_madd(root)
-            {
-                return Err(invalid(
-                    "unequal input shapes require at most one arithmetic stage and no live sin/cos, or a tensor-leaf multiply-add",
-                ));
-            }
+        // A live trig consumer excludes that exception for the whole graph:
+        // p=x*y; return (p+x, p.sin()) shares a product across arithmetic and
+        // trig consumers. Both output orders must stay outside this increment.
+        let unequal_shapes = shapes.windows(2).any(|pair| pair[0] != pair[1]);
+        let live_transcendental = self.outputs.iter().any(|&root| transcendental[root]);
+        if unequal_shapes
+            && self.outputs.iter().any(|&root| {
+                depth[root] > 1 && (live_transcendental || !self.tensor_leaf_madd(root))
+            })
+        {
+            return Err(invalid(
+                "unequal input shapes require at most one arithmetic stage, or a tensor-leaf multiply-add with no live sin/cos in any output",
+            ));
         }
         let first = self.outputs[0];
         if self
@@ -353,7 +357,7 @@ mod tests {
     }
 
     #[test]
-    fn relu_preserves_depth_and_only_live_transcendentals_restrict_admission() {
+    fn relu_and_trig_preserve_depth_and_dead_nodes_still_validate() {
         let mut g = graph();
         g.nodes = vec![
             Node::Input(0),
@@ -371,7 +375,7 @@ mod tests {
         }
         for op in [Node::Sin(0), Node::Cos(0)] {
             g.nodes[2] = op;
-            assert!(g.indexing(&[&[2, 1], &[1, 3]]).is_err());
+            assert!(g.indexing(&[&[2, 1], &[1, 3]]).is_ok());
             assert!(g.indexing(&[&[2], &[2]]).is_ok());
             g.outputs = vec![3]; // All arithmetic and sin/cos are dead; ReLU(y) is live.
             assert!(g.indexing(&[&[2, 1], &[1, 3]]).is_ok());
@@ -386,6 +390,81 @@ mod tests {
                 .to_string()
                 .contains("incompatible")
         );
+    }
+
+    #[test]
+    fn trig_before_and_after_one_stage_accepts_all_scalar_kinds_and_input_orders() {
+        for leaf in [
+            Node::Input(1),
+            Node::Constant(0f64.to_bits()),
+            Node::Integer(0f64.to_bits()),
+            Node::Boolean(false),
+            Node::RuntimeScalar(0, true),
+        ] {
+            for op in [
+                Node::Add(2, 1),
+                Node::Sub(1, 2),
+                Node::Mul(2, 1),
+                Node::Neg(2),
+            ] {
+                let g = Graph {
+                    inputs: 2,
+                    nodes: vec![
+                        Node::Input(0),
+                        leaf.clone(),
+                        Node::Sin(0),
+                        op,
+                        Node::Cos(3),
+                        Node::Relu(4),
+                        Node::Sin(5),
+                    ],
+                    outputs: vec![4, 6],
+                };
+                for (a, b) in [
+                    (&[2, 1][..], &[1, 3][..]),
+                    (&[2][..], &[1, 2][..]),
+                    (&[][..], &[1][..]),
+                    (&[0, 1][..], &[1, 3][..]),
+                ] {
+                    for shapes in [[a, b], [b, a]] {
+                        assert!(g.indexing(&shapes).is_ok(), "{g:?} {shapes:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn live_trig_excludes_madd_graph_wide_in_both_output_orders() {
+        for trig in [Node::Sin(2), Node::Cos(2), Node::Sin(0), Node::Cos(0)] {
+            for reversed in [false, true] {
+                let mut g = graph();
+                // Graph roots are canonical SSA order. Vary producer order so
+                // either root can be the first one visited by admission.
+                g.nodes.extend(if reversed {
+                    [trig.clone(), Node::Add(2, 0)]
+                } else {
+                    [Node::Add(2, 0), trig.clone()]
+                });
+                g.outputs = vec![3, 4];
+                for shapes in [
+                    [&[2, 3][..], &[1, 3][..]],
+                    [&[2][..], &[1, 2][..]],
+                    [&[][..], &[1][..]],
+                    [&[0, 3][..], &[1, 3][..]],
+                ] {
+                    let error = g.indexing(&shapes).err().unwrap().to_string();
+                    assert!(
+                        error.contains("arithmetic stage"),
+                        "{g:?} {shapes:?}: {error}"
+                    );
+                }
+                assert!(g.indexing(&[&[2], &[2]]).is_ok());
+                // Dead trig does not take away the existing MAdd exception.
+                g.outputs = vec![if reversed { 4 } else { 3 }];
+                assert!(g.indexing(&[&[2, 3], &[1, 3]]).is_ok());
+            }
+        }
     }
 
     #[test]

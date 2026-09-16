@@ -105,16 +105,17 @@ the reference folds those products before FMA selection.
 
 ## Unequal-shape numerical boundary
 
-Unequal input shapes admit at most one arithmetic stage and no live sin/cos, or
-the tensor-leaf multiply-add exception below, in the returned original typed IR.
+Unequal input shapes admit every returned root with at most one arithmetic
+stage, including live sin/cos, or the tensor-leaf multiply-add exception below,
+in the original typed IR.
 Input/scalar depth is zero; add/subtract/multiply
-add one to the maximum operand depth, tensor negation adds one, and ReLU preserves
-depth. Scalar signs are metadata, not tensor negation. This check precedes
+add one to the maximum operand depth, tensor negation adds one, and ReLU/sin/cos
+preserve depth. Scalar signs are metadata, not tensor negation. This check precedes
 numerical simplification, so zero/one identities cannot hide a second stage.
 Actual input shape equality controls admission, including unused inputs and
 unequal shapes whose address maps are linear. Full graph and shape validation
 still includes dead expressions; numerical capability depends on the returned
-live expression only. Equal-shape admission and lowering remain unchanged.
+live roots only. Equal-shape admission and lowering remain unchanged.
 
 The one-stage class cannot supply a product to a second arithmetic consumer.
 ReLU contributes comparison/selection, and scalar identities, sign normalization
@@ -123,11 +124,23 @@ Consequently this subset has no competing product contraction to select. Address
 calculation only chooses input elements; it no longer changes numerical
 materialization ranks to approximate a reference autotuner.
 
+The existing numerical planner and generic CUDA instruction executor also own
+one-stage trig; admission adds no trigonometric implementation or launch path.
+Constant-only trig is not runtime-input evidence, and empty outputs execute no
+trig. Finite regression results and generic VM PTX do not prove all-program or
+performance parity, nor independently trace a selected scalar plan on-device.
+Static scalar `-0.0` may reuse a `+0.0` specialization; tests retain that history
+rather than treating each sign as a separately specialized execution.
+
 The sole two-stage exception is `Add(Mul(Input(a), Input(b)), Input(c))` or
 `Add(Input(c), Mul(Input(a), Input(b)))`. All leaves must be tensor inputs;
 IDs may repeat. The existing lowering emits a single FMA with no competing
 product to rank. Scalar leaves of every kind, identity wrappers, subtraction,
 negation, ReLU, sin/cos and extra live arithmetic are outside this exception.
+No returned root may have live sin/cos when using this exception. In
+`p=x*y; return (p+x,p.sin())`, the shared product feeds both an arithmetic and a
+trig consumer, so the graph rejects in either output order. Dead trig remains
+irrelevant to this live-root check.
 Matching the original nodes before identities, CSE and sign normalization keeps
 those near misses excluded. Dead nodes and unused arguments still receive full
 validation. Preparation checks original admission and addresses; reuse requires

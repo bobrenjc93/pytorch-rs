@@ -3,14 +3,16 @@
 Ordinary default `torch_rs.compile(fn)` supports the [native fused CUDA float32
 pointwise subset](compile-pointwise-jit.md): broadcast-compatible contiguous no-grad
 inputs and scalar constants. Equal-shape inputs support add/subtract/multiply and
-negation/ReLU/sin/cos. Unequal input shapes require at most one arithmetic stage
-and no live sin/cos in the returned original expression; ReLU preserves depth,
-while tensor negation adds a stage. This includes unused inputs and unequal
-shapes with linear address maps. The sole two-stage exception is original
+negation/ReLU/sin/cos. Unequal input shapes require every returned original root
+to have at most one arithmetic stage, including live sin/cos; ReLU/sin/cos
+preserve depth, while tensor negation adds a stage. This includes unused inputs
+and unequal shapes with linear address maps. The sole two-stage exception is original
 `a*b+c` or `c+a*b` with all leaves tensor inputs (IDs may repeat); scalar leaves,
 identity wrappers, signed expressions, ReLU/sin/cos and extra arithmetic do not
-qualify. Other multi-stage broadcast expressions are rejected before compilation
-or execution because numerical equivalence is not established.
+qualify. The exception also requires no live sin/cos in any returned root.
+Other multi-stage broadcast expressions are rejected before compilation
+or execution because numerical equivalence is not established; see the
+[numerical contract](compile-pointwise-numerics.md#unequal-shape-numerical-boundary).
 Root functions also support [bounded, non-nested literal-range
 loops](compile-pointwise-jit.md#bounded-root-literal-loops) and
 [bounded input-shape branches](compile-pointwise-jit.md#bounded-root-shape-branches).
