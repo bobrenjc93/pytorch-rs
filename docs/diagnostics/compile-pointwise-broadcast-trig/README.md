@@ -17,6 +17,56 @@ returned root at arithmetic depth at most one, including live sin/cos. The
 exact tensor-leaf multiply-add exception requires no live trig in any returned
 root. Numerical planning and the generic native CUDA executor are unchanged.
 
+## Current clean-commit evidence
+
+Measured on 2026-09-16 UTC at clean repaired commit
+[`9ef4515`](https://github.com/bobrenjc93/pytorch-rs/commit/9ef4515fe7537d8cc0ac1d11a2f1ad52856f7313).
+All 13 command receipts record that commit and empty Git status before and after
+execution. Source and tests remained unchanged throughout; evidence and this
+index were added afterward. There were no test failures.
+
+| Check | Result |
+| --- | --- |
+| Both CI Clippy configurations, with warnings denied | Passed |
+| Rust original-IR indexing | 11 passed |
+| Focused H100 Python selection, including all seven trig tests | 21 passed |
+| H100 ownership, structured I/O and scalar histories | 31 passed; 2 explicit two-device skips |
+| CUDA-hidden trig suite | 2 passed; 5 explicit GPU skips |
+| Formatting, installed-extension provenance and diff whitespace | Passed |
+
+[Build receipt](postcommit-9ef4515/build.json),
+[runtime identities](postcommit-9ef4515/runtime.json),
+[commands](postcommit-9ef4515/commands.json) and
+[complete text outcomes](postcommit-9ef4515/outcomes.log) total about 58 KiB.
+Native Rust compilation occurred in an empty target (50.948 seconds Maturin
+wall time). The existing worktree-local locked environment, interpreter and
+Cargo registry were reused; CUDA/Inductor/Triton cache directories were new.
+The wheel and imported extension match, and installed Python sources match the
+commit. Python was 3.12.14, PyTorch `2.13.0+cu130`, NVRTC 13.0 and CUDA runtime
+13000. Installed nvcc 12.6 was not used for the pointwise JIT. The build tool's
+embedded-PTX label concerns its base CUDA inventory; the runtime receipt records
+the pointwise NVRTC path exercised here.
+
+GPU 0 was H100 UUID `GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1`, driver
+580.82.07. Before/after snapshots showed 0% utilization and 4 MiB used.
+This is single-GPU evidence, with unchanged public `torch_rs.compile(fn)` and
+`torch.compile(fn)` defaults, compiler limits and tolerances.
+
+Reproduce with the [locked setup](../../../CONTRIBUTING.md#locked-setup), the
+[repository build tool](../../../scripts/capture_depth_concat_build.py), and
+the recorded test argument vectors. Export the recorded environment with
+current worktree paths and a fresh build output directory; keep all writable
+caches local. The full Rust suites already checked during repair were not
+repeated here; the focused indexing checks and both Clippy configurations were.
+
+Canonical qualification is pending. These are focused checks, not candidate
+scores or independent review. The [canonical evaluation contract](../../torch-compile-default-evaluator.md#evidence-retention)
+owns fixed evaluations and raw archives. No full fixed benchmark or duplicate
+`--metric both` capture was run here. Reproduction does not require recovering
+ignored files after delivery. Burner owns CI, publication and merge qualification.
+Retirement of PR #2000 remains maintainer-owned; this record does not claim it
+is closed or its commits deleted.
+
 ## PR #2001 CI repair
 
 The [required `test` job](https://github.com/bobrenjc93/pytorch-rs/actions/runs/35046757556/job/104638120458)
@@ -31,67 +81,25 @@ A newly compiled local wheel passed 21 focused and 31 additional H100 tests,
 plus two portable trig tests; seven hardware skips remain explicit. Tests,
 compiler defaults, tolerances and evaluator definitions are unchanged.
 
-This source repair is not included in the `876627d` capture below. Its required
-clean-commit evidence refresh and external CI rerun remain pending after Burner
-commits the repair. The working-tree receipt does not satisfy those gates.
+The repair was committed as `9ef4515`. Its clean focused evidence is recorded
+above; the working-tree repair receipt remains a separate development record.
+External required checks and canonical qualification remain Burner-owned.
 
-## Evidence for clean commit `876627d`
+## Earlier clean capture at `876627d`
 
-Measured on 2026-09-16 UTC at clean implementation commit
+The [build](postcommit-876627d/build.json),
+[runtime](postcommit-876627d/runtime.json),
+[commands](postcommit-876627d/commands.json) and
+[outcomes](postcommit-876627d/outcomes.log) remain unchanged and pinned to
 [`876627d`](https://github.com/bobrenjc93/pytorch-rs/commit/876627dbc12662aa0d3357bf8055ed1ee1137b68).
-All 12 command receipts record this commit and empty Git status before and after
-execution. Source and tests remained unchanged during that capture; the following
-`db3df93` commit added only evidence and index updates. The later CI repair above
-changes the source, so these measurements remain pinned to `876627d`.
-
-Canonical qualification is pending. These focused results are not candidate
-scores or independent review. Burner owns fixed evaluations, archival, review,
-CI and merge qualification. Retirement of PR #2000 remains maintainer-owned;
-this record does not claim it is closed or its commits deleted.
-
-The clean rerun had no test failures:
-
-| Check | Result |
-| --- | --- |
-| Rust original-IR indexing | 11 passed |
-| Same focused H100 Python selection, including all seven trig tests | 21 passed |
-| Additional H100 ownership, structured I/O and scalar histories | 31 passed; 2 explicit two-device skips |
-| CUDA-hidden trig suite | 2 passed; 5 explicit GPU skips |
-| Additional CUDA-hidden admission/cache regressions | 94 passed |
-| Formatting, installed-extension provenance and diff whitespace | Passed |
-
-The repository's [clean-build capture tool](../../../scripts/capture_depth_concat_build.py)
-compiled native Rust in an empty local target (52.240 seconds Maturin wall time);
-it did not reuse a native artifact. The existing locked local environment,
-interpreter and dependency registry were reused; CUDA/Inductor/Triton caches
-started empty for this phase. The new compile produced the same native hash as
-the pre-delivery compile. The local environment
-used Python 3.12.14, PyTorch `2.13.0+cu130`, NVRTC 13.0 and CUDA runtime 13000.
-Installed nvcc 12.6 was not used for the native JIT. GPU 0 was H100 UUID
-`GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1`, driver 580.82.07; before/after
-snapshots both showed 0% utilization and 4 MiB used. This is single-GPU evidence.
-
-[Build receipt](postcommit-876627d/build.json),
-[runtime identities](postcommit-876627d/runtime.json),
-[command receipts](postcommit-876627d/commands.json) and
-[complete text outcomes](postcommit-876627d/outcomes.log) retain elapsed times,
-hashes and skips in about 74 KiB, with no raw tensors or evaluator reports.
-The build tool's embedded-PTX label describes its base CUDA inventory; the runtime
-receipt records the pointwise NVRTC compilation exercised here. Reproduce with the
-locked environment in [CONTRIBUTING.md](../../../CONTRIBUTING.md#locked-setup),
-a worktree-local release wheel, and the receipt's unchanged test selections.
-Use the recorded environment with current worktree paths and a fresh build
-output directory. Keep writable
-Cargo, uv, Python, CUDA, Inductor, Triton and temporary directories inside the
-worktree. Use `CUDA_VISIBLE_DEVICES=0` for H100 checks and an empty value for
-portable checks; two-device tests explicitly skip without a reservation.
-Public comparisons use unchanged `torch_rs.compile(fn)` and `torch.compile(fn)`.
-No compiler-limit, backend or tolerance override is part of this redelivery.
-
-The [canonical evaluation contract](../../torch-compile-default-evaluator.md#evidence-retention)
-owns candidate scores and full raw archives. No full fixed benchmark or duplicate
-`--metric both` capture belongs to this author record. Ignored local build files
-are disposable; reproduction does not require recovering them after delivery.
+That clean capture preceded the CI repair: 11 Rust indexing tests, 21 focused
+H100 tests, 31 additional H100 tests, two portable trig tests and 94 portable
+admission/cache tests passed, with seven explicit hardware skips. Formatting,
+import provenance and whitespace checks passed. Its native compile took
+52.240 seconds in an empty target and produced the same native hash as the
+pre-delivery compile. `db3df93` subsequently added only evidence/index updates.
+These earlier measurements do not qualify the repaired source; the current
+clean capture above supplies the required refreshed focused evidence.
 
 ## Historical evidence, not current qualification
 

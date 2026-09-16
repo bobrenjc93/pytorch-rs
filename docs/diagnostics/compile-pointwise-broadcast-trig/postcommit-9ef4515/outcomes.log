@@ -1,0 +1,283 @@
+===== build-capture =====
+
+===== verify-install =====
+verified native-extension provenance for torch-rs 0.1.0
+interpreter: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/bin/python
+virtualenv: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv
+torch_rs: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/lib/python3.12/site-packages/torch_rs/__init__.py
+torch_rs.torch_rs: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so
+
+===== gpu-before =====
+index, uuid, name, memory.total [MiB], memory.used [MiB], utilization.gpu [%], driver_version, compute_cap
+0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+
+===== runtime =====
+{"commit": "9ef4515fe7537d8cc0ac1d11a2f1ad52856f7313", "source_sha256": "db45b067fe49248b03224c9abb8b330f8f6b1475595b4774b40381230fe185b2", "native_sha256": "6a8ab62ef44de4606d95647a055a43e3be8488a28f9a8b8b70c9072386f442f7", "nvrtc": [13, 0], "runtime": 13000, "device": {"visible": "0", "native_count": 1, "reference_count": 1, "executor_device": 0, "name": "NVIDIA H100", "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1", "capability": [9, 0], "total_memory_bytes": 102085492736}, "clean": true}
+
+===== rust-format =====
+
+===== clippy =====
+   Compiling crossbeam-utils v0.8.23
+   Compiling crossbeam-epoch v0.9.21
+   Compiling crossbeam-deque v0.8.8
+   Compiling rayon-core v1.13.0
+    Checking either v1.18.0
+    Checking cfg-if v1.0.4
+    Checking libloading v0.8.9
+    Checking rayon v1.12.0
+    Checking pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.01s
+
+===== clippy-bindings =====
+   Compiling target-lexicon v0.13.5
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.47
+   Compiling libc v0.2.189
+   Compiling heck v0.5.0
+    Checking inventory v0.3.24
+    Checking once_cell v1.21.4
+   Compiling pyo3-build-config v0.29.2
+   Compiling syn v2.0.119
+   Compiling pyo3-ffi v0.29.2
+   Compiling pyo3 v0.29.2
+   Compiling pyo3-macros-backend v0.29.2
+   Compiling pyo3-macros v0.29.2
+    Checking pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 14.30s
+
+===== rust-indexing =====
+   Compiling crossbeam-utils v0.8.23
+   Compiling cfg-if v1.0.4
+   Compiling either v1.18.0
+   Compiling libloading v0.8.9
+   Compiling crossbeam-epoch v0.9.21
+   Compiling crossbeam-deque v0.8.8
+   Compiling rayon-core v1.13.0
+   Compiling rayon v1.12.0
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.42s
+     Running unittests src/lib.rs (target/trig-postcommit-9ef4515/rust-tests/debug/deps/pytorch_rs-a84bc75b3d7dfab2)
+
+running 11 tests
+test pointwise_ir::indexing::tests::broadcasts_scalar_empty_leading_and_interior_dimensions ... ok
+test pointwise_ir::indexing::tests::live_trig_excludes_madd_graph_wide_in_both_output_orders ... ok
+test pointwise_ir::indexing::tests::multiple_roots_union_dependencies_and_preserve_original_limits ... ok
+test pointwise_ir::indexing::tests::original_depth_rejects_live_stages_before_numeric_simplification ... ok
+test pointwise_ir::indexing::tests::rejects_output_size_and_empty_stride_overflow_before_codegen ... ok
+test pointwise_ir::indexing::tests::relu_and_trig_preserve_depth_and_dead_nodes_still_validate ... ok
+test pointwise_ir::indexing::tests::tensor_leaf_madd_accepts_both_orders_all_input_ids_and_broadcasts ... ok
+test pointwise_ir::indexing::tests::tensor_madd_does_not_admit_wrappers_other_leaves_or_products ... ok
+test pointwise_ir::indexing::tests::tensor_madd_still_checks_dead_nodes_unused_inputs_and_overflow ... ok
+test pointwise_ir::indexing::tests::trig_before_and_after_one_stage_accepts_all_scalar_kinds_and_input_orders ... ok
+test pointwise_ir::indexing::tests::validates_dead_shapes_but_does_not_expand_unrelated_output ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 238 filtered out; finished in 0.01s
+
+     Running tests/autograd.rs (target/trig-postcommit-9ef4515/rust-tests/debug/deps/autograd-f38585ca82bec9e6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 92 filtered out; finished in 0.00s
+
+     Running tests/cuda_add.rs (target/trig-postcommit-9ef4515/rust-tests/debug/deps/cuda_add-3043d5dd2af577ad)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/cuda_contiguous.rs (target/trig-postcommit-9ef4515/rust-tests/debug/deps/cuda_contiguous-19470d316c601991)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/cuda_matmul.rs (target/trig-postcommit-9ef4515/rust-tests/debug/deps/cuda_matmul-405eb25ac7669f7a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/cuda_mul_scalar.rs (target/trig-postcommit-9ef4515/rust-tests/debug/deps/cuda_mul_scalar-e969f9beb76a1936)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/cuda_native_boundaries.rs (target/trig-postcommit-9ef4515/rust-tests/debug/deps/cuda_native_boundaries-5c3fea720f3372b3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running tests/cuda_relu.rs (target/trig-postcommit-9ef4515/rust-tests/debug/deps/cuda_relu-97ded30cbb16e174)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/cuda_same_device_copy.rs (target/trig-postcommit-9ef4515/rust-tests/debug/deps/cuda_same_device_copy-8e5fcdb7d77c7d8c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/cuda_sum_rows.rs (target/trig-postcommit-9ef4515/rust-tests/debug/deps/cuda_sum_rows-9865ac5ad944ff1c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/tensor_baseline.rs (target/trig-postcommit-9ef4515/rust-tests/debug/deps/tensor_baseline-1f3bc301430510b8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 103 filtered out; finished in 0.00s
+
+
+===== focused-h100 =====
+test_cached_native_execution_and_structured_aliases (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_cached_native_execution_and_structured_aliases) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ok
+test_former_rejections_keep_the_original_shapes_and_values (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_former_rejections_keep_the_original_shapes_and_values) ... ok
+test_reference_shape_value_offset_and_retained_output_histories (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_reference_shape_value_offset_and_retained_output_histories) ... ok
+test_scalar_kind_zero_trig_witness_and_runtime_promotion (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_scalar_kind_zero_trig_witness_and_runtime_promotion) ... ok
+test_subnormal_amplification_and_nested_runtime_trig_exact (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_subnormal_amplification_and_nested_runtime_trig_exact) ... ok
+test_mixed_madd_trig_rejects_in_both_orders_even_after_identities (test_compile_pointwise_broadcast_trig.Metadata.test_mixed_madd_trig_rejects_in_both_orders_even_after_identities) ... ok
+test_unary_and_one_stage_trig_before_and_after_arithmetic (test_compile_pointwise_broadcast_trig.Metadata.test_unary_and_one_stage_trig_before_and_after_arithmetic) ... ok
+test_direct_run_cannot_bypass_unequal_shapes_with_linear_addresses (test_compile_pointwise_broadcast_priority.BroadcastPriority.test_direct_run_cannot_bypass_unequal_shapes_with_linear_addresses) ... ok
+test_historical_finite_and_ieee_shape_histories_are_explicitly_unsupported (test_compile_pointwise_broadcast_priority.BroadcastPriority.test_historical_finite_and_ieee_shape_histories_are_explicitly_unsupported) ... ok
+test_historical_fresh_large_cancellation_is_explicitly_unsupported (test_compile_pointwise_broadcast_priority.BroadcastPriority.test_historical_fresh_large_cancellation_is_explicitly_unsupported) ... ok
+test_products_deeper_trig_unused_inputs_empty_and_simplified_graphs_reject (test_compile_pointwise_broadcast_priority.BroadcastPriority.test_products_deeper_trig_unused_inputs_empty_and_simplified_graphs_reject) ... ok
+test_unary_trig_admission_keeps_cached_unused_input_address_guard (test_compile_pointwise_broadcast_priority.BroadcastPriority.test_unary_trig_admission_keeps_cached_unused_input_address_guard) ... ok
+test_dead_graph_still_validates_before_live_admission (test_compile_pointwise_broadcast_priority.Metadata.test_dead_graph_still_validates_before_live_admission) ... ok
+test_original_depth_precedes_simplification_and_address_canonicalization (test_compile_pointwise_broadcast_priority.Metadata.test_original_depth_precedes_simplification_and_address_canonicalization) ... ok
+test_relu_is_depth_neutral_and_dead_nodes_do_not_limit_live_capability (test_compile_pointwise_broadcast_priority.Metadata.test_relu_is_depth_neutral_and_dead_nodes_do_not_limit_live_capability) ... ok
+test_runtime_scalar_sign_is_metadata_not_tensor_negation (test_compile_pointwise_broadcast_priority.Metadata.test_runtime_scalar_sign_is_metadata_not_tensor_negation) ... ok
+test_private_prepared_admission_cannot_bypass_graph_or_shape_checks (test_compile_pointwise_prepared.PreparedHardware.test_private_prepared_admission_cannot_bypass_graph_or_shape_checks) ... ok
+test_unused_tensors_cannot_bypass_broadcast_boundary_and_one_tensor_is_unchanged (test_compile_pointwise_runtime_scalars.PositionalScalarHardware.test_unused_tensors_cannot_bypass_broadcast_boundary_and_one_tensor_is_unchanged) ... ok
+test_scalar_slots_preserve_original_ir_actual_shape_admission (test_compile_pointwise_scalar_admission.PositionalBindingAdmission.test_scalar_slots_preserve_original_ir_actual_shape_admission) ... ok
+test_ieee_broadcast_contraction (test_compile_pointwise_broadcast.Broadcast.test_ieee_broadcast_contraction) ... ok
+test_original_ir_boundary_and_native_input_validation (test_compile_pointwise_helpers.HelperHardware.test_original_ir_boundary_and_native_input_validation) ... ok
+
+----------------------------------------------------------------------
+Ran 21 tests in 29.371s
+
+OK
+
+===== portable-trig =====
+test_cached_native_execution_and_structured_aliases (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_cached_native_execution_and_structured_aliases) ... skipped 'requires native CUDA and reference PyTorch CUDA'
+test_former_rejections_keep_the_original_shapes_and_values (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_former_rejections_keep_the_original_shapes_and_values) ... skipped 'requires native CUDA and reference PyTorch CUDA'
+test_reference_shape_value_offset_and_retained_output_histories (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_reference_shape_value_offset_and_retained_output_histories) ... skipped 'requires native CUDA and reference PyTorch CUDA'
+test_scalar_kind_zero_trig_witness_and_runtime_promotion (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_scalar_kind_zero_trig_witness_and_runtime_promotion) ... skipped 'requires native CUDA and reference PyTorch CUDA'
+test_subnormal_amplification_and_nested_runtime_trig_exact (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_subnormal_amplification_and_nested_runtime_trig_exact) ... skipped 'requires native CUDA and reference PyTorch CUDA'
+test_mixed_madd_trig_rejects_in_both_orders_even_after_identities (test_compile_pointwise_broadcast_trig.Metadata.test_mixed_madd_trig_rejects_in_both_orders_even_after_identities) ... ok
+test_unary_and_one_stage_trig_before_and_after_arithmetic (test_compile_pointwise_broadcast_trig.Metadata.test_unary_and_one_stage_trig_before_and_after_arithmetic) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.007s
+
+OK (skipped=5)
+
+===== ownership-history-h100 =====
+test_aliased_tensor_to_scalar_keeps_realization_history (test_compile_pointwise_structured_inputs.InputHardware.test_aliased_tensor_to_scalar_keeps_realization_history) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ok
+test_bool_float_nonfinite_history (test_compile_pointwise_structured_inputs.InputHardware.test_bool_float_nonfinite_history) ... ok
+test_dict_signed_zero_abi_churn_and_unequal_current_replacements (test_compile_pointwise_structured_inputs.InputHardware.test_dict_signed_zero_abi_churn_and_unequal_current_replacements) ... ok
+test_helper_input_descriptor_round_trip (test_compile_pointwise_structured_inputs.InputHardware.test_helper_input_descriptor_round_trip) ... ok
+test_helper_local_unpack_loop_shape_branch_and_failed_recovery (test_compile_pointwise_structured_inputs.InputHardware.test_helper_local_unpack_loop_shape_branch_and_failed_recovery) ... ok
+test_local_tuple_assignments (test_compile_pointwise_structured_inputs.InputHardware.test_local_tuple_assignments) ... ok
+test_negative_selection_normalizes_and_changes_source_with_length (test_compile_pointwise_structured_inputs.InputHardware.test_negative_selection_normalizes_and_changes_source_with_length) ... ok
+test_noncommutative_reversed_realization_roles_and_runtime_abi_reorder (test_compile_pointwise_structured_inputs.InputHardware.test_noncommutative_reversed_realization_roles_and_runtime_abi_reorder) ... ok
+test_positive_source_across_list_tuple_and_length_precision_history (test_compile_pointwise_structured_inputs.InputHardware.test_positive_source_across_list_tuple_and_length_precision_history) ... ok
+test_tensor_aliases_distinct_equal_views_offsets_ranks_and_shapes (test_compile_pointwise_structured_inputs.InputHardware.test_tensor_aliases_distinct_equal_views_offsets_ranks_and_shapes) ... ok
+test_retained_outputs_shapes_metadata_aliases_and_distinct_allocations (test_compile_pointwise_structured_outputs.StructuredHardware.test_retained_outputs_shapes_metadata_aliases_and_distinct_allocations) ... ok
+test_union_dependencies_broadcast_and_differently_shaped_input_alias (test_compile_pointwise_structured_outputs.StructuredHardware.test_union_dependencies_broadcast_and_differently_shaped_input_alias) ... ok
+test_structured_native_path_without_installed_pytorch (test_compile_pointwise_structured_outputs.StructuredHardware.test_structured_native_path_without_installed_pytorch) ... ok
+test_actual_warm_preparation_reuse_and_retained_result_freshness (test_compile_pointwise_prepared.PreparedHardware.test_actual_warm_preparation_reuse_and_retained_result_freshness) ... ok
+test_revisited_shape_matches_default_inductor_selected_numerical_history (test_compile_pointwise_prepared.PreparedHardware.test_revisited_shape_matches_default_inductor_selected_numerical_history) ... ok
+test_rank_zero_length_one_and_empty_broadcast_keep_numerical_domains (test_compile_pointwise_prepared.PreparedHardware.test_rank_zero_length_one_and_empty_broadcast_keep_numerical_domains) ... ok
+test_private_preparation_and_run_restore_device_and_reject_cross_device (test_compile_pointwise_prepared.PreparedHardware.test_private_preparation_and_run_restore_device_and_reject_cross_device) ... skipped 'requires explicit two-device reservation'
+test_signed_zero_broadcast_shape_transitions (test_compile_pointwise_runtime_scalars.ScalarShapeSpecializationHardware.test_signed_zero_broadcast_shape_transitions) ... ok
+test_signed_zero_one_dimensional_revisit (test_compile_pointwise_runtime_scalars.ScalarShapeSpecializationHardware.test_signed_zero_one_dimensional_revisit) ... ok
+test_signed_zero_rank_transitions (test_compile_pointwise_runtime_scalars.ScalarShapeSpecializationHardware.test_signed_zero_rank_transitions) ... ok
+test_signed_zero_singleton_empty_transitions (test_compile_pointwise_runtime_scalars.ScalarShapeSpecializationHardware.test_signed_zero_singleton_empty_transitions) ... ok
+test_signed_zero_unused_tensor_shape_transitions (test_compile_pointwise_runtime_scalars.ScalarShapeSpecializationHardware.test_signed_zero_unused_tensor_shape_transitions) ... ok
+test_contiguous_singleton_stride_history_keeps_selected_zero_sign (test_compile_pointwise_runtime_scalars.PersistentSpecializationHardware.test_contiguous_singleton_stride_history_keeps_selected_zero_sign) ... ok
+test_failed_compile_and_launch_preserve_both_cache_orders_and_history (test_compile_pointwise_runtime_scalars.PersistentSpecializationHardware.test_failed_compile_and_launch_preserve_both_cache_orders_and_history) ... ok
+test_logical_hit_new_broadcast_executor_keeps_frozen_zero (test_compile_pointwise_runtime_scalars.PersistentSpecializationHardware.test_logical_hit_new_broadcast_executor_keeps_frozen_zero) ... ok
+test_nonfinite_runtime_hit_and_cold_rank_specialization (test_compile_pointwise_runtime_scalars.PersistentSpecializationHardware.test_nonfinite_runtime_hit_and_cold_rank_specialization) ... ok
+test_older_static_precision_guard_survives_other_rank_runtime_graph (test_compile_pointwise_runtime_scalars.PersistentSpecializationHardware.test_older_static_precision_guard_survives_other_rank_runtime_graph) ... ok
+test_signed_nan_payloads_reuse_static_guard_then_promote_for_all_sources (test_compile_pointwise_runtime_scalars.PersistentSpecializationHardware.test_signed_nan_payloads_reuse_static_guard_then_promote_for_all_sources) ... ok
+test_tensor_float_roles_follow_reversed_alias_realization_order (test_compile_pointwise_runtime_scalars.PersistentSpecializationHardware.test_tensor_float_roles_follow_reversed_alias_realization_order) ... ok
+test_unused_local_scalar_tensor_roles_reuse_logical_guard (test_compile_pointwise_runtime_scalars.PersistentSpecializationHardware.test_unused_local_scalar_tensor_roles_reuse_logical_guard) ... ok
+test_positional_execution_without_installed_pytorch_or_original_body (test_compile_pointwise_runtime_scalars.PositionalScalarHardware.test_positional_execution_without_installed_pytorch_or_original_body) ... ok
+test_explicit_cancellation_overflow_and_rounding (test_compile_pointwise_tensor_madd.TensorMadd.test_explicit_cancellation_overflow_and_rounding) ... ok
+test_both_devices_restore_current_device_on_success_failure_and_reset (test_compile_pointwise_tensor_madd.TensorMadd.test_both_devices_restore_current_device_on_success_failure_and_reset) ... skipped 'requires explicit reservation of two CUDA devices'
+
+----------------------------------------------------------------------
+Ran 33 tests in 29.538s
+
+OK (skipped=2)
+
+===== gpu-after =====
+index, uuid, name, memory.total [MiB], memory.used [MiB], utilization.gpu [%], driver_version, compute_cap
+0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+
+===== diff-check =====
+
+===== build-capture/build =====
+📦 Including license file `LICENSE`
+🍹 Building a mixed python/rust project
+🐍 Found CPython 3.12 at /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/bin/python
+🔗 Found pyo3 bindings with abi3-py3.10 support
+📡 Using build options features from pyproject.toml
+   Compiling target-lexicon v0.13.5
+   Compiling proc-macro2 v1.0.107
+   Compiling crossbeam-utils v0.8.23
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.47
+   Compiling crossbeam-epoch v0.9.21
+   Compiling crossbeam-deque v0.8.8
+   Compiling libc v0.2.189
+   Compiling rayon-core v1.13.0
+   Compiling heck v0.5.0
+   Compiling inventory v0.3.24
+   Compiling cfg-if v1.0.4
+   Compiling once_cell v1.21.4
+   Compiling either v1.18.0
+   Compiling libloading v0.8.9
+   Compiling pyo3-build-config v0.29.2
+   Compiling syn v2.0.119
+   Compiling pyo3-ffi v0.29.2
+   Compiling pyo3 v0.29.2
+   Compiling rayon v1.12.0
+   Compiling pyo3-macros-backend v0.29.2
+   Compiling pyo3-macros v0.29.2
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838)
+    Finished `release` profile [optimized] target(s) in 50.61s
+📦 Built wheel for abi3 Python ≥ 3.10 to /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/target/trig-postcommit-9ef4515/build-capture/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl
+
+===== build-capture/install =====
+Resolved 1 package in 1ms
+Prepared 1 package in 44ms
+Uninstalled 1 package in 2ms
+Installed 1 package in 19ms
+ - torch-rs==0.1.0 (from file:///data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/target/trig-ci-repair/build-capture/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl)
+ + torch-rs==0.1.0 (from file:///data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/target/trig-postcommit-9ef4515/build-capture/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl)
+
