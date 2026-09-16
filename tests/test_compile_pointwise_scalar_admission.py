@@ -5,7 +5,7 @@ from unittest import mock
 
 import torch_rs as native
 from torch_rs import _compile_pointwise as frontend
-from tests.test_compile_pointwise_jit import available, cache, lower, mock_pointwise_executor, program
+from tests.test_compile_pointwise_jit import available, cache, lower, mock_pointwise_admit_inputs, mock_pointwise_executor, program
 
 
 def callback_scalar(effects):
@@ -367,7 +367,7 @@ class SharedCacheGuards(unittest.TestCase):
         self.launch_failure = None
         for name, replacement in (
                 ('_compile_trace_tensor_metadata', lambda arg: self.metadata[id(arg)]),
-                ('_pointwise_validate_inputs', lambda args: None)):
+                ('_pointwise_admit_inputs', mock_pointwise_admit_inputs)):
             patcher = mock.patch.object(frontend._native, name, side_effect=replacement)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -541,7 +541,8 @@ class SharedCacheGuards(unittest.TestCase):
         history = (((False, x, 0.), (x,), 0),
                    ((unused, x, False), (unused, x), 1),
                    ((True, x, unused), (x, unused), 0))
-        with mock.patch.object(frontend._native, '_pointwise_validate_inputs') as validate:
+        with mock.patch.object(frontend._native, '_pointwise_admit_inputs',
+                               side_effect=mock_pointwise_admit_inputs) as validate:
             for args, tensors, input_index in history:
                 for _ in range(2):
                     nodes, _ = compiled(*args)

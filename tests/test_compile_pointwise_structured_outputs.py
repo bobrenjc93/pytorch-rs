@@ -205,7 +205,8 @@ class StructuredCache(unittest.TestCase):
             result[4] = 'cuda:0'
             return tuple(result)
         self.stack.enter_context(patch.object(bridge, '_compile_trace_tensor_metadata', metadata))
-        self.stack.enter_context(patch.object(bridge, '_pointwise_validate_inputs', lambda tensors: None))
+        self.stack.enter_context(patch.object(
+            bridge, '_pointwise_admit_inputs', side_effect=jit_tests.mock_pointwise_admit_inputs))
         self.launches = []
         self.hints = []
         self.orders = []

@@ -6,6 +6,16 @@ rust-version = "1.92"
 license = "MIT AND LicenseRef-NVIDIA-CUDA"
 description = "A native Rust tensor and deep-learning library pursuing PyTorch semantics and performance"
 repository = "https://github.com/bobrenjc93/pytorch-rs"
+# Captured builds/distributions stay in Git, outside future source packages.
+# These three small archives are required by the offline evidence tests.
+exclude = [
+    "/docs/diagnostics/**/*.tar.*",
+    "/docs/diagnostics/**/*.whl",
+    "/docs/diagnostics/**/*.zip",
+    "!/docs/diagnostics/compile-pointwise-jit/history.tar.gz",
+    "!/docs/diagnostics/compile-pointwise-jit/history-later/history.tar.gz",
+    "!/docs/diagnostics/compile-pointwise-tensor-madd/history.tar.gz",
+]
 
 [lib]
 name = "pytorch_rs"

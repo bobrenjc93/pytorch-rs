@@ -12,6 +12,10 @@ actual Program words before publication, independently of original equal-shape
 admission. Empty live-Erf VM execution still links. Exposed NVRTC PTX is the
 linker's input, not its final cubin.
 
+The subsequent [native admission and distribution repair](../pointwise-admission-repair/README.md)
+has separate source-bound evidence. The integration captures below retain their
+original identities; its completed eight-leg phase is not replayed for that repair.
+
 ## Source and evidence identities
 
 | Role | Immutable source / record |

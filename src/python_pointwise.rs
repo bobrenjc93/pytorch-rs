@@ -14,6 +14,10 @@ use std::sync::Arc;
 
 type Payload = (String, usize, usize, u64);
 
+#[cfg(test)]
+#[path = "python_pointwise_admission_tests.rs"]
+mod admission_tests;
+
 #[pyfunction(name = "_pointwise_namespace_keys_exact")]
 pub(super) fn namespace_keys_exact(value: &Bound<'_, PyAny>) -> bool {
     let Ok(namespace) = value.cast_exact::<PyDict>() else {
@@ -131,6 +135,25 @@ pub(super) fn validate_inputs(inputs: &Bound<'_, PyTuple>) -> PyResult<usize> {
     with_inputs(inputs, |tensors| {
         CoreTensor::validate_pointwise_inputs(tensors)
             .map_err(|e| PyNotImplementedError::new_err(e.to_string()))
+    })
+}
+
+#[pyfunction(name = "_pointwise_admit_inputs")]
+pub(super) fn admit_inputs<'py>(inputs: &Bound<'py, PyTuple>) -> PyResult<Bound<'py, PyTuple>> {
+    with_inputs(inputs, |tensors| {
+        let metadata = tensors
+            .iter()
+            .map(|tensor| super::compile_tensor_metadata(inputs.py(), tensor))
+            .collect::<PyResult<Vec<_>>>()?;
+        // Preserve whole-input CPU precedence after collecting every record.
+        if tensors.iter().any(|tensor| tensor.device().is_cpu()) {
+            return Err(PyNotImplementedError::new_err(
+                "torch.compile(): native CUDA pointwise: default backend does not compile CPU tensors; use backend='eager' for the documented CPU capture subset; see docs/compile-pointwise-jit.md",
+            ));
+        }
+        CoreTensor::validate_pointwise_inputs(tensors)
+            .map_err(|e| PyNotImplementedError::new_err(e.to_string()))?;
+        PyTuple::new(inputs.py(), metadata)
     })
 }
 

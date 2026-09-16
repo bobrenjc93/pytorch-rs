@@ -182,7 +182,7 @@ class PreparedCache(unittest.TestCase):
         before = self.snapshot(compiled)
         executor = self.created[0]
         for target, name, exception, args in (
-                (bridge, '_pointwise_validate_inputs', RuntimeError('admission'), (x,)),
+                (bridge, '_pointwise_admit_inputs', RuntimeError('admission'), (x,)),
                 (executor, 'prepare', RuntimeError('preparation'), (native.ones(7),)),
                 (frontend, '_prepared_entry_bytes', MemoryError('accounting'), (native.ones(7),)),
                 (older, 'run', RuntimeError('launch/conversion'), (x,)),

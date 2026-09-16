@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import torch_rs as native
 from torch_rs import _compile_pointwise as frontend, torch_rs as bridge
-from tests.test_compile_pointwise_jit import available, cache, lower, mock_pointwise_executor, program, two_device_reservation
+from tests.test_compile_pointwise_jit import available, cache, lower, mock_pointwise_admit_inputs, mock_pointwise_executor, program, two_device_reservation
 
 
 @contextmanager
@@ -351,7 +351,8 @@ class HelperCache(unittest.TestCase):
             result[4] = 'cuda:0'
             return tuple(result)
         self.stack.enter_context(patch.object(bridge, '_compile_trace_tensor_metadata', fake_metadata))
-        self.validate = self.stack.enter_context(patch.object(bridge, '_pointwise_validate_inputs'))
+        self.validate = self.stack.enter_context(patch.object(
+            bridge, '_pointwise_admit_inputs', side_effect=mock_pointwise_admit_inputs))
         def compile_(tensors, nodes, output):
             # Use the actual hardware-free native IR/codegen boundary.
             bridge._pointwise_source(nodes, output, len(tensors))
@@ -475,7 +476,7 @@ class HelperCache(unittest.TestCase):
         compiled = native.compile(fn)
         compiled(self.x, self.x)
         before = self.codegen.call_count
-        with patch.object(bridge, '_pointwise_validate_inputs', side_effect=ValueError('native invalid input')):
+        with patch.object(bridge, '_pointwise_admit_inputs', side_effect=ValueError('native invalid input')):
             with self.assertRaisesRegex(ValueError, 'native invalid input'):
                 compiled(self.x, self.x)
         self.assertEqual(self.codegen.call_count, before)

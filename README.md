@@ -93,7 +93,9 @@ Burner also runs independent generated workloads and differential checks.
 
 ## License
 
-MIT
+MIT AND LicenseRef-NVIDIA-CUDA. See [LICENSE](LICENSE) for the Rust/Python
+code and [CUDA notices](src/cuda/NOTICE.md) for the included NVIDIA code and
+vendor license files.
 
 <!-- burner-progress:start -->
 ## Burner evaluation progress

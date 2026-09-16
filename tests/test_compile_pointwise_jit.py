@@ -57,6 +57,20 @@ def legacy_kernel(compiled, tensors):
     return bridge._pointwise_compile(tensors, graph.nodes, graph.outputs)
 
 
+def mock_pointwise_admit_inputs(tensors):
+    """Portable metadata admission; native hardware validation is mocked.
+
+    Keep the CPU diagnostic ahead of frontend graph/cache work, even when a
+    synthetic metadata fixture changes an otherwise accepted tensor's device.
+    Legacy per-tensor metadata remains useful to mock preparation below.
+    """
+    metadata = tuple(bridge._compile_trace_tensor_metadata(tensor) for tensor in tensors)
+    if any(item[4] == 'cpu' for item in metadata):
+        frontend.unsupported("default backend does not compile CPU tensors; use backend='eager' "
+                             "for the documented CPU capture subset; see docs/compile-pointwise-jit.md")
+    return metadata
+
+
 def mock_pointwise_executor(run, metadata=None, retained_bytes=0):
     """Adapt frontend-only launch mocks to immutable preparation, not CUDA.
 

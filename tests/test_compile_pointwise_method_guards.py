@@ -196,6 +196,7 @@ class MethodGuardAdmission(unittest.TestCase):
                     len(self.launches), len(self.hints), len(self.orders))
         with ExitStack() as stack:
             for owner, attribute in (
+                (bridge, '_pointwise_admit_inputs'),
                 (bridge, '_compile_trace_tensor_metadata'),
                 (bridge, '_pointwise_validate_inputs'),
                 (frontend, 'analyze'), (frontend, 'lower'),
@@ -371,6 +372,7 @@ class NativeMethodGuardAdmission(unittest.TestCase):
                     before = self.snapshot(compiled)
                     with direct_binding(OWNERS[index], name, value), ExitStack() as stack:
                         for owner, attribute in (
+                            (bridge, '_pointwise_admit_inputs'),
                             (bridge, '_compile_trace_tensor_metadata'),
                             (bridge, '_pointwise_validate_inputs'),
                             (bridge, '_pointwise_host_plan'),
