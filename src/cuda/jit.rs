@@ -6,6 +6,10 @@ use crate::pointwise_ir::{Graph, invalid};
 use std::ffi::{CStr, CString};
 use std::sync::Arc;
 
+#[path = "pointwise_identity.rs"]
+mod identity;
+pub(crate) use identity::ExecutableIdentity;
+
 type Program = *mut c_void;
 struct Nvrtc {
     _library: Library,
@@ -186,6 +190,7 @@ impl LaunchLayout {
 }
 
 pub(crate) struct Kernel {
+    pub(crate) identity: Option<ExecutableIdentity>,
     pub(crate) graph: Graph,
     pub(crate) addresses: Vec<crate::pointwise_ir::indexing::Address>,
     pub(crate) device: usize,
@@ -213,8 +218,36 @@ impl Kernel {
         addresses: Vec<crate::pointwise_ir::indexing::Address>,
     ) -> Result<Arc<Self>, TensorError> {
         let source = graph.indexed_source(&addresses)?;
+        Self::compile_source(graph, device, addresses, source, None)
+    }
+
+    pub(crate) fn checked_context(device: usize) -> Result<usize, TensorError> {
+        let _guard = runtime()?.guard(device)?;
+        current_context()
+    }
+
+    pub(crate) fn compile_selected(
+        graph: &Graph,
+        device: usize,
+        addresses: Vec<crate::pointwise_ir::indexing::Address>,
+        source: String,
+        identity: ExecutableIdentity,
+    ) -> Result<Arc<Self>, TensorError> {
+        Self::compile_source(graph, device, addresses, source, Some(identity))
+    }
+
+    fn compile_source(
+        graph: &Graph,
+        device: usize,
+        addresses: Vec<crate::pointwise_ir::indexing::Address>,
+        source: String,
+        identity: Option<ExecutableIdentity>,
+    ) -> Result<Arc<Self>, TensorError> {
         let _guard = runtime()?.guard(device)?;
         let context = current_context()?;
+        if identity.as_ref().is_some_and(|id| id.context != context) {
+            return Err(invalid("host plan context mismatch"));
+        }
         let driver = driver()?;
         let mut ordinal = 0;
         let mut major = 0;
@@ -260,6 +293,7 @@ impl Kernel {
             }
         }
         Ok(Arc::new(Self {
+            identity,
             graph: graph.clone(),
             addresses,
             device,

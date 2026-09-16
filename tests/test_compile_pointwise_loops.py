@@ -237,7 +237,7 @@ class LoopCache(unittest.TestCase):
         for expression in ('x.sum()', 'helper(x)'):
             fn = program('def f(x):\n for i in range(0):\n  x='+expression+'\n return -x', helper=helper)
             compiled = native.compile(fn)
-            with (no_bodies(fn, helper), patch.object(bridge, '_pointwise_compile', side_effect=AssertionError('compile')),
+            with (no_bodies(fn, helper), patch.object(bridge, '_pointwise_host_plan', side_effect=AssertionError('compile')),
                   self.assertRaises(NotImplementedError)):
                 compiled(self.x)
             self.assertFalse(cache(compiled).graphs)
@@ -273,7 +273,7 @@ class LoopCache(unittest.TestCase):
             fn.__globals__[name] = saved
         for body in ('return a.sum()', 'for j in range(2):\n  a=-a\n return a'):
             helper.__code__ = program('def f(a, ignored):\n '+body).__code__
-            with (no_bodies(fn, helper), patch.object(bridge, '_pointwise_compile', side_effect=AssertionError('compile')),
+            with (no_bodies(fn, helper), patch.object(bridge, '_pointwise_host_plan', side_effect=AssertionError('compile')),
                   patch.object(next(iter(state.executors.values())), 'run', side_effect=AssertionError('launch')),
                   self.assertRaises(NotImplementedError)):
                 compiled(self.x)

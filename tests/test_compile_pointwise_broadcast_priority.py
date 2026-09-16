@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import torch_rs as native
 from torch_rs import torch_rs as bridge
-from test_compile_pointwise_jit import Hardware, available, cache, kernel, lower, program
+from test_compile_pointwise_jit import Hardware, available, cache, kernel, legacy_kernel, lower, program
 
 BOUNDARY = 'unequal input shapes require at most one arithmetic stage'
 CANCELLATION = 'def f(x, y):\n a=x+1.0\n return x*y+a*a'
@@ -115,7 +115,7 @@ class BroadcastPriority(unittest.TestCase):
         x, y = self.upload([1., 2.], (2,)), self.upload([3., 4.], (2,))
         tx, ty = self.upload([1., 2.], (2,), self.torch), self.upload([3., 4.], (2,), self.torch)
         self.compare(self.without_replay(fn, compiled, (x, y)), reference(tx, ty))
-        selected = kernel(compiled)
+        selected = legacy_kernel(compiled, (x, y))
         for shape in ((1, 2), (1, 1, 2)):
             with self.assertRaisesRegex(RuntimeError, 'broadcast indexing guard'):
                 selected.run((x, y.reshape(shape)))
@@ -130,7 +130,8 @@ class BroadcastPriority(unittest.TestCase):
             compiled = native.compile(fn)
             x, y = self.upload([1.,2.], (2,)), self.upload([3.,4.], (2,))
             equal = compiled(x,y)
-            selected = kernel(compiled)
+            original = kernel(compiled)
+            selected = legacy_kernel(compiled, (x, y))
             self.assertEqual(len(cache(compiled).graphs), 1)
             for shape in ((1,2), (1,1,2)):
                 unequal_y = y.reshape(shape)
@@ -146,7 +147,7 @@ class BroadcastPriority(unittest.TestCase):
             self.assertFalse(cache(compiled).graphs)
             self.assertEqual(selected.run((x,y))[0].cpu().tolist(), equal.cpu().tolist())
             compiled(x,y)
-            self.assertIsNot(kernel(compiled), selected)
+            self.assertIsNot(kernel(compiled), original)
             native.compiler.reset()
 
 

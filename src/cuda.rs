@@ -229,7 +229,8 @@ pub(crate) struct CudaFloat32Storage {
 /// Empty means the computed output is empty; unused inputs may still be nonempty.
 #[cfg(any(feature = "python-bindings", test))]
 pub(crate) struct PointwisePlan {
-    instruction_count: usize,
+    pub(crate) instruction_count: usize,
+    pub(crate) register_count: usize,
     instructions: Option<CudaFloat32Storage>,
     layout: jit::LaunchLayout,
 }
@@ -239,7 +240,7 @@ impl PointwisePlan {
     pub(crate) fn new(
         kernel: &jit::Kernel,
         elements: usize,
-        program: crate::pointwise_ir::program::Program,
+        program: &crate::pointwise_ir::program::Program,
     ) -> Result<Self, TensorError> {
         let layout = jit::LaunchLayout::new(elements, program.register_count())?;
         let instruction_words = program
@@ -292,8 +293,8 @@ impl PointwisePlan {
         // Upload completion owns the host program's last use. Keep only
         // the launch count; diagnostics build their own listing on demand.
         let instruction_count = program.instruction_count();
-        drop(program);
         Ok(Self {
+            register_count: program.register_count(),
             instruction_count,
             instructions,
             layout,
@@ -1139,6 +1140,10 @@ fn contiguous_layout(
 }
 
 #[cfg(test)]
+#[path = "cuda/pointwise_direct_failure_tests.rs"]
+mod pointwise_direct_failure_tests;
+
+#[cfg(test)]
 mod tests {
     use crate::{Device, Tensor};
 
@@ -1157,14 +1162,14 @@ mod tests {
         let kernel = super::jit::Kernel::compile(&graph, 0).unwrap();
         let program = Program::build(&graph, &[Address::Linear], 13, &[0], false).unwrap();
         let instruction_count = program.instruction_count();
-        let plan = super::PointwisePlan::new(&kernel, 13, program).unwrap();
+        let plan = super::PointwisePlan::new(&kernel, 13, &program).unwrap();
         let storage = plan.instructions.as_ref().unwrap();
         assert_eq!(plan.instruction_count, instruction_count);
         assert!(storage.allocation_bytes >= instruction_count * size_of::<[u32; 6]>());
         assert_eq!(plan.retained_heap_bytes(), storage.allocation_bytes);
         let empty_program = Program::build(&graph, &[Address::Linear], 0, &[0], false).unwrap();
         let instruction_count = empty_program.instruction_count();
-        let empty = super::PointwisePlan::new(&kernel, 0, empty_program).unwrap();
+        let empty = super::PointwisePlan::new(&kernel, 0, &empty_program).unwrap();
         assert!(empty.instructions.is_none());
         assert_eq!(empty.instruction_count, instruction_count);
         assert_eq!(empty.retained_heap_bytes(), 0);

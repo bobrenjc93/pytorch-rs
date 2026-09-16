@@ -1,0 +1,174 @@
+{
+  "kind": "clean-postcommit-incomplete-public-protocol-attempt",
+  "candidateCommit": "47b97f203b35f936dc9fc0d38ef1255a68764f93",
+  "baselineCommit": "60202557b4f110d07777f585e804ab5f55e1ff7b",
+  "bindings": {
+    "protocol": "d6e8f51d024b451f8afed33d743647d46396425724b918a599f7b32274f95d5b",
+    "consumer": "1861fca73674d8c89f6285b07883ab9a83e6719c1b6a0c12cd2be1ae7c4c8b42",
+    "fixtures": "48dda4839471f8839addb11afb77b77b57c739723d4c48354f6313c4ef58d5ac",
+    "tests": "b907c94b00f35fbb18e53510ec692b5fb83f94d37d509fe662418844bc2af5b3"
+  },
+  "attempt": 1,
+  "complete": false,
+  "qualificationOrScoreProduced": false,
+  "status": "blocked at first reference leg before timing; remaining legs not started",
+  "failure": "Traceback (most recent call last):\n  File \"/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4ca5db06/docs/diagnostics/program-identity/consumer.py\", line 877, in main\n    globals()[args.command_kind](args, record, output.parent)\n  File \"/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4ca5db06/docs/diagnostics/program-identity/consumer.py\", line 615, in leg\n    validate_libraries(record)\n  File \"/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4ca5db06/docs/diagnostics/program-identity/consumer.py\", line 643, in validate_libraries\n    require(len(runtimes) == 1 and all(runtimes[0][key] == runtime[key] for key in (\"path\", \"sha256\", \"version\")),\n  File \"/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_4ca5db06/docs/diagnostics/program-identity/consumer.py\", line 49, in require\n    raise ValueError(message)\nValueError: Actual loaded CUDA runtime differs from the single pinned barrier/runtime\n",
+  "orderedLegs": [
+    {
+      "index": 0,
+      "label": "B",
+      "implementation": "native",
+      "status": "captured"
+    },
+    {
+      "index": 1,
+      "label": "B",
+      "implementation": "reference",
+      "status": "failed before matrix"
+    },
+    {
+      "index": 2,
+      "label": "C",
+      "implementation": "native",
+      "status": "not run after prerequisite failure"
+    },
+    {
+      "index": 3,
+      "label": "C",
+      "implementation": "reference",
+      "status": "not run after prerequisite failure"
+    },
+    {
+      "index": 4,
+      "label": "C",
+      "implementation": "reference",
+      "status": "not run after prerequisite failure"
+    },
+    {
+      "index": 5,
+      "label": "C",
+      "implementation": "native",
+      "status": "not run after prerequisite failure"
+    },
+    {
+      "index": 6,
+      "label": "B",
+      "implementation": "reference",
+      "status": "not run after prerequisite failure"
+    },
+    {
+      "index": 7,
+      "label": "B",
+      "implementation": "native",
+      "status": "not run after prerequisite failure"
+    }
+  ],
+  "checks": {
+    "hardwareFreeConsumer": {
+      "passed": true,
+      "tests": 33
+    },
+    "cleanReleaseBuildB": true,
+    "cleanReleaseBuildC": true,
+    "candidatePreflight": true,
+    "sourceAndArchiveIntegrity": true,
+    "incompleteVerifierRejection": "All eight ordered legs are mandatory"
+  },
+  "actualLedger": {
+    "baselineCells": 12,
+    "baselineSamples": 204,
+    "baselineWarmups": 60,
+    "baselineFirstCalls": 12,
+    "baselineChurnCalls": 12,
+    "candidateTimingCells": 0,
+    "referenceTimingCells": 0
+  },
+  "archive": {
+    "path": "attempt-1.tar.gz",
+    "bytes": 2049124,
+    "sha256": "06b9db4679ee6f79ae4672feaf037b9d65248869dc6296efc973c4327bd78374"
+  },
+  "records": [
+    {
+      "path": "target/program-identity-postcommit-20260916/check/result.json.gz",
+      "bytes": 691,
+      "sha256": "18b630ce6eaa9b7dd517f241cc7b33c2826ba72d916119361e8cd689cc73899f"
+    },
+    {
+      "path": "target/program-identity-postcommit-20260916/check/controls.log",
+      "bytes": 3541,
+      "sha256": "0310e01957ff3a4840be429e782f96944c302212d33e5962dd6ec30380c2fce7"
+    },
+    {
+      "path": "target/program-identity-postcommit-20260916/freeze/result.json.gz",
+      "bytes": 285661,
+      "sha256": "fd90bb283e4e298e4f9c02b2f76ff18da28348654ac4cce4a424f5cc5268578f"
+    },
+    {
+      "path": "target/program-identity-postcommit-20260916/build-b/result.json.gz",
+      "bytes": 288219,
+      "sha256": "595ae7ef2ef83fda0196070799e22ee3c1c9e94d1d5f0cbfef1cc5ae2053b88c"
+    },
+    {
+      "path": "target/program-identity-postcommit-20260916/build-b/build.log",
+      "bytes": 2342,
+      "sha256": "a576aebe5759597088e64878e537526fa5265276507318bedf3069afea5da913"
+    },
+    {
+      "path": "target/program-identity-postcommit-20260916/build-c/result.json.gz",
+      "bytes": 288998,
+      "sha256": "8862bf535a3340208b64d4c592a6563bcd26f5c295e60133e3ff9e926219074d"
+    },
+    {
+      "path": "target/program-identity-postcommit-20260916/build-c/build.log",
+      "bytes": 2244,
+      "sha256": "3b8d12a4529715495066d2d7729c3e000a6b8198495192a3e3b5c40e62144e91"
+    },
+    {
+      "path": "target/program-identity-postcommit-20260916/install-b.json",
+      "bytes": 1351,
+      "sha256": "d391acc6e31ba28b42ea42d027e01cabd9ece8fc5fa73a2b45d972dbc16d7067"
+    },
+    {
+      "path": "target/program-identity-postcommit-20260916/install-c.json",
+      "bytes": 1217,
+      "sha256": "09872511d350d0de0c3965209fb2144722820fb0594c58cdac75efe3dbf9c6bc"
+    },
+    {
+      "path": "target/program-identity-postcommit-20260916/preflight/result.json.gz",
+      "bytes": 453941,
+      "sha256": "110dcf631ebd01c9f158523f64ee587c046027c0c850ba519dcdf9e787706b50"
+    },
+    {
+      "path": "target/program-identity-postcommit-20260916/preflight.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/program-identity-postcommit-20260916/leg-0/result.json.gz",
+      "bytes": 4007667,
+      "sha256": "c737ba33c8305f8863e85b2f7648dfcec75285f7e3fc1b20a407c997020eba74"
+    },
+    {
+      "path": "target/program-identity-postcommit-20260916/leg-0.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/program-identity-postcommit-20260916/leg-1/result.json.gz",
+      "bytes": 289342,
+      "sha256": "32ec91f74da17cd6ea58803213ad00abcd56e2cf4c391b6dc1dfef0e8cc2b344"
+    },
+    {
+      "path": "target/program-identity-postcommit-20260916/leg-1.log",
+      "bytes": 1119,
+      "sha256": "d8690ca05f9fb14249df09fcfee14f4d85963fc8f711eb16bd8a30790182abe9"
+    },
+    {
+      "path": "target/program-identity-postcommit-20260916/integrity.json",
+      "bytes": 6145,
+      "sha256": "ccad82b28a0c28dc3d2a260871425029a136538812a10fd78453690ced054b96"
+    }
+  ],
+  "remainingPrerequisite": "Resolve the worktree-local B/reference dependency arrangement against the unchanged single-loaded-runtime contract under independent review. No runtime check, package bytes, harness, workload, or failing record was changed; no hardware leg was retried."
+}

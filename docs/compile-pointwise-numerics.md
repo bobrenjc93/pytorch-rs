@@ -40,8 +40,11 @@ The version-sensitive reference rules come from PyTorch 2.13
 `scheduler.py::Scheduler`. The repair evidence retains the inspected reference
 identity and detailed symbol pointers alongside generated FX and scheduler IR.
 
-One graph-keyed CUDA kernel interprets that bounded program in one launch.
-Container topology does not create additional native executables. Instruction
+One selected CUDA executable executes that bounded Program in one launch.
+Within the fixed code-generation caps, it mechanically emits the exact validated
+words; empty and over-cap executions use the existing interpreter. Original Graph,
+actual addresses, native context and exact Program identity select direct modules.
+Container topology alone does not create additional native executables. Instruction
 validation and register allocation precede device allocation. Matching warm calls
 reuse an immutable validated program and completed instruction upload. Selection
 includes exact admitted input shapes, retained numerical hint and observable

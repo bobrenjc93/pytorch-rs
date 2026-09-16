@@ -1,0 +1,377 @@
+{
+  "kind": "development-validation-not-clean-public-timing",
+  "baseline": "60202557b4f110d07777f585e804ab5f55e1ff7b",
+  "candidate_commit": null,
+  "clean_public_protocol_completed": false,
+  "canonical_dependency": "Burner must commit/freeze implementation and tooling before clean B/C/reference eight-leg capture and qualification. No manual commit performed.",
+  "archive": {
+    "path": "development-validation-20260916.tar.gz",
+    "bytes": 119343,
+    "sha256": "ed6a5a14622396616ae4b33f752ec422d3a8f9aff0b01a6a312b8b29eb68508a"
+  },
+  "records": [
+    {
+      "path": "target/program-identity-admission-order-portable.log",
+      "bytes": 986,
+      "sha256": "dba8a0c3d7353569159b9d44ea0476c0ae57dd5c57da35af2439a740046a457c"
+    },
+    {
+      "path": "target/program-identity-build-admission-order.log",
+      "bytes": 595,
+      "sha256": "2907fb18782eaccaffed5ba8d8bc37a6293191d98b27949a44b0bb28f6c1739b"
+    },
+    {
+      "path": "target/program-identity-build-final.log",
+      "bytes": 585,
+      "sha256": "25f3b13a2aafb890284aa02686139ec7eaeba6ca334b612685e99a1cf3835cad"
+    },
+    {
+      "path": "target/program-identity-build-v2.log",
+      "bytes": 582,
+      "sha256": "a224526a19dc9d1baca7d9838123707b001926df46404530b3e1418c7f15c959"
+    },
+    {
+      "path": "target/program-identity-build-v3.log",
+      "bytes": 582,
+      "sha256": "d38e46a39a87e41038f2b7942936037bb73969febd38979f1743e7f14afa0d31"
+    },
+    {
+      "path": "target/program-identity-clippy-admission-order.log",
+      "bytes": 177,
+      "sha256": "c9a1ee0ae86641b6691e8c7753911ffe885fa66ebe2fc7ca44a5759a79b5dbd9"
+    },
+    {
+      "path": "target/program-identity-clippy-complete.log",
+      "bytes": 177,
+      "sha256": "3e88580190399f9548f80b728ce528045b53b307f5b37f2ba5f8c63d82191fe9"
+    },
+    {
+      "path": "target/program-identity-clippy-v2.log",
+      "bytes": 177,
+      "sha256": "213b3875b505c94d86a29e0bbae2c59afc420509cfcd2bfcf09621e91450a49f"
+    },
+    {
+      "path": "target/program-identity-clippy.log",
+      "bytes": 848,
+      "sha256": "02ba56dacc25f337105214b93796619b7261600b850d26d0ff7a84bdfbcc7fcc"
+    },
+    {
+      "path": "target/program-identity-compiler-failures.log",
+      "bytes": 3424,
+      "sha256": "713bbcf6b0ecc04dd508d9a78f2957d8c161d8e8946dba62b9215350948ba7c7"
+    },
+    {
+      "path": "target/program-identity-compute-post.csv",
+      "bytes": 96,
+      "sha256": "dcaf2f66cc015deca22c65d732fca6a4bcf26760a824bacb6eb33dcb94e8c5f4"
+    },
+    {
+      "path": "target/program-identity-compute-settled.csv",
+      "bytes": 37,
+      "sha256": "a8e32f59cad656f66ec8f16e9ab5c7622ef85eb929386b6d767e32de4284d835"
+    },
+    {
+      "path": "target/program-identity-consumer-final.log",
+      "bytes": 130,
+      "sha256": "2cca32e8b378919cc0d783517305bdde8a51c06edede23e079ed62b3e16c74af"
+    },
+    {
+      "path": "target/program-identity-consumer-native-controls-v2.json.gz",
+      "bytes": 162962,
+      "sha256": "f81807868c803c1a25d8e46bc3f816f8a19f1adbb280fd7acf994c2b82fd4507"
+    },
+    {
+      "path": "target/program-identity-consumer-native-controls-v2.log",
+      "bytes": 311,
+      "sha256": "2adae50206b75c4abbccd68c0565911b983dbbc5d62e8640e0923c2722632617"
+    },
+    {
+      "path": "target/program-identity-consumer-native-controls.json.gz",
+      "bytes": 524,
+      "sha256": "0635d4cd783d3a5c1cb91cfba04e74b92a8e555d50c1bad0bfb1f6698a1d9f5b"
+    },
+    {
+      "path": "target/program-identity-consumer-native-controls.log",
+      "bytes": 995,
+      "sha256": "27573ef22f41e9294b3007d647a46aadd8e386c1806411a34d6b3a98212c9427"
+    },
+    {
+      "path": "target/program-identity-environment.json",
+      "bytes": 3781,
+      "sha256": "4f7e081345a0f12e00db78d17c6fc42fd3655bd3e7e8ab0989b9d31ad1a5ea92"
+    },
+    {
+      "path": "target/program-identity-fixture-check.log",
+      "bytes": 263,
+      "sha256": "9f67356d90f8e5e8d1c3bb786d09ee4fab4b6fe407df6848d0787bc17dfc1c85"
+    },
+    {
+      "path": "target/program-identity-format-complete.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/program-identity-format.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/program-identity-gpu-post.csv",
+      "bytes": 716,
+      "sha256": "c6be2566a39bf73a5983cfd8266ef7a1876161eb75a26e64e247dde3466dc294"
+    },
+    {
+      "path": "target/program-identity-gpu-settled.csv",
+      "bytes": 714,
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174"
+    },
+    {
+      "path": "target/program-identity-h100-complete-result.json",
+      "bytes": 87,
+      "sha256": "2b1f4a28e78e7eec5d7105ad002419c57915b17bcc29b67f5dcb15e34a735967"
+    },
+    {
+      "path": "target/program-identity-h100-final-result-v2.json",
+      "bytes": 1894,
+      "sha256": "1a543b5c381f934c2ab6b8f571870bb185c25e4361d268400444ae7d51770a61"
+    },
+    {
+      "path": "target/program-identity-h100-final-result.json",
+      "bytes": 22589,
+      "sha256": "c4e5a4e0a23f6a23c860e3b25d4898d743fee9bf617e3cc72a6494c4c1a19ff4"
+    },
+    {
+      "path": "target/program-identity-h100-first-error-v2.log",
+      "bytes": 14754,
+      "sha256": "ab198b2dc4b4a4f78be24bb30a693545bf4e3a8d3f952de293b5e2379722ea96"
+    },
+    {
+      "path": "target/program-identity-h100-first-error.log",
+      "bytes": 945,
+      "sha256": "dfe9298f28b9962579f717f8290e702e1d36956714bad28d298e07d90524e5ce"
+    },
+    {
+      "path": "target/program-identity-h100-slow-stack.log",
+      "bytes": 4549,
+      "sha256": "94bc38db34d09cad4bfa2e56eef86ff1e438a7f9f2155f694e5f4b1a177424c5"
+    },
+    {
+      "path": "target/program-identity-native-bridge.log",
+      "bytes": 101,
+      "sha256": "9f113c50de99db820a1da6336b72d2268c1c30079865254d579b35256d8a9ac2"
+    },
+    {
+      "path": "target/program-identity-native-final.log",
+      "bytes": 1817,
+      "sha256": "27f2ca488238e887077b67a92976adeb2bff45c62c9d149466c6b4c7d32a4d6e"
+    },
+    {
+      "path": "target/program-identity-pointwise-h100-complete.log",
+      "bytes": 68424,
+      "sha256": "58c3e5b11107859950b593ca84df82bc396a77a74556ed4155a4c8b0c1d93906"
+    },
+    {
+      "path": "target/program-identity-pointwise-h100-final-v2.log",
+      "bytes": 71882,
+      "sha256": "fcb1359d423fb81ebad97090b6780432b1cf9ef92074a68a0c5159bddc467a8e"
+    },
+    {
+      "path": "target/program-identity-pointwise-h100-final.log",
+      "bytes": 59283,
+      "sha256": "563df29584100910c3908e23f114b3e0e71ca994dc1ac7859cfae8c0803883ae"
+    },
+    {
+      "path": "target/program-identity-pointwise-h100.log",
+      "bytes": 188841,
+      "sha256": "27ce0b1ba02b07b8b13b355d8e133cba33d2e4476bfedcc269c5f2bfd94a7601"
+    },
+    {
+      "path": "target/program-identity-portable-latest.log",
+      "bytes": 496,
+      "sha256": "9ce1bffdd16e8938717043a97e8273816ee40dec2f4d9639e6a4ba51cb4b04db"
+    },
+    {
+      "path": "target/program-identity-portable-tests-v2.log",
+      "bytes": 496,
+      "sha256": "1b3275250bd7c62ecdf0d217f66e01c6425bba7f78c22f08484d9255731988c0"
+    },
+    {
+      "path": "target/program-identity-portable-tests-v3.log",
+      "bytes": 496,
+      "sha256": "7815b35ead1598990dccebd6b30b33aadf7d24a433e5bb54bd0fb07fc13e035e"
+    },
+    {
+      "path": "target/program-identity-portable-tests.log",
+      "bytes": 7896,
+      "sha256": "d2c47c8aea8a8c40ebc1be1353581a8d1c623fa7254e88f531df5de3d6b37ddf"
+    },
+    {
+      "path": "target/program-identity-rust-complete.log",
+      "bytes": 26824,
+      "sha256": "7b87e3798091fbb213d0aafbd7f239c7707b2e81cf3e44d11e592327c12186ec"
+    },
+    {
+      "path": "target/program-identity-rust-h100-admission-order.log",
+      "bytes": 26821,
+      "sha256": "16c726a06f7bf67b4ec40225f7070e3540641a3b98fae8af37607c65d92f37f3"
+    },
+    {
+      "path": "target/program-identity-rust-h100-final.log",
+      "bytes": 26716,
+      "sha256": "4c4f6d926e633fceab953cafba231eb5bde10406d166e5b462eaf2d72ffd4110"
+    },
+    {
+      "path": "target/program-identity-rust-h100.log",
+      "bytes": 27470,
+      "sha256": "94954c9a28ed95252edbf396516947e032e2f8644622e0b812d54672c9ae0389"
+    },
+    {
+      "path": "target/program-identity-rust-portable-final-v2.log",
+      "bytes": 26877,
+      "sha256": "7a26f061a4b31d262088b54037568e2afc8410c8e796c7dbf8b60a827cddfdc4"
+    },
+    {
+      "path": "target/program-identity-rust-portable-final.log",
+      "bytes": 886,
+      "sha256": "146f37aa093809a12a79dc1a88e04c2c7680da66b55a2d3eb0d4633b74c04602"
+    },
+    {
+      "path": "target/program-identity-tensor-madd-portable-final.log",
+      "bytes": 2158,
+      "sha256": "36e129aebcb1500026bccff1780fdacbbe8d1bf16800ac61805ab22677795d0a"
+    },
+    {
+      "path": "target/program-identity-vm-distinct-programs.log",
+      "bytes": 482,
+      "sha256": "d700b17fa56afee5dc2940fc5e30aaf90b436d4911376c936929c0306d2b7105"
+    },
+    {
+      "path": "target/program-identity-wheel-complete.json",
+      "bytes": 6916,
+      "sha256": "d7d79bef09aebfc3c0a632479e00999910c484f74196487b12e2923698ffc8e1"
+    },
+    {
+      "path": "target/program-identity-wheel-final-verification.json",
+      "bytes": 6906,
+      "sha256": "8d7d055a55818c9cee639062e0fb8803a6dcb85a0897fa0a550e792a00c4bd34"
+    },
+    {
+      "path": "target/program-identity/check-1/result.json.gz",
+      "bytes": 638,
+      "sha256": "f6344327e65e682079e8ead21c95841059a23661f5de88ca86acefc5207152b2"
+    },
+    {
+      "path": "target/program-identity/check-2/result.json.gz",
+      "bytes": 647,
+      "sha256": "b93ff9adecdd97659eb6d329122a44ac5f7775e1f537ddacd6c5dd01759045fd"
+    },
+    {
+      "path": "target/program-identity/check-3/result.json.gz",
+      "bytes": 644,
+      "sha256": "e654ed36b472b310a98825d5d3d6296fc724d54fb9b55b8e21b2dd0dd8f58a0e"
+    },
+    {
+      "path": "target/program-identity/check-4/result.json.gz",
+      "bytes": 649,
+      "sha256": "9bfc3e47c4977a85aa91af1db5b59fa510ebddf6a19f889ebc96271febe5123d"
+    },
+    {
+      "path": "target/program-identity/check-complete/result.json.gz",
+      "bytes": 681,
+      "sha256": "9eb747a6b096ec156270226267e47f37573606d7f24b85e0b1ac3bc30b937c1e"
+    },
+    {
+      "path": "target/program-identity/check-final/result.json.gz",
+      "bytes": 678,
+      "sha256": "583de239a1bf11daa40dc685da34ae2cb91d1358a1a653543b3f2ad8fc510833"
+    },
+    {
+      "path": "target/program-identity/check-1/controls.log",
+      "bytes": 1605,
+      "sha256": "4914ae238b8d9bed0d2f7f350ae62497d2919e46143af83f248a0be97fbbe32a"
+    },
+    {
+      "path": "target/program-identity/check-2/controls.log",
+      "bytes": 1921,
+      "sha256": "bcdf2955286f08f8f62d8b1065bbd8030424740575beb1ffe9c8fa30ca4c5f9e"
+    },
+    {
+      "path": "target/program-identity/check-3/controls.log",
+      "bytes": 2530,
+      "sha256": "87117329b44a8334a18a76bc592fbd0c283852d8433887b0c0e4b91601e9870d"
+    },
+    {
+      "path": "target/program-identity/check-4/controls.log",
+      "bytes": 2711,
+      "sha256": "8d2de7befead48162826bfa136cc7c90e94fff349df76fa2471c768c3a4feeee"
+    },
+    {
+      "path": "target/program-identity/check-complete/controls.log",
+      "bytes": 3541,
+      "sha256": "98736d6e23ef05b9c73493225ba6c994ba0d01bb45ca08598a252cb632285ff7"
+    },
+    {
+      "path": "target/program-identity/check-final/controls.log",
+      "bytes": 3287,
+      "sha256": "b5e9b17fdebbc157bc70ad606ec80de7e24f05ea3bd5cde91c739b68e7d99803"
+    }
+  ],
+  "final_changed_source_and_tests_sha256": {
+    "docs/compile-pointwise-jit.md": "2bb7e66f78850cef4754dfa92479f55f05729986c938a51945a0da210cd3a616",
+    "docs/compile-pointwise-numerics.md": "e95f890ddf172a49e50d762e1c6e0627f0d548f88b9f2958b1dedeffb9a3c0c7",
+    "python/torch_rs/__init__.py": "ac630edb8a207b0feee227822a345171677fe185f185bc498209034cbddba8a8",
+    "python/torch_rs/_compile_pointwise.py": "536960a23ed85a15986239eb2ca7699ad4fab90ca2755a5f71ba89fd8498a45c",
+    "src/cuda.rs": "ffd93570e3d7542a17d0b1f90755219fc20486cbceea20ef33e8c3cc638c59e1",
+    "src/cuda/jit.rs": "ae789158266484e7a9df1d0c704218c216ee02ceacd4926043b25ce95d93a5c8",
+    "src/cuda/pointwise_direct_failure_tests.rs": "c3f86e77f4bb1ba93e7d3bac0163c85f64d4c334d214947f39ce8c2e60f6cdb7",
+    "src/cuda/pointwise_identity.rs": "e129ac35f3101198d185be3e51f9c712433833f2a64de7eac302d0f29553db31",
+    "src/pointwise_codegen.rs": "a6371cc5d38cc1cd568b7e9f17255fdb38233918896c262aa24b8cd267042b85",
+    "src/pointwise_codegen_tests.rs": "0fdc809c0da3548c4d16d7441af09071bb2f405f6878f83932c59a1a5bf66812",
+    "src/pointwise_program.rs": "5f27f5bbb6012d4dfd6acac4c5e291c78045c0dc38a34b82f1262958d91e51f0",
+    "src/python.rs": "31113697162f0fbd1c01aeb0bbacae3b5298b48c8e9ab527fa582b034e504630",
+    "src/python_pointwise.rs": "948e2c3e4b8f3982f65a6e30687e1b03150d51e7d9a878e44aebc92ae069563f",
+    "src/tensor_pointwise.rs": "8e18e4b93f056a43de038845d8637b3ceb35147c5143d79c00ff497f92a5b6e8",
+    "src/tensor_pointwise_identity_tests.rs": "a5085cc6f545eb91a13e0fd0a5ec48d0402adf6ca71e5b935a4e752fbebda7de",
+    "tests/fixtures/program_identity_nvrtc.c": "578135ce2e8519139a04e918f19c381ac65957beab40cc39e8ccc459b4a37177",
+    "tests/test_compile_pointwise_broadcast.py": "ce8f5876089092b51d972ccc36f04f58f3624410c01c0d4ec242ec495a357b63",
+    "tests/test_compile_pointwise_broadcast_primitives.py": "c0adeafb47a67b754c058d6cbfb65a252456e61b80a079eb65e9d0645c8fba29",
+    "tests/test_compile_pointwise_broadcast_priority.py": "1ebf820b41d8989c867cfa6bd0dc48c664ed363f88692adf374ffa49dc7f7ae9",
+    "tests/test_compile_pointwise_broadcast_trig.py": "7028332636bb80da06552c6533753259b4ffc0c9215da904af5b816a2475abd8",
+    "tests/test_compile_pointwise_helpers.py": "dd17b98f217a9cee1a7a6e42ee1554b59e00db13decfb59b74273b60d54b6594",
+    "tests/test_compile_pointwise_jit.py": "24062e196923f6af9fb57e99e86328e9b967bb4b270c1acab018703896d052f5",
+    "tests/test_compile_pointwise_loops.py": "5420ac56512094c7d486cc594c68444476ac2eca5d972b570ff37e4bfe32c9a4",
+    "tests/test_compile_pointwise_prepared.py": "7839decfeff55f750233600f8e59ea5eff23e928ded6ee2ae40f2bc963672eee",
+    "tests/test_compile_pointwise_runtime_scalars.py": "f9f6b2cb20a2407887cb144533a37640c21e194e08a24532e0243e1f33973fa4",
+    "tests/test_compile_pointwise_scalar_admission.py": "f1d8120776d59a7ff9841818f4f174d59a89316ff40fd5de56547909a746b852",
+    "tests/test_compile_pointwise_static_guards.py": "bb2225f04e25b7e8d30ac3c5a7e524e806256c2cdd662f7723e2e0dafd2b8f39",
+    "tests/test_compile_pointwise_structured_outputs.py": "525ad3f3925543895d3328a8243717a9cf9cb30eff765c98273aa2cc733810c8",
+    "tests/test_compile_pointwise_tensor_madd.py": "5ba93b3fb648ce9a94a5132cf64a99e6821bfb360fa0cd4e6790ff4aaf644ed5",
+    "tests/test_compile_program_identity.py": "cc729d66da8754689e94a9d4fc2e7898bb8dd9021eeb04dd31ff9ce3e94c0979",
+    "tests/test_program_identity_compiler_failures.py": "c9547189a636cd8abf138e03cf4b9330b8043ceba2ac1268d10011cb7507687f",
+    "tests/test_program_identity_consumer.py": "b907c94b00f35fbb18e53510ec692b5fb83f94d37d509fe662418844bc2af5b3"
+  },
+  "checks": {
+    "rust_library_h100": {
+      "passed": 290
+    },
+    "pointwise_h100": {
+      "run": 382,
+      "skipped": 9,
+      "failed": 0
+    },
+    "native_bridge_and_compiler_failures": {
+      "passed": 9
+    },
+    "hardware_free_consumer": {
+      "passed": 33
+    },
+    "consumer_full_fixed_candidate_controls": "passed; untimed dirty development, not canonical preflight",
+    "clippy": "passed -D warnings",
+    "format": "passed"
+  },
+  "scope": "GPU0 only; no multi-device/context performance claim; no score or public speedup claim.",
+  "final_tooling_sha256": {
+    "consumer.py": "1861fca73674d8c89f6285b07883ab9a83e6719c1b6a0c12cd2be1ae7c4c8b42",
+    "protocol.md": "d6e8f51d024b451f8afed33d743647d46396425724b918a599f7b32274f95d5b"
+  }
+}
