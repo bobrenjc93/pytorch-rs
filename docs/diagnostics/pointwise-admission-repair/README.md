@@ -12,10 +12,34 @@ inputs, provider bytes and all declared licenses. Historical Git evidence is
 unchanged. Contributor guidance now identifies real NVRTC and C-compiler
 prerequisites; README licensing matches the existing package metadata.
 
-## Development evidence
+## Clean-commit evidence
+
+The [clean capture](postcommit-728d147.json) measures implementation commit
+`728d147bfdb2b05e261cb1a4ea1df9e26900c348` against rejected `8006d7e0` under
+the unchanged [six-leg protocol](protocol.md). Both native wheels were rebuilt;
+C was built and installed from its fresh source package. Every leg records a
+clean source checkout inside this worktree. All six legs and offline verification
+passed on GPU0 with NVRTC/runtime 13.0 and unchanged PyTorch 2.13.0+cu130.
+
+The geometric mean B/C steady latency ratio was **1.061×**, and reference/C
+was **0.866×**. Four steady comparisons regressed: small binary in forward
+order, small unary in reverse order, and the 1153-element held-out case in both
+orders. The largest first-call regression was 6.7%; nested churn regressed
+18.5% and 7.5%. All cells, samples and dispersion remain in the
+[raw archive manifest](../gelu-program-integration/postcommit-728d147-manifest.json).
+These observations do not establish an official CUDA score or GELU link-cost parity.
+
+The installed wheel passed 11 targeted admission/GELU tests, eight diagnostic
+integrity controls passed, and 12 untimed selected-executable captures verified
+provider/license inclusion in wheel and sdist. The extracted sdist passed 12
+offline archive tests with one explicit Git-history skip. No production, test,
+dependency or measurement-tool changes accompanied this capture. Canonical
+qualification remains separate; the completed eight-leg integration was not replayed.
+
+## Pre-commit development evidence
 
 The [frozen protocol](protocol.md) compares rejected commit
-`8006d7e05636b3322da86ae89c41040900ceee00` with this **uncommitted repair** and
+`8006d7e05636b3322da86ae89c41040900ceee00` with the **pre-commit repair snapshot** and
 unchanged default PyTorch 2.13.0+cu130. All six ordered B/R/C/C/R/B processes
 passed on reserved H100 GPU0, with NVRTC 13.0 and CUDA runtime 13.0. The separate
 toolkit `nvcc` was 12.6. The [derived summary](development-summary.json) binds
