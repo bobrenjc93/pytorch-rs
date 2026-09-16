@@ -1,0 +1,354 @@
+===== build-capture =====
+
+===== verify-install =====
+verified native-extension provenance for torch-rs 0.1.0
+interpreter: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/bin/python
+virtualenv: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv
+torch_rs: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/lib/python3.12/site-packages/torch_rs/__init__.py
+torch_rs.torch_rs: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so
+
+===== gpu-before =====
+index, uuid, name, memory.total [MiB], memory.used [MiB], utilization.gpu [%], driver_version, compute_cap
+0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+
+===== runtime =====
+{"commit": "876627dbc12662aa0d3357bf8055ed1ee1137b68", "native_sha256": "248b12afb659893af07b5a019aa6f5cb05a8f228e61cc37a48b317aa32ee2806", "source_sha256": "b0e9309ad549012297eee7359d66495e82f68332cd8201011dc7dce4256a9810", "nvrtc_version": [13, 0], "runtime_version": 13000, "device": {"visible": "0", "native_count": 1, "reference_count": 1, "executor_device": 0, "name": "NVIDIA H100", "uuid": "8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1", "capability": [9, 0], "total_memory_bytes": 102085492736}, "clean": true, "installed_sources_match": true}
+
+===== rust-format =====
+
+===== rust-indexing =====
+   Compiling crossbeam-utils v0.8.23
+   Compiling crossbeam-epoch v0.9.21
+   Compiling crossbeam-deque v0.8.8
+   Compiling rayon-core v1.13.0
+   Compiling either v1.18.0
+   Compiling cfg-if v1.0.4
+   Compiling libloading v0.8.9
+   Compiling rayon v1.12.0
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.39s
+     Running unittests src/lib.rs (target/trig-postcommit-876627d/rust-tests/debug/deps/pytorch_rs-a84bc75b3d7dfab2)
+
+running 11 tests
+test pointwise_ir::indexing::tests::broadcasts_scalar_empty_leading_and_interior_dimensions ... ok
+test pointwise_ir::indexing::tests::live_trig_excludes_madd_graph_wide_in_both_output_orders ... ok
+test pointwise_ir::indexing::tests::multiple_roots_union_dependencies_and_preserve_original_limits ... ok
+test pointwise_ir::indexing::tests::original_depth_rejects_live_stages_before_numeric_simplification ... ok
+test pointwise_ir::indexing::tests::rejects_output_size_and_empty_stride_overflow_before_codegen ... ok
+test pointwise_ir::indexing::tests::relu_and_trig_preserve_depth_and_dead_nodes_still_validate ... ok
+test pointwise_ir::indexing::tests::tensor_leaf_madd_accepts_both_orders_all_input_ids_and_broadcasts ... ok
+test pointwise_ir::indexing::tests::tensor_madd_does_not_admit_wrappers_other_leaves_or_products ... ok
+test pointwise_ir::indexing::tests::tensor_madd_still_checks_dead_nodes_unused_inputs_and_overflow ... ok
+test pointwise_ir::indexing::tests::trig_before_and_after_one_stage_accepts_all_scalar_kinds_and_input_orders ... ok
+test pointwise_ir::indexing::tests::validates_dead_shapes_but_does_not_expand_unrelated_output ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 238 filtered out; finished in 0.01s
+
+     Running tests/autograd.rs (target/trig-postcommit-876627d/rust-tests/debug/deps/autograd-f38585ca82bec9e6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 92 filtered out; finished in 0.00s
+
+     Running tests/cuda_add.rs (target/trig-postcommit-876627d/rust-tests/debug/deps/cuda_add-3043d5dd2af577ad)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/cuda_contiguous.rs (target/trig-postcommit-876627d/rust-tests/debug/deps/cuda_contiguous-19470d316c601991)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/cuda_matmul.rs (target/trig-postcommit-876627d/rust-tests/debug/deps/cuda_matmul-405eb25ac7669f7a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/cuda_mul_scalar.rs (target/trig-postcommit-876627d/rust-tests/debug/deps/cuda_mul_scalar-e969f9beb76a1936)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/cuda_native_boundaries.rs (target/trig-postcommit-876627d/rust-tests/debug/deps/cuda_native_boundaries-5c3fea720f3372b3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running tests/cuda_relu.rs (target/trig-postcommit-876627d/rust-tests/debug/deps/cuda_relu-97ded30cbb16e174)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/cuda_same_device_copy.rs (target/trig-postcommit-876627d/rust-tests/debug/deps/cuda_same_device_copy-8e5fcdb7d77c7d8c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/cuda_sum_rows.rs (target/trig-postcommit-876627d/rust-tests/debug/deps/cuda_sum_rows-9865ac5ad944ff1c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/tensor_baseline.rs (target/trig-postcommit-876627d/rust-tests/debug/deps/tensor_baseline-1f3bc301430510b8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 103 filtered out; finished in 0.00s
+
+
+===== focused-h100 =====
+test_cached_native_execution_and_structured_aliases (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_cached_native_execution_and_structured_aliases) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ok
+test_former_rejections_keep_the_original_shapes_and_values (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_former_rejections_keep_the_original_shapes_and_values) ... ok
+test_reference_shape_value_offset_and_retained_output_histories (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_reference_shape_value_offset_and_retained_output_histories) ... ok
+test_scalar_kind_zero_trig_witness_and_runtime_promotion (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_scalar_kind_zero_trig_witness_and_runtime_promotion) ... ok
+test_subnormal_amplification_and_nested_runtime_trig_exact (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_subnormal_amplification_and_nested_runtime_trig_exact) ... ok
+test_mixed_madd_trig_rejects_in_both_orders_even_after_identities (test_compile_pointwise_broadcast_trig.Metadata.test_mixed_madd_trig_rejects_in_both_orders_even_after_identities) ... ok
+test_unary_and_one_stage_trig_before_and_after_arithmetic (test_compile_pointwise_broadcast_trig.Metadata.test_unary_and_one_stage_trig_before_and_after_arithmetic) ... ok
+test_direct_run_cannot_bypass_unequal_shapes_with_linear_addresses (test_compile_pointwise_broadcast_priority.BroadcastPriority.test_direct_run_cannot_bypass_unequal_shapes_with_linear_addresses) ... ok
+test_historical_finite_and_ieee_shape_histories_are_explicitly_unsupported (test_compile_pointwise_broadcast_priority.BroadcastPriority.test_historical_finite_and_ieee_shape_histories_are_explicitly_unsupported) ... ok
+test_historical_fresh_large_cancellation_is_explicitly_unsupported (test_compile_pointwise_broadcast_priority.BroadcastPriority.test_historical_fresh_large_cancellation_is_explicitly_unsupported) ... ok
+test_products_deeper_trig_unused_inputs_empty_and_simplified_graphs_reject (test_compile_pointwise_broadcast_priority.BroadcastPriority.test_products_deeper_trig_unused_inputs_empty_and_simplified_graphs_reject) ... ok
+test_unary_trig_admission_keeps_cached_unused_input_address_guard (test_compile_pointwise_broadcast_priority.BroadcastPriority.test_unary_trig_admission_keeps_cached_unused_input_address_guard) ... ok
+test_dead_graph_still_validates_before_live_admission (test_compile_pointwise_broadcast_priority.Metadata.test_dead_graph_still_validates_before_live_admission) ... ok
+test_original_depth_precedes_simplification_and_address_canonicalization (test_compile_pointwise_broadcast_priority.Metadata.test_original_depth_precedes_simplification_and_address_canonicalization) ... ok
+test_relu_is_depth_neutral_and_dead_nodes_do_not_limit_live_capability (test_compile_pointwise_broadcast_priority.Metadata.test_relu_is_depth_neutral_and_dead_nodes_do_not_limit_live_capability) ... ok
+test_runtime_scalar_sign_is_metadata_not_tensor_negation (test_compile_pointwise_broadcast_priority.Metadata.test_runtime_scalar_sign_is_metadata_not_tensor_negation) ... ok
+test_private_prepared_admission_cannot_bypass_graph_or_shape_checks (test_compile_pointwise_prepared.PreparedHardware.test_private_prepared_admission_cannot_bypass_graph_or_shape_checks) ... ok
+test_unused_tensors_cannot_bypass_broadcast_boundary_and_one_tensor_is_unchanged (test_compile_pointwise_runtime_scalars.PositionalScalarHardware.test_unused_tensors_cannot_bypass_broadcast_boundary_and_one_tensor_is_unchanged) ... ok
+test_scalar_slots_preserve_original_ir_actual_shape_admission (test_compile_pointwise_scalar_admission.PositionalBindingAdmission.test_scalar_slots_preserve_original_ir_actual_shape_admission) ... ok
+test_ieee_broadcast_contraction (test_compile_pointwise_broadcast.Broadcast.test_ieee_broadcast_contraction) ... ok
+test_original_ir_boundary_and_native_input_validation (test_compile_pointwise_helpers.HelperHardware.test_original_ir_boundary_and_native_input_validation) ... ok
+
+----------------------------------------------------------------------
+Ran 21 tests in 30.396s
+
+OK
+
+===== portable-trig =====
+test_cached_native_execution_and_structured_aliases (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_cached_native_execution_and_structured_aliases) ... skipped 'requires native CUDA and reference PyTorch CUDA'
+test_former_rejections_keep_the_original_shapes_and_values (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_former_rejections_keep_the_original_shapes_and_values) ... skipped 'requires native CUDA and reference PyTorch CUDA'
+test_reference_shape_value_offset_and_retained_output_histories (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_reference_shape_value_offset_and_retained_output_histories) ... skipped 'requires native CUDA and reference PyTorch CUDA'
+test_scalar_kind_zero_trig_witness_and_runtime_promotion (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_scalar_kind_zero_trig_witness_and_runtime_promotion) ... skipped 'requires native CUDA and reference PyTorch CUDA'
+test_subnormal_amplification_and_nested_runtime_trig_exact (test_compile_pointwise_broadcast_trig.BroadcastTrig.test_subnormal_amplification_and_nested_runtime_trig_exact) ... skipped 'requires native CUDA and reference PyTorch CUDA'
+test_mixed_madd_trig_rejects_in_both_orders_even_after_identities (test_compile_pointwise_broadcast_trig.Metadata.test_mixed_madd_trig_rejects_in_both_orders_even_after_identities) ... ok
+test_unary_and_one_stage_trig_before_and_after_arithmetic (test_compile_pointwise_broadcast_trig.Metadata.test_unary_and_one_stage_trig_before_and_after_arithmetic) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.007s
+
+OK (skipped=5)
+
+===== portable-regressions =====
+test_dead_graph_still_validates_before_live_admission (test_compile_pointwise_broadcast_priority.Metadata.test_dead_graph_still_validates_before_live_admission) ... ok
+test_original_depth_precedes_simplification_and_address_canonicalization (test_compile_pointwise_broadcast_priority.Metadata.test_original_depth_precedes_simplification_and_address_canonicalization) ... ok
+test_relu_is_depth_neutral_and_dead_nodes_do_not_limit_live_capability (test_compile_pointwise_broadcast_priority.Metadata.test_relu_is_depth_neutral_and_dead_nodes_do_not_limit_live_capability) ... ok
+test_runtime_scalar_sign_is_metadata_not_tensor_negation (test_compile_pointwise_broadcast_priority.Metadata.test_runtime_scalar_sign_is_metadata_not_tensor_negation) ... ok
+test_codegen_uses_metadata_coordinates_and_keeps_numeric_lowering (test_compile_pointwise_broadcast.Metadata.test_codegen_uses_metadata_coordinates_and_keeps_numeric_lowering) ... ok
+test_dead_shape_errors_are_not_removed_and_empty_codegen_has_no_zero_divisor (test_compile_pointwise_broadcast.Metadata.test_dead_shape_errors_are_not_removed_and_empty_codegen_has_no_zero_divisor) ... ok
+test_prepared_helper_is_private_to_the_native_bridge (test_compile_pointwise_prepared.PreparedExports.test_prepared_helper_is_private_to_the_native_bridge) ... ok
+test_accounting_includes_native_capacity_and_python_key_storage (test_compile_pointwise_prepared.PreparedCache.test_accounting_includes_native_capacity_and_python_key_storage) ... ok
+test_byte_limit_and_count_limit_have_independent_success_only_lru_bounds (test_compile_pointwise_prepared.PreparedCache.test_byte_limit_and_count_limit_have_independent_success_only_lru_bounds) ... ok
+test_exact_shape_data_lru_does_not_consume_generalized_logical_slots (test_compile_pointwise_prepared.PreparedCache.test_exact_shape_data_lru_does_not_consume_generalized_logical_slots) ... ok
+test_matching_warm_calls_do_not_prepare_or_reaccount (test_compile_pointwise_prepared.PreparedCache.test_matching_warm_calls_do_not_prepare_or_reaccount) ... ok
+test_oversize_is_ephemeral_and_cannot_keep_evicted_executors_alive_in_cache (test_compile_pointwise_prepared.PreparedCache.test_oversize_is_ephemeral_and_cannot_keep_evicted_executors_alive_in_cache) ... ok
+test_preparation_execution_and_reconstruction_failures_preserve_all_lrus (test_compile_pointwise_prepared.PreparedCache.test_preparation_execution_and_reconstruction_failures_preserve_all_lrus) ... ok
+test_rank_zero_and_length_one_are_different_preparations (test_compile_pointwise_prepared.PreparedCache.test_rank_zero_and_length_one_are_different_preparations) ... ok
+test_reset_drops_all_prepared_entries_and_accounting (test_compile_pointwise_prepared.PreparedCache.test_reset_drops_all_prepared_entries_and_accounting) ... ok
+test_return_order_selects_data_but_cosmetic_containers_share_it (test_compile_pointwise_prepared.PreparedCache.test_return_order_selects_data_but_cosmetic_containers_share_it) ... ok
+test_revisited_shape_uses_the_selected_numerical_history (test_compile_pointwise_prepared.PreparedCache.test_revisited_shape_uses_the_selected_numerical_history) ... ok
+test_runtime_scalar_values_are_not_retained_plan_keys (test_compile_pointwise_prepared.PreparedCache.test_runtime_scalar_values_are_not_retained_plan_keys) ... ok
+test_shape_snapshot_mismatch_is_not_run_or_published (test_compile_pointwise_prepared.PreparedCache.test_shape_snapshot_mismatch_is_not_run_or_published) ... ok
+test_unused_input_shapes_still_bind_the_data_key (test_compile_pointwise_prepared.PreparedCache.test_unused_input_shapes_still_bind_the_data_key) ... ok
+test_promotion_uses_successful_numeric_history_and_preserves_scalar_kind (test_compile_pointwise_runtime_scalars.RuntimeScalarAdmission.test_promotion_uses_successful_numeric_history_and_preserves_scalar_kind) ... ok
+test_runtime_scalar_arity_and_outputs_are_validated_without_hardware (test_compile_pointwise_runtime_scalars.RuntimeScalarAdmission.test_runtime_scalar_arity_and_outputs_are_validated_without_hardware) ... ok
+test_captures_and_parameters_share_one_runtime_budget (test_compile_pointwise_scalar_admission.PositionalBindingAdmission.test_captures_and_parameters_share_one_runtime_budget) ... ok
+test_positional_rejection_never_invokes_object_or_type_hooks (test_compile_pointwise_scalar_admission.PositionalBindingAdmission.test_positional_rejection_never_invokes_object_or_type_hooks) ... ok
+test_scalar_slots_preserve_original_ir_actual_shape_admission (test_compile_pointwise_scalar_admission.PositionalBindingAdmission.test_scalar_slots_preserve_original_ir_actual_shape_admission) ... ok
+test_source_positions_are_separate_from_tensor_and_scalar_operands (test_compile_pointwise_scalar_admission.PositionalBindingAdmission.test_source_positions_are_separate_from_tensor_and_scalar_operands) ... ok
+test_32bit_index_limit_is_inclusive (test_compile_pointwise_scalar_admission.SharedCacheGuards.test_32bit_index_limit_is_inclusive) ... ok
+test_64bit_iteration_specialization_has_no_residual_or_inverse_32bit_bounds (test_compile_pointwise_scalar_admission.SharedCacheGuards.test_64bit_iteration_specialization_has_no_residual_or_inverse_32bit_bounds) ... ok
+test_compile_and_launch_failures_do_not_publish_history_and_reset_clears_both_levels (test_compile_pointwise_scalar_admission.SharedCacheGuards.test_compile_and_launch_failures_do_not_publish_history_and_reset_clears_both_levels) ... ok
+test_contiguous_stride_relations_guard_noncanonical_singleton_strides (test_compile_pointwise_scalar_admission.SharedCacheGuards.test_contiguous_stride_relations_guard_noncanonical_singleton_strides) ... ok
+test_failed_older_revisits_preserve_ordered_contents_before_reset (test_compile_pointwise_scalar_admission.SharedCacheGuards.test_failed_older_revisits_preserve_ordered_contents_before_reset) ... ok
+test_generalized_binary_shapes_preserve_broadcast_equalities (test_compile_pointwise_scalar_admission.SharedCacheGuards.test_generalized_binary_shapes_preserve_broadcast_equalities) ... ok
+test_generalized_selection_keeps_zero_singleton_and_rank_zero_separate (test_compile_pointwise_scalar_admission.SharedCacheGuards.test_generalized_selection_keeps_zero_singleton_and_rank_zero_separate) ... ok
+test_graph_hash_collisions_keep_structural_equality_and_executor_sharing (test_compile_pointwise_scalar_admission.SharedCacheGuards.test_graph_hash_collisions_keep_structural_equality_and_executor_sharing) ... ok
+test_logical_hit_abi_changes_keep_both_lrus_bounded_without_consuming_slots (test_compile_pointwise_scalar_admission.SharedCacheGuards.test_logical_hit_abi_changes_keep_both_lrus_bounded_without_consuming_slots) ... ok
+test_lowering_recency_and_eviction_are_independent_of_shared_executor_recency (test_compile_pointwise_scalar_admission.SharedCacheGuards.test_lowering_recency_and_eviction_are_independent_of_shared_executor_recency) ... ok
+test_nan_payloads_share_static_guard_without_rewriting_frozen_values (test_compile_pointwise_scalar_admission.SharedCacheGuards.test_nan_payloads_share_static_guard_without_rewriting_frozen_values) ... ok
+test_newest_hits_do_not_mutate_any_recency_map_or_recompile (test_compile_pointwise_scalar_admission.SharedCacheGuards.test_newest_hits_do_not_mutate_any_recency_map_or_recompile) ... ok
+test_older_logical_revisit_updates_recency_with_an_already_newest_shared_executor (test_compile_pointwise_scalar_admission.SharedCacheGuards.test_older_logical_revisit_updates_recency_with_an_already_newest_shared_executor) ... ok
+test_rank_history_generalizes_previously_unchanged_dimensions (test_compile_pointwise_scalar_admission.SharedCacheGuards.test_rank_history_generalizes_previously_unchanged_dimensions) ... ok
+test_role_history_stays_with_public_source_across_tensor_positions (test_compile_pointwise_scalar_admission.SharedCacheGuards.test_role_history_stays_with_public_source_across_tensor_positions) ... ok
+test_static_shape_history_promotes_only_independent_singleton_stride (test_compile_pointwise_scalar_admission.SharedCacheGuards.test_static_shape_history_promotes_only_independent_singleton_stride) ... ok
+test_unused_role_changes_validate_the_entire_filtered_tensor_abi (test_compile_pointwise_scalar_admission.SharedCacheGuards.test_unused_role_changes_validate_the_entire_filtered_tensor_abi) ... ok
+test_all_constants_validated_before_disassembly_or_retention (test_compile_pointwise_helpers.HelperAdmission.test_all_constants_validated_before_disassembly_or_retention) ... ok
+test_closure_binding_and_positional_only_helper (test_compile_pointwise_helpers.HelperAdmission.test_closure_binding_and_positional_only_helper) ... ok
+test_code_identity_not_function_or_structural_code_equality (test_compile_pointwise_helpers.HelperAdmission.test_code_identity_not_function_or_structural_code_equality) ... ok
+test_container_and_attribute_callbacks_never_run (test_compile_pointwise_helpers.HelperAdmission.test_container_and_attribute_callbacks_never_run) ... ok
+test_directive_presence_not_truthiness (test_compile_pointwise_helpers.HelperAdmission.test_directive_presence_not_truthiness) ... ok
+test_expanded_instruction_and_node_budgets (test_compile_pointwise_helpers.HelperAdmission.test_expanded_instruction_and_node_budgets) ... ok
+test_higher_order_operands_rejected_even_if_ignored (test_compile_pointwise_helpers.HelperAdmission.test_higher_order_operands_rejected_even_if_ignored) ... ok
+test_identity_and_scalar_literal_returns_feed_tensor_operations (test_compile_pointwise_helpers.HelperAdmission.test_identity_and_scalar_literal_returns_feed_tensor_operations) ... ok
+test_instruction_memo_still_charges_each_complete_frame (test_compile_pointwise_helpers.HelperAdmission.test_instruction_memo_still_charges_each_complete_frame) ... ok
+test_lazy_inputs_shared_sources_and_returned_bound_values (test_compile_pointwise_helpers.HelperAdmission.test_lazy_inputs_shared_sources_and_returned_bound_values) ... ok
+test_metadata_is_not_data_and_no_scalar_binary_arithmetic (test_compile_pointwise_helpers.HelperAdmission.test_metadata_is_not_data_and_no_scalar_binary_arithmetic) ... ok
+test_native_functions_keep_priority_over_python_helpers (test_compile_pointwise_helpers.HelperAdmission.test_native_functions_keep_priority_over_python_helpers) ... ok
+test_repeated_multiple_and_composed_calls_match_inline_graph (test_compile_pointwise_helpers.HelperAdmission.test_repeated_multiple_and_composed_calls_match_inline_graph) ... ok
+test_return_opcodes_share_data_boundary (test_compile_pointwise_helpers.HelperAdmission.test_return_opcodes_share_data_boundary) ... ok
+test_signature_and_unsupported_bytecode (test_compile_pointwise_helpers.HelperAdmission.test_signature_and_unsupported_bytecode) ... ok
+test_equal_distinct_code_guards_share_executor_and_same_code_warm_hit (test_compile_pointwise_helpers.HelperCache.test_equal_distinct_code_guards_share_executor_and_same_code_warm_hit) ... ok
+test_frozen_code_survives_mutation_rebinding_and_absent_tensor_abi (test_compile_pointwise_helpers.HelperCache.test_frozen_code_survives_mutation_rebinding_and_absent_tensor_abi) ... ok
+test_ignored_global_and_closure_arguments_revalidated_on_warm_hits (test_compile_pointwise_helpers.HelperCache.test_ignored_global_and_closure_arguments_revalidated_on_warm_hits) ... ok
+test_ignored_helper_binding_replaced_on_new_abi (test_compile_pointwise_helpers.HelperCache.test_ignored_helper_binding_replaced_on_new_abi) ... ok
+test_ignored_inputs_replacements_and_runtime_scalar_history (test_compile_pointwise_helpers.HelperCache.test_ignored_inputs_replacements_and_runtime_scalar_history) ... ok
+test_native_input_validation_precedes_even_ignored_helper_arguments (test_compile_pointwise_helpers.HelperCache.test_native_input_validation_precedes_even_ignored_helper_arguments) ... ok
+test_new_abi_failure_keeps_existing_lowerings_and_lru_order (test_compile_pointwise_helpers.HelperCache.test_new_abi_failure_keeps_existing_lowerings_and_lru_order) ... ok
+test_nonexecution_reset_and_no_retained_function_containers (test_compile_pointwise_helpers.HelperCache.test_nonexecution_reset_and_no_retained_function_containers) ... ok
+test_recompile_limit_lowering_lru_and_reset_release_helper_code (test_compile_pointwise_helpers.HelperCache.test_recompile_limit_lowering_lru_and_reset_release_helper_code) ... ok
+test_warm_mutation_revalidated_and_failure_atomic (test_compile_pointwise_helpers.HelperCache.test_warm_mutation_revalidated_and_failure_atomic) ... ok
+test_immutable_hash_is_computed_once (test_compile_pointwise_structured_inputs.SourceIdentity.test_immutable_hash_is_computed_once) ... ok
+test_structural_equality_and_hash_collisions (test_compile_pointwise_structured_inputs.SourceIdentity.test_structural_equality_and_hash_collisions) ... ok
+test_flat_large_signature_and_nested_runtime_scalar_bound (test_compile_pointwise_structured_inputs.InputContracts.test_flat_large_signature_and_nested_runtime_scalar_bound) ... ok
+test_ignored_root_flat_tree_transitions_and_recovery (test_compile_pointwise_structured_inputs.InputContracts.test_ignored_root_flat_tree_transitions_and_recovery) ... ok
+test_nested_selection_unpack_and_current_owner (test_compile_pointwise_structured_inputs.InputContracts.test_nested_selection_unpack_and_current_owner) ... ok
+test_all_small_constructors_literal_metadata_and_duplicates (test_compile_pointwise_structured_outputs.StructuredAdmission.test_all_small_constructors_literal_metadata_and_duplicates) ... ok
+test_constant_key_pool_rejected_before_disassembly_without_callbacks (test_compile_pointwise_structured_outputs.StructuredAdmission.test_constant_key_pool_rejected_before_disassembly_without_callbacks) ... ok
+test_helpers_cannot_query_computed_or_local_shapes (test_compile_pointwise_structured_outputs.StructuredAdmission.test_helpers_cannot_query_computed_or_local_shapes) ... ok
+test_helpers_loops_branches_and_immutable_branch_snapshots (test_compile_pointwise_structured_outputs.StructuredAdmission.test_helpers_loops_branches_and_immutable_branch_snapshots) ... ok
+test_metadata_provenance_and_excluded_container_language (test_compile_pointwise_structured_outputs.StructuredAdmission.test_metadata_provenance_and_excluded_container_language) ... ok
+test_noninteger_result_metadata_does_not_require_predicate_provenance (test_compile_pointwise_structured_outputs.StructuredAdmission.test_noninteger_result_metadata_does_not_require_predicate_provenance) ... ok
+test_original_ssa_slots_and_topology_are_separate (test_compile_pointwise_structured_outputs.StructuredAdmission.test_original_ssa_slots_and_topology_are_separate) ... ok
+test_output_count_depth_and_expanded_loop_edge_budgets (test_compile_pointwise_structured_outputs.StructuredAdmission.test_output_count_depth_and_expanded_loop_edge_budgets) ... ok
+test_private_output_roots_and_original_dead_nodes_validate (test_compile_pointwise_structured_outputs.StructuredAdmission.test_private_output_roots_and_original_dead_nodes_validate) ... ok
+test_shape_axis_metadata_inside_expanded_loops (test_compile_pointwise_structured_outputs.StructuredAdmission.test_shape_axis_metadata_inside_expanded_loops) ... ok
+test_dict_order_duplicates_literal_types_and_equal_containers (test_compile_pointwise_structured_outputs.StructuredCache.test_dict_order_duplicates_literal_types_and_equal_containers) ... ok
+test_helper_identity_and_deep_shared_loop_dag (test_compile_pointwise_structured_outputs.StructuredCache.test_helper_identity_and_deep_shared_loop_dag) ... ok
+test_identity_freshness_current_metadata_and_no_input_retention (test_compile_pointwise_structured_outputs.StructuredCache.test_identity_freshness_current_metadata_and_no_input_retention) ... ok
+test_numerical_hint_follows_successful_specialization_history (test_compile_pointwise_structured_outputs.StructuredCache.test_numerical_hint_follows_successful_specialization_history) ... ok
+test_numerical_hint_uses_live_source_after_tensor_abi_rebinding (test_compile_pointwise_structured_outputs.StructuredCache.test_numerical_hint_uses_live_source_after_tensor_abi_rebinding) ... ok
+test_reconstruction_and_launch_failure_preserve_all_cache_orders (test_compile_pointwise_structured_outputs.StructuredCache.test_reconstruction_and_launch_failure_preserve_all_cache_orders) ... ok
+test_same_graph_different_topology_shares_executor (test_compile_pointwise_structured_outputs.StructuredCache.test_same_graph_different_topology_shares_executor) ... ok
+test_warm_capture_admission_and_reconstruction_retry (test_compile_pointwise_structured_outputs.StructuredCache.test_warm_capture_admission_and_reconstruction_retry) ... ok
+test_all_ordered_tensor_leaves_single_fma_and_unused_arguments (test_compile_pointwise_tensor_madd.Metadata.test_all_ordered_tensor_leaves_single_fma_and_unused_arguments) ... ok
+test_near_misses_remain_rejected_before_rewriting (test_compile_pointwise_tensor_madd.Metadata.test_near_misses_remain_rejected_before_rewriting) ... ok
+test_runtime_scalar_leaves_and_all_dead_validation (test_compile_pointwise_tensor_madd.Metadata.test_runtime_scalar_leaves_and_all_dead_validation) ... ok
+
+----------------------------------------------------------------------
+Ran 94 tests in 0.531s
+
+OK
+
+===== ownership-history-h100 =====
+test_aliased_tensor_to_scalar_keeps_realization_history (test_compile_pointwise_structured_inputs.InputHardware.test_aliased_tensor_to_scalar_keeps_realization_history) ... /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+ok
+test_bool_float_nonfinite_history (test_compile_pointwise_structured_inputs.InputHardware.test_bool_float_nonfinite_history) ... ok
+test_dict_signed_zero_abi_churn_and_unequal_current_replacements (test_compile_pointwise_structured_inputs.InputHardware.test_dict_signed_zero_abi_churn_and_unequal_current_replacements) ... ok
+test_helper_input_descriptor_round_trip (test_compile_pointwise_structured_inputs.InputHardware.test_helper_input_descriptor_round_trip) ... ok
+test_helper_local_unpack_loop_shape_branch_and_failed_recovery (test_compile_pointwise_structured_inputs.InputHardware.test_helper_local_unpack_loop_shape_branch_and_failed_recovery) ... ok
+test_local_tuple_assignments (test_compile_pointwise_structured_inputs.InputHardware.test_local_tuple_assignments) ... ok
+test_negative_selection_normalizes_and_changes_source_with_length (test_compile_pointwise_structured_inputs.InputHardware.test_negative_selection_normalizes_and_changes_source_with_length) ... ok
+test_noncommutative_reversed_realization_roles_and_runtime_abi_reorder (test_compile_pointwise_structured_inputs.InputHardware.test_noncommutative_reversed_realization_roles_and_runtime_abi_reorder) ... ok
+test_positive_source_across_list_tuple_and_length_precision_history (test_compile_pointwise_structured_inputs.InputHardware.test_positive_source_across_list_tuple_and_length_precision_history) ... ok
+test_tensor_aliases_distinct_equal_views_offsets_ranks_and_shapes (test_compile_pointwise_structured_inputs.InputHardware.test_tensor_aliases_distinct_equal_views_offsets_ranks_and_shapes) ... ok
+test_retained_outputs_shapes_metadata_aliases_and_distinct_allocations (test_compile_pointwise_structured_outputs.StructuredHardware.test_retained_outputs_shapes_metadata_aliases_and_distinct_allocations) ... ok
+test_union_dependencies_broadcast_and_differently_shaped_input_alias (test_compile_pointwise_structured_outputs.StructuredHardware.test_union_dependencies_broadcast_and_differently_shaped_input_alias) ... ok
+test_structured_native_path_without_installed_pytorch (test_compile_pointwise_structured_outputs.StructuredHardware.test_structured_native_path_without_installed_pytorch) ... ok
+test_actual_warm_preparation_reuse_and_retained_result_freshness (test_compile_pointwise_prepared.PreparedHardware.test_actual_warm_preparation_reuse_and_retained_result_freshness) ... ok
+test_revisited_shape_matches_default_inductor_selected_numerical_history (test_compile_pointwise_prepared.PreparedHardware.test_revisited_shape_matches_default_inductor_selected_numerical_history) ... ok
+test_rank_zero_length_one_and_empty_broadcast_keep_numerical_domains (test_compile_pointwise_prepared.PreparedHardware.test_rank_zero_length_one_and_empty_broadcast_keep_numerical_domains) ... ok
+test_private_preparation_and_run_restore_device_and_reject_cross_device (test_compile_pointwise_prepared.PreparedHardware.test_private_preparation_and_run_restore_device_and_reject_cross_device) ... skipped 'requires explicit two-device reservation'
+test_signed_zero_broadcast_shape_transitions (test_compile_pointwise_runtime_scalars.ScalarShapeSpecializationHardware.test_signed_zero_broadcast_shape_transitions) ... ok
+test_signed_zero_one_dimensional_revisit (test_compile_pointwise_runtime_scalars.ScalarShapeSpecializationHardware.test_signed_zero_one_dimensional_revisit) ... ok
+test_signed_zero_rank_transitions (test_compile_pointwise_runtime_scalars.ScalarShapeSpecializationHardware.test_signed_zero_rank_transitions) ... ok
+test_signed_zero_singleton_empty_transitions (test_compile_pointwise_runtime_scalars.ScalarShapeSpecializationHardware.test_signed_zero_singleton_empty_transitions) ... ok
+test_signed_zero_unused_tensor_shape_transitions (test_compile_pointwise_runtime_scalars.ScalarShapeSpecializationHardware.test_signed_zero_unused_tensor_shape_transitions) ... ok
+test_contiguous_singleton_stride_history_keeps_selected_zero_sign (test_compile_pointwise_runtime_scalars.PersistentSpecializationHardware.test_contiguous_singleton_stride_history_keeps_selected_zero_sign) ... ok
+test_failed_compile_and_launch_preserve_both_cache_orders_and_history (test_compile_pointwise_runtime_scalars.PersistentSpecializationHardware.test_failed_compile_and_launch_preserve_both_cache_orders_and_history) ... ok
+test_logical_hit_new_broadcast_executor_keeps_frozen_zero (test_compile_pointwise_runtime_scalars.PersistentSpecializationHardware.test_logical_hit_new_broadcast_executor_keeps_frozen_zero) ... ok
+test_nonfinite_runtime_hit_and_cold_rank_specialization (test_compile_pointwise_runtime_scalars.PersistentSpecializationHardware.test_nonfinite_runtime_hit_and_cold_rank_specialization) ... ok
+test_older_static_precision_guard_survives_other_rank_runtime_graph (test_compile_pointwise_runtime_scalars.PersistentSpecializationHardware.test_older_static_precision_guard_survives_other_rank_runtime_graph) ... ok
+test_signed_nan_payloads_reuse_static_guard_then_promote_for_all_sources (test_compile_pointwise_runtime_scalars.PersistentSpecializationHardware.test_signed_nan_payloads_reuse_static_guard_then_promote_for_all_sources) ... ok
+test_tensor_float_roles_follow_reversed_alias_realization_order (test_compile_pointwise_runtime_scalars.PersistentSpecializationHardware.test_tensor_float_roles_follow_reversed_alias_realization_order) ... ok
+test_unused_local_scalar_tensor_roles_reuse_logical_guard (test_compile_pointwise_runtime_scalars.PersistentSpecializationHardware.test_unused_local_scalar_tensor_roles_reuse_logical_guard) ... ok
+test_positional_execution_without_installed_pytorch_or_original_body (test_compile_pointwise_runtime_scalars.PositionalScalarHardware.test_positional_execution_without_installed_pytorch_or_original_body) ... ok
+test_explicit_cancellation_overflow_and_rounding (test_compile_pointwise_tensor_madd.TensorMadd.test_explicit_cancellation_overflow_and_rounding) ... ok
+test_both_devices_restore_current_device_on_success_failure_and_reset (test_compile_pointwise_tensor_madd.TensorMadd.test_both_devices_restore_current_device_on_success_failure_and_reset) ... skipped 'requires explicit reservation of two CUDA devices'
+
+----------------------------------------------------------------------
+Ran 33 tests in 29.294s
+
+OK (skipped=2)
+
+===== gpu-after =====
+index, uuid, name, memory.total [MiB], memory.used [MiB], utilization.gpu [%], driver_version, compute_cap
+0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 97871 MiB, 4 MiB, 0 %, 580.82.07, 9.0
+
+===== diff-check =====
+
+===== build-capture/build =====
+📦 Including license file `LICENSE`
+🍹 Building a mixed python/rust project
+🐍 Found CPython 3.12 at /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/.venv/bin/python
+🔗 Found pyo3 bindings with abi3-py3.10 support
+📡 Using build options features from pyproject.toml
+   Compiling target-lexicon v0.13.5
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling crossbeam-utils v0.8.23
+   Compiling quote v1.0.47
+   Compiling crossbeam-epoch v0.9.21
+   Compiling libc v0.2.189
+   Compiling crossbeam-deque v0.8.8
+   Compiling heck v0.5.0
+   Compiling rayon-core v1.13.0
+   Compiling cfg-if v1.0.4
+   Compiling once_cell v1.21.4
+   Compiling inventory v0.3.24
+   Compiling either v1.18.0
+   Compiling libloading v0.8.9
+   Compiling pyo3-build-config v0.29.2
+   Compiling syn v2.0.119
+   Compiling pyo3-ffi v0.29.2
+   Compiling pyo3 v0.29.2
+   Compiling rayon v1.12.0
+   Compiling pyo3-macros-backend v0.29.2
+   Compiling pyo3-macros v0.29.2
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838)
+    Finished `release` profile [optimized] target(s) in 51.91s
+📦 Built wheel for abi3 Python ≥ 3.10 to /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/target/trig-postcommit-876627d/build-capture/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl
+
+===== build-capture/install =====
+Resolved 1 package in 2ms
+Prepared 1 package in 42ms
+Uninstalled 1 package in 2ms
+Installed 1 package in 20ms
+ - torch-rs==0.1.0 (from file:///data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/target/trig-redelivery/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl)
+ + torch-rs==0.1.0 (from file:///data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_3361b838/target/trig-postcommit-876627d/build-capture/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl)
+

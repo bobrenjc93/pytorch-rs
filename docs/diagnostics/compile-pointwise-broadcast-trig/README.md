@@ -17,16 +17,20 @@ returned root at arithmetic depth at most one, including live sin/cos. The
 exact tensor-leaf multiply-add exception requires no live trig in any returned
 root. Numerical planning and the generic native CUDA executor are unchanged.
 
-## Current candidate
+## Clean-commit evidence
 
-Canonical qualification is pending. These are pre-delivery working-tree
-checks, not post-commit results or candidate scores. Burner owns the commit,
-clean-source focused rerun, ordinary fixed evaluations, archival, review, CI
-and merge qualification. This record does not claim PR #2000 is closed or
-its commits deleted. The replacement publication should identify #2000;
-retirement through Burner's withdrawal API remains maintainer-owned.
+Measured on 2026-09-16 UTC at clean implementation commit
+[`876627d`](https://github.com/bobrenjc93/pytorch-rs/commit/876627dbc12662aa0d3357bf8055ed1ee1137b68).
+All 12 command receipts record this commit and empty Git status before and after
+execution. Source and tests remained unchanged; only these evidence files and
+this index were added or updated afterward.
 
-Measured here on 2026-09-16 UTC, with no test failures:
+Canonical qualification is pending. These focused results are not candidate
+scores or independent review. Burner owns fixed evaluations, archival, review,
+CI and merge qualification. Retirement of PR #2000 remains maintainer-owned;
+this record does not claim it is closed or its commits deleted.
+
+The clean rerun had no test failures:
 
 | Check | Result |
 | --- | --- |
@@ -37,18 +41,28 @@ Measured here on 2026-09-16 UTC, with no test failures:
 | Additional CUDA-hidden admission/cache regressions | 94 passed |
 | Formatting, installed-extension provenance and diff whitespace | Passed |
 
-The release build compiled native Rust in an empty local target (51.663 seconds
-wall time); it did not reuse a native artifact. The locked local environment
+The repository's [clean-build capture tool](../../../scripts/capture_depth_concat_build.py)
+compiled native Rust in an empty local target (52.240 seconds Maturin wall time);
+it did not reuse a native artifact. The existing locked local environment,
+interpreter and dependency registry were reused; CUDA/Inductor/Triton caches
+started empty for this phase. The new compile produced the same native hash as
+the pre-delivery compile. The local environment
 used Python 3.12.14, PyTorch `2.13.0+cu130`, NVRTC 13.0 and CUDA runtime 13000.
 Installed nvcc 12.6 was not used for the native JIT. GPU 0 was H100 UUID
 `GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1`, driver 580.82.07; before/after
 snapshots both showed 0% utilization and 4 MiB used. This is single-GPU evidence.
 
-[Command receipts](commands.json), [identities](provenance.json) and
-[complete text outcomes](outcomes.log) retain elapsed times, hashes and skips
-in about 60 KiB, with no raw tensors or evaluator reports. Reproduce with the
+[Build receipt](postcommit-876627d/build.json),
+[runtime identities](postcommit-876627d/runtime.json),
+[command receipts](postcommit-876627d/commands.json) and
+[complete text outcomes](postcommit-876627d/outcomes.log) retain elapsed times,
+hashes and skips in about 74 KiB, with no raw tensors or evaluator reports.
+The build tool's embedded-PTX label describes its base CUDA inventory; the runtime
+receipt records the pointwise NVRTC compilation exercised here. Reproduce with the
 locked environment in [CONTRIBUTING.md](../../../CONTRIBUTING.md#locked-setup),
-a worktree-local release wheel, and the receipt's test selections. Keep writable
+a worktree-local release wheel, and the receipt's unchanged test selections.
+Use the recorded environment with current worktree paths and a fresh build
+output directory. Keep writable
 Cargo, uv, Python, CUDA, Inductor, Triton and temporary directories inside the
 worktree. Use `CUDA_VISIBLE_DEVICES=0` for H100 checks and an empty value for
 portable checks; two-device tests explicitly skip without a reservation.
@@ -61,6 +75,12 @@ owns candidate scores and full raw archives. No full fixed benchmark or duplicat
 are disposable; reproduction does not require recovering them after delivery.
 
 ## Historical evidence, not current qualification
+
+The original pre-delivery [commands](commands.json), [identities](provenance.json)
+and [outcomes](outcomes.log) remain unchanged and explicitly describe working-tree
+checks before `876627d`. That same focused matrix passed, with the same seven
+explicit skips; its native compile took 51.663 seconds. Those earlier results
+do not substitute for the clean-commit rerun above.
 
 The `6255306` postcommit record reported 11 Rust indexing tests and 21 focused
 H100 Python tests passing, plus two portable passes and five explicit GPU skips.
