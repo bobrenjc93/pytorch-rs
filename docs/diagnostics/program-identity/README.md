@@ -6,7 +6,7 @@ It does not produce a qualification verdict or change the fixed evaluation.
 Historical A measurements do not qualify this implementation.
 
 [Development validation](validation.md) records the implementation checks and
-preserved failures. The [current clean comparison](postcommit-fc6c345/README.md)
+preserved failures. The [ownership-repair clean comparison](postcommit-fc6c345/README.md)
 passed the frozen eight-leg verifier after the warm ownership repair. It retains
 cold/churn and small-case regressions alongside repeated-call improvements. The
 [previous complete comparison](postcommit-8f2002d/README.md) and
@@ -14,8 +14,12 @@ cold/churn and small-case regressions alongside repeated-call improvements. The
 
 The [warm ownership repair](warm-ownership-repair/README.md) records bounded
 call-count attribution and development checks after the canonical rejection of
-`4993a37`. The new capture measures committed `fc6c345`; unchanged full
-qualification remains required.
+`4993a37`. That capture measures committed `fc6c345`; subsequent canonical
+qualification of `6f0123a` rejected CUDA performance (32.9071 versus 34).
+The [grouped method-guard repair](method-guard-repair/README.md) retains a
+source-bound block diagnosis and development checks. Its required new clean
+eight-leg capture awaits Burner's implementation commit; earlier captures do
+not measure this repair.
 
 `consumer.py` uses only the standard library until a worker imports its selected
 framework. Its `build`, `check`, `freeze`, `preflight`, `leg`, and `verify` subcommands create

@@ -985,8 +985,11 @@ def compile(
     one/two-tensor limit). Scalar leaves, identity wrappers, subtraction,
     negation, ReLU/sin/cos and extra live arithmetic do not qualify for this
     exception, which also requires no live sin/cos in any returned root. The
-    existing numerical planner and generic CUDA instruction executor are reused;
-    finite evidence does not establish general Inductor or performance parity.
+    existing numerical planner is reused. Validated Programs select bounded
+    straight-line CUDA or, for empty/over-cap plans, the generic VM; executables
+    are reused by exact identity. Unsupported graphs and compiler failures still
+    raise. See ``docs/compile-pointwise-jit.md`` for the bounds and admission
+    contract. Finite evidence does not establish general Inductor or performance parity.
     Root functions may also use sequential, non-nested loops over the
     actual built-in range (including direct aliases), with one to three literal
     exact-integer bounds and a nonzero step. Zero/one/many trips and signed steps

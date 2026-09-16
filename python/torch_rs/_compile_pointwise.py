@@ -49,8 +49,8 @@ _REVERSE_COMPARE = {"<": ">", "<=": ">=", "==": "==", "!=": "!=", ">=": "<=", ">
 # Imported during package initialization, before public bindings can be patched.
 _FUNCTIONS = tuple((name, _ROOT.__dict__.get(name)) for name in
                    ("neg", "negative", "relu", "sin", "cos", "add", "sub", "subtract", "mul", "multiply"))
-_METHOD_GUARDS = tuple((cls, name, cls.__dict__.get(name, _MISSING))
-                      for cls in (_ROOT.Tensor, _ROOT.Tensor.__base__) for name in _METHODS)
+_METHOD_GUARDS = tuple((cls, tuple((name, cls.__dict__.get(name, _MISSING)) for name in _METHODS))
+                      for cls in (_ROOT.Tensor, _ROOT.Tensor.__base__))
 
 
 def unsupported(reason):
@@ -1477,9 +1477,11 @@ def implementation(model, recompile_limit):
         tensors, parameters = bind_arguments(args)
         if _ROOT.overrides._get_current_function_mode() is not None:
             unsupported("active __torch_function__ mode")
-        for cls, name, expected in _METHOD_GUARDS:
-            if cls.__dict__.get(name, _MISSING) is not expected:
-                unsupported("patched Tensor operation binding: " + name)
+        for cls, guards in _METHOD_GUARDS:
+            namespace = cls.__dict__
+            for name, expected in guards:
+                if namespace.get(name, _MISSING) is not expected:
+                    unsupported("patched Tensor operation binding: " + name)
         # The native bridge checks all metadata and storage bounds again on launch.
         metadata = tuple(_native._compile_trace_tensor_metadata(arg) for arg in tensors)
         if any(m[4] == "cpu" for m in metadata):

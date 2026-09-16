@@ -1,0 +1,258 @@
+{
+  "kind": "non-scoring-method-guard-development-evidence",
+  "createdAt": "2026-09-16T16:38:54.960644+00:00",
+  "baseHead": "6f0123a2cc521af9fab3dc19f1c256b28684f0db",
+  "cleanImplementationCapture": false,
+  "qualificationOrScoreProduced": false,
+  "worktree": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/full-leaf-agent_4ca5db06",
+  "sourceHashes": {
+    "python/torch_rs/_compile_pointwise.py": "ec5bb3e4eeb682433be90e9799ae6f020a012406279df3aff0d9572e9a9b05f9",
+    "python/torch_rs/__init__.py": "5b0d4dfc2cb84c5b4dde1b2e5b841dcd424fcd8ea8645d7919f75d0c6703be16",
+    "tests/test_compile_pointwise_method_guards.py": "30bce6b45204212c73982d3f18e5a9a1468aeffa1d8c7f33613772624c5bddff",
+    "tests/fixtures/program_identity_method_guards_before.py": "7e5ec3cd9952b8a0225765bf74fc2ebfa1a59deb588e18927d44c15d06424835",
+    "docs/diagnostics/program-identity/method-guard-block.py": "53c0b6ccc91c6eb98a7dda643ca578727aad83f7e65693528fc4dd4a443936a0"
+  },
+  "diagnosis": {
+    "sourceCommits": {
+      "before": "6f0123a2cc521af9fab3dc19f1c256b28684f0db",
+      "grouped": "9009c8ea6de40ec55c970983602c8fadd8a0447a"
+    },
+    "scriptSha256": "53c0b6ccc91c6eb98a7dda643ca578727aad83f7e65693528fc4dd4a443936a0",
+    "nativeExtensionSha256": "1bc7818796acf16763af7ee44829ebfb63e557ef188a232012a375caabc2a1cb",
+    "sameNativeExtensionForBothBlockArms": true,
+    "fetchesBefore": 38,
+    "fetchesGrouped": 2,
+    "comparisonsEach": 38,
+    "rawSamples": 68,
+    "iterationsPerSample": 20000,
+    "mediansNsPerBlock": [
+      {
+        "arm": "before",
+        "median": 2524.11595
+      },
+      {
+        "arm": "grouped",
+        "median": 1735.0432
+      },
+      {
+        "arm": "grouped",
+        "median": 1770.60035
+      },
+      {
+        "arm": "before",
+        "median": 2535.6088
+      }
+    ]
+  },
+  "testWheel": {
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/full-leaf-agent_4ca5db06/target/method-guard-repair/wheels/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "sha256": "7774986a659d7b0e29362d0e521a628c1dda30cfeda733478c8b805286bd8347",
+    "nativeExtensionSha256": "e50a99c5cdecab1d4acaf5db18d8a2523b9fcccb69efcb260e6a86930303bd02",
+    "identicalToBlockTimingWheel": false
+  },
+  "checks": {
+    "pointwiseH100": {
+      "run": 396,
+      "skipped": 9,
+      "failed": 0
+    },
+    "nativeIdentityAndCompilerFailuresH100": {
+      "run": 9,
+      "skipped": 0,
+      "failed": 0
+    },
+    "portableGuards": {
+      "run": 10,
+      "skipped": 1,
+      "failed": 0
+    },
+    "rust": {
+      "passed": 290,
+      "failed": 0
+    },
+    "format": "passed",
+    "clippy": "passed",
+    "frozenConsumerControls": {
+      "run": 33,
+      "passed": true
+    },
+    "sourceWheelDocAndFixture": "passed",
+    "gpuProviders": "passed"
+  },
+  "preservedFailures": [
+    {
+      "log": "pointwise-h100-failed-setup.log",
+      "errors": 5,
+      "cause": "New test used unsupported CUDA ones creation; corrected to CPU creation then transfer without production change."
+    },
+    {
+      "log": "source-bindings-failed-native-equality.log",
+      "cause": "Supplementary cross-build native-byte equality assertion failed. Both hashes retained; both timed block arms use the same earlier extension. No frozen verifier changed."
+    }
+  ],
+  "reviewFix": "Historical Git dependency in tests replaced by exact AST-extracted local fixture for shallow/source-only checkouts.",
+  "pending": "Burner implementation commit, clean eight-leg public comparison, independent review, full qualification and exact-head CI.",
+  "archive": {
+    "path": "development-evidence.tar.gz",
+    "bytes": 91201,
+    "sha256": "48deb1bc688644ce26d4b315f1635ffffeb04b8c60651433e3c22da8d55cd283"
+  },
+  "members": {
+    "approved-inputs.json": {
+      "bytes": 1074,
+      "sha256": "d178ced6b63215b8a506f28e7fb3a71b41a161310bc374042c7e133bf48a88e9"
+    },
+    "archive-check.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "build.log": {
+      "bytes": 503,
+      "sha256": "4247627da4139a07f8708c685ab3722d498bfea64ccd272df011d409e5cb618d"
+    },
+    "clippy.log": {
+      "bytes": 356,
+      "sha256": "f1bca68b3733c4c1016a263ac84c5f190bb16aa5f54dc8443a727004b9a99879"
+    },
+    "commands.json": {
+      "bytes": 1654,
+      "sha256": "1878f3752fbb363ae568c95848f997331678caee8f416e680fd5e61e4a61a95e"
+    },
+    "consumer-controls.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "consumer-controls/controls.log": {
+      "bytes": 3541,
+      "sha256": "83789cb44eaba5f834e1a6f884361e1000b3fc9cd2df23553c294a26639c3fd3"
+    },
+    "consumer-controls/result.json.gz": {
+      "bytes": 703,
+      "sha256": "3609e63b237917a6ee5ca1a24f3aca4d5886dc35fdf0c89d0689f3075f158f3c"
+    },
+    "diagnosis.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "diagnosis/result.json.gz": {
+      "bytes": 4932,
+      "sha256": "0b473b13cc954720891e8a23c0dd6038b66ea7eed8f7ce007797e15d26b113a5"
+    },
+    "environment.sh": {
+      "bytes": 827,
+      "sha256": "531f5bdac1a37b51fd29b881f956e3ed601137328ca9b008a5e0b5e3fe5c7712"
+    },
+    "gpu-bindings.json": {
+      "bytes": 4692,
+      "sha256": "c5533be84b25b907a0dac899453dffd637517eadc8b6b52636c73c1df73d6ddd"
+    },
+    "gpu-bindings.log": {
+      "bytes": 75,
+      "sha256": "4d11f8160020c00fd662596beafd7da306ae4cc69fc36a16349b5358f5a5fab6"
+    },
+    "gpu-bindings.py": {
+      "bytes": 991,
+      "sha256": "220f93b8fb959b4c49a72ba79546f959bd220dc9ac634319663406e8348fa5f3"
+    },
+    "install.log": {
+      "bytes": 525,
+      "sha256": "b4187012f9c96484ceb4f84d5e23456874d7a2b08fbf2a856ff2757c01344dc9"
+    },
+    "local-review.txt": {
+      "bytes": 839,
+      "sha256": "0ec9c2a0e005cfa328a5daf56da80f8196e4c71bad662fc22491147572a0df47"
+    },
+    "native-identity-h100.log": {
+      "bytes": 1817,
+      "sha256": "d4737015660d6515e100badc73ec07d0b5cbf3afc110df32b4cd3407d1cdc4c4"
+    },
+    "package-evidence.py": {
+      "bytes": 5160,
+      "sha256": "cdc80956b73a62ab6cb3aa7d1bae7364a41b23ca5966bde8361e131daaf4c4bb"
+    },
+    "pointwise-h100-failed-setup.log": {
+      "bytes": 76964,
+      "sha256": "2b20d04cf0804fb3ffbbe9b144beaf754908971c8ff9d3a6f1b2d24e3860e275"
+    },
+    "pointwise-h100.log": {
+      "bytes": 71479,
+      "sha256": "8c0ef15753de32d1b9732400dee9eabe86b839bd4d38703125992d8bfe089941"
+    },
+    "portable-guards-final.log": {
+      "bytes": 2202,
+      "sha256": "9fb6a21b5a84d9c7cfd2559f283fda9f3b7de8f1172db0ca2d38095796489b37"
+    },
+    "portable-guards-fixture-fix.log": {
+      "bytes": 2202,
+      "sha256": "1c84203042e5116631f1c1e06cecceda6d6b79b292e09bd393287313b5cf7a03"
+    },
+    "portable-guards.log": {
+      "bytes": 2202,
+      "sha256": "48b1a77241ef3a261079f7d916e5db8a2537bea151583ed9b50770bf24af701b"
+    },
+    "production.patch": {
+      "bytes": 3106,
+      "sha256": "b614146399ea5551ae5c3c53fe6e247a4866335f3d197284d1975b04b132fdcc"
+    },
+    "reused-production.patch": {
+      "bytes": 1865,
+      "sha256": "b8db96c9f31c60824984d7fc84fb0518da65507ef523b838f253d68e8e2b7d2f"
+    },
+    "rust-format.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "rust-tests.log": {
+      "bytes": 27194,
+      "sha256": "856d6659012f7cc62487d319b7e261931f4377ce0db3e4aa07968135bb59d0b8"
+    },
+    "source-bindings-failed-native-equality.log": {
+      "bytes": 365,
+      "sha256": "9b6dfd5f3ff9f8a9fe9a94f7a9760a2785212927f5af91b87bb6f4714ccebb14"
+    },
+    "source-bindings.json": {
+      "bytes": 10265,
+      "sha256": "bb53be1f4f4cb86ab0dea7b3802e25d02e778229d393d440839870b260540d12"
+    },
+    "source-bindings.log": {
+      "bytes": 103,
+      "sha256": "7d0fc8e5915215d197e31cd661ac42cc77d544c0a991b2a9d1bbfe0e6caf7c7a"
+    },
+    "sources/docs/diagnostics/program-identity/method-guard-block.py": {
+      "bytes": 8285,
+      "sha256": "53c0b6ccc91c6eb98a7dda643ca578727aad83f7e65693528fc4dd4a443936a0"
+    },
+    "sources/python/torch_rs/__init__.py": {
+      "bytes": 54523,
+      "sha256": "5b0d4dfc2cb84c5b4dde1b2e5b841dcd424fcd8ea8645d7919f75d0c6703be16"
+    },
+    "sources/python/torch_rs/_compile_pointwise.py": {
+      "bytes": 77810,
+      "sha256": "ec5bb3e4eeb682433be90e9799ae6f020a012406279df3aff0d9572e9a9b05f9"
+    },
+    "sources/tests/fixtures/program_identity_method_guards_before.py": {
+      "bytes": 650,
+      "sha256": "7e5ec3cd9952b8a0225765bf74fc2ebfa1a59deb588e18927d44c15d06424835"
+    },
+    "sources/tests/test_compile_pointwise_method_guards.py": {
+      "bytes": 21012,
+      "sha256": "30bce6b45204212c73982d3f18e5a9a1468aeffa1d8c7f33613772624c5bddff"
+    },
+    "tests-before-device-setup-fix.py": {
+      "bytes": 21016,
+      "sha256": "07791736bab97ec26af13941c4dc7a3f98731c39825ab76be98feaa418c4c7d0"
+    },
+    "tests-before-portability-fix.py": {
+      "bytes": 21146,
+      "sha256": "7c559533f5848cab21b9efeaf1939e736a957a33ae1406a9da617314ccb21db1"
+    },
+    "verify-bindings-first.py": {
+      "bytes": 3964,
+      "sha256": "546fe90bb513294446182f689f2b9e68ca157459cab759ce5cb09c9e7e8d58ec"
+    },
+    "verify-bindings.py": {
+      "bytes": 4003,
+      "sha256": "6935772bed3efb1f85781787d02d56460768a03bac7f547673287e7e187a7523"
+    }
+  }
+}
