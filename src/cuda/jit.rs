@@ -6,6 +6,9 @@ use crate::pointwise_ir::{Graph, invalid};
 use std::ffi::{CStr, CString};
 use std::sync::Arc;
 
+#[path = "link.rs"]
+mod link;
+
 type Program = *mut c_void;
 struct Nvrtc {
     _library: Library,
@@ -212,7 +215,8 @@ impl Kernel {
         device: usize,
         addresses: Vec<crate::pointwise_ir::indexing::Address>,
     ) -> Result<Arc<Self>, TensorError> {
-        let source = graph.indexed_source(&addresses)?;
+        let compilation = graph.compilation(&addresses)?;
+        let source = compilation.source;
         let _guard = runtime()?.guard(device)?;
         let context = current_context()?;
         let driver = driver()?;
@@ -231,42 +235,40 @@ impl Kernel {
                 "cuDeviceGetAttribute",
             )?;
         }
-        let options = vec![
+        let mut options = vec![
             format!("--gpu-architecture=compute_{major}{minor}"),
             "--fmad=true".into(),
             "--ftz=false".into(),
             "--prec-div=true".into(),
             "--prec-sqrt=true".into(),
         ];
+        if compilation.erf {
+            options.push("--relocatable-device-code=true".into());
+        }
         let (ptx, version) = Nvrtc::load()?.compile(&source, &options)?;
         let ptx_text = CStr::from_bytes_until_nul(&ptx)
             .map_err(|_| invalid("invalid NVRTC PTX"))?
             .to_string_lossy()
             .into_owned();
-        let mut module = std::ptr::null_mut();
-        let mut function = std::ptr::null_mut();
-        // SAFETY: NUL-terminated PTX produced by NVRTC, valid output handles.
-        unsafe {
-            driver.check(
-                (driver.load)(&raw mut module, ptx.as_ptr().cast()),
-                "cuModuleLoadData",
-            )?;
-            if let Err(error) = driver.check(
-                (driver.function)(&raw mut function, module, c"torch_rs_pointwise".as_ptr()),
-                "cuModuleGetFunction",
-            ) {
-                (driver.unload)(module);
-                return Err(error);
-            }
-        }
+        let (module, function) = if compilation.erf {
+            link::load(
+                driver,
+                &ptx,
+                concat!(include_str!("erf_provider.ptx"), "\0").as_bytes(),
+                c"torch_rs_pointwise",
+            )?
+        } else {
+            // SAFETY: NUL-terminated NVRTC PTX lives through module loading.
+            unsafe { load_module(driver, ptx.as_ptr().cast(), c"torch_rs_pointwise")? }
+        };
         Ok(Arc::new(Self {
             graph: graph.clone(),
             addresses,
             device,
             scalar_count: graph.scalar_count(),
             context,
-            module: module as usize,
-            function: function as usize,
+            module,
+            function,
             source,
             ptx: ptx_text,
             version,
@@ -349,6 +351,28 @@ impl Kernel {
         )
     }
 }
+/// The caller supplies valid PTX or cubin storage that survives module loading.
+unsafe fn load_module(
+    driver: &super::Driver,
+    image: *const c_void,
+    name: &CStr,
+) -> Result<(usize, usize), TensorError> {
+    let mut module = std::ptr::null_mut();
+    let mut function = std::ptr::null_mut();
+    // SAFETY: caller owns the input image; both output handles are writable.
+    unsafe {
+        driver.check((driver.load)(&raw mut module, image), "cuModuleLoadData")?;
+        if let Err(error) = driver.check(
+            (driver.function)(&raw mut function, module, name.as_ptr()),
+            "cuModuleGetFunction",
+        ) {
+            (driver.unload)(module);
+            return Err(error);
+        }
+    }
+    Ok((module as usize, function as usize))
+}
+
 impl Drop for Kernel {
     fn drop(&mut self) {
         if let (Ok(runtime), Ok(driver)) = (runtime(), driver())
@@ -442,5 +466,11 @@ mod tests {
         );
         assert!(kernel.options.contains(&"--ftz=false".into()));
         assert!(!kernel.options.contains(&"--use_fast_math".into()));
+        assert!(
+            !kernel
+                .options
+                .contains(&"--relocatable-device-code=true".into())
+        );
+        assert!(!kernel.source.contains("torch_rs_erf"));
     }
 }

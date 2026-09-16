@@ -1,0 +1,15 @@
+{
+  "checked_at": "2026-09-16T08:11:53.765460+00:00",
+  "archive": {
+    "bytes": 641952,
+    "path": "docs/diagnostics/compile-gelu-linked/postcommit-2d9e55f8/public-essential.tar.xz",
+    "sha256": "51db46b95a625bd8f3ef49e0f2df10b2a644463f5446793ad80616d0adacd68c"
+  },
+  "members_verified": 2008,
+  "all_original_files_match": true,
+  "original_gzip_tar_identity_verified": true,
+  "decompressed_tar_bytes": 611543040,
+  "decompressed_tar_sha256": "876aed3e4803f119dbf0139a171ac341b6d40c433c64b74fa0324f698337805b",
+  "passed": true,
+  "scope": "Read-only archive integrity check; measurement contents unchanged"
+}

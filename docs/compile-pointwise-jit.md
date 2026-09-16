@@ -570,3 +570,35 @@ direct cached-kernel revalidation and dispatched CUDA/PTX captures.
 [Clean post-commit evidence](diagnostics/compile-pointwise-tensor-madd/postcommit-bf908578/README.md)
 records candidate `bf908578` and main `77aa16fc`, both fixed-corpus measurement
 orders, exact multiply-add comparisons and the raw-report retention manifest.
+
+## Functional GELU
+
+`torch_rs.nn.functional.gelu(x)` is a real native eager builtin and is also
+admitted by unchanged `torch_rs.compile(fn)`. The call takes one positional
+exact native contiguous CUDA float32 tensor without gradients. Scalar, empty
+and contiguous offset inputs return fresh contiguous outputs. CPU, keywords
+(including `approximate="none"`), Tensor methods, other layouts/dtypes, autograd,
+function modes, subclasses and explicit eager/module capture remain unsupported.
+
+The compiler accepts the canonical `torch_rs.nn.functional` namespaces and
+saved exact builtin aliases. Every traversed namespace edge, module type and
+namespace key is guarded on warm calls. Saved builtin aliases do not depend on
+untraversed module attributes. Data-only helpers can supply its argument; this
+adds no module/global calls inside helpers.
+
+Lowering adds eight ordinary SSA nodes, including scalar constants and private
+Erf, under the existing budgets. Live Erf requires equal actual input shapes,
+even for unused tensor arguments; dead expressions still receive original
+validation. Existing non-Erf broadcast/trig admission is unchanged.
+
+Compiled Erf links the separately generated vendor provider through the CUDA
+driver and needs PTX 8.7/sm75 support plus the existing NVRTC requirements.
+Only this dependency enables relocatable compilation/linking. Eager GELU uses
+a separate lazy PTX 9.0/sm75 image and works without NVRTC. Neither image changes
+the common eager PTX 6.0/sm50 module. The H100 checks are finite evidence, not a
+deployment certificate for other GPUs. See [vendor terms](../src/cuda/NOTICE.md)
+and [generation/check records](diagnostics/compile-gelu-linked/README.md).
+
+The [method-guard grouping check](diagnostics/compile-method-guards/README.md)
+records mutation coverage and a non-scoring public-call comparison for the
+two-class live namespace scan, including its slower, order-sensitive result.

@@ -81,8 +81,10 @@ README smoke check after installation:
 .venv/bin/python -m unittest tests.test_readme_quickstart
 ```
 
-For the full Python suite, `./scripts/test-python.sh` builds and installs a
-release wheel from the current worktree and verifies extension provenance.
+For the full Python suite, enable the optional reference group in the
+[contributor setup](CONTRIBUTING.md#locked-setup), then run
+`./scripts/test-python.sh`. It builds and installs a release wheel from the
+current worktree and verifies extension provenance.
 `./scripts/test-python-exact-head.sh` validates a fresh wheel from committed
 `HEAD`, excluding local edits; see [validation details](docs/troubleshooting.md#exact-head-validation).
 Both use available CUDA hardware and skip hardware-only cases when unavailable.
@@ -93,7 +95,7 @@ Burner also runs independent generated workloads and differential checks.
 
 ## License
 
-MIT
+MIT for original code; [NVIDIA terms](src/cuda/NOTICE.md) apply to generated CUDA math.
 
 <!-- burner-progress:start -->
 ## Burner evaluation progress

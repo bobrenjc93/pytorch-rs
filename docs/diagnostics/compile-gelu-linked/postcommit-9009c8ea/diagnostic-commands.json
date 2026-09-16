@@ -1,0 +1,161 @@
+{
+  "started_at": "2026-09-16T10:09:38.568066+00:00",
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": "0",
+    "TORCH_RS_CUDART": "/usr/local/cuda-13.0/lib64/libcudart.so.13",
+    "TORCH_RS_NVRTC": "/usr/local/cuda-13.0/lib64/libnvrtc.so.13",
+    "OMP_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/postcommit-9009c8ea/tmp"
+  },
+  "commands": [
+    {
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/venv/bin/python",
+        "-B",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-gelu-linked/public_probe.py",
+        "declare",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/postcommit-9009c8ea/public"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33",
+      "started_at": "2026-09-16T10:09:38.568100+00:00",
+      "returncode": 0,
+      "finished_at": "2026-09-16T10:09:38.767399+00:00"
+    },
+    {
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/venv/bin/python",
+        "-B",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-gelu-linked/public_probe.py",
+        "native-eager",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/postcommit-9009c8ea/public"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33",
+      "started_at": "2026-09-16T10:09:38.767843+00:00",
+      "returncode": 0,
+      "finished_at": "2026-09-16T10:09:48.781064+00:00"
+    },
+    {
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/venv/bin/python",
+        "-B",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-gelu-linked/public_probe.py",
+        "reference-eager",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/postcommit-9009c8ea/public"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33",
+      "started_at": "2026-09-16T10:09:48.781720+00:00",
+      "returncode": 0,
+      "finished_at": "2026-09-16T10:10:01.351410+00:00"
+    },
+    {
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/venv/bin/python",
+        "-B",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-gelu-linked/public_probe.py",
+        "native-compiled",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/postcommit-9009c8ea/public"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33",
+      "started_at": "2026-09-16T10:10:01.352148+00:00",
+      "returncode": 0,
+      "finished_at": "2026-09-16T10:11:04.379833+00:00"
+    },
+    {
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/venv/bin/python",
+        "-B",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-gelu-linked/public_probe.py",
+        "reference-compiled",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/postcommit-9009c8ea/public"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33",
+      "started_at": "2026-09-16T10:11:04.380595+00:00",
+      "returncode": 0,
+      "finished_at": "2026-09-16T10:12:43.193037+00:00"
+    },
+    {
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/venv/bin/python",
+        "-B",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-gelu-linked/public_probe.py",
+        "native-no-nvrtc",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/postcommit-9009c8ea/public"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33",
+      "started_at": "2026-09-16T10:12:43.193959+00:00",
+      "returncode": 0,
+      "finished_at": "2026-09-16T10:12:53.050556+00:00"
+    },
+    {
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/venv/bin/python",
+        "-B",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-gelu-linked/public_probe.py",
+        "compare",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/postcommit-9009c8ea/public"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33",
+      "started_at": "2026-09-16T10:12:53.051724+00:00",
+      "returncode": 0,
+      "finished_at": "2026-09-16T10:13:00.343663+00:00"
+    },
+    {
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/venv/bin/python",
+        "-B",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-method-guards/measure.py",
+        "declare",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/postcommit-9009c8ea/guards",
+        "--original-source",
+        "/tmp/burner-approved-default-compile.UA2M6I/gelu-container-profile-build.X4BGHb/source",
+        "--original-python",
+        "/tmp/burner-approved-default-compile.UA2M6I/gelu-container-profile-build.X4BGHb/source/target/default-compile-eval/venv/bin/python",
+        "--original-wheel",
+        "/tmp/burner-approved-default-compile.UA2M6I/gelu-container-profile-build.X4BGHb/source/target/default-compile-eval/wheels.JgXfyM/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+        "--changed-source",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33",
+        "--changed-python",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/venv/bin/python",
+        "--changed-wheel",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/wheels.Gc9oGQ/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+        "--cudart",
+        "/usr/local/cuda-13.0/lib64/libcudart.so.13",
+        "--nvrtc",
+        "/usr/local/cuda-13.0/lib64/libnvrtc.so.13"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33",
+      "started_at": "2026-09-16T10:13:00.344457+00:00",
+      "returncode": 0,
+      "finished_at": "2026-09-16T10:13:00.791631+00:00"
+    },
+    {
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/venv/bin/python",
+        "-B",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-method-guards/measure.py",
+        "correctness",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/postcommit-9009c8ea/guards"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33",
+      "started_at": "2026-09-16T10:13:00.792824+00:00",
+      "returncode": 0,
+      "finished_at": "2026-09-16T10:13:25.803330+00:00"
+    },
+    {
+      "command": [
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/venv/bin/python",
+        "-B",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-method-guards/measure.py",
+        "timing",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/postcommit-9009c8ea/guards"
+      ],
+      "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33",
+      "started_at": "2026-09-16T10:13:25.804050+00:00",
+      "returncode": 0,
+      "finished_at": "2026-09-16T10:13:38.431604+00:00"
+    }
+  ],
+  "finished_at": "2026-09-16T10:13:38.432425+00:00"
+}

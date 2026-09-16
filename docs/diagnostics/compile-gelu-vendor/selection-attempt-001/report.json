@@ -1,0 +1,114 @@
+{
+  "declared_at": "2026-09-16T06:36:05.246857+00:00",
+  "code_commit": "934719a35559bc987120088fd126e8237a16727b",
+  "source": {
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-gelu-vendor/selection/provider.cu",
+    "sha256": "aa0734a318535a9a783c1321f12164bc561644085b558fa19a29464624ac3ddc"
+  },
+  "requested_library": {
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/gelu-vendor/input/libdevice.10.bc",
+    "sha256": "1fc1bc8d4131d5a59a91fc26f4908886e231f842c9e83ae951979ff3df82bdb5"
+  },
+  "tools": {
+    "/usr/local/cuda-12.8/bin/nvcc": "59e4e55f9a38b78c590df1e28a69dad91052958f18a03868ca4a547c043fbba7",
+    "/usr/local/cuda-12.8/nvvm/bin/cicc": "411f568b8acb34a4d03285b554fa6c839956c47eba182290914c8576fa9eef66",
+    "/usr/bin/strace": "2fbb77e8e9948b8697df6f6cc73890279ff762f443f6c8e9d2b3c6d57efe6d5b",
+    "/usr/bin/g++": "8b58cbb443f9f3af9a6dfb333fae55ef8808ed10a78d2a343885ccd06e016e59"
+  },
+  "planned": [
+    "official-directory",
+    "empty-directory"
+  ],
+  "runs": [
+    {
+      "name": "official-directory",
+      "command": [
+        "/usr/bin/strace",
+        "-f",
+        "-ttt",
+        "-s",
+        "4096",
+        "-yy",
+        "-e",
+        "trace=%file,process",
+        "-o",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-gelu-vendor/selection-attempt-001/official-directory/compiler.trace",
+        "/usr/local/cuda-12.8/bin/nvcc",
+        "--dont-use-profile",
+        "--libdevice-directory",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/gelu-vendor/input",
+        "-I/usr/local/cuda-12.8/include",
+        "--compiler-bindir",
+        "/usr/bin/g++",
+        "--ptx",
+        "--relocatable-device-code=true",
+        "--gpu-architecture=compute_75",
+        "--ftz=true",
+        "--fmad=true",
+        "--prec-div=true",
+        "--prec-sqrt=true",
+        "--std=c++17",
+        "--verbose",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-gelu-vendor/selection/provider.cu",
+        "-o",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-gelu-vendor/selection-attempt-001/official-directory/provider.ptx"
+      ],
+      "started_at": "2026-09-16T06:36:05.399746+00:00",
+      "library_directory_entries": [
+        "libdevice.10.bc"
+      ],
+      "pid": 3168458,
+      "exit_code": 0,
+      "child_returned_at": "2026-09-16T06:36:05.736126+00:00",
+      "libdevice_file_accesses": [],
+      "trace_sha256": "d3c8ff9344f736ff2c9b0961f3f6f2f7f52c4b3498eac3b1be50ed5f6c211f2c",
+      "ptx_sha256": "fe983df91f6fd505fdd0d584adb40f87412aa7d268292f91a2552841af07595a"
+    },
+    {
+      "name": "empty-directory",
+      "command": [
+        "/usr/bin/strace",
+        "-f",
+        "-ttt",
+        "-s",
+        "4096",
+        "-yy",
+        "-e",
+        "trace=%file,process",
+        "-o",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-gelu-vendor/selection-attempt-001/empty-directory/compiler.trace",
+        "/usr/local/cuda-12.8/bin/nvcc",
+        "--dont-use-profile",
+        "--libdevice-directory",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-gelu-vendor/selection-attempt-001/empty-library",
+        "-I/usr/local/cuda-12.8/include",
+        "--compiler-bindir",
+        "/usr/bin/g++",
+        "--ptx",
+        "--relocatable-device-code=true",
+        "--gpu-architecture=compute_75",
+        "--ftz=true",
+        "--fmad=true",
+        "--prec-div=true",
+        "--prec-sqrt=true",
+        "--std=c++17",
+        "--verbose",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-gelu-vendor/selection/provider.cu",
+        "-o",
+        "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-gelu-vendor/selection-attempt-001/empty-directory/provider.ptx"
+      ],
+      "started_at": "2026-09-16T06:36:05.750628+00:00",
+      "library_directory_entries": [],
+      "pid": 3168606,
+      "exit_code": 0,
+      "child_returned_at": "2026-09-16T06:36:06.082282+00:00",
+      "libdevice_file_accesses": [],
+      "trace_sha256": "e1c00e7ee70a955b590c34c2e007d712fb1add20b7811b286ad97b82fde219a1",
+      "ptx_sha256": "fe983df91f6fd505fdd0d584adb40f87412aa7d268292f91a2552841af07595a"
+    }
+  ],
+  "identical_ptx": true,
+  "requested_input_unchanged": true,
+  "provider_selection_established": false,
+  "finished_at": "2026-09-16T06:36:06.096710+00:00"
+}

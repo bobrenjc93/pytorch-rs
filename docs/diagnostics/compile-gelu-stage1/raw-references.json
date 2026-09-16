@@ -1,0 +1,14 @@
+{
+  "raw-evidence.tar.gz": {
+    "commit": "934719a35559bc987120088fd126e8237a16727b",
+    "path": "docs/diagnostics/compile-gelu-stage1/raw-evidence.tar.gz",
+    "bytes": 19037574,
+    "sha256": "f94dd3bda8b4dbf02fad290e552f7014c04a07bfc14fa881e9ab1d9c84c43708"
+  },
+  "raw-manifest.json": {
+    "commit": "934719a35559bc987120088fd126e8237a16727b",
+    "path": "docs/diagnostics/compile-gelu-stage1/raw-manifest.json",
+    "bytes": 686890,
+    "sha256": "8129af8e6adf8251f7136d8467c297409bc537e1899247ac4ed26d4059d2b092"
+  }
+}

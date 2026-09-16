@@ -1,0 +1,135 @@
+{
+  "archive": {
+    "bytes": 40704005,
+    "path": "docs/diagnostics/compile-gelu-linked/postcommit-2d9e55f8/fixed-workers.tar.zst",
+    "sha256": "d898162a9c7737aced05757b83bf9b5aaea8f571d5afad4ab7ce2b1b6584ad27"
+  },
+  "finished_at": "2026-09-16T08:04:04.417715+00:00",
+  "method": "gzip.open -> byte-for-byte decompressed JSON file -> tarfile w:xz preset=6; no JSON parsing/reserialization or embedded provenance changes",
+  "original_pack_archive": {
+    "bytes": 106905736,
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/gelu-linked/postcommit-2d9e55f8/fixed-workers.tar.xz",
+    "sha256": "98f57c642a4af649e8f3437aae6e50c9b63146729ad3469008befe789187eb0e"
+  },
+  "other_members": {
+    "cpu-0-candidate.log": {
+      "bytes": 823,
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/run-20260916T075126Z-58d062bb/cpu-0-candidate.log",
+      "sha256": "425c342763d99e2789b8a29851cdc6f34b002e58bac0348f87e258427076d072"
+    },
+    "cpu-0-reference.log": {
+      "bytes": 2162,
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/run-20260916T075126Z-58d062bb/cpu-0-reference.log",
+      "sha256": "78782db0ac13d6d2e9c2076331801abc3b70121584c7c0bd66b9b5f021904c41"
+    },
+    "cuda-0-candidate.log": {
+      "bytes": 851,
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/run-20260916T075126Z-58d062bb/cuda-0-candidate.log",
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac"
+    },
+    "cuda-0-reference.log": {
+      "bytes": 2563,
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/run-20260916T075126Z-58d062bb/cuda-0-reference.log",
+      "sha256": "5743d8b6bb70a7ae35e079b284e0c94f6861164ac3c2dcf6db22a2032db217cb"
+    },
+    "cuda-1-candidate.log": {
+      "bytes": 851,
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/run-20260916T075126Z-58d062bb/cuda-1-candidate.log",
+      "sha256": "f0061c13f8c0000ce3eb3f34ab005732af586b4de0d67fe4d4e5250ac0061fac"
+    },
+    "cuda-1-reference.log": {
+      "bytes": 2563,
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/run-20260916T075126Z-58d062bb/cuda-1-reference.log",
+      "sha256": "5b66624ef7d262e1098741ff0784ce7317fe8e93ff9b11d85d03c416306c6731"
+    },
+    "report.json": {
+      "bytes": 394606,
+      "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/run-20260916T075126Z-58d062bb/report.json",
+      "sha256": "d1823030869041ceb63cc91440446cd5eff70e83084ef9ea9f623bab79a47fb0"
+    }
+  },
+  "recompression": {
+    "command": "xz -dc target/gelu-linked/postcommit-2d9e55f8/fixed-workers.tar.xz | /home/bobren/local/a/pytorch-env/bin/zstd --long=29 -10 -T1 --no-progress -o target/gelu-linked/postcommit-2d9e55f8/fixed-workers.tar.zst",
+    "method": "Original complete tar stream decoded from xz and losslessly recompressed with zstd; no member changes",
+    "observed_exit_code": 0,
+    "tool_sha256": "48bc854041f77d98367dcaf0374b3d1f737fa10d4610e007df46a0f6cdc3d44c",
+    "window_bytes": 536870912,
+    "zstd_version": "*** Zstandard CLI (64-bit) v1.5.7, by Yann Collet ***"
+  },
+  "scope": "Transport provenance only; measurement timestamps remain in original reports",
+  "started_at": "2026-09-16T07:59:32.272210+00:00",
+  "workers": {
+    "cpu-0-candidate.json": {
+      "decompressed_json": {
+        "bytes": 52616,
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/gelu-linked/postcommit-2d9e55f8/fixed-transport-work/cpu-0-candidate.json",
+        "sha256": "94fde41b61d45648d52277cefbb330d55c04872ea8b2760207a4ba4745d8eed9"
+      },
+      "original_gzip": {
+        "bytes": 2059,
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/run-20260916T075126Z-58d062bb/cpu-0-candidate.json.gz",
+        "sha256": "527dcad63c6830d12a8d7910dc1151ff1f583978ff955727577b439f5c756aae"
+      }
+    },
+    "cpu-0-reference.json": {
+      "decompressed_json": {
+        "bytes": 109147829,
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/gelu-linked/postcommit-2d9e55f8/fixed-transport-work/cpu-0-reference.json",
+        "sha256": "e14e671593efb82536d071805fd6c1c2d417fe21e7f0c2f5188e2b2733a2b90f"
+      },
+      "original_gzip": {
+        "bytes": 45415238,
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/run-20260916T075126Z-58d062bb/cpu-0-reference.json.gz",
+        "sha256": "51ad0ac8b02ab2cc64a33d6bf79e79190a8495f5b2c66f1bcdaaa96d3951f83c"
+      }
+    },
+    "cuda-0-candidate.json": {
+      "decompressed_json": {
+        "bytes": 34342719,
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/gelu-linked/postcommit-2d9e55f8/fixed-transport-work/cuda-0-candidate.json",
+        "sha256": "80aa93a30e1f0a3b569eb654302ab546d27e73ff3887b7a95d23f892025a5d20"
+      },
+      "original_gzip": {
+        "bytes": 14103699,
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/run-20260916T075126Z-58d062bb/cuda-0-candidate.json.gz",
+        "sha256": "406d5c71b6a4c2e561ede703b1482e6ce2d943ec36109cf7819c82e2fcf7b226"
+      }
+    },
+    "cuda-0-reference.json": {
+      "decompressed_json": {
+        "bytes": 109155377,
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/gelu-linked/postcommit-2d9e55f8/fixed-transport-work/cuda-0-reference.json",
+        "sha256": "6a6216923d51aee1b78a2b019fdba0d5a52babfa49ccd4490bc5034108081393"
+      },
+      "original_gzip": {
+        "bytes": 45417605,
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/run-20260916T075126Z-58d062bb/cuda-0-reference.json.gz",
+        "sha256": "04000bdfee70bae5d81a1f42e5e071442335418de2ed47479017006ec9309868"
+      }
+    },
+    "cuda-1-candidate.json": {
+      "decompressed_json": {
+        "bytes": 34342749,
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/gelu-linked/postcommit-2d9e55f8/fixed-transport-work/cuda-1-candidate.json",
+        "sha256": "e50d63f0c408f0b87646049e903ad1aef50f7342c88a85e03491b8756a20258b"
+      },
+      "original_gzip": {
+        "bytes": 14103700,
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/run-20260916T075126Z-58d062bb/cuda-1-candidate.json.gz",
+        "sha256": "3563fed4199ea9e98fb8bee412399502165f2f210283e7a0db8a10391392372c"
+      }
+    },
+    "cuda-1-reference.json": {
+      "decompressed_json": {
+        "bytes": 109155442,
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/gelu-linked/postcommit-2d9e55f8/fixed-transport-work/cuda-1-reference.json",
+        "sha256": "d299e6b2f4927522236c1c783f525deac20aaccd4cdfc8a54ee6f3662180542a"
+      },
+      "original_gzip": {
+        "bytes": 45417552,
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/run-20260916T075126Z-58d062bb/cuda-1-reference.json.gz",
+        "sha256": "1f9cced429102559b458b68f460b934b954bf4b761022cafb91571ae692c207f"
+      }
+    }
+  }
+}

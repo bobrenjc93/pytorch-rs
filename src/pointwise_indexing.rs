@@ -100,6 +100,7 @@ impl Graph {
         }
     }
 
+    #[allow(clippy::too_many_lines)] // One original-IR shape and dependency pass.
     pub(crate) fn indexing(&self, shapes: &[&[usize]]) -> Result<Indexing, TensorError> {
         self.validate()?;
         if shapes.len() != self.inputs {
@@ -117,6 +118,7 @@ impl Graph {
         // Propagating only through operands makes the returned node authoritative:
         // dead expressions still validate their shapes but do not restrict numerics.
         let mut depth: Vec<usize> = Vec::with_capacity(self.nodes.len());
+        let mut erf: Vec<bool> = Vec::with_capacity(self.nodes.len());
         let mut transcendental: Vec<bool> = Vec::with_capacity(self.nodes.len());
         for node in &self.nodes {
             let (shape, mask) = match *node {
@@ -129,10 +131,16 @@ impl Graph {
                     broadcast(&layouts[a].shape, &layouts[b].shape)?,
                     dependencies[a] | dependencies[b],
                 ),
-                Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a) => {
+                Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a) | Node::Erf(a) => {
                     (layouts[a].shape.clone(), dependencies[a])
                 }
             };
+            erf.push(match *node {
+                Node::Erf(_) => true,
+                Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b) => erf[a] || erf[b],
+                Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a) => erf[a],
+                _ => false,
+            });
             layouts.push(Layout::new(&shape)?);
             dependencies.push(mask);
             let (stages, has_transcendental) = match *node {
@@ -147,7 +155,7 @@ impl Graph {
                 ),
                 Node::Neg(a) => (1 + depth[a], transcendental[a]),
                 Node::Relu(a) => (depth[a], transcendental[a]),
-                Node::Sin(a) | Node::Cos(a) => (depth[a], true),
+                Node::Sin(a) | Node::Cos(a) | Node::Erf(a) => (depth[a], true),
             };
             depth.push(stages);
             transcendental.push(has_transcendental);
@@ -162,6 +170,9 @@ impl Graph {
         // p=x*y; return (p+x, p.sin()) shares a product across arithmetic and
         // trig consumers. Both output orders must stay outside this increment.
         let unequal_shapes = shapes.windows(2).any(|pair| pair[0] != pair[1]);
+        if unequal_shapes && self.outputs.iter().any(|&root| erf[root]) {
+            return Err(invalid("live Erf requires equal actual input shapes"));
+        }
         let live_transcendental = self.outputs.iter().any(|&root| transcendental[root]);
         if unequal_shapes
             && self.outputs.iter().any(|&root| {

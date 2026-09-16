@@ -8,7 +8,14 @@ version = "0.1.0"
 description = "A PyTorch-compatible Python API backed by a native Rust tensor engine"
 readme = "README.md"
 requires-python = ">=3.10"
-license = "MIT"
+license = "MIT AND LicenseRef-NVIDIA-CUDA"
+license-files = [
+  "LICENSE",
+  "src/cuda/NOTICE.md",
+  "docs/diagnostics/compile-gelu-vendor/notices/requested-CUDA11.8-LICENSE.txt",
+  "docs/diagnostics/compile-gelu-vendor/notices/compiler-CUDA12.8-LICENSE.txt",
+  "docs/diagnostics/compile-gelu-linked/notices/CUDA13-LICENSE.txt",
+]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
   "Programming Language :: Python :: 3",

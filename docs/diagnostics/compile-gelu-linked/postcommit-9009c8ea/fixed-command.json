@@ -1,0 +1,25 @@
+{
+  "command": [
+    "bash",
+    "scripts/evaluate_torch_compile_default.sh",
+    "--metric",
+    "both",
+    "--output",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/postcommit-9009c8ea/fixed-report.json"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33",
+  "started_at": "2026-09-16T10:05:20.462652+00:00",
+  "environment": {
+    "TMPDIR": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/postcommit-9009c8ea/tmp",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "OMP_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1"
+  },
+  "unset": [
+    "CONDA_PREFIX",
+    "BURNER_EVALUATION_ARTIFACT_DIR"
+  ],
+  "returncode": 0,
+  "finished_at": "2026-09-16T10:09:36.242263+00:00"
+}

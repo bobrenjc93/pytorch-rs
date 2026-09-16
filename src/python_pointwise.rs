@@ -82,6 +82,7 @@ fn graph(
             ("relu", a, 0, 0) => Node::Relu(a),
             ("sin", a, 0, 0) => Node::Sin(a),
             ("cos", a, 0, 0) => Node::Cos(a),
+            ("erf", a, 0, 0) => Node::Erf(a),
             _ => {
                 return Err(PyNotImplementedError::new_err(
                     "unsupported typed pointwise node",

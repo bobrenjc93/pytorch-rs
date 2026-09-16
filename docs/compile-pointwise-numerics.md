@@ -18,6 +18,20 @@ cases where CUDA eager's separately rounded operations differ. Declarative
 instructions retain dependencies and reuse; register allocation removes dead
 products after their consumers contract.
 
+Functional GELU decomposes as `half = x * 0.5`,
+`argument = x * 0.70710678118654752440`, then `half * (1 + Erf(argument))`.
+The integer one and binary64 alpha pass through existing scalar materialization.
+Private Erf stays float32, including constant tensors; it has no host/double
+folding path. Its checked-in provider comes from the exact official CUDA 11.8
+libdevice through offline CUDA 12.8 libNVVM with local FTZ enabled. Existing
+executor arithmetic/FTZ options, numerical regions, CSE and FMA policy remain
+unchanged. Programs without live Erf retain their source and direct-load path.
+
+The separate CUDA 13 eager image follows ordinary eager GELU semantics. Eager
+and default-compiled results are compared to their respective reference modes,
+not assumed interchangeable. The [evidence index](diagnostics/compile-gelu-linked/README.md)
+retains the earlier failed provider attempts and this candidate's staged checks.
+
 ## Realization and observable order
 
 Numerical planning uses the first observable order of computed roots and the

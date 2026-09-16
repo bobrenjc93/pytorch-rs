@@ -1,0 +1,79 @@
+{
+  "builds": {
+    "changed": {
+      "python": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/venv/bin/python",
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33",
+      "wheel": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/wheels.Gc9oGQ/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl"
+    },
+    "original": {
+      "python": "/tmp/burner-approved-default-compile.UA2M6I/gelu-container-profile-build.X4BGHb/source/target/default-compile-eval/venv/bin/python",
+      "source": "/tmp/burner-approved-default-compile.UA2M6I/gelu-container-profile-build.X4BGHb/source",
+      "wheel": "/tmp/burner-approved-default-compile.UA2M6I/gelu-container-profile-build.X4BGHb/source/target/default-compile-eval/wheels.JgXfyM/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl"
+    }
+  },
+  "cuda_runtime": {
+    "bytes": 704288,
+    "path": "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcudart.so.13.0.96",
+    "sha256": "96c42e418cec19054186b9429c321603cc190bf26a18104e19408117a2a817b0"
+  },
+  "cudart": "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libcudart.so.13.0.96",
+  "declared": "2026-09-16T10:13:00.591220+00:00",
+  "driver": {
+    "bytes": 19469,
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-method-guards/measure.py",
+    "sha256": "d4fa52649b97d34a0c01af62a9e8b38358b78b66b3be011b0a2659744441ac12"
+  },
+  "helper": {
+    "bytes": 23353,
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-gelu-linked/probe.py",
+    "sha256": "f5f99ceb9ea941fbcc7c46a840374f4482c4fa94ccc8ad9033c98ada32f32e4f"
+  },
+  "nvrtc": "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libnvrtc.so.13.0.88",
+  "nvrtc_library": {
+    "bytes": 109338064,
+    "path": "/usr/local/cuda-13.0/targets/x86_64-linux/lib/libnvrtc.so.13.0.88",
+    "sha256": "a49e67e8e74590f1e98de55c39c6287efd3f59e3c3797464d7bbe0fe01349b11"
+  },
+  "order": [
+    "original",
+    "changed",
+    "changed",
+    "original"
+  ],
+  "phases": [
+    0,
+    3
+  ],
+  "policy": {
+    "bytes": 22160,
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-pointwise-positional/warm-dispatch/gpu-dispatch.py",
+    "sha256": "de002c8bf7c2c1fc46936b0a7b03273822f362897bdc6f22ea1d4a7b7043c811"
+  },
+  "protocol_sha256": "9bd4579bbfab0690deea856b0248d0d97adaf64ef14b8a724a7cc8de2e1bbf6b",
+  "samples": 17,
+  "scope": "Frozen, non-scoring public-call original/changed/changed/original diagnostic.\n\nCorrectness precedes timing in separate processes. No benchmark/evaluator is\nreplaced. All writes are under this checkout; original installations are read-only.\n",
+  "shapes": [
+    [
+      128,
+      256
+    ],
+    [
+      193,
+      256
+    ],
+    [
+      202,
+      118
+    ],
+    [
+      207,
+      292
+    ],
+    [
+      128,
+      256
+    ]
+  ],
+  "source": "def f(x, extra):\n    return x.sin() + extra\n",
+  "warmups": 5
+}

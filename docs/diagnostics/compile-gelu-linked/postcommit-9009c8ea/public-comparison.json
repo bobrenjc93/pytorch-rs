@@ -1,0 +1,202 @@
+{
+  "measured_at": "2026-09-16T10:13:00.140261+00:00",
+  "pairs": [
+    {
+      "compared": 33,
+      "failures": [],
+      "native": "native-eager",
+      "passed": true,
+      "reference": "reference-eager",
+      "timings": [
+        {
+          "correct": true,
+          "name": "gelu",
+          "native_first_ns": 13236702,
+          "native_median_ns": 9965,
+          "reference_first_ns": 6769700,
+          "reference_median_ns": 10146,
+          "reference_over_native": 1.0181635725037632,
+          "shape": [
+            257
+          ]
+        },
+        {
+          "correct": true,
+          "name": "gelu",
+          "native_first_ns": 70186,
+          "native_median_ns": 10396,
+          "reference_first_ns": 113281,
+          "reference_median_ns": 10105,
+          "reference_over_native": 0.9720084647941516,
+          "shape": [
+            131072
+          ]
+        },
+        {
+          "correct": true,
+          "name": "affine_control",
+          "native_first_ns": 49711561,
+          "native_median_ns": 17547,
+          "reference_first_ns": 9704154,
+          "reference_median_ns": 15032,
+          "reference_over_native": 0.8566706559525845,
+          "shape": [
+            257
+          ]
+        },
+        {
+          "correct": true,
+          "name": "affine_control",
+          "native_first_ns": 69705,
+          "native_median_ns": 18038,
+          "reference_first_ns": 172210,
+          "reference_median_ns": 15233,
+          "reference_over_native": 0.8444949550947999,
+          "shape": [
+            131072
+          ]
+        }
+      ]
+    },
+    {
+      "compared": 236,
+      "failures": [],
+      "native": "native-compiled",
+      "passed": true,
+      "reference": "reference-compiled",
+      "timings": [
+        {
+          "correct": true,
+          "name": "gelu",
+          "native_first_ns": 121295144,
+          "native_median_ns": 34792,
+          "reference_first_ns": 1915067888,
+          "reference_median_ns": 27011,
+          "reference_over_native": 0.7763566337088986,
+          "shape": [
+            257
+          ]
+        },
+        {
+          "correct": true,
+          "name": "gelu",
+          "native_first_ns": 21085262,
+          "native_median_ns": 35634,
+          "reference_first_ns": 271342946,
+          "reference_median_ns": 29064,
+          "reference_over_native": 0.8156255261828591,
+          "shape": [
+            131072
+          ]
+        },
+        {
+          "correct": true,
+          "name": "affine_control",
+          "native_first_ns": 102555065,
+          "native_median_ns": 30747,
+          "reference_first_ns": 196664286,
+          "reference_median_ns": 30877,
+          "reference_over_native": 1.004228054769571,
+          "shape": [
+            257
+          ]
+        },
+        {
+          "correct": true,
+          "name": "affine_control",
+          "native_first_ns": 18974664,
+          "native_median_ns": 31056,
+          "reference_first_ns": 41321682,
+          "reference_median_ns": 32590,
+          "reference_over_native": 1.0493946419371458,
+          "shape": [
+            131072
+          ]
+        },
+        {
+          "correct": true,
+          "name": "trig_control",
+          "native_first_ns": 21019373,
+          "native_median_ns": 34592,
+          "reference_first_ns": 292767191,
+          "reference_median_ns": 31077,
+          "reference_over_native": 0.8983869102682701,
+          "shape": [
+            257
+          ]
+        },
+        {
+          "correct": true,
+          "name": "trig_control",
+          "native_first_ns": 19619648,
+          "native_median_ns": 33791,
+          "reference_first_ns": 35371011,
+          "reference_median_ns": 31778,
+          "reference_over_native": 0.9404279245953064,
+          "shape": [
+            131072
+          ]
+        }
+      ]
+    },
+    {
+      "compared": 33,
+      "failures": [],
+      "native": "native-no-nvrtc",
+      "passed": true,
+      "reference": "reference-eager",
+      "timings": [
+        {
+          "correct": true,
+          "name": "gelu",
+          "native_first_ns": 11589713,
+          "native_median_ns": 10707,
+          "reference_first_ns": 6769700,
+          "reference_median_ns": 10146,
+          "reference_over_native": 0.9476043709722611,
+          "shape": [
+            257
+          ]
+        },
+        {
+          "correct": true,
+          "name": "gelu",
+          "native_first_ns": 62555,
+          "native_median_ns": 11027,
+          "reference_first_ns": 113281,
+          "reference_median_ns": 10105,
+          "reference_over_native": 0.9163870499682597,
+          "shape": [
+            131072
+          ]
+        },
+        {
+          "correct": true,
+          "name": "affine_control",
+          "native_first_ns": 47933454,
+          "native_median_ns": 18478,
+          "reference_first_ns": 9704154,
+          "reference_median_ns": 15032,
+          "reference_over_native": 0.8135079554064293,
+          "shape": [
+            257
+          ]
+        },
+        {
+          "correct": true,
+          "name": "affine_control",
+          "native_first_ns": 63647,
+          "native_median_ns": 19089,
+          "reference_first_ns": 172210,
+          "reference_median_ns": 15233,
+          "reference_over_native": 0.797998847503798,
+          "shape": [
+            131072
+          ]
+        }
+      ]
+    }
+  ],
+  "passed": true,
+  "policy_sha256": "de002c8bf7c2c1fc46936b0a7b03273822f362897bdc6f22ea1d4a7b7043c811"
+}

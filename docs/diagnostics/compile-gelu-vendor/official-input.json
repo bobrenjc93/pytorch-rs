@@ -1,0 +1,22 @@
+{
+  "official_archive": {
+    "url": "https://developer.download.nvidia.com/compute/cuda/redist/cuda_nvcc/linux-x86_64/cuda_nvcc-linux-x86_64-11.8.89-archive.tar.xz",
+    "sha256": "7ee8450dbcc16e9fe5d2a7b567d6dec220c5894a94ac6640459e06231e3b39a5",
+    "bytes": 43230952
+  },
+  "official_manifest": {
+    "url": "https://developer.download.nvidia.com/compute/cuda/redist/redistrib_11.8.0.json",
+    "sha256": "941a950a4ab3b95311c50df7b3c8bca973e0cdda76fc2f4b456d2d5e4dac0281"
+  },
+  "requested_input": {
+    "sha256": "1fc1bc8d4131d5a59a91fc26f4908886e231f842c9e83ae951979ff3df82bdb5",
+    "bytes": 473728,
+    "archive_member": "cuda_nvcc-linux-x86_64-11.8.89-archive/nvvm/libdevice/libdevice.10.bc"
+  },
+  "packaged_notice": {
+    "path": "notices/requested-CUDA11.8-LICENSE.txt",
+    "sha256": "b9ee12782ca117b887588d99ae1b8c24deb59105e05417fe28ffbd7a55896dd1"
+  },
+  "input_was_consumed_by_compiler": false,
+  "note": "Archive, member and packaged notice verified read-only against official pins. Requested CUDA11.8 library was not observed consumed. Generated PTX is an unsuccessful CUDA12.8 compiler output, not a CUDA11.8-derived provider or MIT-licensed math."
+}
