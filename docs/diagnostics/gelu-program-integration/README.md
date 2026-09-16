@@ -20,6 +20,7 @@ linker's input, not its final cubin.
 | Reused GELU source | `bc1a44ac408399efd130291bf684ff425ea4d88b`; [historical evidence](../compile-gelu-linked/README.md), including failed provider/capture attempts |
 | Reused selected Program source | `cef34b14d865ee6c207120b1ee3701a8e5e26bd4`; implementation `4e291f5272b4b872ddc1704398b088b1917affc8`; [historical evidence](../program-identity/README.md) |
 | New integration contract | [Unmodified 24bb protocol](protocol.md), alongside [d6e8 protocol and 1861 consumer](../program-identity/protocol.md) and b907 consumer controls |
+| Clean implementation evidence | [5bf3e9b0 measurements and limits](postcommit-5bf3e9b0.md), [raw manifest](postcommit-5bf3e9b0-manifest.json) |
 | Development evidence | [Archive and raw-part manifest](development-manifest.json) |
 
 Reused diagnostic files remain byte-identical at their original paths. Their
@@ -56,7 +57,12 @@ The surplus `test_compile*.py` legacy module-capture run was interrupted (exit
 Rust fixture/check failures and the immutable-file whitespace findings are also
 retained. Authored-source whitespace checks pass.
 
-## Burner evidence handoff
+## Clean evidence and future handoffs
+
+The clean eight-leg capture at `5bf3e9b0` is complete; its verifier and 12 untimed
+GELU/package captures passed. The linked report retains cold/churn regressions
+and both order-specific public-reference ratios. Canonical scores and qualification
+remain separate gates. The instructions below describe reproduction and retention.
 
 Burner creates the implementation/tooling commit. After that commit, use fresh
 source-bound B/C release builds and the unchanged consumer's `check`, `freeze`,

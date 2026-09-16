@@ -1,0 +1,2497 @@
+{
+  "measuredCommit": "5bf3e9b0edfe9c3f06fb8a5cf55905307c0b0960",
+  "baseline": "60202557b4f110d07777f585e804ab5f55e1ff7b",
+  "verification": {
+    "version": "program-identity-public-v2",
+    "bindings": {
+      "protocol": "d6e8f51d024b451f8afed33d743647d46396425724b918a599f7b32274f95d5b",
+      "consumer": "1861fca73674d8c89f6285b07883ab9a83e6719c1b6a0c12cd2be1ae7c4c8b42",
+      "fixtures": "48dda4839471f8839addb11afb77b77b57c739723d4c48354f6313c4ef58d5ac",
+      "tests": "b907c94b00f35fbb18e53510ec692b5fb83f94d37d509fe662418844bc2af5b3"
+    },
+    "commandKind": "verify",
+    "startedAt": "2026-09-16T18:48:33.942445+00:00",
+    "command": [
+      ".venv/bin/python",
+      "docs/diagnostics/program-identity/consumer.py",
+      "verify",
+      "target/postcommit-5bf3e9b0/leg-0/record.json.gz",
+      "target/postcommit-5bf3e9b0/leg-1/record.json.gz",
+      "target/postcommit-5bf3e9b0/leg-2/record.json.gz",
+      "target/postcommit-5bf3e9b0/leg-3/record.json.gz",
+      "target/postcommit-5bf3e9b0/leg-4/record.json.gz",
+      "target/postcommit-5bf3e9b0/leg-5/record.json.gz",
+      "target/postcommit-5bf3e9b0/leg-6/record.json.gz",
+      "target/postcommit-5bf3e9b0/leg-7/record.json.gz",
+      "--output",
+      "target/postcommit-5bf3e9b0/verify/record.json"
+    ],
+    "python": "3.12.13 (main, Jul 20 2026, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-14)]",
+    "interpreter": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c540b456/.venv/bin/python",
+    "interpreterSha256": "41987ba66b0d1234f81ccf9ddfe1f21abcdb6ed8e31956f1edcac13122db017f",
+    "pid": 850800,
+    "passed": true,
+    "qualificationOrScoreProduced": false,
+    "inventory": [
+      {
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c540b456/target/postcommit-5bf3e9b0/leg-0/record.json.gz",
+        "sha256": "9d8bd6c39a6322b95771b1c1faac97f9db154af393b73ca1f64e995e1aec53be"
+      },
+      {
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c540b456/target/postcommit-5bf3e9b0/leg-1/record.json.gz",
+        "sha256": "8d28f6ee22daf2da077f3be19cdce5292b2d78f6091d94c9a1204712a86a728e"
+      },
+      {
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c540b456/target/postcommit-5bf3e9b0/leg-2/record.json.gz",
+        "sha256": "e3faa7e200898ca02324eed22728bb84e8a07b19c544e04963bd1395c758a1a2"
+      },
+      {
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c540b456/target/postcommit-5bf3e9b0/leg-3/record.json.gz",
+        "sha256": "ee75bbf88d436e73341d9f3533aa760e9fd09199e956092d6224b9d2254a11b2"
+      },
+      {
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c540b456/target/postcommit-5bf3e9b0/leg-4/record.json.gz",
+        "sha256": "c19fd65a8cc0e8e599bfb49422e73ac844c3469431f7fe4aeee1852ff4e9afc5"
+      },
+      {
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c540b456/target/postcommit-5bf3e9b0/leg-5/record.json.gz",
+        "sha256": "fd2a202d1469a48c4beb7463380e0a2572caeb8e91964357f2c1c8067296a0bc"
+      },
+      {
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c540b456/target/postcommit-5bf3e9b0/leg-6/record.json.gz",
+        "sha256": "72138bae453fafbe931b3946e6de9779aa79a21dcfe16b44554ea63f90d3923f"
+      },
+      {
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c540b456/target/postcommit-5bf3e9b0/leg-7/record.json.gz",
+        "sha256": "877b37e8abedcc70324f6f1fcdbe4b32d16b438b54080a6449b549ef5432caed"
+      }
+    ],
+    "failures": [],
+    "ratios": [
+      {
+        "comparison": "B/C-forward",
+        "family": "affine",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.110154580872188,
+        "firstRatio": 2.8309522224880475
+      },
+      {
+        "comparison": "B/C-forward",
+        "family": "affine",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.1482613077989166,
+        "firstRatio": 0.8417868671978503
+      },
+      {
+        "comparison": "B/C-forward",
+        "family": "trig",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.0720027500132212,
+        "firstRatio": 1.843963410613607
+      },
+      {
+        "comparison": "B/C-forward",
+        "family": "trig",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.1364391840846135,
+        "firstRatio": 0.9150482658986651
+      },
+      {
+        "comparison": "B/C-forward",
+        "family": "shared",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.3034878493799085,
+        "firstRatio": 0.4440522581282787
+      },
+      {
+        "comparison": "B/C-forward",
+        "family": "shared",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.4621288581152447,
+        "firstRatio": 1.024517382540629
+      },
+      {
+        "comparison": "B/C-forward",
+        "family": "broadcast",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.1107210228463635,
+        "firstRatio": 3.6302228379765324
+      },
+      {
+        "comparison": "B/C-forward",
+        "family": "broadcast",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.1035926226884343,
+        "firstRatio": 22.604033039257555
+      },
+      {
+        "comparison": "B/C-forward",
+        "family": "structured",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.0456602499155692,
+        "firstRatio": 2.384166769469622
+      },
+      {
+        "comparison": "B/C-forward",
+        "family": "structured",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.1237628176549264,
+        "firstRatio": 0.8960536064603614
+      },
+      {
+        "comparison": "B/C-forward",
+        "family": "over_cap",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.014518826130717,
+        "firstRatio": 0.17155071370877317
+      },
+      {
+        "comparison": "B/C-forward",
+        "family": "over_cap",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.2047107022533035,
+        "firstRatio": 0.9730041278581043
+      },
+      {
+        "comparison": "B/C-reverse",
+        "family": "affine",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.081525895561198,
+        "firstRatio": 3.0029472387517746
+      },
+      {
+        "comparison": "B/C-reverse",
+        "family": "affine",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.0683211931016612,
+        "firstRatio": 1.1038040608290556
+      },
+      {
+        "comparison": "B/C-reverse",
+        "family": "trig",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.0534159283048568,
+        "firstRatio": 1.8908922255457274
+      },
+      {
+        "comparison": "B/C-reverse",
+        "family": "trig",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.1210557244691994,
+        "firstRatio": 0.9825748594592527
+      },
+      {
+        "comparison": "B/C-reverse",
+        "family": "shared",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.2722787385554426,
+        "firstRatio": 0.43354384553845254
+      },
+      {
+        "comparison": "B/C-reverse",
+        "family": "shared",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.5208006838580994,
+        "firstRatio": 0.9729108068726251
+      },
+      {
+        "comparison": "B/C-reverse",
+        "family": "broadcast",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.0379682631693357,
+        "firstRatio": 3.726359767997275
+      },
+      {
+        "comparison": "B/C-reverse",
+        "family": "broadcast",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.0557093912798612,
+        "firstRatio": 25.177880545720843
+      },
+      {
+        "comparison": "B/C-reverse",
+        "family": "structured",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.0304776394801158,
+        "firstRatio": 2.579076544610172
+      },
+      {
+        "comparison": "B/C-reverse",
+        "family": "structured",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.1157457627118643,
+        "firstRatio": 1.0178084750794767
+      },
+      {
+        "comparison": "B/C-reverse",
+        "family": "over_cap",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.9969335283294806,
+        "firstRatio": 0.16162564907369031
+      },
+      {
+        "comparison": "B/C-reverse",
+        "family": "over_cap",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.1892883073777172,
+        "firstRatio": 0.982014842353806
+      },
+      {
+        "comparison": "reference/B-forward",
+        "family": "affine",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.8307579102281089,
+        "firstRatio": 19.457712201986975
+      },
+      {
+        "comparison": "reference/B-forward",
+        "family": "affine",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.9783020161843369,
+        "firstRatio": 448.19128971763735
+      },
+      {
+        "comparison": "reference/B-forward",
+        "family": "trig",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.7502528304679213,
+        "firstRatio": 3.7440788557104616
+      },
+      {
+        "comparison": "reference/B-forward",
+        "family": "trig",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.9007932990604502,
+        "firstRatio": 1186.2744906265443
+      },
+      {
+        "comparison": "reference/B-forward",
+        "family": "shared",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.6182496855601087,
+        "firstRatio": 72.07033344965417
+      },
+      {
+        "comparison": "reference/B-forward",
+        "family": "shared",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.5623816097858542,
+        "firstRatio": 19.922913901328744
+      },
+      {
+        "comparison": "reference/B-forward",
+        "family": "broadcast",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.7269189036184366,
+        "firstRatio": 2.4338490118162253
+      },
+      {
+        "comparison": "reference/B-forward",
+        "family": "broadcast",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.8290419028069079,
+        "firstRatio": 23.413464461874305
+      },
+      {
+        "comparison": "reference/B-forward",
+        "family": "structured",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.529503908016278,
+        "firstRatio": 4.087212186935024
+      },
+      {
+        "comparison": "reference/B-forward",
+        "family": "structured",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.715353487264937,
+        "firstRatio": 779.6177693185089
+      },
+      {
+        "comparison": "reference/B-forward",
+        "family": "over_cap",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.24003030942169937,
+        "firstRatio": 156.03341252121186
+      },
+      {
+        "comparison": "reference/B-forward",
+        "family": "over_cap",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.22818633099350372,
+        "firstRatio": 209.64251674425424
+      },
+      {
+        "comparison": "reference/C-forward",
+        "family": "affine",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.9090423526454694,
+        "firstRatio": 55.06436673828731
+      },
+      {
+        "comparison": "reference/C-forward",
+        "family": "affine",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.1066208895048506,
+        "firstRatio": 377.440234367711
+      },
+      {
+        "comparison": "reference/C-forward",
+        "family": "trig",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.8082394626897245,
+        "firstRatio": 7.481751730921157
+      },
+      {
+        "comparison": "reference/C-forward",
+        "family": "trig",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.935180055401662,
+        "firstRatio": 1028.9545221722938
+      },
+      {
+        "comparison": "reference/C-forward",
+        "family": "shared",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.7838802654890658,
+        "firstRatio": 23.494711867835598
+      },
+      {
+        "comparison": "reference/C-forward",
+        "family": "shared",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.7804248327661073,
+        "firstRatio": 19.916639530184618
+      },
+      {
+        "comparison": "reference/C-forward",
+        "family": "broadcast",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.2067700691678893,
+        "firstRatio": 9.401360381391719
+      },
+      {
+        "comparison": "reference/C-forward",
+        "family": "broadcast",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.8564674595552929,
+        "firstRatio": 539.9830137385816
+      },
+      {
+        "comparison": "reference/C-forward",
+        "family": "structured",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.5382978723404256,
+        "firstRatio": 8.035326495734294
+      },
+      {
+        "comparison": "reference/C-forward",
+        "family": "structured",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.7699509585376728,
+        "firstRatio": 697.495410863261
+      },
+      {
+        "comparison": "reference/C-forward",
+        "family": "over_cap",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.2554901292587632,
+        "firstRatio": 26.953208948941224
+      },
+      {
+        "comparison": "reference/C-forward",
+        "family": "over_cap",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.28548596468849186,
+        "firstRatio": 209.72097343057655
+      },
+      {
+        "comparison": "reference/C-reverse",
+        "family": "affine",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.8851295542843158,
+        "firstRatio": 43.312610854007524
+      },
+      {
+        "comparison": "reference/C-reverse",
+        "family": "affine",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.0960181959519766,
+        "firstRatio": 410.0689340377178
+      },
+      {
+        "comparison": "reference/C-reverse",
+        "family": "trig",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.796110589250806,
+        "firstRatio": 7.1907390305830985
+      },
+      {
+        "comparison": "reference/C-reverse",
+        "family": "trig",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.9736579881959171,
+        "firstRatio": 1294.1360128494398
+      },
+      {
+        "comparison": "reference/C-reverse",
+        "family": "shared",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.7564852492370295,
+        "firstRatio": 25.032272694853546
+      },
+      {
+        "comparison": "reference/C-reverse",
+        "family": "shared",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.8389846606829083,
+        "firstRatio": 18.40973950101953
+      },
+      {
+        "comparison": "reference/C-reverse",
+        "family": "broadcast",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.7542207086443011,
+        "firstRatio": 9.749215575147716
+      },
+      {
+        "comparison": "reference/C-reverse",
+        "family": "broadcast",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.8653494156849861,
+        "firstRatio": 587.800315992204
+      },
+      {
+        "comparison": "reference/C-reverse",
+        "family": "structured",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.5394687859119822,
+        "firstRatio": 8.56583080742654
+      },
+      {
+        "comparison": "reference/C-reverse",
+        "family": "structured",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.7192203389830508,
+        "firstRatio": 743.0964346355408
+      },
+      {
+        "comparison": "reference/C-reverse",
+        "family": "over_cap",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.2619867591325817,
+        "firstRatio": 27.664804249978683
+      },
+      {
+        "comparison": "reference/C-reverse",
+        "family": "over_cap",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.2709781143034955,
+        "firstRatio": 202.92710700461515
+      },
+      {
+        "comparison": "reference/B-reverse",
+        "family": "affine",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.8368218589127114,
+        "firstRatio": 15.874019561397246
+      },
+      {
+        "comparison": "reference/B-reverse",
+        "family": "affine",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.0151188487037137,
+        "firstRatio": 382.4372019601387
+      },
+      {
+        "comparison": "reference/B-reverse",
+        "family": "trig",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 1.0417419805750368,
+        "firstRatio": 4.009315803720418
+      },
+      {
+        "comparison": "reference/B-reverse",
+        "family": "trig",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.9221459990427787,
+        "firstRatio": 1344.319514582567
+      },
+      {
+        "comparison": "reference/B-reverse",
+        "family": "shared",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.613620917123096,
+        "firstRatio": 55.25475421367022
+      },
+      {
+        "comparison": "reference/B-reverse",
+        "family": "shared",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.551360719471638,
+        "firstRatio": 19.06180686533184
+      },
+      {
+        "comparison": "reference/B-reverse",
+        "family": "broadcast",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.72826061663758,
+        "firstRatio": 2.6085147381942186
+      },
+      {
+        "comparison": "reference/B-reverse",
+        "family": "broadcast",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.8114608340001779,
+        "firstRatio": 23.190658736042042
+      },
+      {
+        "comparison": "reference/B-reverse",
+        "family": "structured",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.5305971790280527,
+        "firstRatio": 3.339377473196731
+      },
+      {
+        "comparison": "reference/B-reverse",
+        "family": "structured",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.7267769524069939,
+        "firstRatio": 735.992937008274
+      },
+      {
+        "comparison": "reference/B-reverse",
+        "family": "over_cap",
+        "size": 257,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.25157738658590445,
+        "firstRatio": 167.00688185430846
+      },
+      {
+        "comparison": "reference/B-reverse",
+        "family": "over_cap",
+        "size": 65537,
+        "rawBitDifferences": 0,
+        "medianRatio": 0.23739277237529824,
+        "firstRatio": 208.34918197449653
+      }
+    ],
+    "ledger": {
+      "cells": 96,
+      "samples": 1632,
+      "warmups": 480,
+      "firstCalls": 96
+    },
+    "finishedAt": "2026-09-16T18:50:10.635708+00:00"
+  },
+  "legs": [
+    {
+      "index": 0,
+      "label": "B",
+      "implementation": "native",
+      "startedAt": "2026-09-16T18:42:02.685498+00:00",
+      "finishedAt": "2026-09-16T18:42:25.356044+00:00",
+      "rawPath": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c540b456/target/postcommit-5bf3e9b0/leg-0/record.json.gz",
+      "sha256": "9d8bd6c39a6322b95771b1c1faac97f9db154af393b73ca1f64e995e1aec53be",
+      "cells": [
+        {
+          "family": "affine",
+          "size": 257,
+          "factoryNs": 77697,
+          "firstNs": 100426357,
+          "statistics": {
+            "median": 35334,
+            "q1": 34122,
+            "q3": 35954,
+            "mad": 962,
+            "min": 33710,
+            "max": 44607
+          }
+        },
+        {
+          "family": "affine",
+          "size": 65537,
+          "factoryNs": 77697,
+          "firstNs": 451122,
+          "statistics": {
+            "median": 36455,
+            "q1": 35454,
+            "q3": 38638,
+            "mad": 1232,
+            "min": 34201,
+            "max": 43065
+          }
+        },
+        {
+          "family": "trig",
+          "size": 257,
+          "factoryNs": 65329,
+          "firstNs": 93461031,
+          "statistics": {
+            "median": 40541,
+            "q1": 39520,
+            "q3": 42675,
+            "mad": 1602,
+            "min": 38308,
+            "max": 44817
+          }
+        },
+        {
+          "family": "trig",
+          "size": 65537,
+          "factoryNs": 65329,
+          "firstNs": 487707,
+          "statistics": {
+            "median": 45128,
+            "q1": 41853,
+            "q3": 47512,
+            "mad": 3275,
+            "min": 40361,
+            "max": 64828
+          }
+        },
+        {
+          "family": "shared",
+          "size": 257,
+          "factoryNs": 53210,
+          "firstNs": 13600314,
+          "statistics": {
+            "median": 49294,
+            "q1": 48253,
+            "q3": 52499,
+            "mad": 1361,
+            "min": 47442,
+            "max": 65750
+          }
+        },
+        {
+          "family": "shared",
+          "size": 65537,
+          "factoryNs": 53210,
+          "firstNs": 57018348,
+          "statistics": {
+            "median": 62294,
+            "q1": 59469,
+            "q3": 64227,
+            "mad": 2684,
+            "min": 58519,
+            "max": 73241
+          }
+        },
+        {
+          "family": "broadcast",
+          "size": 257,
+          "factoryNs": 55975,
+          "firstNs": 95702138,
+          "statistics": {
+            "median": 42394,
+            "q1": 41353,
+            "q3": 44627,
+            "mad": 1963,
+            "min": 38318,
+            "max": 173683
+          }
+        },
+        {
+          "family": "broadcast",
+          "size": 65537,
+          "factoryNs": 55975,
+          "firstNs": 10850727,
+          "statistics": {
+            "median": 44818,
+            "q1": 43996,
+            "q3": 45869,
+            "mad": 1051,
+            "min": 40942,
+            "max": 51999
+          }
+        },
+        {
+          "family": "structured",
+          "size": 257,
+          "factoryNs": 54772,
+          "firstNs": 93017711,
+          "statistics": {
+            "median": 61924,
+            "q1": 60291,
+            "q3": 62474,
+            "mad": 1202,
+            "min": 57858,
+            "max": 131058
+          }
+        },
+        {
+          "family": "structured",
+          "size": 65537,
+          "factoryNs": 54772,
+          "firstNs": 576882,
+          "statistics": {
+            "median": 63015,
+            "q1": 59480,
+            "q3": 66381,
+            "mad": 3535,
+            "min": 57007,
+            "max": 114002
+          }
+        },
+        {
+          "family": "over_cap",
+          "size": 257,
+          "factoryNs": 54002,
+          "firstNs": 17186132,
+          "statistics": {
+            "median": 128013,
+            "q1": 127553,
+            "q3": 130548,
+            "mad": 1533,
+            "min": 124839,
+            "max": 141223
+          }
+        },
+        {
+          "family": "over_cap",
+          "size": 65537,
+          "factoryNs": 54002,
+          "firstNs": 20502854,
+          "statistics": {
+            "median": 160553,
+            "q1": 157498,
+            "q3": 162335,
+            "mad": 3055,
+            "min": 155435,
+            "max": 168394
+          }
+        }
+      ],
+      "churn": [
+        {
+          "size": 3,
+          "elapsedNs": 12464867
+        },
+        {
+          "size": 5,
+          "elapsedNs": 253704
+        },
+        {
+          "size": 5,
+          "elapsedNs": 56245
+        },
+        {
+          "size": 7,
+          "elapsedNs": 82214
+        },
+        {
+          "size": 9,
+          "elapsedNs": 77207
+        },
+        {
+          "size": 11,
+          "elapsedNs": 78288
+        },
+        {
+          "size": 13,
+          "elapsedNs": 78118
+        },
+        {
+          "size": 15,
+          "elapsedNs": 78568
+        },
+        {
+          "size": 17,
+          "elapsedNs": 76255
+        },
+        {
+          "size": 19,
+          "elapsedNs": 81613
+        },
+        {
+          "size": 21,
+          "elapsedNs": 77277
+        },
+        {
+          "size": 5,
+          "elapsedNs": 72620
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "label": "B",
+      "implementation": "reference",
+      "startedAt": "2026-09-16T18:42:35.895680+00:00",
+      "finishedAt": "2026-09-16T18:43:16.833383+00:00",
+      "rawPath": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c540b456/target/postcommit-5bf3e9b0/leg-1/record.json.gz",
+      "sha256": "8d28f6ee22daf2da077f3be19cdce5292b2d78f6091d94c9a1204712a86a728e",
+      "cells": [
+        {
+          "family": "affine",
+          "size": 257,
+          "factoryNs": 2008915473,
+          "firstNs": 1954067152,
+          "statistics": {
+            "median": 29354,
+            "q1": 27752,
+            "q3": 30907,
+            "mad": 1602,
+            "min": 26630,
+            "max": 66270
+          }
+        },
+        {
+          "family": "affine",
+          "size": 65537,
+          "factoryNs": 2008915473,
+          "firstNs": 202188951,
+          "statistics": {
+            "median": 35664,
+            "q1": 33301,
+            "q3": 41363,
+            "mad": 2374,
+            "min": 31207,
+            "max": 394907
+          }
+        },
+        {
+          "family": "trig",
+          "size": 257,
+          "factoryNs": 1008614,
+          "firstNs": 349925470,
+          "statistics": {
+            "median": 30416,
+            "q1": 29325,
+            "q3": 31337,
+            "mad": 1091,
+            "min": 28423,
+            "max": 35033
+          }
+        },
+        {
+          "family": "trig",
+          "size": 65537,
+          "factoryNs": 1008614,
+          "firstNs": 578554373,
+          "statistics": {
+            "median": 40651,
+            "q1": 37176,
+            "q3": 62455,
+            "mad": 4527,
+            "min": 35264,
+            "max": 354546
+          }
+        },
+        {
+          "family": "shared",
+          "size": 257,
+          "factoryNs": 1113853,
+          "firstNs": 980179165,
+          "statistics": {
+            "median": 30476,
+            "q1": 29124,
+            "q3": 31618,
+            "mad": 1221,
+            "min": 28493,
+            "max": 47341
+          }
+        },
+        {
+          "family": "shared",
+          "size": 65537,
+          "factoryNs": 1113853,
+          "firstNs": 1135971638,
+          "statistics": {
+            "median": 35033,
+            "q1": 34041,
+            "q3": 35924,
+            "mad": 912,
+            "min": 32219,
+            "max": 45789
+          }
+        },
+        {
+          "family": "broadcast",
+          "size": 257,
+          "factoryNs": 1085100,
+          "firstNs": 232924554,
+          "statistics": {
+            "median": 30817,
+            "q1": 29675,
+            "q3": 31317,
+            "mad": 1032,
+            "min": 27962,
+            "max": 33601
+          }
+        },
+        {
+          "family": "broadcast",
+          "size": 65537,
+          "factoryNs": 1085100,
+          "firstNs": 254053111,
+          "statistics": {
+            "median": 37156,
+            "q1": 35975,
+            "q3": 38679,
+            "mad": 1523,
+            "min": 33891,
+            "max": 64828
+          }
+        },
+        {
+          "family": "structured",
+          "size": 257,
+          "factoryNs": 1084239,
+          "firstNs": 380183122,
+          "statistics": {
+            "median": 32789,
+            "q1": 31768,
+            "q3": 34722,
+            "mad": 1191,
+            "min": 30716,
+            "max": 40702
+          }
+        },
+        {
+          "family": "structured",
+          "size": 65537,
+          "factoryNs": 1084239,
+          "firstNs": 449747458,
+          "statistics": {
+            "median": 45078,
+            "q1": 43275,
+            "q3": 62715,
+            "mad": 6380,
+            "min": 38598,
+            "max": 492674
+          }
+        },
+        {
+          "family": "over_cap",
+          "size": 257,
+          "factoryNs": 1105741,
+          "firstNs": 2681610824,
+          "statistics": {
+            "median": 30727,
+            "q1": 29735,
+            "q3": 31798,
+            "mad": 1071,
+            "min": 28483,
+            "max": 32850
+          }
+        },
+        {
+          "family": "over_cap",
+          "size": 65537,
+          "factoryNs": 1105741,
+          "firstNs": 4298269913,
+          "statistics": {
+            "median": 36636,
+            "q1": 35253,
+            "q3": 39199,
+            "mad": 1453,
+            "min": 33260,
+            "max": 50426
+          }
+        }
+      ],
+      "churn": [
+        {
+          "size": 3,
+          "elapsedNs": 171658692
+        },
+        {
+          "size": 5,
+          "elapsedNs": 171483728
+        },
+        {
+          "size": 5,
+          "elapsedNs": 122896
+        },
+        {
+          "size": 7,
+          "elapsedNs": 75754
+        },
+        {
+          "size": 9,
+          "elapsedNs": 66401
+        },
+        {
+          "size": 11,
+          "elapsedNs": 63376
+        },
+        {
+          "size": 13,
+          "elapsedNs": 59350
+        },
+        {
+          "size": 15,
+          "elapsedNs": 58168
+        },
+        {
+          "size": 17,
+          "elapsedNs": 56646
+        },
+        {
+          "size": 19,
+          "elapsedNs": 68123
+        },
+        {
+          "size": 21,
+          "elapsedNs": 54392
+        },
+        {
+          "size": 5,
+          "elapsedNs": 53701
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "label": "C",
+      "implementation": "native",
+      "startedAt": "2026-09-16T18:43:29.796477+00:00",
+      "finishedAt": "2026-09-16T18:44:08.169561+00:00",
+      "rawPath": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c540b456/target/postcommit-5bf3e9b0/leg-2/record.json.gz",
+      "sha256": "e3faa7e200898ca02324eed22728bb84e8a07b19c544e04963bd1395c758a1a2",
+      "cells": [
+        {
+          "family": "affine",
+          "size": 257,
+          "factoryNs": 112870,
+          "firstNs": 35474409,
+          "statistics": {
+            "median": 31828,
+            "q1": 31217,
+            "q3": 34181,
+            "mad": 1121,
+            "min": 30056,
+            "max": 39690
+          }
+        },
+        {
+          "family": "affine",
+          "size": 65537,
+          "factoryNs": 112870,
+          "firstNs": 535910,
+          "statistics": {
+            "median": 31748,
+            "q1": 31067,
+            "q3": 32699,
+            "mad": 691,
+            "min": 30616,
+            "max": 37606
+          }
+        },
+        {
+          "family": "trig",
+          "size": 257,
+          "factoryNs": 81893,
+          "firstNs": 50684862,
+          "statistics": {
+            "median": 37818,
+            "q1": 36776,
+            "q3": 41092,
+            "mad": 2284,
+            "min": 34872,
+            "max": 48233
+          }
+        },
+        {
+          "family": "trig",
+          "size": 65537,
+          "factoryNs": 81893,
+          "firstNs": 532985,
+          "statistics": {
+            "median": 39710,
+            "q1": 37506,
+            "q3": 41553,
+            "mad": 2204,
+            "min": 36445,
+            "max": 59660
+          }
+        },
+        {
+          "family": "shared",
+          "size": 257,
+          "factoryNs": 69405,
+          "firstNs": 30627733,
+          "statistics": {
+            "median": 37817,
+            "q1": 37457,
+            "q3": 41022,
+            "mad": 991,
+            "min": 36725,
+            "max": 43175
+          }
+        },
+        {
+          "family": "shared",
+          "size": 65537,
+          "factoryNs": 69405,
+          "firstNs": 55653861,
+          "statistics": {
+            "median": 42605,
+            "q1": 40441,
+            "q3": 44498,
+            "mad": 2062,
+            "min": 37557,
+            "max": 50917
+          }
+        },
+        {
+          "family": "broadcast",
+          "size": 257,
+          "factoryNs": 70587,
+          "firstNs": 26362607,
+          "statistics": {
+            "median": 38168,
+            "q1": 36324,
+            "q3": 42374,
+            "mad": 2674,
+            "min": 35363,
+            "max": 154834
+          }
+        },
+        {
+          "family": "broadcast",
+          "size": 65537,
+          "factoryNs": 70587,
+          "firstNs": 480035,
+          "statistics": {
+            "median": 40611,
+            "q1": 39300,
+            "q3": 41563,
+            "mad": 1121,
+            "min": 37737,
+            "max": 57998
+          }
+        },
+        {
+          "family": "structured",
+          "size": 257,
+          "factoryNs": 70327,
+          "firstNs": 39014767,
+          "statistics": {
+            "median": 59220,
+            "q1": 58268,
+            "q3": 60602,
+            "mad": 1382,
+            "min": 54443,
+            "max": 126632
+          }
+        },
+        {
+          "family": "structured",
+          "size": 65537,
+          "factoryNs": 70327,
+          "firstNs": 643803,
+          "statistics": {
+            "median": 56075,
+            "q1": 55594,
+            "q3": 58799,
+            "mad": 1181,
+            "min": 54302,
+            "max": 110628
+          }
+        },
+        {
+          "family": "over_cap",
+          "size": 257,
+          "factoryNs": 70507,
+          "firstNs": 100181058,
+          "statistics": {
+            "median": 126181,
+            "q1": 122686,
+            "q3": 127513,
+            "mad": 1803,
+            "min": 121354,
+            "max": 129205
+          }
+        },
+        {
+          "family": "over_cap",
+          "size": 65537,
+          "factoryNs": 70507,
+          "firstNs": 21071703,
+          "statistics": {
+            "median": 133271,
+            "q1": 132590,
+            "q3": 135214,
+            "mad": 1441,
+            "min": 131348,
+            "max": 142215
+          }
+        }
+      ],
+      "churn": [
+        {
+          "size": 3,
+          "elapsedNs": 28082877
+        },
+        {
+          "size": 5,
+          "elapsedNs": 317540
+        },
+        {
+          "size": 5,
+          "elapsedNs": 61473
+        },
+        {
+          "size": 7,
+          "elapsedNs": 94583
+        },
+        {
+          "size": 9,
+          "elapsedNs": 85189
+        },
+        {
+          "size": 11,
+          "elapsedNs": 82224
+        },
+        {
+          "size": 13,
+          "elapsedNs": 91599
+        },
+        {
+          "size": 15,
+          "elapsedNs": 77948
+        },
+        {
+          "size": 17,
+          "elapsedNs": 77757
+        },
+        {
+          "size": 19,
+          "elapsedNs": 85138
+        },
+        {
+          "size": 21,
+          "elapsedNs": 80832
+        },
+        {
+          "size": 5,
+          "elapsedNs": 75965
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "label": "C",
+      "implementation": "reference",
+      "startedAt": "2026-09-16T18:44:19.215929+00:00",
+      "finishedAt": "2026-09-16T18:45:00.455558+00:00",
+      "rawPath": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c540b456/target/postcommit-5bf3e9b0/leg-3/record.json.gz",
+      "sha256": "ee75bbf88d436e73341d9f3533aa760e9fd09199e956092d6224b9d2254a11b2",
+      "cells": [
+        {
+          "family": "affine",
+          "size": 257,
+          "factoryNs": 2123635868,
+          "firstNs": 1953375867,
+          "statistics": {
+            "median": 28933,
+            "q1": 27712,
+            "q3": 29855,
+            "mad": 1043,
+            "min": 26700,
+            "max": 32089
+          }
+        },
+        {
+          "family": "affine",
+          "size": 65537,
+          "factoryNs": 2123635868,
+          "firstNs": 202273996,
+          "statistics": {
+            "median": 35133,
+            "q1": 34252,
+            "q3": 40872,
+            "mad": 3084,
+            "min": 31398,
+            "max": 337239
+          }
+        },
+        {
+          "family": "trig",
+          "size": 257,
+          "factoryNs": 1115666,
+          "firstNs": 379211554,
+          "statistics": {
+            "median": 30566,
+            "q1": 29465,
+            "q3": 33050,
+            "mad": 1381,
+            "min": 28363,
+            "max": 40451
+          }
+        },
+        {
+          "family": "trig",
+          "size": 65537,
+          "factoryNs": 1115666,
+          "firstNs": 548417326,
+          "statistics": {
+            "median": 37136,
+            "q1": 35263,
+            "q3": 47462,
+            "mad": 2874,
+            "min": 33491,
+            "max": 326253
+          }
+        },
+        {
+          "family": "shared",
+          "size": 257,
+          "factoryNs": 1095325,
+          "firstNs": 719589762,
+          "statistics": {
+            "median": 29644,
+            "q1": 28493,
+            "q3": 30717,
+            "mad": 1112,
+            "min": 27211,
+            "max": 32709
+          }
+        },
+        {
+          "family": "shared",
+          "size": 65537,
+          "factoryNs": 1095325,
+          "firstNs": 1108437888,
+          "statistics": {
+            "median": 33250,
+            "q1": 32770,
+            "q3": 34842,
+            "mad": 891,
+            "min": 32039,
+            "max": 38699
+          }
+        },
+        {
+          "family": "broadcast",
+          "size": 257,
+          "factoryNs": 1104028,
+          "firstNs": 247844369,
+          "statistics": {
+            "median": 46060,
+            "q1": 44167,
+            "q3": 47161,
+            "mad": 1612,
+            "min": 41442,
+            "max": 59130
+          }
+        },
+        {
+          "family": "broadcast",
+          "size": 65537,
+          "factoryNs": 1104028,
+          "firstNs": 259210746,
+          "statistics": {
+            "median": 34782,
+            "q1": 34452,
+            "q3": 36796,
+            "mad": 1171,
+            "min": 32800,
+            "max": 40291
+          }
+        },
+        {
+          "family": "structured",
+          "size": 257,
+          "factoryNs": 1085100,
+          "firstNs": 313496391,
+          "statistics": {
+            "median": 31878,
+            "q1": 31478,
+            "q3": 32449,
+            "mad": 551,
+            "min": 29575,
+            "max": 35343
+          }
+        },
+        {
+          "family": "structured",
+          "size": 65537,
+          "factoryNs": 1085100,
+          "firstNs": 449049638,
+          "statistics": {
+            "median": 43175,
+            "q1": 40812,
+            "q3": 59520,
+            "mad": 3135,
+            "min": 37707,
+            "max": 353705
+          }
+        },
+        {
+          "family": "over_cap",
+          "size": 257,
+          "factoryNs": 1206843,
+          "firstNs": 2700200989,
+          "statistics": {
+            "median": 32238,
+            "q1": 31477,
+            "q3": 33801,
+            "mad": 1091,
+            "min": 29806,
+            "max": 40702
+          }
+        },
+        {
+          "family": "over_cap",
+          "size": 65537,
+          "factoryNs": 1206843,
+          "firstNs": 4419178065,
+          "statistics": {
+            "median": 38047,
+            "q1": 37276,
+            "q3": 39069,
+            "mad": 1022,
+            "min": 35804,
+            "max": 63246
+          }
+        }
+      ],
+      "churn": [
+        {
+          "size": 3,
+          "elapsedNs": 178580970
+        },
+        {
+          "size": 5,
+          "elapsedNs": 175099688
+        },
+        {
+          "size": 5,
+          "elapsedNs": 107032
+        },
+        {
+          "size": 7,
+          "elapsedNs": 76946
+        },
+        {
+          "size": 9,
+          "elapsedNs": 64538
+        },
+        {
+          "size": 11,
+          "elapsedNs": 60852
+        },
+        {
+          "size": 13,
+          "elapsedNs": 63005
+        },
+        {
+          "size": 15,
+          "elapsedNs": 64418
+        },
+        {
+          "size": 17,
+          "elapsedNs": 61152
+        },
+        {
+          "size": 19,
+          "elapsedNs": 61173
+        },
+        {
+          "size": 21,
+          "elapsedNs": 54072
+        },
+        {
+          "size": 5,
+          "elapsedNs": 55554
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "label": "C",
+      "implementation": "reference",
+      "startedAt": "2026-09-16T18:45:13.403873+00:00",
+      "finishedAt": "2026-09-16T18:45:52.828290+00:00",
+      "rawPath": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c540b456/target/postcommit-5bf3e9b0/leg-4/record.json.gz",
+      "sha256": "c19fd65a8cc0e8e599bfb49422e73ac844c3469431f7fe4aeee1852ff4e9afc5",
+      "cells": [
+        {
+          "family": "affine",
+          "size": 257,
+          "factoryNs": 1503958242,
+          "firstNs": 1408243880,
+          "statistics": {
+            "median": 28934,
+            "q1": 27631,
+            "q3": 29665,
+            "mad": 981,
+            "min": 25689,
+            "max": 43326
+          }
+        },
+        {
+          "family": "affine",
+          "size": 65537,
+          "factoryNs": 1503958242,
+          "firstNs": 191804413,
+          "statistics": {
+            "median": 38068,
+            "q1": 35884,
+            "q3": 61433,
+            "mad": 4427,
+            "min": 32339,
+            "max": 13671400
+          }
+        },
+        {
+          "family": "trig",
+          "size": 257,
+          "factoryNs": 1015845,
+          "firstNs": 349926385,
+          "statistics": {
+            "median": 31358,
+            "q1": 30215,
+            "q3": 32810,
+            "mad": 1452,
+            "min": 28753,
+            "max": 42885
+          }
+        },
+        {
+          "family": "trig",
+          "size": 65537,
+          "factoryNs": 1015845,
+          "firstNs": 676807252,
+          "statistics": {
+            "median": 38108,
+            "q1": 36455,
+            "q3": 46320,
+            "mad": 2634,
+            "min": 33922,
+            "max": 390800
+          }
+        },
+        {
+          "family": "shared",
+          "size": 257,
+          "factoryNs": 987743,
+          "firstNs": 728272045,
+          "statistics": {
+            "median": 29745,
+            "q1": 29174,
+            "q3": 30646,
+            "mad": 781,
+            "min": 27752,
+            "max": 32259
+          }
+        },
+        {
+          "family": "shared",
+          "size": 65537,
+          "factoryNs": 987743,
+          "firstNs": 1072067284,
+          "statistics": {
+            "median": 35333,
+            "q1": 33881,
+            "q3": 37066,
+            "mad": 1733,
+            "min": 32689,
+            "max": 46811
+          }
+        },
+        {
+          "family": "broadcast",
+          "size": 257,
+          "factoryNs": 1009486,
+          "firstNs": 241448254,
+          "statistics": {
+            "median": 31227,
+            "q1": 29685,
+            "q3": 32879,
+            "mad": 1652,
+            "min": 28624,
+            "max": 40611
+          }
+        },
+        {
+          "family": "broadcast",
+          "size": 65537,
+          "factoryNs": 1009486,
+          "firstNs": 254843766,
+          "statistics": {
+            "median": 36876,
+            "q1": 36094,
+            "q3": 38908,
+            "mad": 1683,
+            "min": 34112,
+            "max": 47252
+          }
+        },
+        {
+          "family": "structured",
+          "size": 257,
+          "factoryNs": 981423,
+          "firstNs": 317850622,
+          "statistics": {
+            "median": 33330,
+            "q1": 32259,
+            "q3": 34883,
+            "mad": 1222,
+            "min": 30556,
+            "max": 36736
+          }
+        },
+        {
+          "family": "structured",
+          "size": 65537,
+          "factoryNs": 981423,
+          "firstNs": 445520495,
+          "statistics": {
+            "median": 42434,
+            "q1": 41032,
+            "q3": 61452,
+            "mad": 2744,
+            "min": 39640,
+            "max": 426965
+          }
+        },
+        {
+          "family": "over_cap",
+          "size": 257,
+          "factoryNs": 1001013,
+          "firstNs": 2685163274,
+          "statistics": {
+            "median": 33320,
+            "q1": 31829,
+            "q3": 36616,
+            "mad": 2243,
+            "min": 30456,
+            "max": 51679
+          }
+        },
+        {
+          "family": "over_cap",
+          "size": 65537,
+          "factoryNs": 1001013,
+          "firstNs": 4355295436,
+          "statistics": {
+            "median": 36575,
+            "q1": 35724,
+            "q3": 38227,
+            "mad": 1332,
+            "min": 34001,
+            "max": 41813
+          }
+        }
+      ],
+      "churn": [
+        {
+          "size": 3,
+          "elapsedNs": 172416335
+        },
+        {
+          "size": 5,
+          "elapsedNs": 171669636
+        },
+        {
+          "size": 5,
+          "elapsedNs": 105429
+        },
+        {
+          "size": 7,
+          "elapsedNs": 69305
+        },
+        {
+          "size": 9,
+          "elapsedNs": 68454
+        },
+        {
+          "size": 11,
+          "elapsedNs": 62674
+        },
+        {
+          "size": 13,
+          "elapsedNs": 66871
+        },
+        {
+          "size": 15,
+          "elapsedNs": 60431
+        },
+        {
+          "size": 17,
+          "elapsedNs": 58158
+        },
+        {
+          "size": 19,
+          "elapsedNs": 55013
+        },
+        {
+          "size": 21,
+          "elapsedNs": 56856
+        },
+        {
+          "size": 5,
+          "elapsedNs": 57557
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "label": "C",
+      "implementation": "native",
+      "startedAt": "2026-09-16T18:46:05.812568+00:00",
+      "finishedAt": "2026-09-16T18:46:45.207561+00:00",
+      "rawPath": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c540b456/target/postcommit-5bf3e9b0/leg-5/record.json.gz",
+      "sha256": "fd2a202d1469a48c4beb7463380e0a2572caeb8e91964357f2c1c8067296a0bc",
+      "cells": [
+        {
+          "family": "affine",
+          "size": 257,
+          "factoryNs": 85319,
+          "firstNs": 32513484,
+          "statistics": {
+            "median": 32689,
+            "q1": 31237,
+            "q3": 33751,
+            "mad": 1421,
+            "min": 30626,
+            "max": 37616
+          }
+        },
+        {
+          "family": "affine",
+          "size": 65537,
+          "factoryNs": 85319,
+          "firstNs": 467737,
+          "statistics": {
+            "median": 34733,
+            "q1": 33511,
+            "q3": 36445,
+            "mad": 1712,
+            "min": 31207,
+            "max": 41032
+          }
+        },
+        {
+          "family": "trig",
+          "size": 257,
+          "factoryNs": 70797,
+          "firstNs": 48663480,
+          "statistics": {
+            "median": 39389,
+            "q1": 37707,
+            "q3": 41873,
+            "mad": 2484,
+            "min": 36625,
+            "max": 50416
+          }
+        },
+        {
+          "family": "trig",
+          "size": 65537,
+          "factoryNs": 70797,
+          "firstNs": 522980,
+          "statistics": {
+            "median": 39139,
+            "q1": 37807,
+            "q3": 41392,
+            "mad": 1352,
+            "min": 37316,
+            "max": 59249
+          }
+        },
+        {
+          "family": "shared",
+          "size": 257,
+          "factoryNs": 66190,
+          "firstNs": 29093325,
+          "statistics": {
+            "median": 39320,
+            "q1": 37957,
+            "q3": 40731,
+            "mad": 1411,
+            "min": 35744,
+            "max": 43666
+          }
+        },
+        {
+          "family": "shared",
+          "size": 65537,
+          "factoryNs": 66190,
+          "firstNs": 58233702,
+          "statistics": {
+            "median": 42114,
+            "q1": 40291,
+            "q3": 43556,
+            "mad": 1823,
+            "min": 38528,
+            "max": 53941
+          }
+        },
+        {
+          "family": "broadcast",
+          "size": 257,
+          "factoryNs": 60712,
+          "firstNs": 24765916,
+          "statistics": {
+            "median": 41403,
+            "q1": 38468,
+            "q3": 43586,
+            "mad": 2935,
+            "min": 36525,
+            "max": 164478
+          }
+        },
+        {
+          "family": "broadcast",
+          "size": 65537,
+          "factoryNs": 60712,
+          "firstNs": 433555,
+          "statistics": {
+            "median": 42614,
+            "q1": 41994,
+            "q3": 44287,
+            "mad": 1673,
+            "min": 38048,
+            "max": 52039
+          }
+        },
+        {
+          "family": "structured",
+          "size": 257,
+          "factoryNs": 58258,
+          "firstNs": 37106806,
+          "statistics": {
+            "median": 61783,
+            "q1": 59079,
+            "q3": 62695,
+            "mad": 2063,
+            "min": 53211,
+            "max": 130007
+          }
+        },
+        {
+          "family": "structured",
+          "size": 65537,
+          "factoryNs": 58258,
+          "firstNs": 599546,
+          "statistics": {
+            "median": 59000,
+            "q1": 58218,
+            "q3": 62194,
+            "mad": 1112,
+            "min": 56495,
+            "max": 113492
+          }
+        },
+        {
+          "family": "over_cap",
+          "size": 257,
+          "factoryNs": 61423,
+          "firstNs": 97060628,
+          "statistics": {
+            "median": 127182,
+            "q1": 125320,
+            "q3": 129957,
+            "mad": 2333,
+            "min": 123837,
+            "max": 136506
+          }
+        },
+        {
+          "family": "over_cap",
+          "size": 65537,
+          "factoryNs": 61423,
+          "firstNs": 21462364,
+          "statistics": {
+            "median": 134974,
+            "q1": 133682,
+            "q3": 137938,
+            "mad": 2093,
+            "min": 131729,
+            "max": 142356
+          }
+        }
+      ],
+      "churn": [
+        {
+          "size": 3,
+          "elapsedNs": 25712737
+        },
+        {
+          "size": 5,
+          "elapsedNs": 281736
+        },
+        {
+          "size": 5,
+          "elapsedNs": 55584
+        },
+        {
+          "size": 7,
+          "elapsedNs": 87322
+        },
+        {
+          "size": 9,
+          "elapsedNs": 88103
+        },
+        {
+          "size": 11,
+          "elapsedNs": 90637
+        },
+        {
+          "size": 13,
+          "elapsedNs": 85729
+        },
+        {
+          "size": 15,
+          "elapsedNs": 81573
+        },
+        {
+          "size": 17,
+          "elapsedNs": 81263
+        },
+        {
+          "size": 19,
+          "elapsedNs": 87933
+        },
+        {
+          "size": 21,
+          "elapsedNs": 84477
+        },
+        {
+          "size": 5,
+          "elapsedNs": 90546
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "label": "B",
+      "implementation": "reference",
+      "startedAt": "2026-09-16T18:46:55.958613+00:00",
+      "finishedAt": "2026-09-16T18:47:35.285491+00:00",
+      "rawPath": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c540b456/target/postcommit-5bf3e9b0/leg-6/record.json.gz",
+      "sha256": "72138bae453fafbe931b3946e6de9779aa79a21dcfe16b44554ea63f90d3923f",
+      "cells": [
+        {
+          "family": "affine",
+          "size": 257,
+          "factoryNs": 1576699991,
+          "firstNs": 1549880171,
+          "statistics": {
+            "median": 29585,
+            "q1": 27992,
+            "q3": 31277,
+            "mad": 1692,
+            "min": 27201,
+            "max": 47162
+          }
+        },
+        {
+          "family": "affine",
+          "size": 65537,
+          "factoryNs": 1576699991,
+          "firstNs": 197448503,
+          "statistics": {
+            "median": 37667,
+            "q1": 34663,
+            "q3": 61313,
+            "mad": 4476,
+            "min": 33191,
+            "max": 2535492
+          }
+        },
+        {
+          "family": "trig",
+          "size": 257,
+          "factoryNs": 1000842,
+          "firstNs": 368926800,
+          "statistics": {
+            "median": 43225,
+            "q1": 32660,
+            "q3": 45459,
+            "mad": 8092,
+            "min": 29174,
+            "max": 51317
+          }
+        },
+        {
+          "family": "trig",
+          "size": 65537,
+          "factoryNs": 1000842,
+          "firstNs": 690801436,
+          "statistics": {
+            "median": 40461,
+            "q1": 38307,
+            "q3": 59901,
+            "mad": 3946,
+            "min": 32870,
+            "max": 389759
+          }
+        },
+        {
+          "family": "shared",
+          "size": 257,
+          "factoryNs": 975594,
+          "firstNs": 696941034,
+          "statistics": {
+            "median": 30697,
+            "q1": 29715,
+            "q3": 31427,
+            "mad": 971,
+            "min": 28293,
+            "max": 39149
+          }
+        },
+        {
+          "family": "shared",
+          "size": 65537,
+          "factoryNs": 975594,
+          "firstNs": 1079969504,
+          "statistics": {
+            "median": 35313,
+            "q1": 34472,
+            "q3": 36034,
+            "mad": 841,
+            "min": 32489,
+            "max": 45018
+          }
+        },
+        {
+          "family": "broadcast",
+          "size": 257,
+          "factoryNs": 976536,
+          "firstNs": 240731251,
+          "statistics": {
+            "median": 31297,
+            "q1": 30286,
+            "q3": 32540,
+            "mad": 1071,
+            "min": 28903,
+            "max": 34562
+          }
+        },
+        {
+          "family": "broadcast",
+          "size": 65537,
+          "factoryNs": 976536,
+          "firstNs": 253149138,
+          "statistics": {
+            "median": 36506,
+            "q1": 35383,
+            "q3": 37467,
+            "mad": 1123,
+            "min": 33781,
+            "max": 45509
+          }
+        },
+        {
+          "family": "structured",
+          "size": 257,
+          "factoryNs": 1034413,
+          "firstNs": 319582742,
+          "statistics": {
+            "median": 33781,
+            "q1": 32238,
+            "q3": 35173,
+            "mad": 1503,
+            "min": 30737,
+            "max": 44828
+          }
+        },
+        {
+          "family": "structured",
+          "size": 65537,
+          "factoryNs": 1034413,
+          "firstNs": 449119818,
+          "statistics": {
+            "median": 47843,
+            "q1": 42164,
+            "q3": 63987,
+            "mad": 6441,
+            "min": 39890,
+            "max": 408818
+          }
+        },
+        {
+          "family": "over_cap",
+          "size": 257,
+          "factoryNs": 985670,
+          "firstNs": 2619918288,
+          "statistics": {
+            "median": 31898,
+            "q1": 30987,
+            "q3": 33230,
+            "mad": 1222,
+            "min": 29464,
+            "max": 42485
+          }
+        },
+        {
+          "family": "over_cap",
+          "size": 65537,
+          "factoryNs": 985670,
+          "firstNs": 4391242365,
+          "statistics": {
+            "median": 38107,
+            "q1": 37457,
+            "q3": 39140,
+            "mad": 1033,
+            "min": 35894,
+            "max": 52259
+          }
+        }
+      ],
+      "churn": [
+        {
+          "size": 3,
+          "elapsedNs": 171976440
+        },
+        {
+          "size": 5,
+          "elapsedNs": 175011376
+        },
+        {
+          "size": 5,
+          "elapsedNs": 108063
+        },
+        {
+          "size": 7,
+          "elapsedNs": 70787
+        },
+        {
+          "size": 9,
+          "elapsedNs": 66500
+        },
+        {
+          "size": 11,
+          "elapsedNs": 62525
+        },
+        {
+          "size": 13,
+          "elapsedNs": 61593
+        },
+        {
+          "size": 15,
+          "elapsedNs": 57687
+        },
+        {
+          "size": 17,
+          "elapsedNs": 57627
+        },
+        {
+          "size": 19,
+          "elapsedNs": 58909
+        },
+        {
+          "size": 21,
+          "elapsedNs": 71528
+        },
+        {
+          "size": 5,
+          "elapsedNs": 57547
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "label": "B",
+      "implementation": "native",
+      "startedAt": "2026-09-16T18:47:48.029969+00:00",
+      "finishedAt": "2026-09-16T18:48:10.753281+00:00",
+      "rawPath": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c540b456/target/postcommit-5bf3e9b0/leg-7/record.json.gz",
+      "sha256": "877b37e8abedcc70324f6f1fcdbe4b32d16b438b54080a6449b549ef5432caed",
+      "cells": [
+        {
+          "family": "affine",
+          "size": 257,
+          "factoryNs": 103497,
+          "firstNs": 97636277,
+          "statistics": {
+            "median": 35354,
+            "q1": 33962,
+            "q3": 36985,
+            "mad": 1522,
+            "min": 33291,
+            "max": 44197
+          }
+        },
+        {
+          "family": "affine",
+          "size": 65537,
+          "factoryNs": 103497,
+          "firstNs": 516290,
+          "statistics": {
+            "median": 37106,
+            "q1": 35894,
+            "q3": 37907,
+            "mad": 1162,
+            "min": 34753,
+            "max": 43736
+          }
+        },
+        {
+          "family": "trig",
+          "size": 257,
+          "factoryNs": 81233,
+          "firstNs": 92017396,
+          "statistics": {
+            "median": 41493,
+            "q1": 40341,
+            "q3": 42284,
+            "mad": 1152,
+            "min": 38669,
+            "max": 46100
+          }
+        },
+        {
+          "family": "trig",
+          "size": 65537,
+          "factoryNs": 81233,
+          "firstNs": 513867,
+          "statistics": {
+            "median": 43877,
+            "q1": 42835,
+            "q3": 48233,
+            "mad": 1924,
+            "min": 41633,
+            "max": 64728
+          }
+        },
+        {
+          "family": "shared",
+          "size": 257,
+          "factoryNs": 69995,
+          "firstNs": 12613232,
+          "statistics": {
+            "median": 50026,
+            "q1": 48674,
+            "q3": 51859,
+            "mad": 1722,
+            "min": 47882,
+            "max": 55604
+          }
+        },
+        {
+          "family": "shared",
+          "size": 65537,
+          "factoryNs": 69995,
+          "firstNs": 56656198,
+          "statistics": {
+            "median": 64047,
+            "q1": 62123,
+            "q3": 66390,
+            "mad": 2103,
+            "min": 60432,
+            "max": 68083
+          }
+        },
+        {
+          "family": "broadcast",
+          "size": 257,
+          "factoryNs": 67762,
+          "firstNs": 92286713,
+          "statistics": {
+            "median": 42975,
+            "q1": 40161,
+            "q3": 44407,
+            "mad": 2814,
+            "min": 38678,
+            "max": 165119
+          }
+        },
+        {
+          "family": "broadcast",
+          "size": 65537,
+          "factoryNs": 67762,
+          "firstNs": 10915996,
+          "statistics": {
+            "median": 44988,
+            "q1": 43135,
+            "q3": 46791,
+            "mad": 1853,
+            "min": 39991,
+            "max": 55584
+          }
+        },
+        {
+          "family": "structured",
+          "size": 257,
+          "factoryNs": 69565,
+          "firstNs": 95701293,
+          "statistics": {
+            "median": 63666,
+            "q1": 62745,
+            "q3": 65288,
+            "mad": 1151,
+            "min": 56636,
+            "max": 137387
+          }
+        },
+        {
+          "family": "structured",
+          "size": 65537,
+          "factoryNs": 69565,
+          "firstNs": 610223,
+          "statistics": {
+            "median": 65829,
+            "q1": 64427,
+            "q3": 67362,
+            "mad": 1533,
+            "min": 58568,
+            "max": 118799
+          }
+        },
+        {
+          "family": "over_cap",
+          "size": 257,
+          "factoryNs": 69986,
+          "firstNs": 15687487,
+          "statistics": {
+            "median": 126792,
+            "q1": 125570,
+            "q3": 128214,
+            "mad": 1332,
+            "min": 124589,
+            "max": 129135
+          }
+        },
+        {
+          "family": "over_cap",
+          "size": 65537,
+          "factoryNs": 69986,
+          "firstNs": 21076360,
+          "statistics": {
+            "median": 160523,
+            "q1": 159962,
+            "q3": 163507,
+            "mad": 1782,
+            "min": 158469,
+            "max": 173252
+          }
+        }
+      ],
+      "churn": [
+        {
+          "size": 3,
+          "elapsedNs": 10121366
+        },
+        {
+          "size": 5,
+          "elapsedNs": 201655
+        },
+        {
+          "size": 5,
+          "elapsedNs": 57988
+        },
+        {
+          "size": 7,
+          "elapsedNs": 83957
+        },
+        {
+          "size": 9,
+          "elapsedNs": 78528
+        },
+        {
+          "size": 11,
+          "elapsedNs": 79791
+        },
+        {
+          "size": 13,
+          "elapsedNs": 89074
+        },
+        {
+          "size": 15,
+          "elapsedNs": 80151
+        },
+        {
+          "size": 17,
+          "elapsedNs": 75834
+        },
+        {
+          "size": 19,
+          "elapsedNs": 82955
+        },
+        {
+          "size": 21,
+          "elapsedNs": 77497
+        },
+        {
+          "size": 5,
+          "elapsedNs": 76806
+        }
+      ]
+    }
+  ],
+  "actualCounts": {
+    "cells": 96,
+    "samples": 1632,
+    "warmups": 480,
+    "firstCalls": 96,
+    "churnCalls": 96
+  }
+}
