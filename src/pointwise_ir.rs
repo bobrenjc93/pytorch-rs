@@ -25,6 +25,7 @@ pub(crate) enum Node {
     Relu(usize),
     Sin(usize),
     Cos(usize),
+    Erf(usize),
 }
 
 #[derive(Clone, Debug)]
@@ -42,6 +43,10 @@ pub(crate) fn invalid(message: impl Into<String>) -> TensorError {
 }
 
 impl Graph {
+    pub(crate) fn uses_erf(&self) -> bool {
+        regions::canonical_nodes(self).uses_erf(&self.outputs)
+    }
+
     pub(crate) fn scalar_count(&self) -> usize {
         self.nodes
             .iter()
@@ -81,7 +86,7 @@ impl Graph {
                     }
                     true
                 }
-                Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a) => {
+                Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a) | Node::Erf(a) => {
                     if !operand(a)? {
                         return Err(invalid("unary operations require a tensor expression"));
                     }
@@ -114,6 +119,13 @@ impl Graph {
         &self,
         addresses: &[indexing::Address],
     ) -> Result<String, TensorError> {
+        Ok(self.compilation(addresses)?.source)
+    }
+
+    pub(crate) fn compilation(
+        &self,
+        addresses: &[indexing::Address],
+    ) -> Result<program::Compilation, TensorError> {
         self.validate()?;
         if addresses.len() != self.inputs {
             return Err(invalid("pointwise address arity mismatch"));

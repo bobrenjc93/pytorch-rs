@@ -18,6 +18,9 @@ from . import _compiler_state as _state
 
 _ROOT = sys.modules[__package__]
 _TENSOR_TYPE = _ROOT.Tensor
+_NN = _ROOT.nn
+_FUNCTIONAL = _NN.functional
+_GELU = _FUNCTIONAL.gelu
 _UNARY = {"neg": "neg", "negative": "neg", "__neg__": "neg",
           "relu": "relu", "sin": "sin", "cos": "cos"}
 _BINARY = {"add": "add", "__add__": "add", "__radd__": "add",
@@ -49,8 +52,8 @@ _REVERSE_COMPARE = {"<": ">", "<=": ">=", "==": "==", "!=": "!=", ">=": "<=", ">
 # Imported during package initialization, before public bindings can be patched.
 _FUNCTIONS = tuple((name, _ROOT.__dict__.get(name)) for name in
                    ("neg", "negative", "relu", "sin", "cos", "add", "sub", "subtract", "mul", "multiply"))
-_METHOD_GUARDS = tuple((cls, name, cls.__dict__.get(name, _MISSING))
-                      for cls in (_ROOT.Tensor, _ROOT.Tensor.__base__) for name in _METHODS)
+_METHOD_GUARDS = tuple((cls, tuple((name, cls.__dict__.get(name, _MISSING)) for name in _METHODS))
+                      for cls in (_ROOT.Tensor, _ROOT.Tensor.__base__))
 
 
 def unsupported(reason):
@@ -231,6 +234,8 @@ class Lowering:
     """Pair native computation with Python topology at the lowering cache owner."""
     graph: Graph
     result: ResultSpec
+    # Exact edges actually traversed by this lowering, checked on every run.
+    namespace_guards: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -849,6 +854,12 @@ def binding(value):
             if _ROOT.__dict__.get(name) is not expected:
                 unsupported("patched native function binding: " + name)
         return ("module", id(value)), value
+    if value is _NN or value is _FUNCTIONAL:
+        if type(value) is not types.ModuleType:
+            unsupported("patched native namespace type")
+        return ("module", id(value)), value
+    if value is _GELU:
+        return ("function", "gelu", id(value)), Call("gelu")
     for name, expected in _FUNCTIONS:
         if value is expected and expected is not None:
             return ("function", name, id(value)), Call((_UNARY | _BINARY)[name])
@@ -856,6 +867,19 @@ def binding(value):
         helper = freeze_helper(value)
         return ("helper", helper), helper
     unsupported("only native operators, exact Python helpers and scalar constants may be captured")
+
+
+def check_namespace_guard(guard):
+    owner, name, expected = guard
+    if type(owner) is not types.ModuleType:
+        unsupported("patched native namespace type")
+    namespace = owner.__dict__
+    if not _native._pointwise_namespace_keys_exact(namespace):
+        unsupported("native namespace keys must be exact strings")
+    if namespace.get(name) is not expected:
+        unsupported("patched native namespace binding: " + name)
+    if (expected is _NN or expected is _FUNCTIONAL) and type(expected) is not types.ModuleType:
+        unsupported("patched native namespace type")
 
 
 def bind_arguments(args):
@@ -1034,6 +1058,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
     helper_instructions = {}  # Per lowering only; warm hits never parse helpers.
     pending_checks = []  # Early-return continuations; no recursion per condition.
     construction_edges = 0
+    namespace_guards = []
 
     def data(obj):
         # Validate without realizing a lazy root source. Ignored parameters must
@@ -1093,6 +1118,16 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
         return Value(len(nodes) - 1, False, "bool" if boolean else "float32")
 
     def emit(op, operands):
+        if op == "gelu":
+            arg = value(operands[0])
+            if not arg.tensor:
+                unsupported("operators require tensor expressions")
+            # The ordinary reference decomposition, with scalar kinds and
+            # binary64 alpha preserved until normal native materialization.
+            half = emit("mul", [arg, 0.5])
+            scaled = emit("mul", [arg, 0.70710678118654752440])
+            erf = emit("erf", [scaled])
+            return emit("mul", [half, emit("add", [1, erf])])
         args = [value(arg) for arg in operands]
         if len(args) == 1 and not args[0].tensor or not any(arg.tensor for arg in args):
             unsupported("operators require tensor expressions")
@@ -1285,6 +1320,15 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                             or original.source.kind != "parameter" or type(owner) is not Value):
                         unsupported("shape queries require an original input Tensor")
                     stack.append(ShapeValue(original.source, predicate_origin=original.predicate_origin))
+                elif ((owner is _ROOT and arg == "nn")
+                      or (owner is _NN and arg == "functional")
+                      or (owner is _FUNCTIONAL and arg == "gelu")):
+                    expected = _NN if owner is _ROOT else _FUNCTIONAL if owner is _NN else _GELU
+                    guard = (owner, arg, expected)
+                    check_namespace_guard(guard)
+                    if not any(o is owner and name == arg for o, name, _ in namespace_guards):
+                        namespace_guards.append(guard)
+                    stack.append(binding(expected)[1])
                 elif owner is _ROOT:
                     if arg not in dict(_FUNCTIONS):
                         unsupported("unsupported native function: " + arg)
@@ -1375,7 +1419,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     unsupported("only native pointwise operators and direct helpers may be called")
                 if target.receiver is not None:
                     operands.insert(0, target.receiver)
-                if len(operands) != (1 if target.op in set(_UNARY.values()) else 2):
+                if len(operands) != (1 if target.op == "gelu" or target.op in set(_UNARY.values()) else 2):
                     unsupported("operator argument count mismatch")
                 if target.reverse:
                     operands.reverse()
@@ -1409,10 +1453,10 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
         continuation, inactive_locals = pending_checks.pop()
         isolated(continuation, inactive_locals, charge=False)
     outputs, specification = result_spec(result)
-    return Lowering(Graph(arity, tuple(nodes), outputs), specification)
+    return Lowering(Graph(arity, tuple(nodes), outputs), specification, tuple(namespace_guards))
 
 
-def _prepared_entry_bytes(key, prepared):
+def _prepared_entry_bytes(key, prepared, code_key):
     """Conservative incremental retention charge, calculated only on a miss.
 
     Native accounting uses actual Vec capacities and device allocation bytes.
@@ -1430,16 +1474,18 @@ def _prepared_entry_bytes(key, prepared):
                     + key_bytes(value.outputs) + key_bytes(value._hash))
         return sys.getsizeof(value)
 
-    return prepared.retained_bytes + sys.getsizeof(prepared) + key_bytes(key) + 512
+    return (prepared.retained_bytes + sys.getsizeof(prepared)
+            + key_bytes(key) + key_bytes(code_key) + 512)
 
 
-def _publish_preparation(cache, key, prepared, retained_bytes, recompile_limit):
+def _publish_preparation(cache, key, prepared, retained_bytes, recompile_limit, code_key, executor):
     """Called under the existing lock only after successful reconstruction."""
     # A prepared Arc must not retain a module whose executor was evicted. The
     # executable transaction above is authoritative, not an independent module cache.
     for old_key in tuple(cache.prepared):
-        if old_key[0] not in cache.executors:
-            _, old_bytes = cache.prepared.pop(old_key)
+        _, old_bytes, old_code, old_executor = cache.prepared[old_key]
+        if cache.executors.get(old_code) is not old_executor:
+            cache.prepared.pop(old_key)
             cache.prepared_bytes -= old_bytes
     if retained_bytes <= _PREPARED_CACHE_BYTES:
         newest = (cache.prepared and next(reversed(cache.prepared)) == key
@@ -1448,12 +1494,17 @@ def _publish_preparation(cache, key, prepared, retained_bytes, recompile_limit):
             previous = cache.prepared.pop(key, None)
             if previous is not None:
                 cache.prepared_bytes -= previous[1]
-            cache.prepared[key] = (prepared, retained_bytes)
+            cache.prepared[key] = (prepared, retained_bytes, code_key, executor)
             cache.prepared_bytes += retained_bytes
     while (len(cache.prepared) > recompile_limit
            or cache.prepared_bytes > _PREPARED_CACHE_BYTES):
-        _, old_bytes = cache.prepared.pop(next(iter(cache.prepared)))
+        _, old_bytes, _, _ = cache.prepared.pop(next(iter(cache.prepared)))
         cache.prepared_bytes -= old_bytes
+
+
+def _receipt(result, prepared):
+    # Allocate before publication, including warm selected-invocation receipts.
+    return result, prepared
 
 
 def implementation(model, recompile_limit):
@@ -1461,7 +1512,7 @@ def implementation(model, recompile_limit):
     cache = _state.new_native_eager_compile_cache()
     program = None
 
-    def compiled(*args, **kwargs):
+    def execute(args, kwargs, want_receipt):
         nonlocal program
         if kwargs:
             unsupported("expected positional arguments without keywords")
@@ -1470,9 +1521,11 @@ def implementation(model, recompile_limit):
         tensors, parameters = bind_arguments(args)
         if _ROOT.overrides._get_current_function_mode() is not None:
             unsupported("active __torch_function__ mode")
-        for cls, name, expected in _METHOD_GUARDS:
-            if cls.__dict__.get(name, _MISSING) is not expected:
-                unsupported("patched Tensor operation binding: " + name)
+        for cls, guards in _METHOD_GUARDS:
+            namespace = cls.__dict__
+            for name, expected in guards:
+                if namespace.get(name, _MISSING) is not expected:
+                    unsupported("patched Tensor operation binding: " + name)
         # The native bridge checks all metadata and storage bounds again on launch.
         metadata = tuple(_native._compile_trace_tensor_metadata(arg) for arg in tensors)
         if any(m[4] == "cpu" for m in metadata):
@@ -1536,27 +1589,40 @@ def implementation(model, recompile_limit):
             # specialize the full native ABI and exact broadcast address formula.
             # Preparation checks all original-IR admission. Exact native shapes
             # certify that result on reuse; offsets/storage are checked each run.
+            for guard in lowering.namespace_guards:
+                check_namespace_guard(guard)
             graph = lowering.graph
             shapes = tuple(m[0] for m in metadata)
             indexing_key = None if all(s == shapes[0] for s in shapes) else shapes
-            code_key = (graph, metadata[0][4], indexing_key)
-            executor = cache.executors.get(code_key)
-            if executor is None:
-                executor = _native._pointwise_compile(tensors, graph.nodes, graph.outputs)
-            prepared_key = (code_key, shapes, entry.numerical_hint, lowering.result.output_order)
+            logical_code_key = (graph, metadata[0][4], indexing_key)
+            prepared_key = (logical_code_key, shapes, entry.numerical_hint, lowering.result.output_order)
             cached_preparation = cache.prepared.get(prepared_key)
+            if cached_preparation is not None:
+                prepared, retained_bytes, code_key, executor = cached_preparation
+                if cache.executors.get(code_key) is not executor:
+                    cached_preparation = None
             if cached_preparation is None:
-                prepared = executor.prepare(tensors, entry.numerical_hint, lowering.result.output_order)
-                # Metadata was read before taking this lock. Bind the published
-                # key to the same native snapshot that passed graph admission;
-                # never label an artifact with a stale Python shape signature.
+                host = _native._pointwise_host_plan(
+                    tensors, graph.nodes, graph.outputs,
+                    entry.numerical_hint, lowering.result.output_order)
+                code_key = host.executable_identity
+                executor = cache.executors.get(code_key)
+                if executor is None:
+                    executor = host.compile()
+                prepared = executor.bind(host)
+                # Drop construction-only graph, source, words and shape vectors.
+                del host
                 if prepared.input_shapes != shapes:
                     unsupported("input shapes changed during pointwise preparation")
-                retained_bytes = _prepared_entry_bytes(prepared_key, prepared)
-            else:
-                prepared, retained_bytes = cached_preparation
+                # Frozen native owners preserve this relation for the lifetime
+                # of a frontend-admitted tuple. Hits still check the map owner.
+                if not prepared.belongs_to(executor):
+                    unsupported("prepared executable owner mismatch")
+                retained_bytes = _prepared_entry_bytes(prepared_key, prepared, code_key)
             outputs = prepared.run(tensors, scalars)
             result = lowering.result.reconstruct(outputs, static_values, tensors, metadata)
+            if want_receipt:
+                result = _receipt(result, prepared)
             # Publish every cache level only after success. Executable/lowering
             # eviction bounds retention without consuming logical slots.
             for mapping, item_key, item in ((entry.lowerings, abi, lowering),
@@ -1571,8 +1637,15 @@ def implementation(model, recompile_limit):
                 mapping[item_key] = item
                 while len(mapping) > recompile_limit:
                     del mapping[next(iter(mapping))]
-            _publish_preparation(cache, prepared_key, prepared, retained_bytes, recompile_limit)
+            _publish_preparation(cache, prepared_key, prepared, retained_bytes, recompile_limit, code_key, executor)
             return result
 
+    def compiled(*args, **kwargs):
+        return execute(args, kwargs, False)
+
+    def receipt(*args, **kwargs):
+        return execute(args, kwargs, True)
+
+    compiled._torch_rs_pointwise_receipt = receipt
     compiled._torch_rs_pointwise_cache = cache
     return compiled

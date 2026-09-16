@@ -3,7 +3,7 @@ name = "pytorch-rs"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.92"
-license = "MIT"
+license = "MIT AND LicenseRef-NVIDIA-CUDA"
 description = "A native Rust tensor and deep-learning library pursuing PyTorch semantics and performance"
 repository = "https://github.com/bobrenjc93/pytorch-rs"
 

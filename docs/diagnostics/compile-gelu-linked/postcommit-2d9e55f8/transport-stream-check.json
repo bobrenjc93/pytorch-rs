@@ -1,0 +1,26 @@
+{
+  "original_tar_stream": {
+    "command": [
+      "xz",
+      "-dc",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/gelu-linked/postcommit-2d9e55f8/fixed-workers.tar.xz"
+    ],
+    "bytes": 396636160,
+    "sha256": "429ea7880834b583e57c1f2ef324e32ce90f2f8524e5e4b1ca18058e262c5114",
+    "returncode": 0,
+    "check_seconds": 3.876693034544587
+  },
+  "retained_tar_stream": {
+    "command": [
+      "/home/bobren/local/a/pytorch-env/bin/zstd",
+      "-dc",
+      "--long=29",
+      "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-gelu-linked/postcommit-2d9e55f8/fixed-workers.tar.zst"
+    ],
+    "bytes": 396636160,
+    "sha256": "429ea7880834b583e57c1f2ef324e32ce90f2f8524e5e4b1ca18058e262c5114",
+    "returncode": 0,
+    "check_seconds": 0.5676765879616141
+  },
+  "identical": true
+}

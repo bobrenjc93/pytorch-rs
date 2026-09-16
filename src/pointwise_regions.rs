@@ -17,6 +17,17 @@ pub(crate) struct Canonical {
     pub nodes: Vec<Node>,
 }
 
+impl Canonical {
+    /// Use the same canonical dependencies and liveness as numerical planning.
+    pub(super) fn uses_erf(&self, outputs: &[usize]) -> bool {
+        let roots: Vec<_> = outputs.iter().map(|&id| self.mapped[id]).collect();
+        locality_order(&self.nodes, &roots)
+            .0
+            .into_iter()
+            .any(|id| matches!(self.nodes[id], Node::Erf(_)))
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct Plan {
     pub canonical: Canonical,
@@ -34,7 +45,7 @@ pub(crate) struct Region {
 fn operands(node: &Node) -> Vec<usize> {
     match *node {
         Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b) => vec![a, b],
-        Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a) => vec![a],
+        Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a) | Node::Erf(a) => vec![a],
         _ => vec![],
     }
 }
@@ -49,6 +60,7 @@ fn tensor_operation(node: &Node) -> bool {
             | Node::Relu(_)
             | Node::Sin(_)
             | Node::Cos(_)
+            | Node::Erf(_)
     )
 }
 

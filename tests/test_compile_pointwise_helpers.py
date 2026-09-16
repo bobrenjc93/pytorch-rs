@@ -357,6 +357,8 @@ class HelperCache(unittest.TestCase):
             bridge._pointwise_source(nodes, output, len(tensors))
             return mock_pointwise_executor(lambda tensors, scalars, numerical_hint, output_order: ((nodes, output, scalars),))
         self.codegen = self.stack.enter_context(patch.object(bridge, '_pointwise_compile', side_effect=compile_))
+        from tests.test_compile_pointwise_jit import mock_pointwise_host_plan
+        self.stack.enter_context(patch.object(bridge, '_pointwise_host_plan', side_effect=mock_pointwise_host_plan))
         self.x = native.tensor([1.0, -2.0])
 
     def test_ignored_global_and_closure_arguments_revalidated_on_warm_hits(self):

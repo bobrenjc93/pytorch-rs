@@ -3,12 +3,12 @@ use super::{CoreTensor, PyTensor, tensor_error};
 use crate::{
     cuda::jit::Kernel,
     pointwise_ir::{Graph, Node},
-    tensor::pointwise_jit::PreparedPointwise,
+    tensor::pointwise_jit::{HostAdmission, HostPointwise, PreparedPointwise},
 };
 use pyo3::{
     exceptions::{PyNotImplementedError, PyTypeError, PyValueError},
     prelude::*,
-    types::{PyBool, PyDict, PyFloat, PyInt, PyString, PyTuple},
+    types::{PyBool, PyBytes, PyDict, PyFloat, PyInt, PyString, PyTuple},
 };
 use std::sync::Arc;
 
@@ -82,6 +82,7 @@ fn graph(
             ("relu", a, 0, 0) => Node::Relu(a),
             ("sin", a, 0, 0) => Node::Sin(a),
             ("cos", a, 0, 0) => Node::Cos(a),
+            ("erf", a, 0, 0) => Node::Erf(a),
             _ => {
                 return Err(PyNotImplementedError::new_err(
                     "unsupported typed pointwise node",
@@ -277,6 +278,131 @@ pub(super) fn compile(
     })
 }
 
+/// Typed preparation precedes any compiler discovery or device upload.
+#[pyfunction(name = "_pointwise_host_plan")]
+#[pyo3(signature = (inputs, nodes, outputs, numerical_hint=None, output_order=None))]
+pub(super) fn host_plan(
+    inputs: &Bound<'_, PyTuple>,
+    nodes: &Bound<'_, PyTuple>,
+    outputs: &Bound<'_, PyTuple>,
+    numerical_hint: Option<&Bound<'_, PyAny>>,
+    output_order: Option<&Bound<'_, PyAny>>,
+) -> PyResult<HostPlan> {
+    let graph = graph(nodes, outputs, inputs.len())?;
+    let output_count = graph.outputs.len();
+    with_inputs(inputs, |tensors| {
+        let admission = HostAdmission::new(tensors, graph)
+            .map_err(|error| PyNotImplementedError::new_err(error.to_string()))?;
+        let hint = parse_numerical_hint(numerical_hint)?;
+        let order = parse_output_order(output_order, output_count)?;
+        admission
+            .prepare(hint, &order)
+            .map(|host| HostPlan { host })
+            .map_err(|error| tensor_error(&error))
+    })
+}
+
+#[pyclass(frozen, module = "torch_rs.torch_rs", name = "_PointwiseHostPlan")]
+pub(super) struct HostPlan {
+    host: HostPointwise,
+}
+#[pymethods]
+impl HostPlan {
+    #[getter]
+    fn executable_identity<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        PyBytes::new(py, &self.host.identity.bytes)
+    }
+    fn compile(&self) -> PyResult<Executable> {
+        self.host
+            .compile()
+            .map(|kernel| Executable { kernel })
+            .map_err(|error| tensor_error(&error))
+    }
+}
+
+/// Ordinary-default handles cannot call the legacy VM re-planning APIs.
+#[pyclass(frozen, module = "torch_rs.torch_rs", name = "_PointwiseExecutable")]
+pub(super) struct Executable {
+    kernel: Arc<Kernel>,
+}
+#[pymethods]
+impl Executable {
+    fn bind(&self, host: &HostPlan) -> PyResult<Prepared> {
+        host.host
+            .bind(Arc::clone(&self.kernel))
+            .map(|invocation| Prepared { invocation })
+            .map_err(|error| tensor_error(&error))
+    }
+    #[getter]
+    fn executable_identity<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        PyBytes::new(
+            py,
+            &self
+                .kernel
+                .identity
+                .as_ref()
+                .expect("selected executable")
+                .bytes,
+        )
+    }
+    #[getter]
+    fn kind(&self) -> &'static str {
+        if self
+            .kernel
+            .identity
+            .as_ref()
+            .expect("selected executable")
+            .direct
+        {
+            "direct"
+        } else {
+            "vm"
+        }
+    }
+    #[getter]
+    fn source(&self) -> &str {
+        &self.kernel.source
+    }
+    #[getter]
+    fn ptx(&self) -> &str {
+        &self.kernel.ptx
+    }
+    #[getter]
+    fn nvrtc_version(&self) -> (i32, i32) {
+        self.kernel.version
+    }
+    #[getter]
+    fn options(&self) -> Vec<String> {
+        self.kernel.options.clone()
+    }
+    #[getter]
+    fn device(&self) -> usize {
+        self.kernel.device
+    }
+    #[getter]
+    fn context(&self) -> usize {
+        self.kernel
+            .identity
+            .as_ref()
+            .expect("selected executable")
+            .context
+    }
+    /// Regenerated diagnostic only, never selected-invocation evidence.
+    #[pyo3(signature = (numerical_hint, output_order=None, scalar_output=None))]
+    fn plan(
+        &self,
+        numerical_hint: &Bound<'_, PyAny>,
+        output_order: Option<&Bound<'_, PyAny>>,
+        scalar_output: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<String> {
+        Compiled {
+            kernel: Arc::clone(&self.kernel),
+            arity: self.kernel.graph.inputs,
+        }
+        .plan(numerical_hint, output_order, scalar_output)
+    }
+}
+
 pub(crate) fn convert_outputs(
     py: Python<'_>,
     outputs: Vec<CoreTensor>,
@@ -415,6 +541,67 @@ pub(super) struct Prepared {
 
 #[pymethods]
 impl Prepared {
+    fn belongs_to(&self, executable: &Executable) -> bool {
+        Arc::ptr_eq(self.invocation.kernel(), &executable.kernel)
+    }
+    #[getter]
+    fn executable_identity<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyBytes>> {
+        self.invocation
+            .kernel()
+            .identity
+            .as_ref()
+            .map(|id| PyBytes::new(py, &id.bytes))
+    }
+    #[getter]
+    fn kind(&self) -> &'static str {
+        if self
+            .invocation
+            .kernel()
+            .identity
+            .as_ref()
+            .is_some_and(|id| id.direct)
+        {
+            "direct"
+        } else {
+            "vm"
+        }
+    }
+    #[getter]
+    fn source(&self) -> &str {
+        &self.invocation.kernel().source
+    }
+    #[getter]
+    fn ptx(&self) -> &str {
+        &self.invocation.kernel().ptx
+    }
+    #[getter]
+    fn nvrtc_version(&self) -> (i32, i32) {
+        self.invocation.kernel().version
+    }
+    #[getter]
+    fn options(&self) -> Vec<String> {
+        self.invocation.kernel().options.clone()
+    }
+    #[getter]
+    fn device(&self) -> usize {
+        self.invocation.kernel().device
+    }
+    #[getter]
+    fn context(&self) -> Option<usize> {
+        self.invocation
+            .kernel()
+            .identity
+            .as_ref()
+            .map(|id| id.context)
+    }
+    #[getter]
+    fn instruction_count(&self) -> usize {
+        self.invocation.instruction_count()
+    }
+    #[getter]
+    fn register_count(&self) -> usize {
+        self.invocation.register_count()
+    }
     #[pyo3(signature = (inputs, scalars=None))]
     fn run<'py>(
         &self,

@@ -18,6 +18,20 @@ cases where CUDA eager's separately rounded operations differ. Declarative
 instructions retain dependencies and reuse; register allocation removes dead
 products after their consumers contract.
 
+Functional GELU decomposes as `half = x * 0.5`,
+`argument = x * 0.70710678118654752440`, then `half * (1 + Erf(argument))`.
+The integer one and binary64 alpha pass through existing scalar materialization.
+Private Erf stays float32, including constant tensors; it has no host/double
+folding path. Its checked-in provider comes from the exact official CUDA 11.8
+libdevice through offline CUDA 12.8 libNVVM with local FTZ enabled. Existing
+executor arithmetic/FTZ options, numerical regions, CSE and FMA policy remain
+unchanged. Programs without live Erf retain their source and direct-load path.
+
+The separate CUDA 13 eager image follows ordinary eager GELU semantics. Eager
+and default-compiled results are compared to their respective reference modes,
+not assumed interchangeable. The [integration index](diagnostics/gelu-program-integration/README.md)
+separates current checks from the earlier failed provider attempts.
+
 ## Realization and observable order
 
 Numerical planning uses the first observable order of computed roots and the
@@ -40,8 +54,11 @@ The version-sensitive reference rules come from PyTorch 2.13
 `scheduler.py::Scheduler`. The repair evidence retains the inspected reference
 identity and detailed symbol pointers alongside generated FX and scheduler IR.
 
-One graph-keyed CUDA kernel interprets that bounded program in one launch.
-Container topology does not create additional native executables. Instruction
+One selected CUDA executable executes that bounded Program in one launch.
+Within the fixed code-generation caps, it mechanically emits the exact validated
+words; empty and over-cap executions use the existing interpreter. Original Graph,
+actual addresses, native context and exact Program identity select direct modules.
+Container topology alone does not create additional native executables. Instruction
 validation and register allocation precede device allocation. Matching warm calls
 reuse an immutable validated program and completed instruction upload. Selection
 includes exact admitted input shapes, retained numerical hint and observable
@@ -124,10 +141,10 @@ Consequently this subset has no competing product contraction to select. Address
 calculation only chooses input elements; it no longer changes numerical
 materialization ranks to approximate a reference autotuner.
 
-The existing numerical planner and generic CUDA instruction executor also own
+The existing numerical planner and selected direct or VM Program executable own
 one-stage trig; admission adds no trigonometric implementation or launch path.
 Constant-only trig is not runtime-input evidence, and empty outputs execute no
-trig. Finite regression results and generic VM PTX do not prove all-program or
+trig. Finite regression results and selected NVRTC PTX do not prove all-program or
 performance parity, nor independently trace a selected scalar plan on-device.
 Static scalar `-0.0` may reuse a `+0.0` specialization; tests retain that history
 rather than treating each sign as a separately specialized execution.

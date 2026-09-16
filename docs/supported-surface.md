@@ -20,6 +20,18 @@ Branch outcomes remain guarded when input dimensions generalize. CPU lowering, s
 inputs, other control flow and training remain unsupported by this JIT; explicit
 eager capture retains its separate contract.
 
+`torch_rs.nn.functional.gelu(input)` additionally supports one positional exact
+native contiguous CUDA float32 input without gradients, including scalar, empty
+and contiguous offset views. It returns fresh storage. Default compile lowers
+the same builtin to ordinary arithmetic and private Erf; every actual tensor
+input must have equal shape when Erf is live, including unused inputs. CPU,
+other dtypes/layouts, keywords/approximation modes, Tensor methods, autograd and
+explicit eager-backend/module capture are unsupported for GELU. Its separate
+lazy eager image needs a PTX 9.0-capable driver and sm75 or newer, but no NVRTC;
+unrelated eager images keep their existing requirements. See the
+[compiler guide](compile-pointwise-jit.md#functional-gelu) and
+[integration evidence](diagnostics/gelu-program-integration/README.md).
+
 This is the exhaustive feature tour and observable Python API contract for the
 current baseline. See [FEATURES.md](../FEATURES.md) for the weighted coverage
 contract and [BENCHMARKING.md](../BENCHMARKING.md) for performance policy.

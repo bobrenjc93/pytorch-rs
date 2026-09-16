@@ -1,0 +1,331 @@
+diff --git a/src/pointwise_indexing.rs b/src/pointwise_indexing.rs
+index 4cfc5ab..fb2a6a3 100644
+--- a/src/pointwise_indexing.rs
++++ b/src/pointwise_indexing.rs
+@@ -117,6 +117,7 @@ impl Graph {
+         // Propagating only through operands makes the returned node authoritative:
+         // dead expressions still validate their shapes but do not restrict numerics.
+         let mut depth: Vec<usize> = Vec::with_capacity(self.nodes.len());
++        let mut erf: Vec<bool> = Vec::with_capacity(self.nodes.len());
+         let mut transcendental: Vec<bool> = Vec::with_capacity(self.nodes.len());
+         for node in &self.nodes {
+             let (shape, mask) = match *node {
+@@ -129,10 +130,16 @@ impl Graph {
+                     broadcast(&layouts[a].shape, &layouts[b].shape)?,
+                     dependencies[a] | dependencies[b],
+                 ),
+-                Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a) => {
++                Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a) | Node::Erf(a) => {
+                     (layouts[a].shape.clone(), dependencies[a])
+                 }
+             };
++            erf.push(match *node {
++                Node::Erf(_) => true,
++                Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b) => erf[a] || erf[b],
++                Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a) => erf[a],
++                _ => false,
++            });
+             layouts.push(Layout::new(&shape)?);
+             dependencies.push(mask);
+             let (stages, has_transcendental) = match *node {
+@@ -147,7 +154,7 @@ impl Graph {
+                 ),
+                 Node::Neg(a) => (1 + depth[a], transcendental[a]),
+                 Node::Relu(a) => (depth[a], transcendental[a]),
+-                Node::Sin(a) | Node::Cos(a) => (depth[a], true),
++                Node::Sin(a) | Node::Cos(a) | Node::Erf(a) => (depth[a], true),
+             };
+             depth.push(stages);
+             transcendental.push(has_transcendental);
+@@ -162,6 +169,9 @@ impl Graph {
+         // p=x*y; return (p+x, p.sin()) shares a product across arithmetic and
+         // trig consumers. Both output orders must stay outside this increment.
+         let unequal_shapes = shapes.windows(2).any(|pair| pair[0] != pair[1]);
++        if unequal_shapes && self.outputs.iter().any(|&root| erf[root]) {
++            return Err(invalid("live Erf requires equal actual input shapes"));
++        }
+         let live_transcendental = self.outputs.iter().any(|&root| transcendental[root]);
+         if unequal_shapes
+             && self.outputs.iter().any(|&root| {
+diff --git a/src/pointwise_ir.rs b/src/pointwise_ir.rs
+index ca2c69f..2ca59ff 100644
+--- a/src/pointwise_ir.rs
++++ b/src/pointwise_ir.rs
+@@ -25,6 +25,7 @@ pub(crate) enum Node {
+     Relu(usize),
+     Sin(usize),
+     Cos(usize),
++    Erf(usize),
+ }
+ 
+ #[derive(Clone, Debug)]
+@@ -81,7 +82,7 @@ impl Graph {
+                     }
+                     true
+                 }
+-                Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a) => {
++                Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a) | Node::Erf(a) => {
+                     if !operand(a)? {
+                         return Err(invalid("unary operations require a tensor expression"));
+                     }
+diff --git a/src/pointwise_lowering.rs b/src/pointwise_lowering.rs
+index 28b9217..9c8d87a 100644
+--- a/src/pointwise_lowering.rs
++++ b/src/pointwise_lowering.rs
+@@ -439,7 +439,7 @@ impl Lowering {
+                     Expr::Node(Node::Relu(a)) => ranks[a] + 2, // compare, select
+                     Expr::Node(Node::Neg(a)) | Expr::SelfSub(a) => ranks[a] + 1,
+                     Expr::Flip(a) | Expr::SignedDouble(a) => ranks[a], // actual fneg
+-                    Expr::Node(Node::Sin(_) | Node::Cos(_)) => call_ranks[id],
++                    Expr::Node(Node::Sin(_) | Node::Cos(_) | Node::Erf(_)) => call_ranks[id],
+                 }
+             };
+             ranks.push(rank);
+@@ -653,7 +653,7 @@ impl Lowering {
+     fn operands(&self, id: usize) -> Vec<usize> {
+         match self.nodes[id] {
+             Expr::Node(Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b)) => vec![a, b],
+-            Expr::Node(Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a))
++            Expr::Node(Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a) | Node::Erf(a))
+             | Expr::Flip(a)
+             | Expr::SelfSub(a)
+             | Expr::SignedDouble(a) => vec![a],
+@@ -757,7 +757,7 @@ fn materialization_ranks(
+             Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b) => {
+                 pending.extend([(b, false), (a, false)]);
+             }
+-            Node::Sin(a) | Node::Cos(a) => pending.extend([(id, true), (a, false)]),
++            Node::Sin(a) | Node::Cos(a) | Node::Erf(a) => pending.extend([(id, true), (a, false)]),
+             Node::Neg(a) | Node::Relu(a) => pending.push((a, false)),
+             _ => {}
+         }
+@@ -784,6 +784,7 @@ pub(super) fn remap(node: &Node, mapped: &[usize]) -> Node {
+         Node::Relu(a) => Node::Relu(mapped[a]),
+         Node::Sin(a) => Node::Sin(mapped[a]),
+         Node::Cos(a) => Node::Cos(mapped[a]),
++        Node::Erf(a) => Node::Erf(mapped[a]),
+     }
+ }
+ 
+@@ -832,7 +833,7 @@ fn consumer_analysis(
+         }
+         let operands = match canonical.nodes[id] {
+             Expr::Node(Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b)) => vec![a, b],
+-            Expr::Node(Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a)) => vec![a],
++            Expr::Node(Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a) | Node::Erf(a)) => vec![a],
+             _ => vec![],
+         };
+         for operand in operands {
+@@ -940,6 +941,7 @@ pub(super) fn region(
+                 Expr::Node(Node::Relu(a)) => Operation::Relu(a),
+                 Expr::Node(Node::Sin(a)) => Operation::Sin(a, lower.constant_expressions[a]),
+                 Expr::Node(Node::Cos(a)) => Operation::Cos(a, lower.constant_expressions[a]),
++                Expr::Node(Node::Erf(a)) => Operation::Erf(a),
+                 Expr::Flip(a) | Expr::SignedDouble(a) => Operation::Flip(a),
+                 Expr::SelfSub(a) => Operation::Sub(a, a),
+             }
+diff --git a/src/pointwise_program.rs b/src/pointwise_program.rs
+index a8a0f18..019a803 100644
+--- a/src/pointwise_program.rs
++++ b/src/pointwise_program.rs
+@@ -29,6 +29,7 @@ const CONSTANT_SIN: u32 = 12;
+ const CONSTANT_COS: u32 = 13;
+ const FMA: u32 = 14;
+ const STORE: u32 = 15;
++const ERF: u32 = 16;
+ 
+ #[derive(Clone, Debug)]
+ pub(super) enum Operation {
+@@ -45,6 +46,7 @@ pub(super) enum Operation {
+     Relu(usize),
+     Sin(usize, bool),
+     Cos(usize, bool),
++    Erf(usize),
+     Fma {
+         a: usize,
+         b: usize,
+@@ -77,6 +79,9 @@ impl Operation {
+                 "sinf((__float_as_uint(v{a}) & 0x7f800000u) == 0 ? __uint_as_float(__float_as_uint(v{a}) & 0x80000000u) : v{a})"
+             ),
+             Self::Cos(a, false) => format!("cosf(v{a})"),
++            Self::Erf(a) => format!(
++                "erff((__float_as_uint(v{a}) & 0x7f800000u) == 0 ? __uint_as_float(__float_as_uint(v{a}) & 0x80000000u) : v{a})"
++            ),
+             Self::Fma {
+                 a,
+                 b,
+@@ -124,7 +129,8 @@ impl Operation {
+             | Self::Flip(a)
+             | Self::Relu(a)
+             | Self::Sin(a, _)
+-            | Self::Cos(a, _) => {
++            | Self::Cos(a, _)
++            | Self::Erf(a) => {
+                 instruction[0] = match *self {
+                     Self::Copy(_) => COPY,
+                     Self::Neg(_) => NEG,
+@@ -134,6 +140,7 @@ impl Operation {
+                     Self::Sin(_, true) => CONSTANT_SIN,
+                     Self::Cos(_, false) => COS,
+                     Self::Cos(_, true) => CONSTANT_COS,
++                    Self::Erf(_) => ERF,
+                     _ => unreachable!(),
+                 };
+                 instruction[2] = reg(a)?;
+@@ -175,7 +182,8 @@ impl Operation {
+             | Self::Flip(a)
+             | Self::Relu(a)
+             | Self::Sin(a, _)
+-            | Self::Cos(a, _) => [Some(a), None, None],
++            | Self::Cos(a, _)
++            | Self::Erf(a) => [Some(a), None, None],
+             Self::Add(a, b) | Self::Sub(a, b) | Self::Mul(a, b) => [Some(a), Some(b), None],
+             Self::Fma { a, b, c, .. } => [Some(a), Some(b), c],
+         }
+@@ -465,7 +473,7 @@ impl Program {
+                 INPUT if (a as usize) < graph.inputs && flags == 0 => {}
+                 SCALAR if (a as usize) < graph.scalar_count() && flags <= 1 => {}
+                 CONSTANT if flags == 0 => {}
+-                COPY | NEG | FLIP | RELU | SIN | COS | CONSTANT_SIN | CONSTANT_COS
++                COPY | NEG | FLIP | RELU | SIN | COS | ERF | CONSTANT_SIN | CONSTANT_COS
+                     if flags == 0 =>
+                 {
+                     read(a)?;
+@@ -561,6 +569,7 @@ pub(super) fn source(graph: &Graph, addresses: &[Address]) -> String {
+             "sinf((__float_as_uint(R(a)) & 0x7f800000u) == 0 ? __uint_as_float(__float_as_uint(R(a)) & 0x80000000u) : R(a))",
+         ),
+         (COS, "cosf(R(a))"),
++        (ERF, "erff((__float_as_uint(R(a)) & 0x7f800000u) == 0 ? __uint_as_float(__float_as_uint(R(a)) & 0x80000000u) : R(a))"),
+         (CONSTANT_SIN, "(float)sin((double)R(a))"),
+         (CONSTANT_COS, "(float)cos((double)R(a))"),
+     ] {
+@@ -586,6 +595,25 @@ mod tests {
+     use super::*;
+     use crate::pointwise_ir::Node;
+ 
++    #[test]
++    fn erf_instruction_validates_its_operand_and_flags() {
++        let graph = Graph {
++            inputs: 1,
++            nodes: vec![Node::Input(0), Node::Erf(0)],
++            outputs: vec![1],
++        };
++        let mut program = Program::build(&graph, &[Address::Linear], 13, &[0], false).unwrap();
++        let index = program.instructions.iter().position(|i| i[0] == ERF).unwrap();
++        let original = program.instructions[index];
++        program.instructions[index][2] = program.register_count as u32;
++        assert!(program.validate(&graph).is_err());
++        program.instructions[index] = original;
++        program.instructions[index][5] = 1;
++        assert!(program.validate(&graph).is_err());
++        program.instructions[index] = original;
++        assert!(program.validate(&graph).is_ok());
++    }
++
+     fn graph() -> Graph {
+         Graph {
+             inputs: 1,
+diff --git a/src/pointwise_regions.rs b/src/pointwise_regions.rs
+index 66b8a80..b801abe 100644
+--- a/src/pointwise_regions.rs
++++ b/src/pointwise_regions.rs
+@@ -34,7 +34,7 @@ pub(crate) struct Region {
+ fn operands(node: &Node) -> Vec<usize> {
+     match *node {
+         Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b) => vec![a, b],
+-        Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a) => vec![a],
++        Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a) | Node::Erf(a) => vec![a],
+         _ => vec![],
+     }
+ }
+@@ -49,6 +49,7 @@ fn tensor_operation(node: &Node) -> bool {
+             | Node::Relu(_)
+             | Node::Sin(_)
+             | Node::Cos(_)
++            | Node::Erf(_)
+     )
+ }
+ 
+diff --git a/src/python_pointwise.rs b/src/python_pointwise.rs
+index e816c73..fca8f95 100644
+--- a/src/python_pointwise.rs
++++ b/src/python_pointwise.rs
+@@ -82,6 +82,7 @@ fn graph(
+             ("relu", a, 0, 0) => Node::Relu(a),
+             ("sin", a, 0, 0) => Node::Sin(a),
+             ("cos", a, 0, 0) => Node::Cos(a),
++            ("erf", a, 0, 0) => Node::Erf(a),
+             _ => {
+                 return Err(PyNotImplementedError::new_err(
+                     "unsupported typed pointwise node",
+diff --git a/tests/test_compile_pointwise_erf.py b/tests/test_compile_pointwise_erf.py
+new file mode 100644
+index 0000000..747404c
+--- /dev/null
++++ b/tests/test_compile_pointwise_erf.py
+@@ -0,0 +1,65 @@
++"""Private Erf admission during the conditional GELU integration gate."""
++import struct
++import unittest
++
++from torch_rs import torch_rs as bridge
++
++
++def constant(value):
++    return ('constant', 0, 0, struct.unpack('<Q', struct.pack('<d', value))[0])
++
++
++class PrivateErf(unittest.TestCase):
++    def test_strict_unary_operand_and_payload(self):
++        prefix = (('input', 0, 0, 0),)
++        for invalid in [('erf', 0, 1, 0), ('erf', 0, 0, 1), ('erf', 1, 0, 0),
++                        ('erf', True, 0, 0)]:
++            with self.subTest(invalid=invalid), self.assertRaises((ValueError, TypeError, NotImplementedError)):
++                bridge._pointwise_plan(prefix + (invalid,), (1,), 1)
++        with self.assertRaisesRegex(ValueError, 'tensor expression'):
++            bridge._pointwise_plan((constant(.75), ('erf', 0, 0, 0)), (1,), 1)
++        with self.assertRaisesRegex(ValueError, 'earlier SSA'):
++            bridge._pointwise_plan(prefix + (('erf', 2, 0, 0), ('neg', 0, 0, 0)), (2,), 1)
++
++    def test_live_equal_actual_shape_boundary_includes_unused_inputs(self):
++        nodes = (('input', 0, 0, 0), ('input', 1, 0, 0), ('erf', 0, 0, 0),
++                 ('relu', 1, 0, 0), ('mul', 2, 0, 0))
++        for shapes in [([2, 1], [1, 2]), ([1], [1, 1]), ([0], [1])]:
++            with self.subTest(shapes=shapes):
++                for roots in [(2,), (4,)]:
++                    with self.assertRaisesRegex(RuntimeError, 'live Erf requires equal actual input shapes'):
++                        bridge._pointwise_plan(nodes, roots, 2, shapes)
++                # Dead Erf does not narrow the accepted broadcast-trig surface.
++                bridge._pointwise_plan(nodes, (3,), 2, shapes)
++        bridge._pointwise_plan(nodes, (2, 4), 2, [[2, 3], [2, 3]])
++
++    def test_constant_erf_uses_float32_and_keeps_original_shape_validation(self):
++        nodes = (('input', 0, 0, 0), ('integer', 0, 0, 0), ('mul', 0, 1, 0),
++                 constant(.75), ('add', 2, 3, 0), ('erf', 4, 0, 0))
++        plan = bridge._pointwise_plan(nodes, (5,), 1, [[13]])
++        self.assertIn('erff(', plan)
++        self.assertNotIn('x0[i]', plan)
++        self.assertNotIn('(double)', plan)
++        # Invalid dead broadcast is checked before liveness and zero folding.
++        bad = nodes + (('input', 1, 0, 0), ('add', 0, 6, 0))
++        with self.assertRaisesRegex(RuntimeError, 'broadcast'):
++            bridge._pointwise_plan(bad, (5,), 2, [[2], [3]])
++
++    def test_cse_does_not_merge_independent_output_slots(self):
++        nodes = (('input', 0, 0, 0), ('erf', 0, 0, 0), ('erf', 0, 0, 0))
++        plan = bridge._pointwise_plan(nodes, (1, 2), 1, [[13]])
++        self.assertEqual(plan.count('erff('), 1)
++        self.assertIn('out0[i]', plan)
++        self.assertIn('out1[i]', plan)
++        self.assertNotIn('erff', bridge._pointwise_plan(nodes + (('neg', 0, 0, 0),), (3,), 1))
++
++    def test_private_erf_is_not_a_public_callable_or_tensor_method(self):
++        import torch_rs
++        for name in ('erf', 'gelu'):
++            self.assertFalse(hasattr(torch_rs, name))
++            self.assertFalse(hasattr(torch_rs.Tensor, name))
++        self.assertFalse(hasattr(torch_rs.nn.functional, 'gelu'))
++
++
++if __name__ == '__main__':
++    unittest.main()

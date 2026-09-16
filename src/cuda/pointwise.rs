@@ -36,8 +36,15 @@ struct Driver {
     // library remain live for the process lifetime, like the CUDA runtime.
     modules: Mutex<Vec<Module>>,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Image {
+    Common,
+    #[cfg(any(feature = "python-bindings", test))]
+    Gelu,
+}
 struct Module {
     context: usize,
+    image: Image,
     _handle: usize,
     functions: [usize; 9],
 }
@@ -53,6 +60,8 @@ enum Kernel {
     #[cfg(any(feature = "python-bindings", test))]
     Negate = 7,
     Relu = 8,
+    #[cfg(any(feature = "python-bindings", test))]
+    Gelu = 9,
 }
 
 static DRIVER: OnceLock<Result<Driver, String>> = OnceLock::new();
@@ -135,56 +144,77 @@ impl Driver {
     }
 
     fn function(&self, kernel: Kernel) -> Result<usize, TensorError> {
+        #[cfg(test)]
+        if matches!(kernel, Kernel::Gelu) {
+            GELU_LOOKUPS.with(|count| count.set(count.get() + 1));
+        }
+        let (image, slot) = match kernel {
+            #[cfg(any(feature = "python-bindings", test))]
+            Kernel::Gelu => (Image::Gelu, 0),
+            _ => (Image::Common, kernel as usize),
+        };
         let context = current_context()?;
         let mut modules = self
             .modules
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(entry) = modules.iter().find(|entry| entry.context == context) {
-            return Ok(entry.functions[kernel as usize]);
+        if let Some(entry) = modules
+            .iter()
+            .find(|entry| entry.context == context && entry.image == image)
+        {
+            return Ok(entry.functions[slot]);
         }
         modules
             .try_reserve(1)
             .map_err(|_| TensorError::AllocationFailed { elements: 1 })?;
         let mut module = std::ptr::null_mut();
         let mut functions = [0; 9];
-        // SAFETY: static NUL-terminated PTX and entry names; writable handles.
+        // Keep the CUDA13 GELU image separate: common eager operations retain
+        // their PTX6/sm50 floor and never load the higher-floor image.
+        let (ptx, names): (&[u8], &[&CStr]) = match image {
+            Image::Common => (
+                concat!(
+                    include_str!("add.ptx"),
+                    "\n",
+                    include_str!("mul_scalar.ptx"),
+                    "\n",
+                    include_str!("add_trailing_vector.ptx"),
+                    "\n",
+                    include_str!("sum_rows.ptx"),
+                    "\n",
+                    include_str!("neg.ptx"),
+                    "\n",
+                    include_str!("contiguous.ptx"),
+                    "\n",
+                    include_str!("relu.ptx"),
+                    "\0"
+                )
+                .as_bytes(),
+                &[
+                    c"add_f32",
+                    c"add_f32x4",
+                    c"mul_scalar_f32",
+                    c"add_trailing_vector_f32",
+                    c"sum_rows_f32",
+                    c"sum_rows_finalize_f32",
+                    c"contiguous_f32",
+                    c"neg_f32",
+                    c"relu_f32",
+                ],
+            ),
+            #[cfg(any(feature = "python-bindings", test))]
+            Image::Gelu => (
+                concat!(include_str!("gelu.ptx"), "\0").as_bytes(),
+                &[c"gelu_f32"],
+            ),
+        };
+        // SAFETY: static NUL-terminated image and names; writable handles.
         unsafe {
             self.check(
-                (self.load)(
-                    &raw mut module,
-                    concat!(
-                        include_str!("add.ptx"),
-                        "\n",
-                        include_str!("mul_scalar.ptx"),
-                        "\n",
-                        include_str!("add_trailing_vector.ptx"),
-                        "\n",
-                        include_str!("sum_rows.ptx"),
-                        "\n",
-                        include_str!("neg.ptx"),
-                        "\n",
-                        include_str!("contiguous.ptx"),
-                        "\n",
-                        include_str!("relu.ptx"),
-                        "\0"
-                    )
-                    .as_ptr()
-                    .cast(),
-                ),
+                (self.load)(&raw mut module, ptx.as_ptr().cast()),
                 "cuModuleLoadData",
             )?;
-            for (slot, name) in functions.iter_mut().zip([
-                c"add_f32",
-                c"add_f32x4",
-                c"mul_scalar_f32",
-                c"add_trailing_vector_f32",
-                c"sum_rows_f32",
-                c"sum_rows_finalize_f32",
-                c"contiguous_f32",
-                c"neg_f32",
-                c"relu_f32",
-            ]) {
+            for (slot, name) in functions.iter_mut().zip(names) {
                 let mut function = std::ptr::null_mut();
                 if let Err(error) = self.check(
                     (self.function)(&raw mut function, module, name.as_ptr()),
@@ -198,10 +228,11 @@ impl Driver {
         }
         modules.push(Module {
             context,
+            image,
             _handle: module as usize,
             functions,
         });
-        Ok(functions[kernel as usize])
+        Ok(functions[slot])
     }
 }
 
@@ -412,6 +443,47 @@ pub(super) unsafe fn launch_relu(
 /// Input and output refer to `elements` live contiguous floats on the guarded
 /// device, without aliasing. Caller must synchronize the legacy stream before
 /// releasing either allocation, including on launch errors.
+#[cfg(any(feature = "python-bindings", test))]
+pub(super) unsafe fn launch_gelu(
+    mut input: u64,
+    mut output: u64,
+    elements: usize,
+) -> Result<(), TensorError> {
+    let driver = driver()?;
+    let function = driver.function(Kernel::Gelu)?;
+    let mut count = elements as u64;
+    let mut arguments = [
+        (&raw mut input).cast(),
+        (&raw mut output).cast(),
+        (&raw mut count).cast(),
+    ];
+    let blocks = u32::try_from(elements.div_ceil(256).min(4096)).expect("bounded grid");
+    // SAFETY: parameters survive the launch argument copy; the cached function
+    // belongs to this context. CU_STREAM_LEGACY matches runtime copies/zero-fill.
+    driver.check(
+        unsafe {
+            (driver.launch)(
+                function as *mut c_void,
+                blocks,
+                1,
+                1,
+                256,
+                1,
+                1,
+                0,
+                std::ptr::without_provenance_mut(1),
+                arguments.as_mut_ptr(),
+                std::ptr::null_mut(),
+            )
+        },
+        "cuLaunchKernel",
+    )
+}
+
+/// # Safety
+/// Input and output refer to `elements` live contiguous floats on the guarded
+/// device, without aliasing. Caller must synchronize the legacy stream before
+/// releasing either allocation, including on launch errors.
 pub(super) unsafe fn launch_mul_scalar(
     mut input: u64,
     mut output: u64,
@@ -500,8 +572,70 @@ pub(super) unsafe fn launch_contiguous(
 }
 
 #[cfg(test)]
+thread_local! {
+    static GELU_LOOKUPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 mod slot_tests {
     use super::Kernel;
+
+    #[test]
+    fn selected_erf_never_looks_up_or_loads_the_eager_gelu_image() {
+        use crate::{
+            Device, Tensor,
+            pointwise_ir::{Graph, Node},
+            tensor::pointwise_jit::HostPointwise,
+        };
+        if crate::cuda::device_count() == 0 {
+            eprintln!("skipping selected/eager image separation: CUDA unavailable");
+            return;
+        }
+        let x = Tensor::from_vec(vec![0.5; 3], [3])
+            .unwrap()
+            .try_copy_cpu_to_cuda(Device::Cuda(0))
+            .unwrap();
+        let before = super::GELU_LOOKUPS.with(std::cell::Cell::get);
+        let graph = Graph {
+            inputs: 1,
+            nodes: vec![Node::Input(0), Node::Erf(0)],
+            outputs: vec![1],
+        };
+        let host = HostPointwise::new(&[&x], graph, None, &[0]).unwrap();
+        let prepared = host.bind(host.compile().unwrap()).unwrap();
+        prepared.run(&[&x], &[]).unwrap();
+        assert_eq!(super::GELU_LOOKUPS.with(std::cell::Cell::get), before);
+        // Positive control proves the counter observes the real lazy eager route.
+        x.gelu_cuda().unwrap();
+        assert_eq!(super::GELU_LOOKUPS.with(std::cell::Cell::get), before + 1);
+    }
+
+    #[test]
+    #[allow(clippy::used_underscore_binding)] // Compare the retained module owners.
+    fn gelu_and_common_images_reuse_distinct_context_modules() {
+        if crate::cuda::device_count() == 0 {
+            eprintln!("skipping CUDA GELU module ownership: CUDA unavailable");
+            return;
+        }
+        let _guard = super::super::runtime().unwrap().guard(0).unwrap();
+        let driver = super::driver().unwrap();
+        let relu = driver.function(Kernel::Relu).unwrap();
+        let gelu = driver.function(Kernel::Gelu).unwrap();
+        assert_ne!(relu, gelu);
+        assert_eq!(relu, driver.function(Kernel::Relu).unwrap());
+        assert_eq!(gelu, driver.function(Kernel::Gelu).unwrap());
+        let context = super::current_context().unwrap();
+        let modules = driver.modules.lock().unwrap();
+        let common = modules
+            .iter()
+            .find(|m| m.context == context && m.image == super::Image::Common)
+            .unwrap();
+        let separate = modules
+            .iter()
+            .find(|m| m.context == context && m.image == super::Image::Gelu)
+            .unwrap();
+        assert_ne!(common._handle, separate._handle);
+    }
 
     #[test]
     fn kernel_slots_match_driver_entry_order() {

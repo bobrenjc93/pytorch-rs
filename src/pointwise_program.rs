@@ -9,6 +9,9 @@ use super::{Graph, indexing::Address, invalid};
 use crate::tensor_error::TensorError;
 use std::fmt::Write;
 
+#[path = "pointwise_codegen.rs"]
+mod codegen;
+
 // Each branch of normalization interns at most eight expressions per original
 // node, including converted constants and exposed signs. Contraction replaces
 // an operation with one FMA; it does not expand the instruction stream.
@@ -29,6 +32,7 @@ const CONSTANT_SIN: u32 = 12;
 const CONSTANT_COS: u32 = 13;
 const FMA: u32 = 14;
 const STORE: u32 = 15;
+const ERF: u32 = 16;
 
 #[derive(Clone, Debug)]
 pub(super) enum Operation {
@@ -45,6 +49,7 @@ pub(super) enum Operation {
     Relu(usize),
     Sin(usize, bool),
     Cos(usize, bool),
+    Erf(usize),
     Fma {
         a: usize,
         b: usize,
@@ -77,6 +82,7 @@ impl Operation {
                 "sinf((__float_as_uint(v{a}) & 0x7f800000u) == 0 ? __uint_as_float(__float_as_uint(v{a}) & 0x80000000u) : v{a})"
             ),
             Self::Cos(a, false) => format!("cosf(v{a})"),
+            Self::Erf(a) => format!("torch_rs_erf(v{a})"),
             Self::Fma {
                 a,
                 b,
@@ -124,7 +130,8 @@ impl Operation {
             | Self::Flip(a)
             | Self::Relu(a)
             | Self::Sin(a, _)
-            | Self::Cos(a, _) => {
+            | Self::Cos(a, _)
+            | Self::Erf(a) => {
                 instruction[0] = match *self {
                     Self::Copy(_) => COPY,
                     Self::Neg(_) => NEG,
@@ -134,6 +141,7 @@ impl Operation {
                     Self::Sin(_, true) => CONSTANT_SIN,
                     Self::Cos(_, false) => COS,
                     Self::Cos(_, true) => CONSTANT_COS,
+                    Self::Erf(_) => ERF,
                     _ => unreachable!(),
                 };
                 instruction[2] = reg(a)?;
@@ -175,7 +183,8 @@ impl Operation {
             | Self::Flip(a)
             | Self::Relu(a)
             | Self::Sin(a, _)
-            | Self::Cos(a, _) => [Some(a), None, None],
+            | Self::Cos(a, _)
+            | Self::Erf(a) => [Some(a), None, None],
             Self::Add(a, b) | Self::Sub(a, b) | Self::Mul(a, b) => [Some(a), Some(b), None],
             Self::Fma { a, b, c, .. } => [Some(a), Some(b), c],
         }
@@ -243,6 +252,22 @@ fn last_uses(operations: &[Operation], roots: &[usize]) -> Result<Vec<Option<usi
 }
 
 impl Program {
+    pub(crate) fn uses_erf(&self) -> bool {
+        self.instructions
+            .iter()
+            .any(|instruction| instruction[0] == ERF)
+    }
+
+    /// Emit only the validated instruction stream, never a diagnostic listing.
+    pub(crate) fn direct_source(
+        &self,
+        graph: &Graph,
+        addresses: &[Address],
+    ) -> Result<Option<String>, TensorError> {
+        self.validate(graph)?;
+        codegen::source(self, graph, addresses)
+    }
+
     pub(crate) fn build(
         graph: &Graph,
         addresses: &[Address],
@@ -465,7 +490,7 @@ impl Program {
                 INPUT if (a as usize) < graph.inputs && flags == 0 => {}
                 SCALAR if (a as usize) < graph.scalar_count() && flags <= 1 => {}
                 CONSTANT if flags == 0 => {}
-                COPY | NEG | FLIP | RELU | SIN | COS | CONSTANT_SIN | CONSTANT_COS
+                COPY | NEG | FLIP | RELU | SIN | COS | ERF | CONSTANT_SIN | CONSTANT_COS
                     if flags == 0 =>
                 {
                     read(a)?;
@@ -508,12 +533,22 @@ impl Program {
 /// The kernel contains no topology-dependent numerical decisions. A graph only
 /// specializes its address maps and input/scalar/output ABI. Registers are
 /// coalesced across workers: `scratch[register * scratch_stride + worker]`.
-pub(super) fn source(graph: &Graph, addresses: &[Address]) -> String {
+#[derive(Clone)]
+pub(crate) struct Compilation {
+    pub source: String,
+    pub erf: bool,
+}
+
+pub(super) fn source(graph: &Graph, addresses: &[Address]) -> Compilation {
+    let erf = graph.uses_erf();
     let mut source = String::from(
         "// torch_rs typed pointwise scalar program v3; float32, no fast math\n\
          extern \"C\" __global__ void torch_rs_pointwise(\n\
          const float* x0, const float* x1",
     );
+    if erf {
+        source.insert_str(0, "extern \"C\" __device__ float torch_rs_erf(float);\n");
+    }
     for index in 0..graph.outputs.len() {
         write!(source, ", float* out{index}").unwrap();
     }
@@ -566,6 +601,9 @@ pub(super) fn source(graph: &Graph, addresses: &[Address]) -> String {
     ] {
         writeln!(source, "case {opcode}: R(d) = {expression}; break;").unwrap();
     }
+    if erf {
+        writeln!(source, "case {ERF}: R(d) = torch_rs_erf(R(a)); break;").unwrap();
+    }
     writeln!(source, "case {FMA}: {{").unwrap();
     source.push_str(
         "float left = R(a), addend = (flags & 4u) ? 0.0f : R(c);\n\
@@ -578,13 +616,162 @@ pub(super) fn source(graph: &Graph, addresses: &[Address]) -> String {
         writeln!(source, "case {slot}: out{slot}[i] = R(a); break;").unwrap();
     }
     source.push_str("default: return; } break;\ndefault: return;\n}\n}\n}\n#undef R\n}\n");
-    source
+    Compilation { source, erf }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::pointwise_ir::Node;
+
+    #[test]
+    fn device_library_dependency_matches_executed_erf_across_plans() {
+        let mut graph = Graph {
+            inputs: 1,
+            nodes: vec![Node::Input(0), Node::Erf(0)],
+            outputs: vec![1],
+        };
+        // Nested, shared and threshold-crossing consumers use the same
+        // dependency regardless of the planner's shape hint or return order.
+        for id in 2..110 {
+            graph.nodes.push(if id % 2 == 0 {
+                Node::Sin(id - 1)
+            } else {
+                Node::Erf(id - 1)
+            });
+        }
+        graph.nodes.push(Node::Mul(1, 1));
+        graph.nodes.push(Node::Add(109, 110));
+        graph.outputs = vec![1, 109, 110, 111];
+        for address in [Address::Linear, Address::Broadcast(vec![])] {
+            let compilation = graph.compilation(std::slice::from_ref(&address)).unwrap();
+            assert!(compilation.erf);
+            assert_eq!(
+                compilation
+                    .source
+                    .matches("float torch_rs_erf(float);")
+                    .count(),
+                1
+            );
+            assert_eq!(compilation.source.matches("torch_rs_erf(R(a))").count(), 1);
+            for hint in [0, 1, 13, 257, u64::MAX] {
+                for order in [&[0, 1, 2, 3][..], &[3, 2, 1, 0][..]] {
+                    for scalar_output in [false, true] {
+                        let program = Program::build(
+                            &graph,
+                            std::slice::from_ref(&address),
+                            hint,
+                            order,
+                            scalar_output,
+                        )
+                        .unwrap();
+                        assert!(program.instructions().iter().any(|i| i[0] == ERF));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn dead_and_integer_zero_erf_keep_non_library_source_and_program() {
+        let baseline = Graph {
+            inputs: 1,
+            nodes: vec![Node::Input(0), Node::Neg(0)],
+            outputs: vec![1],
+        };
+        let mut dead = baseline.clone();
+        dead.nodes.push(Node::Erf(0));
+        let integer_zero = Graph {
+            inputs: 1,
+            nodes: vec![
+                Node::Input(0),
+                Node::Erf(0),
+                Node::Integer(0),
+                Node::Mul(1, 2),
+            ],
+            outputs: vec![3],
+        };
+        for address in [Address::Linear, Address::Broadcast(vec![(4, 3, 1)])] {
+            let original = baseline
+                .compilation(std::slice::from_ref(&address))
+                .unwrap();
+            assert!(!original.erf);
+            assert!(!original.source.contains("torch_rs_erf"));
+            for graph in [&dead, &integer_zero] {
+                let compilation = graph.compilation(std::slice::from_ref(&address)).unwrap();
+                assert!(!compilation.erf);
+                // The executor's entire source remains unchanged, not only
+                // its operation case or signature, when no provider is live.
+                assert_eq!(compilation.source, original.source);
+                for hint in [1, 13, u64::MAX] {
+                    let program =
+                        Program::build(graph, std::slice::from_ref(&address), hint, &[0], false)
+                            .unwrap();
+                    assert!(program.instructions().iter().all(|i| i[0] != ERF));
+                }
+            }
+        }
+        // Compile dependencies follow numerical liveness; shape admission
+        // intentionally still sees the original, reachable Erf before erasure.
+        let mut unequal = integer_zero;
+        unequal.inputs = 2;
+        assert!(unequal.indexing(&[&[3], &[1]]).is_err());
+    }
+
+    #[test]
+    fn float_zero_and_constant_erf_do_not_erase_library_dependency() {
+        for graph in [
+            Graph {
+                inputs: 1,
+                nodes: vec![
+                    Node::Input(0),
+                    Node::Erf(0),
+                    Node::Constant(0),
+                    Node::Mul(1, 2),
+                ],
+                outputs: vec![3],
+            },
+            Graph {
+                inputs: 1,
+                nodes: vec![
+                    Node::Input(0),
+                    Node::Integer(0),
+                    Node::Mul(0, 1),
+                    Node::Constant(2.0_f64.to_bits()),
+                    Node::Add(2, 3),
+                    Node::Erf(4),
+                ],
+                outputs: vec![5],
+            },
+        ] {
+            assert!(graph.compilation(&[Address::Linear]).unwrap().erf);
+            let program = Program::build(&graph, &[Address::Linear], 13, &[0], false).unwrap();
+            assert!(program.instructions().iter().any(|i| i[0] == ERF));
+        }
+    }
+
+    #[test]
+    fn erf_instruction_validates_its_operand_and_flags() {
+        let graph = Graph {
+            inputs: 1,
+            nodes: vec![Node::Input(0), Node::Erf(0)],
+            outputs: vec![1],
+        };
+        let mut program = Program::build(&graph, &[Address::Linear], 13, &[0], false).unwrap();
+        let index = program
+            .instructions
+            .iter()
+            .position(|i| i[0] == ERF)
+            .unwrap();
+        let original = program.instructions[index];
+        program.instructions[index][2] = u32::try_from(program.register_count).unwrap();
+        assert!(program.validate(&graph).is_err());
+        program.instructions[index] = original;
+        program.instructions[index][5] = 1;
+        assert!(program.validate(&graph).is_err());
+        program.instructions[index] = original;
+        assert!(program.validate(&graph).is_ok());
+    }
 
     fn graph() -> Graph {
         Graph {

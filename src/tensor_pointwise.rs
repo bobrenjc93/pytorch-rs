@@ -1,5 +1,12 @@
 //! Whole-input admission and fresh output construction for the pointwise JIT.
 use super::{Arc, DType, Device, Tensor, requires_grad_flag};
+
+#[cfg(test)]
+#[path = "tensor_pointwise_gelu_tests.rs"]
+mod gelu_tests;
+#[cfg(test)]
+#[path = "tensor_pointwise_identity_tests.rs"]
+mod identity_tests;
 use crate::{
     cuda::{PointwisePlan, jit::Kernel},
     pointwise_ir::{indexing::Layout, invalid},
@@ -14,6 +21,148 @@ pub(crate) struct PreparedPointwise {
     output: Layout,
     input_elements: [usize; 2],
     plan: PointwisePlan,
+}
+
+/// Construction-only admission certificate. It owns no input storage and is
+/// released after binding; only the executable LRU retains native code identity.
+pub(crate) struct HostPointwise {
+    graph: crate::pointwise_ir::Graph,
+    addresses: Vec<crate::pointwise_ir::indexing::Address>,
+    device: usize,
+    pub(crate) identity: crate::cuda::jit::ExecutableIdentity,
+    compilation: crate::pointwise_ir::program::Compilation,
+    input_shapes: Vec<Vec<usize>>,
+    output: Layout,
+    input_elements: [usize; 2],
+    program: crate::pointwise_ir::program::Program,
+}
+
+/// Original input/Graph admission precedes interpretation of planning options.
+/// This preserves admission errors even when Python's incompatible-shape hint
+/// sentinel cannot be represented as a native unsigned hint.
+pub(crate) struct HostAdmission {
+    graph: crate::pointwise_ir::Graph,
+    device: usize,
+    indexing: crate::pointwise_ir::indexing::Indexing,
+    input_shapes: Vec<Vec<usize>>,
+}
+
+impl HostAdmission {
+    pub(crate) fn new(
+        inputs: &[&Tensor],
+        graph: crate::pointwise_ir::Graph,
+    ) -> Result<Self, TensorError> {
+        let device = Tensor::validate_pointwise_inputs(inputs)?;
+        let indexing = graph.indexing(
+            &inputs
+                .iter()
+                .map(|x| x.shape.as_slice())
+                .collect::<Vec<_>>(),
+        )?;
+        Ok(Self {
+            graph,
+            device,
+            indexing,
+            input_shapes: inputs.iter().map(|x| x.shape.clone()).collect(),
+        })
+    }
+
+    pub(crate) fn prepare(
+        self,
+        numerical_hint: Option<u64>,
+        output_order: &[usize],
+    ) -> Result<HostPointwise, TensorError> {
+        let Self {
+            graph,
+            device,
+            indexing,
+            input_shapes,
+        } = self;
+        let program = crate::pointwise_ir::program::Program::build(
+            &graph,
+            &indexing.addresses,
+            numerical_hint.unwrap_or(indexing.output.elements as u64),
+            output_order,
+            indexing.output.shape.is_empty(),
+        )?;
+        let direct = if indexing.output.elements == 0 {
+            None
+        } else {
+            program.direct_source(&graph, &indexing.addresses)?
+        };
+        let context = Kernel::checked_context(device)?;
+        let identity = crate::cuda::jit::ExecutableIdentity::new(
+            &graph,
+            &indexing.addresses,
+            device,
+            context,
+            direct.as_ref().map(|_| &program),
+        );
+        // Canonical liveness is graph-invariant, including empty VM execution.
+        // Check concrete words before any executable can be published/shared.
+        let erf = graph.uses_erf();
+        if erf != program.uses_erf() {
+            return Err(invalid("pointwise Program Erf dependency mismatch"));
+        }
+        let compilation = match direct {
+            Some(source) => crate::pointwise_ir::program::Compilation { source, erf },
+            None => graph.compilation(&indexing.addresses)?,
+        };
+        let input_elements = [
+            indexing.input_elements[0],
+            *indexing
+                .input_elements
+                .get(1)
+                .unwrap_or(&indexing.input_elements[0]),
+        ];
+        Ok(HostPointwise {
+            graph,
+            addresses: indexing.addresses,
+            device,
+            identity,
+            compilation,
+            input_shapes,
+            output: indexing.output,
+            input_elements,
+            program,
+        })
+    }
+}
+
+impl HostPointwise {
+    #[cfg(test)]
+    pub(crate) fn new(
+        inputs: &[&Tensor],
+        graph: crate::pointwise_ir::Graph,
+        numerical_hint: Option<u64>,
+        output_order: &[usize],
+    ) -> Result<Self, TensorError> {
+        HostAdmission::new(inputs, graph)?.prepare(numerical_hint, output_order)
+    }
+
+    pub(crate) fn compile(&self) -> Result<Arc<Kernel>, TensorError> {
+        Kernel::compile_selected(
+            &self.graph,
+            self.device,
+            self.addresses.clone(),
+            self.compilation.clone(),
+            self.identity.clone(),
+        )
+    }
+
+    pub(crate) fn bind(&self, kernel: Arc<Kernel>) -> Result<PreparedPointwise, TensorError> {
+        if kernel.identity.as_ref() != Some(&self.identity) {
+            return Err(invalid("host plan executable identity mismatch"));
+        }
+        let plan = PointwisePlan::new(&kernel, self.output.elements, &self.program)?;
+        Ok(PreparedPointwise {
+            kernel,
+            input_shapes: self.input_shapes.clone(),
+            output: Layout::new(&self.output.shape)?,
+            input_elements: self.input_elements,
+            plan,
+        })
+    }
 }
 
 impl Tensor {
@@ -102,7 +251,7 @@ impl Tensor {
                 .get(1)
                 .unwrap_or(&indexing.input_elements[0]),
         ];
-        let plan = PointwisePlan::new(&kernel, elements, program)?;
+        let plan = PointwisePlan::new(&kernel, elements, &program)?;
         Ok(PreparedPointwise {
             kernel,
             input_shapes: inputs.iter().map(|input| input.shape.clone()).collect(),
@@ -114,6 +263,16 @@ impl Tensor {
 }
 
 impl PreparedPointwise {
+    pub(crate) fn kernel(&self) -> &Arc<Kernel> {
+        &self.kernel
+    }
+    pub(crate) fn instruction_count(&self) -> usize {
+        self.plan.instruction_count
+    }
+    pub(crate) fn register_count(&self) -> usize {
+        self.plan.register_count
+    }
+
     pub(crate) fn input_shapes(&self) -> &[Vec<usize>] {
         &self.input_shapes
     }

@@ -1,0 +1,21 @@
+{
+  "commit": "2d9e55f820f49efd817f3d52b7cbc9c69894d3ad",
+  "git_status": "",
+  "wheel": {
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/wheels.g4RQre/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "sha256": "9e21a312acd09aa155c0d5e2f7984a063300d378110534fc4c9d8781adcb6031"
+  },
+  "extension": {
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+    "sha256": "d335da08693751bc75c187016cae210d45b789903f7d52a3310be68ea55b1ca0"
+  },
+  "python_files_verified": 60,
+  "license_files_verified": [
+    "torch_rs-0.1.0.dist-info/licenses/LICENSE",
+    "torch_rs-0.1.0.dist-info/licenses/docs/diagnostics/compile-gelu-linked/notices/CUDA13-LICENSE.txt",
+    "torch_rs-0.1.0.dist-info/licenses/docs/diagnostics/compile-gelu-vendor/notices/compiler-CUDA12.8-LICENSE.txt",
+    "torch_rs-0.1.0.dist-info/licenses/docs/diagnostics/compile-gelu-vendor/notices/requested-CUDA11.8-LICENSE.txt",
+    "torch_rs-0.1.0.dist-info/licenses/src/cuda/NOTICE.md"
+  ],
+  "scope": "Exact clean-source/release-wheel/installed-file equality; packaging attribution, not legal approval"
+}

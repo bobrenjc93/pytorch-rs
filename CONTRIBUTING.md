@@ -15,6 +15,9 @@ VIRTUAL_ENV="$PWD/.venv" PYO3_PYTHON="$PWD/.venv/bin/python" \
   .venv/bin/maturin develop --release --locked
 ```
 
+Native-only work does not require PyTorch. For reference comparisons, add
+`--group reference` to the `uv sync` command above before the Maturin build.
+
 The lockfiles are part of the contract: `uv.lock` pins Python dependencies,
 `Cargo.lock` pins Rust dependencies, and `rust-toolchain.toml` pins the Rust
 toolchain. Use locked installs and builds by default. Change a lockfile only
@@ -30,18 +33,14 @@ python - <<'PY'
 import importlib.metadata as md, pathlib, sys
 if pathlib.Path(sys.prefix).resolve() != pathlib.Path(".venv").resolve():
     raise SystemExit(sys.prefix)
-import numpy, torch, torch_rs
-if torch.__version__.split("+", 1)[0] != "2.13.0":
-    raise SystemExit(torch.__version__)
+import numpy, torch_rs
 print("python", sys.executable)
 print("torch-rs", md.version("torch-rs"), torch_rs.__file__)
 print("numpy", numpy.__version__, numpy.__file__)
-print("torch", torch.__version__, torch.__file__)
 PY
 rustc --version && cargo --version
 ```
 
-If `torch` is missing, run `uv sync --locked --no-install-project --group reference`.
 After a manual release wheel install, run `.venv/bin/python .github/scripts/verify_native_extension.py`; `./scripts/test-python.sh` runs that check before the suite. See [docs/troubleshooting.md](docs/troubleshooting.md) for setup recovery steps.
 
 ## Environment Expectations

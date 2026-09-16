@@ -1,0 +1,314 @@
+{
+  "kind": "complete-clean-public-program-identity-protocol",
+  "attempt": 2,
+  "candidateCommit": "8f2002d4fe1d579b8a0eb7d9d6016d9c6be01519",
+  "implementationCommit": "47b97f203b35f936dc9fc0d38ef1255a68764f93",
+  "baselineCommit": "60202557b4f110d07777f585e804ab5f55e1ff7b",
+  "interveningChange": "8f2002d contains only evidence/documentation; implementation and frozen consumer unchanged from 47b97f2",
+  "bindings": {
+    "protocol": "d6e8f51d024b451f8afed33d743647d46396425724b918a599f7b32274f95d5b",
+    "consumer": "1861fca73674d8c89f6285b07883ab9a83e6719c1b6a0c12cd2be1ae7c4c8b42",
+    "fixtures": "48dda4839471f8839addb11afb77b77b57c739723d4c48354f6313c4ef58d5ac",
+    "tests": "b907c94b00f35fbb18e53510ec692b5fb83f94d37d509fe662418844bc2af5b3"
+  },
+  "complete": true,
+  "verifierPassed": true,
+  "qualificationOrScoreProduced": false,
+  "ledger": {
+    "cells": 96,
+    "samples": 1632,
+    "warmups": 480,
+    "firstCalls": 96
+  },
+  "churnCalls": 96,
+  "orderedLegs": [
+    {
+      "index": 0,
+      "label": "B",
+      "implementation": "native",
+      "startedAt": "2026-09-16T14:12:16.891755+00:00",
+      "finishedAt": "2026-09-16T14:12:37.060839+00:00",
+      "sourceCommit": "60202557b4f110d07777f585e804ab5f55e1ff7b",
+      "wheelSha256": "d971407b4d932ab4a5498f458b1aa069aca74b3f486681961c5ea2952bbdb891"
+    },
+    {
+      "index": 1,
+      "label": "B",
+      "implementation": "reference",
+      "startedAt": "2026-09-16T14:12:44.813246+00:00",
+      "finishedAt": "2026-09-16T14:13:21.693213+00:00",
+      "sourceCommit": "60202557b4f110d07777f585e804ab5f55e1ff7b",
+      "wheelSha256": "d971407b4d932ab4a5498f458b1aa069aca74b3f486681961c5ea2952bbdb891"
+    },
+    {
+      "index": 2,
+      "label": "C",
+      "implementation": "native",
+      "startedAt": "2026-09-16T14:13:31.241768+00:00",
+      "finishedAt": "2026-09-16T14:14:04.981656+00:00",
+      "sourceCommit": "8f2002d4fe1d579b8a0eb7d9d6016d9c6be01519",
+      "wheelSha256": "0bb7f2d880ddc8a29e2cee1b991353998be57fed3d96361b8bcd73b9a165ad9a"
+    },
+    {
+      "index": 3,
+      "label": "C",
+      "implementation": "reference",
+      "startedAt": "2026-09-16T14:14:12.982367+00:00",
+      "finishedAt": "2026-09-16T14:14:48.572821+00:00",
+      "sourceCommit": "8f2002d4fe1d579b8a0eb7d9d6016d9c6be01519",
+      "wheelSha256": "0bb7f2d880ddc8a29e2cee1b991353998be57fed3d96361b8bcd73b9a165ad9a"
+    },
+    {
+      "index": 4,
+      "label": "C",
+      "implementation": "reference",
+      "startedAt": "2026-09-16T14:14:58.405960+00:00",
+      "finishedAt": "2026-09-16T14:15:35.064130+00:00",
+      "sourceCommit": "8f2002d4fe1d579b8a0eb7d9d6016d9c6be01519",
+      "wheelSha256": "0bb7f2d880ddc8a29e2cee1b991353998be57fed3d96361b8bcd73b9a165ad9a"
+    },
+    {
+      "index": 5,
+      "label": "C",
+      "implementation": "native",
+      "startedAt": "2026-09-16T14:15:45.207559+00:00",
+      "finishedAt": "2026-09-16T14:16:18.829972+00:00",
+      "sourceCommit": "8f2002d4fe1d579b8a0eb7d9d6016d9c6be01519",
+      "wheelSha256": "0bb7f2d880ddc8a29e2cee1b991353998be57fed3d96361b8bcd73b9a165ad9a"
+    },
+    {
+      "index": 6,
+      "label": "B",
+      "implementation": "reference",
+      "startedAt": "2026-09-16T14:16:26.797017+00:00",
+      "finishedAt": "2026-09-16T14:17:02.051251+00:00",
+      "sourceCommit": "60202557b4f110d07777f585e804ab5f55e1ff7b",
+      "wheelSha256": "d971407b4d932ab4a5498f458b1aa069aca74b3f486681961c5ea2952bbdb891"
+    },
+    {
+      "index": 7,
+      "label": "B",
+      "implementation": "native",
+      "startedAt": "2026-09-16T14:17:13.360298+00:00",
+      "finishedAt": "2026-09-16T14:17:33.077301+00:00",
+      "sourceCommit": "60202557b4f110d07777f585e804ab5f55e1ff7b",
+      "wheelSha256": "d971407b4d932ab4a5498f458b1aa069aca74b3f486681961c5ea2952bbdb891"
+    }
+  ],
+  "checks": {
+    "hardwareFreeTests": 33,
+    "referenceRuntimeSetupChecks": 2,
+    "candidatePreflight": true,
+    "cleanSourceAndWheelBindings": true,
+    "commonCudaFilesUnchanged": 25,
+    "nativeExactComparison": true,
+    "referenceFiniteToleranceAndMetadataComparison": true,
+    "selectedInvocationOwnershipControls": true,
+    "allRawSamplesRetained": true
+  },
+  "previousFailedAttempt": "../postcommit-47b97f2/manifest.json",
+  "previousFailedAttemptArchiveSha256": "06b9db4679ee6f79ae4672feaf037b9d65248869dc6296efc973c4327bd78374",
+  "archive": {
+    "path": "attempt-2.tar.gz",
+    "bytes": 6223046,
+    "sha256": "80d07f1c8d4ed74ec112f87ae1eacc22c18b37d93e5a70c4afda114f0d187fca"
+  },
+  "records": [
+    {
+      "path": "target/program-identity-attempt-2/check/result.json.gz",
+      "bytes": 687,
+      "sha256": "60cc789c779e903b23abd627d654c86867cdd4274e649516b476558f1974c932"
+    },
+    {
+      "path": "target/program-identity-attempt-2/check/controls.log",
+      "bytes": 3541,
+      "sha256": "6dbc5efe7bcd7b38f74168dfa2b50f34cda2d8749013d2b43ac74155cfbe797e"
+    },
+    {
+      "path": "target/program-identity-attempt-2/freeze/result.json.gz",
+      "bytes": 285809,
+      "sha256": "84d68ad5df87568ad45175f4cf76a82d29e6fab14ba502433c3023e7bcb84928"
+    },
+    {
+      "path": "target/program-identity-attempt-2/build-b/result.json.gz",
+      "bytes": 288223,
+      "sha256": "e5909ca3c12b88bd3d43e2758bdc645894191143ddd5c015391d77cf214ede1b"
+    },
+    {
+      "path": "target/program-identity-attempt-2/build-b/build.log",
+      "bytes": 2322,
+      "sha256": "a7615083cfcca84b230c44d87fbc4eda3fea502c2f9dda9990a3315026d6ffa3"
+    },
+    {
+      "path": "target/program-identity-attempt-2/build-c/result.json.gz",
+      "bytes": 289149,
+      "sha256": "7ae121cfdad04b3121fb129329c0f32e8b323b745aad8d961c3cefe52ed0318e"
+    },
+    {
+      "path": "target/program-identity-attempt-2/build-c/build.log",
+      "bytes": 2234,
+      "sha256": "626a8896e90887c7601f9e839b59eda0f97b03e4be8d6d5a98333967fcaedfbc"
+    },
+    {
+      "path": "target/program-identity-attempt-2/install-b.json",
+      "bytes": 1448,
+      "sha256": "84773a5d534a91bdf719ff71dacb019392199a1dca5210c4bb7acc54be38668d"
+    },
+    {
+      "path": "target/program-identity-attempt-2/install-c.json",
+      "bytes": 1334,
+      "sha256": "f591e5897fdbe6182c93cb56097d596438e36a3f3a2c58e177d3e8f07138af51"
+    },
+    {
+      "path": "target/program-identity-attempt-2/dependency-setup.py",
+      "bytes": 2000,
+      "sha256": "1c4cceea8a0228c3d3f9f1ae7eebb37138995d3c0c64a08884113557388c016a"
+    },
+    {
+      "path": "target/program-identity-attempt-2/dependency-setup.json",
+      "bytes": 4561,
+      "sha256": "bd999b3d05c984b690bf72a8c1fac29069c13d5f46462d1ebd8139971129c999"
+    },
+    {
+      "path": "target/program-identity-attempt-2/runtime-check.py",
+      "bytes": 1958,
+      "sha256": "75b1747ea073a9f2f4de07083501e7f908ca2ef2beb7009fed2fb584c91f1a10"
+    },
+    {
+      "path": "target/program-identity-attempt-2/runtime-b/result.json.gz",
+      "bytes": 286249,
+      "sha256": "22d6e2b23342e946492301de98fa268559e7dda6708a2bcbc20123d27601c0eb"
+    },
+    {
+      "path": "target/program-identity-attempt-2/runtime-c/result.json.gz",
+      "bytes": 286220,
+      "sha256": "d6a6e85b404c3f98b9d2f542800866990766e9057e72f6a0c7bc054a978e124b"
+    },
+    {
+      "path": "target/program-identity-attempt-2/install-wheels.py",
+      "bytes": 1581,
+      "sha256": "66a18e01c12d8b0bd21beb69afbbfae7de770e72fbb3e5ec656df959f80ca3cb"
+    },
+    {
+      "path": "target/program-identity-attempt-2/preflight/result.json.gz",
+      "bytes": 454170,
+      "sha256": "15a9e5fa8156637cc346f633aecc02b27c3f0fcfcfd49b9f0c8045bab52048c3"
+    },
+    {
+      "path": "target/program-identity-attempt-2/preflight.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/program-identity-attempt-2/run-legs.sh",
+      "bytes": 1049,
+      "sha256": "67652f44296f89dba43bf7279a52ce4dc52cb5ae8f5cf5ecf610024862c553ea"
+    },
+    {
+      "path": "target/program-identity-attempt-2/ordered-launch.log",
+      "bytes": 192,
+      "sha256": "4661a1c86f361703c168c4042f585682813745de228757ebcd88bc3716fc30a4"
+    },
+    {
+      "path": "target/program-identity-attempt-2/verify/result.json.gz",
+      "bytes": 3159,
+      "sha256": "147dd79517a3742471d70f95da58b2db26ddff1a9f7d4eeccfafdeeee8df4d6a"
+    },
+    {
+      "path": "target/program-identity-attempt-2/verify.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/program-identity-attempt-2/integrity.json",
+      "bytes": 5185,
+      "sha256": "fb66bdc4f779eb5ebd00b9ebaccd7b2eee0386615f00ec12e83287beda89347d"
+    },
+    {
+      "path": "target/program-identity-attempt-2/summary.json",
+      "bytes": 63825,
+      "sha256": "426ce017bfd02df8b41010a6e31405ec7f2dcf8b07a260b665b91086071c08dd"
+    },
+    {
+      "path": "target/program-identity-attempt-2/leg-0/result.json.gz",
+      "bytes": 4007661,
+      "sha256": "7161d8b4f333e92978197811671b6a807b6f741d2e56d1c85056b101a9ada910"
+    },
+    {
+      "path": "target/program-identity-attempt-2/leg-0.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/program-identity-attempt-2/leg-1/result.json.gz",
+      "bytes": 4006866,
+      "sha256": "7c357d4fb2ecd17f7c8a0a06416b5d5b5382e8626670277251b3cac6fc7d9854"
+    },
+    {
+      "path": "target/program-identity-attempt-2/leg-1.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/program-identity-attempt-2/leg-2/result.json.gz",
+      "bytes": 4174772,
+      "sha256": "4658cdf0ac7b9469aa5733dc43294c8c65cc4fd8914e2913e38c736c2235839c"
+    },
+    {
+      "path": "target/program-identity-attempt-2/leg-2.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/program-identity-attempt-2/leg-3/result.json.gz",
+      "bytes": 4007359,
+      "sha256": "5f2ea1cae913f949f392bec5e76b7c939a9739e3525d64352483647102bcc57f"
+    },
+    {
+      "path": "target/program-identity-attempt-2/leg-3.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/program-identity-attempt-2/leg-4/result.json.gz",
+      "bytes": 4007366,
+      "sha256": "01f974985ad1f3b3f80b0f8d0a029eba81e4b28d44db6e18c1a956582306f7d2"
+    },
+    {
+      "path": "target/program-identity-attempt-2/leg-4.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/program-identity-attempt-2/leg-5/result.json.gz",
+      "bytes": 4174795,
+      "sha256": "f73cc693b7440c2348bed26b91b090f610680c72d0d1c54ce5310754f748e2d1"
+    },
+    {
+      "path": "target/program-identity-attempt-2/leg-5.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/program-identity-attempt-2/leg-6/result.json.gz",
+      "bytes": 4006875,
+      "sha256": "d2b6ec3fff8961eeb073ae925ba691ea060442b3532362627e90caac7678b733"
+    },
+    {
+      "path": "target/program-identity-attempt-2/leg-6.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/program-identity-attempt-2/leg-7/result.json.gz",
+      "bytes": 4007674,
+      "sha256": "22f04dfabc31fa3842a86bec7859c69cca41418a1931b4f732fb8cc6a7d735ff"
+    },
+    {
+      "path": "target/program-identity-attempt-2/leg-7.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "scope": "Non-scoring retained-output diagnostic; no qualification or merge approval. Runtime dependency layout repaired without changing package bytes, frozen checks, workloads, or implementation."
+}

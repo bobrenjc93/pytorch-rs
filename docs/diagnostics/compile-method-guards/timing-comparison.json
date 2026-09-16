@@ -1,0 +1,1145 @@
+{
+  "build_confounds": {
+    "dependencies": [
+      {
+        "Jinja2": {
+          "metadata_sha256": "68c5548fb67c4132a13898d9b31ec50c6bea2abdd915d921f214355c3a6499c8",
+          "version": "3.1.6"
+        },
+        "MarkupSafe": {
+          "metadata_sha256": "12b4cc61a7fa288cf7667ee3f213786d9619db57fb33ff6f934afbcb5c12ec81",
+          "version": "3.0.3"
+        },
+        "cuda-bindings": {
+          "metadata_sha256": "0bfcbe77dade61b1cba9f201c0465f2353f5b50adf4e4f554bca35a35033166f",
+          "version": "13.3.1"
+        },
+        "cuda-pathfinder": {
+          "metadata_sha256": "0b224d8df48997cd2d336dbf9debc7a7afa000cc242e1555c5c90ac654cccb7f",
+          "version": "1.6.0"
+        },
+        "cuda-toolkit": {
+          "metadata_sha256": "3e28bf0013ae8db8cf863ae392897248f4a1ff6c946fe966547fd4b6c44c0057",
+          "version": "13.0.3.0"
+        },
+        "filelock": {
+          "metadata_sha256": "02c1fa9abf083b9bd5792cc1f300088bde118bbb3db9c9f7c19595cb4101d0ba",
+          "version": "3.32.2"
+        },
+        "fsspec": {
+          "metadata_sha256": "88b1657585de14e3bb82aa5278aa9595b30aa4ca74ead073d8950615c808099d",
+          "version": "2026.7.0"
+        },
+        "maturin": {
+          "metadata_sha256": "143d06aba37ca819d542fb1a1201ac7db7fd57ba73ea484197e01196c9e4a0fa",
+          "version": "1.14.1"
+        },
+        "mpmath": {
+          "metadata_sha256": "44b66ea444b9c0d19ae94815d356bf047ae6b680c19268b5c265687cd6a81406",
+          "version": "1.3.0"
+        },
+        "networkx": {
+          "metadata_sha256": "aca5d94a97d1f70f301d033addb635f6e66be8973a00aba4127637eed2ef316a",
+          "version": "3.6.1"
+        },
+        "numpy": {
+          "metadata_sha256": "6ae45122ee97050e48849438320430d05f01814f72e66e69cbeed027d2c6a1e8",
+          "version": "2.5.1"
+        },
+        "nvidia-cublas": {
+          "metadata_sha256": "775b12e0b38858a03e93019f6a18104b10fce80f64f969fe9bb7ed6153ab2804",
+          "version": "13.1.1.3"
+        },
+        "nvidia-cuda-cupti": {
+          "metadata_sha256": "ae42b56aa16feaa9994af204b6c82ac546fed7d67cf584cc10d1f2b7119b5eac",
+          "version": "13.0.85"
+        },
+        "nvidia-cuda-nvrtc": {
+          "metadata_sha256": "27505676fa8577b448021d935306228d06c6236b2bf5247c148425e5130ad4c8",
+          "version": "13.0.88"
+        },
+        "nvidia-cuda-runtime": {
+          "metadata_sha256": "30699e3ca76f6f41f5252e7a0fce2c2d303c465b86c1b022e03a2799bd15098b",
+          "version": "13.0.96"
+        },
+        "nvidia-cudnn-cu13": {
+          "metadata_sha256": "905598a1f0fa9ec98b73133b7340bb60fb3666262eaaaf87f8fb8e3461261d38",
+          "version": "9.20.0.48"
+        },
+        "nvidia-cufft": {
+          "metadata_sha256": "f519e642db9f4983f5e24d131a52972210b3222800a07e099d40926d18d183d8",
+          "version": "12.0.0.61"
+        },
+        "nvidia-cufile": {
+          "metadata_sha256": "35ef649dd5370d74512351b45aa9ddc81715ae8c806326c2c5ec61d80dc97aca",
+          "version": "1.15.1.6"
+        },
+        "nvidia-curand": {
+          "metadata_sha256": "0a7d6e8b87aa972f3f2bc454f12fee898e8ef5d1a09d92b418acd38e8582076d",
+          "version": "10.4.0.35"
+        },
+        "nvidia-cusolver": {
+          "metadata_sha256": "88d296b4407f82253bf358667db12776dcb521170c7ff5b8eff38eb272ff729f",
+          "version": "12.0.4.66"
+        },
+        "nvidia-cusparse": {
+          "metadata_sha256": "d7b8582e9cf38072a8bb9960822e89f41a64bc7f68995eec783304c828e9734e",
+          "version": "12.6.3.3"
+        },
+        "nvidia-cusparselt-cu13": {
+          "metadata_sha256": "353669bafb80cbf22f1324121ac05049d36a6b0fb44b1fed3fab00b513231171",
+          "version": "0.8.1"
+        },
+        "nvidia-nccl-cu13": {
+          "metadata_sha256": "1a0f592f961f6e5b260131f57c59f23c05bec4e78279ab64a585e483894aacb4",
+          "version": "2.29.7"
+        },
+        "nvidia-nvjitlink": {
+          "metadata_sha256": "908bff94497d21be5d218bf2905aec3f0751242e1e4cc9af07d0380bda91e6d0",
+          "version": "13.3.33"
+        },
+        "nvidia-nvshmem-cu13": {
+          "metadata_sha256": "825ae32b105cfd50f7b375b9132e551f24dc32896c67c425349f6565d3b3fe46",
+          "version": "3.4.5"
+        },
+        "nvidia-nvtx": {
+          "metadata_sha256": "4777c4d7b040cdead515e13febe9da861052e4690bdfc2c67664b13aaf605be5",
+          "version": "13.0.85"
+        },
+        "setuptools": {
+          "metadata_sha256": "3ef2975718dd31cabdd5829455e9b868ca14dbf79ed8fed2de0af4e87347006e",
+          "version": "84.0.0"
+        },
+        "sympy": {
+          "metadata_sha256": "b756c2fbfd5be05ac5bdb0ebca61f55618f30f633ed92d88a5687429313a7595",
+          "version": "1.14.0"
+        },
+        "torch": {
+          "metadata_sha256": "63e791c950d477e7107e22f186e91ae81fbca5beec545c013a71edbde72f6c00",
+          "version": "2.13.0"
+        },
+        "torch-rs": {
+          "metadata_sha256": "d87a1b7762b265f66b465d69f44704742c2717c8a52320ce97f0ac69d9ab1550",
+          "version": "0.1.0"
+        },
+        "triton": {
+          "metadata_sha256": "c0067ae183ac3e221330fc16dd9539a4bc7f2e56a34245cca63335e9da14a8ce",
+          "version": "3.7.1"
+        },
+        "typing_extensions": {
+          "metadata_sha256": "b05084ca1d50879865178d9fff9fabeab61bdfb1f361bfbde95421ffc8f9be46",
+          "version": "4.16.0"
+        }
+      },
+      {
+        "Jinja2": {
+          "metadata_sha256": "68c5548fb67c4132a13898d9b31ec50c6bea2abdd915d921f214355c3a6499c8",
+          "version": "3.1.6"
+        },
+        "MarkupSafe": {
+          "metadata_sha256": "12b4cc61a7fa288cf7667ee3f213786d9619db57fb33ff6f934afbcb5c12ec81",
+          "version": "3.0.3"
+        },
+        "cuda-bindings": {
+          "metadata_sha256": "0bfcbe77dade61b1cba9f201c0465f2353f5b50adf4e4f554bca35a35033166f",
+          "version": "13.3.1"
+        },
+        "cuda-pathfinder": {
+          "metadata_sha256": "0b224d8df48997cd2d336dbf9debc7a7afa000cc242e1555c5c90ac654cccb7f",
+          "version": "1.6.0"
+        },
+        "cuda-toolkit": {
+          "metadata_sha256": "3e28bf0013ae8db8cf863ae392897248f4a1ff6c946fe966547fd4b6c44c0057",
+          "version": "13.0.3.0"
+        },
+        "filelock": {
+          "metadata_sha256": "02c1fa9abf083b9bd5792cc1f300088bde118bbb3db9c9f7c19595cb4101d0ba",
+          "version": "3.32.2"
+        },
+        "fsspec": {
+          "metadata_sha256": "88b1657585de14e3bb82aa5278aa9595b30aa4ca74ead073d8950615c808099d",
+          "version": "2026.7.0"
+        },
+        "maturin": {
+          "metadata_sha256": "143d06aba37ca819d542fb1a1201ac7db7fd57ba73ea484197e01196c9e4a0fa",
+          "version": "1.14.1"
+        },
+        "mpmath": {
+          "metadata_sha256": "44b66ea444b9c0d19ae94815d356bf047ae6b680c19268b5c265687cd6a81406",
+          "version": "1.3.0"
+        },
+        "networkx": {
+          "metadata_sha256": "aca5d94a97d1f70f301d033addb635f6e66be8973a00aba4127637eed2ef316a",
+          "version": "3.6.1"
+        },
+        "numpy": {
+          "metadata_sha256": "6ae45122ee97050e48849438320430d05f01814f72e66e69cbeed027d2c6a1e8",
+          "version": "2.5.1"
+        },
+        "nvidia-cublas": {
+          "metadata_sha256": "775b12e0b38858a03e93019f6a18104b10fce80f64f969fe9bb7ed6153ab2804",
+          "version": "13.1.1.3"
+        },
+        "nvidia-cuda-cupti": {
+          "metadata_sha256": "ae42b56aa16feaa9994af204b6c82ac546fed7d67cf584cc10d1f2b7119b5eac",
+          "version": "13.0.85"
+        },
+        "nvidia-cuda-nvrtc": {
+          "metadata_sha256": "27505676fa8577b448021d935306228d06c6236b2bf5247c148425e5130ad4c8",
+          "version": "13.0.88"
+        },
+        "nvidia-cuda-runtime": {
+          "metadata_sha256": "30699e3ca76f6f41f5252e7a0fce2c2d303c465b86c1b022e03a2799bd15098b",
+          "version": "13.0.96"
+        },
+        "nvidia-cudnn-cu13": {
+          "metadata_sha256": "905598a1f0fa9ec98b73133b7340bb60fb3666262eaaaf87f8fb8e3461261d38",
+          "version": "9.20.0.48"
+        },
+        "nvidia-cufft": {
+          "metadata_sha256": "f519e642db9f4983f5e24d131a52972210b3222800a07e099d40926d18d183d8",
+          "version": "12.0.0.61"
+        },
+        "nvidia-cufile": {
+          "metadata_sha256": "35ef649dd5370d74512351b45aa9ddc81715ae8c806326c2c5ec61d80dc97aca",
+          "version": "1.15.1.6"
+        },
+        "nvidia-curand": {
+          "metadata_sha256": "0a7d6e8b87aa972f3f2bc454f12fee898e8ef5d1a09d92b418acd38e8582076d",
+          "version": "10.4.0.35"
+        },
+        "nvidia-cusolver": {
+          "metadata_sha256": "88d296b4407f82253bf358667db12776dcb521170c7ff5b8eff38eb272ff729f",
+          "version": "12.0.4.66"
+        },
+        "nvidia-cusparse": {
+          "metadata_sha256": "d7b8582e9cf38072a8bb9960822e89f41a64bc7f68995eec783304c828e9734e",
+          "version": "12.6.3.3"
+        },
+        "nvidia-cusparselt-cu13": {
+          "metadata_sha256": "353669bafb80cbf22f1324121ac05049d36a6b0fb44b1fed3fab00b513231171",
+          "version": "0.8.1"
+        },
+        "nvidia-nccl-cu13": {
+          "metadata_sha256": "1a0f592f961f6e5b260131f57c59f23c05bec4e78279ab64a585e483894aacb4",
+          "version": "2.29.7"
+        },
+        "nvidia-nvjitlink": {
+          "metadata_sha256": "908bff94497d21be5d218bf2905aec3f0751242e1e4cc9af07d0380bda91e6d0",
+          "version": "13.3.33"
+        },
+        "nvidia-nvshmem-cu13": {
+          "metadata_sha256": "825ae32b105cfd50f7b375b9132e551f24dc32896c67c425349f6565d3b3fe46",
+          "version": "3.4.5"
+        },
+        "nvidia-nvtx": {
+          "metadata_sha256": "4777c4d7b040cdead515e13febe9da861052e4690bdfc2c67664b13aaf605be5",
+          "version": "13.0.85"
+        },
+        "setuptools": {
+          "metadata_sha256": "3ef2975718dd31cabdd5829455e9b868ca14dbf79ed8fed2de0af4e87347006e",
+          "version": "84.0.0"
+        },
+        "sympy": {
+          "metadata_sha256": "b756c2fbfd5be05ac5bdb0ebca61f55618f30f633ed92d88a5687429313a7595",
+          "version": "1.14.0"
+        },
+        "torch": {
+          "metadata_sha256": "63e791c950d477e7107e22f186e91ae81fbca5beec545c013a71edbde72f6c00",
+          "version": "2.13.0"
+        },
+        "torch-rs": {
+          "metadata_sha256": "9bf79d5632f5a3f40fda5d4b97efd994e9f3a9cdc42a0823526a07ace9063726",
+          "version": "0.1.0"
+        },
+        "triton": {
+          "metadata_sha256": "c0067ae183ac3e221330fc16dd9539a4bc7f2e56a34245cca63335e9da14a8ce",
+          "version": "3.7.1"
+        },
+        "typing_extensions": {
+          "metadata_sha256": "b05084ca1d50879865178d9fff9fabeab61bdfb1f361bfbde95421ffc8f9be46",
+          "version": "4.16.0"
+        }
+      },
+      {
+        "Jinja2": {
+          "metadata_sha256": "68c5548fb67c4132a13898d9b31ec50c6bea2abdd915d921f214355c3a6499c8",
+          "version": "3.1.6"
+        },
+        "MarkupSafe": {
+          "metadata_sha256": "12b4cc61a7fa288cf7667ee3f213786d9619db57fb33ff6f934afbcb5c12ec81",
+          "version": "3.0.3"
+        },
+        "cuda-bindings": {
+          "metadata_sha256": "0bfcbe77dade61b1cba9f201c0465f2353f5b50adf4e4f554bca35a35033166f",
+          "version": "13.3.1"
+        },
+        "cuda-pathfinder": {
+          "metadata_sha256": "0b224d8df48997cd2d336dbf9debc7a7afa000cc242e1555c5c90ac654cccb7f",
+          "version": "1.6.0"
+        },
+        "cuda-toolkit": {
+          "metadata_sha256": "3e28bf0013ae8db8cf863ae392897248f4a1ff6c946fe966547fd4b6c44c0057",
+          "version": "13.0.3.0"
+        },
+        "filelock": {
+          "metadata_sha256": "02c1fa9abf083b9bd5792cc1f300088bde118bbb3db9c9f7c19595cb4101d0ba",
+          "version": "3.32.2"
+        },
+        "fsspec": {
+          "metadata_sha256": "88b1657585de14e3bb82aa5278aa9595b30aa4ca74ead073d8950615c808099d",
+          "version": "2026.7.0"
+        },
+        "maturin": {
+          "metadata_sha256": "143d06aba37ca819d542fb1a1201ac7db7fd57ba73ea484197e01196c9e4a0fa",
+          "version": "1.14.1"
+        },
+        "mpmath": {
+          "metadata_sha256": "44b66ea444b9c0d19ae94815d356bf047ae6b680c19268b5c265687cd6a81406",
+          "version": "1.3.0"
+        },
+        "networkx": {
+          "metadata_sha256": "aca5d94a97d1f70f301d033addb635f6e66be8973a00aba4127637eed2ef316a",
+          "version": "3.6.1"
+        },
+        "numpy": {
+          "metadata_sha256": "6ae45122ee97050e48849438320430d05f01814f72e66e69cbeed027d2c6a1e8",
+          "version": "2.5.1"
+        },
+        "nvidia-cublas": {
+          "metadata_sha256": "775b12e0b38858a03e93019f6a18104b10fce80f64f969fe9bb7ed6153ab2804",
+          "version": "13.1.1.3"
+        },
+        "nvidia-cuda-cupti": {
+          "metadata_sha256": "ae42b56aa16feaa9994af204b6c82ac546fed7d67cf584cc10d1f2b7119b5eac",
+          "version": "13.0.85"
+        },
+        "nvidia-cuda-nvrtc": {
+          "metadata_sha256": "27505676fa8577b448021d935306228d06c6236b2bf5247c148425e5130ad4c8",
+          "version": "13.0.88"
+        },
+        "nvidia-cuda-runtime": {
+          "metadata_sha256": "30699e3ca76f6f41f5252e7a0fce2c2d303c465b86c1b022e03a2799bd15098b",
+          "version": "13.0.96"
+        },
+        "nvidia-cudnn-cu13": {
+          "metadata_sha256": "905598a1f0fa9ec98b73133b7340bb60fb3666262eaaaf87f8fb8e3461261d38",
+          "version": "9.20.0.48"
+        },
+        "nvidia-cufft": {
+          "metadata_sha256": "f519e642db9f4983f5e24d131a52972210b3222800a07e099d40926d18d183d8",
+          "version": "12.0.0.61"
+        },
+        "nvidia-cufile": {
+          "metadata_sha256": "35ef649dd5370d74512351b45aa9ddc81715ae8c806326c2c5ec61d80dc97aca",
+          "version": "1.15.1.6"
+        },
+        "nvidia-curand": {
+          "metadata_sha256": "0a7d6e8b87aa972f3f2bc454f12fee898e8ef5d1a09d92b418acd38e8582076d",
+          "version": "10.4.0.35"
+        },
+        "nvidia-cusolver": {
+          "metadata_sha256": "88d296b4407f82253bf358667db12776dcb521170c7ff5b8eff38eb272ff729f",
+          "version": "12.0.4.66"
+        },
+        "nvidia-cusparse": {
+          "metadata_sha256": "d7b8582e9cf38072a8bb9960822e89f41a64bc7f68995eec783304c828e9734e",
+          "version": "12.6.3.3"
+        },
+        "nvidia-cusparselt-cu13": {
+          "metadata_sha256": "353669bafb80cbf22f1324121ac05049d36a6b0fb44b1fed3fab00b513231171",
+          "version": "0.8.1"
+        },
+        "nvidia-nccl-cu13": {
+          "metadata_sha256": "1a0f592f961f6e5b260131f57c59f23c05bec4e78279ab64a585e483894aacb4",
+          "version": "2.29.7"
+        },
+        "nvidia-nvjitlink": {
+          "metadata_sha256": "908bff94497d21be5d218bf2905aec3f0751242e1e4cc9af07d0380bda91e6d0",
+          "version": "13.3.33"
+        },
+        "nvidia-nvshmem-cu13": {
+          "metadata_sha256": "825ae32b105cfd50f7b375b9132e551f24dc32896c67c425349f6565d3b3fe46",
+          "version": "3.4.5"
+        },
+        "nvidia-nvtx": {
+          "metadata_sha256": "4777c4d7b040cdead515e13febe9da861052e4690bdfc2c67664b13aaf605be5",
+          "version": "13.0.85"
+        },
+        "setuptools": {
+          "metadata_sha256": "3ef2975718dd31cabdd5829455e9b868ca14dbf79ed8fed2de0af4e87347006e",
+          "version": "84.0.0"
+        },
+        "sympy": {
+          "metadata_sha256": "b756c2fbfd5be05ac5bdb0ebca61f55618f30f633ed92d88a5687429313a7595",
+          "version": "1.14.0"
+        },
+        "torch": {
+          "metadata_sha256": "63e791c950d477e7107e22f186e91ae81fbca5beec545c013a71edbde72f6c00",
+          "version": "2.13.0"
+        },
+        "torch-rs": {
+          "metadata_sha256": "9bf79d5632f5a3f40fda5d4b97efd994e9f3a9cdc42a0823526a07ace9063726",
+          "version": "0.1.0"
+        },
+        "triton": {
+          "metadata_sha256": "c0067ae183ac3e221330fc16dd9539a4bc7f2e56a34245cca63335e9da14a8ce",
+          "version": "3.7.1"
+        },
+        "typing_extensions": {
+          "metadata_sha256": "b05084ca1d50879865178d9fff9fabeab61bdfb1f361bfbde95421ffc8f9be46",
+          "version": "4.16.0"
+        }
+      },
+      {
+        "Jinja2": {
+          "metadata_sha256": "68c5548fb67c4132a13898d9b31ec50c6bea2abdd915d921f214355c3a6499c8",
+          "version": "3.1.6"
+        },
+        "MarkupSafe": {
+          "metadata_sha256": "12b4cc61a7fa288cf7667ee3f213786d9619db57fb33ff6f934afbcb5c12ec81",
+          "version": "3.0.3"
+        },
+        "cuda-bindings": {
+          "metadata_sha256": "0bfcbe77dade61b1cba9f201c0465f2353f5b50adf4e4f554bca35a35033166f",
+          "version": "13.3.1"
+        },
+        "cuda-pathfinder": {
+          "metadata_sha256": "0b224d8df48997cd2d336dbf9debc7a7afa000cc242e1555c5c90ac654cccb7f",
+          "version": "1.6.0"
+        },
+        "cuda-toolkit": {
+          "metadata_sha256": "3e28bf0013ae8db8cf863ae392897248f4a1ff6c946fe966547fd4b6c44c0057",
+          "version": "13.0.3.0"
+        },
+        "filelock": {
+          "metadata_sha256": "02c1fa9abf083b9bd5792cc1f300088bde118bbb3db9c9f7c19595cb4101d0ba",
+          "version": "3.32.2"
+        },
+        "fsspec": {
+          "metadata_sha256": "88b1657585de14e3bb82aa5278aa9595b30aa4ca74ead073d8950615c808099d",
+          "version": "2026.7.0"
+        },
+        "maturin": {
+          "metadata_sha256": "143d06aba37ca819d542fb1a1201ac7db7fd57ba73ea484197e01196c9e4a0fa",
+          "version": "1.14.1"
+        },
+        "mpmath": {
+          "metadata_sha256": "44b66ea444b9c0d19ae94815d356bf047ae6b680c19268b5c265687cd6a81406",
+          "version": "1.3.0"
+        },
+        "networkx": {
+          "metadata_sha256": "aca5d94a97d1f70f301d033addb635f6e66be8973a00aba4127637eed2ef316a",
+          "version": "3.6.1"
+        },
+        "numpy": {
+          "metadata_sha256": "6ae45122ee97050e48849438320430d05f01814f72e66e69cbeed027d2c6a1e8",
+          "version": "2.5.1"
+        },
+        "nvidia-cublas": {
+          "metadata_sha256": "775b12e0b38858a03e93019f6a18104b10fce80f64f969fe9bb7ed6153ab2804",
+          "version": "13.1.1.3"
+        },
+        "nvidia-cuda-cupti": {
+          "metadata_sha256": "ae42b56aa16feaa9994af204b6c82ac546fed7d67cf584cc10d1f2b7119b5eac",
+          "version": "13.0.85"
+        },
+        "nvidia-cuda-nvrtc": {
+          "metadata_sha256": "27505676fa8577b448021d935306228d06c6236b2bf5247c148425e5130ad4c8",
+          "version": "13.0.88"
+        },
+        "nvidia-cuda-runtime": {
+          "metadata_sha256": "30699e3ca76f6f41f5252e7a0fce2c2d303c465b86c1b022e03a2799bd15098b",
+          "version": "13.0.96"
+        },
+        "nvidia-cudnn-cu13": {
+          "metadata_sha256": "905598a1f0fa9ec98b73133b7340bb60fb3666262eaaaf87f8fb8e3461261d38",
+          "version": "9.20.0.48"
+        },
+        "nvidia-cufft": {
+          "metadata_sha256": "f519e642db9f4983f5e24d131a52972210b3222800a07e099d40926d18d183d8",
+          "version": "12.0.0.61"
+        },
+        "nvidia-cufile": {
+          "metadata_sha256": "35ef649dd5370d74512351b45aa9ddc81715ae8c806326c2c5ec61d80dc97aca",
+          "version": "1.15.1.6"
+        },
+        "nvidia-curand": {
+          "metadata_sha256": "0a7d6e8b87aa972f3f2bc454f12fee898e8ef5d1a09d92b418acd38e8582076d",
+          "version": "10.4.0.35"
+        },
+        "nvidia-cusolver": {
+          "metadata_sha256": "88d296b4407f82253bf358667db12776dcb521170c7ff5b8eff38eb272ff729f",
+          "version": "12.0.4.66"
+        },
+        "nvidia-cusparse": {
+          "metadata_sha256": "d7b8582e9cf38072a8bb9960822e89f41a64bc7f68995eec783304c828e9734e",
+          "version": "12.6.3.3"
+        },
+        "nvidia-cusparselt-cu13": {
+          "metadata_sha256": "353669bafb80cbf22f1324121ac05049d36a6b0fb44b1fed3fab00b513231171",
+          "version": "0.8.1"
+        },
+        "nvidia-nccl-cu13": {
+          "metadata_sha256": "1a0f592f961f6e5b260131f57c59f23c05bec4e78279ab64a585e483894aacb4",
+          "version": "2.29.7"
+        },
+        "nvidia-nvjitlink": {
+          "metadata_sha256": "908bff94497d21be5d218bf2905aec3f0751242e1e4cc9af07d0380bda91e6d0",
+          "version": "13.3.33"
+        },
+        "nvidia-nvshmem-cu13": {
+          "metadata_sha256": "825ae32b105cfd50f7b375b9132e551f24dc32896c67c425349f6565d3b3fe46",
+          "version": "3.4.5"
+        },
+        "nvidia-nvtx": {
+          "metadata_sha256": "4777c4d7b040cdead515e13febe9da861052e4690bdfc2c67664b13aaf605be5",
+          "version": "13.0.85"
+        },
+        "setuptools": {
+          "metadata_sha256": "3ef2975718dd31cabdd5829455e9b868ca14dbf79ed8fed2de0af4e87347006e",
+          "version": "84.0.0"
+        },
+        "sympy": {
+          "metadata_sha256": "b756c2fbfd5be05ac5bdb0ebca61f55618f30f633ed92d88a5687429313a7595",
+          "version": "1.14.0"
+        },
+        "torch": {
+          "metadata_sha256": "63e791c950d477e7107e22f186e91ae81fbca5beec545c013a71edbde72f6c00",
+          "version": "2.13.0"
+        },
+        "torch-rs": {
+          "metadata_sha256": "d87a1b7762b265f66b465d69f44704742c2717c8a52320ce97f0ac69d9ab1550",
+          "version": "0.1.0"
+        },
+        "triton": {
+          "metadata_sha256": "c0067ae183ac3e221330fc16dd9539a4bc7f2e56a34245cca63335e9da14a8ce",
+          "version": "3.7.1"
+        },
+        "typing_extensions": {
+          "metadata_sha256": "b05084ca1d50879865178d9fff9fabeab61bdfb1f361bfbde95421ffc8f9be46",
+          "version": "4.16.0"
+        }
+      }
+    ],
+    "interpreter": [
+      {
+        "bytes": 30846632,
+        "path": "/tmp/burner-approved-default-compile.UA2M6I/gelu-container-profile-build.X4BGHb/source/target/uv-python/cpython-3.12.13-linux-x86_64-gnu/bin/python3.12",
+        "sha256": "202c17d1671602a4ef1d43e9b2fdbef0769443f37bf5e51f6b603e0b2c27d9d8"
+      },
+      {
+        "bytes": 30846632,
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/uv-python/cpython-3.12.13-linux-x86_64-gnu/bin/python3.12",
+        "sha256": "202c17d1671602a4ef1d43e9b2fdbef0769443f37bf5e51f6b603e0b2c27d9d8"
+      },
+      {
+        "bytes": 30846632,
+        "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/uv-python/cpython-3.12.13-linux-x86_64-gnu/bin/python3.12",
+        "sha256": "202c17d1671602a4ef1d43e9b2fdbef0769443f37bf5e51f6b603e0b2c27d9d8"
+      },
+      {
+        "bytes": 30846632,
+        "path": "/tmp/burner-approved-default-compile.UA2M6I/gelu-container-profile-build.X4BGHb/source/target/uv-python/cpython-3.12.13-linux-x86_64-gnu/bin/python3.12",
+        "sha256": "202c17d1671602a4ef1d43e9b2fdbef0769443f37bf5e51f6b603e0b2c27d9d8"
+      }
+    ]
+  },
+  "captured_at": "2026-09-16T10:02:00.576383+00:00",
+  "comparisons": 40,
+  "limits": "Two workers/version; no precise confidence interval or causal grouping-only claim when build identities differ. Only first/last timing outputs captured; no certification of intermediate outputs. Every sample retained.",
+  "native_hashes": [
+    "b9db6f35d6129c9681b6d47e190558c5b1897ce997ad1c6c7dbe011249f420c2",
+    "d335da08693751bc75c187016cae210d45b789903f7d52a3310be68ea55b1ca0",
+    "d335da08693751bc75c187016cae210d45b789903f7d52a3310be68ea55b1ca0",
+    "b9db6f35d6129c9681b6d47e190558c5b1897ce997ad1c6c7dbe011249f420c2"
+  ],
+  "passed": true,
+  "policy": {
+    "bytes": 22160,
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-pointwise-positional/warm-dispatch/gpu-dispatch.py",
+    "sha256": "de002c8bf7c2c1fc46936b0a7b03273822f362897bdc6f22ea1d4a7b7043c811"
+  },
+  "shapes": [
+    {
+      "changed_over_original": [
+        0.9171736578076636,
+        0.9751686166551962
+      ],
+      "shape": [
+        128,
+        256
+      ],
+      "workers": [
+        {
+          "label": "original",
+          "mad": 1813,
+          "maximum": 50997,
+          "median": 37476,
+          "minimum": 34472,
+          "samples_ns": [
+            50997,
+            45549,
+            42594,
+            40331,
+            39179,
+            38308,
+            38999,
+            37646,
+            37476,
+            36756,
+            35624,
+            36555,
+            36365,
+            34472,
+            35163,
+            34653,
+            35663
+          ]
+        },
+        {
+          "label": "changed",
+          "mad": 1593,
+          "maximum": 52760,
+          "median": 34372,
+          "minimum": 32489,
+          "samples_ns": [
+            47722,
+            52760,
+            40981,
+            37877,
+            37446,
+            36825,
+            36265,
+            35965,
+            34372,
+            33320,
+            32489,
+            32870,
+            34041,
+            33481,
+            34001,
+            33120,
+            33621
+          ]
+        },
+        {
+          "label": "changed",
+          "mad": 1633,
+          "maximum": 47802,
+          "median": 35423,
+          "minimum": 33621,
+          "samples_ns": [
+            47802,
+            41934,
+            38858,
+            39690,
+            39340,
+            46300,
+            37056,
+            34953,
+            35224,
+            34522,
+            34923,
+            33661,
+            35504,
+            35304,
+            35423,
+            33971,
+            33621
+          ]
+        },
+        {
+          "label": "original",
+          "mad": 1582,
+          "maximum": 47913,
+          "median": 36325,
+          "minimum": 33410,
+          "samples_ns": [
+            47913,
+            41593,
+            41062,
+            36986,
+            36976,
+            36345,
+            36325,
+            35884,
+            34743,
+            37046,
+            34552,
+            34963,
+            34412,
+            33410,
+            34162,
+            34713,
+            37056
+          ]
+        }
+      ]
+    },
+    {
+      "changed_over_original": [
+        0.9238317401556835,
+        0.9792997905815389
+      ],
+      "shape": [
+        193,
+        256
+      ],
+      "workers": [
+        {
+          "label": "original",
+          "mad": 2103,
+          "maximum": 178109,
+          "median": 39439,
+          "minimum": 35514,
+          "samples_ns": [
+            50656,
+            42254,
+            178109,
+            46230,
+            42274,
+            40861,
+            39439,
+            38247,
+            37336,
+            38368,
+            37446,
+            44597,
+            35724,
+            37858,
+            35514,
+            39389,
+            39490
+          ]
+        },
+        {
+          "label": "changed",
+          "mad": 2434,
+          "maximum": 153832,
+          "median": 36435,
+          "minimum": 33140,
+          "samples_ns": [
+            49315,
+            40661,
+            37908,
+            38898,
+            36014,
+            37587,
+            36375,
+            153832,
+            51679,
+            38278,
+            36435,
+            35113,
+            33290,
+            34001,
+            34052,
+            33140,
+            33410
+          ]
+        },
+        {
+          "label": "changed",
+          "mad": 1662,
+          "maximum": 135515,
+          "median": 36475,
+          "minimum": 33941,
+          "samples_ns": [
+            55985,
+            41283,
+            37026,
+            36725,
+            36114,
+            35964,
+            34672,
+            135515,
+            41904,
+            37267,
+            37407,
+            36475,
+            36085,
+            34301,
+            33941,
+            34512,
+            34813
+          ]
+        },
+        {
+          "label": "original",
+          "mad": 2654,
+          "maximum": 161133,
+          "median": 37246,
+          "minimum": 34392,
+          "samples_ns": [
+            53440,
+            42224,
+            161133,
+            47722,
+            43195,
+            40070,
+            38218,
+            37516,
+            37246,
+            36005,
+            35834,
+            35965,
+            34592,
+            35123,
+            35324,
+            34392,
+            34482
+          ]
+        }
+      ]
+    },
+    {
+      "changed_over_original": [
+        0.9468909223250493,
+        1.1638584895438293
+      ],
+      "shape": [
+        202,
+        118
+      ],
+      "workers": [
+        {
+          "label": "original",
+          "mad": 1692,
+          "maximum": 52800,
+          "median": 38468,
+          "minimum": 36275,
+          "samples_ns": [
+            50646,
+            42545,
+            40371,
+            40241,
+            39590,
+            38638,
+            38468,
+            44327,
+            38228,
+            38318,
+            36776,
+            37837,
+            52800,
+            37998,
+            36685,
+            36275,
+            37197
+          ]
+        },
+        {
+          "label": "changed",
+          "mad": 1512,
+          "maximum": 47853,
+          "median": 36425,
+          "minimum": 33040,
+          "samples_ns": [
+            47853,
+            39700,
+            39469,
+            38939,
+            37367,
+            36645,
+            35674,
+            34612,
+            35604,
+            36425,
+            35314,
+            36805,
+            34913,
+            41473,
+            35955,
+            33040,
+            33971
+          ]
+        },
+        {
+          "label": "changed",
+          "mad": 2514,
+          "maximum": 59049,
+          "median": 42965,
+          "minimum": 37707,
+          "samples_ns": [
+            59049,
+            50126,
+            40722,
+            45028,
+            46541,
+            48373,
+            42775,
+            51047,
+            42083,
+            45479,
+            45689,
+            42935,
+            39870,
+            41072,
+            41813,
+            37707,
+            42965
+          ]
+        },
+        {
+          "label": "original",
+          "mad": 1262,
+          "maximum": 50607,
+          "median": 36916,
+          "minimum": 34732,
+          "samples_ns": [
+            47292,
+            50607,
+            39590,
+            40040,
+            38338,
+            37898,
+            36215,
+            36916,
+            37086,
+            36976,
+            35173,
+            36305,
+            36074,
+            35414,
+            34732,
+            35654,
+            35674
+          ]
+        }
+      ]
+    },
+    {
+      "changed_over_original": [
+        0.9320650761474089,
+        0.9862471740768651
+      ],
+      "shape": [
+        207,
+        292
+      ],
+      "workers": [
+        {
+          "label": "original",
+          "mad": 1011,
+          "maximum": 52900,
+          "median": 38478,
+          "minimum": 36645,
+          "samples_ns": [
+            52009,
+            42575,
+            52900,
+            38939,
+            37177,
+            36645,
+            39610,
+            37737,
+            37677,
+            37467,
+            37537,
+            37907,
+            40652,
+            39810,
+            38288,
+            38478,
+            38678
+          ]
+        },
+        {
+          "label": "changed",
+          "mad": 1412,
+          "maximum": 52399,
+          "median": 35864,
+          "minimum": 34352,
+          "samples_ns": [
+            52399,
+            43986,
+            41683,
+            40812,
+            38198,
+            37627,
+            35864,
+            35623,
+            35403,
+            34452,
+            36034,
+            35053,
+            34352,
+            35644,
+            35003,
+            40221,
+            34803
+          ]
+        },
+        {
+          "label": "changed",
+          "mad": 1041,
+          "maximum": 49475,
+          "median": 36645,
+          "minimum": 34522,
+          "samples_ns": [
+            49475,
+            41733,
+            39730,
+            37416,
+            36645,
+            36184,
+            37486,
+            37076,
+            37237,
+            35474,
+            35604,
+            42935,
+            35414,
+            35023,
+            36045,
+            34522,
+            35644
+          ]
+        },
+        {
+          "label": "original",
+          "mad": 881,
+          "maximum": 50195,
+          "median": 37156,
+          "minimum": 35544,
+          "samples_ns": [
+            50195,
+            41263,
+            39660,
+            38508,
+            36836,
+            37026,
+            38127,
+            36775,
+            37156,
+            35924,
+            38037,
+            36826,
+            37817,
+            36756,
+            37036,
+            35544,
+            45058
+          ]
+        }
+      ]
+    },
+    {
+      "changed_over_original": [
+        0.964278220730172,
+        0.9649774047772757
+      ],
+      "shape": [
+        128,
+        256
+      ],
+      "workers": [
+        {
+          "label": "original",
+          "mad": 1513,
+          "maximum": 56074,
+          "median": 38128,
+          "minimum": 35794,
+          "samples_ns": [
+            56074,
+            42824,
+            41052,
+            37657,
+            36786,
+            38839,
+            39790,
+            38448,
+            37566,
+            38128,
+            48984,
+            37276,
+            35794,
+            36175,
+            36615,
+            36826,
+            41203
+          ]
+        },
+        {
+          "label": "changed",
+          "mad": 1302,
+          "maximum": 49224,
+          "median": 36766,
+          "minimum": 34051,
+          "samples_ns": [
+            49224,
+            40250,
+            38709,
+            36856,
+            37707,
+            38518,
+            36725,
+            35494,
+            34893,
+            34512,
+            36766,
+            37466,
+            35994,
+            35464,
+            34051,
+            39871,
+            36665
+          ]
+        },
+        {
+          "label": "changed",
+          "mad": 1142,
+          "maximum": 46661,
+          "median": 35874,
+          "minimum": 33791,
+          "samples_ns": [
+            46661,
+            38758,
+            37016,
+            36976,
+            37447,
+            37066,
+            36505,
+            35303,
+            40741,
+            35744,
+            35874,
+            35653,
+            35253,
+            34532,
+            33791,
+            34342,
+            34733
+          ]
+        },
+        {
+          "label": "original",
+          "mad": 801,
+          "maximum": 49795,
+          "median": 37176,
+          "minimum": 35243,
+          "samples_ns": [
+            49164,
+            41933,
+            37958,
+            37237,
+            36144,
+            36064,
+            35714,
+            35975,
+            37246,
+            37176,
+            49795,
+            37036,
+            35243,
+            36726,
+            37266,
+            37868,
+            36375
+          ]
+        }
+      ]
+    }
+  ]
+}

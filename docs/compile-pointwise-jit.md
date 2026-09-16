@@ -40,7 +40,8 @@ Positional integers, numeric subclasses, keyword arguments, default expansion an
 programs are unsupported. Equal-shape inputs support
 local intermediate variables, reused expressions, binary
 add/subtract/multiply (tensor/tensor or tensor/scalar in either order), and
-unary negation/ReLU/sin/cos. Operator syntax, positional Tensor methods, and
+unary negation/ReLU/sin/cos. Bounded [functional GELU](#functional-gelu) is also
+supported. Operator syntax, positional Tensor methods, and
 positional native top-level functions are accepted. Exact bool/int/float
 constants may be literal, module-global, or closure values; native operator
 and package bindings may also be captured. Function globals must be an exact
@@ -85,10 +86,10 @@ and trig consumers and is excluded in both output orders. This graph-wide guard
 preserves the bounded single-FMA exception. Dead trig does not restrict live
 admission. The exception reuses the existing lowering and checked addresses.
 
-One-stage trig uses the existing numerical planner and generic native CUDA
-instruction executor, including its scalar-kind and shape-history behavior.
+One-stage trig uses the existing numerical planner and the selected direct or
+VM Program executable, including its scalar-kind and shape-history behavior.
 Finite default-Inductor comparisons do not establish general Inductor coverage
-or performance parity. Generic executor PTX and reconstructed scalar plans are
+or performance parity. Selected NVRTC PTX and reconstructed scalar plans are
 not independent device traces; empty outputs execute no trig.
 
 Strided inputs, other dtypes, gradients (even inside no-grad),
@@ -208,14 +209,14 @@ The result specification also projects the first observable occurrence of each
 computed root into native numerical planning. Realization and fusion determine
 logical regions, including rounded intermediate imports and exports. A native
 scalar instruction plan executes those regions within one generated CUDA kernel;
-changing return order supplies different plan data to the same graph-keyed
-executable. An immutable preparation retains the validated plan and completed
+changing return order may supply a different Program and executable. An immutable preparation retains the validated plan and completed
 read-only instruction upload for matching warm calls. Register scratch and
 computed outputs remain invocation-owned through synchronization and failure;
 neither input tensors nor previous outputs are retained by preparations.
 Register scratch is capped at 64 MiB by limiting active workers and
-using a grid-stride loop. This execution strategy adds instruction-dispatch and
-scratch traffic; correctness captures do not establish a performance improvement.
+using a grid-stride loop. The direct executable retains this allocation/launch boundary but uses local
+registers instead of interpreting the upload. Correctness tests do not establish
+a performance improvement.
 
 The [structured-output evidence index](diagnostics/compile-pointwise-structured-outputs/README.md)
 links the clean `d0f965a2` correctness capture, bounded guard timing diagnostic,
@@ -385,8 +386,13 @@ constructs typed SSA nodes with float32 tensor values and scalar kinds.
 plans realization, locality ordering and fusion over the admitted graph.
 `pointwise_lowering.rs` canonicalizes each region into declarative scalar
 instructions with explicit rounding and FMA decisions. `pointwise_program.rs`
-allocates registers, validates instruction dataflow and emits the shared CUDA
-instruction kernel. Plan disassembly is separate from actual kernel source/PTX.
+allocates registers and validates instruction dataflow. `pointwise_codegen.rs`
+mechanically emits those exact words when there are at most 256 instructions,
+128 registers and 65,536 complete UTF-8 source bytes, including addresses and ABI.
+Empty or over-cap plans use the existing VM. Both domains retain the existing
+precise intrinsics, compiler options, instruction upload, scratch allocation and
+completion path. Compiler failures propagate; they never trigger VM fallback.
+Plan disassembly is separate from actual selected kernel source/PTX.
 `pointwise_indexing.rs` checks every expression's broadcast shape and size before
 numerical rewriting, including dead expressions. The same Rust admission check
 enforces the unequal-shape original-IR boundary during compilation and direct
@@ -396,8 +402,10 @@ full graph and shape validation. It checks a common shape across all computed ro
 and derives each live input's address from row-major coordinates; unused inputs do not
 expand the result. Singleton axes contribute no address increment. The same
 generated kernel fuses all supported pointwise operations.
-`cuda/jit.rs` compiles it with NVRTC and loads the resulting PTX through the
-existing native driver. No fixed workload, shape, name, or corpus recognizer
+`cuda/jit.rs` compiles the selected source once with NVRTC. Ordinary non-Erf
+programs load that PTX through the native driver. Live Erf instead links the
+frozen provider and loads the resulting cubin into the same Kernel owner;
+exposed NVRTC PTX is pre-link input, not the final linked image. No fixed workload, shape, name, or corpus recognizer
 is involved.
 
 The [numerical contract](compile-pointwise-numerics.md) explains expression
@@ -471,8 +479,15 @@ create no logical shape guards but still participate in all native validation.
 A generalized specialization retains its frozen constants when an older shape
 returns, including the sign of zero.
 
-Native executors specialize the full filtered tensor ABI, device and exact
-broadcast address formulas. Equal-shaped inputs share linear-load code. A logical
+A checked native host plan performs original-graph admission and builds one
+validated Program before compiler discovery or upload. Native executable identity
+contains versioned exact bytes for the structural original Graph, complete ABI,
+device/context, checked address formulas and VM/direct domain. Direct identity
+also includes every instruction word and the register count; VM identity omits
+the uploaded Program. Shapes and raw numerical hints are not executable identity.
+Equal Programs and addresses share an executable even after preparation eviction;
+different resulting Programs may require a new compilation. A retained identical
+executable can rebuild a preparation without discovering or loading NVRTC. A logical
 hit may compile a new concrete executor without consuming a logical slot or
 updating promotion history. Preparation checks original-IR numerical admission on
 actual shapes, including unused tensors and singleton-only linear maps. A warm
@@ -483,26 +498,40 @@ bounds and exact shapes, and uses current offsets and runtime scalar values.
 
 `recompile_limit` defaults to eight logical specializations. The executable LRU
 and each specialization's ABI-lowering LRU are independently bounded by the same
-limit. Immutable preparations form a separate data LRU keyed by executor key,
+limit. Immutable preparations form a separate data LRU keyed by logical graph/device/indexing,
 exact input shapes, the retained numerical hint and computed-root output order.
 Container-only changes do not fragment this data cache. Different exact shapes
 may prepare or evict data within one generalized logical specialization without
-consuming another logical slot or creating another module.
+consuming another logical slot. Equivalent executable identity avoids another module.
 
 The preparation LRU is bounded by the same entry count and a 32 MiB per-wrapper
 retained-data budget. The host instruction vector is dropped after completed
 upload. Native charges include device allocation bytes (including best-fit excess
 capacity), and owned
 signature/layout storage. Python charges conservatively count every key referent,
-including shared/repeated references and its graph, plus the wrapper and a
+including shared/repeated references, its graph and the value-carried actual
+executor key, plus the wrapper and a
 512-byte per-entry bookkeeping allowance. This is not a bound on total process
 memory, CUDA allocator pools, modules, outputs, scratch or transient preparation.
 An oversized preparation executes by the same mechanism without being retained.
-Evicting an executor drops all its cached preparations.
+Kernel/module/source/PTX and the exact native executable identity belong to the
+count-bounded executor LRU. Construction-only host plans are dropped after bind.
+Eviction prunes preparations by their recorded actual executor identity and owner.
+Each newly bound preparation certifies its native Arc ownership before execution,
+accounting or publication. Frozen native owners preserve that relation in the
+frontend-admitted cache tuple. Every selected hit checks that the recorded
+executor is still the exact current map owner; it performs no native ownership
+query, planning, emission, compilation, upload or retention reaccounting. The
+existing bounded scan prunes stale map owners only after success. Executor-map
+replacement and clear remain supported; manually fabricating an inconsistent
+tuple in the private preparation dictionary is outside this contract.
 
 Failed admission, preparation, compilation, execution, output conversion or result
 reconstruction publishes no entry, history or LRU change. All cache publication
-happens after successful result reconstruction. `torch.compiler.reset()` clears
+happens after successful result reconstruction and optional selected-invocation
+receipt allocation. The private `_torch_rs_pointwise_receipt` calls the same
+implementation body and returns the exact successfully used prepared owner;
+source/PTX is not final linked cubin, SASS or physical GPU UUID attestation. `torch.compiler.reset()` clears
 all three levels under the same lock; the next call recompiles. Explicitly held
 private prepared objects have ordinary independent ownership, like held private
 kernel objects, and may outlive wrapper reset.
@@ -517,8 +546,9 @@ repeated on a cache hit. Storage owners remain borrowed through legacy-stream co
 including errors. One launch produces fresh computed outputs; empty outputs need
 no launch, instruction upload, scratch or input pointer. An empty computed output
 does not require every input to be empty; unused inputs still receive validation.
-The private legacy kernel `.run` uses the same preparation/execution mechanism
-ephemerally. Modules are shared with immutable preparations, keyed by device
+The private legacy kernel `.run` and `.prepare` remain VM-only; ordinary-default
+executables instead bind a typed checked host plan. No arbitrary CUDA source or
+caller-provided instruction stream is accepted by the Python bridge. Modules are shared with immutable preparations, keyed by device
 and checked against the active driver context. The existing device guard
 restores the caller's device on compilation, execution and module destruction.
 Wrapper locks serialize cache publication and reset.
@@ -570,3 +600,40 @@ direct cached-kernel revalidation and dispatched CUDA/PTX captures.
 [Clean post-commit evidence](diagnostics/compile-pointwise-tensor-madd/postcommit-bf908578/README.md)
 records candidate `bf908578` and main `77aa16fc`, both fixed-corpus measurement
 orders, exact multiply-add comparisons and the raw-report retention manifest.
+
+The [Program-identity diagnostic](diagnostics/program-identity/README.md) contains
+the frozen non-scoring public B/C/reference protocol and hardware-free verifier.
+Clean candidate measurements require Burner's canonical commit/evidence phase.
+## Functional GELU
+
+`torch_rs.nn.functional.gelu(x)` is a real native eager builtin and is also
+admitted by unchanged `torch_rs.compile(fn)`. The call takes one positional
+exact native contiguous CUDA float32 tensor without gradients. Scalar, empty
+and contiguous offset inputs return fresh contiguous outputs. CPU, keywords
+(including `approximate="none"`), Tensor methods, other layouts/dtypes, autograd,
+function modes, subclasses and explicit eager/module capture remain unsupported.
+
+The compiler accepts the canonical `torch_rs.nn.functional` namespaces and
+saved exact builtin aliases. Every traversed namespace edge, module type and
+namespace key is guarded on warm calls. Saved builtin aliases do not depend on
+untraversed module attributes. Data-only helpers can supply its argument; this
+adds no module/global calls inside helpers.
+
+Lowering adds eight ordinary SSA nodes, including scalar constants and private
+Erf, under the existing budgets. Live Erf requires equal actual input shapes,
+even for unused tensor arguments; dead expressions still receive original
+validation. Existing non-Erf broadcast/trig admission is unchanged.
+
+Compiled Erf links the separately generated vendor provider through the CUDA
+driver and needs PTX 8.7/sm75 support plus the existing NVRTC requirements.
+Only this dependency enables relocatable compilation/linking. Eager GELU uses
+a separate lazy PTX 9.0/sm75 image and works without NVRTC. Neither image changes
+the common eager PTX 6.0/sm50 module. The H100 checks are finite evidence, not a
+deployment certificate for other GPUs. See [vendor terms](../src/cuda/NOTICE.md)
+and the [current integration/evidence index](diagnostics/gelu-program-integration/README.md).
+
+Canonical numerical liveness controls both VM linking and direct linking and is
+checked against actual Program words before publication. Dead and integer-zero-
+erased Erf need no provider; empty execution still links when its VM references
+Erf. Original reachable-Erf equal-shape admission precedes that erasure. The
+external declaration counts toward the complete source cap.

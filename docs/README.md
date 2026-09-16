@@ -53,6 +53,8 @@ Inductor support.
 
 ## Historical Validation Evidence
 
+- [GELU / selected Program integration](diagnostics/gelu-program-integration/README.md): Current capability checks, frozen clean-comparison contract, and distinctly identified predecessor evidence.
+
 - [Legacy eager compile evaluator](torch-compile-coverage-evaluator.md): Historical eager/custom-backend diagnostic, no longer the default compiler scoring gate.
 - [Compiler analysis and CPU tanh composite validation](diagnostics/compile-cuda-graph/composite-postcommit-d94daecd/README.md): Historical measurements of implementation `d94daecd`, with
   [source clean](diagnostics/compile-cuda-graph/postcommit-4cb0432/README.md) (`4cb0432`) and

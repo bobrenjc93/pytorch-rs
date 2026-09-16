@@ -5419,6 +5419,39 @@ impl Tensor {
         self.finish_saved_input_unary_vjp(output, AutogradNode::Relu, apply_relu_vjp)
     }
 
+    /// Bounded native eager GELU; no compiler or autograd dependency.
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn gelu_cuda(&self) -> Result<Self, TensorError> {
+        let reason = if !self.is_cuda() {
+            Some("input must be CUDA")
+        } else if self.dtype() != DType::Float32 {
+            Some("only float32 is supported")
+        } else if self.requires_grad() {
+            Some("autograd is unsupported, including inside no_grad")
+        } else if !self.is_contiguous() {
+            Some("input must be contiguous")
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            return Err(TensorError::UnsupportedCudaGelu { reason });
+        }
+        let shape = try_clone_result_shape(&self.shape, self.elements)?;
+        let strides = contiguous_strides(&shape, self.elements)?;
+        let storage = self.storage.cuda_gelu_float32(self.offset, self.elements)?;
+        Ok(Self {
+            storage: Arc::new(storage),
+            shape,
+            strides,
+            offset: 0,
+            elements: self.elements,
+            output_nr: 0,
+            leaf_requires_grad: requires_grad_flag(false),
+            view_requires_grad: None,
+            autograd: None,
+        })
+    }
+
     /// Computes the sine of every element in radians.
     ///
     /// # Errors

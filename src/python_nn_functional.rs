@@ -855,6 +855,29 @@ fn _nn_functional_mse_loss(
     PyTensor::new(output).into_py_any(py)
 }
 
+/// Default GELU for one positional, exact native contiguous CUDA float32 tensor.
+/// Returns fresh storage. CPU, autograd (including `no_grad`), modes, subclasses,
+/// keywords and approximation arguments are not supported.
+#[pyfunction(name = "gelu", signature = (input, /))]
+fn _nn_functional_gelu(py: Python<'_>, input: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    if !python_torch_function_mode::is_empty() {
+        return Err(PyTypeError::new_err(
+            "gelu() does not support an active TorchFunctionMode",
+        ));
+    }
+    if !input.is_exact_instance_of::<PyTensor>() {
+        return Err(PyTypeError::new_err(
+            "gelu() only supports an exact native Tensor input",
+        ));
+    }
+    let input = input.cast::<PyTensor>()?.try_borrow()?;
+    let output = input
+        .inner()
+        .gelu_cuda()
+        .map_err(|error| tensor_error(&error))?;
+    PyTensor::new(output).into_py_any(py)
+}
+
 #[pyfunction]
 fn _nn_functional_softsign(py: Python<'_>, input: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
     if !python_torch_function_mode::is_empty() {
@@ -903,6 +926,12 @@ pub(crate) fn add_nn_functional_bridges(module: &Bound<'_, PyModule>) -> PyResul
     module
         .getattr("__all__")?
         .call_method1("remove", ("_nn_functional_linear",))?;
+    let gelu = wrap_pyfunction!(_nn_functional_gelu, module)?;
+    gelu.setattr("__module__", "torch_rs.nn.functional")?;
+    module.add("_nn_functional_gelu", gelu)?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", ("_nn_functional_gelu",))?;
     for function in [
         wrap_pyfunction!(_nn_functional_dropout, module)?,
         wrap_pyfunction!(_nn_functional_dropout_tensor_autograd_suffix, module)?,
