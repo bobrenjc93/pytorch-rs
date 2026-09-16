@@ -47,6 +47,16 @@ def kernel(compiled):
     return next(iter(cache(compiled).executors.values()))
 
 
+def legacy_kernel(compiled, tensors):
+    """Build an explicit VM handle for tests of the unchanged private API.
+
+    Public executors intentionally have no arbitrary-hint run/prepare methods.
+    The logical preparation key still carries the original lowered Graph.
+    """
+    graph = next(reversed(cache(compiled).prepared))[0][0]
+    return bridge._pointwise_compile(tensors, graph.nodes, graph.outputs)
+
+
 def mock_pointwise_executor(run, metadata=None, retained_bytes=0):
     """Adapt frontend-only launch mocks to immutable preparation, not CUDA.
 
@@ -63,10 +73,54 @@ def mock_pointwise_executor(run, metadata=None, retained_bytes=0):
             input_shapes=shapes,
             retained_bytes=retained_bytes,
             run=lambda inputs, scalars: executor.run(inputs, scalars, numerical_hint, output_order),
+            belongs_to=lambda owner: owner is executor,
         )
 
     executor.prepare = prepare
+    executor.bind = lambda host: executor.prepare(host.tensors, host.numerical_hint, host.output_order)
     return executor
+
+
+def mock_pointwise_host_plan(tensors, nodes, outputs, numerical_hint, output_order):
+    """Portable VM-domain fixture for the checked host-plan bridge.
+
+    This deliberately does not model native Program emission. Tests which need
+    distinct direct Programs provide explicit executable identities instead.
+    Keeping compilation deferred makes hit/miss and publication checks exercise
+    the same frontend boundary as the native bridge.
+    """
+    metadata = tuple(bridge._compile_trace_tensor_metadata(tensor) for tensor in tensors)
+    shapes = tuple(item[0] for item in metadata)
+    indexing = None if all(shape == shapes[0] for shape in shapes) else shapes
+    identity = ('mock-vm', tuple(nodes), tuple(outputs), metadata[0][4], indexing)
+    host = types.SimpleNamespace(tensors=tensors, numerical_hint=numerical_hint,
+                                 output_order=output_order, executable_identity=identity)
+
+    def compile_():
+        executor = bridge._pointwise_compile(tensors, nodes, outputs)
+        executor.executable_identity = host.executable_identity
+        executor.kind = 'vm'
+        bind = executor.bind
+
+        def owned_bind(plan):
+            prepared = bind(plan)
+            prepared.belongs_to = lambda owner: owner is executor
+            return prepared
+
+        executor.bind = owned_bind
+        return executor
+
+    host.compile = compile_
+    return host
+
+
+def mock_host_plan_with_executor(executor):
+    """Inject a launch failure after real frontend admission, without CUDA."""
+    def build(*args):
+        host = mock_pointwise_host_plan(*args)
+        host.compile = lambda: executor
+        return host
+    return build
 
 
 def diagnostic_capture_selectors():
@@ -570,6 +624,7 @@ diagnostic.write(directory/'report.json.gz', record)
             fn = program(source)
             reference_fn = program(source, self.torch)
             compiled, reference = native.compile(fn), self.torch.compile(reference_fn)
+            observed_executables = {}
             for shape in [(37,), (3, 19), (2, 3, 5), (11, 263), (), (0, 7)]:
                 for changed in range(2):
                     count = math.prod(shape)
@@ -578,6 +633,14 @@ diagnostic.write(directory/'report.json.gz', record)
                     refs = [self.upload(v, shape, self.torch) for v in values]
                     expected = reference(*refs)
                     actual = self.without_replay(fn, compiled, args)
+                    selected = next(reversed(cache(compiled).executors.values()))
+                    identity = selected.executable_identity
+                    if identity in observed_executables:
+                        self.assertIs(selected, observed_executables[identity])
+                    else:
+                        self.assertTrue(all(selected is not previous
+                                            for previous in observed_executables.values()))
+                        observed_executables[identity] = selected
                     with self.subTest(index=index, shape=shape, changed=changed):
                         self.compare(actual, expected)
                         self.compare(actual, reference_fn(*refs))
@@ -592,13 +655,17 @@ diagnostic.write(directory/'report.json.gz', record)
             reference_entries = self.torch._dynamo.eval_frame._debug_get_cache_entry_list(reference_fn.__code__)
             self.assertEqual(len(reference_entries), 5)
             self.assertEqual(len(cache(compiled).graphs), len(reference_entries))
-            self.assertEqual(len({id(entry) for entry in kernels(compiled)}), 1)
-            generated = kernel(compiled)
-            self.assertIn('torch_rs_pointwise', generated.ptx)
-            self.assertEqual(generated.ptx.count('.visible .entry'), 1)
-            self.assertIn('--fmad=true', generated.options)
-            self.assertNotIn('--use_fast_math', generated.options)
-            self.assertGreaterEqual(generated.nvrtc_version[0], 12)
+            # Empty execution retains the VM domain; scalar/numerical-history
+            # Programs may also differ from the nonempty vector Program.
+            self.assertEqual(len({id(entry) for entry in kernels(compiled)}),
+                             len(observed_executables))
+            self.assertEqual({entry.kind for entry in kernels(compiled)}, {'direct', 'vm'})
+            for generated in kernels(compiled):
+                self.assertIn('torch_rs_pointwise', generated.ptx)
+                self.assertEqual(generated.ptx.count('.visible .entry'), 1)
+                self.assertIn('--fmad=true', generated.options)
+                self.assertNotIn('--use_fast_math', generated.options)
+                self.assertGreaterEqual(generated.nvrtc_version[0], 12)
 
     def test_ieee_values_and_scalar_rounding(self):
         values = [0., -0., float('inf'), -float('inf'), float('nan'), 1e30, -1e30,
@@ -674,7 +741,7 @@ diagnostic.write(directory/'report.json.gz', record)
                 # A warm call must enter cached code, not analyze or lower nodes.
                 with patch.object(frontend, 'lower', side_effect=AssertionError('warm lowering')), \
                      patch.object(frontend, 'analyze', side_effect=AssertionError('warm analysis')), \
-                     patch.object(bridge, '_pointwise_compile', side_effect=AssertionError('warm NVRTC')):
+                     patch.object(bridge, '_pointwise_host_plan', side_effect=AssertionError('warm NVRTC')):
                     self.compare(compiled(self.upload(values, (len(values),))), expected)
                 if body == 'return x * 2.0 - x':
                     self.assertTrue(self.torch.isinf(reference_fn(tx)[:2]).all())
@@ -684,7 +751,7 @@ diagnostic.write(directory/'report.json.gz', record)
         fn = program('def f(x, y):\n return (x * y).sin() - x')
         compiled = native.compile(fn)
         x = self.upload([1., 2., 3., 4.], (2, 2))
-        with patch.object(bridge, '_pointwise_compile', side_effect=AssertionError('compiled invalid graph')):
+        with patch.object(bridge, '_pointwise_host_plan', side_effect=AssertionError('compiled invalid graph')):
             for args in [(x, x.t()), (x, native.ones(2, 2))]:
                 with self.assertRaises(NotImplementedError):
                     compiled(*args)
@@ -756,7 +823,7 @@ diagnostic.write(directory/'report.json.gz', record)
             fn, effects = custom_globals_program('def f(x):\n return ' + expression)
             compiled = native.compile(fn)
             for _ in range(2):
-                with patch.object(bridge, '_pointwise_compile', side_effect=AssertionError('codegen')):
+                with patch.object(bridge, '_pointwise_host_plan', side_effect=AssertionError('codegen')):
                     with self.assertRaisesRegex(NotImplementedError, 'globals must be an exact dict'):
                         compiled(x)
                 self.assertEqual(effects, [])
@@ -833,9 +900,12 @@ assert 'torch' not in sys.modules
                 self.compare(compiled(x), torch.tensor([1., 2.], device=f'cuda:{target}').mul(0.7).sin())
                 self.assertEqual(torch.cuda.current_device(), 1 - target)
         self.assertEqual({entry.device for entry in kernels(compiled)}, {0, 1})
+        selected = kernel(compiled)
+        prepared = next(item[0] for item in cache(compiled).prepared.values()
+                        if item[0].belongs_to(selected))
         with torch.cuda.device(1):
             with self.assertRaisesRegex(RuntimeError, 'device guard'):
-                kernel(compiled).run((inputs[1],))
+                prepared.run((inputs[1],))
             native.compiler.reset()
             self.assertEqual(torch.cuda.current_device(), 1)
             with patch.dict(os.environ, TORCH_RS_NVRTC='/nonexistent/torch-rs-test-nvrtc'):

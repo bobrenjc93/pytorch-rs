@@ -50,7 +50,7 @@ class BroadcastPrimitives(unittest.TestCase):
                     self.compare(actual, expected)
                     with patch.object(frontend, 'analyze', side_effect=AssertionError('warm analysis')), \
                          patch.object(frontend, 'lower', side_effect=AssertionError('warm lowering')), \
-                         patch.object(bridge, '_pointwise_compile', side_effect=AssertionError('warm compile')):
+                         patch.object(bridge, '_pointwise_host_plan', side_effect=AssertionError('warm compile')):
                         again = self.without_replay(fn, compiled, args)
                     self.compare(again, expected)
                     self.assertIsNot(again, actual)

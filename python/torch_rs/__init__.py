@@ -409,6 +409,7 @@ def _make_compile_wrapper(
 ):
     metadata_attribute_names = (
         "_torch_rs_pointwise_cache",
+        "_torch_rs_pointwise_receipt",
         "_torch_rs_cuda_compile_executor",
         "_torch_rs_cuda_compile_preparation",
     )

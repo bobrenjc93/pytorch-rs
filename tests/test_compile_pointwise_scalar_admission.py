@@ -375,6 +375,11 @@ class SharedCacheGuards(unittest.TestCase):
                                     side_effect=self.make_executor)
         self.compile_bridge = patcher.start()
         self.addCleanup(patcher.stop)
+        from tests.test_compile_pointwise_jit import mock_pointwise_host_plan
+        patcher = mock.patch.object(frontend._native, '_pointwise_host_plan',
+                                   side_effect=mock_pointwise_host_plan)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def make_executor(self, tensors, nodes, output):
         run = mock.Mock()
