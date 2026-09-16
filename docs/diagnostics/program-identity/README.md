@@ -6,15 +6,16 @@ It does not produce a qualification verdict or change the fixed evaluation.
 Historical A measurements do not qualify this implementation.
 
 [Development validation](validation.md) records the implementation checks and
-preserved failures. The [complete clean comparison](postcommit-8f2002d/README.md)
-passed the frozen eight-leg verifier. It retains cold/churn regressions alongside
-repeated-call improvements. The [first failed attempt](postcommit-47b97f2/README.md)
-remains unchanged.
+preserved failures. The [current clean comparison](postcommit-fc6c345/README.md)
+passed the frozen eight-leg verifier after the warm ownership repair. It retains
+cold/churn and small-case regressions alongside repeated-call improvements. The
+[previous complete comparison](postcommit-8f2002d/README.md) and
+[first failed attempt](postcommit-47b97f2/README.md) remain unchanged.
 
 The [warm ownership repair](warm-ownership-repair/README.md) records bounded
 call-count attribution and development checks after the canonical rejection of
-`4993a37`. Its repaired source still requires a new clean eight-leg capture after
-Burner commits it; the previous comparison does not qualify that source.
+`4993a37`. The new capture measures committed `fc6c345`; unchanged full
+qualification remains required.
 
 `consumer.py` uses only the standard library until a worker imports its selected
 framework. Its `build`, `check`, `freeze`, `preflight`, `leg`, and `verify` subcommands create

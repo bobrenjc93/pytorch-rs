@@ -56,14 +56,12 @@ selected/non-selected owner replacement, failure snapshots and exact byte
 accounting. Their intentional run against the pre-repair wheel failed (one
 failure and four subtest errors); that log is preserved rather than discarded.
 
-## Required clean evidence remains pending
+## Clean post-commit evidence
 
-Burner must commit the repaired implementation and profiler before its canonical
-post-commit evidence phase can freeze a new consumer/head binding. That phase must
-use the unchanged [protocol](../protocol.md), separate clean source-bound B/C
-wheels and all eight ordered fresh ordinary-default B/C/reference legs, retaining
-every sample and cold/churn/small-case regression. The already-proved common
-byte-identical CUDA library layout can be reused without weakening provider checks.
-The previous complete and failed archives remain unchanged; neither measures this
-repair. Independent review, unchanged full qualification and exact-head CI remain
-required. Development profiling and structural tests do not replace them.
+Burner committed the repair as `fc6c345bd71205626329627cd4c28a085af6072e`.
+The [new clean comparison](../postcommit-fc6c345/README.md) completed all eight
+ordinary-default B/C/reference legs and passed the unchanged verifier, retaining
+every sample and cold/churn/small-case regression. The previous complete and
+failed archives remain unchanged. Independent review, unchanged full qualification
+and exact-head CI remain required; the development profiles above do not replace
+those gates or measure ordinary-call latency.
