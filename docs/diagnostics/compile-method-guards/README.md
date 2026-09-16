@@ -20,8 +20,10 @@ the successful build unset that variable for the command.
 
 The original is the retained, clean X4BGHb build of `162abef6f497341327e4ac3f5e412f92a4e3bf81`.
 The changed wheel was built normally from that commit **plus the uncommitted
-guard and onboarding edits**. It is development evidence; clean-commit evidence
-must be refreshed after Burner commits the repair. No final score is claimed.
+guard and onboarding edits**. It remains development evidence. The required
+[clean-commit refresh for 9009c8ea](../compile-gelu-linked/postcommit-9009c8ea/README.md)
+now records the fixed gates, public GELU and frozen guard comparison separately.
+No final score is claimed for this development run.
 The exact paths, commands, exits, source and installed-file hashes are in the
 [declaration](declaration.json) and retained records indexed by [raw-index.json](raw-index.json).
 

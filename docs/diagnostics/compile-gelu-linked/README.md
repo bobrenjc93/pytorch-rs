@@ -122,6 +122,9 @@ earlier failed checks and limits accompany the supporting record.
 
 The deferred public eager/compiled/no-NVRTC, timing and fixed-gate captures are
 now [recorded from clean commit 2d9e55f8](postcommit-2d9e55f8/README.md).
+The subsequent method-guard repair has a separate
+[clean 9009c8ea capture](postcommit-9009c8ea/README.md), including all fixed cells,
+public GELU modes and the frozen guard comparison; prior results remain pinned.
 Canonical full qualification and independent review remain outstanding.
 The development fixed run above uses `--diagnostic`
 and records `valid=false`; it is not a final score. All worker output hashes,

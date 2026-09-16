@@ -1,0 +1,122 @@
+{
+  "commit": "9009c8ea6de40ec55c970983602c8fadd8a0447a",
+  "fixed": {
+    "cells": 112,
+    "coverage": 21.0,
+    "cuda_performance": 33.433414668636416,
+    "passed": 22,
+    "workers": [
+      {
+        "device": "cpu",
+        "gzip_sha256": "2a033e8159581a12594717a1e71530050da5e58fe5cc33ebb2aa967470c80074",
+        "implementation": "reference",
+        "observations": 112,
+        "variants": 56
+      },
+      {
+        "device": "cpu",
+        "gzip_sha256": "834616d551ab90c1b96a8a7b40963f0f5308b1e4c897be7fc63713c3dade1606",
+        "implementation": "candidate",
+        "observations": 0,
+        "variants": 0
+      },
+      {
+        "device": "cuda",
+        "gzip_sha256": "46a8edd8e40c8d7864c9c9cd648a67af5697c983accc0163dd61d0fdab85891e",
+        "implementation": "reference",
+        "observations": 112,
+        "variants": 56
+      },
+      {
+        "device": "cuda",
+        "gzip_sha256": "b62464122bcbdd91a68f1ab11de7d0ec9ed241c6fe2d4e91b2ff5283dec9f6a6",
+        "implementation": "candidate",
+        "observations": 44,
+        "variants": 22
+      },
+      {
+        "device": "cuda",
+        "gzip_sha256": "7b742f9ba1ed1e5bfffbd3ccc09c737396342da54c750653506533a1a098e0ee",
+        "implementation": "candidate",
+        "observations": 44,
+        "variants": 22
+      },
+      {
+        "device": "cuda",
+        "gzip_sha256": "1d61abb48b048d16b7009cb6298f4a8cbefe1d1c49a2dc81ee35804652c6a194",
+        "implementation": "reference",
+        "observations": 112,
+        "variants": 56
+      }
+    ]
+  },
+  "guards": {
+    "medians_us": [
+      [
+        37.546,
+        36.295,
+        38.198,
+        37.236,
+        38.779
+      ],
+      [
+        36.005,
+        36.104,
+        37.637,
+        36.805,
+        36.495
+      ],
+      [
+        35.003,
+        35.894,
+        37.547,
+        37.227,
+        35.744
+      ],
+      [
+        52.579,
+        37.517,
+        37.267,
+        38.067,
+        38.028
+      ]
+    ],
+    "numerical_pairs": 96,
+    "raw_records": 288,
+    "samples": 340,
+    "workers": 7
+  },
+  "observed_at": "2026-09-16T10:15:19.806716+00:00",
+  "passed": true,
+  "public": {
+    "no_nvrtc_verified": true,
+    "pairs": [
+      {
+        "comparisons": 33,
+        "finite_bit_mismatches": 0,
+        "nan_word_mismatches": 0,
+        "native": "native-eager",
+        "signed_zero_mismatches": 0
+      },
+      {
+        "comparisons": 236,
+        "finite_bit_mismatches": 0,
+        "nan_word_mismatches": 1924,
+        "native": "native-compiled",
+        "signed_zero_mismatches": 0
+      },
+      {
+        "comparisons": 33,
+        "finite_bit_mismatches": 0,
+        "nan_word_mismatches": 0,
+        "native": "native-no-nvrtc",
+        "signed_zero_mismatches": 0
+      }
+    ],
+    "raw_records": 1871,
+    "retained_snapshots": 590
+  },
+  "scope": "Read-only host audit of recorded data with unchanged comparators; no framework/GPU workload or measurement rerun; no implementation approval.",
+  "vendor_members": 5,
+  "wheel_package_members": 61
+}

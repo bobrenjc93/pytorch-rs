@@ -1,0 +1,16 @@
+{
+  "observed_at": "2026-09-16T10:10:25.927492+00:00",
+  "wheel": {
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/target/default-compile-eval/wheels.Gc9oGQ/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "bytes": 1743017,
+    "sha256": "22b66f5969a614ce4fd6b14f92ab06f007d5961206f37c7ee5d9ac246c00518c"
+  },
+  "matched_source_files": {
+    "LICENSE": "4c49fec403b760407567676dc394de858c46535cd610ec11524e468ffa9ce46d",
+    "docs/diagnostics/compile-gelu-linked/notices/CUDA13-LICENSE.txt": "f176e5fd245a4ff1d7aee743e345e14b29c4b724f150e4858c4c6a313966d1fb",
+    "docs/diagnostics/compile-gelu-vendor/notices/compiler-CUDA12.8-LICENSE.txt": "e2c71babfd18a8e69542dd7e9ca018f9caa438094001a58e6bc4d8c999bf0d07",
+    "docs/diagnostics/compile-gelu-vendor/notices/requested-CUDA11.8-LICENSE.txt": "b9ee12782ca117b887588d99ae1b8c24deb59105e05417fe28ffbd7a55896dd1",
+    "src/cuda/NOTICE.md": "9297ff4f7cad6c2f029c5d3867a4911503253fc528be850b87e257248e82377c"
+  },
+  "passed": true
+}
