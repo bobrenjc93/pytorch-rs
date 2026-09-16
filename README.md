@@ -93,7 +93,7 @@ Burner also runs independent generated workloads and differential checks.
 
 ## License
 
-MIT
+MIT for original code; [NVIDIA terms](src/cuda/NOTICE.md) apply to generated CUDA math.
 
 <!-- burner-progress:start -->
 ## Burner evaluation progress

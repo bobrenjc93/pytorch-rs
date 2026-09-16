@@ -296,6 +296,22 @@ impl Storage {
         }
     }
 
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn cuda_gelu_float32(
+        &self,
+        offset: usize,
+        elements: usize,
+    ) -> Result<Self, TensorError> {
+        match &self.payload {
+            StoragePayload::CudaFloat32(input) => Ok(Self {
+                payload: StoragePayload::CudaFloat32(input.gelu(offset, elements)?),
+            }),
+            StoragePayload::CpuFloat32(_) => Err(TensorError::UnsupportedCudaGelu {
+                reason: "input must be CUDA",
+            }),
+        }
+    }
+
     pub(crate) fn cuda_mul_scalar_float32(
         &self,
         offset: usize,

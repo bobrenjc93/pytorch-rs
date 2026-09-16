@@ -18,6 +18,9 @@ from . import _compiler_state as _state
 
 _ROOT = sys.modules[__package__]
 _TENSOR_TYPE = _ROOT.Tensor
+_NN = _ROOT.nn
+_FUNCTIONAL = _NN.functional
+_GELU = _FUNCTIONAL.gelu
 _UNARY = {"neg": "neg", "negative": "neg", "__neg__": "neg",
           "relu": "relu", "sin": "sin", "cos": "cos"}
 _BINARY = {"add": "add", "__add__": "add", "__radd__": "add",
@@ -231,6 +234,8 @@ class Lowering:
     """Pair native computation with Python topology at the lowering cache owner."""
     graph: Graph
     result: ResultSpec
+    # Exact edges actually traversed by this lowering, checked on every run.
+    namespace_guards: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -849,6 +854,12 @@ def binding(value):
             if _ROOT.__dict__.get(name) is not expected:
                 unsupported("patched native function binding: " + name)
         return ("module", id(value)), value
+    if value is _NN or value is _FUNCTIONAL:
+        if type(value) is not types.ModuleType:
+            unsupported("patched native namespace type")
+        return ("module", id(value)), value
+    if value is _GELU:
+        return ("function", "gelu", id(value)), Call("gelu")
     for name, expected in _FUNCTIONS:
         if value is expected and expected is not None:
             return ("function", name, id(value)), Call((_UNARY | _BINARY)[name])
@@ -856,6 +867,19 @@ def binding(value):
         helper = freeze_helper(value)
         return ("helper", helper), helper
     unsupported("only native operators, exact Python helpers and scalar constants may be captured")
+
+
+def check_namespace_guard(guard):
+    owner, name, expected = guard
+    if type(owner) is not types.ModuleType:
+        unsupported("patched native namespace type")
+    namespace = owner.__dict__
+    if not _native._pointwise_namespace_keys_exact(namespace):
+        unsupported("native namespace keys must be exact strings")
+    if namespace.get(name) is not expected:
+        unsupported("patched native namespace binding: " + name)
+    if (expected is _NN or expected is _FUNCTIONAL) and type(expected) is not types.ModuleType:
+        unsupported("patched native namespace type")
 
 
 def bind_arguments(args):
@@ -1034,6 +1058,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
     helper_instructions = {}  # Per lowering only; warm hits never parse helpers.
     pending_checks = []  # Early-return continuations; no recursion per condition.
     construction_edges = 0
+    namespace_guards = []
 
     def data(obj):
         # Validate without realizing a lazy root source. Ignored parameters must
@@ -1093,6 +1118,16 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
         return Value(len(nodes) - 1, False, "bool" if boolean else "float32")
 
     def emit(op, operands):
+        if op == "gelu":
+            arg = value(operands[0])
+            if not arg.tensor:
+                unsupported("operators require tensor expressions")
+            # The ordinary reference decomposition, with scalar kinds and
+            # binary64 alpha preserved until normal native materialization.
+            half = emit("mul", [arg, 0.5])
+            scaled = emit("mul", [arg, 0.70710678118654752440])
+            erf = emit("erf", [scaled])
+            return emit("mul", [half, emit("add", [1, erf])])
         args = [value(arg) for arg in operands]
         if len(args) == 1 and not args[0].tensor or not any(arg.tensor for arg in args):
             unsupported("operators require tensor expressions")
@@ -1285,6 +1320,15 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                             or original.source.kind != "parameter" or type(owner) is not Value):
                         unsupported("shape queries require an original input Tensor")
                     stack.append(ShapeValue(original.source, predicate_origin=original.predicate_origin))
+                elif ((owner is _ROOT and arg == "nn")
+                      or (owner is _NN and arg == "functional")
+                      or (owner is _FUNCTIONAL and arg == "gelu")):
+                    expected = _NN if owner is _ROOT else _FUNCTIONAL if owner is _NN else _GELU
+                    guard = (owner, arg, expected)
+                    check_namespace_guard(guard)
+                    if not any(o is owner and name == arg for o, name, _ in namespace_guards):
+                        namespace_guards.append(guard)
+                    stack.append(binding(expected)[1])
                 elif owner is _ROOT:
                     if arg not in dict(_FUNCTIONS):
                         unsupported("unsupported native function: " + arg)
@@ -1375,7 +1419,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     unsupported("only native pointwise operators and direct helpers may be called")
                 if target.receiver is not None:
                     operands.insert(0, target.receiver)
-                if len(operands) != (1 if target.op in set(_UNARY.values()) else 2):
+                if len(operands) != (1 if target.op == "gelu" or target.op in set(_UNARY.values()) else 2):
                     unsupported("operator argument count mismatch")
                 if target.reverse:
                     operands.reverse()
@@ -1409,7 +1453,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
         continuation, inactive_locals = pending_checks.pop()
         isolated(continuation, inactive_locals, charge=False)
     outputs, specification = result_spec(result)
-    return Lowering(Graph(arity, tuple(nodes), outputs), specification)
+    return Lowering(Graph(arity, tuple(nodes), outputs), specification, tuple(namespace_guards))
 
 
 def _prepared_entry_bytes(key, prepared):
@@ -1536,6 +1580,8 @@ def implementation(model, recompile_limit):
             # specialize the full native ABI and exact broadcast address formula.
             # Preparation checks all original-IR admission. Exact native shapes
             # certify that result on reuse; offsets/storage are checked each run.
+            for guard in lowering.namespace_guards:
+                check_namespace_guard(guard)
             graph = lowering.graph
             shapes = tuple(m[0] for m in metadata)
             indexing_key = None if all(s == shapes[0] for s in shapes) else shapes

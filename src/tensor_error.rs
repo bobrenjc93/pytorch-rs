@@ -117,6 +117,9 @@ pub enum TensorError {
     UnsupportedCudaRelu {
         reason: &'static str,
     },
+    UnsupportedCudaGelu {
+        reason: &'static str,
+    },
     UnsupportedCudaSum {
         reason: &'static str,
     },
@@ -240,6 +243,7 @@ impl Display for TensorError {
             | Self::UnsupportedCudaScalarMultiplication { .. }
             | Self::UnsupportedCudaNegation { .. }
             | Self::UnsupportedCudaRelu { .. }
+            | Self::UnsupportedCudaGelu { .. }
             | Self::UnsupportedCudaSum { .. }
             | Self::UnsupportedCudaMatmul { .. }
             | Self::UnsupportedCudaTransfer { .. }
@@ -464,6 +468,9 @@ fn format_device_error(formatter: &mut Formatter<'_>, error: &TensorError) -> st
         }
         TensorError::UnsupportedCudaRelu { reason } => {
             write!(formatter, "relu(): unsupported CUDA ReLU ({reason})")
+        }
+        TensorError::UnsupportedCudaGelu { reason } => {
+            write!(formatter, "gelu(): unsupported native GELU ({reason})")
         }
         TensorError::UnsupportedCudaSum { reason } => {
             write!(formatter, "sum(): unsupported CUDA reduction ({reason})")

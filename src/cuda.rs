@@ -481,6 +481,15 @@ impl CudaFloat32Storage {
         })
     }
 
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn gelu(&self, offset: usize, elements: usize) -> Result<Self, TensorError> {
+        self.unary_pointwise(offset, elements, |input, output, count| {
+            // SAFETY: unary_pointwise checks bounds, guards the device and holds
+            // both allocations through legacy-stream completion, even on errors.
+            unsafe { pointwise::launch_gelu(input, output, count) }
+        })
+    }
+
     pub(crate) fn mul_scalar(
         &self,
         offset: usize,
@@ -1884,6 +1893,47 @@ mod tests {
         assert_eq!(
             input.sum_rows(0, 2, 2).unwrap().copy_range(0, 2).unwrap(),
             [3., 7.]
+        );
+    }
+
+    #[test]
+    fn gelu_storage_bounds_offset_and_retained_outputs() {
+        use super::CudaFloat32Storage;
+        use crate::TensorError;
+        if super::device_count() == 0 {
+            eprintln!("skipping CUDA GELU storage: no CUDA runtime/device");
+            return;
+        }
+        let values = [-4.0, -0.0, 0.0, 4.0];
+        let input = CudaFloat32Storage::from_host(&values, 0).unwrap();
+        for (offset, count) in [(4, 1), (usize::MAX, 2), (0, 5)] {
+            assert!(matches!(
+                input.gelu(offset, count),
+                Err(TensorError::IndexCalculationOverflow)
+            ));
+        }
+        assert_eq!(input.gelu(usize::MAX, 0).unwrap().elements, 0);
+        let first = input.gelu(1, 2).unwrap();
+        let second = input.gelu(1, 2).unwrap();
+        assert_ne!(input.data_ptr, first.data_ptr);
+        assert_ne!(first.data_ptr, second.data_ptr);
+        for output in [&first, &second] {
+            let words: Vec<_> = output
+                .copy_range(0, 2)
+                .unwrap()
+                .iter()
+                .map(|x| x.to_bits())
+                .collect();
+            assert_eq!(words, [(-0.0_f32).to_bits(), 0]);
+        }
+        assert_eq!(
+            input
+                .copy_range(0, 4)
+                .unwrap()
+                .iter()
+                .map(|x| x.to_bits())
+                .collect::<Vec<_>>(),
+            values.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
         );
     }
 

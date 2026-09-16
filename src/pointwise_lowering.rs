@@ -439,7 +439,7 @@ impl Lowering {
                     Expr::Node(Node::Relu(a)) => ranks[a] + 2, // compare, select
                     Expr::Node(Node::Neg(a)) | Expr::SelfSub(a) => ranks[a] + 1,
                     Expr::Flip(a) | Expr::SignedDouble(a) => ranks[a], // actual fneg
-                    Expr::Node(Node::Sin(_) | Node::Cos(_)) => call_ranks[id],
+                    Expr::Node(Node::Sin(_) | Node::Cos(_) | Node::Erf(_)) => call_ranks[id],
                 }
             };
             ranks.push(rank);
@@ -653,7 +653,9 @@ impl Lowering {
     fn operands(&self, id: usize) -> Vec<usize> {
         match self.nodes[id] {
             Expr::Node(Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b)) => vec![a, b],
-            Expr::Node(Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a))
+            Expr::Node(
+                Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a) | Node::Erf(a),
+            )
             | Expr::Flip(a)
             | Expr::SelfSub(a)
             | Expr::SignedDouble(a) => vec![a],
@@ -757,7 +759,7 @@ fn materialization_ranks(
             Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b) => {
                 pending.extend([(b, false), (a, false)]);
             }
-            Node::Sin(a) | Node::Cos(a) => pending.extend([(id, true), (a, false)]),
+            Node::Sin(a) | Node::Cos(a) | Node::Erf(a) => pending.extend([(id, true), (a, false)]),
             Node::Neg(a) | Node::Relu(a) => pending.push((a, false)),
             _ => {}
         }
@@ -784,6 +786,7 @@ pub(super) fn remap(node: &Node, mapped: &[usize]) -> Node {
         Node::Relu(a) => Node::Relu(mapped[a]),
         Node::Sin(a) => Node::Sin(mapped[a]),
         Node::Cos(a) => Node::Cos(mapped[a]),
+        Node::Erf(a) => Node::Erf(mapped[a]),
     }
 }
 
@@ -832,7 +835,9 @@ fn consumer_analysis(
         }
         let operands = match canonical.nodes[id] {
             Expr::Node(Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b)) => vec![a, b],
-            Expr::Node(Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a)) => vec![a],
+            Expr::Node(
+                Node::Neg(a) | Node::Relu(a) | Node::Sin(a) | Node::Cos(a) | Node::Erf(a),
+            ) => vec![a],
             _ => vec![],
         };
         for operand in operands {
@@ -940,6 +945,7 @@ pub(super) fn region(
                 Expr::Node(Node::Relu(a)) => Operation::Relu(a),
                 Expr::Node(Node::Sin(a)) => Operation::Sin(a, lower.constant_expressions[a]),
                 Expr::Node(Node::Cos(a)) => Operation::Cos(a, lower.constant_expressions[a]),
+                Expr::Node(Node::Erf(a)) => Operation::Erf(a),
                 Expr::Flip(a) | Expr::SignedDouble(a) => Operation::Flip(a),
                 Expr::SelfSub(a) => Operation::Sub(a, a),
             }
@@ -951,7 +957,10 @@ pub(super) fn region(
     }
 }
 
-pub(super) fn source(graph: &Graph, addresses: &[super::indexing::Address]) -> String {
+pub(super) fn source(
+    graph: &Graph,
+    addresses: &[super::indexing::Address],
+) -> super::program::Compilation {
     super::program::source(graph, addresses)
 }
 

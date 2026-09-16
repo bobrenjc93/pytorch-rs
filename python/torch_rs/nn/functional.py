@@ -12,6 +12,7 @@ from torch_rs.overrides import _dispatch_unary_torch_function
 from ..torch_rs import (
     _nn_functional_dropout,
     _nn_functional_glu_vector,
+    _nn_functional_gelu as gelu,
     _nn_functional_l1_loss,
     _nn_functional_linear as linear,
     _nn_functional_mse_loss,
