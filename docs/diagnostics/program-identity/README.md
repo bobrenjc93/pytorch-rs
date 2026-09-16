@@ -6,9 +6,10 @@ It does not produce a qualification verdict or change the fixed evaluation.
 Historical A measurements do not qualify this implementation.
 
 [Development validation](validation.md) records the implementation checks and
-preserved failures. The [clean post-commit attempt](postcommit-47b97f2/README.md)
-stopped at the first reference leg's runtime-provenance check; the full public
-comparison remains incomplete.
+preserved failures. The [complete clean comparison](postcommit-8f2002d/README.md)
+passed the frozen eight-leg verifier. It retains cold/churn regressions alongside
+repeated-call improvements. The [first failed attempt](postcommit-47b97f2/README.md)
+remains unchanged.
 
 `consumer.py` uses only the standard library until a worker imports its selected
 framework. Its `build`, `check`, `freeze`, `preflight`, `leg`, and `verify` subcommands create
@@ -41,6 +42,13 @@ own worktree-local environment through the canonical evidence phase. The worker
 checks every installed Python file and native extension against the wheel and
 source again. Do not use an editable install or import reference PyTorch in a
 native worker. Reference environments must contain locked `2.13.0+cu130`.
+
+The separate environments must resolve their CUDA libraries to the same pinned
+worktree-local files. PyTorch preloads its package-local libraries by absolute
+path, so separate copies with equal hashes can still load two runtimes. The
+[successful setup record](postcommit-8f2002d/README.md) verifies all library bytes
+before linking the baseline CUDA library directory to the common directory and
+checks actual reference mappings in both environments before timing.
 
 Under the canonical `cpu-heavy`/`gpu` lease, first run a separate candidate
 `preflight --build-record <C-build> --freeze <freeze> --runtime <runtime> --nvrtc <compiler> --output
