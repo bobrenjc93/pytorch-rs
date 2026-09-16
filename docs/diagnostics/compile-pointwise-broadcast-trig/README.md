@@ -6,9 +6,9 @@ test and documentation files come from reviewed source
 [`6255306`](https://github.com/bobrenjc93/pytorch-rs/commit/6255306165615d9502a4aa491187bcf626e9d585)
 (tree `de3d425c8468ab595f79efd2d11f6c3cac0c3a99`), directly based on
 [`9a36b4a`](https://github.com/bobrenjc93/pytorch-rs/commit/9a36b4a4642528d5af7533b309a8562b74447084).
-Executable source and all seven changed/new test files are byte-identical.
-Only the permitted compiler-guide scalar-leaf example and supported-surface
-opening are corrected beyond those reviewed contents.
+All seven changed/new test files remain byte-identical. Beyond the permitted
+compiler-guide scalar-leaf example and supported-surface opening corrections,
+the indexing rejection loop now has the equivalent CI repair described below.
 
 The [compiler guide](../../compile-pointwise-jit.md#supported-programs) owns
 admission; the [numerical guide](../../compile-pointwise-numerics.md#unequal-shape-numerical-boundary)
@@ -17,13 +17,32 @@ returned root at arithmetic depth at most one, including live sin/cos. The
 exact tensor-leaf multiply-add exception requires no live trig in any returned
 root. Numerical planning and the generic native CUDA executor are unchanged.
 
-## Clean-commit evidence
+## PR #2001 CI repair
+
+The [required `test` job](https://github.com/bobrenjc93/pytorch-rs/actions/runs/35046757556/job/104638120458)
+failed Rust 1.92 Clippy: `Graph::indexing` had 101 lines against the 100-line
+limit. Replacing its rejection loop with a short-circuit `any` predicate keeps
+the same condition, validation order and error message, without a lint exemption.
+
+The [repair receipt](ci-repair.json) preserves the local reproduction of that
+failure and subsequent working-tree checks: both CI Clippy configurations,
+formatting, 464 Rust tests without Python bindings and 493 with bindings passed.
+A newly compiled local wheel passed 21 focused and 31 additional H100 tests,
+plus two portable trig tests; seven hardware skips remain explicit. Tests,
+compiler defaults, tolerances and evaluator definitions are unchanged.
+
+This source repair is not included in the `876627d` capture below. Its required
+clean-commit evidence refresh and external CI rerun remain pending after Burner
+commits the repair. The working-tree receipt does not satisfy those gates.
+
+## Evidence for clean commit `876627d`
 
 Measured on 2026-09-16 UTC at clean implementation commit
 [`876627d`](https://github.com/bobrenjc93/pytorch-rs/commit/876627dbc12662aa0d3357bf8055ed1ee1137b68).
 All 12 command receipts record this commit and empty Git status before and after
-execution. Source and tests remained unchanged; only these evidence files and
-this index were added or updated afterward.
+execution. Source and tests remained unchanged during that capture; the following
+`db3df93` commit added only evidence and index updates. The later CI repair above
+changes the source, so these measurements remain pinned to `876627d`.
 
 Canonical qualification is pending. These focused results are not candidate
 scores or independent review. Burner owns fixed evaluations, archival, review,

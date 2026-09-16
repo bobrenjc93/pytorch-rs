@@ -163,15 +163,14 @@ impl Graph {
         // trig consumers. Both output orders must stay outside this increment.
         let unequal_shapes = shapes.windows(2).any(|pair| pair[0] != pair[1]);
         let live_transcendental = self.outputs.iter().any(|&root| transcendental[root]);
-        for &root in &self.outputs {
-            if unequal_shapes
-                && depth[root] > 1
-                && (live_transcendental || !self.tensor_leaf_madd(root))
-            {
-                return Err(invalid(
-                    "unequal input shapes require at most one arithmetic stage, or a tensor-leaf multiply-add with no live sin/cos in any output",
-                ));
-            }
+        if unequal_shapes
+            && self.outputs.iter().any(|&root| {
+                depth[root] > 1 && (live_transcendental || !self.tensor_leaf_madd(root))
+            })
+        {
+            return Err(invalid(
+                "unequal input shapes require at most one arithmetic stage, or a tensor-leaf multiply-add with no live sin/cos in any output",
+            ));
         }
         let first = self.outputs[0];
         if self
