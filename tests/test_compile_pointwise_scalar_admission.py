@@ -313,8 +313,11 @@ class PositionalBindingAdmission(unittest.TestCase):
                                         (0.375, x, y, True))
             for shapes in (((5,), (1, 5)), ((5,), ()), ((0, 5), (1, 5))):
                 with self.subTest(body=body, shapes=shapes):
-                    with self.assertRaisesRegex(RuntimeError, 'arithmetic|sin/cos'):
+                    if body == 'x.sin()+scale':
                         bridge._pointwise_source(graph.nodes, graph.outputs, 2, shapes)
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, 'arithmetic|sin/cos'):
+                            bridge._pointwise_source(graph.nodes, graph.outputs, 2, shapes)
             # One tensor plus scalars retains the complete one-tensor language.
             _, _, _, graph = self.graph('def f(scale,x,flag):\n return '+body,
                                         (0.375, x, True))

@@ -185,7 +185,7 @@ class Broadcast(unittest.TestCase):
                 refs = [self.upload(values, s, self.torch) for s in shapes]
                 with self.subTest(expression=expression, shapes=shapes):
                     if expression in ('x * 2.0 - y * 2.0', 'y * 2.0 - x * 2.0',
-                                      '-(x * y)', 'x.sin() - y.cos()', '(x + y) - (x + y)'):
+                                      '-(x * y)', '(x + y) - (x + y)'):
                         with self.assertRaisesRegex(NotImplementedError, 'one arithmetic stage'):
                             compiled(*args)
                     else:

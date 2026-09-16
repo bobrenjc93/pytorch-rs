@@ -654,12 +654,24 @@ class HelperHardware(unittest.TestCase):
         y = native.ones(4).to('cuda:0')
         # Tensor-leaf multiply-add remains admitted through a helper.
         self.assertEqual(compiled(x, y).cpu().tolist(), [[2.] * 4] * 3)
-        for source in ('def f(a, b):\n return a*b+0.5',
-                       'def f(a, b):\n return a.sin()+b'):
-            compiled = native.compile(root(program(source), 'helper(x, y)', 'x, y'))
-            with self.assertRaises((ValueError, NotImplementedError)):
-                compiled(x, y)
-            self.assertFalse(cache(compiled).graphs)
+        compiled = native.compile(root(program('def f(a, b):\n return a*b+0.5'),
+                                       'helper(x, y)', 'x, y'))
+        with self.assertRaises((ValueError, NotImplementedError)):
+            compiled(x, y)
+        self.assertFalse(cache(compiled).graphs)
+        # The former one-stage trig rejection now follows the same native path
+        # through helpers, with both Python bodies forbidden on cold/warm calls.
+        helper = program('def f(a, b):\n return a.sin()+b')
+        fn = root(helper, 'helper(x, y)', 'x, y')
+        compiled = native.compile(fn)
+        reference = self.torch.compile(root(program('def f(a, b):\n return a.sin()+b'),
+                                            'helper(x, y)', 'x, y'))
+        tx = self.torch.ones(3, 4, device='cuda:0')
+        ty = self.torch.ones(4, device='cuda:0')
+        for _ in range(2):
+            with no_bodies(fn, helper):
+                actual = compiled(x, y)
+            self.compare(actual, reference(tx, ty), (x, y))
         helper = program('def f(a, ignored):\n return -a')
         compiled = native.compile(root(helper, 'helper(x, y)', 'x, y'))
         for invalid in (x.t(), native.ones(3, 4),

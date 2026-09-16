@@ -364,7 +364,9 @@ class PreparedHardware(unittest.TestCase):
         reshaped = x.reshape((1, 2))
         with self.assertRaisesRegex(RuntimeError, 'shape guard'):
             prepared.run((x, reshaped))
-        with self.assertRaisesRegex(RuntimeError, 'unequal input shapes'):
+        # Public admission now accepts this graph, but this old kernel has a
+        # different address map for its unused argument. Neither guard changes.
+        with self.assertRaisesRegex(RuntimeError, 'broadcast indexing guard'):
             executor.prepare((x, reshaped))
         for inputs in ((x,), (x, native.ones(2)), (x, object())):
             with self.subTest(inputs=len(inputs)), self.assertRaises((RuntimeError, TypeError)):
@@ -385,6 +387,7 @@ class PreparedHardware(unittest.TestCase):
         expected = self.torch.compile(program('def f(x):\n return x.sin()', self.torch))(
             self.upload([1., 2.], (2,), self.torch))
         self.compare(prepared.run((x, x))[0], expected)
+        self.compare(self.without_replay(fn, compiled, (x, reshaped)), expected)
         native.compiler.reset()
         self.assertFalse(cache(compiled).prepared)
         self.compare(prepared.run((x, x))[0], expected)
