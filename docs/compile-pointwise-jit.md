@@ -598,3 +598,7 @@ a separate lazy PTX 9.0/sm75 image and works without NVRTC. Neither image change
 the common eager PTX 6.0/sm50 module. The H100 checks are finite evidence, not a
 deployment certificate for other GPUs. See [vendor terms](../src/cuda/NOTICE.md)
 and [generation/check records](diagnostics/compile-gelu-linked/README.md).
+
+The [method-guard grouping check](diagnostics/compile-method-guards/README.md)
+records mutation coverage and a non-scoring public-call comparison for the
+two-class live namespace scan, including its slower, order-sensitive result.

@@ -134,18 +134,21 @@ at most 256 KiB of staging and at most eight times the logical transfer size
 to avoid the copy engine's per-row cost. Large gaps are always skipped; no
 allocation or transfer grows with an arbitrary backing span. Packed outputs
 retain CPU clone's dimension ordering, including transposed and selected views.
-CUDA addition accepts same-shape contiguous float32 inputs on one device,
-including offsets, scalars and empty tensors. Eager and compiled addition accept
+Native eager CUDA addition accepts same-shape contiguous float32 inputs on one device,
+including offsets, scalars and empty tensors. Eager execution and `backend="eager"` capture accept
 contiguous `(M, N)` and `(N,)` on that device in either operand order. The
 64-bit grid-stride trailing-vector kernel preserves independent bounds checks,
 device restoration, fresh storage, and completion before return; empty outputs
 launch no kernel. Other broadcasts, noncontiguous layouts, other dtypes,
-nonunit alpha, concrete out, and autograd remain excluded. The compiler metadata
+nonunit alpha, concrete out, and autograd remain excluded. That capture path's metadata
 planner admits the same bounded relation, derives singleton/empty output strides
 with its elementwise planner, and guards inputs before execution. Its private
 native bridge delegates independent validation to `Tensor::add`, sharing the
-eager kernel boundary. Compiled add syntax remains operator/positional method
-only; compiler alpha/out forms remain unsupported.
+eager kernel boundary. Eager-backend capture accepts `x + y`, positional
+`x.add(y)`, and positional native `torch.add(x, y)` or genuine direct-import
+aliases; `alpha`, `out`, and keyword forms remain unsupported. Default
+`torch.compile(fn)` instead uses the separate [fused pointwise JIT](docs/compile-pointwise-jit.md),
+with its own broadcasting and operation limits.
 Native float32 CUDA ReLU uses integer compare/select on IEEE bits: negative
 non-NaN values become positive zero, while positive values and all NaN payloads
 remain unchanged. It shares `unary_pointwise`/`unary_output` bounds, ownership,

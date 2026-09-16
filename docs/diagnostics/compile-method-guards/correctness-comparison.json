@@ -1,0 +1,10 @@
+{
+  "captured_at": "2026-09-16T10:01:40.484661+00:00",
+  "comparisons": 56,
+  "passed": true,
+  "policy": {
+    "bytes": 22160,
+    "path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33/docs/diagnostics/compile-pointwise-positional/warm-dispatch/gpu-dispatch.py",
+    "sha256": "de002c8bf7c2c1fc46936b0a7b03273822f362897bdc6f22ea1d4a7b7043c811"
+  }
+}

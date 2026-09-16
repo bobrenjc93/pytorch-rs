@@ -1,0 +1,1637 @@
+{
+  "generated_at": "2026-09-16T10:03:08.646264+00:00",
+  "root": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_6ada2b33",
+  "retention": "Worktree-local raw records and build retained for canonical review; cache trees omitted. These are uncommitted-source development measurements, not a clean-commit qualification.",
+  "files": [
+    {
+      "path": "target/guard-grouping/broadcast-tests-receipt.json",
+      "bytes": 1828,
+      "sha256": "f4bfb0e3b4ec7e0c4ac11ea3720635135636117b52c2beb88ee22270fe5e399c"
+    },
+    {
+      "path": "target/guard-grouping/broadcast-tests.log",
+      "bytes": 1678,
+      "sha256": "7e3a398695751af3cd8500f1c3cff1085f7691d21ebaf54c489c63bf4042bcad"
+    },
+    {
+      "path": "target/guard-grouping/build-observation.json",
+      "bytes": 4953,
+      "sha256": "3cee6c5eb8a05f455b499469f8228ac5341f4834887f44b444da1b1d4ab23464"
+    },
+    {
+      "path": "target/guard-grouping/changed-build.log",
+      "bytes": 2759,
+      "sha256": "ab971021cd6511b44076c970ebaf64fe0880cf9e1996d311a338817972b34e2b"
+    },
+    {
+      "path": "target/guard-grouping/dev-setup.log",
+      "bytes": 182,
+      "sha256": "ad00d611b825402fab1d260012594caff68f0f62d03cdd59e838c940d253f083"
+    },
+    {
+      "path": "target/guard-grouping/docs-smoke.log",
+      "bytes": 1971,
+      "sha256": "2917c2965194134383f5bd40d015e030fa56e18d86e19c79b4375f842702c5c7"
+    },
+    {
+      "path": "target/guard-grouping/focused-tests-receipt.json",
+      "bytes": 2015,
+      "sha256": "498e846d997fb57b057bb4839bb19fda2eea9cc5cc001c09e650cdf452ce8d88"
+    },
+    {
+      "path": "target/guard-grouping/focused-tests.log",
+      "bytes": 15884,
+      "sha256": "ed0b889ff6da2b704b099ebdbf93f9b1b3ffc38090b61272a91071234baf7742"
+    },
+    {
+      "path": "target/guard-grouping/guard-matrix-counts.json",
+      "bytes": 474,
+      "sha256": "0a446c8887fd505b52230de5b7ccd03b47d1c0f54bf993d41602149b73d3a07d"
+    },
+    {
+      "path": "target/guard-grouping/guard-tests.log",
+      "bytes": 1499,
+      "sha256": "47c5a6ba63ad2907d1bf9cbfef0dfdff0b08e6c5118823063bd5496424e2ccde"
+    },
+    {
+      "path": "target/guard-grouping/measurement-correctness.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/guard-grouping/measurement-timing.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/guard-grouping/native-build-retry.log",
+      "bytes": 1483,
+      "sha256": "14583e047157416b7caad226b88ca50af87b2ccb5bd71b68dcf15a4fcf8241ba"
+    },
+    {
+      "path": "target/guard-grouping/native-build.log",
+      "bytes": 101,
+      "sha256": "066627da4b1b719faa70b222cf1d899a1978074186c4a2c465eb4deb8b585465"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/correctness-comparison.json",
+      "bytes": 378,
+      "sha256": "a45a8a33317b3102633acc7635536ec136d7c7dbcc67020be75b7cc47b88f5da"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/declaration.json",
+      "bytes": 3101,
+      "sha256": "0abb76507737bfaa67db6ced498ed6e2e9c8548361c61abd91a9788df37cbeb4"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/timing-comparison.json",
+      "bytes": 34600,
+      "sha256": "b9936139c39e8f36c54e17cd7d2ac53137b4656968a150ac8bd5cf983568286c"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/0-input-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/0-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/0-input-after-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/0-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/0-output.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/1-input-0.u32le",
+      "bytes": 197632,
+      "sha256": "c02a1af04679679e242686b5cfbdf1fbe6f9c0e017d27a5189ad59234abdee42"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/1-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/1-input-after-0.u32le",
+      "bytes": 197632,
+      "sha256": "c02a1af04679679e242686b5cfbdf1fbe6f9c0e017d27a5189ad59234abdee42"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/1-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/1-output.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/1-retained-0.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/2-input-0.u32le",
+      "bytes": 95344,
+      "sha256": "a81be26c8308b37fa1a43069b88a9c282de7b3bdfa0f2868a41fbccae57a7b74"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/2-input-1.u32le",
+      "bytes": 472,
+      "sha256": "bea8ac9fb13b61f0495f134c8d5afac0db6530707712145bef857a083bd11bcd"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/2-input-after-0.u32le",
+      "bytes": 95344,
+      "sha256": "a81be26c8308b37fa1a43069b88a9c282de7b3bdfa0f2868a41fbccae57a7b74"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/2-input-after-1.u32le",
+      "bytes": 472,
+      "sha256": "bea8ac9fb13b61f0495f134c8d5afac0db6530707712145bef857a083bd11bcd"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/2-output.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/2-retained-0.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/2-retained-1.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/3-input-0.u32le",
+      "bytes": 241776,
+      "sha256": "18c69326e487d27f02c7dc9a0b2e456efda91c644f59467120cfea5b76a9a650"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/3-input-1.u32le",
+      "bytes": 1168,
+      "sha256": "5aa9a1463b83dc44b8d0778dfe1969578e08eb583390f291bb84adcba46a6063"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/3-input-after-0.u32le",
+      "bytes": 241776,
+      "sha256": "18c69326e487d27f02c7dc9a0b2e456efda91c644f59467120cfea5b76a9a650"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/3-input-after-1.u32le",
+      "bytes": 1168,
+      "sha256": "5aa9a1463b83dc44b8d0778dfe1969578e08eb583390f291bb84adcba46a6063"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/3-output.u32le",
+      "bytes": 241776,
+      "sha256": "cfeaa50c76e4239101ac753d4813ea3071dfbf27c34956f2069e7935cf0d1041"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/3-retained-0.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/3-retained-1.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/3-retained-2.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/4-input-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/4-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/4-input-after-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/4-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/4-output.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/4-retained-0.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/4-retained-1.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/4-retained-2.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/4-retained-3.u32le",
+      "bytes": 241776,
+      "sha256": "cfeaa50c76e4239101ac753d4813ea3071dfbf27c34956f2069e7935cf0d1041"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/5-input-0.u32le",
+      "bytes": 131072,
+      "sha256": "9893603e79dcf4d4010546bac17c8bdfa2af5db30f7bbacc255d55547ada568e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/5-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "09a8e06bd72e507b9840b347552816ae83472a4ea343262d49235c9344379e89"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/5-input-after-0.u32le",
+      "bytes": 131072,
+      "sha256": "9893603e79dcf4d4010546bac17c8bdfa2af5db30f7bbacc255d55547ada568e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/5-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "09a8e06bd72e507b9840b347552816ae83472a4ea343262d49235c9344379e89"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/5-output.u32le",
+      "bytes": 131072,
+      "sha256": "992a9303fa2fec56ded2458091f789f631650e6bfda5808ce588c35dde5873c4"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/5-retained-0.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/5-retained-1.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/5-retained-2.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/5-retained-3.u32le",
+      "bytes": 241776,
+      "sha256": "cfeaa50c76e4239101ac753d4813ea3071dfbf27c34956f2069e7935cf0d1041"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/5-retained-4.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/6-input-0.u32le",
+      "bytes": 131072,
+      "sha256": "9627e2f1cbdeb59852ba7f1621c22d112a8b7cf5c93cd3612e2528c4507fa835"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/6-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "f9f0651066bbf36fa044fe94a74d2d63abe4ec805de1f21f36b328197befa768"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/6-input-after-0.u32le",
+      "bytes": 131072,
+      "sha256": "9627e2f1cbdeb59852ba7f1621c22d112a8b7cf5c93cd3612e2528c4507fa835"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/6-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "f9f0651066bbf36fa044fe94a74d2d63abe4ec805de1f21f36b328197befa768"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/6-output.u32le",
+      "bytes": 131072,
+      "sha256": "161676d8c0e3eb6a00f74a5af139396145dca43bb8170c8e111e3d339b405696"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/6-retained-0.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/6-retained-1.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/6-retained-2.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/6-retained-3.u32le",
+      "bytes": 241776,
+      "sha256": "cfeaa50c76e4239101ac753d4813ea3071dfbf27c34956f2069e7935cf0d1041"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/6-retained-4.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/6-retained-5.u32le",
+      "bytes": 131072,
+      "sha256": "992a9303fa2fec56ded2458091f789f631650e6bfda5808ce588c35dde5873c4"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/exit.json",
+      "bytes": 1928,
+      "sha256": "6fdf7eb6d5b68c625135880ec47d1097ec31d9c75a4d3b163585c646ff99e801"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/process.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/00-correctness-original/report.json",
+      "bytes": 119758,
+      "sha256": "f3ca6ce5fee388b15ec8af8a7f25b61b759cf39bd9b5affa2df8467a66e9de60"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/0-input-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/0-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/0-input-after-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/0-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/0-output.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/1-input-0.u32le",
+      "bytes": 197632,
+      "sha256": "c02a1af04679679e242686b5cfbdf1fbe6f9c0e017d27a5189ad59234abdee42"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/1-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/1-input-after-0.u32le",
+      "bytes": 197632,
+      "sha256": "c02a1af04679679e242686b5cfbdf1fbe6f9c0e017d27a5189ad59234abdee42"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/1-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/1-output.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/1-retained-0.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/2-input-0.u32le",
+      "bytes": 95344,
+      "sha256": "a81be26c8308b37fa1a43069b88a9c282de7b3bdfa0f2868a41fbccae57a7b74"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/2-input-1.u32le",
+      "bytes": 472,
+      "sha256": "bea8ac9fb13b61f0495f134c8d5afac0db6530707712145bef857a083bd11bcd"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/2-input-after-0.u32le",
+      "bytes": 95344,
+      "sha256": "a81be26c8308b37fa1a43069b88a9c282de7b3bdfa0f2868a41fbccae57a7b74"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/2-input-after-1.u32le",
+      "bytes": 472,
+      "sha256": "bea8ac9fb13b61f0495f134c8d5afac0db6530707712145bef857a083bd11bcd"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/2-output.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/2-retained-0.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/2-retained-1.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/3-input-0.u32le",
+      "bytes": 241776,
+      "sha256": "18c69326e487d27f02c7dc9a0b2e456efda91c644f59467120cfea5b76a9a650"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/3-input-1.u32le",
+      "bytes": 1168,
+      "sha256": "5aa9a1463b83dc44b8d0778dfe1969578e08eb583390f291bb84adcba46a6063"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/3-input-after-0.u32le",
+      "bytes": 241776,
+      "sha256": "18c69326e487d27f02c7dc9a0b2e456efda91c644f59467120cfea5b76a9a650"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/3-input-after-1.u32le",
+      "bytes": 1168,
+      "sha256": "5aa9a1463b83dc44b8d0778dfe1969578e08eb583390f291bb84adcba46a6063"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/3-output.u32le",
+      "bytes": 241776,
+      "sha256": "cfeaa50c76e4239101ac753d4813ea3071dfbf27c34956f2069e7935cf0d1041"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/3-retained-0.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/3-retained-1.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/3-retained-2.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/4-input-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/4-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/4-input-after-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/4-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/4-output.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/4-retained-0.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/4-retained-1.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/4-retained-2.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/4-retained-3.u32le",
+      "bytes": 241776,
+      "sha256": "cfeaa50c76e4239101ac753d4813ea3071dfbf27c34956f2069e7935cf0d1041"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/5-input-0.u32le",
+      "bytes": 131072,
+      "sha256": "9893603e79dcf4d4010546bac17c8bdfa2af5db30f7bbacc255d55547ada568e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/5-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "09a8e06bd72e507b9840b347552816ae83472a4ea343262d49235c9344379e89"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/5-input-after-0.u32le",
+      "bytes": 131072,
+      "sha256": "9893603e79dcf4d4010546bac17c8bdfa2af5db30f7bbacc255d55547ada568e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/5-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "09a8e06bd72e507b9840b347552816ae83472a4ea343262d49235c9344379e89"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/5-output.u32le",
+      "bytes": 131072,
+      "sha256": "992a9303fa2fec56ded2458091f789f631650e6bfda5808ce588c35dde5873c4"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/5-retained-0.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/5-retained-1.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/5-retained-2.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/5-retained-3.u32le",
+      "bytes": 241776,
+      "sha256": "cfeaa50c76e4239101ac753d4813ea3071dfbf27c34956f2069e7935cf0d1041"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/5-retained-4.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/6-input-0.u32le",
+      "bytes": 131072,
+      "sha256": "9627e2f1cbdeb59852ba7f1621c22d112a8b7cf5c93cd3612e2528c4507fa835"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/6-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "f9f0651066bbf36fa044fe94a74d2d63abe4ec805de1f21f36b328197befa768"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/6-input-after-0.u32le",
+      "bytes": 131072,
+      "sha256": "9627e2f1cbdeb59852ba7f1621c22d112a8b7cf5c93cd3612e2528c4507fa835"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/6-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "f9f0651066bbf36fa044fe94a74d2d63abe4ec805de1f21f36b328197befa768"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/6-output.u32le",
+      "bytes": 131072,
+      "sha256": "161676d8c0e3eb6a00f74a5af139396145dca43bb8170c8e111e3d339b405696"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/6-retained-0.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/6-retained-1.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/6-retained-2.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/6-retained-3.u32le",
+      "bytes": 241776,
+      "sha256": "cfeaa50c76e4239101ac753d4813ea3071dfbf27c34956f2069e7935cf0d1041"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/6-retained-4.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/6-retained-5.u32le",
+      "bytes": 131072,
+      "sha256": "992a9303fa2fec56ded2458091f789f631650e6bfda5808ce588c35dde5873c4"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/exit.json",
+      "bytes": 1907,
+      "sha256": "1e7bd3a73d16d8c7e043249e333632ba95bb80ed0d5fa1d79622a84a77c1f352"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/process.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/01-correctness-changed/report.json",
+      "bytes": 118171,
+      "sha256": "ccc7b5abfe71189d38a14e7de1b49a705ee089d295c909d460ef09ae1bd31afa"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/0-input-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/0-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/0-input-after-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/0-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/0-output.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/1-input-0.u32le",
+      "bytes": 197632,
+      "sha256": "c02a1af04679679e242686b5cfbdf1fbe6f9c0e017d27a5189ad59234abdee42"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/1-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/1-input-after-0.u32le",
+      "bytes": 197632,
+      "sha256": "c02a1af04679679e242686b5cfbdf1fbe6f9c0e017d27a5189ad59234abdee42"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/1-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/1-output.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/1-retained-0.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/2-input-0.u32le",
+      "bytes": 95344,
+      "sha256": "a81be26c8308b37fa1a43069b88a9c282de7b3bdfa0f2868a41fbccae57a7b74"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/2-input-1.u32le",
+      "bytes": 472,
+      "sha256": "bea8ac9fb13b61f0495f134c8d5afac0db6530707712145bef857a083bd11bcd"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/2-input-after-0.u32le",
+      "bytes": 95344,
+      "sha256": "a81be26c8308b37fa1a43069b88a9c282de7b3bdfa0f2868a41fbccae57a7b74"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/2-input-after-1.u32le",
+      "bytes": 472,
+      "sha256": "bea8ac9fb13b61f0495f134c8d5afac0db6530707712145bef857a083bd11bcd"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/2-output.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/2-retained-0.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/2-retained-1.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/3-input-0.u32le",
+      "bytes": 241776,
+      "sha256": "18c69326e487d27f02c7dc9a0b2e456efda91c644f59467120cfea5b76a9a650"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/3-input-1.u32le",
+      "bytes": 1168,
+      "sha256": "5aa9a1463b83dc44b8d0778dfe1969578e08eb583390f291bb84adcba46a6063"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/3-input-after-0.u32le",
+      "bytes": 241776,
+      "sha256": "18c69326e487d27f02c7dc9a0b2e456efda91c644f59467120cfea5b76a9a650"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/3-input-after-1.u32le",
+      "bytes": 1168,
+      "sha256": "5aa9a1463b83dc44b8d0778dfe1969578e08eb583390f291bb84adcba46a6063"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/3-output.u32le",
+      "bytes": 241776,
+      "sha256": "cfeaa50c76e4239101ac753d4813ea3071dfbf27c34956f2069e7935cf0d1041"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/3-retained-0.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/3-retained-1.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/3-retained-2.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/4-input-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/4-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/4-input-after-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/4-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/4-output.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/4-retained-0.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/4-retained-1.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/4-retained-2.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/4-retained-3.u32le",
+      "bytes": 241776,
+      "sha256": "cfeaa50c76e4239101ac753d4813ea3071dfbf27c34956f2069e7935cf0d1041"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/5-input-0.u32le",
+      "bytes": 131072,
+      "sha256": "9893603e79dcf4d4010546bac17c8bdfa2af5db30f7bbacc255d55547ada568e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/5-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "09a8e06bd72e507b9840b347552816ae83472a4ea343262d49235c9344379e89"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/5-input-after-0.u32le",
+      "bytes": 131072,
+      "sha256": "9893603e79dcf4d4010546bac17c8bdfa2af5db30f7bbacc255d55547ada568e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/5-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "09a8e06bd72e507b9840b347552816ae83472a4ea343262d49235c9344379e89"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/5-output.u32le",
+      "bytes": 131072,
+      "sha256": "992a9303fa2fec56ded2458091f789f631650e6bfda5808ce588c35dde5873c4"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/5-retained-0.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/5-retained-1.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/5-retained-2.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/5-retained-3.u32le",
+      "bytes": 241776,
+      "sha256": "cfeaa50c76e4239101ac753d4813ea3071dfbf27c34956f2069e7935cf0d1041"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/5-retained-4.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/6-input-0.u32le",
+      "bytes": 131072,
+      "sha256": "9627e2f1cbdeb59852ba7f1621c22d112a8b7cf5c93cd3612e2528c4507fa835"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/6-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "f9f0651066bbf36fa044fe94a74d2d63abe4ec805de1f21f36b328197befa768"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/6-input-after-0.u32le",
+      "bytes": 131072,
+      "sha256": "9627e2f1cbdeb59852ba7f1621c22d112a8b7cf5c93cd3612e2528c4507fa835"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/6-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "f9f0651066bbf36fa044fe94a74d2d63abe4ec805de1f21f36b328197befa768"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/6-output.u32le",
+      "bytes": 131072,
+      "sha256": "161676d8c0e3eb6a00f74a5af139396145dca43bb8170c8e111e3d339b405696"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/6-retained-0.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/6-retained-1.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/6-retained-2.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/6-retained-3.u32le",
+      "bytes": 241776,
+      "sha256": "cfeaa50c76e4239101ac753d4813ea3071dfbf27c34956f2069e7935cf0d1041"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/6-retained-4.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/6-retained-5.u32le",
+      "bytes": 131072,
+      "sha256": "992a9303fa2fec56ded2458091f789f631650e6bfda5808ce588c35dde5873c4"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/exit.json",
+      "bytes": 1919,
+      "sha256": "98ddf9238b062490818e307ed4f7f75ed9f2c37d89483ffbaaab2033a1656370"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/process.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/02-correctness-reference/report.json",
+      "bytes": 119174,
+      "sha256": "65d743061083804e432b5944e1b2206407ff7726caea01c6de53edf2f03371a2"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/0-first.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/0-input-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/0-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/0-input-after-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/0-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/0-last.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/1-first.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/1-input-0.u32le",
+      "bytes": 197632,
+      "sha256": "c02a1af04679679e242686b5cfbdf1fbe6f9c0e017d27a5189ad59234abdee42"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/1-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/1-input-after-0.u32le",
+      "bytes": 197632,
+      "sha256": "c02a1af04679679e242686b5cfbdf1fbe6f9c0e017d27a5189ad59234abdee42"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/1-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/1-last.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/2-first.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/2-input-0.u32le",
+      "bytes": 95344,
+      "sha256": "a81be26c8308b37fa1a43069b88a9c282de7b3bdfa0f2868a41fbccae57a7b74"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/2-input-1.u32le",
+      "bytes": 472,
+      "sha256": "bea8ac9fb13b61f0495f134c8d5afac0db6530707712145bef857a083bd11bcd"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/2-input-after-0.u32le",
+      "bytes": 95344,
+      "sha256": "a81be26c8308b37fa1a43069b88a9c282de7b3bdfa0f2868a41fbccae57a7b74"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/2-input-after-1.u32le",
+      "bytes": 472,
+      "sha256": "bea8ac9fb13b61f0495f134c8d5afac0db6530707712145bef857a083bd11bcd"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/2-last.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/3-first.u32le",
+      "bytes": 241776,
+      "sha256": "cfeaa50c76e4239101ac753d4813ea3071dfbf27c34956f2069e7935cf0d1041"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/3-input-0.u32le",
+      "bytes": 241776,
+      "sha256": "18c69326e487d27f02c7dc9a0b2e456efda91c644f59467120cfea5b76a9a650"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/3-input-1.u32le",
+      "bytes": 1168,
+      "sha256": "5aa9a1463b83dc44b8d0778dfe1969578e08eb583390f291bb84adcba46a6063"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/3-input-after-0.u32le",
+      "bytes": 241776,
+      "sha256": "18c69326e487d27f02c7dc9a0b2e456efda91c644f59467120cfea5b76a9a650"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/3-input-after-1.u32le",
+      "bytes": 1168,
+      "sha256": "5aa9a1463b83dc44b8d0778dfe1969578e08eb583390f291bb84adcba46a6063"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/3-last.u32le",
+      "bytes": 241776,
+      "sha256": "cfeaa50c76e4239101ac753d4813ea3071dfbf27c34956f2069e7935cf0d1041"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/4-first.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/4-input-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/4-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/4-input-after-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/4-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/4-last.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/exit.json",
+      "bytes": 1898,
+      "sha256": "b389e866e59219e78fa2d002e17a4034a90c3db0da9f84e74c5d397f732b92da"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/process.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/03-timing-original/report.json",
+      "bytes": 189483,
+      "sha256": "ba11dcf449bcf4e87e97bae5876015162a756753c79b039b92a1b8d1e2ff682a"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/0-first.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/0-input-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/0-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/0-input-after-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/0-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/0-last.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/1-first.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/1-input-0.u32le",
+      "bytes": 197632,
+      "sha256": "c02a1af04679679e242686b5cfbdf1fbe6f9c0e017d27a5189ad59234abdee42"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/1-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/1-input-after-0.u32le",
+      "bytes": 197632,
+      "sha256": "c02a1af04679679e242686b5cfbdf1fbe6f9c0e017d27a5189ad59234abdee42"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/1-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/1-last.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/2-first.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/2-input-0.u32le",
+      "bytes": 95344,
+      "sha256": "a81be26c8308b37fa1a43069b88a9c282de7b3bdfa0f2868a41fbccae57a7b74"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/2-input-1.u32le",
+      "bytes": 472,
+      "sha256": "bea8ac9fb13b61f0495f134c8d5afac0db6530707712145bef857a083bd11bcd"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/2-input-after-0.u32le",
+      "bytes": 95344,
+      "sha256": "a81be26c8308b37fa1a43069b88a9c282de7b3bdfa0f2868a41fbccae57a7b74"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/2-input-after-1.u32le",
+      "bytes": 472,
+      "sha256": "bea8ac9fb13b61f0495f134c8d5afac0db6530707712145bef857a083bd11bcd"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/2-last.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/3-first.u32le",
+      "bytes": 241776,
+      "sha256": "cfeaa50c76e4239101ac753d4813ea3071dfbf27c34956f2069e7935cf0d1041"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/3-input-0.u32le",
+      "bytes": 241776,
+      "sha256": "18c69326e487d27f02c7dc9a0b2e456efda91c644f59467120cfea5b76a9a650"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/3-input-1.u32le",
+      "bytes": 1168,
+      "sha256": "5aa9a1463b83dc44b8d0778dfe1969578e08eb583390f291bb84adcba46a6063"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/3-input-after-0.u32le",
+      "bytes": 241776,
+      "sha256": "18c69326e487d27f02c7dc9a0b2e456efda91c644f59467120cfea5b76a9a650"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/3-input-after-1.u32le",
+      "bytes": 1168,
+      "sha256": "5aa9a1463b83dc44b8d0778dfe1969578e08eb583390f291bb84adcba46a6063"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/3-last.u32le",
+      "bytes": 241776,
+      "sha256": "cfeaa50c76e4239101ac753d4813ea3071dfbf27c34956f2069e7935cf0d1041"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/4-first.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/4-input-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/4-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/4-input-after-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/4-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/4-last.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/exit.json",
+      "bytes": 1877,
+      "sha256": "181652c9d834740e5f826a573039fd09f59adab5946f13d72404ffd3f179ddf0"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/process.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/04-timing-changed/report.json",
+      "bytes": 187896,
+      "sha256": "d9d4fbddffb301022ebdba6f7941d44f57b1dbff20d412c664c7eadd8fe1bd64"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/0-first.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/0-input-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/0-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/0-input-after-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/0-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/0-last.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/1-first.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/1-input-0.u32le",
+      "bytes": 197632,
+      "sha256": "c02a1af04679679e242686b5cfbdf1fbe6f9c0e017d27a5189ad59234abdee42"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/1-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/1-input-after-0.u32le",
+      "bytes": 197632,
+      "sha256": "c02a1af04679679e242686b5cfbdf1fbe6f9c0e017d27a5189ad59234abdee42"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/1-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/1-last.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/2-first.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/2-input-0.u32le",
+      "bytes": 95344,
+      "sha256": "a81be26c8308b37fa1a43069b88a9c282de7b3bdfa0f2868a41fbccae57a7b74"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/2-input-1.u32le",
+      "bytes": 472,
+      "sha256": "bea8ac9fb13b61f0495f134c8d5afac0db6530707712145bef857a083bd11bcd"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/2-input-after-0.u32le",
+      "bytes": 95344,
+      "sha256": "a81be26c8308b37fa1a43069b88a9c282de7b3bdfa0f2868a41fbccae57a7b74"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/2-input-after-1.u32le",
+      "bytes": 472,
+      "sha256": "bea8ac9fb13b61f0495f134c8d5afac0db6530707712145bef857a083bd11bcd"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/2-last.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/3-first.u32le",
+      "bytes": 241776,
+      "sha256": "cfeaa50c76e4239101ac753d4813ea3071dfbf27c34956f2069e7935cf0d1041"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/3-input-0.u32le",
+      "bytes": 241776,
+      "sha256": "18c69326e487d27f02c7dc9a0b2e456efda91c644f59467120cfea5b76a9a650"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/3-input-1.u32le",
+      "bytes": 1168,
+      "sha256": "5aa9a1463b83dc44b8d0778dfe1969578e08eb583390f291bb84adcba46a6063"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/3-input-after-0.u32le",
+      "bytes": 241776,
+      "sha256": "18c69326e487d27f02c7dc9a0b2e456efda91c644f59467120cfea5b76a9a650"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/3-input-after-1.u32le",
+      "bytes": 1168,
+      "sha256": "5aa9a1463b83dc44b8d0778dfe1969578e08eb583390f291bb84adcba46a6063"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/3-last.u32le",
+      "bytes": 241776,
+      "sha256": "cfeaa50c76e4239101ac753d4813ea3071dfbf27c34956f2069e7935cf0d1041"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/4-first.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/4-input-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/4-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/4-input-after-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/4-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/4-last.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/exit.json",
+      "bytes": 1877,
+      "sha256": "6d92b8c839fc53c8ee7c1eb60978b57f52817443e624fa24aa4dd3f03484c40f"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/process.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/05-timing-changed/report.json",
+      "bytes": 187895,
+      "sha256": "46d035926f40f82a238cbbc7b883febdaa8b0553f919e16d80d463e0b113dcba"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/0-first.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/0-input-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/0-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/0-input-after-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/0-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/0-last.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/1-first.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/1-input-0.u32le",
+      "bytes": 197632,
+      "sha256": "c02a1af04679679e242686b5cfbdf1fbe6f9c0e017d27a5189ad59234abdee42"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/1-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/1-input-after-0.u32le",
+      "bytes": 197632,
+      "sha256": "c02a1af04679679e242686b5cfbdf1fbe6f9c0e017d27a5189ad59234abdee42"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/1-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/1-last.u32le",
+      "bytes": 197632,
+      "sha256": "0c7f9006260e14b46cf1f14f410cee95bb354f7a34d8e2c81724dcd007bbab5e"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/2-first.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/2-input-0.u32le",
+      "bytes": 95344,
+      "sha256": "a81be26c8308b37fa1a43069b88a9c282de7b3bdfa0f2868a41fbccae57a7b74"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/2-input-1.u32le",
+      "bytes": 472,
+      "sha256": "bea8ac9fb13b61f0495f134c8d5afac0db6530707712145bef857a083bd11bcd"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/2-input-after-0.u32le",
+      "bytes": 95344,
+      "sha256": "a81be26c8308b37fa1a43069b88a9c282de7b3bdfa0f2868a41fbccae57a7b74"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/2-input-after-1.u32le",
+      "bytes": 472,
+      "sha256": "bea8ac9fb13b61f0495f134c8d5afac0db6530707712145bef857a083bd11bcd"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/2-last.u32le",
+      "bytes": 95344,
+      "sha256": "8aa45f7d57b9be230218834ce1e618d0a94dced2b0c15b3aa51b6850018cca79"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/3-first.u32le",
+      "bytes": 241776,
+      "sha256": "cfeaa50c76e4239101ac753d4813ea3071dfbf27c34956f2069e7935cf0d1041"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/3-input-0.u32le",
+      "bytes": 241776,
+      "sha256": "18c69326e487d27f02c7dc9a0b2e456efda91c644f59467120cfea5b76a9a650"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/3-input-1.u32le",
+      "bytes": 1168,
+      "sha256": "5aa9a1463b83dc44b8d0778dfe1969578e08eb583390f291bb84adcba46a6063"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/3-input-after-0.u32le",
+      "bytes": 241776,
+      "sha256": "18c69326e487d27f02c7dc9a0b2e456efda91c644f59467120cfea5b76a9a650"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/3-input-after-1.u32le",
+      "bytes": 1168,
+      "sha256": "5aa9a1463b83dc44b8d0778dfe1969578e08eb583390f291bb84adcba46a6063"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/3-last.u32le",
+      "bytes": 241776,
+      "sha256": "cfeaa50c76e4239101ac753d4813ea3071dfbf27c34956f2069e7935cf0d1041"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/4-first.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/4-input-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/4-input-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/4-input-after-0.u32le",
+      "bytes": 131072,
+      "sha256": "87a526cc14994bdcf8ace407787df0f36d042be2e982419b3a62533e654dcbcb"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/4-input-after-1.u32le",
+      "bytes": 1024,
+      "sha256": "bd7ce149b4d0280890ed3ccb71c3e56e6673e7bed20737a84b03bdcf8db55e9b"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/4-last.u32le",
+      "bytes": 131072,
+      "sha256": "e7c680548d252777f866f1094f015f88cf0b70a832312f3afb1b65defcf39c22"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/exit.json",
+      "bytes": 1898,
+      "sha256": "dee788eaa80f9902b5f6d92e816472e85a19804b0ed83420989e66e955a68d78"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/process.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/guard-grouping/measurement-v1/06-timing-original/report.json",
+      "bytes": 189481,
+      "sha256": "7269d86d6cbf7a714626e9454a87e7dba3c4dc398fa79bacfdfb55fdc7a0d2b7"
+    }
+  ]
+}
