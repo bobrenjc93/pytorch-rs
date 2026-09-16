@@ -1,0 +1,366 @@
+{
+  "archive": "feature-gate-repair.tar.gz",
+  "size": 107468295,
+  "sha256": "e8dad9d176defceaa3b0f0674cda71f6c0713c04fe616aba60a62435dc42b054",
+  "members": [
+    {
+      "path": "target/debug/deps/autograd-f38585ca82bec9e6",
+      "size": 20113816,
+      "sha256": "fe7dba1b95c81b2b65f465e0bc5e18138454366dcd5adf415d78582380abb29a"
+    },
+    {
+      "path": "target/debug/deps/cuda_add-3043d5dd2af577ad",
+      "size": 16429128,
+      "sha256": "91f6dbdfada78fc11abc6b5bdca1175d366cf86d10368c4035804ff87181bcc6"
+    },
+    {
+      "path": "target/debug/deps/cuda_contiguous-19470d316c601991",
+      "size": 15514816,
+      "sha256": "cb961fe688ff4c45cc5d3723c9626d48fd54ec951fb2be8379135002030bb0ec"
+    },
+    {
+      "path": "target/debug/deps/cuda_matmul-405eb25ac7669f7a",
+      "size": 15930056,
+      "sha256": "d0151a22b014750c53c9d238a01dff94c42f7441bf823ebffa561d7f0dd35b31"
+    },
+    {
+      "path": "target/debug/deps/cuda_mul_scalar-e969f9beb76a1936",
+      "size": 15632096,
+      "sha256": "f928995e63d962e41761dc19b511214f961a158898b22545d9f18dda788857a5"
+    },
+    {
+      "path": "target/debug/deps/cuda_native_boundaries-5c3fea720f3372b3",
+      "size": 16437328,
+      "sha256": "9eda9b0c2aebbb66cc7bb5657b9a586d1a89a912b9204bb153fc12da93797d8d"
+    },
+    {
+      "path": "target/debug/deps/cuda_relu-97ded30cbb16e174",
+      "size": 15538200,
+      "sha256": "04dc3d917ea7444b2433bf5beeb90db02171699f69ffb9b6c069228a82488dbc"
+    },
+    {
+      "path": "target/debug/deps/cuda_same_device_copy-8e5fcdb7d77c7d8c",
+      "size": 15387912,
+      "sha256": "f49f73c27984ef1edcc9edffc5a407e97ab34cbda440371d20120c57fdd47567"
+    },
+    {
+      "path": "target/debug/deps/cuda_sum_rows-9865ac5ad944ff1c",
+      "size": 16371512,
+      "sha256": "70f2b24df71bbfe0fac4c044d5cce1ec8cac3276b4a4ea78bbf1758bc245bfbf"
+    },
+    {
+      "path": "target/debug/deps/pytorch_rs-545e4fdb10cc861f",
+      "size": 56448456,
+      "sha256": "966b7b604efe774215a81d2fb553e3b664bc15ed7161bb71654fc47fa65e1270"
+    },
+    {
+      "path": "target/debug/deps/pytorch_rs-a84bc75b3d7dfab2",
+      "size": 35802224,
+      "sha256": "78b5272337f1126a83f7a460a2cfa997edf5fcbdff6a5d68064e8771eab6211f"
+    },
+    {
+      "path": "target/debug/deps/tensor_baseline-1f3bc301430510b8",
+      "size": 20107968,
+      "sha256": "a44680b73ab579e1452694f71013b77d6614789c894e84775e3287e2c8fb3214"
+    },
+    {
+      "path": "target/gelu-feature-gate-repair/audit.json",
+      "size": 5941,
+      "sha256": "1e8a41a6a542815143c27f0fad5919fcf127768caff7b68590b51f1f411366ee"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585318181685964-feature-gate-reproduce/receipt.json",
+      "size": 121496,
+      "sha256": "a8f96df998ea02fd9e7262d5d2f41ef480149581a3ff1fa4f194f36e412897ac"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585318181685964-feature-gate-reproduce/source.patch",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585318181685964-feature-gate-reproduce/source.tar.gz",
+      "size": 3702070,
+      "sha256": "0608d0502337ee31f0edd414b4a39ec7af60160a1f7518d72abb4fec8c3bc04c"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585318181685964-feature-gate-reproduce/stderr.log",
+      "size": 730,
+      "sha256": "0c47a5b994496659ca8da6f7cbd6c2dff221cd8121cbd0558169b28abc75f3d4"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585318181685964-feature-gate-reproduce/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585333578735171-feature-gate-default-check/receipt.json",
+      "size": 121520,
+      "sha256": "c2df490746dd0f4c0ee5c30a234d3d72237a94d87f287866caa9e0b66cac6430"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585333578735171-feature-gate-default-check/source.patch",
+      "size": 383,
+      "sha256": "dd3019e8adba9309a95f101f2335b6e0a0cc27d156bbbdb051253eec18836b9e"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585333578735171-feature-gate-default-check/source.tar.gz",
+      "size": 3702079,
+      "sha256": "ec18f3779cca7065f668f28cbc3665bf2135fb3fd0ac110d98e6a350481ffebe"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585333578735171-feature-gate-default-check/stderr.log",
+      "size": 177,
+      "sha256": "a2e1e911b2f8d99a1604fb5168ac6690ffe8d79b405a190c15ee418de61c5248"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585333578735171-feature-gate-default-check/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585335017603236-feature-gate-format/receipt.json",
+      "size": 121485,
+      "sha256": "54ad0b47ae6b2468db2ca2c4da3e5863c0b6002a16a8da65ae0a30b95c712a1e"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585335017603236-feature-gate-format/source.patch",
+      "size": 383,
+      "sha256": "dd3019e8adba9309a95f101f2335b6e0a0cc27d156bbbdb051253eec18836b9e"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585335017603236-feature-gate-format/source.tar.gz",
+      "size": 3702079,
+      "sha256": "9199607733275e62accec68119363b5a320d146d61c00ebf63b2f480f16959bf"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585335017603236-feature-gate-format/stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585335017603236-feature-gate-format/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585336453333608-feature-gate-gpu-inventory/receipt.json",
+      "size": 121557,
+      "sha256": "f2ef181e4f302aea4271a00b0e7e976763da51fdf73def95850ed8243ff3a5af"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585336453333608-feature-gate-gpu-inventory/source.patch",
+      "size": 383,
+      "sha256": "dd3019e8adba9309a95f101f2335b6e0a0cc27d156bbbdb051253eec18836b9e"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585336453333608-feature-gate-gpu-inventory/source.tar.gz",
+      "size": 3702079,
+      "sha256": "8b8e99cd70d8308a453f54f14e89f78d84824559ca720d7352ca765eacee0a73"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585336453333608-feature-gate-gpu-inventory/stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585336453333608-feature-gate-gpu-inventory/stdout.log",
+      "size": 606,
+      "sha256": "db88f43a59cc15f53aa9795aff2fe1843a02a3d2a4ed1946821fb42390866890"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585349885566927-feature-gate-checks/receipt.json",
+      "size": 122478,
+      "sha256": "e13c00c2c47a64d2c25efc99ec815497a84293d5e2ea83e5d14a45ca0830f837"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585349885566927-feature-gate-checks/source.patch",
+      "size": 383,
+      "sha256": "dd3019e8adba9309a95f101f2335b6e0a0cc27d156bbbdb051253eec18836b9e"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585349885566927-feature-gate-checks/source.tar.gz",
+      "size": 3702079,
+      "sha256": "4be6af73d6f24983f66edc3be50740d3651e6ee2ad6e6416923d11d78f4bb191"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585349885566927-feature-gate-checks/stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585349885566927-feature-gate-checks/stdout.log",
+      "size": 4989,
+      "sha256": "8e0ade20e8d170159a956ec12eaa7d953eeab9c2dd563503152cb100e28cb5c0"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585351961517070-feature-gate-default-tests/receipt.json",
+      "size": 121709,
+      "sha256": "ce8ca1a760e129c8153cbfa65b64c9e3379c896eba39ab8037afe58da65e7a3a"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585351961517070-feature-gate-default-tests/source.patch",
+      "size": 383,
+      "sha256": "dd3019e8adba9309a95f101f2335b6e0a0cc27d156bbbdb051253eec18836b9e"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585351961517070-feature-gate-default-tests/source.tar.gz",
+      "size": 3702079,
+      "sha256": "bae3d5d732de5207a30e768528ee437ff44318c844a0c582f1540f1d64d5c091"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585351961517070-feature-gate-default-tests/stderr.log",
+      "size": 1144,
+      "sha256": "3d7522501e91160f3ccd39aa3e5fe1881d6cd6eb977df7bc4985cfdc11b33104"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585351961517070-feature-gate-default-tests/stdout.log",
+      "size": 41475,
+      "sha256": "0dd1bb2f9dadc0d7ac07d9de01ce7c0eb34d0b55773592581897e5f461c9e992"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585368964731588-feature-gate-default-clippy/receipt.json",
+      "size": 121713,
+      "sha256": "864a24f263b7e3cde11d18d9eb222466362e483fb6ae678525a77559ef5ed2df"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585368964731588-feature-gate-default-clippy/source.patch",
+      "size": 383,
+      "sha256": "dd3019e8adba9309a95f101f2335b6e0a0cc27d156bbbdb051253eec18836b9e"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585368964731588-feature-gate-default-clippy/source.tar.gz",
+      "size": 3702079,
+      "sha256": "912eb3af0c3892345a35631d83c7cb2379246e814b040f8906837718a4ea45ce"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585368964731588-feature-gate-default-clippy/stderr.log",
+      "size": 177,
+      "sha256": "af872696478266eac902ed5e0515798d0ba490cb7ba4870c1b569f5beb81e424"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585368964731588-feature-gate-default-clippy/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585374746327804-feature-gate-bindings-check/receipt.json",
+      "size": 121711,
+      "sha256": "4b0e92556714341759551bfd0264c7bff824be735bfde5bf503ec79fb115429d"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585374746327804-feature-gate-bindings-check/source.patch",
+      "size": 383,
+      "sha256": "dd3019e8adba9309a95f101f2335b6e0a0cc27d156bbbdb051253eec18836b9e"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585374746327804-feature-gate-bindings-check/source.tar.gz",
+      "size": 3702079,
+      "sha256": "1f4997865cecc6d33e44233b9e2d80f311c5e511e26e1a0369aa2b1b6f512b13"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585374746327804-feature-gate-bindings-check/stderr.log",
+      "size": 177,
+      "sha256": "df5b4610b42d9e072592d36765e6e4de412df8dddbf278625dd5a6bae8277d20"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585374746327804-feature-gate-bindings-check/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585382492595304-feature-gate-bindings-clippy/receipt.json",
+      "size": 121754,
+      "sha256": "b9a3b6c9caa4f6936af9d1d04c0f33f4e40a49666a94e6eff0c097a5fc49ce1c"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585382492595304-feature-gate-bindings-clippy/source.patch",
+      "size": 383,
+      "sha256": "dd3019e8adba9309a95f101f2335b6e0a0cc27d156bbbdb051253eec18836b9e"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585382492595304-feature-gate-bindings-clippy/source.tar.gz",
+      "size": 3702079,
+      "sha256": "f1b22fc7c7ca51ca682fe3a6171f7fe0551349ed8e8faf6dcc267af1e5be648d"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585382492595304-feature-gate-bindings-clippy/stderr.log",
+      "size": 177,
+      "sha256": "7965f429c59c179f5eebaa8988e6de12d112bbadb1c81dab8f8b62e61042de3a"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585382492595304-feature-gate-bindings-clippy/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585389394724696-feature-gate-gpu-positive-control/receipt.json",
+      "size": 121846,
+      "sha256": "d77c9b74d94e52c4a7980f73634f7a18d69fbb7aff6eeb2ce6594e51c4a6da75"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585389394724696-feature-gate-gpu-positive-control/source.patch",
+      "size": 383,
+      "sha256": "dd3019e8adba9309a95f101f2335b6e0a0cc27d156bbbdb051253eec18836b9e"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585389394724696-feature-gate-gpu-positive-control/source.tar.gz",
+      "size": 3702079,
+      "sha256": "61156c8fec02376195b79a9313f0fbce6db1cfc03b86f9487c8f4e62d61e5992"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585389394724696-feature-gate-gpu-positive-control/stderr.log",
+      "size": 260,
+      "sha256": "9b1f244004008104de3ba72a1593f301e9f266dbd06f085097e53fe10dbfd0df"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585389394724696-feature-gate-gpu-positive-control/stdout.log",
+      "size": 213,
+      "sha256": "cd38d8e419a19efcdc04f0438038d00af2485e1fe21b9271da9d96a6f319dfd3"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585438887798054-feature-gate-audit/receipt.json",
+      "size": 124168,
+      "sha256": "fffe44ae0511805ca0307634117eeb9c3eb4dc16d7166f310ceb52444fcb5cce"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585438887798054-feature-gate-audit/source.patch",
+      "size": 383,
+      "sha256": "dd3019e8adba9309a95f101f2335b6e0a0cc27d156bbbdb051253eec18836b9e"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585438887798054-feature-gate-audit/source.tar.gz",
+      "size": 3702079,
+      "sha256": "73cae0d6517a4f2449ae1c374d5209039ab93e243e50840d28ded0873af2f788"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585438887798054-feature-gate-audit/stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789585438887798054-feature-gate-audit/stdout.log",
+      "size": 108,
+      "sha256": "e08a625702e75b9f0c2ca9f5a77a7f7334a06097006bed7a3b8de98eb7accfc1"
+    }
+  ],
+  "scope": "Executed inner commands and artifacts; no future outer-controller receipt",
+  "protocolBindings": {
+    "docs/diagnostics/gelu-program-integration/protocol.md": "24bb4d8924b821ef4a94efa1ee89c85db0af46afa138e7c814d502eec9ccbe17",
+    "docs/diagnostics/program-identity/protocol.md": "d6e8f51d024b451f8afed33d743647d46396425724b918a599f7b32274f95d5b",
+    "docs/diagnostics/program-identity/consumer.py": "1861fca73674d8c89f6285b07883ab9a83e6719c1b6a0c12cd2be1ae7c4c8b42",
+    "tests/test_program_identity_consumer.py": "b907c94b00f35fbb18e53510ec692b5fb83f94d37d509fe662418844bc2af5b3"
+  },
+  "parts": [
+    {
+      "path": "feature-gate-repair.tar.gz.part-000",
+      "size": 67108864,
+      "sha256": "9f3e6db6fd94c07ef16ad4550eb881a67c521f8de6352050b9ad496a5655890a"
+    },
+    {
+      "path": "feature-gate-repair.tar.gz.part-001",
+      "size": 40359431,
+      "sha256": "9c185ef2ede3b2a4f8ddb16809bdd71d0d8bed704dd285966fac7e0937b8202a"
+    }
+  ]
+}

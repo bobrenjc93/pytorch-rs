@@ -35,6 +35,9 @@ gzip archive; each tracked part stays below GitHub's file-size limit.
 
 ## Development validation
 
+The [review repair](feature-gate-repair.md) fixes default-feature compilation of
+the eager-image separation test and records fresh default/bindings checks.
+
 Rust all-target tests passed (486 tests); native-bridge tests passed (300), with
 an additional native eager-image separation control. Clippy and formatting passed.
 The complete pointwise suite ran 401 tests: 391 passed, nine multi-GPU cases

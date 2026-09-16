@@ -581,6 +581,7 @@ mod slot_tests {
     use super::Kernel;
 
     #[test]
+    #[cfg(feature = "python-bindings")]
     fn selected_erf_never_looks_up_or_loads_the_eager_gelu_image() {
         use crate::{
             Device, Tensor,
