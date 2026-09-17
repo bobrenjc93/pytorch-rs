@@ -924,49 +924,309 @@ mod leading_sum_descriptor_tests {
     use super::*;
     use std::ffi::CString;
 
+    const CONTROL: &str = "('leading_sum', 0, False, 128, ('none',), 0, 256, 128)";
+
+    fn evaluate<'py>(py: Python<'py>, expression: &str) -> Bound<'py, PyAny> {
+        py.eval(&CString::new(expression).unwrap(), None, None)
+            .unwrap()
+    }
+
+    fn replaced<'py>(
+        control: &Bound<'py, PyAny>,
+        field: usize,
+        replacement: Bound<'py, PyAny>,
+    ) -> Bound<'py, PyAny> {
+        let mut fields = control
+            .cast_exact::<PyTuple>()
+            .unwrap()
+            .iter()
+            .collect::<Vec<_>>();
+        fields[field] = replacement;
+        PyTuple::new(control.py(), fields).unwrap().into_any()
+    }
+
+    fn rejects(value: &Bound<'_, PyAny>, kind: &str, message: &str) {
+        let error = leading_sum_descriptor(value).unwrap_err();
+        assert_eq!(
+            error.get_type(value.py()).name().unwrap().to_str().unwrap(),
+            kind
+        );
+        assert!(error.to_string().contains(message), "{value:?}: {error}");
+    }
+
     #[test]
     fn leading_sum_exact_descriptor_parsing_and_certificates() {
         Python::initialize();
         Python::attach(|py| {
             for expression in [
-                "('leading_sum', 0, False, 3, ('none',))",
-                "('leading_sum', -2, True, None, ('dimension', 1, 7))",
-                "('leading_sum', 0, False, 0, ('dimension', 0, 0))",
-                "('leading_sum', 0, False, 1, ('constant', 'float', 9223372036854775808))",
-                "('leading_sum', 0, False, None, ('runtime', 0, True))",
+                CONTROL,
+                "('leading_sum', -2, True, 65, ('none',), 1, 132, 65)",
+                "('leading_sum', 0, False, None, ('none',), 64, 252, 256)",
+                "('leading_sum', -2, True, None, ('dimension', 1, 256), 1, 256, 193)",
+                "('leading_sum', 0, False, 128, ('dimension', 0, 128), 0, 256, 128)",
+                "('leading_sum', 0, True, None, ('dimension', 0, None), 64, 252, 129)",
+                "('leading_sum', 0, False, 128, ('constant', 'float', 9223372036854775808), 0, 256, 128)",
+                "('leading_sum', -2, True, None, ('constant', 'int', 4607182418800017408), 1, 256, 128)",
+                "('leading_sum', 0, False, 128, ('constant', 'bool', 0), 64, 256, 128)",
+                "('leading_sum', 0, True, 128, ('constant', 'bool', 4607182418800017408), 0, 256, 128)",
+                "('leading_sum', 0, False, None, ('runtime', 0, True), 1, 256, 128)",
+                "('leading_sum', -2, True, 256, ('runtime', 63, False), 64, 256, 256)",
             ] {
-                let expression = CString::new(expression).unwrap();
-                let value = py.eval(&expression, None, None).unwrap();
-                assert!(leading_sum_descriptor(&value).is_ok(), "{expression:?}");
+                let value = evaluate(py, expression);
+                let parsed = leading_sum_descriptor(&value).expect(expression);
+                assert_eq!(
+                    parsed.scalar_count,
+                    value.get_item(5).unwrap().extract::<usize>().unwrap()
+                );
+                assert_eq!(
+                    parsed.row_hint,
+                    value.get_item(7).unwrap().extract::<u64>().unwrap()
+                );
             }
-            for expression in [
-                "[]",
-                "('leading_sum', 0, False, 1)",
-                "('other', 0, False, 1, ('none',))",
-                "('leading_sum', False, False, 1, ('none',))",
-                "('leading_sum', 1, False, 1, ('none',))",
-                "('leading_sum', 0, 0, 1, ('none',))",
-                "('leading_sum', 0, False, True, ('none',))",
-                "('leading_sum', 0, False, -1, ('none',))",
-                "('leading_sum', 0, False, 2**64, ('none',))",
-                "('leading_sum', 0, False, 1, [])",
-                "('leading_sum', 0, False, 1, ('none', 0))",
-                "('leading_sum', 0, False, 1, ('constant', 'float', True))",
-                "('leading_sum', 0, False, 1, ('constant', 'wrong', 0))",
-                "('leading_sum', 0, False, 1, ('constant', 'bool', 1))",
-                "('leading_sum', 0, False, 1, ('constant', 'int', 4609434218613702656))",
-                "('leading_sum', 0, False, 1, ('runtime', True, False))",
-                "('leading_sum', 0, False, 1, ('runtime', -1, False))",
-                "('leading_sum', 0, False, 1, ('runtime', 0, 0))",
-                "('leading_sum', 0, False, 1, ('dimension', False, 1))",
-                "('leading_sum', 0, False, 1, ('dimension', 2, 1))",
-                "('leading_sum', 0, False, 1, ('dimension', 0, 2))",
-                "('leading_sum', 0, False, 1, ('dimension', 0, None))",
+        });
+    }
+
+    #[test]
+    fn leading_sum_descriptor_envelope_rejections() {
+        Python::initialize();
+        Python::attach(|py| {
+            let control = evaluate(py, CONTROL);
+            assert!(leading_sum_descriptor(&control).is_ok());
+            rejects(
+                &evaluate(py, "[]"),
+                "TypeError",
+                "exact leading-sum descriptor tuple",
+            );
+            for length in [0, 4, 5, 7, 9] {
+                let expression = format!("({CONTROL} + (0,))[:{length}]");
+                rejects(
+                    &evaluate(py, &expression),
+                    "ValueError",
+                    "eight leading-sum descriptor fields",
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn leading_sum_descriptor_field_certificates_and_domain() {
+        Python::initialize();
+        Python::attach(|py| {
+            let control = evaluate(py, CONTROL);
+            assert!(leading_sum_descriptor(&control).is_ok());
+            for (field, expression, kind, message) in [
+                (
+                    0,
+                    "'other'",
+                    "ValueError",
+                    "unknown leading-sum descriptor kind",
+                ),
+                (1, "1", "ValueError", "axis 0 or -2"),
+                (3, "True", "TypeError", "dimension certificate"),
+                (3, "1.0", "TypeError", "dimension certificate"),
+                (3, "129", "RuntimeError", "row hint"),
+                (5, "65", "RuntimeError", "scalar count exceeds 64"),
+                (6, "131", "RuntimeError", "exact columns"),
+                (6, "255", "RuntimeError", "exact columns"),
+                (6, "260", "RuntimeError", "exact columns"),
+                (7, "64", "RuntimeError", "row hint"),
+                (7, "257", "RuntimeError", "row hint"),
             ] {
-                let expression = CString::new(expression).unwrap();
-                let value = py.eval(&expression, None, None).unwrap();
-                assert!(leading_sum_descriptor(&value).is_err(), "{expression:?}");
+                rejects(
+                    &replaced(&control, field, evaluate(py, expression)),
+                    kind,
+                    message,
+                );
             }
+        });
+    }
+
+    #[test]
+    fn leading_sum_descriptor_exact_field_types_and_conversion_ranges() {
+        Python::initialize();
+        Python::attach(|py| {
+            let control = evaluate(py, CONTROL);
+            assert!(leading_sum_descriptor(&control).is_ok());
+            for field in [0, 1, 2, 5, 6, 7] {
+                rejects(
+                    &replaced(&control, field, evaluate(py, "1.0")),
+                    "TypeError",
+                    "exact integer",
+                );
+            }
+            for field in [1, 5, 6, 7] {
+                rejects(
+                    &replaced(&control, field, evaluate(py, "True")),
+                    "TypeError",
+                    "exact integer",
+                );
+            }
+            rejects(
+                &replaced(&control, 2, evaluate(py, "0")),
+                "TypeError",
+                "bool keepdim",
+            );
+            for field in [3, 5, 6, 7] {
+                for expression in ["-1", "2**128"] {
+                    rejects(
+                        &replaced(&control, field, evaluate(py, expression)),
+                        "OverflowError",
+                        "",
+                    );
+                }
+            }
+            rejects(
+                &replaced(&control, 1, evaluate(py, "2**128")),
+                "OverflowError",
+                "",
+            );
+        });
+    }
+
+    #[test]
+    fn leading_sum_constant_divisor_fields() {
+        Python::initialize();
+        Python::attach(|py| {
+            let control = replaced(&evaluate(py, CONTROL), 5, evaluate(py, "1"));
+            assert!(leading_sum_descriptor(&control).is_ok());
+            for (expression, kind, message) in [
+                ("[]", "TypeError", "exact divisor descriptor tuple"),
+                ("()", "TypeError", "divisor kind"),
+                ("(False,)", "TypeError", "divisor kind"),
+                (
+                    "('none', 0)",
+                    "ValueError",
+                    "unsupported leading-sum divisor descriptor",
+                ),
+                (
+                    "('constant', 'float')",
+                    "ValueError",
+                    "unsupported leading-sum divisor descriptor",
+                ),
+                ("('constant', 'float', True)", "TypeError", "integer bits"),
+                ("('constant', 0, 0)", "TypeError", "exact constant kind"),
+                (
+                    "('constant', 'wrong', 0)",
+                    "ValueError",
+                    "unknown leading-sum scalar kind",
+                ),
+                ("('constant', 'float', -1)", "OverflowError", ""),
+                ("('constant', 'float', 2**64)", "OverflowError", ""),
+                ("('constant', 'bool', 1)", "RuntimeError", "boolean scalar"),
+                (
+                    "('constant', 'int', 4609434218613702656)",
+                    "RuntimeError",
+                    "integer scalar",
+                ),
+            ] {
+                rejects(
+                    &replaced(&control, 4, evaluate(py, expression)),
+                    kind,
+                    message,
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn leading_sum_runtime_divisor_fields_and_arity() {
+        Python::initialize();
+        Python::attach(|py| {
+            let control = replaced(&evaluate(py, CONTROL), 5, evaluate(py, "1"));
+            let runtime = replaced(&control, 4, evaluate(py, "('runtime', 0, False)"));
+            assert!(leading_sum_descriptor(&runtime).is_ok());
+            for (expression, kind, message) in [
+                (
+                    "('runtime', True, False)",
+                    "TypeError",
+                    "exact runtime slot",
+                ),
+                ("('runtime', -1, False)", "OverflowError", ""),
+                ("('runtime', 2**128, False)", "OverflowError", ""),
+                ("('runtime', 0, 0)", "TypeError", "bool sign"),
+                (
+                    "('runtime', 1, False)",
+                    "RuntimeError",
+                    "scalar slot out of range",
+                ),
+            ] {
+                rejects(
+                    &replaced(&runtime, 4, evaluate(py, expression)),
+                    kind,
+                    message,
+                );
+            }
+            rejects(
+                &replaced(&runtime, 5, evaluate(py, "0")),
+                "RuntimeError",
+                "scalar slot out of range",
+            );
+        });
+    }
+
+    #[test]
+    fn leading_sum_dimension_divisor_fields_and_certificates() {
+        Python::initialize();
+        Python::attach(|py| {
+            let control = replaced(
+                &evaluate(py, CONTROL),
+                4,
+                evaluate(py, "('dimension', 0, 128)"),
+            );
+            assert!(leading_sum_descriptor(&control).is_ok());
+            for (expression, kind, message) in [
+                (
+                    "('dimension', False, 128)",
+                    "TypeError",
+                    "exact divisor dimension axis",
+                ),
+                ("('dimension', -1, 128)", "OverflowError", ""),
+                ("('dimension', 2**128, 128)", "OverflowError", ""),
+                ("('dimension', 2, 128)", "ValueError", "axis must be 0 or 1"),
+                (
+                    "('dimension', 0, True)",
+                    "TypeError",
+                    "dimension certificate",
+                ),
+                ("('dimension', 0, -1)", "OverflowError", ""),
+                ("('dimension', 0, 2**64)", "OverflowError", ""),
+                (
+                    "('dimension', 0, 129)",
+                    "RuntimeError",
+                    "row/divisor certificates disagree",
+                ),
+                (
+                    "('dimension', 0, None)",
+                    "RuntimeError",
+                    "row/divisor certificates disagree",
+                ),
+                (
+                    "('dimension', 1, 252)",
+                    "RuntimeError",
+                    "column/divisor certificates disagree",
+                ),
+                (
+                    "('dimension', 1, None)",
+                    "RuntimeError",
+                    "column/divisor certificates disagree",
+                ),
+            ] {
+                rejects(
+                    &replaced(&control, 4, evaluate(py, expression)),
+                    kind,
+                    message,
+                );
+            }
+            let generalized = evaluate(
+                py,
+                "('leading_sum', 0, False, None, ('dimension', 0, None), 0, 256, 128)",
+            );
+            assert!(leading_sum_descriptor(&generalized).is_ok());
+            rejects(
+                &replaced(&generalized, 4, evaluate(py, "('dimension', 0, 128)")),
+                "RuntimeError",
+                "row/divisor certificates disagree",
+            );
         });
     }
 
@@ -975,18 +1235,32 @@ mod leading_sum_descriptor_tests {
         Python::initialize();
         Python::attach(|py| {
             let namespace = PyDict::new(py);
-            py.run(c"calls = []\nclass BadInt(int):\n def __index__(self): calls.append('index'); raise AssertionError\n def __int__(self): calls.append('int'); raise AssertionError\nclass BadTuple(tuple):\n def __iter__(self): calls.append('iter'); raise AssertionError\nclass BadString(str):\n def __eq__(self, other): calls.append('eq'); raise AssertionError\n", Some(&namespace), None).unwrap();
-            for expression in [
-                "BadTuple(('leading_sum', 0, False, 1, ('none',)))",
-                "('leading_sum', BadInt(0), False, 1, ('none',))",
-                "(BadString('leading_sum'), 0, False, 1, ('none',))",
-                "('leading_sum', 0, False, BadInt(1), ('none',))",
-                "('leading_sum', 0, False, 1, BadTuple(('none',)))",
-                "('leading_sum', 0, False, 1, ('constant', 'float', BadInt(0)))",
+            py.run(c"calls = []\nclass BadInt(int):\n def __index__(self): calls.append('index'); raise AssertionError\n def __int__(self): calls.append('int'); raise AssertionError\nclass BadTuple(tuple):\n def __iter__(self): calls.append('iter'); raise AssertionError\n def __getitem__(self, key): calls.append('getitem'); raise AssertionError\nclass BadString(str):\n def __eq__(self, other): calls.append('eq'); raise AssertionError\n", Some(&namespace), None).unwrap();
+            let control = replaced(&evaluate(py, CONTROL), 5, evaluate(py, "1"));
+            assert!(leading_sum_descriptor(&control).is_ok());
+            namespace.set_item("control", &control).unwrap();
+            let outer = py
+                .eval(c"BadTuple(control)", Some(&namespace), None)
+                .unwrap();
+            rejects(&outer, "TypeError", "exact leading-sum descriptor tuple");
+            for (field, expression) in [
+                (0, "BadString('leading_sum')"),
+                (1, "BadInt(0)"),
+                (3, "BadInt(128)"),
+                (5, "BadInt(1)"),
+                (6, "BadInt(256)"),
+                (7, "BadInt(128)"),
+                (4, "BadTuple(('none',))"),
+                (4, "(BadString('none'),)"),
+                (4, "('constant', BadString('float'), 0)"),
+                (4, "('constant', 'float', BadInt(0))"),
+                (4, "('runtime', BadInt(0), False)"),
+                (4, "('dimension', BadInt(0), 128)"),
+                (4, "('dimension', 0, BadInt(128))"),
             ] {
                 let expression = CString::new(expression).unwrap();
                 let value = py.eval(&expression, Some(&namespace), None).unwrap();
-                assert!(leading_sum_descriptor(&value).is_err());
+                rejects(&replaced(&control, field, value), "TypeError", "");
             }
             assert_eq!(
                 namespace.get_item("calls").unwrap().unwrap().len().unwrap(),

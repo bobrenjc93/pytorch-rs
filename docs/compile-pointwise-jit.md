@@ -505,7 +505,7 @@ create no logical shape guards but still participate in all native validation.
 A generalized specialization retains its frozen constants when an older shape
 returns, including the sign of zero.
 
-A checked native host plan performs original-graph admission and builds one
+A checked native pointwise host plan performs original-graph admission and builds one
 validated Program before compiler discovery or upload. Native executable identity
 contains versioned exact bytes for the structural original Graph, complete ABI,
 device/context, checked address formulas and VM/direct domain. Direct identity
@@ -521,6 +521,9 @@ preparation requires the identical native input shapes (including rank); that
 checked signature certifies reuse of the graph's shape analysis. Every run still
 rechecks current types, device, dtype, gradients, contiguity, element/storage
 bounds and exact shapes, and uses current offsets and runtime scalar values.
+These Program and executable-identity rules apply to pointwise compilation;
+[leading-axis sum](#leading-axis-sum) has its own certificate-based identity and
+[selected-history numerical policy](compile-pointwise-numerics.md#leading-axis-sum).
 
 `recompile_limit` defaults to eight logical specializations. The executable LRU
 and each specialization's ABI-lowering LRU are independently bounded by the same

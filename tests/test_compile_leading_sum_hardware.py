@@ -1,15 +1,21 @@
 """Untimed native leading-sum checks against ordinary default Inductor."""
 from contextlib import contextmanager
 import gc
+import hashlib
 import json
 import math
+import os
+from pathlib import Path
+import struct
 import sys
+import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 import torch_rs as native
 from torch_rs import _compile_pointwise as frontend, _compile_trace
-from tests.test_compile_pointwise_jit import available, cache, program
+from tests.test_compile_pointwise_jit import cache, program
 from tests.test_compile_pointwise_method_guards import direct_binding, Poison
 
 
@@ -34,11 +40,53 @@ def no_replay(*functions):
         sys.setprofile(previous)
 
 
-@unittest.skipUnless(available(), 'requires native CUDA and reference PyTorch CUDA')
+def leading_sum_device_reason(properties):
+    """Positive fixtures require the complete device envelope at maximum C=256."""
+    if (properties.major, properties.minor, properties.warp_size) != (9, 0, 32):
+        return 'requires Hopper cc 9.0 and warp size 32'
+    sms = properties.multi_processor_count
+    threads = properties.max_threads_per_multi_processor
+    if sms <= 0 or threads <= 0:
+        return 'requires positive SM and thread counts'
+    if 256 >= 64 * sms or 256 * 256 >= 32 * sms * threads:
+        return 'requires the leading-sum device envelope for C=256'
+    return None
+
+
+class LeadingSumPrerequisites(unittest.TestCase):
+    def test_complete_maximum_column_device_envelope(self):
+        valid = dict(major=9, minor=0, warp_size=32, multi_processor_count=132,
+                     max_threads_per_multi_processor=2048)
+        self.assertIsNone(leading_sum_device_reason(SimpleNamespace(**valid)))
+        for changes in ({'major': 8}, {'major': 10}, {'minor': 1}, {'warp_size': 64},
+                        {'multi_processor_count': 0}, {'multi_processor_count': -1},
+                        {'max_threads_per_multi_processor': 0},
+                        {'max_threads_per_multi_processor': -1},
+                        {'multi_processor_count': 4},
+                        {'multi_processor_count': 8, 'max_threads_per_multi_processor': 256}):
+            with self.subTest(changes=changes):
+                self.assertIsNotNone(leading_sum_device_reason(SimpleNamespace(**(valid | changes))))
+        for changes in ({'multi_processor_count': 5},
+                        {'multi_processor_count': 8, 'max_threads_per_multi_processor': 257}):
+            with self.subTest(changes=changes):
+                self.assertIsNone(leading_sum_device_reason(SimpleNamespace(**(valid | changes))))
+
+
 class LeadingSumHardware(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        import torch
+        if not native.cuda.is_available():
+            raise unittest.SkipTest('MISSING COVERAGE: native CUDA unavailable')
+        try:
+            import torch
+        except ImportError:
+            raise unittest.SkipTest('MISSING COVERAGE: reference PyTorch unavailable') from None
+        if not torch.cuda.is_available():
+            raise unittest.SkipTest('MISSING COVERAGE: reference CUDA unavailable')
+        # Query errors on available CUDA are failures, not unsupported-device skips.
+        reason = leading_sum_device_reason(torch.cuda.get_device_properties(0))
+        if reason is not None:
+            raise unittest.SkipTest('MISSING COVERAGE: ' + reason)
         cls.torch = torch
         torch.set_num_threads(1)
 
@@ -92,6 +140,134 @@ class LeadingSumHardware(unittest.TestCase):
         state = cache(compiled)
         return (tuple((key, tuple(entry.lowerings)) for key, entry in state.graphs.items()),
                 tuple(state.executors), tuple(state.prepared), state.prepared_bytes)
+
+    def fixed_sparse_history(self, columns, rows_history, hints):
+        from torch._inductor.utils import fresh_cache
+
+        root = Path(__file__).resolve().parents[1] / 'target' / 'leading-review-4552'
+        root.mkdir(parents=True, exist_ok=True)
+        evidence = os.environ.get('LEADING_REVIEW_EVIDENCE')
+        directory = (Path(evidence) / self._testMethodName if evidence else
+                     Path(tempfile.mkdtemp(prefix=self._testMethodName + '-', dir=root)))
+        if evidence:
+            directory.mkdir(parents=True, exist_ok=False)
+        summary = dict(test=self.id(), columns=columns, rows=rows_history, expectedHints=hints,
+                       reference='ordinary torch.compile, default options, one persistent wrapper',
+                       policy='rtol=1e-5, atol=1e-6, equal_nan=True; exact classes and paired zero signs',
+                       serialization='CPU list to little-endian f32; no device NaN-payload attestation',
+                       calls=[], completed=False)
+
+        def write_summary():
+            (directory / 'summary.json').write_text(json.dumps(summary, indent=2, allow_nan=False) + '\n')
+
+        def error(exc):
+            return dict(type=type(exc).__name__, message=str(exc))
+
+        def metadata(tensor):
+            return dict(shape=list(tensor.shape), strides=list(tensor.stride()),
+                        dtype=str(tensor.dtype), device=str(tensor.device),
+                        storage_offset=tensor.storage_offset(), requires_grad=bool(tensor.requires_grad))
+
+        def materialize(tensor, meta, name):
+            values = tensor.cpu().tolist()
+            flat = [value for row in values for value in row] if len(meta['shape']) == 2 else values
+            raw = struct.pack('<' + str(len(flat)) + 'f', *flat)
+            path = directory / (name + '.f32')
+            path.write_bytes(raw)
+            return raw, dict(metadata=meta, path=str(path), sha256=hashlib.sha256(raw).hexdigest(),
+                             elements=len(flat), bytes=len(raw))
+
+        # Cold logical and disk-cache isolation occurs once for this whole history.
+        # The directory is retained; no reset/recompile/reseed happens within it.
+        native.compiler.reset()
+        self.torch.compiler.reset()
+        try:
+            with fresh_cache(dir=str(directory), delete=False):
+                fn, _, compiled, reference = self.pair('def f(x):\n return x.sum(0)')
+                entries, preparations = [], {}
+                a, b = float(2**24), float(2**127)
+                patterns = ({0: a, 16: -a, 32: 1.}, {0: a, 16: -a, 64: 1.},
+                            {0: a, 16: 1., 64: -a}, {0: a, 16: 1., 128: -a},
+                            {0: b, 32: b, 64: -b, 96: -b})
+                for index, (rows, hint) in enumerate(zip(rows_history, hints)):
+                    record = dict(index=index, rows=rows, expectedHint=hint, passed=False)
+                    summary['calls'].append(record)
+                    values = [patterns[column % 5].get(row, 0.)
+                              for row in range(rows) for column in range(columns)]
+                    x = self.upload(values, (rows, columns))
+                    tx = self.upload(values, (rows, columns), self.torch)
+                    input_meta, reference_input_meta = metadata(x), metadata(tx)
+                    first, record['nativeInput'] = materialize(x, input_meta, f'{index}-native-input')
+                    second, record['referenceInput'] = materialize(tx, reference_input_meta,
+                                                                 f'{index}-reference-input')
+                    record['inputBitsEqual'] = first == second
+                    self.assertEqual(first, second)
+                    actual = expected = None
+                    try:
+                        with no_replay(fn):
+                            actual = compiled(x)
+                    except Exception as exc:
+                        record['nativeException'] = error(exc)
+                    try:
+                        expected = reference(tx)
+                    except Exception as exc:
+                        record['referenceException'] = error(exc)
+                    # Capture BOTH original GPU metadata records before any output transfer.
+                    actual_meta = metadata(actual) if actual is not None else None
+                    expected_meta = metadata(expected) if expected is not None else None
+                    if actual is not None:
+                        _, record['nativeOutput'] = materialize(actual, actual_meta, f'{index}-native-output')
+                    if expected is not None:
+                        _, record['referenceOutput'] = materialize(expected, expected_meta,
+                                                                  f'{index}-reference-output')
+                    try:
+                        self.assertNotIn('nativeException', record)
+                        self.assertNotIn('referenceException', record)
+                        self.compare(actual, expected)
+                        record['comparisonPassed'] = True
+                        entry, operation = self.selected(compiled)
+                        prepared = next(reversed(cache(compiled).prepared.values()))[0]
+                        record['selected'] = dict(descriptor=operation.descriptor,
+                            hint=entry.numerical_hint, entryId=id(entry), preparedId=id(prepared),
+                            executableIdentity=repr(prepared.executable_identity))
+                        self.assertEqual(entry.numerical_hint, hint)
+                        self.assertEqual(operation.descriptor, ('leading_sum', 0, False,
+                            rows if index == 0 else None, ('none',), 0, columns, hint))
+                        self.assertEqual(prepared.kind, 'leading_sum')
+                        self.assertEqual(prepared.input_shapes, ((rows, columns),))
+                        entries.append(entry)
+                        if index >= 2:
+                            self.assertIs(entry, entries[1])
+                            self.assertEqual(prepared.executable_identity,
+                                             next(iter(preparations.values()))[1])
+                        if index >= 1:
+                            key = (rows, hint)
+                            if key in preparations:
+                                self.assertIs(prepared, preparations[key][0])
+                                record['preparedReused'] = True
+                            else:
+                                record['preparedReused'] = False
+                            preparations[key] = (prepared, prepared.executable_identity)
+                        record['passed'] = True
+                    except Exception as exc:
+                        record['failure'] = error(exc)
+                        raise
+                    finally:
+                        write_summary()
+                    print(json.dumps(dict(test=self.id(), index=index, rows=rows,
+                                          hint=hint, passed=record['passed'])), flush=True)
+            summary['completed'] = True
+        except Exception as exc:
+            summary['failure'] = error(exc)
+            raise
+        finally:
+            write_summary()
+
+    def test_00_sparse_h1_retains_two_segments_on_short_revisit(self):
+        self.fixed_sparse_history(132, (65, 256, 65), (65, 256, 256))
+
+    def test_01_sparse_h2_retains_one_segment_on_long_revisit(self):
+        self.fixed_sparse_history(252, (193, 65, 256, 193, 65), (193, 65, 65, 65, 65))
 
     def test_public_default_leading_sum_positive_capability(self):
         fn, _, compiled, reference = self.pair('def f(x):\n return x.sum(dim=0)')

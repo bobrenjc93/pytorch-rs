@@ -1368,9 +1368,11 @@ and top-level `out=None`. Output is fresh contiguous storage on the input device
 with offset zero and shape `(rows,)` or `(rows, 1)`; zero-width rows yield zeros.
 Native float32 reduction preserves intermediate overflow and does not flush
 subnormals. Device guards restore the caller's device and execution completes
-before return. Full CUDA sums, dim=0/-2, multiple dimensions, other ranks/dtypes,
-noncontiguous CUDA inputs, CUDA autograd, and compiled reductions remain
-unsupported. See the [CUDA row-sum guide](cuda-sum-rows.md) for geometry,
+before return. Eager full CUDA sums, dim=0/-2, multiple dimensions, other ranks/dtypes,
+noncontiguous CUDA inputs, CUDA autograd, and compiled row-wise reductions remain
+unsupported. Ordinary default compilation has a separate
+[bounded leading-axis sum contract](compile-pointwise-jit.md#leading-axis-sum).
+See the [CUDA row-sum guide](cuda-sum-rows.md) for geometry,
 numerical regressions, and evidence boundaries. The following full-sum, other
 sum-axis, and mean contracts describe CPU behavior.
 

@@ -288,3 +288,12 @@ remain in the admitted shape domain. Output strides are `(C, 1)` for keepdim
 and `(1,)` otherwise. Earlier small/empty and Tree8 counterexamples remain
 historical evidence; rejecting those shapes does not establish numerical parity.
 These policies do not change pointwise Program arithmetic or reference tolerance.
+
+The version-sensitive upstream sources are PyTorch `2.13.0+cu130`, commit
+`cf30153c4c131c8164ee7798e5022d810682e2cb`:
+[`ir.py::Reduction.num_splits`](https://github.com/pytorch/pytorch/blob/cf30153c4c131c8164ee7798e5022d810682e2cb/torch/_inductor/ir.py),
+[`choices.py::InductorChoices.reduction_split_factor`](https://github.com/pytorch/pytorch/blob/cf30153c4c131c8164ee7798e5022d810682e2cb/torch/_inductor/choices.py),
+[`runtime/triton_heuristics.py::_reduction_configs.outer_config_opt`](https://github.com/pytorch/pytorch/blob/cf30153c4c131c8164ee7798e5022d810682e2cb/torch/_inductor/runtime/triton_heuristics.py),
+and [`lowering.py::div_prim`](https://github.com/pytorch/pytorch/blob/cf30153c4c131c8164ee7798e5022d810682e2cb/torch/_inductor/lowering.py).
+They own the split, outer-reduction configuration and constant-division rules;
+source correspondence alone does not establish numerical equivalence.

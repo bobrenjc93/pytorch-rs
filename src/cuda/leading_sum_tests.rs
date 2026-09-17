@@ -67,10 +67,33 @@ fn descriptor(rows: Option<u64>, keepdim: bool, divisor: Divisor) -> LeadingSum 
 fn gpu() -> bool {
     if crate::cuda::device_count() == 0 {
         eprintln!("MISSING COVERAGE: leading sum CUDA unavailable");
-        false
-    } else {
-        true
+        return false;
     }
+    let _guard = runtime().unwrap().guard(0).unwrap();
+    current_context().unwrap();
+    let driver = driver().unwrap();
+    let mut ordinal = 0;
+    let mut properties = [0; 5];
+    // SAFETY: documented attributes and writable integers under the device guard.
+    unsafe {
+        driver
+            .check((driver.device)(&raw mut ordinal), "cuCtxGetDevice")
+            .unwrap();
+        for (value, attribute) in properties.iter_mut().zip([75, 76, 10, 16, 39]) {
+            driver
+                .check(
+                    (driver.attribute)(value, attribute, ordinal),
+                    "cuDeviceGetAttribute(leading sum test prerequisite)",
+                )
+                .unwrap();
+        }
+    }
+    // Positive fixtures reach C=256; query failures above are test failures.
+    if let Err(error) = validate_device_properties(256, properties) {
+        eprintln!("MISSING COVERAGE: leading sum device {properties:?}: {error}");
+        return false;
+    }
+    true
 }
 
 #[test]
