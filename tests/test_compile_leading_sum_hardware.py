@@ -51,6 +51,14 @@ class LeadingSumHardware(unittest.TestCase):
 
     def compare(self, actual, expected, exact=False):
         torch = self.torch
+        # Compare the original GPU metadata before transfer can normalize it.
+        self.assertEqual(actual.shape, tuple(expected.shape))
+        self.assertEqual(actual.stride(), expected.stride())
+        self.assertEqual(actual.storage_offset(), 0)
+        self.assertEqual(expected.storage_offset(), 0)
+        self.assertEqual(str(actual.dtype), str(expected.dtype))
+        self.assertEqual(str(actual.device), str(expected.device))
+        self.assertFalse(actual.requires_grad)
         expected = expected.cpu()
         observed = torch.tensor(actual.cpu().tolist(), dtype=torch.float32).reshape(expected.shape)
         torch.testing.assert_close(observed, expected, rtol=0 if exact else 1e-5,
@@ -223,6 +231,42 @@ class LeadingSumHardware(unittest.TestCase):
                                           'reference': 'ordinary torch.compile, same persistent history'},
                                          allow_nan=False), flush=True)
                         raise
+
+    def test_empty_keepdim_gpu_metadata_cold_warm_and_prepared_revisits(self):
+        for rows in (0, 1, 5):
+            for keepdim in (False, True):
+                for epilogue in ('', '/2'):
+                    native.compiler.reset()
+                    self.torch.compiler.reset()
+                    fn, _, compiled, reference = self.pair(
+                        f'def f(x):\n return x.sum(0, keepdim={keepdim}){epilogue}')
+                    retained = []
+                    for columns in (0, 1, 0, 3, 0, 3):
+                        shape = (rows, columns)
+                        values = [float(i + 1) for i in range(rows * columns)]
+                        x = self.upload(values, shape)
+                        tx = self.upload(values, shape, self.torch)
+                        previous = None
+                        for repeat in range(2):
+                            with self.subTest(rows=rows, columns=columns,
+                                              keepdim=keepdim, epilogue=epilogue, repeat=repeat):
+                                with no_replay(fn):
+                                    actual, prepared = compiled._torch_rs_pointwise_receipt(x)
+                                expected = reference(tx)
+                                self.compare(actual, expected)
+                                self.assertEqual(actual.shape, (1, columns) if keepdim else (columns,))
+                                self.assertEqual(actual.stride(), (columns, 1) if keepdim else (1,))
+                                self.assertTrue(actual.is_contiguous())
+                                if previous is not None:
+                                    self.assertIs(prepared, previous)
+                                previous = prepared
+                                reused = prepared.run((x,))[0]
+                                self.compare(reused, expected)
+                                self.assertIsNot(reused, actual)
+                                retained.extend((actual, reused))
+                    # Empty-pointer inequality is deliberately not an ownership
+                    # oracle; the Rust companion checks actual storage owners.
+                    self.assertEqual(len({id(value) for value in retained}), len(retained))
 
     def test_empty_rows_dimension_zero_divisor_writes_nan(self):
         fn, _, compiled, reference = self.pair('def f(x):\n return x.sum(0)/x.shape[0]')

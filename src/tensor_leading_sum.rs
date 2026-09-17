@@ -178,11 +178,14 @@ impl HostLeadingSum {
         let device = validate_inputs(inputs, &descriptor)?;
         let context = Module::checked_context(device)?;
         let columns = inputs[0].shape[1];
-        let output = Layout::new(&if descriptor.keepdim {
+        let mut output = Layout::new(&if descriptor.keepdim {
             vec![1, columns]
         } else {
             vec![columns]
         })?;
+        if descriptor.keepdim && columns == 0 {
+            output.strides[0] = 0;
+        }
         Ok(Self {
             identity: descriptor.identity(device, context),
             descriptor,
@@ -205,7 +208,11 @@ impl HostLeadingSum {
         Ok(PreparedLeadingSum {
             kernel,
             input_shapes: self.input_shapes.clone(),
-            output: Layout::new(&self.output.shape)?,
+            output: Layout {
+                shape: self.output.shape.clone(),
+                strides: self.output.strides.clone(),
+                elements: self.output.elements,
+            },
         })
     }
 }

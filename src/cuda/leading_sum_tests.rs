@@ -16,6 +16,7 @@ pub(crate) enum Phase {
 struct Audit {
     failure: Option<Phase>,
     both: bool,
+    empty: bool,
     events: Vec<Phase>,
     kernel: std::sync::Weak<Kernel>,
 }
@@ -31,7 +32,17 @@ pub(crate) fn observe(
         if let Some(audit) = audit.as_mut() {
             assert!(audit.kernel.upgrade().is_some());
             assert_eq!(kernel.device, input.device_index);
-            assert_eq!(input.copy_range(0, 2).unwrap(), [2., 4.]);
+            if audit.empty {
+                assert_eq!(
+                    phase,
+                    Phase::Allocate,
+                    "empty columns must not launch or complete"
+                );
+                assert_eq!(input.elements, 0);
+                assert!(outputs.is_empty());
+            } else {
+                assert_eq!(input.copy_range(0, 2).unwrap(), [2., 4.]);
+            }
             audit.events.push(phase);
             if phase != Phase::Allocate {
                 assert_eq!(outputs.len(), 1);
@@ -293,6 +304,7 @@ fn actual_launch_and_completed_error_paths_preserve_owners_and_first_error() {
             *a.borrow_mut() = Some(Audit {
                 failure,
                 both,
+                empty: false,
                 events: vec![],
                 kernel: Arc::downgrade(&kernel),
             });
@@ -354,4 +366,122 @@ fn empty_columns_still_validate_context_and_exact_bound_identity() {
     assert!(prepared.run(&[], &[]).is_err());
     assert!(prepared.run(&[&input, &input], &[]).is_err());
     assert_eq!(prepared.run(&[&input], &[]).unwrap()[0].shape(), [0]);
+}
+
+#[test]
+fn empty_keepdim_layout_does_not_change_the_shared_pointwise_layout() {
+    let layout = crate::pointwise_ir::indexing::Layout::new(&[1, 0]).unwrap();
+    assert_eq!(layout.shape, [1, 0]);
+    assert_eq!(layout.strides, [1, 1]);
+    assert_eq!(layout.elements, 0);
+}
+
+fn check_empty_prepared_outputs(rows: usize, keepdim: bool, divisor: Divisor) {
+    let input = Tensor::from_vec(vec![], [rows, 0])
+        .unwrap()
+        .try_copy_cpu_to_cuda(Device::Cuda(0))
+        .unwrap();
+    let spec = descriptor(Some(rows as u64), keepdim, divisor);
+    let scalars = vec![2.0; spec.scalar_count()];
+    let host = HostLeadingSum::new(&[&input], spec.clone()).unwrap();
+    let mut kernel = host.compile().unwrap();
+    let context = kernel.context;
+    Arc::get_mut(&mut kernel).unwrap().module.context = usize::MAX;
+    let rejected = host.bind(Arc::clone(&kernel));
+    Arc::get_mut(&mut kernel).unwrap().module.context = context;
+    assert!(matches!(rejected, Err(error) if error.to_string().contains("context mismatch")));
+    let weak = Arc::downgrade(&kernel);
+    let prepared = host.bind(Arc::clone(&kernel)).unwrap();
+    assert!(Arc::ptr_eq(prepared.kernel(), &kernel));
+    assert_eq!(prepared.input_shapes(), &[vec![rows, 0]]);
+    let before_bytes = prepared.retained_bytes();
+    let _reset = ResetAudit;
+    AUDIT.with(|audit| {
+        *audit.borrow_mut() = Some(Audit {
+            failure: None,
+            both: false,
+            empty: true,
+            events: vec![],
+            kernel: Arc::downgrade(&kernel),
+        });
+    });
+    let first = prepared.run(&[&input], &scalars).unwrap().remove(0);
+    let second = prepared.run(&[&input], &scalars).unwrap().remove(0);
+    for output in [&first, &second] {
+        assert_eq!(output.shape(), if keepdim { vec![1, 0] } else { vec![0] });
+        assert_eq!(output.stride(), if keepdim { vec![0, 1] } else { vec![1] });
+        assert_eq!(output.storage_offset(), 0);
+        assert_eq!(output.dtype(), crate::DType::Float32);
+        assert_eq!(output.device(), Device::Cuda(0));
+        assert!(!output.requires_grad());
+        assert!(
+            output
+                .try_copy_cuda_to_cpu()
+                .unwrap()
+                .try_to_vec()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(!output.shares_storage_with(&input));
+    }
+    // Empty allocations can share a null data address, but never their owners.
+    assert!(!first.shares_storage_with(&second));
+    assert_eq!(prepared.retained_bytes(), before_bytes);
+    let wrong_shape = Tensor::from_vec(vec![0.0; rows], [rows, 1])
+        .unwrap()
+        .try_copy_cpu_to_cuda(Device::Cuda(0))
+        .unwrap();
+    assert!(matches!(prepared.run(&[&wrong_shape], &scalars), Err(error)
+        if error.to_string().contains("input shape guard mismatch")));
+    let mut wrong_scalars = scalars.clone();
+    wrong_scalars.push(1.0);
+    assert!(matches!(prepared.run(&[&input], &wrong_scalars), Err(error)
+        if error.to_string().contains("runtime scalar arity mismatch")));
+    let mut wrong_descriptor = spec.clone();
+    wrong_descriptor.row_certificate = Some(rows as u64 + 1);
+    assert!(HostLeadingSum::new(&[&input], wrong_descriptor).is_err());
+    let opposite_keepdim = HostLeadingSum::new(
+        &[&input],
+        LeadingSum {
+            keepdim: !keepdim,
+            ..spec
+        },
+    )
+    .unwrap();
+    assert!(
+        matches!(opposite_keepdim.bind(Arc::clone(&kernel)), Err(error)
+        if error.to_string().contains("executable identity mismatch"))
+    );
+    let audit = AUDIT.with(|audit| audit.borrow_mut().take().unwrap());
+    assert_eq!(audit.events, [Phase::Allocate, Phase::Allocate]);
+    drop(kernel);
+    assert_eq!(weak.strong_count(), 1);
+    drop(prepared);
+    assert!(weak.upgrade().is_none());
+    assert_eq!(first.stride(), if keepdim { vec![0, 1] } else { vec![1] });
+    assert!(!first.shares_storage_with(&second));
+}
+
+#[test]
+fn empty_keepdim_host_bind_and_reuse_preserve_strides_owners_and_no_launch() {
+    if !gpu() {
+        return;
+    }
+    for rows in [0, 1, 5] {
+        for keepdim in [false, true] {
+            for divisor in [
+                Divisor::None,
+                Divisor::Runtime {
+                    slot: 0,
+                    negative: false,
+                },
+                Divisor::Dimension {
+                    axis: 0,
+                    certificate: Some(rows as u64),
+                },
+            ] {
+                check_empty_prepared_outputs(rows, keepdim, divisor);
+            }
+        }
+    }
 }

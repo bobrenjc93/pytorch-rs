@@ -276,4 +276,7 @@ explicit non-FTZ `div.full.f32`. An exact input-dimension certificate uses the
 current checked extent with reciprocal/multiply; a generalized dimension uses
 current u64-to-float32 conversion and full division. Empty columns still validate
 inputs; empty rows with nonempty columns write outputs and apply the epilogue.
+Empty keepdim outputs retain stride `(0, 1)` through preparation. This matches
+the tested bare-sum reference, but the tested terminal `/2` reference returns
+`(1, 1)`; that metadata difference remains unresolved.
 These policies do not change pointwise Program arithmetic or reference tolerance.
