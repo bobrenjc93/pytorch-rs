@@ -129,9 +129,11 @@ contiguous float32 CUDA tensors; see the [capture guide](compile-cuda-add.md)
 for its guards and scope.
 Contiguous float32 CUDA scalar multiplication also uses the native driver kernel;
 see its [scope and validation](cuda-mul-scalar-validation.md).
-Noncontiguous CUDA negation/multiplication, tensor-tensor multiplication, other CUDA math, CUDA autograd,
+Noncontiguous CUDA negation/multiplication, tensor-tensor multiplication, CUDA autograd,
 asynchronous transfers, dtype changes, unindexed CUDA targets, nondefault
 streams, and general CUDA runtime management remain unsupported.
+See the operation-specific [eager math contracts](supported-surface.md#elementwise-and-reductions)
+and [eager CUDA matmul contract](cuda-matmul.md).
 
 After a current-worktree release build, run the focused hardware tests:
 

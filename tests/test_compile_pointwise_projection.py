@@ -220,7 +220,7 @@ class ProjectionCUDA(unittest.TestCase):
                         self.assertEqual(len(record), 5)
                     else:
                         self.assertEqual(record, 'scalar')
-            # Invalid ignored leaves still reach native whole-input admission.
+            # Invalid leaves still reach native whole-input admission.
             with self.assertRaisesRegex(NotImplementedError, 'does not compile CPU'):
                 compiled({'x': offset, 'y': native.ones(3), 'gain': .5})
         # The retained prepared entry validates independently, including after reset.
