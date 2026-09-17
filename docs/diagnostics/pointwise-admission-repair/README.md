@@ -12,7 +12,32 @@ inputs, provider bytes and all declared licenses. Historical Git evidence is
 unchanged. Contributor guidance now identifies real NVRTC and C-compiler
 prerequisites; README licensing matches the existing package metadata.
 
-## Current archive repair; native batch stopped
+## Current author-only direct-scratch revision
+
+The [phase record](warm-repair-scope.md) binds `gelu-b355-direct-scratch-20260917`
+to parent `b35595e4`. Selected direct execution now omits unused invocation
+scratch; VM and identity-absent execution retain it. The shared output allocation,
+launch and completion owner remains in place. No speedup is claimed.
+
+Development checks passed 17 selected Rust tests (the canonical allocation/failure
+witness also passed with Python bindings) and five selected Python tests: one
+frontend mock and four real GPU controls on the fresh release wheel. The witness
+covered 21 direct/selected-VM/legacy-VM cases, including empty calls and distinct
+launch/completion errors. All selections had no skips or hardware early returns.
+Default test compilation, Clippy with and without Python bindings, formatting
+and diff checks passed. This is a subset, excluding the timing-producing
+`test_gpu_dispatch_real_native_and_default_histories` test unchanged.
+
+[Development receipts and binary provenance](../gelu-program-integration/direct-scratch-development-manifest.json)
+retain the wheel, command streams, three rejected test-fixture attempts, initial
+Clippy errors and the test launcher's failed import attempt. These are dirty-source
+correctness checks, not postcommit or performance evidence. Completion errors
+were injected after real synchronization; a device-not-completed fault and
+restoration from a different active device ordinal were not exercised on GPU0.
+Burner must commit and stop: review, performance measurement and merge remain
+outstanding pending explicit continuation.
+
+## Completed archive repair; native batch stopped
 
 The [current phase record](warm-repair-scope.md) binds rejection of `f83a858`
 and permits no new diagnostic profile or timing campaign. The proposed stateless

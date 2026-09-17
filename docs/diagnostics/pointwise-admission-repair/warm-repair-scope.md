@@ -1,4 +1,33 @@
-# Current method-guard batch and archive repair
+# Current author-only direct-scratch revision
+
+Request `gelu-b355-direct-scratch-20260917`, starting at
+`b35595e4e8bd1683d049574301fdf3972d36a913` against pinned base `60202557`.
+The operator admits only authoring for Burner's commit, followed by a stop.
+Evidence refresh, independent review, official evaluation and publication require
+explicit continuation. No new profile or timing campaign is admitted.
+
+The narrow hypothesis removes invocation scratch only for the existing positive
+selected-direct identity, retaining VM scratch and the shared completion owner.
+It removes a storage allocation/cache acquisition and Drop, not necessarily a
+`cudaMalloc`; no speedup is established. Permitted checks are focused untimed
+Rust/Python correctness on GPU0. The timing-producing dispatch-history test
+named below remains excluded. Development builds are not clean-commit evidence.
+
+Author result: the scratch-only premise held. `src/cuda.rs` is the only production
+file changed; `src/cuda/pointwise_direct_failure_tests.rs` observes real allocation,
+Drop, launch and completion events through canonical `pointwise_jit`. Seventeen
+selected Rust tests and five Python tests passed on the development source; the
+canonical witness also passed with Python bindings. One Python test uses mocks.
+The [current index](README.md#current-author-only-direct-scratch-revision) links
+raw commands, failures, the fresh wheel and tested source/runtime identities.
+This author output awaits Burner's commit and the required continuation stop.
+
+The method-guard batch stopped at its callback counterexample; it is not resumed.
+The archive relocation completed in b355 and is not repeated. Earlier negative
+assessments, raw failures and phase limitations remain unchanged below. Review,
+performance measurement and merge remain outstanding.
+
+# Completed method-guard investigation and archive repair
 
 Starting source: `f83a85862f3784383c85dfea9c0a7ecdf115589d`; confirmed
 rejection `leaf-evaluation_7d6d376c`, 2026-09-17T03:01:18.057Z, against

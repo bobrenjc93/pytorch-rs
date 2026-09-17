@@ -676,14 +676,22 @@ impl CudaFloat32Storage {
         }
         let _guard = self.runtime.guard(self.device_index)?;
         kernel.validate_context()?;
-        // Immutable plan instructions were completed at preparation. Scratch is
-        // never shared: every run owns it alongside all new output allocations.
+        // Immutable plan instructions were completed at preparation. Only VM
+        // execution needs invocation-owned scratch; selected direct code uses locals.
+        let direct = kernel
+            .identity
+            .as_ref()
+            .is_some_and(|identity| identity.direct);
         self.pointwise_outputs(
             elements,
             kernel.graph.outputs.len(),
             || {
-                Self::allocate(plan.layout.scratch_elements, self.device_index)
-                    .map(|(scratch, _guard)| scratch)
+                if direct {
+                    Ok(None)
+                } else {
+                    Self::allocate(plan.layout.scratch_elements, self.device_index)
+                        .map(|(scratch, _guard)| Some(scratch))
+                }
             },
             || Self::allocate(elements, self.device_index).map(|(output, _guard)| output),
             |scratch, results| {
@@ -709,19 +717,33 @@ impl CudaFloat32Storage {
                         elements as u64,
                         instructions.data_ptr as u64,
                         plan.instruction_count as u64,
-                        scratch.data_ptr as u64,
+                        scratch
+                            .as_ref()
+                            .map_or(0, |storage| storage.data_ptr as u64),
                         plan.layout,
                         scalars,
-                    )
+                    )?;
                 }
+                #[cfg(test)]
+                pointwise_direct_failure_tests::observe(
+                    pointwise_direct_failure_tests::Event::Launched(scratch.as_ref(), results),
+                )?;
+                Ok(())
             },
-            |_scratch, _results| {
+            |scratch, results| {
                 self.runtime.check(
                     unsafe {
                         (self.runtime.stream_synchronize)(std::ptr::without_provenance_mut(1))
                     },
                     "cudaStreamSynchronize",
-                )
+                )?;
+                #[cfg(test)]
+                pointwise_direct_failure_tests::observe(
+                    pointwise_direct_failure_tests::Event::Completed(scratch.as_ref(), results),
+                )?;
+                #[cfg(not(test))]
+                let _ = (scratch, results);
+                Ok(())
             },
         )
     }
@@ -762,6 +784,7 @@ impl CudaFloat32Storage {
         // One guard spans every allocation, launch, completion and failure. A
         // partial allocation failure releases only local, unpublished owners.
         let _guard = self.runtime.guard(self.device_index)?;
+        // The outer option denotes work, even when T is an absent direct scratch.
         let scratch = if elements == 0 {
             None
         } else {
@@ -826,6 +849,8 @@ impl CudaFloat32Storage {
     // Only the initializing constructors above may publish this allocation.
     // Retain one guard across allocation and initialization, including errors.
     fn allocate(elements: usize, device_index: usize) -> Result<(Self, DeviceGuard), TensorError> {
+        #[cfg(test)]
+        pointwise_direct_failure_tests::observe(pointwise_direct_failure_tests::Event::Allocating)?;
         let bytes = elements
             .checked_mul(4)
             .filter(|bytes| isize::try_from(*bytes).is_ok())
@@ -878,6 +903,10 @@ impl CudaFloat32Storage {
             runtime,
         };
         INITIALIZED.store(true, Ordering::Relaxed);
+        #[cfg(test)]
+        pointwise_direct_failure_tests::observe(pointwise_direct_failure_tests::Event::Allocated(
+            result.data_ptr,
+        ))?;
         Ok((result, guard))
     }
     pub(crate) fn copy_range(
@@ -1054,6 +1083,8 @@ impl CudaFloat32Storage {
 }
 impl Drop for CudaFloat32Storage {
     fn drop(&mut self) {
+        #[cfg(test)]
+        pointwise_direct_failure_tests::record_drop(self.data_ptr);
         if self.data_ptr == 0 {
             return;
         }

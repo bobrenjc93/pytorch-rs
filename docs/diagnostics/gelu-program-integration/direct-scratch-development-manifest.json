@@ -1,0 +1,409 @@
+{
+  "archive": "direct-scratch-development.tar.gz",
+  "size": 6429928,
+  "sha256": "6478eace6600c6f2e050212a9dbac188debb8a5ce6a4b5e396ec962b464c33c1",
+  "members": [
+    {
+      "path": "docs/diagnostics/pointwise-admission-repair/README.md",
+      "size": 12011,
+      "sha256": "e405d0409169972fb17d53f8524365cc1e6ed078caa42467ebaf5dae8ea62ac2"
+    },
+    {
+      "path": "docs/diagnostics/pointwise-admission-repair/warm-repair-scope.md",
+      "size": 8241,
+      "sha256": "e5dab1d60a77e10ba0bc047faa76dff9d5a6c8d61b26ee5273b722f60242dcc8"
+    },
+    {
+      "path": "target/direct-scratch/archive-inputs.json",
+      "size": 6223,
+      "sha256": "4d940376efff389109defceee8fc7d923f24f0de4ae341eecd7e8bab786f5077"
+    },
+    {
+      "path": "target/direct-scratch/build-release/build.json",
+      "size": 15606,
+      "sha256": "acaf7b3c9beb8ecf770508f306498864234c8fab24abb028b34dbf6900348fff"
+    },
+    {
+      "path": "target/direct-scratch/build-release/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+      "size": 1762128,
+      "sha256": "b56a6f4ebba773e3b1403e989e809287a396f8ef0d2db54dacb8e7a2869db037"
+    },
+    {
+      "path": "target/direct-scratch/build.py",
+      "size": 1039,
+      "sha256": "44c9c14428b40868e69c99768e91eea8dc799562f099c57155f3cae3efd22ad0"
+    },
+    {
+      "path": "target/direct-scratch/command-index.json",
+      "size": 6617,
+      "sha256": "4dc55e9ca3ce079a600a48320c4527f0c05b023d7d6590b0641a27273da987dc"
+    },
+    {
+      "path": "target/direct-scratch/python-checks-root.py",
+      "size": 4597,
+      "sha256": "e466772d7f0558a8e73fc6d2d453c4d762cec15f9530daeaa3dd9eededcef3ee"
+    },
+    {
+      "path": "target/direct-scratch/python-checks.py",
+      "size": 4562,
+      "sha256": "fb822012325defe304a40cfa286d3540fc64f5bd73fd33be99b508b4a3d62bef"
+    },
+    {
+      "path": "target/direct-scratch/python-results-root.json",
+      "size": 26101,
+      "sha256": "98b20d11ce0ff28f7fcb37cd3f1c652fa3a7dc6ffd75551e1b71cd950294490e"
+    },
+    {
+      "path": "target/direct-scratch/python-results.json",
+      "size": 25837,
+      "sha256": "dc5c5d9a5ba199363848104a02052bdec38b84c79aadc22d2d518e0dc7119c53"
+    },
+    {
+      "path": "target/direct-scratch/rust-checks.py",
+      "size": 1278,
+      "sha256": "d6146073422e392829122277726d6abf6ad6c1bb1b1fa501f23f9af63f792259"
+    },
+    {
+      "path": "target/direct-scratch/rust-results.json",
+      "size": 2022,
+      "sha256": "0ddbcf336e2ffefef7e8819be63d43d828d91a9b48ca9be47f8a7e3760209347"
+    },
+    {
+      "path": "target/direct-scratch/seal.py",
+      "size": 273,
+      "sha256": "182ab17ab5b79865871d7e300469657b8090fd74231f3af129f01cd3b4aaae92"
+    },
+    {
+      "path": "target/gelu-program-integration/1789621994591026757-scratch-format/receipt.json",
+      "size": 122305,
+      "sha256": "a14caf8c6dcc0a5763c0a0caad48aa8097546e565e4a5ed15201edbc7e557814"
+    },
+    {
+      "path": "target/gelu-program-integration/1789621994591026757-scratch-format/source.patch",
+      "size": 19918,
+      "sha256": "c63c330b5bc5f01743e1773acfa8cd90aa87adfbe50fd6cc79cbb52412d1ca11"
+    },
+    {
+      "path": "target/gelu-program-integration/1789621994591026757-scratch-format/stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789621994591026757-scratch-format/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622006706642305-scratch-canonical/receipt.json",
+      "size": 122534,
+      "sha256": "5d09e7b4fcf4feb683cc1f486640639f2ecb08da0e4833e5b74512a681f2e3b0"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622006706642305-scratch-canonical/source.patch",
+      "size": 20670,
+      "sha256": "263950c6fe1a54156b1e9190672c8c4202b9bd61041e9397f3985f68dd792c36"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622006706642305-scratch-canonical/stderr.log",
+      "size": 1006,
+      "sha256": "b709375a0d41293fd47f61895081e3b43291121cd120bc7e1185257445059c03"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622006706642305-scratch-canonical/stdout.log",
+      "size": 402,
+      "sha256": "d9e34c3bfe0e2e26dfb510a9cc586dfe75f1433706687dce37d717266223e846"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622111368717833-scratch-canonical-ssa-order/receipt.json",
+      "size": 122534,
+      "sha256": "b92a893264c683e886d517c16f3f4d8499e1a9f9c7ddde657ea493f481f58efb"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622111368717833-scratch-canonical-ssa-order/source.patch",
+      "size": 20669,
+      "sha256": "1305ef7349b097179fc1f4fad9f65652c24292034cde13a1924c48c995825dd5"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622111368717833-scratch-canonical-ssa-order/stderr.log",
+      "size": 743,
+      "sha256": "6a7c3d675c026130eb31c9fcc9ca4055806c480340b5fc04ad7e9884cfefcf1c"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622111368717833-scratch-canonical-ssa-order/stdout.log",
+      "size": 402,
+      "sha256": "e4337588c54ca4e36a63b3b8fa6ad3fa5be7fe709c10f3f919933a0b83c08457"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622134106965704-scratch-canonical-computed-roots/receipt.json",
+      "size": 122534,
+      "sha256": "57f6d43817b1752e1898343a16c9b0f70fd60ec8d5d3376de5e806bb55b2e05e"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622134106965704-scratch-canonical-computed-roots/source.patch",
+      "size": 20736,
+      "sha256": "47fe544c4a384c84eff5e2f00c0d0cf5a3e2ffa9bb34d7fdb334aca1c354ca0c"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622134106965704-scratch-canonical-computed-roots/stderr.log",
+      "size": 744,
+      "sha256": "34bf9b6f04dbc9c8f59462cee8db4d0ae695f222bc139a90aa57dd8d03662086"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622134106965704-scratch-canonical-computed-roots/stdout.log",
+      "size": 402,
+      "sha256": "d9e34c3bfe0e2e26dfb510a9cc586dfe75f1433706687dce37d717266223e846"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622145410783251-scratch-canonical-output-order/receipt.json",
+      "size": 122532,
+      "sha256": "0deb2a4ede894eee928a857fb33aa87e488abc549325c30798cfe2d069918a15"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622145410783251-scratch-canonical-output-order/source.patch",
+      "size": 20822,
+      "sha256": "171de90764268c261ce04c15eef738a46cdc558683768779df40612595e969fc"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622145410783251-scratch-canonical-output-order/stderr.log",
+      "size": 1797,
+      "sha256": "1bebdf14d01c21bb83957ec0e118b64ca8b456e698e01b110bdbc279fdc03200"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622145410783251-scratch-canonical-output-order/stdout.log",
+      "size": 247,
+      "sha256": "ac1843509dde5c2229aa3b802fbf2820d619feebe27f48e3b559b6fe1847d242"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622158667018221-scratch-rust-selections/receipt.json",
+      "size": 122349,
+      "sha256": "ffa7168f2817c90170c8c6ca807062a31121a6ca8f92d27637e061df5cb6ce36"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622158667018221-scratch-rust-selections/source.patch",
+      "size": 20822,
+      "sha256": "171de90764268c261ce04c15eef738a46cdc558683768779df40612595e969fc"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622158667018221-scratch-rust-selections/stderr.log",
+      "size": 147133,
+      "sha256": "6271530780d8083bdc6d7162c253cc25f76ed31d21c5027e97556ade96240c5a"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622158667018221-scratch-rust-selections/stdout.log",
+      "size": 3710,
+      "sha256": "aff9a01058e9ba9a1bf0e44a3852a2b4068869b9dac5610508ab3f228b9c5092"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622188737449780-scratch-format-final/receipt.json",
+      "size": 122305,
+      "sha256": "b737febfe2f928fa8b756a5f041f11494be2a9640d4f15b8d2b5f0d4ed777f1b"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622188737449780-scratch-format-final/source.patch",
+      "size": 20846,
+      "sha256": "1a82c6aa9db8cc576179149c89816bde3f0808f95b4dd9cef3044c0a4ade9ebb"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622188737449780-scratch-format-final/stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622188737449780-scratch-format-final/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622198641521911-scratch-release-build/receipt.json",
+      "size": 122358,
+      "sha256": "daa3d10002bd2562ea8d496bccc924cd896e29446d7e12e2f03a5da0efe75386"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622198641521911-scratch-release-build/source.patch",
+      "size": 20846,
+      "sha256": "1a82c6aa9db8cc576179149c89816bde3f0808f95b4dd9cef3044c0a4ade9ebb"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622198641521911-scratch-release-build/stderr.log",
+      "size": 665,
+      "sha256": "cd119e5f99cafdbd1a95c62748f7c1943bc5c3c57c634230a36f98d50595b766"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622198641521911-scratch-release-build/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622200297065884-scratch-clippy-final/receipt.json",
+      "size": 122389,
+      "sha256": "bedb0c30d798f823554a685593ff6c49b911c71ba66e9288db500f1b3fb175f2"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622200297065884-scratch-clippy-final/source.patch",
+      "size": 20846,
+      "sha256": "1a82c6aa9db8cc576179149c89816bde3f0808f95b4dd9cef3044c0a4ade9ebb"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622200297065884-scratch-clippy-final/stderr.log",
+      "size": 187,
+      "sha256": "f7ff4a834f0d45b5d58987e3f820f07a22d818d2a8249fa5c8bdac44ffd49ce4"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622200297065884-scratch-clippy-final/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622234384951493-scratch-clippy-bindings-final/receipt.json",
+      "size": 122430,
+      "sha256": "a86ee702cbe64f6bb52cc264dd1224723602c480b9783c824eca0994ad87d520"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622234384951493-scratch-clippy-bindings-final/source.patch",
+      "size": 20846,
+      "sha256": "1a82c6aa9db8cc576179149c89816bde3f0808f95b4dd9cef3044c0a4ade9ebb"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622234384951493-scratch-clippy-bindings-final/stderr.log",
+      "size": 187,
+      "sha256": "6129d3df2e4aaa854eaa4bf69d8ed5e9d8c7d9f2570bddfc219ffc3c435bce1f"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622234384951493-scratch-clippy-bindings-final/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622262081815595-scratch-wheel-install/receipt.json",
+      "size": 122494,
+      "sha256": "94f4668f5a845a76a9706b8ff5361d5b33febed65ac32c6f755eb6617cc6996d"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622262081815595-scratch-wheel-install/source.patch",
+      "size": 20846,
+      "sha256": "1a82c6aa9db8cc576179149c89816bde3f0808f95b4dd9cef3044c0a4ade9ebb"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622262081815595-scratch-wheel-install/stderr.log",
+      "size": 511,
+      "sha256": "2203050a2cffb9820ae9708321483dc0d98fa3ab81cfa18934236d6045337c90"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622262081815595-scratch-wheel-install/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622274565269744-scratch-python-selections/receipt.json",
+      "size": 122351,
+      "sha256": "8b0c6dde82bfb8ac42e85a363012e65ff31d65c73c9b4a1bc97f3619bca1611f"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622274565269744-scratch-python-selections/source.patch",
+      "size": 20846,
+      "sha256": "1a82c6aa9db8cc576179149c89816bde3f0808f95b4dd9cef3044c0a4ade9ebb"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622274565269744-scratch-python-selections/stderr.log",
+      "size": 3129,
+      "sha256": "fe99e52a16f04ac6837bc667e46dde77b3cd8687f00b820da768c8fbc3a2d0f0"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622274565269744-scratch-python-selections/stdout.log",
+      "size": 25837,
+      "sha256": "dc5c5d9a5ba199363848104a02052bdec38b84c79aadc22d2d518e0dc7119c53"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622299208084324-scratch-canonical-bindings/receipt.json",
+      "size": 122573,
+      "sha256": "6326ef9ca8ccb10244a310073673bdf74b31d8405b2d0890d642dc03ccaac51c"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622299208084324-scratch-canonical-bindings/source.patch",
+      "size": 20846,
+      "sha256": "1a82c6aa9db8cc576179149c89816bde3f0808f95b4dd9cef3044c0a4ade9ebb"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622299208084324-scratch-canonical-bindings/stderr.log",
+      "size": 1943,
+      "sha256": "b7cbb58779d6d93420395eadea7bdac84985f71053170a9e7106fc9af6235989"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622299208084324-scratch-canonical-bindings/stdout.log",
+      "size": 247,
+      "sha256": "e44cd186768f7e91cb0be90b8e4614abb12c14286226a7f5d108e21a17448045"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622310022112680-scratch-python-root-selections/receipt.json",
+      "size": 122356,
+      "sha256": "10bf73d8b114f7d26a0a83fc1ad1cde4916ab3948a089add8bc442f9bad5e895"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622310022112680-scratch-python-root-selections/source.patch",
+      "size": 20846,
+      "sha256": "1a82c6aa9db8cc576179149c89816bde3f0808f95b4dd9cef3044c0a4ade9ebb"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622310022112680-scratch-python-root-selections/stderr.log",
+      "size": 1119,
+      "sha256": "c0805958b602f38557c2ef5af7c59116443df9acd0f0f12dc23d6ec8ea113ddf"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622310022112680-scratch-python-root-selections/stdout.log",
+      "size": 26101,
+      "sha256": "98b20d11ce0ff28f7fcb37cd3f1c652fa3a7dc6ffd75551e1b71cd950294490e"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622349884045308-scratch-format-check/receipt.json",
+      "size": 122388,
+      "sha256": "3dba196fe23eb53865d626d3c9bc42561ed9787b801ad8302c89c4dd3e6a3949"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622349884045308-scratch-format-check/source.patch",
+      "size": 23927,
+      "sha256": "7f09dae0f953b65bb11b91d2b2a3897bed225bb703fa84d077d2c2a22ef7be76"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622349884045308-scratch-format-check/source.tar.gz",
+      "size": 3712660,
+      "sha256": "5b8ab68e65d358833204bcd7ad1b4817ee6c724d61f11ccbe48b833d9cdd6ac9"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622349884045308-scratch-format-check/stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622349884045308-scratch-format-check/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622381753901830-scratch-diff-check/receipt.json",
+      "size": 122377,
+      "sha256": "a74e01fd67a40878770876e180d4aadd8a9c4025ac8c86561257b893c08afd9e"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622381753901830-scratch-diff-check/source.patch",
+      "size": 23927,
+      "sha256": "7f09dae0f953b65bb11b91d2b2a3897bed225bb703fa84d077d2c2a22ef7be76"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622381753901830-scratch-diff-check/stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789622381753901830-scratch-diff-check/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "scope": "Executed inner commands and artifacts; no future outer-controller receipt",
+  "protocolBindings": {
+    "docs/diagnostics/gelu-program-integration/protocol.md": "24bb4d8924b821ef4a94efa1ee89c85db0af46afa138e7c814d502eec9ccbe17",
+    "docs/diagnostics/program-identity/protocol.md": "d6e8f51d024b451f8afed33d743647d46396425724b918a599f7b32274f95d5b",
+    "docs/diagnostics/program-identity/consumer.py": "1861fca73674d8c89f6285b07883ab9a83e6719c1b6a0c12cd2be1ae7c4c8b42",
+    "tests/test_program_identity_consumer.py": "b907c94b00f35fbb18e53510ec692b5fb83f94d37d509fe662418844bc2af5b3"
+  }
+}
