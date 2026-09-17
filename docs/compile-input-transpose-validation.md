@@ -17,7 +17,7 @@ and rejects parameter-derived axes before native execution or cache publication.
 Literal, local, global and closure constants remain admitted, and view-free
 boolean arithmetic retains its existing behavior.
 
-Verification used a freshly packaged release wheel in the worktree-local `.venv`
+Before the correction was committed, verification used a freshly packaged release wheel in the worktree-local `.venv`
 on GPU0: 24 focused tests passed (including 11 hardware tests); 161 helper,
 control-flow, input/result and cache/guard regressions passed with three existing
 skips. The hardware-free run passed 25 tests with 11 explicit CUDA skips.
@@ -33,26 +33,25 @@ exact commands and uncommitted source/build/import identity against base
 not a clean-commit measurement. Native Rust sources and the evaluation harness
 were unchanged by this correction.
 
-The clean-commit report below measures `d22c5ac` **before this correction** and is
-stale for the corrected candidate. Its report, raw receipts and recorded identities
-remain unchanged. A new clean-commit capture is required after Burner commits
-the correction; no current-candidate performance credit is claimed from these
-older measurements, and no scoring run was repeated during the repair.
+Burner committed the correction as `48c7b82`; the fresh clean-commit capture below
+now measures that corrected candidate. The earlier `d22c5ac` measurement and dirty
+repair receipts remain unchanged and supply no current-candidate performance
+credit. No scoring run was performed during the uncommitted repair.
 
-## Clean-commit evidence before the review correction
+## Current clean-commit evidence
 
 Captured on 2026-09-17 from clean implementation commit
-`d22c5acbf83be77a789d32839ee57a6e5d4b41f8`, before these evidence-only updates.
+`48c7b82cd55318e8be455d792f2410d3a0f2ff95`, before these evidence-only updates.
 The inherited Burner task declares the canonical `gpu` and `cpu-heavy` resources;
 all device execution used GPU0 through `CUDA_VISIBLE_DEVICES=0`.
 
 The repository-supported paired command ran once:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 bash scripts/evaluate_torch_compile_default.sh --metric both --output target/postcommit-evidence/default-compile-report.json
+CUDA_VISIBLE_DEVICES=0 bash scripts/evaluate_torch_compile_default.sh --metric both --output target/postcommit-48c7b82/default-compile-report.json
 ```
 
-The [complete unmodified report](diagnostics/default-input-transpose-postcommit.json)
+The [complete unmodified report](diagnostics/default-input-transpose-postcommit-48c7b82.json)
 records `public-default-compile-v2`, untouched compiler defaults, five warmups,
 17 samples, both CUDA implementation orders and fresh worker compiler caches.
 All 84 reference program executions passed across CPU and the two CUDA rounds.
@@ -61,10 +60,10 @@ The fixed denominator, unsupported outcomes and slow samples are unchanged.
 | Measurement/check | Clean-commit outcome |
 | --- | --- |
 | Weighted default-compile coverage | 19.5 / 100; 20 / 112 cells pass |
-| Weighted default-compile CUDA performance | 33.768731260903884 / 100; 20 / 56 cells pass |
-| Uncapped common-success latency ratio | 1.1578276300529724, limited to the 20 passing CUDA cells |
-| Focused transpose checks against the freshly installed release wheel | 20 passed, including nine real-GPU tests and native-only execution |
-| Hardware-free transpose and branch admission | 23 passed, nine explicit CUDA skips |
+| Weighted default-compile CUDA performance | 33.28903094923071 / 100; 20 / 56 cells pass |
+| Uncapped common-success latency ratio | 1.0971804306957396, limited to the 20 passing CUDA cells |
+| Focused transpose checks against the freshly installed release wheel | 24 passed, including 11 real-GPU tests and native-only execution |
+| Hardware-free transpose and branch admission | 25 passed, 11 explicit CUDA skips |
 | Native planner/bridge and wrapping failure | 17 passed; three PyO3 test-only deprecation warnings retained |
 | Source, build, import and raw-artifact provenance audit | Passed: 132 source hashes, all 12 worker output/log hashes and exported copies |
 
@@ -74,25 +73,32 @@ mutation through the existing raw-bit helpers; they do not substitute for that
 canonical outcome. These results establish neither a gain over main nor general
 Inductor/performance parity, and do not replace independent review or merge gates.
 
-The [compact clean-commit archive](diagnostics/default-input-transpose-postcommit.tar.gz)
+The [compact clean-commit archive](diagnostics/default-input-transpose-postcommit-48c7b82.tar.gz)
 contains exact commands, setup/build output, focused test logs, native-only
 runtime identity, source/import/wheel hashes, the provenance audit and worker
 logs. Full-value worker outputs remain in
-`target/postcommit-evidence/export/`, exported through
+`target/postcommit-48c7b82/export/`, exported through
 `BURNER_EVALUATION_ARTIFACT_DIR`; the report and audit retain their paths and hashes.
 The original run directory is
-`target/default-compile-eval/run-20260917T205502Z-de59baff/`.
+`target/default-compile-eval/run-20260917T211038Z-b51cde18/`.
 Large value arrays are not checked into Git.
 
-The fresh evaluator environment uses the worktree-local Python 3.12.12 and locked
+The evaluator environment uses the worktree-local Python 3.12.12 and locked
 PyTorch `2.13.0+cu130`. Native NVRTC is 13.0, loaded CUDA runtime is 13000, and
-installed `nvcc` is 12.6.85; Rust is 1.92.0. Setup took 53.753295384 seconds,
-including a 52.444668009-second release build. Dependency caches were warm;
-the evaluator environment and release wheel were newly created. GPU0 is H100
+installed `nvcc` is 12.6.85; Rust is 1.92.0. Setup took 0.987751929 seconds,
+including 0.532835713 seconds for the cached native build and fresh wheel packaging.
+The local environment and dependency/native-build caches were reused; the release
+wheel was newly created and installed. GPU0 is H100
 `GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1`, driver 580.82.07; focused-check
-before/after snapshots both show 0% utilization and 4 MiB allocated.
+before/after snapshots show 0%/2% utilization and 4 MiB allocated in both.
 No implementation, test, dependency, harness or evaluation definition changed
 during this capture. No post-commit measurement or check failed.
+
+The [earlier report](diagnostics/default-input-transpose-postcommit.json) and
+[archive](diagnostics/default-input-transpose-postcommit.tar.gz) remain pinned to
+`d22c5acbf83be77a789d32839ee57a6e5d4b41f8`, before the runtime-axis correction.
+Their original setup, timings, paths and hashes are preserved; the new audit
+verifies that those files and the development archives are unchanged.
 
 ## Development checks before the implementation commit
 
