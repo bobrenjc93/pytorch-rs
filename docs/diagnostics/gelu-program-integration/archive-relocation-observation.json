@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+  "checked_head": "f83a85862f3784383c85dfea9c0a7ecdf115589d",
+  "started_at": "2026-09-17T03:28:10.441132+00:00",
+  "finished_at": "2026-09-17T03:28:22.437309+00:00",
+  "inventory": "archive-preservation-observation.json",
+  "inventory_sha256": "06c64af258cd4eca888f0ad486d43eb438db2acad56181b45fd7f50f923bf9ee",
+  "remote_observation": {
+    "gelu-archive-remote-head-facts.json": "bb577d18d560be5741d0307e7b9f0f0102640fa90ef8efd694f480a42cb9302f",
+    "gelu-34dcc-archive-remote-proof-review.md": "a38f9b6f393e2c1f28d44c5ba4cc7fdf8e6f7c9680630fa9410f9ae44bae646d"
+  },
+  "remote_observation_scope": "Supplied Main observations at their recorded times; no new remote request or payload download",
+  "source_is_ancestor": true,
+  "full_history": true,
+  "original_manifests_verified": 6,
+  "files": 28,
+  "bytes": 1612770062,
+  "checkout_copies_removed": true,
+  "post_removal_original_blob_and_concatenation_verification": true,
+  "raw_receipts": "target/method-guard-repair/archive",
+  "limitations": [
+    "Earlier API/CONNECT 403 failures remain unchanged.",
+    "Later merge must retain the archive-containing ancestor.",
+    "No smaller full-clone history or offline raw bytes in source archives omitting these blobs."
+  ]
+}

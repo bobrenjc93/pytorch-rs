@@ -1,0 +1,62 @@
+{
+  "kind": "Sanitized recorded remote-head observations; no private canonical state or agent transcript",
+  "repository": "bobrenjc93/pytorch-rs",
+  "observations": [
+    {
+      "sourceFile": "gelu-34dcc-guided-repair-v2.NAzbnn/before-observations.json",
+      "sourceSha256": "d8fef479de17265172f17a5f84eede7e6aafb99c971fc96021a4377e0cfa3b42",
+      "observedAt": "2026-09-17T01:21:35.292Z",
+      "remoteProbeSucceeded": true,
+      "number": 2004,
+      "state": "OPEN",
+      "isDraft": true,
+      "headRefName": "burner/integrate-native-gelu-into-once-compiled-c-40b456",
+      "headRefOid": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "baseRefName": "main",
+      "baseRefOid": "60202557b4f110d07777f585e804ab5f55e1ff7b",
+      "observerScriptSha256": "3165299dd7475d8302ef560dab0e6d1cdf03569abc9859fe7a7cac07fb6c7db6"
+    },
+    {
+      "sourceFile": "gelu-f83a-full-only.HstfR2/preflight-observations.json",
+      "sourceSha256": "18450fa46ea3f6caa3ab6afb3c15bd2e365f79daee1100f46de0fa0fdbb4a9cf",
+      "observedAt": "2026-09-17T02:48:30.609Z",
+      "remoteProbeSucceeded": true,
+      "number": 2004,
+      "state": "OPEN",
+      "isDraft": true,
+      "headRefName": "burner/integrate-native-gelu-into-once-compiled-c-40b456",
+      "headRefOid": "f83a85862f3784383c85dfea9c0a7ecdf115589d",
+      "baseRefName": "main",
+      "baseRefOid": "60202557b4f110d07777f585e804ab5f55e1ff7b",
+      "observerScriptSha256": "b6bed27a779fd0e9f163a930182c3b527f93d360d2e6649199178369fe1d7ad9"
+    }
+  ],
+  "localAncestryCheck": {
+    "ancestor": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+    "descendant": "f83a85862f3784383c85dfea9c0a7ecdf115589d",
+    "toolChunkId": "46da25",
+    "exitCode": 0,
+    "lazyFetchingDisabled": true,
+    "replacementObjectsDisabled": true,
+    "optionalLocksDisabled": true
+  },
+  "archiveVerification": {
+    "report": "gelu-34dcc-archive-remote-proof-review.md",
+    "sha256": "a38f9b6f393e2c1f28d44c5ba4cc7fdf8e6f7c9680630fa9410f9ae44bae646d",
+    "commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+    "files": 28,
+    "bytes": 1612770062,
+    "originalManifests": 6,
+    "verification": "Previously independently streamed original local Git blobs and checkout copies; Git IDs, per-file and concatenation SHA256 values matched."
+  },
+  "interpretation": "Under ordinary Git connectivity, the successful recorded remote head identifies the archived commit/tree/blob chain. This is not a new remote request or proof of a fresh remote payload download.",
+  "limitations": [
+    "The author's earlier destination/CONNECT 403 failures remain true and are not bypassed.",
+    "No current checkout copy has been removed by Main.",
+    "Post-removal retrieval and exact-byte verification remain required.",
+    "Removing current-tree copies does not shrink existing Git history or full clones.",
+    "No guarantee of permanent remote availability, shallow/no-Git retrieval, offline sdist payloads, or completed acceptance.",
+    "Any later merge must retain the archive-containing ancestor; no squash, force-push, history rewrite, or reference deletion is authorized."
+  ],
+  "nextRepairAdmitted": false
+}

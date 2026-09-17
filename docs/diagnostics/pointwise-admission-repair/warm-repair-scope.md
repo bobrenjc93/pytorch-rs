@@ -1,3 +1,42 @@
+# Current method-guard batch and archive repair
+
+Starting source: `f83a85862f3784383c85dfea9c0a7ecdf115589d`; confirmed
+rejection `leaf-evaluation_7d6d376c`, 2026-09-17T03:01:18.057Z, against
+`60202557b4f110d07777f585e804ab5f55e1ff7b`: CUDA 33.5924 versus 34,
+polish 75 versus 80. The later public repair guidance admits investigation of a
+stateless native batch at the existing method-identity guard boundary and
+completion of the six-group archive relocation with Main's supplied remote proof.
+
+No new profile, development timing or post-commit timing campaign is admitted.
+The original eight-leg integration, admission comparisons and one profile pair
+below are completed history. Their failures and unplanned timing capture remain
+unchanged. Correctness selections must exclude
+`test_compile_pointwise_jit.Hardware.test_gpu_dispatch_real_native_and_default_histories`,
+which records timings; this exclusion must be reported, not called a full pass.
+Official evaluation belongs to Burner after a genuine source change.
+
+Current status: the native batch stopped before production changes. A hermetic
+Python 3.12 control confirmed that a class with the exact ordinary metaclass can
+retain a string-subclass key, whose equality callback executes in the proposed
+mapping-proxy lookup. Exact private-input shape/type checks do not establish
+callback-free lookup. Under the explicit stopping rule, broader namespace scans
+or a retained owner registry were not added. The CUDA regression remains unresolved.
+
+Archive relocation is complete: Main's supplied sanitized proof was hash-checked;
+all six manifests and 28 regular blobs matched ancestor `34dcc` before removal;
+all original bytes and concatenation hashes matched after local Git retrieval.
+All mandatory offline archives, manifests, failures and weaker results remain.
+See [retrieval/provenance](../gelu-program-integration/archive-preservation.md).
+
+Focused untimed checks and concise receipts accompany the stopped hypothesis.
+The timing-producing dispatch-history test is excluded explicitly. No new
+profile, timing, production change, wheel build or official evaluation occurred.
+This is an archive repair and a documented native impediment, not a successful
+CUDA repair or authority for an unchanged CUDA timing rerun. Both author and
+post-commit handoffs must begin with this status and the record path. A conflicting
+fresh-capture obligation must be reported without another phase. The previous
+phase record follows for its original context.
+
 # Warm-call and historical-archive repair
 
 Starting source: `34dcc47454b3faaa27ef46a5189b34e81d3802f2`.

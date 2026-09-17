@@ -12,7 +12,31 @@ inputs, provider bytes and all declared licenses. Historical Git evidence is
 unchanged. Contributor guidance now identifies real NVRTC and C-compiler
 prerequisites; README licensing matches the existing package metadata.
 
-## Current warm-call repair
+## Current archive repair; native batch stopped
+
+The [current phase record](warm-repair-scope.md) binds rejection of `f83a858`
+and permits no new diagnostic profile or timing campaign. The proposed stateless
+native method-check batch was stopped before implementation: an ordinary class
+can retain a string-subclass namespace key, and its equality callback executes
+during the proposed mapping-proxy lookup. Exact tuple/name/metaclass checks
+alone cannot meet the callback-free private-boundary requirement. Broader
+namespace validation or a trusted-owner registry is outside this bounded repair.
+Production method guards remain unchanged; no CUDA performance repair is claimed.
+The hermetic reproducer, design outcome and untimed checks are retained in the
+[repair archive](../gelu-program-integration/method-guard-repair-manifest.json).
+
+All 28 scoped historical archive copies were removed after the supplied Main
+remote observations and local original-blob verification; post-removal retrieval
+verified every byte again. Use the [historical retrieval guide](../gelu-program-integration/archive-preservation.md).
+This reduces checkout size by 1,612,770,062 bytes, not full-clone history.
+The focused untimed selection passed 65 tests with one explicit two-device skip;
+12 documentation checks, three new provenance checks and 13 existing archive
+checks passed. The timing-producing dispatch-history test was excluded. Tested
+Python 3.12/native-extension hashes and GPU0/driver/NVRTC/runtime identities are
+retained with the receipts; the existing wheel was verified, not rebuilt or
+relabeled. Independent archive review passed.
+
+## Completed warm-call repair
 
 The [repair scope/status](warm-repair-scope.md) binds the rejection of
 `34dcc474` and the later public guidance. Warm calls now construct invocation-local
@@ -47,8 +71,8 @@ That broad suite also invoked an existing dispatch-history test which emitted
 **unplanned timings** (408 native and 408 reference calls). This scope deviation
 is retained separately and excluded from performance claims; it is not
 retroactively admitted as another phase. The three required offline archives
-remain intact. [Historical archive removal is blocked](../gelu-program-integration/archive-preservation.md)
-by unavailable pushed-remote reachability proof, so all 28 copies remain.
+remain intact. Historical archive removal, blocked during that phase, is now
+complete under the later supplied proof and [retrieval contract](../gelu-program-integration/archive-preservation.md).
 No official gate has been rerun. Earlier clean measurements below do not measure
 this repair; the no-extra-phase boundary prevents a replacement timing campaign.
 Any later source change that invalidates this profile must be reported.
@@ -100,8 +124,9 @@ or measure GELU link-cost performance. No unchanged timing was rerolled.
 The [raw archive manifest](../gelu-program-integration/admission-repair-development-manifest.json)
 indexes command streams/receipts, source snapshots, both comparator wheels,
 the source-package-built candidate wheel, both slim source-package attempts,
-input/output captures, package inventories and local review. Concatenate its
-ordered parts to recover the verified gzip archive. It excludes build caches,
+input/output captures, package inventories and local review. Retrieve the original
+parts from [ancestor Git blobs](../gelu-program-integration/archive-preservation.md),
+then concatenate them in manifest order to recover the verified gzip archive. It excludes build caches,
 whole environments and older archives. The earlier
 [GELU integration evidence](../gelu-program-integration/README.md) remains pinned
 to its original sources; its completed eight-leg phase was not replayed.

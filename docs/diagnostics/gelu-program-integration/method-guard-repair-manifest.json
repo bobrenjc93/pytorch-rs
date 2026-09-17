@@ -1,0 +1,1379 @@
+{
+  "archive": "method-guard-repair.tar.gz",
+  "size": 510903,
+  "sha256": "4f84de3966a520c282de413bb0b556466758b95cde703b16018935566bcf7a3e",
+  "members": [
+    {
+      "path": "docs/diagnostics/gelu-program-integration/archive-preservation.md",
+      "size": 4736,
+      "sha256": "e7c285996d644ee60e0a8b81b49d04888d08464e1306056556675f861bf7ac54"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/archive-relocation-observation.json",
+      "size": 1311,
+      "sha256": "e1dec621c7c4023956acba2ad6409793cd51d1b1134019764bd334ac1cfb916a"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/gelu-34dcc-archive-remote-proof-review.md",
+      "size": 7513,
+      "sha256": "a38f9b6f393e2c1f28d44c5ba4cc7fdf8e6f7c9680630fa9410f9ae44bae646d"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/gelu-archive-remote-head-facts.json",
+      "size": 3148,
+      "sha256": "bb577d18d560be5741d0307e7b9f0f0102640fa90ef8efd694f480a42cb9302f"
+    },
+    {
+      "path": "docs/diagnostics/pointwise-admission-repair/README.md",
+      "size": 10388,
+      "sha256": "e7caf44e042ec9e1e189359de638a602641328280ace0403c407965c46edf841"
+    },
+    {
+      "path": "docs/diagnostics/pointwise-admission-repair/warm-repair-scope.md",
+      "size": 6408,
+      "sha256": "cd5ca395a79c23661e15cc84de2e0a04a71f16d950f7252fb4e4ff517a8e09cd"
+    },
+    {
+      "path": "target/gelu-program-integration/1789615784005220012-method-batch-namespace-probe/receipt.json",
+      "size": 124991,
+      "sha256": "61f367a6532835bd11ef1281e57f642c42b947c4574a0d829ce098f4738cb887"
+    },
+    {
+      "path": "target/gelu-program-integration/1789615784005220012-method-batch-namespace-probe/source.patch",
+      "size": 19469,
+      "sha256": "723b543137be1d646ea24d107a86f30b57b7db9a7cfcc4bd2d7cf057b6ee2f95"
+    },
+    {
+      "path": "target/gelu-program-integration/1789615784005220012-method-batch-namespace-probe/stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789615784005220012-method-batch-namespace-probe/stdout.log",
+      "size": 199,
+      "sha256": "ef9c453005566771c54acaaeaa377a1bf459c6a44b3d82a2415f9422c0e5f339"
+    },
+    {
+      "path": "target/gelu-program-integration/1789615887889364922-method-batch-runtime/receipt.json",
+      "size": 124990,
+      "sha256": "8934987e8d36edc007d061991847fa3e5634d0013dab9e78aeee4a7bbf90fd68"
+    },
+    {
+      "path": "target/gelu-program-integration/1789615887889364922-method-batch-runtime/source.patch",
+      "size": 19469,
+      "sha256": "723b543137be1d646ea24d107a86f30b57b7db9a7cfcc4bd2d7cf057b6ee2f95"
+    },
+    {
+      "path": "target/gelu-program-integration/1789615887889364922-method-batch-runtime/stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789615887889364922-method-batch-runtime/stdout.log",
+      "size": 4643,
+      "sha256": "45037e367dbd83c5f26e22ee960831206925adb1ad0e8fab1de025a3d2a78637"
+    },
+    {
+      "path": "target/gelu-program-integration/1789615906359897556-method-batch-untimed-correctness/receipt.json",
+      "size": 125232,
+      "sha256": "95564bdc05f0c1220721bc187e2e0c5b8b359a0c8ec0ffb0ad5f2ebbf2e648f4"
+    },
+    {
+      "path": "target/gelu-program-integration/1789615906359897556-method-batch-untimed-correctness/source.patch",
+      "size": 19469,
+      "sha256": "723b543137be1d646ea24d107a86f30b57b7db9a7cfcc4bd2d7cf057b6ee2f95"
+    },
+    {
+      "path": "target/gelu-program-integration/1789615906359897556-method-batch-untimed-correctness/stderr.log",
+      "size": 385,
+      "sha256": "5b9f1bcaa1ffc2bdc9bfa7cfc968de1659cb48fce5e65aaf44bfe08a9fbe424a"
+    },
+    {
+      "path": "target/gelu-program-integration/1789615906359897556-method-batch-untimed-correctness/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789615950420962451-method-batch-docs/receipt.json",
+      "size": 125068,
+      "sha256": "63931795b831409126ea37f04a42699f0c4c5867485ab96811d7cd313841e0ed"
+    },
+    {
+      "path": "target/gelu-program-integration/1789615950420962451-method-batch-docs/source.patch",
+      "size": 24302,
+      "sha256": "3927e9def6ed3c31a207a2348342646b2fecffc1cc7fee0c07afc5142e2fbda9"
+    },
+    {
+      "path": "target/gelu-program-integration/1789615950420962451-method-batch-docs/stderr.log",
+      "size": 98,
+      "sha256": "ec0ee3288da19400b366da4a3d253beabe7a7155d69a78350493241c92d4639a"
+    },
+    {
+      "path": "target/gelu-program-integration/1789615950420962451-method-batch-docs/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789616017643349506-method-batch-whitespace/receipt.json",
+      "size": 125010,
+      "sha256": "0c63e636de2d7da807350badf8de2c39efa94814f8d9f0fee404a50254174ab0"
+    },
+    {
+      "path": "target/gelu-program-integration/1789616017643349506-method-batch-whitespace/source.patch",
+      "size": 24863,
+      "sha256": "6be559edfcb4630edadf8dc7b2163642692ce7b6e30c352e6848ee14c31ebef1"
+    },
+    {
+      "path": "target/gelu-program-integration/1789616017643349506-method-batch-whitespace/stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/gelu-program-integration/1789616017643349506-method-batch-whitespace/stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive-inputs.json",
+      "size": 2421,
+      "sha256": "af04b5e89bb49f2e7c9c92181674875a3e9759e7adb51f566f80a5e64537001b"
+    },
+    {
+      "path": "target/method-guard-repair/archive/000.receipt.json",
+      "size": 370,
+      "sha256": "47f03ab69ad2ac14d4371e58f84c5ccad10a074c92723feb99b9fb636793fb60"
+    },
+    {
+      "path": "target/method-guard-repair/archive/000.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/000.stdout",
+      "size": 41,
+      "sha256": "fa6f05f00516cdc0ec1bcdf07e2e846f5a6dd66383a064acec17cfbd3a64a2f0"
+    },
+    {
+      "path": "target/method-guard-repair/archive/001.receipt.json",
+      "size": 476,
+      "sha256": "3e46fcd119b3cb1e7aa8e2de38201736fb5132d74dd14851e09847ecc02d2d76"
+    },
+    {
+      "path": "target/method-guard-repair/archive/001.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/001.stdout",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/002.receipt.json",
+      "size": 389,
+      "sha256": "d4504a30bbaf5f554f71824b6375f1543bc1a06fe276c9e7e42951a2752f02d4"
+    },
+    {
+      "path": "target/method-guard-repair/archive/002.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/002.stdout",
+      "size": 6,
+      "sha256": "2ed27c1421e6928dbe13dbfdb5c59e1045b30341fe7ebe05700006bc5ac572c0"
+    },
+    {
+      "path": "target/method-guard-repair/archive/003.receipt.json",
+      "size": 469,
+      "sha256": "76aeed2ced587ea05e530bac6fa8cd2639ad0c5d468a2d298bb1fa3f803e13d9"
+    },
+    {
+      "path": "target/method-guard-repair/archive/003.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/003.stdout",
+      "size": 132186,
+      "sha256": "cd5d5b00d453f874b63b42a9aff23cea60bb9ea1bf041ea5f4bbce58e5fe736b"
+    },
+    {
+      "path": "target/method-guard-repair/archive/004.receipt.json",
+      "size": 491,
+      "sha256": "c8d309d3f37c5db06919d4fdaf46f0a523f99c2092b0af608e47514bea5db6aa"
+    },
+    {
+      "path": "target/method-guard-repair/archive/004.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/004.stdout",
+      "size": 123,
+      "sha256": "c010b9fd25971fddd04edc417b67d1ebf98784fa8c99aa53df643b63bcb5dc22"
+    },
+    {
+      "path": "target/method-guard-repair/archive/005.receipt.json",
+      "size": 630,
+      "sha256": "b26123816b0ef599ca7ed02e70f91959684915870ca1ab56581d9b7cbf6b3b69"
+    },
+    {
+      "path": "target/method-guard-repair/archive/005.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/006.receipt.json",
+      "size": 491,
+      "sha256": "4d2214a02260c284d50e0a40f8e0a8d65d973e3d40ef995ead1f1f74b7362390"
+    },
+    {
+      "path": "target/method-guard-repair/archive/006.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/006.stdout",
+      "size": 123,
+      "sha256": "9df90b49788178f514998d05496f6aff89cc8ff51a4a52f6c4d27f204236542f"
+    },
+    {
+      "path": "target/method-guard-repair/archive/007.receipt.json",
+      "size": 630,
+      "sha256": "a924800ba92071e7c5445d4a1c11a4d79827ebae84ad7890703a5d13da4ef211"
+    },
+    {
+      "path": "target/method-guard-repair/archive/007.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/008.receipt.json",
+      "size": 491,
+      "sha256": "f002f3c7cf7b1cb1abf50575d8832053f6b7a01867fb3f998375b7689b62a8e9"
+    },
+    {
+      "path": "target/method-guard-repair/archive/008.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/008.stdout",
+      "size": 123,
+      "sha256": "76c94f1b8ef8edc8a8e59eef399b51f7c121547b82266169e9e05b03aa7c1f98"
+    },
+    {
+      "path": "target/method-guard-repair/archive/009.receipt.json",
+      "size": 630,
+      "sha256": "094cd0841d35889530416f9da03fef416651651be1624b169aabd2cce96516a8"
+    },
+    {
+      "path": "target/method-guard-repair/archive/009.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/010.receipt.json",
+      "size": 491,
+      "sha256": "8fb81a57bf1b33cc5d56ce44650263598e837883b044a81a50267074358286d2"
+    },
+    {
+      "path": "target/method-guard-repair/archive/010.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/010.stdout",
+      "size": 123,
+      "sha256": "f80b06ea80341420e252fb7fde6b3a5935631e83b8d30550fe58549a13b7f63d"
+    },
+    {
+      "path": "target/method-guard-repair/archive/011.receipt.json",
+      "size": 630,
+      "sha256": "bec31257d0749a05e115fbb5eb825d4d7b734b6845ebaab6efa8d56b22399174"
+    },
+    {
+      "path": "target/method-guard-repair/archive/011.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/012.receipt.json",
+      "size": 491,
+      "sha256": "6db583eb6fa6050813e4a81d36d7c1460fa5df4950847d375f22abf9e9fa3350"
+    },
+    {
+      "path": "target/method-guard-repair/archive/012.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/012.stdout",
+      "size": 123,
+      "sha256": "8265ad3ae74bc0f2ed735fdb7e846b465f79c72159c7a69555e20fab353e4324"
+    },
+    {
+      "path": "target/method-guard-repair/archive/013.receipt.json",
+      "size": 630,
+      "sha256": "b73dc610947311dd078b33dbad9c17938eb4c87576db10c6a2126cfea2e6ca28"
+    },
+    {
+      "path": "target/method-guard-repair/archive/013.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/014.receipt.json",
+      "size": 491,
+      "sha256": "4003aa72f0d0dfd032613957f6f7c7e72dbff6e435f1ff0d58ee20354a379e2c"
+    },
+    {
+      "path": "target/method-guard-repair/archive/014.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/014.stdout",
+      "size": 123,
+      "sha256": "60009503d5978985eb57eb3ee2461749edc7cff63c57c390a3d462c999f34150"
+    },
+    {
+      "path": "target/method-guard-repair/archive/015.receipt.json",
+      "size": 630,
+      "sha256": "20438d18e9b85486c30fdd8eda9570d2707bcfede3a3a4bb4d72115e774382d2"
+    },
+    {
+      "path": "target/method-guard-repair/archive/015.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/016.receipt.json",
+      "size": 491,
+      "sha256": "e66e68314ff86008416ee205f6dbab2474c06c383a48f5d813cc8c2f38a0bf5a"
+    },
+    {
+      "path": "target/method-guard-repair/archive/016.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/016.stdout",
+      "size": 123,
+      "sha256": "baf352f2facb0a077bc011ac949bb5bd4d5abb439639f81a78526f37af558841"
+    },
+    {
+      "path": "target/method-guard-repair/archive/017.receipt.json",
+      "size": 630,
+      "sha256": "2c21b1f61301433b84864f22a9dfc5791893c47e8f8424213e90d437efe5ba7b"
+    },
+    {
+      "path": "target/method-guard-repair/archive/017.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/018.receipt.json",
+      "size": 477,
+      "sha256": "a60a16b4661edea3d8560fd17fafdee24dce087f7a379a03894f785d0f4f9811"
+    },
+    {
+      "path": "target/method-guard-repair/archive/018.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/018.stdout",
+      "size": 350707,
+      "sha256": "b9aaa59477e3ba69723361a613905892d10f74a644398f669958de610ae5833c"
+    },
+    {
+      "path": "target/method-guard-repair/archive/019.receipt.json",
+      "size": 499,
+      "sha256": "7b0a51f42636e270e2dce1fd3d36cdd4ee0dbcac8f1ce47da433d993faf56b1a"
+    },
+    {
+      "path": "target/method-guard-repair/archive/019.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/019.stdout",
+      "size": 131,
+      "sha256": "deeda3975e7aacd40bc0b4491778c4c4f9cd906f0842825557fb43664f749e6e"
+    },
+    {
+      "path": "target/method-guard-repair/archive/020.receipt.json",
+      "size": 630,
+      "sha256": "5780f9ec64264a73f71e1adb5f28a4e7ae17e1b1457933e3c9df62460cc00a7a"
+    },
+    {
+      "path": "target/method-guard-repair/archive/020.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/021.receipt.json",
+      "size": 499,
+      "sha256": "ec6702a5cf4335aa4a5c9b8c49ce368c219ba396f9be8284057605f7635c5acd"
+    },
+    {
+      "path": "target/method-guard-repair/archive/021.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/021.stdout",
+      "size": 131,
+      "sha256": "48664cf6a4a260b52fa6d869c80991d3db00a02d402ba5c558c40aa789058179"
+    },
+    {
+      "path": "target/method-guard-repair/archive/022.receipt.json",
+      "size": 630,
+      "sha256": "da9840529cbcc3d03517eade5f0cd1fba5d802c5712ca39776a5bc6a515c043d"
+    },
+    {
+      "path": "target/method-guard-repair/archive/022.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/023.receipt.json",
+      "size": 499,
+      "sha256": "cf6374f82ddd21580606f4963fcd94a276d79009abb616fbdf21b228a0c5ecc3"
+    },
+    {
+      "path": "target/method-guard-repair/archive/023.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/023.stdout",
+      "size": 131,
+      "sha256": "f40d611bbdc56ca3c7a7bcc33d24349e29ce6ee4ed177dcb9e45e4d26225cee7"
+    },
+    {
+      "path": "target/method-guard-repair/archive/024.receipt.json",
+      "size": 630,
+      "sha256": "04d6a71bc68f16d9cc26c07e895c8761499622580a4e4e0bf224cdf66237b3df"
+    },
+    {
+      "path": "target/method-guard-repair/archive/024.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/025.receipt.json",
+      "size": 499,
+      "sha256": "d3c16a065ff143e8e334067e7a3835cb1143f33bfdde46fc335ee170fc8da3ee"
+    },
+    {
+      "path": "target/method-guard-repair/archive/025.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/025.stdout",
+      "size": 131,
+      "sha256": "3d66c9b4b3ca5ffec5ae3c95e5e3e40d2e2f836bd80c3675ae976e3927961193"
+    },
+    {
+      "path": "target/method-guard-repair/archive/026.receipt.json",
+      "size": 630,
+      "sha256": "ab3bd664e266abfe42e87e3a0534e1e91c9870e574fb69ba8ec30470ddd7ca49"
+    },
+    {
+      "path": "target/method-guard-repair/archive/026.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/027.receipt.json",
+      "size": 499,
+      "sha256": "5c61f0ad0452c843762420e8537abd2bf560ec49d78be8e725fb89357e0aa13d"
+    },
+    {
+      "path": "target/method-guard-repair/archive/027.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/027.stdout",
+      "size": 131,
+      "sha256": "85cd7c7e29cc9c2a613275ffbd0cd3938854b74d5b953d011d7006a08f664b3f"
+    },
+    {
+      "path": "target/method-guard-repair/archive/028.receipt.json",
+      "size": 630,
+      "sha256": "76db4da85db65b7dba4f52ecd15974faf6b448bd57d5651d0f7f1a09a9b8e798"
+    },
+    {
+      "path": "target/method-guard-repair/archive/028.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/029.receipt.json",
+      "size": 499,
+      "sha256": "64d3775a82475428dbbc30abdff64a08327d3f94980a0cee822a89fd8e120a6a"
+    },
+    {
+      "path": "target/method-guard-repair/archive/029.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/029.stdout",
+      "size": 131,
+      "sha256": "261b1ea8762d764cdf8022f6ed5d7a098b1e276d4ddf7bccc9f79327cac9067d"
+    },
+    {
+      "path": "target/method-guard-repair/archive/030.receipt.json",
+      "size": 630,
+      "sha256": "c002a2f3ecb4aaefd366fdbe4a560fec2def5a7c337128518288c00b7ad0a126"
+    },
+    {
+      "path": "target/method-guard-repair/archive/030.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/031.receipt.json",
+      "size": 499,
+      "sha256": "c7d02d9dfc7db221be5999d5fb64f3c8d91b5307e70568f11e22ede8a972d2d6"
+    },
+    {
+      "path": "target/method-guard-repair/archive/031.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/031.stdout",
+      "size": 131,
+      "sha256": "7cf16df08e3768aaade74b54dcf8138769ffe9ffa6f9379aaf676c1dcca5bf32"
+    },
+    {
+      "path": "target/method-guard-repair/archive/032.receipt.json",
+      "size": 630,
+      "sha256": "75769a823dfc154728d04cfd7c541610504a3363ff576e761c820bcc1d5ffb3a"
+    },
+    {
+      "path": "target/method-guard-repair/archive/032.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/033.receipt.json",
+      "size": 499,
+      "sha256": "fab1b1ee6f46a85f4da06ac833a27621b67c2dec6d49fa1da9f0a479938f6b61"
+    },
+    {
+      "path": "target/method-guard-repair/archive/033.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/033.stdout",
+      "size": 131,
+      "sha256": "f49f626a87803efca83513db7d923420ffae1b023394ff7bd51b94efe00572c7"
+    },
+    {
+      "path": "target/method-guard-repair/archive/034.receipt.json",
+      "size": 630,
+      "sha256": "69d254060ed5146891a69bc5982d53dfc2b6dbd27b1d48b0fcebb2eb4281c2fe"
+    },
+    {
+      "path": "target/method-guard-repair/archive/034.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/035.receipt.json",
+      "size": 499,
+      "sha256": "c19a8b422422c4dc1821aa01efed753a696dad83424cc60149b87fc6dea1f637"
+    },
+    {
+      "path": "target/method-guard-repair/archive/035.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/035.stdout",
+      "size": 131,
+      "sha256": "7f9d858efc4b9bb9cfa5b652b8098f749a369c61ab6f5fb749cee4bc9337d468"
+    },
+    {
+      "path": "target/method-guard-repair/archive/036.receipt.json",
+      "size": 630,
+      "sha256": "3b2659fe44f91d0dc6097c7497edad89007a33bc65f890340e7b86bc01158f73"
+    },
+    {
+      "path": "target/method-guard-repair/archive/036.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/037.receipt.json",
+      "size": 499,
+      "sha256": "7f40ca442a6ca9968c22013a9910535339002ec82ac20ec5d4b57a69ba16013c"
+    },
+    {
+      "path": "target/method-guard-repair/archive/037.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/037.stdout",
+      "size": 131,
+      "sha256": "c55373033bab221df23e40b7f450a986237c695f63276de175943a8e125d017a"
+    },
+    {
+      "path": "target/method-guard-repair/archive/038.receipt.json",
+      "size": 630,
+      "sha256": "e8976d4a4c6afca20a6a3f7d8fa923e08ddba7978d521458fae322324e2aa8a9"
+    },
+    {
+      "path": "target/method-guard-repair/archive/038.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/039.receipt.json",
+      "size": 477,
+      "sha256": "1bf229348ca06fb15c50e7597a5c1d643fb46d1ba3aca3d748d323978983093b"
+    },
+    {
+      "path": "target/method-guard-repair/archive/039.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/039.stdout",
+      "size": 15811,
+      "sha256": "6a4df1bf30e12c8e215f4c8bca9b1dbb3e3f9af0e4d461e82d83c32735c627d2"
+    },
+    {
+      "path": "target/method-guard-repair/archive/040.receipt.json",
+      "size": 499,
+      "sha256": "3d50d5858698dbe4f6861199ed7f15fa86663caaf38e9de20633c33daa5c5898"
+    },
+    {
+      "path": "target/method-guard-repair/archive/040.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/040.stdout",
+      "size": 131,
+      "sha256": "b880534a23818ef28d48e15ec8a9dc05de58521c02ba52fdb341f1d8df67a490"
+    },
+    {
+      "path": "target/method-guard-repair/archive/041.receipt.json",
+      "size": 630,
+      "sha256": "bcd6f21ff7404b7b3e894aa1c5bc747f73cb54d97a25ec91d2dc8136d8fecbf0"
+    },
+    {
+      "path": "target/method-guard-repair/archive/041.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/042.receipt.json",
+      "size": 499,
+      "sha256": "d42fe355299cd59c121323cb727a01edf4f1caf7b8fd89f92fe72d823b588b27"
+    },
+    {
+      "path": "target/method-guard-repair/archive/042.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/042.stdout",
+      "size": 131,
+      "sha256": "53416138d5f9ce879042101505641ec078cc850fb644cc68e389029b5dd1f7b7"
+    },
+    {
+      "path": "target/method-guard-repair/archive/043.receipt.json",
+      "size": 630,
+      "sha256": "e2829c6f437a54db9d29150dddb5d4555cb9848983d8be4abcb8f5f4e1220a5a"
+    },
+    {
+      "path": "target/method-guard-repair/archive/043.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/044.receipt.json",
+      "size": 486,
+      "sha256": "d259b87d774d59d5aa7b5c4ecd84d1ceaadf018483fcaae36ee804b3263b8ae8"
+    },
+    {
+      "path": "target/method-guard-repair/archive/044.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/044.stdout",
+      "size": 300475,
+      "sha256": "b9bf83b079b710ea12e1068afd10aba001ba6f1e5a725c57b5b60b886dec0e2b"
+    },
+    {
+      "path": "target/method-guard-repair/archive/045.receipt.json",
+      "size": 508,
+      "sha256": "27e23954591d53654b65c689dd11d6e53117891539e16400d6da96c50f4f0c5e"
+    },
+    {
+      "path": "target/method-guard-repair/archive/045.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/045.stdout",
+      "size": 140,
+      "sha256": "3fe2e7cf2ae971da74862e26d0cf0a710d004d64a693738c37b1409e4a9345f2"
+    },
+    {
+      "path": "target/method-guard-repair/archive/046.receipt.json",
+      "size": 630,
+      "sha256": "71d31cf310ade01702aebd9bcac7d12921d91055f9368c156135e769e97200f6"
+    },
+    {
+      "path": "target/method-guard-repair/archive/046.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/047.receipt.json",
+      "size": 508,
+      "sha256": "22228da2bd9d1d0d42a9ee8ddeae2a039e91e1501b543e63f442ae2c1abac687"
+    },
+    {
+      "path": "target/method-guard-repair/archive/047.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/047.stdout",
+      "size": 140,
+      "sha256": "b2ef72346e577cd6d01275ff2c74db47c00c40e6c4ac7b7dc3277a5529bb31ee"
+    },
+    {
+      "path": "target/method-guard-repair/archive/048.receipt.json",
+      "size": 630,
+      "sha256": "ccda8693b350c509249cace814ceb76bdd4782ee77822f3e6b4790903f5169a8"
+    },
+    {
+      "path": "target/method-guard-repair/archive/048.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/049.receipt.json",
+      "size": 508,
+      "sha256": "d34145c2795bbe76d8c92a7c1414eee59dafa1e19b581000cec84175796f4973"
+    },
+    {
+      "path": "target/method-guard-repair/archive/049.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/049.stdout",
+      "size": 140,
+      "sha256": "2776564f57c591f4f36c4d85914e1c0720ac6a09c55d521dd01f381cecce110f"
+    },
+    {
+      "path": "target/method-guard-repair/archive/050.receipt.json",
+      "size": 630,
+      "sha256": "e88de4e1b2f47a6aad6c11b19a851db02e6cbd7c9bfd5c139b181f8407d4fc3b"
+    },
+    {
+      "path": "target/method-guard-repair/archive/050.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/051.receipt.json",
+      "size": 508,
+      "sha256": "4ad1cb33c85df73d9f8c55ac4797b11862addd024df05c5103391f4dd31c130c"
+    },
+    {
+      "path": "target/method-guard-repair/archive/051.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/051.stdout",
+      "size": 140,
+      "sha256": "02d4d1f1a2367a6b8e34936762ae5ddc07895c4f6fcb4db4ec3aba726b56ad6a"
+    },
+    {
+      "path": "target/method-guard-repair/archive/052.receipt.json",
+      "size": 630,
+      "sha256": "d11486e40595ece4ce3b93dcba10a833383d013d0022ed4b6e0daabc8eb65831"
+    },
+    {
+      "path": "target/method-guard-repair/archive/052.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/053.receipt.json",
+      "size": 508,
+      "sha256": "c169b371c4aa05f6c3634b2743e04bf29549e39436ded4632640234581cfdc16"
+    },
+    {
+      "path": "target/method-guard-repair/archive/053.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/053.stdout",
+      "size": 140,
+      "sha256": "596700219439896b82f24c45a999606c5e9cd85b10a3fa3d25a96c2b77ceaa8d"
+    },
+    {
+      "path": "target/method-guard-repair/archive/054.receipt.json",
+      "size": 630,
+      "sha256": "c7f30eddb1b39dcd1540fe4422aadf1432e146fbeabc465c6163665aff097971"
+    },
+    {
+      "path": "target/method-guard-repair/archive/054.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/055.receipt.json",
+      "size": 476,
+      "sha256": "05ced6541df5dae6630e407e7b20f961f9e7579487c7e21cb2b8efb1900bdbe3"
+    },
+    {
+      "path": "target/method-guard-repair/archive/055.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/055.stdout",
+      "size": 268358,
+      "sha256": "483efdf5ef54a7feb6ccf20d0600a3f266781b3c9e6c6a14e9f8068a46d44d11"
+    },
+    {
+      "path": "target/method-guard-repair/archive/056.receipt.json",
+      "size": 498,
+      "sha256": "9249b0f4e4b09268a9388cd6a6ade43743597f2412d8354d2357e96ee3f03ca7"
+    },
+    {
+      "path": "target/method-guard-repair/archive/056.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/056.stdout",
+      "size": 130,
+      "sha256": "f4b798a7aa70a8636feccf4a297287cf1f6c4a68c1a8bb301fd444284ecf6dc9"
+    },
+    {
+      "path": "target/method-guard-repair/archive/057.receipt.json",
+      "size": 630,
+      "sha256": "c40c196604ce00e1cf60a9dcf44b9b2b05eb7c4a8cbb99ae2da2307a86ea8825"
+    },
+    {
+      "path": "target/method-guard-repair/archive/057.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/058.receipt.json",
+      "size": 498,
+      "sha256": "f68758ff1bd5795582382a135be89e95fd3aef62fc6cb3665a3a48a9d3b9d7a9"
+    },
+    {
+      "path": "target/method-guard-repair/archive/058.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/058.stdout",
+      "size": 130,
+      "sha256": "ed9c6e60b13c5e197cc403db2029e41fd5763f6be8e0ccaea340cb1e3da3b701"
+    },
+    {
+      "path": "target/method-guard-repair/archive/059.receipt.json",
+      "size": 630,
+      "sha256": "bdf4403af287bd55235da7ff3aa18125688ca7c1112cf0db3260b48020d48fb4"
+    },
+    {
+      "path": "target/method-guard-repair/archive/059.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/060.receipt.json",
+      "size": 498,
+      "sha256": "9da9bd5e82ef35c409c95b6721f41291f81f0442516952df88a616d878ffb1bd"
+    },
+    {
+      "path": "target/method-guard-repair/archive/060.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/060.stdout",
+      "size": 130,
+      "sha256": "9b5ec000e2d608140a69001e51a62bb99fc273f9daf63d87e6bf938cc95e3fa9"
+    },
+    {
+      "path": "target/method-guard-repair/archive/061.receipt.json",
+      "size": 629,
+      "sha256": "dd47c7bcd4f50f6b524b9b182ca17f2ac31fb8f0ccdadd146994d296dcd09ddd"
+    },
+    {
+      "path": "target/method-guard-repair/archive/061.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/062.receipt.json",
+      "size": 472,
+      "sha256": "9d2485e9ea5de89f945dbcf2a33634509c8aa8e123c2b2f81541917d7ca931f8"
+    },
+    {
+      "path": "target/method-guard-repair/archive/062.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/062.stdout",
+      "size": 25833,
+      "sha256": "2cd26cc4e074d652421b137c3c568e816610f720e4274a214c0759fe15c7f49c"
+    },
+    {
+      "path": "target/method-guard-repair/archive/063.receipt.json",
+      "size": 485,
+      "sha256": "639b73549d560ad685ec0900a2938200c396a2735e3cce2903259a3d95406a84"
+    },
+    {
+      "path": "target/method-guard-repair/archive/063.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/063.stdout",
+      "size": 117,
+      "sha256": "2b5c120cf72eb76e8707d2aefce91317fa007fbca044dc53cb95dbe464abde7c"
+    },
+    {
+      "path": "target/method-guard-repair/archive/064.receipt.json",
+      "size": 630,
+      "sha256": "5af0ddbda5506ade9dde81d7826b25d05c17cfbc00743eee14445ededee07d9d"
+    },
+    {
+      "path": "target/method-guard-repair/archive/064.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/065.receipt.json",
+      "size": 630,
+      "sha256": "b15c500bd43a683b0882f2cce9417ed4e5bd8fb6eb6fef7011fd2f7eb08da4e2"
+    },
+    {
+      "path": "target/method-guard-repair/archive/065.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/066.receipt.json",
+      "size": 630,
+      "sha256": "7165acd4376edff74ca2965de5f37a26961fe4053aa4fa8458c750b8739c81fc"
+    },
+    {
+      "path": "target/method-guard-repair/archive/066.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/067.receipt.json",
+      "size": 630,
+      "sha256": "fb21ac7c6b540735bc30945844fb21da94ec69b15bf02257e551e24459216a5e"
+    },
+    {
+      "path": "target/method-guard-repair/archive/067.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/068.receipt.json",
+      "size": 630,
+      "sha256": "47a3ad60dc60c83246298aa009183cf4e0ac5c4684196a78223f1b5782ccf53b"
+    },
+    {
+      "path": "target/method-guard-repair/archive/068.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/069.receipt.json",
+      "size": 630,
+      "sha256": "d431e4f6872110df7a5eb2232fde1acea6373de08b74fc423aaed635fa2680f2"
+    },
+    {
+      "path": "target/method-guard-repair/archive/069.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/070.receipt.json",
+      "size": 630,
+      "sha256": "b15de7f401d8533ec9cf58e002b87463a728220bddf3ad434f57eb6812ce7fa1"
+    },
+    {
+      "path": "target/method-guard-repair/archive/070.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/071.receipt.json",
+      "size": 630,
+      "sha256": "6b201e8b726504b795e12875fa17ac1ae598c3e4e06222ccb3b592f464e10c2d"
+    },
+    {
+      "path": "target/method-guard-repair/archive/071.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/072.receipt.json",
+      "size": 630,
+      "sha256": "3333bb55874eb603d1d81c2124f90599d8ce04da971550f2f1dc493ce54d9256"
+    },
+    {
+      "path": "target/method-guard-repair/archive/072.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/073.receipt.json",
+      "size": 630,
+      "sha256": "97af152495a68c260aff4037a611e3442620fe29d4efd902aeee6b8fcc62599d"
+    },
+    {
+      "path": "target/method-guard-repair/archive/073.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/074.receipt.json",
+      "size": 630,
+      "sha256": "ece484399f3ad2863684a39cb119e188a915c7ecc481b28e1e5a5e5ffe9f3fd6"
+    },
+    {
+      "path": "target/method-guard-repair/archive/074.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/075.receipt.json",
+      "size": 630,
+      "sha256": "dea39ec7cd8c16ca808cccff0ab7ea45f335aa5c37c2089911cabb95fb6864a4"
+    },
+    {
+      "path": "target/method-guard-repair/archive/075.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/076.receipt.json",
+      "size": 630,
+      "sha256": "d89ed3b6f582194b44657cf28ae284980e6f016a7aab98e90d7878d579199f1e"
+    },
+    {
+      "path": "target/method-guard-repair/archive/076.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/077.receipt.json",
+      "size": 630,
+      "sha256": "b97b51f6d3ab1d4d9e107d8f40d946691b9c707e503fce9d385fadd35ed5e8b5"
+    },
+    {
+      "path": "target/method-guard-repair/archive/077.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/078.receipt.json",
+      "size": 630,
+      "sha256": "fd49d8e2bcb52e1c7d24832b8e88f30881eacdbea69cf134dfc3a4388619932a"
+    },
+    {
+      "path": "target/method-guard-repair/archive/078.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/079.receipt.json",
+      "size": 630,
+      "sha256": "95aff72ca2880432a2b67fd11cd86f0ec81b614eaf7539f689b8d1069f689905"
+    },
+    {
+      "path": "target/method-guard-repair/archive/079.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/080.receipt.json",
+      "size": 630,
+      "sha256": "32008396f422607aac5cbf363bfe711d02df56a57e6dc337f52c9c70429436ee"
+    },
+    {
+      "path": "target/method-guard-repair/archive/080.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/081.receipt.json",
+      "size": 630,
+      "sha256": "cc8d503362842dfab19590f73b24f6c0ad3501f5aa23a11a314d5736736dca6f"
+    },
+    {
+      "path": "target/method-guard-repair/archive/081.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/082.receipt.json",
+      "size": 630,
+      "sha256": "a78a04122cce709a0b36101253653501c546a52fc9fc4c62074905cf66ad7541"
+    },
+    {
+      "path": "target/method-guard-repair/archive/082.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/083.receipt.json",
+      "size": 630,
+      "sha256": "954bb386df5bd822ddb4dd3c1cfebb78188cb84d6fd66bb8c0201493b28700ae"
+    },
+    {
+      "path": "target/method-guard-repair/archive/083.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/084.receipt.json",
+      "size": 630,
+      "sha256": "dd17fdb40d6dbc5f39a142bacad9ae368d35fecac74f1b18a864bcc6eff25b41"
+    },
+    {
+      "path": "target/method-guard-repair/archive/084.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/085.receipt.json",
+      "size": 630,
+      "sha256": "e4b9c86b4ffba26740f6f898a8a3f8cb9947c6de3c92ed79ff1867a4562108cd"
+    },
+    {
+      "path": "target/method-guard-repair/archive/085.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/086.receipt.json",
+      "size": 630,
+      "sha256": "567545fc43122b24ccd9c9c0f14936cb76074e9abc9035168fd1e97c1f8eb8cf"
+    },
+    {
+      "path": "target/method-guard-repair/archive/086.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/087.receipt.json",
+      "size": 630,
+      "sha256": "dbfc0c4add417125162177321bcd90bada6457f3fa841e28cad5162eeef866fa"
+    },
+    {
+      "path": "target/method-guard-repair/archive/087.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/088.receipt.json",
+      "size": 630,
+      "sha256": "1360c81c8138a623e860653927684ef6f12a90d4b537560bff1189d734a9ac61"
+    },
+    {
+      "path": "target/method-guard-repair/archive/088.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/089.receipt.json",
+      "size": 630,
+      "sha256": "987496b6375e75c5d782faaacc0f3852e35eb30458d7929c8b72798ce0d33e40"
+    },
+    {
+      "path": "target/method-guard-repair/archive/089.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/090.receipt.json",
+      "size": 630,
+      "sha256": "4cc84be5ef73fc9e31f1c305a2bd24bbdc15f7b99310888a700e4b2f7576856b"
+    },
+    {
+      "path": "target/method-guard-repair/archive/090.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/091.receipt.json",
+      "size": 629,
+      "sha256": "e90fe6980e38bf8f13102bb5788cb91de1ac2ddd94209177c6dbfeee26f8825a"
+    },
+    {
+      "path": "target/method-guard-repair/archive/091.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/092.receipt.json",
+      "size": 630,
+      "sha256": "c177a9acac6e95662905d76f4dd13108d1774a39c02784357c500bf393c31791"
+    },
+    {
+      "path": "target/method-guard-repair/archive/092.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/before-removal.json",
+      "size": 2509,
+      "sha256": "c8feb617edb4f95c4003a0edc12095ce1d4380af4ba2588a6ab472e5d14840bf"
+    },
+    {
+      "path": "target/method-guard-repair/archive/mandatory.receipt.json",
+      "size": 332,
+      "sha256": "5e70f8a7c7cc9cead981caa7fc05a1eb4e19927750c360ae35ca48a39fcce7ef"
+    },
+    {
+      "path": "target/method-guard-repair/archive/mandatory.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/mandatory.stdout",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/relocate.py",
+      "size": 6450,
+      "sha256": "7bd6076add4e5a2ca6be73a3c3e23f74457fa976967f9cbd9fcd869c3600b7d2"
+    },
+    {
+      "path": "target/method-guard-repair/archive/relocate.receipt.json",
+      "size": 405,
+      "sha256": "a68af85e81168930765445bc8601820416497c2fcf40c5b248436a4ea2ae7fee"
+    },
+    {
+      "path": "target/method-guard-repair/archive/relocate.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/relocate.stdout",
+      "size": 1798,
+      "sha256": "7dd04837d644328cb5fee83c21bf3239c4dbdf9e812fff8fbf1eb19e0198f1b7"
+    },
+    {
+      "path": "target/method-guard-repair/archive/tests-0.receipt.json",
+      "size": 354,
+      "sha256": "f2acccb376feda469a3cb24eb6fe1911fc72669073fad854f1d51773d73ab084"
+    },
+    {
+      "path": "target/method-guard-repair/archive/tests-0.stderr",
+      "size": 453,
+      "sha256": "9a3101112d0c37df192503ce2d0c49596ac1a862854fd1cce14762e81d3f0c5c"
+    },
+    {
+      "path": "target/method-guard-repair/archive/tests-0.stdout",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/tests-1.receipt.json",
+      "size": 347,
+      "sha256": "43433412dc198edd7b9d3af0a82f6a84b609db998dd2bb5deab8e5bf6af2e463"
+    },
+    {
+      "path": "target/method-guard-repair/archive/tests-1.stderr",
+      "size": 1437,
+      "sha256": "691bdf261f3881c56730a42ee0554d112b458e91e8005d6adc74feadba118a19"
+    },
+    {
+      "path": "target/method-guard-repair/archive/tests-1.stdout",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/whitespace.receipt.json",
+      "size": 282,
+      "sha256": "92e22dcb3f9f023d3a56a2098b31e8ab7e93bbfcb68741fdd3c53a3e5d48f2e8"
+    },
+    {
+      "path": "target/method-guard-repair/archive/whitespace.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/archive/whitespace.stdout",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "target/method-guard-repair/namespace-probe.py",
+      "size": 1041,
+      "sha256": "8c1027e8e1e6227ba43aa6b58e7ca88e0f20f61c709b2045deb3d12d53620d45"
+    },
+    {
+      "path": "target/method-guard-repair/review.md",
+      "size": 1513,
+      "sha256": "4604cb9b33c81d0db3b993371865ed88e68006beb613951dc80a4d3d450bd9ae"
+    },
+    {
+      "path": "target/method-guard-repair/runtime.json",
+      "size": 4643,
+      "sha256": "45037e367dbd83c5f26e22ee960831206925adb1ad0e8fab1de025a3d2a78637"
+    },
+    {
+      "path": "target/method-guard-repair/seal.py",
+      "size": 1320,
+      "sha256": "f8964e76704c14b7de4be03131775d6bdf3433befc8c4b04ff22767141520189"
+    },
+    {
+      "path": "target/method-guard-repair/verify-runtime.py",
+      "size": 2867,
+      "sha256": "3b79bfe10f37e277e5882b7c5a566c6e216a8a687297a446b80a6ec4f2f18613"
+    },
+    {
+      "path": "tests/test_compile_gelu_archive_provenance.py",
+      "size": 6086,
+      "sha256": "e492392e62223e1c3a3e5f7712afb2e16779d46e97b0a1b8d30676b4f8e95497"
+    }
+  ],
+  "scope": "Executed inner commands and artifacts; no future outer-controller receipt",
+  "protocolBindings": {
+    "docs/diagnostics/gelu-program-integration/protocol.md": "24bb4d8924b821ef4a94efa1ee89c85db0af46afa138e7c814d502eec9ccbe17",
+    "docs/diagnostics/program-identity/protocol.md": "d6e8f51d024b451f8afed33d743647d46396425724b918a599f7b32274f95d5b",
+    "docs/diagnostics/program-identity/consumer.py": "1861fca73674d8c89f6285b07883ab9a83e6719c1b6a0c12cd2be1ae7c4c8b42",
+    "tests/test_program_identity_consumer.py": "b907c94b00f35fbb18e53510ec692b5fb83f94d37d509fe662418844bc2af5b3"
+  }
+}

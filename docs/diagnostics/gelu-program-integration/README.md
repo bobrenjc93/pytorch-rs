@@ -34,8 +34,10 @@ the seven reviewed contracts, command streams/receipts and source snapshots,
 actual release wheel/sdist bytes, native binaries and selected input/output
 captures. Failed attempts remain included. These are development measurements
 from an uncommitted combination, not clean-C public timing or qualification.
-Concatenate the manifest's ordered `.part-*` files to reconstruct its verified
-gzip archive; each tracked part stays below GitHub's file-size limit.
+The six historical archive groups retain their exact compressed bytes in Git
+ancestor `34dcc47454b3faaa27ef46a5189b34e81d3802f2`; their checkout copies
+have been removed after verification. Use the [retrieval instructions and
+provenance](archive-preservation.md) before concatenating any original parts.
 
 ## Development validation
 
