@@ -538,7 +538,7 @@ def _select_specialization(program, bindings, values, tensors, metadata, graphs)
             if tuple(aliases) != key[3]:
                 continue
             if by_source is None:
-                by_source = {s: metadata[v.index][:5] for s, v in values.items() if type(v) is Value}
+                by_source = {s: metadata[v.index] for s, v in values.items() if type(v) is Value}
             if key[2].matches(by_source):
                 return key, entry, tuple(scalars)
     return None
@@ -929,22 +929,27 @@ class _InputWalker:
             if any(type(key) is not str for key, _ in pairs):
                 unsupported("input dict keys must be exact strings")
             keys = tuple(key for key, _ in pairs)
-            children = tuple(value for _, value in pairs)
         else:
-            keys, children = (), tuple(islice(arg, 4097))
+            keys, children = (), arg if kind is tuple else tuple(islice(arg, 4097))
         # A concurrent growth cannot bypass the budget at expansion.
-        if len(children) != width:
+        if len(pairs if kind is dict else children) != width:
             unsupported("input container changed during admission")
         if source is None:
-            return InputTree(kind.__name__, tuple(self.snapshot(child, depth + 1) for child in children), keys)
+            if kind is dict:
+                values = tuple(self.snapshot(child, depth + 1) for _, child in pairs)
+            else:
+                values = tuple(self.snapshot(child, depth + 1) for child in children)
+            return InputTree(kind.__name__, values, keys)
         # Reserve the parent before its children, matching legacy projection's
         # preorder (also used for scalar promotion and specialization identity).
         self.projected_keys[source] = ("dict",) if kind is dict else (kind.__name__, width)
         self.projected_values[source] = None
-        items = keys if kind is dict else range(width)
-        value = InputTree(kind.__name__, tuple(
-            self.snapshot(child, depth + 1, source.child(item))
-            for item, child in zip(items, children)), keys)
+        if kind is dict:
+            values = tuple(self.snapshot(child, depth + 1, source.child(key)) for key, child in pairs)
+        else:
+            values = tuple(self.snapshot(child, depth + 1, source.child(index))
+                           for index, child in enumerate(children))
+        value = InputTree(kind.__name__, values, keys)
         self.projected_values[source] = value
         return value
 

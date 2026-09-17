@@ -176,6 +176,121 @@ class InputContracts(unittest.TestCase):
         self.assertEqual(len(cache(compiled).graphs), 2)
 
 
+class SnapshotConsumption(unittest.TestCase):
+    def projection(self, enabled, arity=1):
+        return ((tuple(frontend.BindingSource('parameter', f'p{i}', i) for i in range(arity)), {}, {})
+                if enabled else None)
+
+    def test_descriptors_and_projected_preorder_after_flat_prefix_restart(self):
+        x = native.ones(1)
+        for kind in (dict, list, tuple):
+            for projected in (False, True):
+                with self.subTest(kind=kind, projected=projected):
+                    data = {'x': x, 'flags': (True,)} if kind is dict else kind((x, (True,)))
+                    projection = self.projection(projected, 3)
+                    tensors, parameters = frontend.bind_arguments((x, False, data), projection)
+                    tree = frontend.InputTree(kind.__name__, (frontend.Value(1),
+                        frontend.InputTree('tuple', (True,))), ('x', 'flags') if kind is dict else ())
+                    self.assertEqual(parameters, (frontend.Value(0), False, tree))
+                    self.assertEqual([id(t) for t in tensors], [id(x), id(x)])
+                    if projected:
+                        a, b, root = projection[0]
+                        leaf = root.child('x' if kind is dict else 0)
+                        flags = root.child('flags' if kind is dict else 1)
+                        self.assertEqual(list(projection[1].items()), [
+                            (a, ('tensor', 0)), (b, frontend.binding(False)[0]),
+                            (root, ('dict',) if kind is dict else (kind.__name__, 2)),
+                            (leaf, ('tensor', 1)), (flags, ('tuple', 1)),
+                            (flags.child(0), frontend.binding(True)[0])])
+                        self.assertEqual(list(projection[2].items()), [
+                            (a, frontend.Value(0)), (b, False), (root, tree),
+                            (leaf, frontend.Value(1)), (flags, tree.items[1]), (flags.child(0), True)])
+
+    def test_all_dict_keys_precede_children_and_cardinality_rejection(self):
+        real_islice = frontend.islice
+        for projected in (False, True):
+            for grow in (False, True):
+                data = {'invalid_child': None, 'tensor': native.ones(1)}
+                if not grow:
+                    data[7] = False
+
+                def snapshot(items, limit):
+                    self.assertEqual(limit, 4097)
+                    if grow:
+                        data[7] = False  # Change width after len(), before pair capture.
+                    return real_islice(items, limit)
+
+                with self.subTest(projected=projected, grow=grow), patch.object(frontend, 'islice', snapshot):
+                    with self.assertRaisesRegex(NotImplementedError, 'dict keys must be exact strings'):
+                        frontend.bind_arguments((data,), self.projection(projected))
+
+    def test_mutable_snapshots_are_bounded_and_reject_width_changes(self):
+        real_islice = frontend.islice
+        for kind in (dict, list):
+            for projected in (False, True):
+                data = {'x': native.ones(1), 'flag': False} if kind is dict else [native.ones(1), False]
+                calls = []
+
+                def snapshot(items, limit):
+                    calls.append(limit)
+                    data.pop('flag') if kind is dict else data.pop()
+                    return real_islice(items, limit)
+
+                with self.subTest(kind=kind, projected=projected), patch.object(frontend, 'islice', snapshot):
+                    with self.assertRaisesRegex(NotImplementedError, 'container changed during admission'):
+                        frontend.bind_arguments((data,), self.projection(projected))
+                self.assertEqual(calls, [4097])
+
+    def test_dict_is_not_reread_after_pair_snapshot(self):
+        real_islice = frontend.islice
+        x = native.ones(1)
+        for projected in (False, True):
+            data = {'x': x, 'flag': True}
+
+            def snapshot(items, limit):
+                self.assertEqual(limit, 4097)
+                pairs = tuple(real_islice(items, limit))
+                data.clear()
+                data[7] = None
+                return iter(pairs)
+
+            with self.subTest(projected=projected), patch.object(frontend, 'islice', snapshot):
+                tensors, parameters = frontend.bind_arguments((data,), self.projection(projected))
+            self.assertIs(tensors[0], x)
+            self.assertEqual(parameters, (frontend.InputTree('dict', (frontend.Value(0), True), ('x', 'flag')),))
+
+    def test_reused_tuple_resnapshots_mutable_descendants(self):
+        x, y = native.ones(1), native.ones(1)
+        for projected in (False, True):
+            data = ([x], {'flag': True})
+            first_tensors, first = frontend.bind_arguments((data,), self.projection(projected))
+            data[0][0], data[1]['flag'] = y, False
+            second_tensors, second = frontend.bind_arguments((data,), self.projection(projected))
+            self.assertIs(first_tensors[0], x)
+            self.assertIs(second_tensors[0], y)
+            self.assertEqual(first[0].items[1].items, (True,))
+            self.assertEqual(second[0].items[1].items, (False,))
+            data[1]['invalid'] = None
+            with self.assertRaises(NotImplementedError):
+                frontend.bind_arguments((data,), self.projection(projected))
+
+    def test_exact_tuple_uses_itself_but_mutable_children_take_snapshots(self):
+        # Structural reuse witness, not an allocation count or a timing assertion.
+        real_islice = frontend.islice
+        for projected in (False, True):
+            calls = []
+
+            def snapshot(items, limit):
+                self.assertIsNot(type(items), tuple, 'exact tuple was copied through islice')
+                calls.append((type(items), limit))
+                return real_islice(items, limit)
+
+            data = ([native.ones(1)], {'flag': False})
+            with self.subTest(projected=projected), patch.object(frontend, 'islice', snapshot):
+                frontend.bind_arguments((data,), self.projection(projected))
+                self.assertEqual(calls, [(list, 4097), (type({}.items()), 4097)])
+
+
 class InputAdmission(unittest.TestCase):
     def test_structured_restart_counts_the_flat_prefix_once(self):
         x, y = native.ones(1), native.ones(1)

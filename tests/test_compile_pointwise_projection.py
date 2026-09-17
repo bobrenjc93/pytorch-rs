@@ -129,10 +129,104 @@ class Projection(unittest.TestCase):
             frontend._resolve_bindings(fn, ir, params, projection[1:])
 
 
+class MetadataConsumption(unittest.TestCase):
+    def fixture(self):
+        fn = program('def f(x):\n return -x')
+        ir = frontend.analyze(fn, 1)
+        source = ir.dependencies[0]
+        metadata = (((3,), (1,), False, 'torch.float32', 'cuda:0', 7),)
+        graph = frontend.Graph(1, (('input', 0, 0, 0), ('neg', 0, 0, 0)), (1,))
+        guards, observations, _ = frontend._shape_guards(ir, graph, {source: 0}, metadata, {})
+        entry = frontend.Specialization({}, (), observations, {},
+            binding_checks=((source, ('tensor', None)),), tensor_sources=(source,))
+        key = (ir.code, (), guards, (0,))
+        return ir, source, metadata, key, entry
+
+    def test_selection_reuses_current_metadata_record_without_retaining_offset(self):
+        ir, source, metadata, key, entry = self.fixture()
+        real_matches = frontend.ShapeGuards.matches
+        calls = []
+
+        def matches(guards, current):
+            calls.append(current[source])
+            self.assertIs(current[source], metadata[0])
+            return real_matches(guards, current)
+
+        with patch.object(frontend.ShapeGuards, 'matches', matches):
+            result = frontend._select_specialization(ir, {source: ('tensor', 0)},
+                {source: frontend.Value(0)}, (native.ones(3),), metadata, {key: entry})
+        self.assertIs(result[1], entry)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(entry.observations[source], metadata[0][:5])
+        self.assertEqual(len(entry.observations[source]), 5)
+
+    def test_offset_is_ignored_but_shape_rank_stride_and_properties_still_guard(self):
+        ir, source, metadata, key, entry = self.fixture()
+        x = native.ones(3)
+        cases = [(metadata[0][:5] + (offset,), True) for offset in (0, 1, 99)]
+        for field, replacement in ((0, (4,)), (0, (1, 3)), (1, (2,)),
+                                   (2, True), (3, 'torch.float64'), (4, 'cuda:1')):
+            changed = list(metadata[0])
+            changed[field] = replacement
+            cases.append((tuple(changed), False))
+        for record, accepted in cases:
+            with self.subTest(record=record):
+                result = frontend._select_specialization(ir, {source: ('tensor', 0)},
+                    {source: frontend.Value(0)}, (x,), (record,), {key: entry})
+                self.assertEqual(result is not None, accepted)
+                self.assertEqual(entry.observations[source], metadata[0][:5])
+
+
 @unittest.skipUnless(available(), 'requires native CUDA and NVRTC')
 class ProjectionCUDA(unittest.TestCase):
     def tearDown(self):
         native.compiler.reset()
+
+    def test_offset_reuse_current_public_slot_order_aliases_and_native_checks(self):
+        fn = program('def f(data):\n return (data["x"] + data["y"] * data["gain"], data["x"])')
+        compiled = native.compile(fn)
+        x = native.tensor([2., 4., 6.]).to('cuda:0')
+        y = native.tensor([1., 3., 5.]).to('cuda:0')
+        offset = native.tensor([99., 8., 10., 12.]).to('cuda:0')[1:]
+        admit = bridge._pointwise_admit_inputs
+        admitted = []
+
+        def observe(inputs):
+            metadata = admit(inputs)
+            admitted.append(metadata)
+            return metadata
+
+        with patch.object(bridge, '_pointwise_admit_inputs', observe):
+            result = compiled({'x': x, 'y': y, 'gain': .5})
+            self.assertEqual(result[0].cpu().tolist(), [2.5, 5.5, 8.5])
+            graphs = tuple(cache(compiled).graphs)
+            # Same shapes, changed offsets and Tensor/scalar traversal positions.
+            result, prepared = compiled._torch_rs_pointwise_receipt({'gain': .5, 'y': y, 'x': offset})
+            self.assertEqual(result[0].cpu().tolist(), [8.5, 11.5, 14.5])
+            self.assertIs(result[1], offset)
+            self.assertEqual(tuple(cache(compiled).graphs), graphs)
+            for gain in (.75, 1.25):
+                result = compiled({'y': offset, 'gain': gain, 'x': offset})
+                self.assertEqual(result[0].cpu().tolist(), [v * (1 + gain) for v in (8., 10., 12.)])
+                self.assertIs(result[1], offset)
+            self.assertEqual(len(admitted), 4)
+            self.assertEqual([record[-1] for record in admitted[0]], [0, 0])
+            self.assertEqual([record[-1] for record in admitted[1]], [0, 1])
+            for key, entry in cache(compiled).graphs.items():
+                tensor_sources = {source for source, _ in key[2].tensors}
+                self.assertTrue(tensor_sources)
+                for source, record in entry.observations.items():
+                    if source in tensor_sources:
+                        self.assertEqual(len(record), 5)
+                    else:
+                        self.assertEqual(record, 'scalar')
+            # Invalid ignored leaves still reach native whole-input admission.
+            with self.assertRaisesRegex(NotImplementedError, 'does not compile CPU'):
+                compiled({'x': offset, 'y': native.ones(3), 'gain': .5})
+        # The retained prepared entry validates independently, including after reset.
+        native.compiler.reset()
+        with self.assertRaisesRegex(RuntimeError, "native CUDA inputs"):
+            prepared.run((native.ones(3), y))
 
     def test_warm_projection_and_code_replacement_during_admission(self):
         fn = program('def f(data):\n return -data["x"]')
