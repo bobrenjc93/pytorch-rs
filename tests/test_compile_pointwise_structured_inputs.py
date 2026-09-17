@@ -1,5 +1,9 @@
 """Input trees: admission is complete; source observation is lazy."""
 import unittest
+import gc
+import sys
+import weakref
+from contextlib import contextmanager
 import types
 import dataclasses
 import builtins
@@ -11,6 +15,83 @@ from tests.test_compile_pointwise_jit import program, cache
 from tests.test_compile_pointwise_helpers import no_bodies
 from tests import test_compile_pointwise_structured_outputs as output_tests
 from tests import test_compile_pointwise_jit as jit_tests
+
+
+@contextmanager
+def _without_cyclic_collection():
+    enabled = gc.isenabled()
+    gc.collect()
+    gc.disable()
+    try:
+        yield
+    finally:
+        # Cleanup is outside the observation, including when a parent assertion fails.
+        gc.collect()
+        if enabled:
+            gc.enable()
+        else:
+            gc.disable()
+
+
+def _tensor_reference_count(tensor):
+    # Native Tensor has no weakref slot. Use the same bytecode site on both
+    # observations, including on CPython versions with borrowed LOAD_FAST refs.
+    return sys.getrefcount(tensor)
+
+
+def _snapshot_lifetime_call(tensor, projected, rejected, retain_traceback=False):
+    source = frontend.BindingSource('parameter', 'data', 0)
+    projection = ((source,), {}, {}) if projected else None
+    data = {'tensor': tensor, 'items': [False]}
+    if rejected:
+        data['invalid'] = None  # Reject only after admitting the Tensor occurrence.
+    references = [weakref.ref(source)]
+    try:
+        tensors, parameters = frontend.bind_arguments((data,), projection)
+    except NotImplementedError as error:
+        if not rejected:
+            raise
+        if retain_traceback:
+            # Do not store this traceback in a frame local (that creates its own cycle).
+            return references, error.__traceback__
+    else:
+        if rejected:
+            raise AssertionError('invalid ignored leaf was admitted')
+        assert tensors == (tensor,)
+        references.extend((weakref.ref(parameters[0]), weakref.ref(parameters[0].items[0])))
+    if projected:
+        references.extend(weakref.ref(value) for value in projection[2].values()
+                          if type(value) in (frontend.InputTree, frontend.Value))
+    return references
+
+
+@unittest.skipUnless(sys.implementation.name == 'cpython', 'requires CPython reference release')
+class SnapshotLifetime(unittest.TestCase):
+    def test_nested_success_releases_invocation_owners_without_collection(self):
+        self.check_release(rejected=False)
+
+    def test_nested_rejection_releases_admitted_tensor_without_collection(self):
+        self.check_release(rejected=True)
+
+    def check_release(self, rejected):
+        for projected in (False, True):
+            with self.subTest(projected=projected), _without_cyclic_collection():
+                tensor = native.ones(1)
+                before = _tensor_reference_count(tensor)
+                references = _snapshot_lifetime_call(tensor, projected, rejected)
+                self.assertEqual(_tensor_reference_count(tensor), before)
+                self.assertTrue(all(reference() is None for reference in references))
+
+    def test_retained_traceback_is_an_owner_until_released(self):
+        with _without_cyclic_collection():
+            tensor = native.ones(1)
+            before = _tensor_reference_count(tensor)
+            references, traceback = _snapshot_lifetime_call(tensor, True, True, True)
+            self.assertGreater(_tensor_reference_count(tensor), before)
+            self.assertIsNotNone(references[0]())
+            del traceback
+            self.assertEqual(_tensor_reference_count(tensor), before)
+            self.assertTrue(all(reference() is None for reference in references))
 
 
 class SourceIdentity(unittest.TestCase):

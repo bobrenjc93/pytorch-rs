@@ -882,6 +882,73 @@ def check_namespace_guard(guard):
         unsupported("patched native namespace type")
 
 
+class _InputWalker:
+    """Bounded invocation state; returned descriptors never refer to this walker."""
+    __slots__ = ('tensors', 'seen', 'edges', 'projected_keys', 'projected_values')
+
+    def __init__(self, edges, projected_keys, projected_values):
+        self.tensors = []
+        self.seen = set()
+        self.edges = edges
+        self.projected_keys = projected_keys
+        self.projected_values = projected_values
+        if edges > 4096:
+            unsupported("input tree exceeds 4096 reference edges")
+
+    def snapshot(self, arg, depth, source=None):
+        kind = type(arg)
+        if kind is not tuple and kind is not list and kind is not dict:
+            if kind is _TENSOR_TYPE:
+                value = Value(len(self.tensors))
+                self.tensors.append(arg)
+                if len(self.tensors) > 2:
+                    unsupported("expected one or two positional tensor occurrences")
+            elif kind is float or kind is bool:
+                value = arg
+            else:
+                unsupported("default backend requires exact native CUDA float32 Tensor inputs "
+                            "and exact float/bool leaves in bounded exact tuple/list/dict trees; "
+                            "see docs/compile-pointwise-jit.md")
+            if source is not None:
+                if kind is _TENSOR_TYPE:
+                    self.projected_keys[source], self.projected_values[source] = ("tensor", value.index), value
+                else:
+                    self.projected_keys[source], self.projected_values[source] = binding(value)
+            return value
+        if depth >= 64:
+            unsupported("input tree exceeds container depth 64")
+        if id(arg) in self.seen:
+            unsupported("repeated input container identity or cycle")
+        self.seen.add(id(arg))
+        width = len(arg)
+        self.edges += width
+        if self.edges > 4096:
+            unsupported("input tree exceeds 4096 reference edges")
+        if kind is dict:
+            pairs = tuple(islice(arg.items(), 4097))
+            if any(type(key) is not str for key, _ in pairs):
+                unsupported("input dict keys must be exact strings")
+            keys = tuple(key for key, _ in pairs)
+            children = tuple(value for _, value in pairs)
+        else:
+            keys, children = (), tuple(islice(arg, 4097))
+        # A concurrent growth cannot bypass the budget at expansion.
+        if len(children) != width:
+            unsupported("input container changed during admission")
+        if source is None:
+            return InputTree(kind.__name__, tuple(self.snapshot(child, depth + 1) for child in children), keys)
+        # Reserve the parent before its children, matching legacy projection's
+        # preorder (also used for scalar promotion and specialization identity).
+        self.projected_keys[source] = ("dict",) if kind is dict else (kind.__name__, width)
+        self.projected_values[source] = None
+        items = keys if kind is dict else range(width)
+        value = InputTree(kind.__name__, tuple(
+            self.snapshot(child, depth + 1, source.child(item))
+            for item, child in zip(items, children)), keys)
+        self.projected_values[source] = value
+        return value
+
+
 def bind_arguments(args, projection=None):
     """Snapshot exact trees; retain every Tensor occurrence only for this call.
 
@@ -921,78 +988,16 @@ def bind_arguments(args, projection=None):
 
     # A container switches this invocation to the complete bounded walker.
     # Discard the prefix so every root and Tensor occurrence is counted once.
-    tensors = []
+    del tensors
     if roots is not None:
         projected_keys.clear()
         projected_values.clear()
-
-    def leaf(arg):
-        kind = type(arg)
-        if kind is _TENSOR_TYPE:
-            value = Value(len(tensors))
-            tensors.append(arg)
-            if len(tensors) > 2:
-                unsupported("expected one or two positional tensor occurrences")
-            return value
-        if kind is float or kind is bool:
-            return arg
-        unsupported("default backend requires exact native CUDA float32 Tensor inputs "
-                    "and exact float/bool leaves in bounded exact tuple/list/dict trees; "
-                    "see docs/compile-pointwise-jit.md")
-
-    seen, edges = set(), len(args)
-    if edges > 4096:
-        unsupported("input tree exceeds 4096 reference edges")
-
-    def snapshot(arg, depth, source=None):
-        nonlocal edges
-        kind = type(arg)
-        if kind is not tuple and kind is not list and kind is not dict:
-            value = leaf(arg)
-            if source is not None:
-                if kind is _TENSOR_TYPE:
-                    projected_keys[source], projected_values[source] = ("tensor", value.index), value
-                else:
-                    projected_keys[source], projected_values[source] = binding(value)
-            return value
-        if depth >= 64:
-            unsupported("input tree exceeds container depth 64")
-        if id(arg) in seen:
-            unsupported("repeated input container identity or cycle")
-        seen.add(id(arg))
-        width = len(arg)
-        edges += width
-        if edges > 4096:
-            unsupported("input tree exceeds 4096 reference edges")
-        if kind is dict:
-            pairs = tuple(islice(arg.items(), 4097))
-            if any(type(key) is not str for key, _ in pairs):
-                unsupported("input dict keys must be exact strings")
-            keys = tuple(key for key, _ in pairs)
-            children = tuple(value for _, value in pairs)
-        else:
-            keys, children = (), tuple(islice(arg, 4097))
-        # A concurrent growth cannot bypass the budget at expansion.
-        if len(children) != width:
-            unsupported("input container changed during admission")
-        if source is None:
-            return InputTree(kind.__name__, tuple(snapshot(child, depth + 1) for child in children), keys)
-        # Reserve the parent before its children, matching legacy projection's
-        # preorder (also used for scalar promotion and specialization identity).
-        projected_keys[source] = ("dict",) if kind is dict else (kind.__name__, width)
-        projected_values[source] = None
-        items = keys if kind is dict else range(width)
-        value = InputTree(kind.__name__, tuple(
-            snapshot(child, depth + 1, source.child(item))
-            for item, child in zip(items, children)), keys)
-        projected_values[source] = value
-        return value
-
-    parameters = tuple(snapshot(arg, 0, roots[i] if roots is not None else None)
+    walker = _InputWalker(len(args), projected_keys, projected_values)
+    parameters = tuple(walker.snapshot(arg, 0, roots[i] if roots is not None else None)
                        for i, arg in enumerate(args))
-    if len(tensors) not in (1, 2):
+    if len(walker.tensors) not in (1, 2):
         unsupported("expected one or two positional tensor occurrences")
-    return tuple(tensors), parameters
+    return tuple(walker.tensors), parameters
 
 
 def resolve(model, program, parameters=None):
@@ -1001,6 +1006,18 @@ def resolve(model, program, parameters=None):
     validate_signature_containers(model)
     validate_code(model.__code__, program.code.co_argcount)
     return _resolve_bindings(model, program, parameters)
+
+
+def _project_parameter(source, value, keys, values):
+    values[source] = value
+    if type(value) is InputTree:
+        keys[source] = (value.kind,) if value.kind == "dict" else (value.kind, len(value.items))
+        for item, child in zip(value.keys if value.kind == "dict" else range(len(value.items)), value.items):
+            _project_parameter(source.child(item), child, keys, values)
+    elif type(value) is Value:
+        keys[source] = ("tensor", value.index)
+    else:
+        keys[source], values[source] = binding(value)
 
 
 def _resolve_bindings(model, program, parameters, projection=None):
@@ -1013,22 +1030,12 @@ def _resolve_bindings(model, program, parameters, projection=None):
     if parameters is None:
         # Private hardware-free lowering callers model a tensor-only signature.
         parameters = tuple(Value(i) for i in range(program.code.co_argcount))
-    def parameter(source, value):
-        values[source] = value
-        if type(value) is InputTree:
-            keys[source] = (value.kind,) if value.kind == "dict" else (value.kind, len(value.items))
-            for item, child in zip(value.keys if value.kind == "dict" else range(len(value.items)), value.items):
-                parameter(source.child(item), child)
-        elif type(value) is Value:
-            keys[source] = ("tensor", value.index)
-        else:
-            keys[source], values[source] = binding(value)
 
     for source in program.dependencies:
         kind, name = source.kind, source.name
         if kind == "parameter":
             if projection is None:
-                parameter(source, parameters[source.position])
+                _project_parameter(source, parameters[source.position], keys, values)
             continue
         elif kind == "LOAD_GLOBAL":
             if name not in globals_:

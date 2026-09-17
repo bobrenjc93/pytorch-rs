@@ -1,10 +1,70 @@
 """Invocation-local binding projection agrees with the independent resolver."""
 import unittest
+import sys
+import weakref
 from unittest.mock import patch
 
 import torch_rs as native
 from torch_rs import _compile_pointwise as frontend, torch_rs as bridge
 from tests.test_compile_pointwise_jit import available, cache, program
+from tests.test_compile_pointwise_structured_inputs import _without_cyclic_collection
+
+
+def _resolver_lifetime_call(projected, rejected, retain_traceback=False):
+    # Construct real admitted descriptors directly: admission's helper lifetime
+    # and mock host/compile closures cannot affect this resolver observation.
+    fn = program('def f(data):\n return data["x"] * gain', gain=object() if rejected else .5)
+    ir = frontend.analyze(fn, 1)
+    source = ir.dependencies[0]
+    leaf = frontend.Value(0)
+    tree = frontend.InputTree('dict', (leaf,), ('x',))
+    references = [weakref.ref(source), weakref.ref(leaf), weakref.ref(tree)]
+    if projected:
+        child = source.child('x')
+        projection = ({source: ('dict',), child: ('tensor', 0)}, {source: tree, child: leaf})
+        references.append(weakref.ref(child))
+    else:
+        projection = None
+    try:
+        result = frontend._resolve_bindings(fn, ir, (tree,), projection)
+    except NotImplementedError as error:
+        if not rejected:
+            raise
+        if retain_traceback:
+            return references, error.__traceback__
+    else:
+        if rejected:
+            raise AssertionError('invalid capture was admitted')
+        assert result[1][source] is tree
+    return references
+
+
+@unittest.skipUnless(sys.implementation.name == 'cpython', 'requires CPython reference release')
+class ResolverLifetime(unittest.TestCase):
+    def test_fallback_success_releases_projected_descriptors_without_collection(self):
+        self.check_release(False, False)
+
+    def test_projected_success_releases_descriptors_without_collection(self):
+        self.check_release(True, False)
+
+    def test_fallback_invalid_capture_releases_parameter_projection_without_collection(self):
+        self.check_release(False, True)
+
+    def test_projected_invalid_capture_releases_descriptors_without_collection(self):
+        self.check_release(True, True)
+
+    def check_release(self, projected, rejected):
+        with _without_cyclic_collection():
+            references = _resolver_lifetime_call(projected, rejected)
+            self.assertTrue(all(reference() is None for reference in references))
+
+    def test_retained_traceback_is_an_owner_until_released(self):
+        for projected in (False, True):
+            with self.subTest(projected=projected), _without_cyclic_collection():
+                references, traceback = _resolver_lifetime_call(projected, True, True)
+                self.assertTrue(all(reference() is not None for reference in references))
+                del traceback
+                self.assertTrue(all(reference() is None for reference in references))
 
 
 class Projection(unittest.TestCase):
