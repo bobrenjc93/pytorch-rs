@@ -40,16 +40,48 @@ does not undo user callback effects or concurrent work. An uncertain post-launch
 failure promises neither rollback nor usable contents. Concurrent mutations have
 no additional ordering guarantee.
 
-## Author verification
+## Clean-commit verification
 
-This revision is author-only, based on published source
+After the operator released the author boundary, the focused checks were
+captured from clean commit `8ac9d0e768e2cd6faab558dc6838240231ccf585`.
+The [generated report](diagnostics/cuda-add-inplace-postcommit-8ac9d0e.json) and
+[raw receipts](diagnostics/cuda-add-inplace-postcommit-8ac9d0e.tar.gz) record
+the exact commands, source hashes, wheel/import identity and complete outcomes:
+
+| Check | Clean-commit outcome |
+| --- | --- |
+| Existing focused transpose and public `add_` suites | 39 passed, including 21 GPU tests |
+| Same suites with CUDA hidden | 18 passed, 21 explicit hardware skips |
+| Native scalar-add geometry/ownership/fault tests | 6 passed |
+| Native graph metadata/conversion/refcount tests | 17 passed |
+| Release build, isolated install, native import verifier, Clippy and formatting | Passed |
+
+All 900 captured source/test/build-input hashes remained unchanged. The fresh
+Python 3.12.12 environment, native build directory and CUDA/Inductor/Triton caches
+are rooted under `target/postcommit-8ac9d0e`; only local dependency download caches
+were reused. GPU0 is H100, driver 580.82.07, with local CUDA runtime 13.0 and locked
+PyTorch 2.13.0+cu130. The native-only transpose subprocess reports NVRTC 13.0;
+`add_` uses embedded PTX and the driver JIT. Installed nvcc 12.6 is inventory,
+not the compiler for that primitive. Every capture command passed on its first
+attempt; the reference's existing script-method deprecation warning is retained.
+
+This is capability evidence, not a canonical score or an independent review.
+The current requirements prohibit manually running the canonical evaluator.
+Consequently the older scored reports remain unchanged and stale for this
+revision; their refresh remains outstanding for Burner's canonical evaluation
+stage. These focused checks neither substitute for nor waive that measurement.
+The Linux/macOS and GPU0-only limitations below still apply.
+
+## Original author verification
+
+The original author-only verification was based on published source
 `41499a26015380a5d6c09dae80e0a0b9f7354dbf`. The accompanying
 [developer receipts](diagnostics/cuda-add-inplace-author.tar.gz) record dirty
 author sources, commands, hashes, local wheel/import identity and complete logs,
 including first failures. They are not clean-commit measurements, an independent
 review, canonical evaluation or publication approval. Prior transpose measurements
-remain unchanged and do not measure this revision. Any subsequent clean-commit
-evidence refresh requires separate operator admission after Burner commits.
+remain unchanged and do not measure this revision. The separately admitted
+clean-commit capability capture is recorded above.
 
 The release wheel was built with an explicit interpreter and installed with
 `pip --isolated` into a fresh worktree-owned Python 3.12 environment after checking

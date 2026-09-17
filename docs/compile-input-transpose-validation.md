@@ -1,11 +1,14 @@
 # Default input-rooted transpose validation
 
-**Author revision pending:** the CUDA scalar `add_` revision based on published
-head `41499a2` postdates the captures below. Those artifacts remain unchanged;
-they do not measure the revised candidate. [Author verification](cuda-add-inplace.md)
-records the new development checks. A fresh clean-commit capture remains pending
-separate operator admission after Burner commits; this author step performs no
-evidence refresh, review or canonical evaluation.
+**Current capability capture:** after the operator released the author boundary,
+clean commit `8ac9d0e768e2cd6faab558dc6838240231ccf585` passed the focused
+transpose and public CUDA scalar `add_` checks. [Clean-commit verification](cuda-add-inplace.md#clean-commit-verification)
+links the generated report and raw receipts: 39 focused tests passed, 18 portable
+tests passed with 21 hardware skips, and 23 native tests passed. No implementation
+or test changed during capture. The older scored artifacts below remain unchanged
+and do not measure this revision. Their refresh remains outstanding for Burner's
+canonical evaluation stage: the current requirements prohibit manual evaluator
+runs. No current-candidate coverage or performance score is claimed here.
 
 Implemented from `60202557b4f110d07777f585e804ab5f55e1ff7b`. This is bounded
 metadata-compilation support, not general Inductor or performance parity.
@@ -45,7 +48,7 @@ measured that corrected candidate before the subsequent author revision. The ear
 repair receipts remain unchanged and supply no current-candidate performance
 credit. No scoring run was performed during the uncommitted repair.
 
-## Prior clean-commit evidence (refresh pending)
+## Prior scored capture (current scores pending)
 
 Captured on 2026-09-17 from clean implementation commit
 `48c7b82cd55318e8be455d792f2410d3a0f2ff95`, before these evidence-only updates.
@@ -74,8 +77,8 @@ The fixed denominator, unsupported outcomes and slow samples are unchanged.
 | Native planner/bridge and wrapping failure | 17 passed; three PyO3 test-only deprecation warnings retained |
 | Source, build, import and raw-artifact provenance audit | Passed: 132 source hashes, all 12 worker output/log hashes and exported copies |
 
-The canonical `transpose_view` cells still receive zero: their external mutation
-check calls the missing `Tensor.add_` API. The focused checks exercise alias
+In that `48c7b82` capture, the canonical `transpose_view` cells received zero:
+their external mutation check called the then-missing `Tensor.add_` API. Those focused checks exercised alias
 mutation through the existing raw-bit helpers; they do not substitute for that
 canonical outcome. These results establish neither a gain over main nor general
 Inductor/performance parity, and do not replace independent review or merge gates.
@@ -110,8 +113,8 @@ verifies that those files and the development archives are unchanged.
 ## Development checks before the implementation commit
 
 The following records describe the earlier dirty development checkout. Their
-original archive and first failures are preserved unchanged; the clean-commit
-capture above supplies current-candidate evidence.
+original archive and first failures are preserved unchanged. The `48c7b82`
+scored capture above predates the current `8ac9d0e` capability capture.
 
 All GPU checks used `CUDA_VISIBLE_DEVICES=0`. Both frameworks were invoked as
 `compile(fn)` without compiler overrides. Numerical tolerances remained
