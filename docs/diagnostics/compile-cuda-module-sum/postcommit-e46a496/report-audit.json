@@ -1,0 +1,29 @@
+{
+  "verified": true,
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/checkout/.venv/bin/python",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8/target/module-sum-postcommit-e46a496/validate-report.py"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_576e26f8",
+  "start": 1789224605.3949583,
+  "end": 1789224605.9321175,
+  "measured_commit": "e46a496f995c1491a305f3038886e15cbb017fcf",
+  "clean_measured_checkout": true,
+  "historical_files_unchanged": true,
+  "archive_members": 136,
+  "source_files": 854,
+  "compiler_modules": 65,
+  "compiler_tests": 746,
+  "compiler_skips": 21,
+  "compiler_warning_lines": 30,
+  "relative_documentation_targets": 134,
+  "documentation_sha256": {
+    "FEATURES.md": "7dd51a083c2f9d883edebc9084d9d486a65b329783fdea669d264a168d0774ca",
+    "docs/README.md": "a66e86a241d1d619d046fc3eace8a9732db38519dbbf02fc91177bab6c6ba91c",
+    "docs/supported-surface.md": "39ac43a2703a0509c796437ed0c66f358ea1816dca0e785662bae1e34f796c1b",
+    "docs/compile-cuda-sum-rows.md": "2f3f7412e8e79e7a5257ba331729fcd8075e4841be215ed43a95f002ed17f2c9",
+    "docs/diagnostics/compile-cuda-module-sum/postcommit-e46a496/README.md": "9bcfb468b81b8a33f8b4c28a3810a3059816c38873d07cb67c8442a2dc60c564"
+  },
+  "raw_evidence_sha256": "0059871471e8c3677c439bee75143102deddcad62a0418898cb41d349795c549",
+  "status": 0
+}
