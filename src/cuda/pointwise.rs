@@ -5,6 +5,12 @@ use super::{CStr, Library, Mutex, OnceLock, Status, TensorError, c_char, c_int, 
 #[cfg(any(feature = "python-bindings", test))]
 #[path = "jit.rs"]
 pub(crate) mod jit;
+#[cfg(any(feature = "python-bindings", test))]
+#[path = "jit_module.rs"]
+pub(crate) mod jit_module;
+#[cfg(any(feature = "python-bindings", test))]
+#[path = "leading_sum.rs"]
+pub(crate) mod leading_sum;
 
 #[path = "sum_rows.rs"]
 mod sum_rows;

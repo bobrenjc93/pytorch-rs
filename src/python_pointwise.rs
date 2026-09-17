@@ -1,9 +1,12 @@
 //! Private typed JIT bridge; no arbitrary source strings or raw pointers accepted.
 use super::{CoreTensor, PyTensor, tensor_error};
 use crate::{
-    cuda::jit::Kernel,
+    cuda::{jit::Kernel, jit_module::Module, leading_sum::Kernel as LeadingKernel},
     pointwise_ir::{Graph, Node},
-    tensor::pointwise_jit::{HostAdmission, HostPointwise, PreparedPointwise},
+    tensor::{
+        leading_sum::{Divisor, HostLeadingSum, LeadingSum, PreparedLeadingSum, ScalarKind},
+        pointwise_jit::{HostAdmission, HostPointwise, PreparedPointwise},
+    },
 };
 use pyo3::{
     exceptions::{PyNotImplementedError, PyTypeError, PyValueError},
@@ -320,95 +323,281 @@ pub(super) fn host_plan(
         let order = parse_output_order(output_order, output_count)?;
         admission
             .prepare(hint, &order)
-            .map(|host| HostPlan { host })
+            .map(|host| HostPlan {
+                host: HostVariant::Pointwise(host),
+            })
             .map_err(|error| tensor_error(&error))
     })
 }
 
+/// The descriptor is immutable scalar/provenance data, never Python owners.
+/// Exact-kind checks precede conversions, indexing and any native discovery.
+fn leading_sum_descriptor(value: &Bound<'_, PyAny>) -> PyResult<LeadingSum> {
+    let descriptor = value
+        .cast_exact::<PyTuple>()
+        .map_err(|_| PyTypeError::new_err("expected an exact leading-sum descriptor tuple"))?;
+    if descriptor.len() != 5 {
+        return Err(PyValueError::new_err(
+            "expected five leading-sum descriptor fields",
+        ));
+    }
+    let tag = descriptor.get_item(0)?;
+    let axis = descriptor.get_item(1)?;
+    let keepdim = descriptor.get_item(2)?;
+    if !tag.is_exact_instance_of::<PyString>()
+        || !axis.is_exact_instance_of::<PyInt>()
+        || !keepdim.is_exact_instance_of::<PyBool>()
+    {
+        return Err(PyTypeError::new_err(
+            "expected leading_sum, exact integer axis and bool keepdim",
+        ));
+    }
+    if tag.extract::<String>()? != "leading_sum" {
+        return Err(PyValueError::new_err("unknown leading-sum descriptor kind"));
+    }
+    let axis = axis.extract::<i64>()?;
+    if axis != 0 && axis != -2 {
+        return Err(PyValueError::new_err("leading sum requires axis 0 or -2"));
+    }
+    let row_certificate = parse_dimension_certificate(&descriptor.get_item(3)?)?;
+    let divisor = parse_leading_sum_divisor(&descriptor.get_item(4)?)?;
+    let descriptor = LeadingSum {
+        axis,
+        keepdim: keepdim.extract::<bool>()?,
+        row_certificate,
+        divisor,
+    };
+    descriptor
+        .validate()
+        .map_err(|error| tensor_error(&error))?;
+    Ok(descriptor)
+}
+
+fn parse_leading_sum_divisor(value: &Bound<'_, PyAny>) -> PyResult<Divisor> {
+    let divisor = value
+        .cast_exact::<PyTuple>()
+        .map_err(|_| PyTypeError::new_err("expected an exact divisor descriptor tuple"))?;
+    if divisor.is_empty() || !divisor.get_item(0)?.is_exact_instance_of::<PyString>() {
+        return Err(PyTypeError::new_err("expected a divisor kind"));
+    }
+    let kind = divisor.get_item(0)?.extract::<String>()?;
+    Ok(match (kind.as_str(), divisor.len()) {
+        ("none", 1) => Divisor::None,
+        ("constant", 3) => {
+            let kind = divisor.get_item(1)?;
+            let bits = divisor.get_item(2)?;
+            if !kind.is_exact_instance_of::<PyString>() || !bits.is_exact_instance_of::<PyInt>() {
+                return Err(PyTypeError::new_err(
+                    "expected exact constant kind and integer bits",
+                ));
+            }
+            let kind = match kind.extract::<String>()?.as_str() {
+                "bool" => ScalarKind::Boolean,
+                "int" => ScalarKind::Integer,
+                "float" => ScalarKind::Float,
+                _ => return Err(PyValueError::new_err("unknown leading-sum scalar kind")),
+            };
+            Divisor::Constant {
+                kind,
+                bits: bits.extract::<u64>()?,
+            }
+        }
+        ("runtime", 3) => {
+            let slot = divisor.get_item(1)?;
+            let negative = divisor.get_item(2)?;
+            if !slot.is_exact_instance_of::<PyInt>() || !negative.is_exact_instance_of::<PyBool>() {
+                return Err(PyTypeError::new_err(
+                    "expected exact runtime slot and bool sign",
+                ));
+            }
+            Divisor::Runtime {
+                slot: slot.extract::<usize>()?,
+                negative: negative.extract::<bool>()?,
+            }
+        }
+        ("dimension", 3) => {
+            let axis = divisor.get_item(1)?;
+            if !axis.is_exact_instance_of::<PyInt>() {
+                return Err(PyTypeError::new_err(
+                    "expected an exact divisor dimension axis",
+                ));
+            }
+            let axis = axis.extract::<usize>()?;
+            if axis > 1 {
+                return Err(PyValueError::new_err(
+                    "divisor dimension axis must be 0 or 1",
+                ));
+            }
+            Divisor::Dimension {
+                axis,
+                certificate: parse_dimension_certificate(&divisor.get_item(2)?)?,
+            }
+        }
+        _ => {
+            return Err(PyValueError::new_err(
+                "unsupported leading-sum divisor descriptor",
+            ));
+        }
+    })
+}
+
+fn parse_dimension_certificate(value: &Bound<'_, PyAny>) -> PyResult<Option<u64>> {
+    if value.is_none() {
+        return Ok(None);
+    }
+    if !value.is_exact_instance_of::<PyInt>() {
+        return Err(PyTypeError::new_err(
+            "dimension certificate must be None or an exact integer",
+        ));
+    }
+    value.extract::<u64>().map(Some)
+}
+
+#[pyfunction(name = "_leading_sum_host_plan")]
+pub(super) fn leading_sum_host_plan(
+    inputs: &Bound<'_, PyTuple>,
+    descriptor: &Bound<'_, PyAny>,
+) -> PyResult<HostPlan> {
+    let descriptor = leading_sum_descriptor(descriptor)?;
+    if !inputs.is_exact_instance_of::<PyTuple>() {
+        return Err(PyTypeError::new_err(
+            "expected an exact leading-sum input tuple",
+        ));
+    }
+    with_inputs(inputs, |tensors| {
+        HostLeadingSum::new(tensors, descriptor)
+            .map(|host| HostPlan {
+                host: HostVariant::LeadingSum(host),
+            })
+            .map_err(|error| tensor_error(&error))
+    })
+}
+
+enum HostVariant {
+    Pointwise(HostPointwise),
+    LeadingSum(HostLeadingSum),
+}
+
+enum ExecutableKernel {
+    Pointwise(Arc<Kernel>),
+    LeadingSum(Arc<LeadingKernel>),
+}
+
+impl ExecutableKernel {
+    fn module(&self) -> &Module {
+        match self {
+            Self::Pointwise(kernel) => &kernel.module,
+            Self::LeadingSum(kernel) => &kernel.module,
+        }
+    }
+    fn identity(&self) -> &[u8] {
+        match self {
+            Self::Pointwise(kernel) => {
+                &kernel.identity.as_ref().expect("selected executable").bytes
+            }
+            Self::LeadingSum(kernel) => &kernel.identity,
+        }
+    }
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::Pointwise(kernel)
+                if kernel
+                    .identity
+                    .as_ref()
+                    .expect("selected executable")
+                    .direct =>
+            {
+                "direct"
+            }
+            Self::Pointwise(_) => "vm",
+            Self::LeadingSum(_) => "leading_sum",
+        }
+    }
+}
+
 #[pyclass(frozen, module = "torch_rs.torch_rs", name = "_PointwiseHostPlan")]
 pub(super) struct HostPlan {
-    host: HostPointwise,
+    host: HostVariant,
 }
 #[pymethods]
 impl HostPlan {
     #[getter]
     fn executable_identity<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
-        PyBytes::new(py, &self.host.identity.bytes)
+        let identity = match &self.host {
+            HostVariant::Pointwise(host) => &host.identity.bytes,
+            HostVariant::LeadingSum(host) => &host.identity,
+        };
+        PyBytes::new(py, identity)
     }
     fn compile(&self) -> PyResult<Executable> {
-        self.host
-            .compile()
-            .map(|kernel| Executable { kernel })
-            .map_err(|error| tensor_error(&error))
+        let kernel = match &self.host {
+            HostVariant::Pointwise(host) => {
+                ExecutableKernel::Pointwise(host.compile().map_err(|error| tensor_error(&error))?)
+            }
+            HostVariant::LeadingSum(host) => {
+                ExecutableKernel::LeadingSum(host.compile().map_err(|error| tensor_error(&error))?)
+            }
+        };
+        Ok(Executable { kernel })
     }
 }
 
 /// Ordinary-default handles cannot call the legacy VM re-planning APIs.
 #[pyclass(frozen, module = "torch_rs.torch_rs", name = "_PointwiseExecutable")]
 pub(super) struct Executable {
-    kernel: Arc<Kernel>,
+    kernel: ExecutableKernel,
 }
 #[pymethods]
 impl Executable {
     fn bind(&self, host: &HostPlan) -> PyResult<Prepared> {
-        host.host
-            .bind(Arc::clone(&self.kernel))
-            .map(|invocation| Prepared { invocation })
-            .map_err(|error| tensor_error(&error))
+        let invocation = match (&self.kernel, &host.host) {
+            (ExecutableKernel::Pointwise(kernel), HostVariant::Pointwise(host)) => {
+                PreparedVariant::Pointwise(
+                    host.bind(Arc::clone(kernel))
+                        .map_err(|error| tensor_error(&error))?,
+                )
+            }
+            (ExecutableKernel::LeadingSum(kernel), HostVariant::LeadingSum(host)) => {
+                PreparedVariant::LeadingSum(
+                    host.bind(Arc::clone(kernel))
+                        .map_err(|error| tensor_error(&error))?,
+                )
+            }
+            _ => return Err(PyValueError::new_err("host plan executable kind mismatch")),
+        };
+        Ok(Prepared { invocation })
     }
     #[getter]
     fn executable_identity<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
-        PyBytes::new(
-            py,
-            &self
-                .kernel
-                .identity
-                .as_ref()
-                .expect("selected executable")
-                .bytes,
-        )
+        PyBytes::new(py, self.kernel.identity())
     }
     #[getter]
     fn kind(&self) -> &'static str {
-        if self
-            .kernel
-            .identity
-            .as_ref()
-            .expect("selected executable")
-            .direct
-        {
-            "direct"
-        } else {
-            "vm"
-        }
+        self.kernel.kind()
     }
     #[getter]
     fn source(&self) -> &str {
-        &self.kernel.source
+        &self.kernel.module().source
     }
     #[getter]
     fn ptx(&self) -> &str {
-        &self.kernel.ptx
+        &self.kernel.module().ptx
     }
     #[getter]
     fn nvrtc_version(&self) -> (i32, i32) {
-        self.kernel.version
+        self.kernel.module().version
     }
     #[getter]
     fn options(&self) -> Vec<String> {
-        self.kernel.options.clone()
+        self.kernel.module().options.clone()
     }
     #[getter]
     fn device(&self) -> usize {
-        self.kernel.device
+        self.kernel.module().device
     }
     #[getter]
     fn context(&self) -> usize {
-        self.kernel
-            .identity
-            .as_ref()
-            .expect("selected executable")
-            .context
+        self.kernel.module().context
     }
     /// Regenerated diagnostic only, never selected-invocation evidence.
     #[pyo3(signature = (numerical_hint, output_order=None, scalar_output=None))]
@@ -418,9 +607,14 @@ impl Executable {
         output_order: Option<&Bound<'_, PyAny>>,
         scalar_output: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<String> {
+        let ExecutableKernel::Pointwise(kernel) = &self.kernel else {
+            return Err(PyNotImplementedError::new_err(
+                "leading_sum has no pointwise Program",
+            ));
+        };
         Compiled {
-            kernel: Arc::clone(&self.kernel),
-            arity: self.kernel.graph.inputs,
+            kernel: Arc::clone(kernel),
+            arity: kernel.graph.inputs,
         }
         .plan(numerical_hint, output_order, scalar_output)
     }
@@ -466,7 +660,9 @@ impl Compiled {
                 numerical_hint,
                 Some(&output_order),
             )
-            .map(|invocation| Prepared { invocation })
+            .map(|invocation| Prepared {
+                invocation: PreparedVariant::Pointwise(invocation),
+            })
             .map_err(|error| tensor_error(&error))
         })
     }
@@ -557,73 +753,112 @@ impl Compiled {
     }
 }
 
+enum PreparedVariant {
+    Pointwise(PreparedPointwise),
+    LeadingSum(PreparedLeadingSum),
+}
+impl PreparedVariant {
+    fn module(&self) -> &Module {
+        match self {
+            Self::Pointwise(invocation) => &invocation.kernel().module,
+            Self::LeadingSum(invocation) => &invocation.kernel().module,
+        }
+    }
+}
+
 #[pyclass(frozen, module = "torch_rs.torch_rs", name = "_PointwisePrepared")]
 pub(super) struct Prepared {
-    invocation: PreparedPointwise,
+    invocation: PreparedVariant,
 }
 
 #[pymethods]
 impl Prepared {
     fn belongs_to(&self, executable: &Executable) -> bool {
-        Arc::ptr_eq(self.invocation.kernel(), &executable.kernel)
+        match (&self.invocation, &executable.kernel) {
+            (PreparedVariant::Pointwise(invocation), ExecutableKernel::Pointwise(kernel)) => {
+                Arc::ptr_eq(invocation.kernel(), kernel)
+            }
+            (PreparedVariant::LeadingSum(invocation), ExecutableKernel::LeadingSum(kernel)) => {
+                Arc::ptr_eq(invocation.kernel(), kernel)
+            }
+            _ => false,
+        }
     }
     #[getter]
     fn executable_identity<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyBytes>> {
-        self.invocation
-            .kernel()
-            .identity
-            .as_ref()
-            .map(|id| PyBytes::new(py, &id.bytes))
+        match &self.invocation {
+            PreparedVariant::Pointwise(invocation) => invocation
+                .kernel()
+                .identity
+                .as_ref()
+                .map(|id| PyBytes::new(py, &id.bytes)),
+            PreparedVariant::LeadingSum(invocation) => {
+                Some(PyBytes::new(py, &invocation.kernel().identity))
+            }
+        }
     }
     #[getter]
     fn kind(&self) -> &'static str {
-        if self
-            .invocation
-            .kernel()
-            .identity
-            .as_ref()
-            .is_some_and(|id| id.direct)
-        {
-            "direct"
-        } else {
-            "vm"
+        match &self.invocation {
+            PreparedVariant::Pointwise(invocation)
+                if invocation
+                    .kernel()
+                    .identity
+                    .as_ref()
+                    .is_some_and(|id| id.direct) =>
+            {
+                "direct"
+            }
+            PreparedVariant::Pointwise(_) => "vm",
+            PreparedVariant::LeadingSum(_) => "leading_sum",
         }
     }
     #[getter]
     fn source(&self) -> &str {
-        &self.invocation.kernel().source
+        &self.invocation.module().source
     }
     #[getter]
     fn ptx(&self) -> &str {
-        &self.invocation.kernel().ptx
+        &self.invocation.module().ptx
     }
     #[getter]
     fn nvrtc_version(&self) -> (i32, i32) {
-        self.invocation.kernel().version
+        self.invocation.module().version
     }
     #[getter]
     fn options(&self) -> Vec<String> {
-        self.invocation.kernel().options.clone()
+        self.invocation.module().options.clone()
     }
     #[getter]
     fn device(&self) -> usize {
-        self.invocation.kernel().device
+        self.invocation.module().device
     }
     #[getter]
     fn context(&self) -> Option<usize> {
-        self.invocation
-            .kernel()
-            .identity
-            .as_ref()
-            .map(|id| id.context)
+        match &self.invocation {
+            PreparedVariant::Pointwise(invocation) => {
+                invocation.kernel().identity.as_ref().map(|id| id.context)
+            }
+            PreparedVariant::LeadingSum(invocation) => Some(invocation.kernel().module.context),
+        }
     }
     #[getter]
-    fn instruction_count(&self) -> usize {
-        self.invocation.instruction_count()
+    fn instruction_count(&self) -> PyResult<usize> {
+        match &self.invocation {
+            PreparedVariant::Pointwise(invocation) => Ok(invocation.instruction_count()),
+            PreparedVariant::LeadingSum(_) => Err(PyNotImplementedError::new_err(
+                "leading_sum has no pointwise instructions",
+            )),
+        }
     }
     #[getter]
-    fn register_count(&self) -> usize {
-        self.invocation.register_count()
+    fn register_count(&self) -> PyResult<usize> {
+        match &self.invocation {
+            PreparedVariant::Pointwise(invocation) => Ok(invocation.register_count()),
+            PreparedVariant::LeadingSum(_) => Err(PyNotImplementedError::new_err(
+                "leading_sum has no pointwise registers",
+            )),
+        }
     }
     #[pyo3(signature = (inputs, scalars=None))]
     fn run<'py>(
@@ -632,11 +867,19 @@ impl Prepared {
         scalars: Option<&Bound<'_, PyTuple>>,
     ) -> PyResult<Bound<'py, PyTuple>> {
         let values = parse_scalars(scalars)?;
+        if matches!(self.invocation, PreparedVariant::LeadingSum(_))
+            && !inputs.is_exact_instance_of::<PyTuple>()
+        {
+            return Err(PyTypeError::new_err(
+                "expected an exact leading-sum input tuple",
+            ));
+        }
         with_inputs(inputs, |tensors| {
-            let outputs = self
-                .invocation
-                .run(tensors, &values)
-                .map_err(|error| tensor_error(&error))?;
+            let outputs = match &self.invocation {
+                PreparedVariant::Pointwise(invocation) => invocation.run(tensors, &values),
+                PreparedVariant::LeadingSum(invocation) => invocation.run(tensors, &values),
+            }
+            .map_err(|error| tensor_error(&error))?;
             // The borrowed preparation/kernel, inputs and every output remain
             // owned through completion and this fallible conversion boundary.
             convert_outputs(inputs.py(), outputs, |output| {
@@ -647,9 +890,11 @@ impl Prepared {
 
     #[getter]
     fn input_shapes<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
-        let shapes = self
-            .invocation
-            .input_shapes()
+        let shapes = match &self.invocation {
+            PreparedVariant::Pointwise(invocation) => invocation.input_shapes(),
+            PreparedVariant::LeadingSum(invocation) => invocation.input_shapes(),
+        };
+        let shapes = shapes
             .iter()
             .map(|shape| PyTuple::new(py, shape.iter().copied()))
             .collect::<PyResult<Vec<_>>>()?;
@@ -658,6 +903,86 @@ impl Prepared {
 
     #[getter]
     fn retained_bytes(&self) -> usize {
-        self.invocation.retained_bytes()
+        match &self.invocation {
+            PreparedVariant::Pointwise(invocation) => invocation.retained_bytes(),
+            PreparedVariant::LeadingSum(invocation) => invocation.retained_bytes(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod leading_sum_descriptor_tests {
+    use super::*;
+    use std::ffi::CString;
+
+    #[test]
+    fn leading_sum_exact_descriptor_parsing_and_certificates() {
+        Python::initialize();
+        Python::attach(|py| {
+            for expression in [
+                "('leading_sum', 0, False, 3, ('none',))",
+                "('leading_sum', -2, True, None, ('dimension', 1, 7))",
+                "('leading_sum', 0, False, 0, ('dimension', 0, 0))",
+                "('leading_sum', 0, False, 1, ('constant', 'float', 9223372036854775808))",
+                "('leading_sum', 0, False, None, ('runtime', 0, True))",
+            ] {
+                let expression = CString::new(expression).unwrap();
+                let value = py.eval(&expression, None, None).unwrap();
+                assert!(leading_sum_descriptor(&value).is_ok(), "{expression:?}");
+            }
+            for expression in [
+                "[]",
+                "('leading_sum', 0, False, 1)",
+                "('other', 0, False, 1, ('none',))",
+                "('leading_sum', False, False, 1, ('none',))",
+                "('leading_sum', 1, False, 1, ('none',))",
+                "('leading_sum', 0, 0, 1, ('none',))",
+                "('leading_sum', 0, False, True, ('none',))",
+                "('leading_sum', 0, False, -1, ('none',))",
+                "('leading_sum', 0, False, 2**64, ('none',))",
+                "('leading_sum', 0, False, 1, [])",
+                "('leading_sum', 0, False, 1, ('none', 0))",
+                "('leading_sum', 0, False, 1, ('constant', 'float', True))",
+                "('leading_sum', 0, False, 1, ('constant', 'wrong', 0))",
+                "('leading_sum', 0, False, 1, ('constant', 'bool', 1))",
+                "('leading_sum', 0, False, 1, ('constant', 'int', 4609434218613702656))",
+                "('leading_sum', 0, False, 1, ('runtime', True, False))",
+                "('leading_sum', 0, False, 1, ('runtime', -1, False))",
+                "('leading_sum', 0, False, 1, ('runtime', 0, 0))",
+                "('leading_sum', 0, False, 1, ('dimension', False, 1))",
+                "('leading_sum', 0, False, 1, ('dimension', 2, 1))",
+                "('leading_sum', 0, False, 1, ('dimension', 0, 2))",
+                "('leading_sum', 0, False, 1, ('dimension', 0, None))",
+            ] {
+                let expression = CString::new(expression).unwrap();
+                let value = py.eval(&expression, None, None).unwrap();
+                assert!(leading_sum_descriptor(&value).is_err(), "{expression:?}");
+            }
+        });
+    }
+
+    #[test]
+    fn leading_sum_descriptor_rejects_subclasses_without_callbacks() {
+        Python::initialize();
+        Python::attach(|py| {
+            let namespace = PyDict::new(py);
+            py.run(c"calls = []\nclass BadInt(int):\n def __index__(self): calls.append('index'); raise AssertionError\n def __int__(self): calls.append('int'); raise AssertionError\nclass BadTuple(tuple):\n def __iter__(self): calls.append('iter'); raise AssertionError\nclass BadString(str):\n def __eq__(self, other): calls.append('eq'); raise AssertionError\n", Some(&namespace), None).unwrap();
+            for expression in [
+                "BadTuple(('leading_sum', 0, False, 1, ('none',)))",
+                "('leading_sum', BadInt(0), False, 1, ('none',))",
+                "(BadString('leading_sum'), 0, False, 1, ('none',))",
+                "('leading_sum', 0, False, BadInt(1), ('none',))",
+                "('leading_sum', 0, False, 1, BadTuple(('none',)))",
+                "('leading_sum', 0, False, 1, ('constant', 'float', BadInt(0)))",
+            ] {
+                let expression = CString::new(expression).unwrap();
+                let value = py.eval(&expression, Some(&namespace), None).unwrap();
+                assert!(leading_sum_descriptor(&value).is_err());
+            }
+            assert_eq!(
+                namespace.get_item("calls").unwrap().unwrap().len().unwrap(),
+                0
+            );
+        });
     }
 }

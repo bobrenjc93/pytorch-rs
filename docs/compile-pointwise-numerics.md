@@ -260,3 +260,20 @@ or flush-to-zero option is enabled. Regression tests include amplified
 subnormal values and exact zero-sign assertions.
 Numerical comparisons retain the existing `rtol=1e-5`, `atol=1e-6` contract;
 small subnormal comparisons alone do not establish bit-exact preservation.
+
+## Leading-axis sum
+
+The distinct rank-two leading-sum executable uses selected logical guard
+certificates: exact zero rows writes positive zero, one row loads directly
+(including negative zero), and two through seven rows add in row order starting
+with row zero. Larger or generalized row extents use eight row-strided partials
+and a fixed 4/2/1 tree in a 32-by-8 column tile. Row and divisor-axis certificates
+are independent; a generalized small-shape revisit keeps its selected tree.
+
+Constant divisors use a binary64 reciprocal rounded to float32 followed by
+float32 multiplication. Promoted runtime scalars use current float32 values and
+explicit non-FTZ `div.full.f32`. An exact input-dimension certificate uses the
+current checked extent with reciprocal/multiply; a generalized dimension uses
+current u64-to-float32 conversion and full division. Empty columns still validate
+inputs; empty rows with nonempty columns write outputs and apply the epilogue.
+These policies do not change pointwise Program arithmetic or reference tolerance.

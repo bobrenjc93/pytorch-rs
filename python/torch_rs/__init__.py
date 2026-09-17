@@ -1002,10 +1002,14 @@ def compile(
     computed Tensor roots of one actual shape, input aliases, literal metadata and current
     input shape-axis values. Repeated leaves/containers preserve identity; dynamic
     computed outputs are fresh per call. At least one computed Tensor is required.
-    CPU compilation, mutation, reductions, data-dependent or nested conditionals,
+    CPU compilation, mutation, other reductions, data-dependent or nested conditionals,
     branches inside loops/helpers, loops inside branch arms, nested/helper-local
     loops, runtime range bounds, arbitrary iterators, module calls and training
     are outside this default JIT subset.
+    Straight-line rank-two functions also support one original input
+    ``x.sum(dim=0)`` (or ``-2``, exact bool ``keepdim``), optionally followed
+    by one scalar division. This uses a distinct native reduction executable;
+    see the guide for divisor provenance and shape-history numerical policies.
     NVRTC and the CUDA driver compile/cache code; no PyTorch forwarding or eager
     replay is used. See docs/compile-pointwise-jit.md for guards and scope.
 

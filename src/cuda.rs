@@ -10,7 +10,7 @@ use std::sync::{
 };
 
 #[cfg(any(feature = "python-bindings", test))]
-pub(crate) use pointwise::jit;
+pub(crate) use pointwise::{jit, jit_module, leading_sum};
 
 mod blas;
 mod pointwise;
@@ -647,6 +647,87 @@ impl CudaFloat32Storage {
                 }
             },
         )
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn leading_sum(
+        &self,
+        offset: usize,
+        shape: [usize; 2],
+        kernel: &leading_sum::Kernel,
+        scalars: &[f32],
+    ) -> Result<Self, TensorError> {
+        kernel.validate_scalars(scalars)?;
+        kernel.descriptor.validate_shape(&shape)?;
+        if self.device_index != kernel.device {
+            return Err(crate::pointwise_ir::invalid("mixed CUDA JIT devices"));
+        }
+        let count = shape[0]
+            .checked_mul(shape[1])
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        if count != 0
+            && offset
+                .checked_add(count)
+                .is_none_or(|end| end > self.elements)
+        {
+            return Err(TensorError::IndexCalculationOverflow);
+        }
+        let _guard = self.runtime.guard(self.device_index)?;
+        kernel.validate_context()?;
+        let mut outputs = self.pointwise_outputs(
+            shape[1],
+            1,
+            || Ok(()),
+            || {
+                #[cfg(test)]
+                leading_sum::tests::observe(
+                    leading_sum::tests::Phase::Allocate,
+                    self,
+                    kernel,
+                    &[],
+                )?;
+                Self::allocate(shape[1], self.device_index).map(|(output, _guard)| output)
+            },
+            |(), results| {
+                let input = if count == 0 {
+                    0
+                } else {
+                    (self.data_ptr + offset * 4) as u64
+                };
+                // SAFETY: current input range/output allocation are checked and
+                // the shared completion owner keeps all operands live.
+                unsafe {
+                    kernel.launch(input, results[0].data_ptr as u64, shape, scalars)?;
+                }
+                #[cfg(test)]
+                leading_sum::tests::observe(
+                    leading_sum::tests::Phase::Launch,
+                    self,
+                    kernel,
+                    results,
+                )?;
+                Ok(())
+            },
+            |(), results| {
+                self.runtime.check(
+                    unsafe {
+                        (self.runtime.stream_synchronize)(std::ptr::without_provenance_mut(1))
+                    },
+                    "cudaStreamSynchronize",
+                )?;
+                #[cfg(test)]
+                leading_sum::tests::observe(
+                    leading_sum::tests::Phase::Complete,
+                    self,
+                    kernel,
+                    results,
+                )?;
+                #[cfg(not(test))]
+                let _ = results;
+                Ok(())
+            },
+        )?;
+        Ok(outputs.remove(0))
     }
 
     #[cfg(any(feature = "python-bindings", test))]

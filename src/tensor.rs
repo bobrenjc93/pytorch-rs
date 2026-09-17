@@ -4,6 +4,10 @@ use std::collections::{HashMap, HashSet};
 #[path = "tensor_pointwise.rs"]
 pub(crate) mod pointwise_jit;
 
+#[cfg(any(feature = "python-bindings", test))]
+#[path = "tensor_leading_sum.rs"]
+pub(crate) mod leading_sum;
+
 #[cfg(feature = "python-bindings")]
 #[path = "tensor_cuda_graph.rs"]
 pub(crate) mod cuda_graph;

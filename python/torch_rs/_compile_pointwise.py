@@ -4,7 +4,7 @@ The frontend never invokes the function, Tensor methods, or a Python operator
 on user objects. Warm calls resolve binding/metadata guards and enter one native
 kernel. It deliberately has no graph breaks or eager fallback.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import dis
 from itertools import islice
 import math
@@ -31,7 +31,8 @@ _ROTATIONS = {"ROT_TWO": 2, "ROT_THREE": 3}  # CPython 3.10 fixed tuple assignme
 _ALLOWED = _IGNORED | _ROTATIONS.keys() | {"LOAD_FAST", "LOAD_FAST_CHECK", "LOAD_FAST_BORROW", "LOAD_FAST_LOAD_FAST",
     "LOAD_FAST_BORROW_LOAD_FAST_BORROW", "STORE_FAST", "STORE_FAST_LOAD_FAST", "STORE_FAST_STORE_FAST",
     "LOAD_CONST", "LOAD_SMALL_INT", "LOAD_GLOBAL", "LOAD_DEREF", "LOAD_ATTR", "LOAD_METHOD", "BINARY_OP",
-    "BINARY_ADD", "BINARY_SUBTRACT", "BINARY_MULTIPLY", "UNARY_NEGATIVE", "CALL", "CALL_FUNCTION",
+    "BINARY_ADD", "BINARY_SUBTRACT", "BINARY_MULTIPLY", "BINARY_TRUE_DIVIDE", "UNARY_NEGATIVE", "CALL", "CALL_FUNCTION",
+    "KW_NAMES", "CALL_FUNCTION_KW", "CALL_KW", "CALL_METHOD_KW",
     "CALL_METHOD", "RETURN_VALUE", "RETURN_CONST", "COPY", "DUP_TOP", "SWAP",
     "BUILD_TUPLE", "BUILD_LIST", "BUILD_MAP", "BUILD_CONST_KEY_MAP",
     "BINARY_SUBSCR", "UNPACK_SEQUENCE"}
@@ -54,6 +55,8 @@ _FUNCTIONS = tuple((name, _ROOT.__dict__.get(name)) for name in
                    ("neg", "negative", "relu", "sin", "cos", "add", "sub", "subtract", "mul", "multiply"))
 _METHOD_GUARDS = tuple((cls, tuple((name, cls.__dict__.get(name, _MISSING)) for name in _METHODS))
                       for cls in (_ROOT.Tensor, _ROOT.Tensor.__base__))
+_LEADING_METHOD_GUARDS = tuple((cls, name, cls.__dict__.get(name, _MISSING))
+    for cls in (_TENSOR_TYPE, _TENSOR_TYPE.__base__) for name in ("sum", "__truediv__"))
 
 
 def unsupported(reason):
@@ -82,6 +85,30 @@ class Value:
     index: int
     tensor: bool = True
     dtype: str = "float32"
+
+
+@dataclass(frozen=True)
+class LeadingSum:
+    """Reduction semantics and selected guard certificates, never pointwise IR."""
+    input: object
+    axis: int
+    keepdim: bool
+    divisor: tuple = ("none",)
+    row_certificate: int | None = None
+
+    @property
+    def descriptor(self):
+        return ("leading_sum", self.axis, self.keepdim, self.row_certificate, self.divisor)
+
+
+@dataclass(frozen=True, eq=False)
+class LeadingResult:
+    operation: LeadingSum
+
+
+@dataclass(frozen=True)
+class KeywordNames:
+    names: tuple
 
 
 @dataclass(frozen=True)
@@ -304,7 +331,7 @@ def validate_data(obj):
         item = item.value
     if type(item) is ShapeValue and item.axis is not None:
         return obj
-    if type(item) is not Value and type(item) is not RuntimeScalar:
+    if type(item) is not Value and type(item) is not RuntimeScalar and type(item) is not LeadingResult:
         scalar_bits(item)
     return obj
 
@@ -466,6 +493,8 @@ def _shape_guards(program, graph, first, metadata, history, predicates=()):
                     if key[0] is program.code and source in entry.observations]
         guards.append((source, _tensor_guard(current, previous, duck_strides, source)))
         observations[source] = current
+    if type(graph) is LeadingSum:
+        return ShapeGuards(tuple(guards), (), (), tuple(predicates)), observations, 1
     # Graph topology supplies broadcast equalities and live iteration/buffer
     # bounds. Rust remains the owner of actual-shape admission at compile/run.
     dependencies, combined = [], False
@@ -497,6 +526,19 @@ def _shape_guards(program, graph, first, metadata, history, predicates=()):
     numerical_hint = _broadcast_elements([observations[s][0] for s in live])
     return (ShapeGuards(tuple(guards), tuple(equal_axes), bounds, tuple(predicates)),
             observations, numerical_hint)
+
+
+def _finalize_leading_sum(lowering, guards):
+    operation = lowering.graph
+    if type(operation) is not LeadingSum:
+        return lowering
+    sizes = dict(guards.tensors)[operation.input].sizes
+    if len(sizes) != 2:
+        unsupported("leading sum requires rank-two input")
+    divisor = operation.divisor
+    if divisor[0] == "dimension":
+        divisor = ("dimension", divisor[1], sizes[divisor[1]])
+    return replace(lowering, graph=replace(operation, row_certificate=sizes[0], divisor=divisor))
 
 
 def _select_specialization(program, bindings, values, tensors, metadata, graphs):
@@ -580,6 +622,8 @@ def instructions_for(code, *, helper=False):
     instructions = tuple(islice(dis.get_instructions(code), 16385))
     if len(instructions) > 16384:
         unsupported("function exceeds pointwise instruction limit")
+    instructions = tuple(i._replace(argval=code.co_consts[i.arg]) if i.opname == "KW_NAMES" else i
+                         for i in instructions)
     for instruction in instructions:
         if (instruction.opname not in (_ALLOWED if helper else _ALLOWED | _LOOP_OPS | _BRANCH_OPS)
                 or (helper and instruction.opname in ("LOAD_GLOBAL", "LOAD_DEREF"))):
@@ -618,6 +662,7 @@ def validate_ranges(model, sources):
 def validate_loop_stack(body):
     # The iterator lives below the body in CPython. Our straight-line frame
     # omits it, so no body instruction may read/swap/copy below its own stack.
+    previous_op = None
     depth = 1  # FOR_ITER's index, consumed by STORE_FAST (possibly fused).
     for instruction in body:
         op, arg = instruction.opname, instruction.arg
@@ -639,15 +684,20 @@ def validate_loop_stack(body):
             if not 0 <= arg <= 4096:
                 unsupported("unpack exceeds 4096 input reference limit")
             required, delta = 1, arg - 1
-        elif op in ("BINARY_OP", "BINARY_ADD", "BINARY_SUBTRACT", "BINARY_MULTIPLY"):
-            if op == "BINARY_OP" and instruction.argrepr not in ("+", "-", "*"):
+        elif op in ("BINARY_OP", "BINARY_ADD", "BINARY_SUBTRACT", "BINARY_MULTIPLY", "BINARY_TRUE_DIVIDE"):
+            if op == "BINARY_OP" and instruction.argrepr not in ("+", "-", "*", "/"):
                 unsupported("unsupported loop binary operator")
             required, delta = 2, -1
         elif op in ("BUILD_TUPLE", "BUILD_LIST", "BUILD_MAP", "BUILD_CONST_KEY_MAP"):
             required = arg * 2 if op == "BUILD_MAP" else arg + (op == "BUILD_CONST_KEY_MAP")
             delta = 1 - required
+        elif op == "KW_NAMES":
+            delta = 1
+        elif op in ("CALL_FUNCTION_KW", "CALL_KW", "CALL_METHOD_KW"):
+            required, delta = arg + 2, -arg - 1
         elif op in ("CALL", "CALL_FUNCTION", "CALL_METHOD"):
-            required, delta = arg + 1, -arg
+            keyword = depth > 0 and previous_op == "KW_NAMES"
+            required, delta = arg + 1 + keyword, -arg - keyword
         elif op in ("COPY", "DUP_TOP"):
             required, delta = (arg if op == "COPY" else 1), 1
         elif op == "SWAP":
@@ -659,6 +709,7 @@ def validate_loop_stack(body):
         if required < 0 or depth < required:
             unsupported("invalid loop body stack")
         depth += delta
+        previous_op = op
     if depth:
         unsupported("invalid loop body stack")
 
@@ -871,6 +922,13 @@ def binding(value):
 
 def check_namespace_guard(guard):
     owner, name, expected = guard
+    if any(owner is cls and name == operation for cls, operation, _ in _LEADING_METHOD_GUARDS):
+        namespace = type.__getattribute__(owner, "__dict__")
+        if any(type(key) is not str for key in namespace):
+            unsupported("native Tensor namespace keys must be exact strings")
+        if namespace.get(name, _MISSING) is not expected:
+            unsupported("patched Tensor operation binding: " + name)
+        return
     if type(owner) is not types.ModuleType:
         unsupported("patched native namespace type")
     namespace = owner.__dict__
@@ -1102,6 +1160,62 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
     pending_checks = []  # Early-return continuations; no recursion per condition.
     construction_edges = 0
     namespace_guards = []
+    reduction = None
+    root_control = bool(program.range_sources) or any(type(i) is Branch for i in program.instructions)
+
+    def leading_guards(division=False):
+        for guard in _LEADING_METHOD_GUARDS:
+            if guard[1] == "sum" or division:
+                check_namespace_guard(guard)
+                if guard not in namespace_guards:
+                    namespace_guards.append(guard)
+
+    def sum_result(receiver, operands, names):
+        nonlocal reduction
+        if root_control:
+            unsupported("leading sum requires straight-line functions and helpers")
+        if reduction is not None or len(nodes) != arity + len(runtime):
+            unsupported("leading sum requires one original input and one computed result")
+        owner = realize(receiver)
+        if (arity != 1 or type(receiver) is not BoundValue or receiver.source.kind != "parameter"
+                or type(owner) is not Value or owner.index != 0 or not metadata or len(metadata[0][0]) != 2):
+            unsupported("leading sum requires one original rank-two Tensor occurrence")
+        positional = len(operands) - len(names)
+        if positional > 2 or positional < 0 or any(name not in ("dim", "keepdim") for name in names):
+            unsupported("unsupported leading sum arguments")
+        arguments = dict(zip(("dim", "keepdim"), operands[:positional]))
+        for name, operand in zip(names, operands[positional:]):
+            if name in arguments:
+                unsupported("duplicate leading sum argument")
+            arguments[name] = operand
+        if "dim" not in arguments:
+            unsupported("leading sum requires explicit dim")
+        axis = realize(arguments["dim"])
+        keepdim = realize(arguments["keepdim"]) if "keepdim" in arguments else False
+        if type(axis) is not int or axis not in (0, -2) or type(keepdim) is not bool:
+            unsupported("leading sum requires axis 0/-2 and exact bool keepdim")
+        leading_guards()
+        reduction = LeadingResult(LeadingSum(receiver.source, axis, keepdim))
+        return reduction
+
+    def divide_result(left, right):
+        nonlocal reduction
+        left = realize(left)
+        if type(left) is not LeadingResult or left.operation.divisor != ("none",):
+            unsupported("only one terminal leading-sum division is supported")
+        right = realize(right)
+        if type(right) is ShapeValue:
+            if right.axis is None or type(values[right.source]) is not Value or values[right.source].index != 0:
+                unsupported("leading sum divisor requires an original input dimension")
+            divisor = ("dimension", right.axis % 2, None)
+        elif type(right) is RuntimeScalar:
+            divisor = ("runtime", right.index, right.negative)
+        else:
+            bits = scalar_bits(right)
+            divisor = ("constant", type(right).__name__, bits)
+        leading_guards(True)
+        reduction = LeadingResult(replace(left.operation, divisor=divisor))
+        return reduction
 
     def data(obj):
         # Validate without realizing a lazy root source. Ignored parameters must
@@ -1161,6 +1275,8 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
         return Value(len(nodes) - 1, False, "bool" if boolean else "float32")
 
     def emit(op, operands):
+        if reduction is not None:
+            unsupported("additional leading-sum tensor arithmetic is unsupported")
         if op == "gelu":
             arg = value(operands[0])
             if not arg.tensor:
@@ -1213,6 +1329,9 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                 if type(resolved) is not Value or not resolved.tensor or item.source.kind != "parameter":
                     unsupported("result metadata must be literal or an input shape axis")
                 entry = ("input", item.source)
+            elif type(item) is LeadingResult:
+                roots.add(item)
+                entry = ("output", item)
             elif type(item) is Value and item.tensor and (item.index >= arity or item.index == -1):
                 roots.add(item.index)
                 entry = ("output", item.index)
@@ -1235,7 +1354,12 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
             unsupported("return at least one computed pointwise tensor")
         if len(roots) > 64:
             unsupported("result exceeds 64 computed output limit")
-        outputs = tuple(sorted(roots))
+        if reduction is not None:
+            if roots != {reduction}:
+                unsupported("return one leading-sum result, optionally repeated")
+            outputs = (reduction,)
+        else:
+            outputs = tuple(sorted(roots))
         slots = {value: slot for slot, value in enumerate(outputs)}
         entries = tuple((kind, slots[payload] if kind == "output" else payload)
                         for kind, payload in entries)
@@ -1376,6 +1500,8 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     if arg not in dict(_FUNCTIONS):
                         unsupported("unsupported native function: " + arg)
                     stack.append(binding(_ROOT.__dict__.get(arg))[1])
+                elif arg == "sum" and type(owner) is Value and owner.tensor:
+                    stack.append(Call("leading_sum", original))
                 elif isinstance(owner, Value) and owner.tensor and arg in (_UNARY | _BINARY):
                     stack.append(Call((_UNARY | _BINARY)[arg], owner, arg == "__rsub__"))
                 else:
@@ -1438,15 +1564,34 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
             elif op == "TO_BOOL":
                 if not stack or type(stack[-1]) is not ShapePredicate:
                     unsupported("only shape comparison truthiness is supported")
-            elif op in ("BINARY_OP", "BINARY_ADD", "BINARY_SUBTRACT", "BINARY_MULTIPLY"):
-                symbol = instruction.argrepr if op == "BINARY_OP" else {"BINARY_ADD": "+", "BINARY_SUBTRACT": "-", "BINARY_MULTIPLY": "*"}[op]
+            elif op in ("BINARY_OP", "BINARY_ADD", "BINARY_SUBTRACT", "BINARY_MULTIPLY", "BINARY_TRUE_DIVIDE"):
+                symbol = instruction.argrepr if op == "BINARY_OP" else {"BINARY_ADD": "+", "BINARY_SUBTRACT": "-", "BINARY_MULTIPLY": "*", "BINARY_TRUE_DIVIDE": "/"}[op]
+                if symbol == "/":
+                    right, left = stack.pop(), stack.pop()
+                    stack.append(divide_result(left, right))
+                    continue
                 if symbol not in ("+", "-", "*"):
                     unsupported("unsupported binary operator: " + symbol)
                 right, left = stack.pop(), stack.pop()
                 stack.append(emit({"+": "add", "-": "sub", "*": "mul"}[symbol], [left, right]))
-            elif op in ("CALL", "CALL_FUNCTION", "CALL_METHOD"):
+            elif op == "KW_NAMES":
+                stack.append(KeywordNames(arg))
+            elif op in ("CALL", "CALL_FUNCTION", "CALL_METHOD", "CALL_FUNCTION_KW", "CALL_KW", "CALL_METHOD_KW"):
+                names = ()
+                if op in ("CALL_FUNCTION_KW", "CALL_KW", "CALL_METHOD_KW") or (stack and type(stack[-1]) is KeywordNames):
+                    names = stack.pop()
+                    if type(names) is KeywordNames:
+                        names = names.names
+                    if (type(names) is not tuple or not names or any(type(name) is not str for name in names)
+                            or len(set(names)) != len(names) or len(names) > instruction.arg):
+                        unsupported("invalid keyword names")
                 operands = [stack.pop() for _ in range(instruction.arg)][::-1]
                 target = realize(stack.pop())
+                if type(target) is Call and target.op == "leading_sum":
+                    stack.append(sum_result(target.receiver, operands, names))
+                    continue
+                if names:
+                    unsupported("keyword arguments are supported only for leading sum")
                 if type(target) is Helper:
                     if len(operands) != target.code.co_argcount:
                         unsupported("helper argument count mismatch")
@@ -1496,7 +1641,8 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
         continuation, inactive_locals = pending_checks.pop()
         isolated(continuation, inactive_locals, charge=False)
     outputs, specification = result_spec(result)
-    return Lowering(Graph(arity, tuple(nodes), outputs), specification, tuple(namespace_guards))
+    graph = reduction.operation if reduction is not None else Graph(arity, tuple(nodes), outputs)
+    return Lowering(graph, specification, tuple(namespace_guards))
 
 
 def _prepared_entry_bytes(key, prepared, code_key):
@@ -1511,6 +1657,12 @@ def _prepared_entry_bytes(key, prepared, code_key):
     def key_bytes(value):
         if type(value) is tuple:
             return sys.getsizeof(value) + sum(key_bytes(item) for item in value)
+        if type(value) is LeadingSum:
+            return (sys.getsizeof(value) + sys.getsizeof(value.__dict__)
+                    + key_bytes(value.descriptor) + key_bytes(value.input))
+        if type(value) is BindingSource:
+            return (sys.getsizeof(value) + sys.getsizeof(value.__dict__)
+                    + key_bytes((value.kind, value.name, value.position, value.path)))
         if type(value) is Graph:
             return (sys.getsizeof(value) + sys.getsizeof(value.__dict__)
                     + key_bytes(value.inputs) + key_bytes(value.nodes)
@@ -1632,6 +1784,7 @@ def implementation(model, recompile_limit):
                     values = dict(static_values)
                     values.update((s, v) for s, v in entry.values.items() if type(v) is not Value)
                     lowering = lower(program, values, len(tensors), input_ids, metadata=metadata)
+            lowering = _finalize_leading_sum(lowering, key[2])
             # Logical guards choose scalar semantics. Concrete executables still
             # specialize the full native ABI and exact broadcast address formula.
             # Preparation checks all original-IR admission. Exact native shapes
@@ -1649,9 +1802,12 @@ def implementation(model, recompile_limit):
                 if cache.executors.get(code_key) is not executor:
                     cached_preparation = None
             if cached_preparation is None:
-                host = _native._pointwise_host_plan(
-                    tensors, graph.nodes, graph.outputs,
-                    entry.numerical_hint, lowering.result.output_order)
+                if type(graph) is LeadingSum:
+                    host = _native._leading_sum_host_plan(tensors, graph.descriptor)
+                else:
+                    host = _native._pointwise_host_plan(
+                        tensors, graph.nodes, graph.outputs,
+                        entry.numerical_hint, lowering.result.output_order)
                 code_key = host.executable_identity
                 executor = cache.executors.get(code_key)
                 if executor is None:

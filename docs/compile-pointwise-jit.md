@@ -94,11 +94,29 @@ not independent device traces; empty outputs execute no trig.
 
 Strided inputs, other dtypes, gradients (even inside no-grad),
 mutation, control flow outside the bounded root branches and literal loops below, module calls, keyword operator
-arguments, reductions, matrix operations, and device/dtype conversions are
+arguments outside the leading-sum form below, other reductions, matrix operations, and device/dtype conversions are
 explicitly rejected. No original body or Python operator is run during
 admission or warm execution. Unsupported configurations keep their existing
 contracts; `disable=True`, configured/custom backend resolution, and the
 explicit `backend="eager"` capture implementation remain separate.
+
+### Leading-axis sum
+
+A straight-line function or helper may reduce one original contiguous no-grad
+CUDA float32 rank-two input with `x.sum(dim=0)` or `x.sum(-2)`, with exact bool
+`keepdim` (default `False`). It may then divide that result once by a literal or
+captured scalar, an existing float/bool argument, or an original input shape
+axis. Integer argument leaves, other axes/options, input preprocessing, further
+Tensor arithmetic and reductions in functions with branches or loops reject.
+One computed result may repeat in the existing result containers alongside
+input aliases and metadata. This is a distinct `leading_sum` native executable,
+not a pointwise Program or eager capture. It shares compile/module ownership,
+prepared input validation, fresh outputs and synchronous completion. Logical
+shape/scalar guards select the [reduction and divisor policies](compile-pointwise-numerics.md#leading-axis-sum)
+before executable lookup; preparation still checks current shape, storage and
+offset. Empty `keepdim=True` outputs currently have stride `(1, 1)` where
+default Inductor produces `(0, 1)`; this parity conflict remains unresolved.
+No performance benefit or general reduction coverage is implied.
 
 ### Bounded positional input trees
 

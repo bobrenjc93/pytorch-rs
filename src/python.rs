@@ -25987,6 +25987,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
     module.add_class::<pointwise::HostPlan>()?;
     module.add_class::<pointwise::Executable>()?;
     module.add_function(wrap_pyfunction!(pointwise::host_plan, module)?)?;
+    module.add_function(wrap_pyfunction!(pointwise::leading_sum_host_plan, module)?)?;
     module.add_class::<pointwise::Compiled>()?;
     module.add_class::<pointwise::Prepared>()?;
     module.add_function(wrap_pyfunction!(pointwise::source, module)?)?;

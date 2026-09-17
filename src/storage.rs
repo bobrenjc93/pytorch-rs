@@ -210,6 +210,26 @@ impl Storage {
     }
 
     #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn cuda_leading_sum(
+        &self,
+        offset: usize,
+        shape: [usize; 2],
+        kernel: &crate::cuda::leading_sum::Kernel,
+        scalars: &[f32],
+    ) -> Result<Self, TensorError> {
+        match &self.payload {
+            StoragePayload::CudaFloat32(input) => Ok(Self {
+                payload: StoragePayload::CudaFloat32(
+                    input.leading_sum(offset, shape, kernel, scalars)?,
+                ),
+            }),
+            StoragePayload::CpuFloat32(_) => {
+                Err(crate::pointwise_ir::invalid("expected CUDA storage"))
+            }
+        }
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
     #[allow(clippy::too_many_arguments)] // Mirrors the validated pointwise launch ABI.
     pub(crate) fn cuda_pointwise_jit(
         &self,
