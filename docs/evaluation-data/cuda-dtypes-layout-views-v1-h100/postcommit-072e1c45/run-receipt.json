@@ -1,0 +1,28 @@
+{
+  "label": "evaluator",
+  "command": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd/.venv/bin/python",
+    "-B",
+    "scripts/evaluate_cuda_dtypes_layout_views.py",
+    "--build-record",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd/target/dtypes-postcommit-072e1c45/build-record.json",
+    "--output",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd/target/dtypes-postcommit-072e1c45/results.json"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_bc6362dd",
+  "started_at": "2026-09-11T02:05:30.826869+00:00",
+  "finished_at": "2026-09-11T02:06:17.197319+00:00",
+  "elapsed_seconds": 46.37047724891454,
+  "exit_code": 0,
+  "git_status_before": "",
+  "git_status_after": "",
+  "measured_commit": "072e1c45e78b0e22a881d34807e842ce8f74b0f1",
+  "CUDA_VISIBLE_DEVICES": "0",
+  "gpu_inventory_command": [
+    "nvidia-smi",
+    "--query-gpu=index,uuid,name,utilization.gpu,memory.total,memory.used,driver_version,compute_cap",
+    "--format=csv"
+  ],
+  "gpu_before": "index, uuid, name, utilization.gpu [%], memory.total [MiB], memory.used [MiB], driver_version, compute_cap\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 0 %, 97871 MiB, 116 MiB, 580.82.07, 9.0\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 0 %, 97871 MiB, 130 MiB, 580.82.07, 9.0\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 0 %, 97871 MiB, 4 MiB, 580.82.07, 9.0\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 0 %, 97871 MiB, 4 MiB, 580.82.07, 9.0\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 0 %, 97871 MiB, 102 MiB, 580.82.07, 9.0\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 0 %, 97871 MiB, 108 MiB, 580.82.07, 9.0\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 0 %, 97871 MiB, 60 MiB, 580.82.07, 9.0\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 0 %, 97871 MiB, 114 MiB, 580.82.07, 9.0\n",
+  "gpu_after": "index, uuid, name, utilization.gpu [%], memory.total [MiB], memory.used [MiB], driver_version, compute_cap\n0, GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1, NVIDIA H100, 0 %, 97871 MiB, 116 MiB, 580.82.07, 9.0\n1, GPU-11979b85-93e3-21d3-e68f-df37b8a4c296, NVIDIA H100, 0 %, 97871 MiB, 130 MiB, 580.82.07, 9.0\n2, GPU-3aa416f0-b0e5-dbfc-0613-04b3426a6c0e, NVIDIA H100, 0 %, 97871 MiB, 4 MiB, 580.82.07, 9.0\n3, GPU-dd11c699-940c-55ea-ffe3-ca416a4c44f4, NVIDIA H100, 0 %, 97871 MiB, 4 MiB, 580.82.07, 9.0\n4, GPU-e18b912e-7c28-47a8-4a51-e08ffe4ff95f, NVIDIA H100, 0 %, 97871 MiB, 102 MiB, 580.82.07, 9.0\n5, GPU-bc3ef6aa-3227-bcfd-a031-47ca357b5693, NVIDIA H100, 0 %, 97871 MiB, 108 MiB, 580.82.07, 9.0\n6, GPU-9ecef766-973c-0d6e-af08-4f5917cb1d92, NVIDIA H100, 0 %, 97871 MiB, 60 MiB, 580.82.07, 9.0\n7, GPU-4e974cba-9435-d345-b9ff-d1511ec12e96, NVIDIA H100, 0 %, 97871 MiB, 114 MiB, 580.82.07, 9.0\n"
+}
