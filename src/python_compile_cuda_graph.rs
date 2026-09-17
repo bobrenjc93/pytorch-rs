@@ -119,6 +119,55 @@ fn shape_metadata(
     Ok((output.shape, output.strides, output.offset))
 }
 
+// Pure preflight for the default input-rooted view recipe. No storage owner,
+// device context, allocation or Python conversion callback is involved.
+#[pyfunction(name = "_compile_trace_cuda_transpose_metadata", signature = (shape, strides, offset, axes, /))]
+pub(super) fn transpose_metadata(
+    shape: &Bound<'_, PyAny>,
+    strides: &Bound<'_, PyAny>,
+    offset: &Bound<'_, PyAny>,
+    axes: &Bound<'_, PyAny>,
+) -> PyResult<(Vec<usize>, Vec<usize>, usize)> {
+    if !offset.is_exact_instance_of::<PyInt>() {
+        return Err(PyTypeError::new_err(
+            "transpose offset requires an exact integer",
+        ));
+    }
+    let input = Layout {
+        shape: exact_indices(shape)?,
+        strides: exact_indices(strides)?,
+        offset: offset.extract()?,
+    };
+    // The planner consumes trusted tensor layouts elsewhere. This metadata-only
+    // boundary must check length and address arithmetic before planner indexing.
+    if input.shape.len() != input.strides.len() {
+        return Err(PyValueError::new_err(
+            "transpose shape/stride rank mismatch",
+        ));
+    }
+    if !input.shape.contains(&0) {
+        input
+            .shape
+            .iter()
+            .try_fold(1usize, |n, &size| n.checked_mul(size))
+            .ok_or_else(|| PyValueError::new_err("transpose element count overflow"))?;
+        input
+            .shape
+            .iter()
+            .zip(&input.strides)
+            .try_fold(input.offset, |last, (&size, &stride)| {
+                (size - 1)
+                    .checked_mul(stride)
+                    .and_then(|span| last.checked_add(span))
+            })
+            .ok_or_else(|| PyValueError::new_err("transpose address overflow"))?;
+    }
+    let output = parse_operation("transpose", &[0], axes)?
+        .layout(&[input])
+        .map_err(|error| tensor_error(&error))?;
+    Ok((output.shape, output.strides, output.offset))
+}
+
 fn parse_operation(
     target: &str,
     indices: &[usize],
@@ -264,21 +313,24 @@ pub(super) fn execute(
     }
     drop(tensors);
     drop(guards);
-    wrap_outputs(inputs.py(), owners, outputs, aliases)
+    wrap_outputs(owners, outputs, aliases, |output| {
+        Py::new(inputs.py(), PyTensor::new(output))
+    })
 }
 
-fn wrap_outputs<'py>(
-    py: Python<'py>,
-    owners: Vec<Bound<'py, PyTensor>>,
+fn wrap_outputs(
+    owners: Vec<Bound<'_, PyTensor>>,
     outputs: Vec<CoreTensor>,
     aliases: Vec<Option<usize>>,
+    mut convert: impl FnMut(CoreTensor) -> PyResult<Py<PyTensor>>,
 ) -> PyResult<Vec<Py<PyTensor>>> {
+    let py = owners[0].py();
     let input_count = owners.len();
     let mut objects: Vec<Py<PyTensor>> = owners.into_iter().map(Bound::unbind).collect();
     for (output, alias) in outputs.into_iter().zip(aliases) {
         let object = match alias {
             Some(input) => objects[input].clone_ref(py),
-            None => Py::new(py, PyTensor::new(output))?,
+            None => convert(output)?,
         };
         objects.push(object);
     }
@@ -289,6 +341,87 @@ fn wrap_outputs<'py>(
 mod tests {
     use super::*;
     use crate::{Device, cuda, tensor::cuda_graph::EXECUTIONS};
+
+    #[test]
+    fn transpose_query_checks_exact_payloads_and_layout_before_indexing() {
+        Python::initialize();
+        Python::attach(|py| {
+            let shape = py.eval(c"(2, 3)", None, None).unwrap();
+            let strides = py.eval(c"(3, 1)", None, None).unwrap();
+            let offset = py.eval(c"7", None, None).unwrap();
+            let axes = py.eval(c"(-1, 0)", None, None).unwrap();
+            assert_eq!(
+                transpose_metadata(&shape, &strides, &offset, &axes).unwrap(),
+                (vec![3, 2], vec![1, 3], 7)
+            );
+            for expr in [
+                c"(True, 0)",
+                c"(0.0, 1)",
+                c"[0, 1]",
+                c"(0,)",
+                c"(0, 2**100)",
+            ] {
+                assert!(
+                    transpose_metadata(
+                        &shape,
+                        &strides,
+                        &offset,
+                        &py.eval(expr, None, None).unwrap()
+                    )
+                    .is_err()
+                );
+            }
+            for expr in [c"()", c"(1,)", c"(1, -1)", c"(2**64-1, 1)"] {
+                assert!(
+                    transpose_metadata(&shape, &py.eval(expr, None, None).unwrap(), &offset, &axes)
+                        .is_err()
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn transpose_wrapping_failure_releases_partial_and_pending_aliases() {
+        use pyo3::exceptions::PyMemoryError;
+        Python::initialize();
+        Python::attach(|py| {
+            let input = CoreTensor::from_vec(vec![1.; 6], [2, 3]).unwrap();
+            let owner = Py::new(py, PyTensor::new(input.clone())).unwrap();
+            let baseline = owner.get_refcnt(py);
+            let outputs = (0..3).map(|_| input.transpose(0, 1).unwrap()).collect();
+            let mut wrapped = Vec::new();
+            let mut count = 0;
+            let result = wrap_outputs(
+                vec![owner.bind(py).clone()],
+                outputs,
+                vec![None; 3],
+                |output| {
+                    count += 1;
+                    if count == 2 {
+                        return Err(PyMemoryError::new_err("injected alias wrapping failure"));
+                    }
+                    let object = Py::new(py, PyTensor::new(output))?;
+                    wrapped.push(object.clone_ref(py));
+                    Ok(object)
+                },
+            );
+            assert!(result.unwrap_err().is_instance_of::<PyMemoryError>(py));
+            assert_eq!(count, 2);
+            assert_eq!(owner.get_refcnt(py), baseline);
+            assert_eq!(wrapped[0].get_refcnt(py), 1);
+            drop(wrapped);
+            let outputs = vec![input.transpose(0, 1).unwrap()];
+            let result = wrap_outputs(
+                vec![owner.bind(py).clone()],
+                outputs,
+                vec![None],
+                |output| Py::new(py, PyTensor::new(output)),
+            )
+            .unwrap();
+            assert_eq!(result.len(), 1);
+            assert!(!result[0].is(&owner));
+        });
+    }
 
     #[test]
     fn shape_payloads_reject_before_early_or_late_execution() {

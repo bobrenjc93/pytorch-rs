@@ -59,6 +59,35 @@ supported. Computed outputs have fresh storage and canonical contiguous strides;
 returned input aliases preserve their original storage and strides. Inputs are
 unchanged. Input-only returns remain outside this subset.
 
+Terminal `Tensor.transpose(dim0, dim1)` results are also admitted when rooted
+in an original input Tensor leaf or an earlier such transpose, at rank 0, 1 or 2.
+Axes must be two positional exact integer constants (literal, local, global or
+closure). Nested results may mix these views with original aliases, computed
+outputs and the existing literal/current-input-shape metadata. Repeated
+references to a construction share one Python wrapper; distinct constructions,
+including equal-axis and inverse transposes, create distinct wrappers sharing
+the original storage. A function returning only metadata/views must return at
+least one view and perform no numerical Tensor operation. Mixed numerical
+functions still require a computed output root.
+
+Computed-source transposes, arithmetic or shape queries consuming a view,
+`t`, `view`, `reshape`, `contiguous`, top-level transpose, keyword/runtime axes,
+strided inputs and training remain outside the default subset. All original
+inputs, including unused leaves, retain the contiguous CUDA float32 admission.
+
+View recipes retain only source/construction slots and axes. Every current view
+is preflighted through the native planner before numerical compilation or
+execution. Warm calls also preflight retained inactive and zero-trip recipes
+against current inputs, without rescanning inactive helper bodies. Mixed
+calls run the unchanged pointwise pipeline, then the existing native alias
+bridge, then result reconstruction. Pure-view calls create no numerical graph,
+kernel, executor or preparation entry. The bridge independently replans actual
+inputs, and caches publish only after successful wrapping and reconstruction.
+Transpose binding guards apply only to programs that admit transpose; warm
+same-arm reuse preserves the existing inactive-helper behavior. These changes
+extend metadata compilation coverage and make no performance-parity claim.
+Focused validation is recorded in [input transpose validation](compile-input-transpose-validation.md).
+
 Unequal input shapes additionally require either the tensor-leaf multiply-add
 described below, or at most one arithmetic stage, including live sin/cos. Input and scalar nodes start at depth
 zero; add/subtract/multiply add one to the maximum operand depth, tensor negation
@@ -158,7 +187,7 @@ remains pending; the diagnostic timings are not performance or coverage scores.
 ### Bounded nested results
 
 Small exact tuple/list/dict constructors can combine computed Tensor leaves,
-original input aliases, exact literal `None`/bool/int/float/string metadata and
+input-rooted transpose views, original input aliases, exact literal `None`/bool/int/float/string metadata and
 current `input.shape[literal_integer_axis]` values:
 
 ```python
@@ -168,8 +197,8 @@ def structured(x, y):
     return {"shared": shared, "again": shared, "sum": product + x, "tag": "native"}
 ```
 
-At least one computed Tensor is required, with at most 64 distinct original SSA
-roots. Every computed root must have the same actual shape; input aliases may
+Numerical functions require at least one computed Tensor, with at most 64 distinct
+original SSA roots; purely input-rooted view functions follow the rule above. Every computed root must have the same actual shape; input aliases may
 retain another shape. Dict keys must be exact literal strings; insertion order
 and duplicate-key replacement follow Python. Repeated Tensor or container leaves
 preserve identity within a call. Separate equal computations get separate output
@@ -345,7 +374,7 @@ including unused constants and warm calls. Strings and `None` are literal result
 Arguments and returns may also contain admitted small constructors and literal metadata; functions,
 native call objects and modules cannot pass through helpers even as ignored
 arguments. Identity and scalar-literal returns may feed later tensor operations;
-the root must still contain at least one computed tensor. Scalar binary arithmetic remains
+numerical functions must still return at least one computed tensor. Scalar binary arithmetic remains
 unsupported. Both `RETURN_VALUE` and Python 3.12 `RETURN_CONST` use this data-only
 boundary. Passing an ignored input through a helper creates no scalar value guard,
 but its data admission is rechecked on warm cache hits, including global and

@@ -1,8 +1,9 @@
 """Static bytecode to typed float32 SSA for the native default CUDA JIT.
 
 The frontend never invokes the function, Tensor methods, or a Python operator
-on user objects. Warm calls resolve binding/metadata guards and enter one native
-kernel. It deliberately has no graph breaks or eager fallback.
+on user objects. Warm numerical calls resolve binding/metadata guards and enter
+one native kernel; terminal input-rooted transpose recipes construct aliases.
+It deliberately has no graph breaks or eager fallback.
 """
 from dataclasses import dataclass, field
 import dis
@@ -53,6 +54,18 @@ _METHOD_GUARDS = tuple((cls, name, cls.__dict__.get(name, _MISSING))
                       for cls in (_ROOT.Tensor, _ROOT.Tensor.__base__) for name in _METHODS)
 
 
+# Transpose is guarded only for lowerings that admitted it, including inactive
+# bodies. View-free programs keep their existing operation-binding contract.
+_TRANSPOSE_GUARDS = tuple((cls, cls.__dict__.get("transpose", _MISSING))
+                          for cls in (_ROOT.Tensor, _ROOT.Tensor.__base__))
+
+
+def validate_transpose_binding():
+    for cls, expected in _TRANSPOSE_GUARDS:
+        if cls.__dict__.get("transpose", _MISSING) is not expected:
+            unsupported("patched Tensor operation binding: transpose")
+
+
 def unsupported(reason):
     raise NotImplementedError("torch.compile(): native CUDA pointwise: " + reason)
 
@@ -82,6 +95,12 @@ class Value:
 
 
 @dataclass(frozen=True)
+class View:
+    # Construction slot, never numerical SSA or a geometry-based identity.
+    index: int
+
+
+@dataclass(frozen=True)
 class RuntimeScalar:
     index: int
     negative: bool = False
@@ -90,7 +109,7 @@ class RuntimeScalar:
 @dataclass(frozen=True)
 class Call:
     op: str
-    receiver: Value | None = None
+    receiver: Value | tuple | None = None
     reverse: bool = False
 
 
@@ -203,12 +222,14 @@ class ResultSpec:
     # container kinds, keys, aliases and metadata never enter the executable key.
     output_order: tuple = ()
 
-    def reconstruct(self, outputs, values, tensors, metadata):
+    def reconstruct(self, outputs, values, tensors, metadata, views=()):
         """Build fresh containers from this call's owners before cache publication."""
         objects = []
         for kind, payload in self.entries:
             if kind == "output":
                 obj = outputs[payload]
+            elif kind == "view":
+                obj = views[payload]
             elif kind == "input":
                 obj = tensors[values[payload].index]
             elif kind == "shape":
@@ -229,8 +250,36 @@ class ResultSpec:
 @dataclass(frozen=True)
 class Lowering:
     """Pair native computation with Python topology at the lowering cache owner."""
-    graph: Graph
+    graph: Graph | None
     result: ResultSpec
+    # All admitted constructions, including inactive/zero-trip bodies. Sources
+    # are original BindingSources or earlier view slots; no concrete geometry.
+    views: tuple = ()
+    uses_transpose: bool = False
+    active_views: tuple = ()
+
+
+def preflight_views(lowering, values, metadata):
+    """Replan every admitted view; only active constructions become aliases."""
+    layouts, nodes = [], []
+    slots = {index: slot for slot, index in enumerate(lowering.active_views)}
+    for index, (kind, source, axes) in enumerate(lowering.views):
+        if kind == "input":
+            value = values.get(source)
+            if type(value) is not Value:
+                unsupported("transpose requires a current original input Tensor")
+            current = metadata[value.index]
+            shape, strides, offset = current[0], current[1], current[5]
+            operand = value.index
+        else:
+            shape, strides, offset = layouts[source]
+            if index in slots:
+                operand = len(metadata) + slots[source]
+        layout = _native._compile_trace_cuda_transpose_metadata(shape, strides, offset, axes)
+        layouts.append(layout)
+        if index in slots:
+            nodes.append(("transpose", (operand,), axes, layout[0], layout[1]))
+    return nodes
 
 
 @dataclass(frozen=True)
@@ -299,7 +348,7 @@ def validate_data(obj):
         item = item.value
     if type(item) is ShapeValue and item.axis is not None:
         return obj
-    if type(item) is not Value and type(item) is not RuntimeScalar:
+    if type(item) is not Value and type(item) is not View and type(item) is not RuntimeScalar:
         scalar_bits(item)
     return obj
 
@@ -464,7 +513,7 @@ def _shape_guards(program, graph, first, metadata, history, predicates=()):
     # Graph topology supplies broadcast equalities and live iteration/buffer
     # bounds. Rust remains the owner of actual-shape admission at compile/run.
     dependencies, combined = [], False
-    for op, a, b, _ in graph.nodes:
+    for op, a, b, _ in (() if graph is None else graph.nodes):
         if op == "input":
             deps = {a}
         elif op in ("add", "sub", "mul"):
@@ -482,7 +531,8 @@ def _shape_guards(program, graph, first, metadata, history, predicates=()):
         for offset in range(1, min(len(ls), len(rs))+1):
             if ls[-offset] > 1 and rs[-offset] > 1:
                 equal_axes.append((left, len(ls)-offset, right, len(rs)-offset))
-    live = tuple(s for s, i in first.items() if graph.nodes[i][1] in set().union(*(dependencies[root] for root in graph.outputs)))
+    live_inputs = set().union(*(dependencies[root] for root in graph.outputs)) if graph is not None else set()
+    live = tuple(s for s, i in first.items() if graph.nodes[i][1] in live_inputs) if graph is not None else ()
     groups = tuple((s,) for s in live) + ((live,) if len(live) == 2 else ())
     # torch/_inductor/codegen/simd.py: can_use_32bit_indexing installs an
     # upper-bound conjunction only if the whole kernel is 32-bit eligible.
@@ -1034,6 +1084,8 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
     helper_instructions = {}  # Per lowering only; warm hits never parse helpers.
     pending_checks = []  # Early-return continuations; no recursion per condition.
     construction_edges = 0
+    views, active_views = [], []
+    uses_transpose = False
 
     def data(obj):
         # Validate without realizing a lazy root source. Ignored parameters must
@@ -1097,23 +1149,26 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
         if len(args) == 1 and not args[0].tensor or not any(arg.tensor for arg in args):
             unsupported("operators require tensor expressions")
         nodes.append((op, args[0].index, args[1].index if len(args) == 2 else 0, 0))
-        if len(nodes) + checked_nodes > 4096:
+        if len(nodes) + len(views) + checked_nodes > 4096:
             unsupported("graph exceeds 4096-node limit")
         return Value(len(nodes) - 1)
 
-    def isolated(instructions, locals_, *, charge=True):
+    def isolated(instructions, locals_, *, charge=True, snapshot=False):
         nonlocal observed, data_sources, predicates, checked_nodes
         saved = observed, data_sources, predicates
         observed, data_sources, predicates = None, None, None
         node_start = len(nodes)
         try:
-            return frame(instructions, locals_, check_only=True, charge=charge)
+            result = frame(instructions, locals_, check_only=True, charge=charge)
+            return (result, tuple(nodes)) if snapshot else result
         finally:
+            # View slots remain globally unique for immutable warm preflight.
+            # Only numerical instructions are discarded after body admission.
             checked_nodes += len(nodes) - node_start
             del nodes[node_start:]
             observed, data_sources, predicates = saved
 
-    def result_spec(obj):
+    def result_spec(obj, view_slots=None):
         """Separate result topology from sorted distinct computed SSA roots.
 
         Repeated container identities are memoized; repeated computed roots map
@@ -1138,6 +1193,8 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
             elif type(item) is Value and item.tensor and (item.index >= arity or item.index == -1):
                 roots.add(item.index)
                 entry = ("output", item.index)
+            elif type(item) is View:
+                entry = ("view", item.index if view_slots is None else view_slots[item.index])
             elif type(item) is Literal:
                 entry = ("literal", item.value)
             elif type(item) is ShapeValue and item.axis is not None:
@@ -1154,7 +1211,9 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
 
         root = visit(obj)
         if not roots:
-            unsupported("return at least one computed pointwise tensor")
+            numerical = any(node[0] in set(_UNARY.values()) | set(_BINARY.values()) for node in nodes)
+            if numerical or not any(kind == "view" for kind, _ in entries):
+                unsupported("return at least one computed pointwise tensor or a purely input-rooted view")
         if len(roots) > 64:
             unsupported("result exceeds 64 computed output limit")
         outputs = tuple(sorted(roots))
@@ -1169,7 +1228,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
         return obj
 
     def frame(instructions, locals_, *, check_only=False, helper=False, charge=True):
-        nonlocal remaining, checked_nodes, construction_edges
+        nonlocal remaining, checked_nodes, construction_edges, uses_transpose
         remaining -= len(instructions) if charge else 0
         if remaining < 0:
             unsupported("expanded function exceeds pointwise instruction limit")
@@ -1198,11 +1257,11 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                 active = instruction.jumped if taken else instruction.fallthrough
                 inactive = instruction.fallthrough if taken else instruction.jumped
                 inactive_locals = locals_.copy()
-                inactive_result = isolated(inactive, inactive_locals)
+                inactive_result, inactive_nodes = isolated(inactive, inactive_locals, snapshot=True)
                 result = frame(active, locals_, check_only=check_only)
                 if result is not _MISSING:
                     if inactive_result is _MISSING:
-                        pending_checks.append((instructions[position + 1:], inactive_locals))
+                        pending_checks.append((instructions[position + 1:], inactive_locals, inactive_nodes))
                     return result
                 continue
             op, arg = instruction.opname, instruction.argval
@@ -1289,6 +1348,17 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     if arg not in dict(_FUNCTIONS):
                         unsupported("unsupported native function: " + arg)
                     stack.append(binding(_ROOT.__dict__.get(arg))[1])
+                elif arg == "transpose":
+                    validate_transpose_binding()
+                    uses_transpose = True
+                    if type(owner) is View:
+                        source = ("view", owner.index)
+                    elif (type(original) is BoundValue and original.source.kind == "parameter"
+                          and type(owner) is Value and 0 <= owner.index < arity):
+                        source = ("input", original.source)
+                    else:
+                        unsupported("transpose requires an original input or input-rooted transpose")
+                    stack.append(Call("transpose", source))
                 elif isinstance(owner, Value) and owner.tensor and arg in (_UNARY | _BINARY):
                     stack.append(Call((_UNARY | _BINARY)[arg], owner, arg == "__rsub__"))
                 else:
@@ -1373,6 +1443,17 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     continue
                 if type(target) is not Call:
                     unsupported("only native pointwise operators and direct helpers may be called")
+                if target.op == "transpose":
+                    axes = tuple(realize(operand) for operand in operands)
+                    if len(axes) != 2 or any(type(axis) is not int for axis in axes):
+                        unsupported("transpose requires two exact integer constants")
+                    views.append((*target.receiver, axes))
+                    if len(nodes) + len(views) + checked_nodes > 4096:
+                        unsupported("graph exceeds 4096-node limit")
+                    if not check_only:
+                        active_views.append(len(views) - 1)
+                    stack.append(View(len(views) - 1))
+                    continue
                 if target.receiver is not None:
                     operands.insert(0, target.receiver)
                 if len(operands) != (1 if target.op in set(_UNARY.values()) else 2):
@@ -1406,10 +1487,24 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                if source.kind == "parameter"}
     result = root_result(frame(program.instructions, locals_))
     while pending_checks:
-        continuation, inactive_locals = pending_checks.pop()
-        isolated(continuation, inactive_locals, charge=False)
-    outputs, specification = result_spec(result)
-    return Lowering(Graph(arity, tuple(nodes), outputs), specification)
+        continuation, inactive_locals, inactive_nodes = pending_checks.pop()
+        # An early-return continuation belongs to the inactive path's prefix,
+        # never to the numerical operations or view slots of the returned arm.
+        active_nodes = nodes[:]
+        # Keep the shared node budget constant while swapping path prefixes:
+        # active instructions remain charged, and already-checked inactive
+        # prefix nodes must not be charged twice when restored here.
+        budget_delta = len(active_nodes) - len(inactive_nodes)
+        checked_nodes += budget_delta
+        nodes[:] = inactive_nodes
+        try:
+            isolated(continuation, inactive_locals, charge=False)
+        finally:
+            nodes[:] = active_nodes
+            checked_nodes -= budget_delta
+    outputs, specification = result_spec(result, {index: slot for slot, index in enumerate(active_views)})
+    return Lowering(Graph(arity, tuple(nodes), outputs) if outputs else None,
+                    specification, tuple(views), uses_transpose, tuple(active_views))
 
 
 def _prepared_entry_bytes(key, prepared):
@@ -1536,32 +1631,41 @@ def implementation(model, recompile_limit):
             # specialize the full native ABI and exact broadcast address formula.
             # Preparation checks all original-IR admission. Exact native shapes
             # certify that result on reuse; offsets/storage are checked each run.
-            graph = lowering.graph
-            shapes = tuple(m[0] for m in metadata)
-            indexing_key = None if all(s == shapes[0] for s in shapes) else shapes
-            code_key = (graph, metadata[0][4], indexing_key)
-            executor = cache.executors.get(code_key)
-            if executor is None:
-                executor = _native._pointwise_compile(tensors, graph.nodes, graph.outputs)
-            prepared_key = (code_key, shapes, entry.numerical_hint, lowering.result.output_order)
-            cached_preparation = cache.prepared.get(prepared_key)
-            if cached_preparation is None:
-                prepared = executor.prepare(tensors, entry.numerical_hint, lowering.result.output_order)
-                # Metadata was read before taking this lock. Bind the published
-                # key to the same native snapshot that passed graph admission;
-                # never label an artifact with a stale Python shape signature.
-                if prepared.input_shapes != shapes:
-                    unsupported("input shapes changed during pointwise preparation")
-                retained_bytes = _prepared_entry_bytes(prepared_key, prepared)
+            if lowering.uses_transpose:
+                validate_transpose_binding()
+            view_nodes = preflight_views(lowering, static_values, metadata) if lowering.views else ()
+            publications = [(entry.lowerings, abi, lowering), (cache.graphs, key, entry)]
+            outputs = ()
+            if lowering.graph is not None:
+                graph = lowering.graph
+                shapes = tuple(m[0] for m in metadata)
+                indexing_key = None if all(s == shapes[0] for s in shapes) else shapes
+                code_key = (graph, metadata[0][4], indexing_key)
+                executor = cache.executors.get(code_key)
+                if executor is None:
+                    executor = _native._pointwise_compile(tensors, graph.nodes, graph.outputs)
+                prepared_key = (code_key, shapes, entry.numerical_hint, lowering.result.output_order)
+                cached_preparation = cache.prepared.get(prepared_key)
+                if cached_preparation is None:
+                    prepared = executor.prepare(tensors, entry.numerical_hint, lowering.result.output_order)
+                    # Metadata was read before taking this lock. Bind the published
+                    # key to the same native snapshot that passed graph admission;
+                    # never label an artifact with a stale Python shape signature.
+                    if prepared.input_shapes != shapes:
+                        unsupported("input shapes changed during pointwise preparation")
+                    retained_bytes = _prepared_entry_bytes(prepared_key, prepared)
+                else:
+                    prepared, retained_bytes = cached_preparation
+                outputs = prepared.run(tensors, scalars)
+                publications.insert(1, (cache.executors, code_key, executor))
+            if lowering.active_views:
+                views = _native._compile_trace_cuda_graph(tensors, view_nodes)
+                result = lowering.result.reconstruct(outputs, static_values, tensors, metadata, views)
             else:
-                prepared, retained_bytes = cached_preparation
-            outputs = prepared.run(tensors, scalars)
-            result = lowering.result.reconstruct(outputs, static_values, tensors, metadata)
+                result = lowering.result.reconstruct(outputs, static_values, tensors, metadata)
             # Publish every cache level only after success. Executable/lowering
             # eviction bounds retention without consuming logical slots.
-            for mapping, item_key, item in ((entry.lowerings, abi, lowering),
-                                            (cache.executors, code_key, executor),
-                                            (cache.graphs, key, entry)):
+            for mapping, item_key, item in publications:
                 # Recency belongs to each map independently: a shared executor
                 # can already be newest while its logical entry/lowering is not.
                 if (mapping and next(reversed(mapping)) == item_key
@@ -1571,7 +1675,8 @@ def implementation(model, recompile_limit):
                 mapping[item_key] = item
                 while len(mapping) > recompile_limit:
                     del mapping[next(iter(mapping))]
-            _publish_preparation(cache, prepared_key, prepared, retained_bytes, recompile_limit)
+            if lowering.graph is not None:
+                _publish_preparation(cache, prepared_key, prepared, retained_bytes, recompile_limit)
             return result
 
     compiled._torch_rs_pointwise_cache = cache
