@@ -1474,11 +1474,7 @@ def implementation(model, recompile_limit):
             if cls.__dict__.get(name, _MISSING) is not expected:
                 unsupported("patched Tensor operation binding: " + name)
         # The native bridge checks all metadata and storage bounds again on launch.
-        metadata = tuple(_native._compile_trace_tensor_metadata(arg) for arg in tensors)
-        if any(m[4] == "cpu" for m in metadata):
-            unsupported("default backend does not compile CPU tensors; use backend='eager' "
-                        "for the documented CPU capture subset; see docs/compile-pointwise-jit.md")
-        _native._pointwise_validate_inputs(tensors)
+        metadata = _native._pointwise_admit_inputs(tensors)
         with cache.lock:
             if program is None or program.code is not model.__code__:
                 program = analyze(model, len(args))

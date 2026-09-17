@@ -9666,15 +9666,20 @@ fn compile_trace_tensor_metadata(py: Python<'_>, input: &Bound<'_, PyAny>) -> Py
     }
 
     let tensor = input.cast::<PyTensor>()?.try_borrow()?;
-    let shape = PyTuple::new(py, tensor.inner.shape().iter().copied())?;
-    let stride = PyTuple::new(py, tensor.inner.stride().iter().copied())?;
+    compile_tensor_metadata(py, &tensor.inner)
+}
+
+// Copied six-field projection shared by tracing and default input admission.
+fn compile_tensor_metadata(py: Python<'_>, tensor: &CoreTensor) -> PyResult<Py<PyAny>> {
+    let shape = PyTuple::new(py, tensor.shape().iter().copied())?;
+    let stride = PyTuple::new(py, tensor.stride().iter().copied())?;
     (
         shape,
         stride,
-        tensor.inner.requires_grad(),
-        format!("torch.{}", tensor.inner.dtype()),
-        tensor.inner.device().to_string(),
-        tensor.inner.storage_offset(),
+        tensor.requires_grad(),
+        format!("torch.{}", tensor.dtype()),
+        tensor.device().to_string(),
+        tensor.storage_offset(),
     )
         .into_py_any(py)
 }
@@ -25986,6 +25991,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
     module.add_function(wrap_pyfunction!(pointwise::plan, module)?)?;
     module.add_function(wrap_pyfunction!(pointwise::compile, module)?)?;
     module.add_function(wrap_pyfunction!(pointwise::validate_inputs, module)?)?;
+    module.add_function(wrap_pyfunction!(pointwise::admit_inputs, module)?)?;
     module.add_function(wrap_pyfunction!(pointwise::namespace_keys_exact, module)?)?;
     module.add_function(wrap_pyfunction!(compile_cuda_graph::execute, module)?)?;
     module.add_function(wrap_pyfunction!(
@@ -26001,6 +26007,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
         "_pointwise_source",
         "_pointwise_compile",
         "_pointwise_validate_inputs",
+        "_pointwise_admit_inputs",
         "_pointwise_namespace_keys_exact",
         "_MAX_BACKWARD_LEAF_ROOTS",
         "_backward_leaf_roots",

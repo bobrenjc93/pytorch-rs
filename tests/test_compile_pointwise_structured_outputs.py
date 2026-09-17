@@ -204,8 +204,9 @@ class StructuredCache(unittest.TestCase):
             result = list(original(tensor))
             result[4] = 'cuda:0'
             return tuple(result)
-        self.stack.enter_context(patch.object(bridge, '_compile_trace_tensor_metadata', metadata))
-        self.stack.enter_context(patch.object(bridge, '_pointwise_validate_inputs', lambda tensors: None))
+        self.admit = self.stack.enter_context(patch.object(
+            bridge, '_pointwise_admit_inputs',
+            side_effect=lambda tensors: tuple(metadata(tensor) for tensor in tensors)))
         self.launches = []
         self.hints = []
         self.orders = []
@@ -216,7 +217,7 @@ class StructuredCache(unittest.TestCase):
                 result = tuple(object() for _ in outputs)
                 self.launches.append(result)
                 return result
-            return jit_tests.mock_pointwise_executor(run)
+            return jit_tests.mock_pointwise_executor(run, metadata=metadata)
         self.codegen = self.stack.enter_context(patch.object(bridge, '_pointwise_compile', side_effect=compile_))
 
     def snapshot(self, compiled):

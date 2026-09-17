@@ -350,12 +350,13 @@ class HelperCache(unittest.TestCase):
             result = list(metadata(tensor))
             result[4] = 'cuda:0'
             return tuple(result)
-        self.stack.enter_context(patch.object(bridge, '_compile_trace_tensor_metadata', fake_metadata))
-        self.validate = self.stack.enter_context(patch.object(bridge, '_pointwise_validate_inputs'))
+        self.validate = self.stack.enter_context(patch.object(
+            bridge, '_pointwise_admit_inputs',
+            side_effect=lambda tensors: tuple(fake_metadata(tensor) for tensor in tensors)))
         def compile_(tensors, nodes, output):
             # Use the actual hardware-free native IR/codegen boundary.
             bridge._pointwise_source(nodes, output, len(tensors))
-            return mock_pointwise_executor(lambda tensors, scalars, numerical_hint, output_order: ((nodes, output, scalars),))
+            return mock_pointwise_executor(lambda tensors, scalars, numerical_hint, output_order: ((nodes, output, scalars),), metadata=fake_metadata)
         self.codegen = self.stack.enter_context(patch.object(bridge, '_pointwise_compile', side_effect=compile_))
         self.x = native.tensor([1.0, -2.0])
 
@@ -473,7 +474,7 @@ class HelperCache(unittest.TestCase):
         compiled = native.compile(fn)
         compiled(self.x, self.x)
         before = self.codegen.call_count
-        with patch.object(bridge, '_pointwise_validate_inputs', side_effect=ValueError('native invalid input')):
+        with patch.object(bridge, '_pointwise_admit_inputs', side_effect=ValueError('native invalid input')):
             with self.assertRaisesRegex(ValueError, 'native invalid input'):
                 compiled(self.x, self.x)
         self.assertEqual(self.codegen.call_count, before)

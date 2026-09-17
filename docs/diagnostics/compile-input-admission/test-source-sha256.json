@@ -1,0 +1,7 @@
+{
+  "tests/test_compile_pointwise_admission.py": "2a3f1b05ab305fb71aa9058844ea088ec2b8e0fc94a829e4cce451550ddec67d",
+  "tests/test_compile_pointwise_helpers.py": "b056165a72ac3870c4648899052953a2d6b21900b0c8af4453555081fe019a2e",
+  "tests/test_compile_pointwise_prepared.py": "9567efd413d73be5090034992c1f103b99cd25002ec984ee7309522930a782ec",
+  "tests/test_compile_pointwise_scalar_admission.py": "13e4123f44e85e206ae095b480adc0f0d5a02a0b49a8d6b31aa6217dd1c9ce11",
+  "tests/test_compile_pointwise_structured_outputs.py": "452c378d8d55ee0f814647c2995b1a551dcb9b44aecf26e9d28d4375433ce2e6"
+}
