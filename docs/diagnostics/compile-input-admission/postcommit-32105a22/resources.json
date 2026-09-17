@@ -1,0 +1,15 @@
+{
+  "observed_at_utc": "2026-09-17T19:15:05.298225+00:00",
+  "resources": {
+    "gpu": {
+      "owner": "idea_7ba378d2",
+      "pid": 3240339,
+      "createdAt": "2026-09-17T18:56:00.393Z"
+    },
+    "cpu-heavy": {
+      "owner": "idea_7ba378d2",
+      "pid": 3240339,
+      "createdAt": "2026-09-17T18:56:00.392Z"
+    }
+  }
+}

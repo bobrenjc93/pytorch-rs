@@ -1,0 +1,24 @@
+{
+  "commit": "60202557b4f110d07777f585e804ab5f55e1ff7b",
+  "status": "",
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/main",
+  "executable": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/main/target/default-compile-eval/venv/bin/python",
+  "base_prefix": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/main/target/uv-python/cpython-3.12.14-linux-x86_64-gnu",
+  "package": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/main/target/default-compile-eval/venv/lib/python3.12/site-packages/torch_rs/__init__.py",
+  "extension": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/main/target/default-compile-eval/venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so",
+  "extension_sha256": "2be7eee7cd29f210811aa7f30a0876dcbed4ac12c100f6ca3b2798c2868b7032",
+  "nvrtc_version": [
+    13,
+    0
+  ],
+  "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2024 NVIDIA Corporation\nBuilt on Tue_Oct_29_23:50:19_PDT_2024\nCuda compilation tools, release 12.6, V12.6.85\nBuild cuda_12.6.r12.6/compiler.35059454_0\n",
+  "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)\n",
+  "loaded_cuda_libraries": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/main/target/default-compile-eval/venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13",
+    "/usr/lib64/libcuda.so.580.82.07"
+  ],
+  "smoke_values": [
+    -1.0,
+    -1.0
+  ]
+}

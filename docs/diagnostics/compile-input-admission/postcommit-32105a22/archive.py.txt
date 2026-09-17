@@ -1,0 +1,38 @@
+"""Lossless payload archive; original evaluator gzip files are left untouched."""
+import gzip, hashlib, json, lzma, pathlib, shutil, tarfile
+root=pathlib.Path.cwd()
+work=root/'target/postcommit-32105a22'
+manifest=json.loads((work/'raw-retention-manifest.json').read_text())
+decoded=work/'decoded'
+decoded.mkdir(exist_ok=True)
+entries=[]
+archive_path=work/'raw-payloads.tar.xz'
+assert not archive_path.exists()
+filters=[{'id':lzma.FILTER_LZMA2,'preset':3,'dict_size':64*1024*1024}]
+with lzma.open(archive_path,'wb',filters=filters) as compressed:
+ with tarfile.open(fileobj=compressed,mode='w|') as archive:
+  for label,files in manifest.items():
+   for item in files:
+    source=pathlib.Path(item['path'])
+    member=label+'/'+source.name.removesuffix('.gz')
+    if source.suffix=='.gz':
+     payload=decoded/(label+'-'+source.name.removesuffix('.gz'))
+     with gzip.open(source,'rb') as reader,payload.open('wb') as writer:
+      shutil.copyfileobj(reader,writer,1024*1024)
+    else: payload=source
+    with payload.open('rb') as stream:
+     sha=hashlib.file_digest(stream,'sha256').hexdigest()
+    archive.add(payload,arcname=member,recursive=False)
+    entries.append(dict(member=member,source=item['path'],original_sha256=item['sha256'],payload_sha256=sha,payload_bytes=payload.stat().st_size,gzip_decoded=source.suffix=='.gz'))
+    print(member,payload.stat().st_size,flush=True)
+expected={item['member']:item for item in entries}
+with tarfile.open(archive_path,'r:xz') as archive:
+ for member in archive:
+  stream=archive.extractfile(member)
+  assert stream is not None
+  assert hashlib.file_digest(stream,'sha256').hexdigest()==expected[member.name]['payload_sha256']
+  assert member.size==expected[member.name]['payload_bytes']
+  del expected[member.name]
+assert not expected
+(work/'payload-manifest.json').write_text(json.dumps(entries,indent=2)+'\n')
+print('Archive round-trip verified:',archive_path.stat().st_size,flush=True)

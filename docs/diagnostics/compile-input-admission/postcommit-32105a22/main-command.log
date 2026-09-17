@@ -1,0 +1,50 @@
+Resolved 36 packages in 26ms
+Uninstalled 1 package in 3ms
+ - torch-rs==0.1.0 (from file:///data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/default-compile-eval/wheels.HYM1s8/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl)
+📦 Including license file `LICENSE`
+🍹 Building a mixed python/rust project
+🐍 Found CPython 3.12 at /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/main/target/default-compile-eval/venv/bin/python
+🔗 Found pyo3 bindings with abi3-py3.10 support
+📡 Using build options features from pyproject.toml
+   Compiling target-lexicon v0.13.5
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling crossbeam-utils v0.8.23
+   Compiling quote v1.0.47
+   Compiling crossbeam-epoch v0.9.21
+   Compiling libc v0.2.189
+   Compiling pyo3-build-config v0.29.2
+   Compiling crossbeam-deque v0.8.8
+   Compiling syn v2.0.119
+   Compiling heck v0.5.0
+   Compiling rayon-core v1.13.0
+   Compiling pyo3-ffi v0.29.2
+   Compiling pyo3 v0.29.2
+   Compiling inventory v0.3.24
+   Compiling once_cell v1.21.4
+   Compiling either v1.18.0
+   Compiling cfg-if v1.0.4
+   Compiling libloading v0.8.9
+   Compiling rayon v1.12.0
+   Compiling pyo3-macros-backend v0.29.2
+   Compiling pyo3-macros v0.29.2
+   Compiling pytorch-rs v0.1.0 (/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/main)
+    Finished `release` profile [optimized] target(s) in 51.11s
+📦 Built wheel for abi3 Python ≥ 3.10 to /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/main/target/default-compile-eval/wheels.kNQiNq/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl
+Using Python 3.12.14 environment at: target/default-compile-eval/venv
+Resolved 1 package in 2ms
+Prepared 1 package in 45ms
+Installed 1 package in 22ms
+ + torch-rs==0.1.0 (from file:///data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/main/target/default-compile-eval/wheels.kNQiNq/torch_rs-0.1.0-cp310-abi3-manylinux_2_34_x86_64.whl)
+verified native-extension provenance for torch-rs 0.1.0
+interpreter: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/main/target/default-compile-eval/venv/bin/python
+virtualenv: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/main/target/default-compile-eval/venv
+torch_rs: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/main/target/default-compile-eval/venv/lib/python3.12/site-packages/torch_rs/__init__.py
+torch_rs.torch_rs: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/main/target/default-compile-eval/venv/lib/python3.12/site-packages/torch_rs/torch_rs.abi3.so
+running cpu-0-reference; log: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/main/target/default-compile-eval/run-20260917T190915Z-a2e8224c/cpu-0-reference.log
+running cpu-0-candidate; log: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/main/target/default-compile-eval/run-20260917T190915Z-a2e8224c/cpu-0-candidate.log
+running cuda-0-reference; log: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/main/target/default-compile-eval/run-20260917T190915Z-a2e8224c/cuda-0-reference.log
+running cuda-0-candidate; log: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/main/target/default-compile-eval/run-20260917T190915Z-a2e8224c/cuda-0-candidate.log
+running cuda-1-candidate; log: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/main/target/default-compile-eval/run-20260917T190915Z-a2e8224c/cuda-1-candidate.log
+running cuda-1-reference; log: /data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/main/target/default-compile-eval/run-20260917T190915Z-a2e8224c/cuda-1-reference.log
+{"valid": true, "diagnostic": false, "scores": {"coverage": {"score": 19.5, "passed": 20, "eligible": 112, "categories": {"tensor_arithmetic": {"passed": 4, "eligible": 8, "weight": 12, "contribution": 6.0}, "broadcasting": {"passed": 4, "eligible": 8, "weight": 8, "contribution": 4.0}, "modules_parameters_buffers": {"passed": 0, "eligible": 8, "weight": 8, "contribution": 0.0}, "inference": {"passed": 0, "eligible": 8, "weight": 6, "contribution": 0.0}, "training_autograd": {"passed": 0, "eligible": 8, "weight": 8, "contribution": 0.0}, "python_control_flow": {"passed": 4, "eligible": 8, "weight": 8, "contribution": 4.0}, "graph_breaks": {"passed": 0, "eligible": 8, "weight": 8, "contribution": 0.0}, "dynamic_shapes": {"passed": 0, "eligible": 8, "weight": 8, "contribution": 0.0}, "mutation_aliasing_views": {"passed": 0, "eligible": 8, "weight": 8, "contribution": 0.0}, "containers_pytrees": {"passed": 4, "eligible": 8, "weight": 6, "contribution": 3.0}, "decompositions": {"passed": 0, "eligible": 8, "weight": 6, "contribution": 0.0}, "custom_functions": {"passed": 2, "eligible": 8, "weight": 6, "contribution": 1.5}, "recompilation_guards": {"passed": 2, "eligible": 8, "weight": 4, "contribution": 1.0}, "dtype_device_transitions": {"passed": 0, "eligible": 8, "weight": 4, "contribution": 0.0}}, "common_success_geomean_ratio": 1.1143679074835644}, "cuda-perf": {"score": 33.3678445484245, "passed": 20, "eligible": 56, "categories": {"tensor_arithmetic": {"passed": 4, "eligible": 4, "weight": 12, "contribution": 12.0}, "broadcasting": {"passed": 4, "eligible": 4, "weight": 8, "contribution": 8.0}, "modules_parameters_buffers": {"passed": 0, "eligible": 4, "weight": 8, "contribution": 0.0}, "inference": {"passed": 0, "eligible": 4, "weight": 6, "contribution": 0.0}, "training_autograd": {"passed": 0, "eligible": 4, "weight": 8, "contribution": 0.0}, "python_control_flow": {"passed": 4, "eligible": 4, "weight": 8, "contribution": 8.0}, "graph_breaks": {"passed": 0, "eligible": 4, "weight": 8, "contribution": 0.0}, "dynamic_shapes": {"passed": 0, "eligible": 4, "weight": 8, "contribution": 0.0}, "mutation_aliasing_views": {"passed": 0, "eligible": 4, "weight": 8, "contribution": 0.0}, "containers_pytrees": {"passed": 4, "eligible": 4, "weight": 6, "contribution": 5.367844548424503}, "decompositions": {"passed": 0, "eligible": 4, "weight": 6, "contribution": 0.0}, "custom_functions": {"passed": 2, "eligible": 4, "weight": 6, "contribution": 0.0}, "recompilation_guards": {"passed": 2, "eligible": 4, "weight": 4, "contribution": 0.0}, "dtype_device_transitions": {"passed": 0, "eligible": 4, "weight": 4, "contribution": 0.0}}, "common_success_geomean_ratio": 1.1143679074835644}}, "report": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/main/target/default-compile-eval/run-20260917T190915Z-a2e8224c/report.json"}

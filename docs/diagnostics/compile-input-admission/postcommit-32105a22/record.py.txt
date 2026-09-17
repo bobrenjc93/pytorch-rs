@@ -1,0 +1,14 @@
+import datetime, json, os, pathlib, subprocess, sys, time
+root=pathlib.Path.cwd()
+record_path=pathlib.Path(sys.argv[1]).resolve()
+command=sys.argv[2:]
+def git(*args): return subprocess.check_output(['git',*args],text=True).strip()
+def snapshot(): return subprocess.check_output(['nvidia-smi','--query-gpu=index,uuid,name,driver_version,compute_cap,memory.total,memory.used,utilization.gpu,clocks.sm,pstate','--format=csv'],text=True)
+def now(): return datetime.datetime.now(datetime.timezone.utc).isoformat()
+result=dict(command=command,cwd=str(root),start_utc=now(),commit=git('rev-parse','HEAD'),status_before=git('status','--porcelain','--untracked-files=all'),gpu_before=snapshot(),environment={k:v for k,v in os.environ.items() if k in ('CUDA_VISIBLE_DEVICES','CARGO_HOME','CARGO_TARGET_DIR','UV_CACHE_DIR','UV_PYTHON_INSTALL_DIR','TMPDIR','XDG_CACHE_HOME','CUDA_CACHE_PATH','TORCHINDUCTOR_CACHE_DIR','TRITON_CACHE_DIR','OMP_NUM_THREADS','MKL_NUM_THREADS','CARGO_BUILD_JOBS','BURNER_EVALUATION_ARTIFACT_DIR')})
+record_path.write_text(json.dumps(result,indent=2)+'\n')
+with record_path.with_suffix('.log').open('w') as stream:
+    code=subprocess.call(command,stdout=stream,stderr=subprocess.STDOUT)
+result.update(end_utc=now(),returncode=code,status_after=git('status','--porcelain','--untracked-files=all'),gpu_after=snapshot())
+record_path.write_text(json.dumps(result,indent=2)+'\n')
+raise SystemExit(code)

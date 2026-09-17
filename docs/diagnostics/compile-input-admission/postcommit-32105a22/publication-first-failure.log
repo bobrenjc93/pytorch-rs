@@ -1,0 +1,9 @@
+The first evidence-publication command used system python3 with hashlib.file_digest:
+Traceback (most recent call last):
+  File "<stdin>", line 8, in <module>
+  File "<stdin>", line 5, in digest
+AttributeError: module 'hashlib' has no attribute 'file_digest'
+
+This occurred before receipt/checksum publication. Measured reports, original
+artifacts and export copies were untouched. The same publication operation was
+then run with the worktree-local Python 3.12 interpreter.

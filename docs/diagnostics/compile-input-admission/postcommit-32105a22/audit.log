@@ -1,0 +1,10 @@
+{
+  "measured_commits": {
+    "candidate": "32105a2277965dbf15a84cc464aaf3e5be0006d2",
+    "main": "60202557b4f110d07777f585e804ab5f55e1ff7b"
+  },
+  "checks": "clean source, source manifest, wheel/Python bytes, installed imports, interpreter/runtime hashes, 112 cells, 6 workers, 28 cases per worker, successful references, frozen aggregation, exact export copies; all passed",
+  "pass_fail_changes": [],
+  "common_cuda_geomean_main_over_candidate_native_median": 1.076289008895991,
+  "common_cuda_geomean_main_over_candidate_reference_median": 1.045304489991268
+}

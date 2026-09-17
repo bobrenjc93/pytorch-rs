@@ -1,0 +1,19 @@
+{
+  "verified_at_utc": "2026-09-17T19:17:49.277442+00:00",
+  "archive_path": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb/target/postcommit-32105a22/raw-payloads.tar.xz",
+  "archive_bytes": 227439184,
+  "archive_sha256": "ab862a689abb524295358d47300d915fd7c0e3dc170ab2313f8801505bf014ab",
+  "format": "tar.xz with losslessly decoded gzip payloads; no JSON reserialization",
+  "member_count": 26,
+  "original_gzip_count": 12,
+  "payload_bytes": 778974037,
+  "round_trip_verified": true,
+  "command": [
+    "target/default-compile-eval/venv/bin/python",
+    "target/postcommit-32105a22/archive.py"
+  ],
+  "cwd": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_1594b5eb",
+  "original_gzip_files_preserved": true,
+  "exact_export_copies_verified": true,
+  "external_collection_receipt_verified": false
+}

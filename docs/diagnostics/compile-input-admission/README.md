@@ -1,5 +1,11 @@
 # Default compile input admission experiment
 
+The required clean-commit captures are now recorded in
+[postcommit-32105a22](postcommit-32105a22/README.md): candidate `32105a22` and
+accepted main `60202557`, unchanged full corpus and both CUDA orders. Coverage
+is unchanged; the CUDA score increase is only 0.0708 points and does not establish
+a reliable benefit. The development records below retain their original identities.
+
 Author correctness evidence, 2026-09-17, based on accepted main
 `60202557b4f110d07777f585e804ab5f55e1ff7b`. This is an uncommitted implementation
 check, not a score or a performance result. No historical measurement is used
