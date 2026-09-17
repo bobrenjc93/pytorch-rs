@@ -133,10 +133,12 @@ class DiagnosticDocumentationTests(unittest.TestCase):
         self.assertNotIn("compiled CUDA negation", text)
         self.assertIn("Bounded eager native neg/add capture", text)
         self.assertIn("[capture guide](compile-cuda-add.md)", text)
-        for boundary in ("Noncontiguous CUDA negation", "other CUDA math", "CUDA autograd",
+        for boundary in ("Noncontiguous CUDA negation", "CUDA autograd",
                          "asynchronous transfers", "dtype changes", "unindexed CUDA targets",
                          "nondefault\nstreams", "general CUDA runtime management"):
             self.assertIn(boundary, text)
+        self.assertIn("(supported-surface.md#elementwise-and-reductions)", text)
+        self.assertIn("(cuda-matmul.md)", text)
         self.assertIn("(compile-cuda-neg-validation.md)", (ROOT / "docs/README.md").read_text())
 
 
