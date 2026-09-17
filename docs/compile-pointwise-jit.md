@@ -210,13 +210,13 @@ computed root into native numerical planning. Realization and fusion determine
 logical regions, including rounded intermediate imports and exports. A native
 scalar instruction plan executes those regions within one generated CUDA kernel;
 changing return order may supply a different Program and executable. An immutable preparation retains the validated plan and completed
-read-only instruction upload for matching warm calls. Register scratch and
-computed outputs remain invocation-owned through synchronization and failure;
+read-only instruction upload for matching warm calls. Computed outputs and VM
+register scratch remain invocation-owned through synchronization and failure;
 neither input tensors nor previous outputs are retained by preparations.
-Register scratch is capped at 64 MiB by limiting active workers and
-using a grid-stride loop. The direct executable retains this allocation/launch boundary but uses local
-registers instead of interpreting the upload. Correctness tests do not establish
-a performance improvement.
+VM register scratch is capped at 64 MiB by limiting active workers and
+using a grid-stride loop. Selected direct execution uses local registers without
+invocation scratch, preserving fresh outputs, launch and completion. Correctness
+tests do not establish a performance improvement.
 
 The [structured-output evidence index](diagnostics/compile-pointwise-structured-outputs/README.md)
 links the clean `d0f965a2` correctness capture, bounded guard timing diagnostic,
@@ -390,8 +390,10 @@ allocates registers and validates instruction dataflow. `pointwise_codegen.rs`
 mechanically emits those exact words when there are at most 256 instructions,
 128 registers and 65,536 complete UTF-8 source bytes, including addresses and ABI.
 Empty or over-cap plans use the existing VM. Both domains retain the existing
-precise intrinsics, compiler options, instruction upload, scratch allocation and
-completion path. Compiler failures propagate; they never trigger VM fallback.
+precise intrinsics, compiler options, instruction upload, fresh outputs, launch and
+completion path. Nonempty VM execution, including executables without identity,
+retains invocation scratch; selected direct execution omits it. Compiler failures
+propagate; they never trigger VM fallback.
 Plan disassembly is separate from actual selected kernel source/PTX.
 `pointwise_indexing.rs` checks every expression's broadcast shape and size before
 numerical rewriting, including dead expressions. The same Rust admission check

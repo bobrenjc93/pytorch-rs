@@ -65,10 +65,12 @@ includes exact admitted input shapes, retained numerical hint and observable
 output order; rank-zero and length-one inputs are distinct signatures. The Rust
 planner remains the only numerical authority, including for oversized ephemeral
 preparations. This reuse changes neither instructions nor admission: current
-input metadata must still match the checked native signature. Register scratch
-and outputs remain fresh invocation-owned storage through launch, completion and
-failure. The usage guide describes the bounded data cache and its memory limits;
-no performance improvement is implied without a new measurement.
+input metadata must still match the checked native signature. Outputs remain
+fresh invocation-owned storage through launch, completion and failure. Nonempty
+VM execution, including executables without identity, also owns register scratch;
+selected direct execution allocates none. The usage guide describes the bounded
+data cache and its memory limits; no performance improvement is implied without
+a new measurement.
 
 ## Expression sharing and contraction
 
