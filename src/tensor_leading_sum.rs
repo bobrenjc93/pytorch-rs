@@ -183,7 +183,7 @@ impl HostLeadingSum {
         } else {
             vec![columns]
         })?;
-        if descriptor.keepdim && columns == 0 {
+        if descriptor.keepdim && columns == 0 && matches!(descriptor.divisor, Divisor::None) {
             output.strides[0] = 0;
         }
         Ok(Self {

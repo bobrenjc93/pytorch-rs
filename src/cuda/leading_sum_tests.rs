@@ -381,6 +381,12 @@ fn check_empty_prepared_outputs(rows: usize, keepdim: bool, divisor: Divisor) {
         .unwrap()
         .try_copy_cpu_to_cuda(Device::Cuda(0))
         .unwrap();
+    let leading_stride = usize::from(!matches!(divisor, Divisor::None));
+    let expected_stride = if keepdim {
+        vec![leading_stride, 1]
+    } else {
+        vec![1]
+    };
     let spec = descriptor(Some(rows as u64), keepdim, divisor);
     let scalars = vec![2.0; spec.scalar_count()];
     let host = HostLeadingSum::new(&[&input], spec.clone()).unwrap();
@@ -409,7 +415,7 @@ fn check_empty_prepared_outputs(rows: usize, keepdim: bool, divisor: Divisor) {
     let second = prepared.run(&[&input], &scalars).unwrap().remove(0);
     for output in [&first, &second] {
         assert_eq!(output.shape(), if keepdim { vec![1, 0] } else { vec![0] });
-        assert_eq!(output.stride(), if keepdim { vec![0, 1] } else { vec![1] });
+        assert_eq!(output.stride(), expected_stride);
         assert_eq!(output.storage_offset(), 0);
         assert_eq!(output.dtype(), crate::DType::Float32);
         assert_eq!(output.device(), Device::Cuda(0));
@@ -458,7 +464,7 @@ fn check_empty_prepared_outputs(rows: usize, keepdim: bool, divisor: Divisor) {
     assert_eq!(weak.strong_count(), 1);
     drop(prepared);
     assert!(weak.upgrade().is_none());
-    assert_eq!(first.stride(), if keepdim { vec![0, 1] } else { vec![1] });
+    assert_eq!(first.stride(), expected_stride);
     assert!(!first.shares_storage_with(&second));
 }
 
@@ -471,6 +477,10 @@ fn empty_keepdim_host_bind_and_reuse_preserve_strides_owners_and_no_launch() {
         for keepdim in [false, true] {
             for divisor in [
                 Divisor::None,
+                Divisor::Constant {
+                    kind: ScalarKind::Integer,
+                    bits: 2f64.to_bits(),
+                },
                 Divisor::Runtime {
                     slot: 0,
                     negative: false,

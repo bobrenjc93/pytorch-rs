@@ -255,7 +255,8 @@ class LeadingSumHardware(unittest.TestCase):
                                 expected = reference(tx)
                                 self.compare(actual, expected)
                                 self.assertEqual(actual.shape, (1, columns) if keepdim else (columns,))
-                                self.assertEqual(actual.stride(), (columns, 1) if keepdim else (1,))
+                                leading_stride = max(columns, 1) if epilogue else columns
+                                self.assertEqual(actual.stride(), (leading_stride, 1) if keepdim else (1,))
                                 self.assertTrue(actual.is_contiguous())
                                 if previous is not None:
                                     self.assertIs(prepared, previous)
@@ -267,6 +268,60 @@ class LeadingSumHardware(unittest.TestCase):
                     # Empty-pointer inequality is deliberately not an ownership
                     # oracle; the Rust companion checks actual storage owners.
                     self.assertEqual(len({id(value) for value in retained}), len(retained))
+
+    def epilogue_metadata_history(self, source, history, **bindings):
+        native.compiler.reset()
+        self.torch.compiler.reset()
+        fn, _, compiled, reference = self.pair(source, **bindings)
+        preparations = []
+        for shape, arguments in history:
+            values = [float(i % 5 - 2) for i in range(math.prod(shape))]
+            x, tx = self.upload(values, shape), self.upload(values, shape, self.torch)
+            with self.subTest(source=source, shape=shape, arguments=arguments,
+                              bindings=bindings):
+                with no_replay(fn):
+                    actual, prepared = compiled._torch_rs_pointwise_receipt(x, *arguments)
+                expected = reference(tx, *arguments)
+                self.compare(actual, expected)
+                self.assertEqual(actual.shape, (1, shape[1]))
+                self.assertEqual(actual.stride(), (max(shape[1], 1), 1))
+                self.assertEqual(prepared.kind, 'leading_sum')
+                preparations.append(prepared)
+        return preparations
+
+    def test_empty_keepdim_literal_and_captured_divisor_metadata(self):
+        history = tuple(((1, columns), ()) for columns in (3, 0, 3))
+        # Literals exercise each exact kind; nonfinite floats are captures,
+        # without calls to user code in the compiled function.
+        for literal in ('2.0', '1.0', '1', '0', 'True', 'False', '-0.0'):
+            self.epilogue_metadata_history(
+                f'def f(x):\n return x.sum(0, keepdim=True)/{literal}', history)
+        for divisor in (2., 1, True, 0., False, -0., math.inf, math.nan):
+            self.epilogue_metadata_history(
+                'def f(x):\n return x.sum(0, keepdim=True)/d', history, d=divisor)
+
+    def test_empty_keepdim_argument_promotion_and_bool_metadata(self):
+        source = 'def f(x,d):\n return x.sum(0, keepdim=True)/d'
+        # Change scalars at a fixed shape before revisiting empty/nonempty
+        # inputs, so float promotion is independent of shape specialization.
+        for divisors in ((2., 3., 2.), (True, False, True)):
+            history = tuple(((1, columns), (divisor,))
+                            for columns in (3, 0, 3) for divisor in divisors)
+            preparations = self.epilogue_metadata_history(source, history)
+            if type(divisors[0]) is float:
+                self.assertNotIn('div.full.f32', preparations[0].source)
+                self.assertTrue(all('div.full.f32' in p.source for p in preparations[1:]))
+            else:
+                self.assertTrue(all('div.full.f32' not in p.source for p in preparations))
+
+    def test_empty_keepdim_input_dimension_metadata_histories(self):
+        shapes = ((3, 3), (5, 3), (3, 0), (3, 3),
+                  (0, 3), (0, 0), (0, 3), (1, 1), (1, 0), (1, 1),
+                  (3, 5), (3, 0), (3, 3))
+        for axis in (0, 1):
+            self.epilogue_metadata_history(
+                f'def f(x):\n return x.sum(0, keepdim=True)/x.shape[{axis}]',
+                tuple((shape, ()) for shape in shapes))
 
     def test_empty_rows_dimension_zero_divisor_writes_nan(self):
         fn, _, compiled, reference = self.pair('def f(x):\n return x.sum(0)/x.shape[0]')

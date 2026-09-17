@@ -114,10 +114,10 @@ not a pointwise Program or eager capture. It shares compile/module ownership,
 prepared input validation, fresh outputs and synchronous completion. Logical
 shape/scalar guards select the [reduction and divisor policies](compile-pointwise-numerics.md#leading-axis-sum)
 before executable lookup; preparation still checks current shape, storage and
-offset. Empty `keepdim=True` bare sums use stride `(0, 1)`, matching the tested
-default Inductor path. With terminal `/2`, the tested reference instead returns
-`(1, 1)` while native still returns `(0, 1)`; this epilogue metadata conflict
-remains unresolved.
+offset. With `keepdim=True`, bare sums use stride `(C, 1)`; a terminal
+scalar division uses `(max(C, 1), 1)`. Thus empty outputs have stride `(0, 1)`
+and `(1, 1)`, respectively, preserved through preparation and matching the
+tested default Inductor histories.
 No performance benefit or general reduction coverage is implied.
 
 ### Bounded positional input trees
