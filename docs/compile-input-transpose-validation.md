@@ -8,7 +8,38 @@ preflight includes retained inactive/zero-trip constructions on warm calls;
 only active constructions enter the existing alias bridge. Numerical SSA,
 output ordering, preparation and launch remain with their existing owners.
 
-## Clean-commit evidence
+## Review correction and measurement status
+
+Independent review found that negating a runtime boolean discarded its input
+provenance and admitted it as an integer transpose axis. The correction retains
+the original binding through unary negation and helper/container forwarding,
+and rejects parameter-derived axes before native execution or cache publication.
+Literal, local, global and closure constants remain admitted, and view-free
+boolean arithmetic retains its existing behavior.
+
+Verification used a freshly packaged release wheel in the worktree-local `.venv`
+on GPU0: 24 focused tests passed (including 11 hardware tests); 161 helper,
+control-flow, input/result and cache/guard regressions passed with three existing
+skips. The hardware-free run passed 25 tests with 11 explicit CUDA skips.
+The new regressions cover both boolean values, direct parameters and selected
+tree leaves, double negation, helper/container forwarding, unused/inactive/zero-trip
+instructions, failed-publication recovery, admitted constants and unchanged
+view-free arithmetic. Focused source review reported no remaining findings.
+
+[Review-fix receipts](diagnostics/default-input-transpose-review-fix.tar.gz)
+retain the initial reproducer failures, a corrected helper fixture, final logs,
+exact commands and uncommitted source/build/import identity against base
+`a2332c9deff957b4b09c3e50149d4cfe1c94d2e1`. They are development verification,
+not a clean-commit measurement. Native Rust sources and the evaluation harness
+were unchanged by this correction.
+
+The clean-commit report below measures `d22c5ac` **before this correction** and is
+stale for the corrected candidate. Its report, raw receipts and recorded identities
+remain unchanged. A new clean-commit capture is required after Burner commits
+the correction; no current-candidate performance credit is claimed from these
+older measurements, and no scoring run was repeated during the repair.
+
+## Clean-commit evidence before the review correction
 
 Captured on 2026-09-17 from clean implementation commit
 `d22c5acbf83be77a789d32839ee57a6e5d4b41f8`, before these evidence-only updates.

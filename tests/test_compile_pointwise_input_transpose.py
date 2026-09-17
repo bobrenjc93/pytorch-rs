@@ -27,6 +27,27 @@ def lower(source, shapes=((2, 3),), **bindings):
     return result
 
 
+def runtime_axis_programs():
+    negate = program('def f(value):\n return -value')
+    forward = program('def f(value):\n return value')
+    wrapped = program('def f(value):\n return (-value,)')
+    transpose = program('def f(x, axis):\n return x.transpose(axis,0)')
+    for tree in (False, True):
+        source = 'axis["selected"][0]' if tree else 'axis'
+        bodies = (
+            f'return x.transpose(-{source},0)',
+            f'return x.transpose(0,-(-{source}))',
+            f'saved=-{source}\n return transpose(x,forward(saved))',
+            f'return x.transpose(wrapped({source})[0],0)',
+            f'y=-x\n unused=x.transpose(-{source},0)\n return y',
+            f'for i in range(0):\n  unused=x.transpose(-{source},0)\n return -x',
+            f'if x.shape[0]<4:\n  return -x\n return transpose(x,negate({source}))',
+        )
+        for body in bodies:
+            yield tree, program('def f(x,axis):\n '+body, negate=negate,
+                                forward=forward, wrapped=wrapped, transpose=transpose)
+
+
 class Metadata(unittest.TestCase):
     def test_exact_types_without_callbacks_and_private_export(self):
         self.assertNotIn('_compile_trace_cuda_transpose_metadata', native.__all__)
@@ -203,6 +224,37 @@ class Transactions(unittest.TestCase):
         compiled(False,native.ones(2,3))
         with self.assertRaises(NotImplementedError): compiled(native.ones(2,3),native.ones(2,3))
         self.assertEqual(len(cache(compiled).executors),1)
+
+    def test_negated_runtime_axes_reject_before_execution_or_publication(self):
+        for tree, fn in runtime_axis_programs():
+            compiled = native.compile(fn)
+            for axis in (False, True):
+                argument = {'selected': [axis]} if tree else axis
+                with self.subTest(tree=tree, code=fn.__code__, axis=axis):
+                    with self.assertRaisesRegex(NotImplementedError, 'integer constants'):
+                        compiled(native.ones(2,3), argument)
+                    self.assertEqual(self.snapshot(compiled), ([], [], [], 0))
+        self.codegen.assert_not_called()
+        self.aliases.assert_not_called()
+        self.assertEqual(self.launches, [])
+
+    def test_runtime_axis_rejection_preserves_existing_cache_and_recovery(self):
+        fn = program('def f(x,axis):\n return x.transpose(0,1)')
+        safe = fn.__code__
+        compiled = native.compile(fn)
+        x = native.ones(2,3)
+        retained = compiled(x,False)
+        before = self.snapshot(compiled)
+        self.aliases.reset_mock()
+        fn.__code__ = program('def f(x,axis):\n return x.transpose(-axis,0)').__code__
+        for axis in (False, True):
+            with self.assertRaisesRegex(NotImplementedError, 'integer constants'):
+                compiled(x,axis)
+            self.assertEqual(self.snapshot(compiled), before)
+        self.aliases.assert_not_called()
+        fn.__code__ = safe
+        self.assertIsNot(compiled(x,True), retained)
+        self.assertEqual(self.snapshot(compiled), before)
 
     def test_current_abi_rebinding_and_view_only_observed_input(self):
         fn = program('def f(unused,x):\n return [x.transpose(0,1),-x]')
@@ -405,6 +457,46 @@ class Hardware(unittest.TestCase):
             with self.assertRaises((NotImplementedError, ValueError)): compiled(bad,x)
         native.compiler.reset(); self.assertFalse(cache(compiled).graphs)
         self.assertEqual(compiled(False,x).data_ptr(),x.data_ptr())
+
+    def test_runtime_boolean_axes_reject_on_cuda(self):
+        x = self.upload((2,3))
+        for tree, fn in runtime_axis_programs():
+            compiled = native.compile(fn)
+            for axis in (False, True):
+                argument = {'selected': [axis]} if tree else axis
+                with self.subTest(tree=tree, code=fn.__code__, axis=axis):
+                    with no_bodies(fn), self.assertRaisesRegex(NotImplementedError, 'integer constants'):
+                        compiled(x,argument)
+                    self.assertFalse(cache(compiled).graphs)
+                    self.assertFalse(cache(compiled).executors)
+                    self.assertFalse(cache(compiled).prepared)
+                    self.assertEqual(cache(compiled).prepared_bytes, 0)
+
+    def test_negated_constants_and_view_free_boolean_arithmetic(self):
+        source = 'def f(x):\n return helper(x,-axis)'
+        helper = program('def f(x,axis):\n return x.transpose(axis,0)')
+        ref_helper = program('def f(x,axis):\n return x.transpose(axis,0)', self.torch)
+        x = self.upload((2,3)); r = self.upload((2,3), framework=self.torch)
+        for binding in (1, True):
+            fn = program(source, axis=binding, helper=helper)
+            reference = self.torch.compile(program(source, self.torch, axis=binding, helper=ref_helper))
+            self.compare(native.compile(fn)(x), reference(r))
+        axis = 1
+        def closure(x): return helper(x,-axis)
+        def ref_closure(x): return ref_helper(x,-axis)
+        self.compare(native.compile(closure)(x), self.torch.compile(ref_closure)(r))
+        source = 'def f(x):\n axis=1\n return x.transpose(-axis,0)'
+        self.compare(native.compile(program(source))(x),
+                     self.torch.compile(program(source,self.torch))(r))
+        source = 'def f(x,axis):\n return x*helper(axis)'
+        helper = program('def f(axis):\n return -axis')
+        ref_helper = program('def f(axis):\n return -axis', self.torch)
+        fn = program(source, helper=helper)
+        compiled = native.compile(fn)
+        reference = self.torch.compile(program(source,self.torch,helper=ref_helper))
+        for axis in (False, True, False):
+            with no_bodies(fn,helper): actual = compiled(x,axis)
+            self.compare(actual, reference(r,axis))
 
     def test_native_only_without_reference_import(self):
         code = '''

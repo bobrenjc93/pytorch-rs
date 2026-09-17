@@ -1377,7 +1377,11 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     stack.append(emit("neg", [operand]))
                 else:
                     scalar_bits(operand)
-                    stack.append(-operand)
+                    # Keep the source when bool negation produces an exact int.
+                    # Helpers/constructors must not turn runtime input leaves
+                    # into constants eligible for metadata-only operations.
+                    stack.append(BoundValue(original.source, -operand, False)
+                                 if type(original) is BoundValue else -operand)
             elif op == "BINARY_SUBSCR" or (op == "BINARY_OP" and instruction.argrepr == "[]"):
                 axis, shape = stack.pop(), stack.pop()
                 if type(shape) is not ShapeValue:
@@ -1445,7 +1449,9 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     unsupported("only native pointwise operators and direct helpers may be called")
                 if target.op == "transpose":
                     axes = tuple(realize(operand) for operand in operands)
-                    if len(axes) != 2 or any(type(axis) is not int for axis in axes):
+                    if (len(axes) != 2 or any(type(axis) is not int for axis in axes)
+                            or any(type(operand) is BoundValue and operand.source.kind == "parameter"
+                                   for operand in operands)):
                         unsupported("transpose requires two exact integer constants")
                     views.append((*target.receiver, axes))
                     if len(nodes) + len(views) + checked_nodes > 4096:

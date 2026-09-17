@@ -62,7 +62,9 @@ unchanged. Input-only returns remain outside this subset.
 Terminal `Tensor.transpose(dim0, dim1)` results are also admitted when rooted
 in an original input Tensor leaf or an earlier such transpose, at rank 0, 1 or 2.
 Axes must be two positional exact integer constants (literal, local, global or
-closure). Nested results may mix these views with original aliases, computed
+closure). Runtime input leaves remain ineligible axes through unary negation,
+local assignment, helper forwarding and container selection, even when negation
+turns a boolean into an exact integer. Nested results may mix these views with original aliases, computed
 outputs and the existing literal/current-input-shape metadata. Repeated
 references to a construction share one Python wrapper; distinct constructions,
 including equal-axis and inverse transposes, create distinct wrappers sharing
