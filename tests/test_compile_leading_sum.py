@@ -3,6 +3,7 @@
 Synthetic metadata here exercises lowering only, never CUDA execution. The
 hardware companion proves the public default-compile capability independently.
 """
+from dataclasses import replace
 import unittest
 
 import torch_rs as native
@@ -11,7 +12,7 @@ from tests.test_compile_pointwise_helpers import no_bodies
 from tests.test_compile_pointwise_jit import program
 
 
-def semantic(fn, shape=(3, 5), arguments=None):
+def semantic(fn, shape=(128, 256), arguments=None):
     arguments = (frontend.Value(0),) if arguments is None else arguments
     parsed = frontend.analyze(fn, len(arguments))
     _, values = frontend.resolve(fn, parsed, arguments)
@@ -96,6 +97,50 @@ class LeadingSumLanguage(unittest.TestCase):
 
 
 class LeadingSumDescriptor(unittest.TestCase):
+    def test_selected_history_and_full_scalar_abi_finalize_before_identity(self):
+        fn = program('def f(x):\n return x.sum(0)/x.shape[0]')
+        lowering = semantic(fn)
+        source = lowering.graph.input
+        properties = (False, 'torch.float32', 'cuda:0')
+        metadata = (((193, 252), (252, 1), *properties),)
+        parsed = frontend.analyze(fn, 1)
+        guards, observations, hint = frontend._shape_guards(
+            parsed, lowering.graph, {source: 0}, metadata, {})
+        self.assertEqual(hint, 193)
+        self.assertEqual(observations[source], metadata[0])
+        cold = frontend._finalize_leading_sum(lowering, guards, hint, 0).graph
+        self.assertEqual(cold.descriptor,
+                         ('leading_sum', 0, False, 193, ('dimension', 0, 193), 0, 252, 193))
+        generalized = frontend.ShapeGuards(
+            ((source, frontend.TensorGuard((None, 252), (252, 1), properties)),), (), ())
+        selected = frontend._finalize_leading_sum(lowering, generalized, 128, 2).graph
+        self.assertEqual(selected.descriptor,
+                         ('leading_sum', 0, False, None, ('dimension', 0, None), 2, 252, 128))
+        # Re-finalization on a selected hit retains its H and all dead/live slots.
+        self.assertEqual(frontend._finalize_leading_sum(
+            replace(lowering, graph=selected), generalized, 128, 2).graph, selected)
+        identities = {selected, replace(selected, scalar_count=1),
+                      replace(selected, row_hint=193), replace(selected, column_certificate=256)}
+        self.assertEqual(len(identities), 4)
+        columns_changed = frontend.ShapeGuards(
+            ((source, frontend.TensorGuard((None, None), (None, 1), properties)),), (), ())
+        with self.assertRaisesRegex(NotImplementedError, 'exact column guard'):
+            frontend._finalize_leading_sum(lowering, columns_changed, 193, 2)
+
+    def test_full_scalar_counts_and_divisor_slots_reach_input_admission(self):
+        for count in (0, 1, 64):
+            divisors = [('none',), ('constant', 'float', frontend.scalar_bits(2.)),
+                        ('dimension', 0, 128), ('dimension', 1, 256)]
+            if count:
+                divisors.extend((('runtime', 0, False), ('runtime', count-1, True)))
+            for divisor in divisors:
+                with self.subTest(count=count, divisor=divisor):
+                    descriptor = ('leading_sum', 0, False, 128, divisor, count, 256, 128)
+                    # Descriptor acceptance is observed without CUDA discovery:
+                    # the empty input tuple then fails whole-input admission.
+                    with self.assertRaisesRegex(RuntimeError, 'missing tensor input'):
+                        bridge._leading_sum_host_plan((), descriptor)
+
     def test_malformed_descriptors_reject_before_tensor_admission_or_callbacks(self):
         calls = []
 
@@ -108,24 +153,41 @@ class LeadingSumDescriptor(unittest.TestCase):
         class Tuple(tuple):
             pass
 
-        descriptor = ('leading_sum', 0, False, 3, ('none',))
+        class Integer(int):
+            pass
+
+        class String(str):
+            pass
+
+        descriptor = ('leading_sum', 0, False, 128, ('none',), 0, 256, 128)
         invalid = [Poison(), list(descriptor), Tuple(descriptor), (),
-                   ('pointwise', 0, False, 3, ('none',)),
-                   ('leading_sum', True, False, 3, ('none',)),
-                   ('leading_sum', 1, False, 3, ('none',)),
-                   ('leading_sum', 0, 0, 3, ('none',)),
-                   ('leading_sum', 0, False, True, ('none',)),
-                   ('leading_sum', 0, False, -1, ('none',)),
-                   ('leading_sum', 0, False, 2**64, ('none',))]
+                   descriptor[:5], descriptor[:6], descriptor[:7], descriptor+(0,)]
+        replacements = {
+            0: (Poison(), 'pointwise', String('leading_sum')),
+            1: (Poison(), True, Integer(0), 1, 2**64),
+            2: (Poison(), 0),
+            3: (Poison(), True, Integer(128), -1, 2**64, 64, 257, 129),
+            5: (Poison(), True, Integer(0), -1, 2**64, 65),
+            6: (Poison(), None, True, Integer(256), -1, 2**64, 128, 255, 260),
+            7: (Poison(), None, True, Integer(128), -1, 2**64, 64, 257, 129),
+        }
+        for index, values in replacements.items():
+            for value in values:
+                invalid.append(descriptor[:index]+(value,)+descriptor[index+1:])
         for divisor in (('none', 1), ('constant', 'complex', 0),
                         ('constant', 'float', Poison()), ('runtime', True, False),
                         ('runtime', 2**64, False), ('runtime', 0, 0),
+                        ('runtime', 0, False), ('runtime', Integer(0), False),
+                        Tuple(('none',)), ('constant', String('float'), 0),
                         ('dimension', 2, None), ('dimension', 0, True),
-                        ('dimension', 0, 2**64)):
-            invalid.append(('leading_sum', 0, False, 3, divisor))
+                        ('dimension', 0, 2**64), ('dimension', 0, None),
+                        ('dimension', 1, None), ('dimension', 1, 252)):
+            invalid.append(descriptor[:4]+(divisor,)+descriptor[5:])
         for value in invalid:
-            with self.subTest(kind=type(value).__name__), self.assertRaises((TypeError, ValueError, OverflowError)):
-                bridge._leading_sum_host_plan((), value)
+            with self.subTest(kind=type(value).__name__):
+                with self.assertRaises((TypeError, ValueError, OverflowError, RuntimeError)) as error:
+                    bridge._leading_sum_host_plan((), value)
+                self.assertNotIn('missing tensor input', str(error.exception))
         self.assertEqual(calls, [])
 
 

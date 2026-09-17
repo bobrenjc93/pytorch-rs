@@ -990,6 +990,14 @@ def compile(
     are reused by exact identity. Unsupported graphs and compiler failures still
     raise. See ``docs/compile-pointwise-jit.md`` for the bounds and admission
     contract. Finite evidence does not establish general Inductor or performance parity.
+    A separate leading-axis sum supports one original rank-two contiguous no-grad
+    CUDA float32 input, axis 0 or -2, optional bool keepdim, and one terminal
+    scalar/input-dimension division. It requires Hopper cc 9.0, warp size 32,
+    65–256 rows and exact selected columns C in 132–256 divisible by four, with
+    C < 64 * SM_count and 256 * C < 32 * SM_count * max_threads_per_SM.
+    The selected row hint is also 65–256; generalized columns, small/empty
+    reductions and other architectures reject. See the numerical guide for
+    selected-history arithmetic and the complete 0–64-slot scalar ABI.
     Root functions may also use sequential, non-nested loops over the
     actual built-in range (including direct aliases), with one to three literal
     exact-integer bounds and a nonzero step. Zero/one/many trips and signed steps

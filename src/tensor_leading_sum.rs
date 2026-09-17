@@ -28,24 +28,39 @@ pub(crate) enum Divisor {
         certificate: Option<u64>,
     },
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Reduction {
-    Empty,
-    Singleton,
-    OrderedSmall(u64),
-    Tree8,
-}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct LeadingSum {
     pub(crate) axis: i64,
     pub(crate) keepdim: bool,
     pub(crate) row_certificate: Option<u64>,
     pub(crate) divisor: Divisor,
+    pub(crate) scalar_count: usize,
+    pub(crate) column_certificate: u64,
+    pub(crate) row_hint: u64,
 }
 impl LeadingSum {
     pub(crate) fn validate(&self) -> Result<(), TensorError> {
         if !matches!(self.axis, 0 | -2) {
             return Err(invalid("leading sum requires axis 0 or -2"));
+        }
+        if !(65..=256).contains(&self.row_hint)
+            || self
+                .row_certificate
+                .is_some_and(|rows| rows != self.row_hint)
+        {
+            return Err(invalid(
+                "leading sum requires a row hint in 65..=256 matching its certificate",
+            ));
+        }
+        if !(132..=256).contains(&self.column_certificate)
+            || !self.column_certificate.is_multiple_of(4)
+        {
+            return Err(invalid(
+                "leading sum requires exact columns in 132..=256 divisible by four",
+            ));
+        }
+        if self.scalar_count > 64 {
+            return Err(invalid("leading sum scalar count exceeds 64"));
         }
         match self.divisor {
             Divisor::Constant {
@@ -68,7 +83,7 @@ impl LeadingSum {
                     return Err(invalid("invalid leading sum integer scalar"));
                 }
             }
-            Divisor::Runtime { slot, .. } if slot >= 4096 => {
+            Divisor::Runtime { slot, .. } if slot >= self.scalar_count => {
                 return Err(invalid("leading sum scalar slot out of range"));
             }
             Divisor::Dimension { axis, .. } if axis > 1 => {
@@ -84,26 +99,31 @@ impl LeadingSum {
         {
             return Err(invalid("leading sum row/divisor certificates disagree"));
         }
+        if let Divisor::Dimension {
+            axis: 1,
+            certificate,
+        } = self.divisor
+            && certificate != Some(self.column_certificate)
+        {
+            return Err(invalid("leading sum column/divisor certificates disagree"));
+        }
         Ok(())
     }
-    pub(crate) fn reduction(&self) -> Reduction {
-        match self.row_certificate {
-            Some(0) => Reduction::Empty,
-            Some(1) => Reduction::Singleton,
-            Some(r @ 2..=7) => Reduction::OrderedSmall(r),
-            _ => Reduction::Tree8,
-        }
+    pub(crate) fn segments(&self) -> u64 {
+        self.row_hint.div_ceil(128)
     }
     pub(crate) fn scalar_count(&self) -> usize {
-        match self.divisor {
-            Divisor::Runtime { slot, .. } => slot + 1,
-            _ => 0,
-        }
+        self.scalar_count
     }
     pub(crate) fn validate_shape(&self, shape: &[usize]) -> Result<(), TensorError> {
         self.validate()?;
         if shape.len() != 2 {
             return Err(invalid("leading sum requires rank two"));
+        }
+        if !(65..=256).contains(&shape[0]) || shape[1] as u64 != self.column_certificate {
+            return Err(invalid(
+                "leading sum shape outside the certified row/column domain",
+            ));
         }
         let check = |axis: usize, certificate: Option<u64>| {
             if certificate.map_or(shape[axis] >= 2, |exact| exact == shape[axis] as u64) {
@@ -119,15 +139,18 @@ impl LeadingSum {
         Ok(())
     }
     pub(crate) fn identity(&self, device: usize, context: usize) -> Vec<u8> {
-        // v1 fixes float32 arithmetic/conversions, u64 indices, 32x8 geometry,
-        // grid cap 65535, no-FTZ full divide and the shared precise NVRTC options.
-        let mut out = b"torch_rs.leading_sum.executable.v1\0".to_vec();
+        // v2 fixes seeded 64-lane segments, separate B32 halves, u64 indices,
+        // 32x8 geometry, no-FTZ full divide and the shared precise NVRTC options.
+        let mut out = b"torch_rs.leading_sum.executable.v2\0".to_vec();
         let mut word = |x: u64| out.extend_from_slice(&x.to_le_bytes());
         for x in [
             device as u64,
             context as u64,
             self.axis.cast_unsigned(),
             u64::from(self.keepdim),
+            self.scalar_count as u64,
+            self.column_certificate,
+            self.segments(),
         ] {
             word(x);
         }
@@ -178,14 +201,11 @@ impl HostLeadingSum {
         let device = validate_inputs(inputs, &descriptor)?;
         let context = Module::checked_context(device)?;
         let columns = inputs[0].shape[1];
-        let mut output = Layout::new(&if descriptor.keepdim {
+        let output = Layout::new(&if descriptor.keepdim {
             vec![1, columns]
         } else {
             vec![columns]
         })?;
-        if descriptor.keepdim && columns == 0 && matches!(descriptor.divisor, Divisor::None) {
-            output.strides[0] = 0;
-        }
         Ok(Self {
             identity: descriptor.identity(device, context),
             descriptor,

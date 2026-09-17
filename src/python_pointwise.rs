@@ -336,20 +336,26 @@ fn leading_sum_descriptor(value: &Bound<'_, PyAny>) -> PyResult<LeadingSum> {
     let descriptor = value
         .cast_exact::<PyTuple>()
         .map_err(|_| PyTypeError::new_err("expected an exact leading-sum descriptor tuple"))?;
-    if descriptor.len() != 5 {
+    if descriptor.len() != 8 {
         return Err(PyValueError::new_err(
-            "expected five leading-sum descriptor fields",
+            "expected eight leading-sum descriptor fields",
         ));
     }
     let tag = descriptor.get_item(0)?;
     let axis = descriptor.get_item(1)?;
     let keepdim = descriptor.get_item(2)?;
+    let scalar_count = descriptor.get_item(5)?;
+    let column_certificate = descriptor.get_item(6)?;
+    let row_hint = descriptor.get_item(7)?;
     if !tag.is_exact_instance_of::<PyString>()
         || !axis.is_exact_instance_of::<PyInt>()
         || !keepdim.is_exact_instance_of::<PyBool>()
+        || !scalar_count.is_exact_instance_of::<PyInt>()
+        || !column_certificate.is_exact_instance_of::<PyInt>()
+        || !row_hint.is_exact_instance_of::<PyInt>()
     {
         return Err(PyTypeError::new_err(
-            "expected leading_sum, exact integer axis and bool keepdim",
+            "expected leading_sum, exact integer axis/count/column/hint and bool keepdim",
         ));
     }
     if tag.extract::<String>()? != "leading_sum" {
@@ -366,6 +372,9 @@ fn leading_sum_descriptor(value: &Bound<'_, PyAny>) -> PyResult<LeadingSum> {
         keepdim: keepdim.extract::<bool>()?,
         row_certificate,
         divisor,
+        scalar_count: scalar_count.extract::<usize>()?,
+        column_certificate: column_certificate.extract::<u64>()?,
+        row_hint: row_hint.extract::<u64>()?,
     };
     descriptor
         .validate()

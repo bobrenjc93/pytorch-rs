@@ -1,11 +1,11 @@
 //! Column-tiled rank-two leading reduction; distinct from pointwise Programs.
-use super::super::{TensorError, c_void};
-use super::{driver, jit_module::Module};
+use super::super::{TensorError, c_void, runtime};
+use super::{current_context, driver, jit_module::Module};
 use crate::{
     pointwise_ir::invalid,
-    tensor::leading_sum::{Divisor, LeadingSum, Reduction},
+    tensor::leading_sum::{Divisor, LeadingSum},
 };
-use std::{fmt::Write, sync::Arc};
+use std::sync::Arc;
 
 pub(crate) struct Kernel {
     pub(crate) descriptor: LeadingSum,
@@ -25,6 +25,7 @@ impl Kernel {
         context: usize,
     ) -> Result<Arc<Self>, TensorError> {
         descriptor.validate()?;
+        validate_device(device, context, descriptor.column_certificate)?;
         let source = source(&descriptor);
         let module = Module::compile(
             source,
@@ -103,6 +104,44 @@ impl Kernel {
         )
     }
 }
+fn validate_device(device: usize, context: usize, columns: u64) -> Result<(), TensorError> {
+    let _guard = runtime()?.guard(device)?;
+    if current_context()? != context {
+        return Err(invalid("host plan context mismatch"));
+    }
+    let driver = driver()?;
+    let mut ordinal = 0;
+    let mut properties = [0; 5];
+    // SAFETY: documented CUDA attributes and writable integers under the device guard.
+    unsafe {
+        driver.check((driver.device)(&raw mut ordinal), "cuCtxGetDevice")?;
+        for (value, attribute) in properties.iter_mut().zip([75, 76, 10, 16, 39]) {
+            driver.check(
+                (driver.attribute)(value, attribute, ordinal),
+                "cuDeviceGetAttribute(leading sum)",
+            )?;
+        }
+    }
+    validate_device_properties(columns, properties)
+}
+fn validate_device_properties(columns: u64, properties: [i32; 5]) -> Result<(), TensorError> {
+    let [major, minor, warp, multiprocessors, threads] = properties;
+    if (major, minor, warp) != (9, 0, 32) || multiprocessors <= 0 || threads <= 0 {
+        return Err(invalid(
+            "leading sum requires Hopper cc 9.0, warp 32 and positive device properties",
+        ));
+    }
+    let multiprocessors = u64::try_from(multiprocessors).expect("positive device property");
+    let threads = u64::try_from(threads).expect("positive device property");
+    if u128::from(columns) >= 64 * u128::from(multiprocessors)
+        || 256 * u128::from(columns) >= 32 * u128::from(multiprocessors) * u128::from(threads)
+    {
+        return Err(invalid(
+            "leading sum exceeds the device outer-reduction envelope",
+        ));
+    }
+    Ok(())
+}
 pub(crate) fn blocks(columns: usize) -> u32 {
     u32::try_from(columns.div_ceil(32).min(65535)).expect("capped grid")
 }
@@ -133,49 +172,48 @@ fn source(descriptor: &LeadingSum) -> String {
             if axis == 0 { "rows" } else { "columns" }
         ),
     };
-    let body = match descriptor.reduction() {
-        Reduction::Empty => "float value = 0.0f;".into(),
-        Reduction::Singleton => "float value = input[column];".into(),
-        Reduction::OrderedSmall(rows) => {
-            let mut s = "float value = input[column];\n".to_owned();
-            for row in 1..rows {
-                writeln!(
-                    s,
-                    "value = __fadd_rn(value, input[{row}ull * columns + column]);"
-                )
-                .unwrap();
-            }
-            s
-        }
-        Reduction::Tree8 => String::new(),
-    };
-    let reduce = if descriptor.reduction() == Reduction::Tree8 {
-        format!(
-            r"
-        float partial = 0.0f;
-        if (column < columns) {{
-            for (unsigned long long row = threadIdx.y; row < rows; row += 8ull)
-                partial = __fadd_rn(partial, input[row * columns + column]);
-        }}
-        workspace[threadIdx.y][threadIdx.x] = partial;
-        __syncthreads();
-        for (unsigned int step = 4; step != 0; step >>= 1) {{
-            if (threadIdx.y < step)
-                workspace[threadIdx.y][threadIdx.x] = __fadd_rn(workspace[threadIdx.y][threadIdx.x], workspace[threadIdx.y + step][threadIdx.x]);
+    let segments = descriptor.segments();
+    let reduce = format!(
+        r"
+        unsigned long long length = (rows + {segments}ull - 1ull) / {segments}ull;
+        float value = 0.0f;
+        for (unsigned int segment = 0; segment < {segments}u; ++segment) {{
+            float p[8] = {{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}};
+            for (unsigned long long k = 0; k < length; k += 64ull) {{
+                #pragma unroll
+                for (unsigned int j = 0; j < 8; ++j) {{
+                    unsigned long long position = k + threadIdx.y + 8ull * j;
+                    if (position < length) {{
+                        unsigned long long row = segment * length + position;
+                        float x = row < rows && column < columns ? input[row * columns + column] : 0.0f;
+                        p[j] = __fadd_rn(p[j], x);
+                    }}
+                }}
+            }}
+            // d16 then d8, independently for each complete 32-lane half.
+            lo[threadIdx.y][threadIdx.x] = __fadd_rn(__fadd_rn(p[0], p[2]), __fadd_rn(p[1], p[3]));
+            hi[threadIdx.y][threadIdx.x] = __fadd_rn(__fadd_rn(p[4], p[6]), __fadd_rn(p[5], p[7]));
+            __syncthreads();
+            for (unsigned int step = 4; step != 0; step >>= 1) {{
+                if (threadIdx.y < step) {{
+                    lo[threadIdx.y][threadIdx.x] = __fadd_rn(lo[threadIdx.y][threadIdx.x], lo[threadIdx.y + step][threadIdx.x]);
+                    hi[threadIdx.y][threadIdx.x] = __fadd_rn(hi[threadIdx.y][threadIdx.x], hi[threadIdx.y + step][threadIdx.x]);
+                }}
+                __syncthreads();
+            }}
+            if (threadIdx.y == 0) {{
+                float total = __fadd_rn(lo[0][threadIdx.x], hi[0][threadIdx.x]);
+                value = segment == 0 ? total : __fadd_rn(value, total);
+            }}
+            // All reads finish before the next segment reuses either plane.
             __syncthreads();
         }}
         if (threadIdx.y == 0 && column < columns) {{
-            float value = workspace[0][threadIdx.x];
             output[column] = {epilogue};
         }}
         __syncthreads();
 "
-        )
-    } else {
-        format!(
-            "if (threadIdx.y == 0 && column < columns) {{\n{body}\noutput[column] = {epilogue};\n}}"
-        )
-    };
+    );
     let division_helper = if matches!(
         descriptor.divisor,
         Divisor::Runtime { .. }
@@ -196,7 +234,8 @@ fn source(descriptor: &LeadingSum) -> String {
         r#"
 {division_helper}
 extern "C" __global__ void torch_rs_leading_sum(const float* input, float* output, unsigned long long rows, unsigned long long columns, float scalar) {{
-    __shared__ float workspace[8][32];
+    __shared__ float lo[8][32];
+    __shared__ float hi[8][32];
     for (unsigned long long tile = (unsigned long long)blockIdx.x * 32ull; tile < columns; tile += (unsigned long long)gridDim.x * 32ull) {{
         unsigned long long column = tile + threadIdx.x;
         {reduce}

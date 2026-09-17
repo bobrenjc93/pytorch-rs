@@ -114,10 +114,14 @@ not a pointwise Program or eager capture. It shares compile/module ownership,
 prepared input validation, fresh outputs and synchronous completion. Logical
 shape/scalar guards select the [reduction and divisor policies](compile-pointwise-numerics.md#leading-axis-sum)
 before executable lookup; preparation still checks current shape, storage and
-offset. With `keepdim=True`, bare sums use stride `(C, 1)`; a terminal
-scalar division uses `(max(C, 1), 1)`. Thus empty outputs have stride `(0, 1)`
-and `(1, 1)`, respectively, preserved through preparation and matching the
-tested default Inductor histories.
+offset. This reduction requires Hopper compute capability 9.0, warp size 32,
+65–256 current rows, and an exact selected column extent of 132–256 divisible
+by four. The selected row hint must also be 65–256; generalized columns reject.
+For column extent `C`, the device must satisfy `C < 64 * SM_count` and
+`256 * C < 32 * SM_count * max_threads_per_SM`. Small and empty reductions
+and other architectures reject. Output strides are `(C, 1)` with `keepdim=True`
+and `(1,)` otherwise. The complete selected scalar ABI includes unused promoted
+float slots, with at most 64 slots; only the live divisor is read by the kernel.
 No performance benefit or general reduction coverage is implied.
 
 ### Bounded positional input trees

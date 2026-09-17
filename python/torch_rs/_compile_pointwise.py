@@ -95,10 +95,14 @@ class LeadingSum:
     keepdim: bool
     divisor: tuple = ("none",)
     row_certificate: int | None = None
+    scalar_count: int = 0
+    column_certificate: int | None = None
+    row_hint: int = 1
 
     @property
     def descriptor(self):
-        return ("leading_sum", self.axis, self.keepdim, self.row_certificate, self.divisor)
+        return ("leading_sum", self.axis, self.keepdim, self.row_certificate, self.divisor,
+                self.scalar_count, self.column_certificate, self.row_hint)
 
 
 @dataclass(frozen=True, eq=False)
@@ -494,7 +498,10 @@ def _shape_guards(program, graph, first, metadata, history, predicates=()):
         guards.append((source, _tensor_guard(current, previous, duck_strides, source)))
         observations[source] = current
     if type(graph) is LeadingSum:
-        return ShapeGuards(tuple(guards), (), (), tuple(predicates)), observations, 1
+        shape = observations[graph.input][0]
+        if len(shape) != 2:
+            unsupported("leading sum requires rank-two input")
+        return ShapeGuards(tuple(guards), (), (), tuple(predicates)), observations, shape[0]
     # Graph topology supplies broadcast equalities and live iteration/buffer
     # bounds. Rust remains the owner of actual-shape admission at compile/run.
     dependencies, combined = [], False
@@ -528,17 +535,21 @@ def _shape_guards(program, graph, first, metadata, history, predicates=()):
             observations, numerical_hint)
 
 
-def _finalize_leading_sum(lowering, guards):
+def _finalize_leading_sum(lowering, guards, numerical_hint, scalar_count):
     operation = lowering.graph
     if type(operation) is not LeadingSum:
         return lowering
     sizes = dict(guards.tensors)[operation.input].sizes
     if len(sizes) != 2:
         unsupported("leading sum requires rank-two input")
+    if sizes[1] is None:
+        unsupported("leading sum requires an exact column guard")
     divisor = operation.divisor
     if divisor[0] == "dimension":
         divisor = ("dimension", divisor[1], sizes[divisor[1]])
-    return replace(lowering, graph=replace(operation, row_certificate=sizes[0], divisor=divisor))
+    return replace(lowering, graph=replace(
+        operation, row_certificate=sizes[0], divisor=divisor, scalar_count=scalar_count,
+        column_certificate=sizes[1], row_hint=numerical_hint))
 
 
 def _select_specialization(program, bindings, values, tensors, metadata, graphs):
@@ -1784,7 +1795,7 @@ def implementation(model, recompile_limit):
                     values = dict(static_values)
                     values.update((s, v) for s, v in entry.values.items() if type(v) is not Value)
                     lowering = lower(program, values, len(tensors), input_ids, metadata=metadata)
-            lowering = _finalize_leading_sum(lowering, key[2])
+            lowering = _finalize_leading_sum(lowering, key[2], entry.numerical_hint, len(scalars))
             # Logical guards choose scalar semantics. Concrete executables still
             # specialize the full native ABI and exact broadcast address formula.
             # Preparation checks all original-IR admission. Exact native shapes

@@ -263,20 +263,28 @@ small subnormal comparisons alone do not establish bit-exact preservation.
 
 ## Leading-axis sum
 
-The distinct rank-two leading-sum executable uses selected logical guard
-certificates: exact zero rows writes positive zero, one row loads directly
-(including negative zero), and two through seven rows add in row order starting
-with row zero. Larger or generalized row extents use eight row-strided partials
-and a fixed 4/2/1 tree in a 32-by-8 column tile. Row and divisor-axis certificates
-are independent; a generalized small-shape revisit keeps its selected tree.
+The distinct rank-two leading-sum executable is bounded to Hopper cc 9.0 with
+warp size 32, current rows 65–256 and exact selected columns 132–256 divisible
+by four. It also requires `C < 64 * SM_count` and
+`256 * C < 32 * SM_count * max_threads_per_SM`. Generalized columns, small or
+empty reductions and other architectures reject.
+
+The selected logical specialization retains a row hint `H` in 65–256 and the
+complete scalar ABI (0–64 slots). A static row certificate equals `H`; a
+generalized row revisit retains the selected hint. There are `ceil(H / 128)`
+segments, each spanning `ceil(current_rows / segments)` rows. Each segment uses
+64 positive-zero-seeded lanes and explicit round-to-nearest float32 additions.
+Each 32-lane half reduces independently in 16/8/4/2/1 order before the two
+halves are added. Two segment totals are added before the epilogue. The native
+32-by-8 block uses separate shared planes for the halves and uniform barriers.
+The segment count is not recomputed from current rows on a selected cache hit.
 
 Constant divisors use a binary64 reciprocal rounded to float32 followed by
 float32 multiplication. Promoted runtime scalars use current float32 values and
 explicit non-FTZ `div.full.f32`. An exact input-dimension certificate uses the
 current checked extent with reciprocal/multiply; a generalized dimension uses
-current u64-to-float32 conversion and full division. Empty columns still validate
-inputs; empty rows with nonempty columns write outputs and apply the epilogue.
-Empty keepdim outputs retain stride `(0, 1)` for bare sum and `(1, 1)` for
-a terminal scalar division through preparation, matching the tested default
-Inductor histories. Rank-one outputs retain stride `(1,)`.
+current u64-to-float32 conversion and full division. All float32 value classes
+remain in the admitted shape domain. Output strides are `(C, 1)` for keepdim
+and `(1,)` otherwise. Earlier small/empty and Tree8 counterexamples remain
+historical evidence; rejecting those shapes does not establish numerical parity.
 These policies do not change pointwise Program arithmetic or reference tolerance.
