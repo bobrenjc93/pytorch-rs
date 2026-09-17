@@ -383,11 +383,17 @@ mod tests {
     #[test]
     fn transpose_wrapping_failure_releases_partial_and_pending_aliases() {
         use pyo3::exceptions::PyMemoryError;
+        #[allow(unsafe_code)]
+        fn refcount(owner: &Bound<'_, PyTensor>) -> isize {
+            // SAFETY: Bound supplies a live object while attached to Python;
+            // borrowing it does not increment the count being observed.
+            unsafe { pyo3::ffi::Py_REFCNT(owner.as_ptr()) }
+        }
         Python::initialize();
         Python::attach(|py| {
             let input = CoreTensor::from_vec(vec![1.; 6], [2, 3]).unwrap();
             let owner = Py::new(py, PyTensor::new(input.clone())).unwrap();
-            let baseline = owner.get_refcnt(py);
+            let baseline = refcount(owner.bind(py));
             let outputs = (0..3).map(|_| input.transpose(0, 1).unwrap()).collect();
             let mut wrapped = Vec::new();
             let mut count = 0;
@@ -407,8 +413,8 @@ mod tests {
             );
             assert!(result.unwrap_err().is_instance_of::<PyMemoryError>(py));
             assert_eq!(count, 2);
-            assert_eq!(owner.get_refcnt(py), baseline);
-            assert_eq!(wrapped[0].get_refcnt(py), 1);
+            assert_eq!(refcount(owner.bind(py)), baseline);
+            assert_eq!(refcount(wrapped[0].bind(py)), 1);
             drop(wrapped);
             let outputs = vec![input.transpose(0, 1).unwrap()];
             let result = wrap_outputs(

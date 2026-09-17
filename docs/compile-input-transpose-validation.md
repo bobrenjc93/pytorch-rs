@@ -1,5 +1,12 @@
 # Default input-rooted transpose validation
 
+**Author revision pending:** the CUDA scalar `add_` revision based on published
+head `41499a2` postdates the captures below. Those artifacts remain unchanged;
+they do not measure the revised candidate. [Author verification](cuda-add-inplace.md)
+records the new development checks. A fresh clean-commit capture remains pending
+separate operator admission after Burner commits; this author step performs no
+evidence refresh, review or canonical evaluation.
+
 Implemented from `60202557b4f110d07777f585e804ab5f55e1ff7b`. This is bounded
 metadata-compilation support, not general Inductor or performance parity.
 The default frontend retains one immutable view recipe with original binding
@@ -33,12 +40,12 @@ exact commands and uncommitted source/build/import identity against base
 not a clean-commit measurement. Native Rust sources and the evaluation harness
 were unchanged by this correction.
 
-Burner committed the correction as `48c7b82`; the fresh clean-commit capture below
-now measures that corrected candidate. The earlier `d22c5ac` measurement and dirty
+Burner committed the correction as `48c7b82`; the clean-commit capture below
+measured that corrected candidate before the subsequent author revision. The earlier `d22c5ac` measurement and dirty
 repair receipts remain unchanged and supply no current-candidate performance
 credit. No scoring run was performed during the uncommitted repair.
 
-## Current clean-commit evidence
+## Prior clean-commit evidence (refresh pending)
 
 Captured on 2026-09-17 from clean implementation commit
 `48c7b82cd55318e8be455d792f2410d3a0f2ff95`, before these evidence-only updates.

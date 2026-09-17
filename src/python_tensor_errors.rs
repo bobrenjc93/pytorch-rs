@@ -54,6 +54,7 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         TensorError::UnsupportedDevice { .. }
         | TensorError::UnsupportedCudaZeroTensor { .. }
         | TensorError::UnsupportedCudaAddition { .. }
+        | TensorError::UnsupportedCudaInplaceAddition { .. }
         | TensorError::UnsupportedCudaScalarMultiplication { .. }
         | TensorError::UnsupportedCudaNegation { .. }
         | TensorError::UnsupportedCudaRelu { .. }

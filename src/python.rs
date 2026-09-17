@@ -1407,6 +1407,18 @@ Example::
         tensor_add_sub_method(AddSubMethodOperation::Add, slf, args, kwargs)
     }
 
+    /// add_(other, *, alpha=1) -> Tensor
+    ///
+    /// Add a scalar in place to a dense native CUDA float32 tensor without gradients.
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn add_(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        tensor_add_sub_method(AddSubMethodOperation::AddInplace, slf, args, kwargs)
+    }
+
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
     #[doc = "\ndiv(value, *, rounding_mode=None) -> Tensor\n\nSee :func:`torch.div`\n"]
@@ -8363,12 +8375,16 @@ fn apply_tensor_add_sub_method(
         }
     }
 
+    // Mutation shares normalization/dispatch, never the allocating binary executor.
+    let binary = match operation {
+        AddSubMethodOperation::AddInplace => return apply_tensor_add_inplace(call),
+        AddSubMethodOperation::Add => BinaryOperation::Add,
+        AddSubMethodOperation::Sub | AddSubMethodOperation::Subtract => BinaryOperation::Subtract,
+    };
     let result = match (&call.input, &call.other) {
         (BoundSubOperand::Tensor(input), BoundSubOperand::Tensor(other)) => {
             let other = other.try_borrow()?;
-            operation
-                .binary_operation()
-                .apply_tensors(&input.try_borrow()?.inner, &other.inner)
+            binary.apply_tensors(&input.try_borrow()?.inner, &other.inner)
         }
         (BoundSubOperand::Tensor(tensor), BoundSubOperand::Scalar(scalar)) => {
             let scalar = parse_supported_arithmetic_scalar(scalar)?;
@@ -8379,11 +8395,7 @@ fn apply_tensor_add_sub_method(
             {
                 return Err(bool_subtraction_error());
             }
-            operation.binary_operation().apply_scalar(
-                &tensor.try_borrow()?.inner,
-                scalar.into_f32(),
-                false,
-            )
+            binary.apply_scalar(&tensor.try_borrow()?.inner, scalar.into_f32(), false)
         }
         (BoundSubOperand::Override(_), _) | (_, BoundSubOperand::Override(_)) => {
             unreachable!("add/sub operand overrides were dispatched before the native path")
@@ -8397,6 +8409,25 @@ fn apply_tensor_add_sub_method(
         PyTensor::new(result.map_err(|error| tensor_error(&error))?),
     )?
     .into_any())
+}
+
+fn apply_tensor_add_inplace(call: &BoundTensorMethodAddSubCall<'_>) -> PyResult<Py<PyAny>> {
+    let (BoundSubOperand::Tensor(receiver), BoundSubOperand::Scalar(other)) =
+        (&call.input, &call.other)
+    else {
+        return Err(PyNotImplementedError::new_err(
+            "add_(): only an exact native CUDA float32 Tensor and a real-number scalar other are supported",
+        ));
+    };
+    // Conversions can invoke Python/NumPy callbacks. Finish them before borrowing
+    // mutable native state; this operation cannot undo their independent effects.
+    let scalar = parse_supported_arithmetic_scalar(other)?.into_f32();
+    receiver
+        .try_borrow_mut()?
+        .inner
+        .add_scalar_(scalar)
+        .map_err(|error| tensor_error(&error))?;
+    Ok(receiver.clone().unbind().into_any())
 }
 
 fn parse_supported_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<ParsedArithmeticScalar> {
@@ -8644,6 +8675,7 @@ enum MultiplicationOperation {
 #[derive(Clone, Copy)]
 enum AddSubMethodOperation {
     Add,
+    AddInplace,
     Sub,
     Subtract,
 }
@@ -8658,6 +8690,7 @@ impl AddSubMethodOperation {
     const fn name(self) -> &'static str {
         match self {
             Self::Add => "add",
+            Self::AddInplace => "add_",
             Self::Sub => "sub",
             Self::Subtract => "subtract",
         }
@@ -8666,6 +8699,7 @@ impl AddSubMethodOperation {
     const fn qualified_method_name(self) -> &'static str {
         match self {
             Self::Add => "torch.Tensor.add",
+            Self::AddInplace => "torch.Tensor.add_",
             Self::Sub => "torch.Tensor.sub",
             Self::Subtract => "torch.Tensor.subtract",
         }
@@ -8674,6 +8708,7 @@ impl AddSubMethodOperation {
     const fn dispatch_allocation_error(self) -> &'static str {
         match self {
             Self::Add => "unable to allocate add dispatch operands",
+            Self::AddInplace => "unable to allocate add_ dispatch operands",
             Self::Sub => "unable to allocate sub dispatch operands",
             Self::Subtract => "unable to allocate subtract dispatch operands",
         }
@@ -8682,15 +8717,9 @@ impl AddSubMethodOperation {
     const fn alpha_unsupported_error(self) -> &'static str {
         match self {
             Self::Add => "add(): alpha values other than 1 are not supported",
+            Self::AddInplace => "add_(): alpha values other than 1 are not supported",
             Self::Sub => "sub(): alpha values other than 1 are not supported",
             Self::Subtract => "subtract(): alpha values other than 1 are not supported",
-        }
-    }
-
-    const fn binary_operation(self) -> BinaryOperation {
-        match self {
-            Self::Add => BinaryOperation::Add,
-            Self::Sub | Self::Subtract => BinaryOperation::Subtract,
         }
     }
 }
@@ -20446,6 +20475,9 @@ fn bind_tensor_add_sub_method_arguments<'py>(
 ) -> PyResult<BoundTensorMethodAddSubArguments<'py>> {
     match operation {
         AddSubMethodOperation::Add => bind_tensor_add_method_arguments(positional, keywords),
+        AddSubMethodOperation::AddInplace => {
+            bind_tensor_add_inplace_arguments(positional, keywords)
+        }
         AddSubMethodOperation::Sub => bind_tensor_sub_method_arguments(positional, keywords),
         AddSubMethodOperation::Subtract => bind_tensor_subtract_method_arguments(
             SubtractionOperation::Subtract,
@@ -20453,6 +20485,60 @@ fn bind_tensor_add_sub_method_arguments<'py>(
             keywords,
         ),
     }
+}
+
+fn bind_tensor_add_inplace_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundTensorMethodAddSubArguments<'py>> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err("add_() takes 1 positional argument"));
+    }
+    let mut other = if positional.is_empty() {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let mut alpha = None;
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "other" if other.is_none() => {
+                    other = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                "other" => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("add_() got multiple values for argument 'other'")
+                    });
+                }
+                "alpha" => {
+                    alpha = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+                _ => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "add_() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+            }
+        }
+    }
+    let other = other.ok_or_else(|| {
+        PyTypeError::new_err("add_() missing 1 required positional argument: 'other'")
+    })?;
+    Ok((other, alpha, keyword_error))
 }
 
 fn bind_tensor_add_method_arguments<'py>(
@@ -22024,6 +22110,11 @@ fn validate_pow_native_input(input: &PyTensor) -> PyResult<()> {
 }
 
 fn add_sub_method_unsupported_native_input(operation: AddSubMethodOperation) -> PyErr {
+    if matches!(operation, AddSubMethodOperation::AddInplace) {
+        return PyNotImplementedError::new_err(
+            "add_(): only an exact native CUDA float32 Tensor and a real-number scalar other are supported",
+        );
+    }
     PyNotImplementedError::new_err(format!(
         "{}(): only exact native CPU float32 Tensor input and Tensor or real-number other operands are supported",
         operation.name()
