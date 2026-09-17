@@ -882,15 +882,18 @@ def check_namespace_guard(guard):
         unsupported("patched native namespace type")
 
 
-def bind_arguments(args):
+def bind_arguments(args, projection=None):
     """Snapshot exact trees; retain every Tensor occurrence only for this call.
 
     Flat calls retain their direct, unbounded scalar-root admission. The bounded
     walker checks types before iteration/hash/lookup, and snapshots dict pairs
     before validating keys so no mutable dictionary is subsequently reread.
     """
+    # Optional maps belong to this invocation, never to the Program/cache.
+    # Roots come from the captured immutable Program and remain in argument order.
+    roots, projected_keys, projected_values = projection if projection is not None else (None, None, None)
     tensors, parameters = [], []
-    for arg in args:
+    for position, arg in enumerate(args):
         kind = type(arg)
         if kind is _TENSOR_TYPE:
             parameters.append(Value(len(tensors)))
@@ -905,6 +908,12 @@ def bind_arguments(args):
             unsupported("default backend requires exact native CUDA float32 Tensor inputs "
                         "and exact float/bool leaves in bounded exact tuple/list/dict trees; "
                         "see docs/compile-pointwise-jit.md")
+        if roots is not None:
+            source, value = roots[position], parameters[-1]
+            if kind is _TENSOR_TYPE:
+                projected_keys[source], projected_values[source] = ("tensor", value.index), value
+            else:
+                projected_keys[source], projected_values[source] = binding(value)
     else:
         if len(tensors) not in (1, 2):
             unsupported("expected one or two positional tensor occurrences")
@@ -913,6 +922,9 @@ def bind_arguments(args):
     # A container switches this invocation to the complete bounded walker.
     # Discard the prefix so every root and Tensor occurrence is counted once.
     tensors = []
+    if roots is not None:
+        projected_keys.clear()
+        projected_values.clear()
 
     def leaf(arg):
         kind = type(arg)
@@ -932,11 +944,17 @@ def bind_arguments(args):
     if edges > 4096:
         unsupported("input tree exceeds 4096 reference edges")
 
-    def snapshot(arg, depth):
+    def snapshot(arg, depth, source=None):
         nonlocal edges
         kind = type(arg)
         if kind is not tuple and kind is not list and kind is not dict:
-            return leaf(arg)
+            value = leaf(arg)
+            if source is not None:
+                if kind is _TENSOR_TYPE:
+                    projected_keys[source], projected_values[source] = ("tensor", value.index), value
+                else:
+                    projected_keys[source], projected_values[source] = binding(value)
+            return value
         if depth >= 64:
             unsupported("input tree exceeds container depth 64")
         if id(arg) in seen:
@@ -957,9 +975,21 @@ def bind_arguments(args):
         # A concurrent growth cannot bypass the budget at expansion.
         if len(children) != width:
             unsupported("input container changed during admission")
-        return InputTree(kind.__name__, tuple(snapshot(child, depth + 1) for child in children), keys)
+        if source is None:
+            return InputTree(kind.__name__, tuple(snapshot(child, depth + 1) for child in children), keys)
+        # Reserve the parent before its children, matching legacy projection's
+        # preorder (also used for scalar promotion and specialization identity).
+        projected_keys[source] = ("dict",) if kind is dict else (kind.__name__, width)
+        projected_values[source] = None
+        items = keys if kind is dict else range(width)
+        value = InputTree(kind.__name__, tuple(
+            snapshot(child, depth + 1, source.child(item))
+            for item, child in zip(items, children)), keys)
+        projected_values[source] = value
+        return value
 
-    parameters = tuple(snapshot(arg, 0) for arg in args)
+    parameters = tuple(snapshot(arg, 0, roots[i] if roots is not None else None)
+                       for i, arg in enumerate(args))
     if len(tensors) not in (1, 2):
         unsupported("expected one or two positional tensor occurrences")
     return tuple(tensors), parameters
@@ -973,12 +1003,12 @@ def resolve(model, program, parameters=None):
     return _resolve_bindings(model, program, parameters)
 
 
-def _resolve_bindings(model, program, parameters):
+def _resolve_bindings(model, program, parameters, projection=None):
     """Resolve mutable bindings after the caller validates the root/signature."""
     validate_namespaces(model)
     validate_ranges(model, program.range_sources)
     globals_ = model.__globals__
-    values, keys = {}, {}
+    keys, values = ({}, {}) if projection is None else projection
     closure = dict(zip(program.code.co_freevars, model.__closure__ or ()))
     if parameters is None:
         # Private hardware-free lowering callers model a tensor-only signature.
@@ -997,7 +1027,8 @@ def _resolve_bindings(model, program, parameters):
     for source in program.dependencies:
         kind, name = source.kind, source.name
         if kind == "parameter":
-            parameter(source, parameters[source.position])
+            if projection is None:
+                parameter(source, parameters[source.position])
             continue
         elif kind == "LOAD_GLOBAL":
             if name not in globals_:
@@ -1518,7 +1549,12 @@ def implementation(model, recompile_limit):
             unsupported("expected positional arguments without keywords")
         if type(_ROOT) is not types.ModuleType:
             unsupported("patched native package type")
-        tensors, parameters = bind_arguments(args)
+        captured_program = program
+        projection = None
+        if captured_program is not None and captured_program.code.co_argcount == len(args):
+            roots = captured_program.dependencies[:len(args)]
+            projection = (roots, {}, {})
+        tensors, parameters = bind_arguments(args, projection)
         if _ROOT.overrides._get_current_function_mode() is not None:
             unsupported("active __torch_function__ mode")
         for cls, guards in _METHOD_GUARDS:
@@ -1538,7 +1574,10 @@ def implementation(model, recompile_limit):
             # identity check above repeats admission on replacement; mutable
             # signature containers still receive their one check on every call.
             # Private resolve() remains fully validating for independent callers.
-            static_bindings, static_values = _resolve_bindings(model, program, parameters)
+            # Admission can reenter Python and replace the closure's Program.
+            # Speculative maps are usable only for the identical immutable owner.
+            projected = projection[1:] if projection is not None and program is captured_program else None
+            static_bindings, static_values = _resolve_bindings(model, program, parameters, projected)
             input_ids = (0, 0) if len(tensors) == 2 and tensors[0] is tensors[1] else tuple(range(len(tensors)))
             selected = _select_specialization(program, static_bindings, static_values,
                                               tensors, metadata, cache.graphs)

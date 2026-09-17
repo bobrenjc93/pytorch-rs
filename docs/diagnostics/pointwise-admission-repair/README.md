@@ -12,7 +12,49 @@ inputs, provider bytes and all declared licenses. Historical Git evidence is
 unchanged. Contributor guidance now identifies real NVRTC and C-compiler
 prerequisites; README licensing matches the existing package metadata.
 
-## Clean-commit evidence
+## Current warm-call repair
+
+The [repair scope/status](warm-repair-scope.md) binds the rejection of
+`34dcc474` and the later public guidance. Warm calls now construct invocation-local
+binding projections during input snapshotting, reusing immutable Program roots.
+Cold calls and reentrant Program replacement retain the original resolver.
+Input guards, native admission and independent prepared-run validation remain.
+
+The one [before/after call-profile pair](warm-profile-summary.json) completed
+280 calls per side (256 profiled), with identical cases, inputs/outputs,
+interpreter, GPU0 and NVRTC/runtime 13.0. The before production source matches
+`34dcc474`; the after source is the recorded **uncommitted** repair. Both use
+source-checked release wheels. The second recursive `parameter()` traversal
+disappeared. Profiled cumulative execute time was mixed:
+
+| Case | Before / after, ms across 64 profiled calls |
+| --- | --- |
+| Unary flat | 6.308 / 5.917 |
+| Unary nested | 9.225 / 10.279 |
+| Binary flat | 9.726 / 7.054 |
+| Binary nested | 12.001 / 12.392 |
+
+These are profiler observations, not ordinary latency, reference parity or score
+evidence; both nested totals increased. No timing reroll is authorized.
+[Raw profiles, wheels, outputs, checks and failures](../gelu-program-integration/warm-repair-manifest.json)
+remain auditable. Six new tests and 55 GELU/identity/failure controls passed.
+The broader suite ran 414 tests: 403 passed, nine skipped, and two errors in
+the original new fixtures; the corrected module passed separately. CUDA-hidden
+controls passed 25 tests with 17 skips. All 25 documentation/offline archive
+checks passed. Local design and code review passed.
+
+That broad suite also invoked an existing dispatch-history test which emitted
+**unplanned timings** (408 native and 408 reference calls). This scope deviation
+is retained separately and excluded from performance claims; it is not
+retroactively admitted as another phase. The three required offline archives
+remain intact. [Historical archive removal is blocked](../gelu-program-integration/archive-preservation.md)
+by unavailable pushed-remote reachability proof, so all 28 copies remain.
+No official gate has been rerun. Earlier clean measurements below do not measure
+this repair; the no-extra-phase boundary prevents a replacement timing campaign.
+Any later source change that invalidates this profile must be reported.
+
+## Earlier clean-commit evidence
+
 
 The [clean capture](postcommit-728d147.json) measures implementation commit
 `728d147bfdb2b05e261cb1a4ea1df9e26900c348` against rejected `8006d7e0` under

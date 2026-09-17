@@ -1,0 +1,291 @@
+{
+  "schema": 1,
+  "observed_at": "2026-09-17T01:23:14.074742+00:00",
+  "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+  "purpose": "Historical compressed evidence inventory; checkout copies retained because fresh pushed-remote reachability could not be verified.",
+  "full_history": true,
+  "source_is_ancestor": true,
+  "local_remote_tracking_head": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+  "pushed_remote_reachability": "unverified: GitHub API lookup denied by destination filter; local remote-tracking ref is not a fresh remote observation",
+  "all_original_git_blob_bytes_verified": true,
+  "checkout_copies_removed": false,
+  "total_files": 28,
+  "total_bytes": 1612770062,
+  "groups": [
+    {
+      "manifest": "docs/diagnostics/gelu-program-integration/development-manifest.json",
+      "manifest_sha256": "cd5d5b00d453f874b63b42a9aff23cea60bb9ea1bf041ea5f4bbce58e5fe736b",
+      "archive": "development.tar.gz",
+      "size": 416003036,
+      "sha256": "7084ec98f141af94ab028c902d8482052e60fb899802fcbdd1eaee2e61f03258",
+      "parts": 7
+    },
+    {
+      "manifest": "docs/diagnostics/gelu-program-integration/postcommit-5bf3e9b0-manifest.json",
+      "manifest_sha256": "b9aaa59477e3ba69723361a613905892d10f74a644398f669958de610ae5833c",
+      "archive": "postcommit-5bf3e9b0.tar.gz",
+      "size": 648030978,
+      "sha256": "32afc88283f5975c5efadaec6557cc8b0f97ddbc9d2951575145657439e64a66",
+      "parts": 10
+    },
+    {
+      "manifest": "docs/diagnostics/gelu-program-integration/feature-gate-repair-manifest.json",
+      "manifest_sha256": "6a4df1bf30e12c8e215f4c8bca9b1dbb3e3f9af0e4d461e82d83c32735c627d2",
+      "archive": "feature-gate-repair.tar.gz",
+      "size": 107468295,
+      "sha256": "e8dad9d176defceaa3b0f0674cda71f6c0713c04fe616aba60a62435dc42b054",
+      "parts": 2
+    },
+    {
+      "manifest": "docs/diagnostics/gelu-program-integration/admission-repair-development-manifest.json",
+      "manifest_sha256": "b9bf83b079b710ea12e1068afd10aba001ba6f1e5a725c57b5b60b886dec0e2b",
+      "archive": "admission-repair-development.tar.gz",
+      "size": 289273973,
+      "sha256": "8f25ebc128b454917edcf81f85c7db05a8e9ce41cc8d34218e177d43fe24bfb6",
+      "parts": 5
+    },
+    {
+      "manifest": "docs/diagnostics/gelu-program-integration/postcommit-728d147-manifest.json",
+      "manifest_sha256": "483efdf5ef54a7feb6ccf20d0600a3f266781b3c9e6c6a14e9f8068a46d44d11",
+      "archive": "postcommit-728d147.tar.gz",
+      "size": 137748914,
+      "sha256": "e6ada03d55ddc69814c804b82c13179ad2cd70f5c40cbda1e75f118eb41f5934",
+      "parts": 3
+    },
+    {
+      "manifest": "docs/diagnostics/gelu-program-integration/ci-gate-repair-manifest.json",
+      "manifest_sha256": "2cd26cc4e074d652421b137c3c568e816610f720e4274a214c0759fe15c7f49c",
+      "archive": "ci-gate-repair.tar.gz",
+      "size": 14244866,
+      "sha256": "c610005aa867450465b7509e1738454cfb180b1978994c0560330314f8113b33",
+      "parts": 1
+    }
+  ],
+  "files": [
+    {
+      "path": "docs/diagnostics/gelu-program-integration/development.tar.gz.part-000",
+      "gitBlob": "d3be74d6aec507ac6be2ab90d149da2ee92e8d4e",
+      "size": 67108864,
+      "sha256": "43ddd023bfb3fe0962b8b12314fe0224363b5a8ddf870651df979712215aa704",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/development.tar.gz.part-000"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/development.tar.gz.part-001",
+      "gitBlob": "a9704917279b1762c8de597ae8fcfb63814a6420",
+      "size": 67108864,
+      "sha256": "edc788ea154359137e01d6224221578f8bf563457298c0083274e6a06fc8cd2a",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/development.tar.gz.part-001"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/development.tar.gz.part-002",
+      "gitBlob": "8a37ee2327b4dcf006332a5383f83f83b555ce4a",
+      "size": 67108864,
+      "sha256": "1a295bedea5cf4de33850b2f510a99d1ec1a49f23cea7f9d5f1d25f9ec68503d",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/development.tar.gz.part-002"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/development.tar.gz.part-003",
+      "gitBlob": "6aab0438133b8608b64f021e0befa4f37d6497a8",
+      "size": 67108864,
+      "sha256": "593f5f4ceb3b034cb3996f378324f336a1e890adfd90712deee7d18248569fad",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/development.tar.gz.part-003"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/development.tar.gz.part-004",
+      "gitBlob": "e530e942e38eabfa326c944a06d3d699c53c986c",
+      "size": 67108864,
+      "sha256": "a2b5257ec1826518499275d0eeb969a23e8aee2c2f84426a72d2404344fdb74e",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/development.tar.gz.part-004"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/development.tar.gz.part-005",
+      "gitBlob": "b87a6bdfc944134742d746fdd95153c5b21791c5",
+      "size": 67108864,
+      "sha256": "f15c0786755d77538f8a65fa8d4c134d27a10f1fa9e560f6f93bbfb28557696b",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/development.tar.gz.part-005"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/development.tar.gz.part-006",
+      "gitBlob": "a1d7b2284cb23643399bd6684c4731367e0e54d3",
+      "size": 13349852,
+      "sha256": "018ebfd88da837324e5e5b4c36b1e7bcf50a3ca29dd5509199172502945b19d4",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/development.tar.gz.part-006"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/postcommit-5bf3e9b0.tar.gz.part-000",
+      "gitBlob": "a72877c8a2d5e63465e9b9d730846fd371e173d9",
+      "size": 67108864,
+      "sha256": "bd41bce0aae66c795589e1559aeffb935e518bcda697c78e24c10e042ff3ca1e",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/postcommit-5bf3e9b0.tar.gz.part-000"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/postcommit-5bf3e9b0.tar.gz.part-001",
+      "gitBlob": "91ba20eda397a8dfa2fb165e59d1ae8a9603d46a",
+      "size": 67108864,
+      "sha256": "b2dd83160ff95bbcd932600efa6c62e2d303e6e5ba038e9078bc765d3386d332",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/postcommit-5bf3e9b0.tar.gz.part-001"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/postcommit-5bf3e9b0.tar.gz.part-002",
+      "gitBlob": "ec62e95116aaa0dcf33d95c2335f05885eda49c5",
+      "size": 67108864,
+      "sha256": "1b107018d89a71fc7696c0361a8ab26fbcee14a2de9588a87143bfba6f1e5d5e",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/postcommit-5bf3e9b0.tar.gz.part-002"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/postcommit-5bf3e9b0.tar.gz.part-003",
+      "gitBlob": "1f015cab3abf9f870f10e575c14d82875cc66d4f",
+      "size": 67108864,
+      "sha256": "483e36df1b8ef79ebf2360ad4620f7dfb7af9c5ed574583f0dbda4e2a82479af",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/postcommit-5bf3e9b0.tar.gz.part-003"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/postcommit-5bf3e9b0.tar.gz.part-004",
+      "gitBlob": "52649e494357afeb696eaeb7f087d2bd4ccc6cac",
+      "size": 67108864,
+      "sha256": "92aa1b86bdeed57e04af483c74f9413601367d2ddff578c1c7c539bbbfcf9b61",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/postcommit-5bf3e9b0.tar.gz.part-004"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/postcommit-5bf3e9b0.tar.gz.part-005",
+      "gitBlob": "c5753ffc9081b0a73b13614cd0959dcde099a620",
+      "size": 67108864,
+      "sha256": "d4a597a57969b9c7c0ada2775fc770b847d43eb9225fc54d13dc463268fbd866",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/postcommit-5bf3e9b0.tar.gz.part-005"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/postcommit-5bf3e9b0.tar.gz.part-006",
+      "gitBlob": "55232d8b9039b8805a0027c7f3d361d3c76e4a94",
+      "size": 67108864,
+      "sha256": "0f3b19e5f4dc49c3a979784323b2687d53bff83321f10f5913f7d987389de515",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/postcommit-5bf3e9b0.tar.gz.part-006"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/postcommit-5bf3e9b0.tar.gz.part-007",
+      "gitBlob": "76d6e89c4373fb3075c4b2d24a561c909b4717c8",
+      "size": 67108864,
+      "sha256": "ab1f2037b36c969826bda559a4c3253ec080088f7b6bb57f88d6af06a353ab82",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/postcommit-5bf3e9b0.tar.gz.part-007"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/postcommit-5bf3e9b0.tar.gz.part-008",
+      "gitBlob": "19c0fc4f00be6f89c4cb3dcb1a9b407e16758595",
+      "size": 67108864,
+      "sha256": "a8e9df99b00b9322a87080ed1f354485e1c402a37b495df86a9b56de9022dc76",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/postcommit-5bf3e9b0.tar.gz.part-008"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/postcommit-5bf3e9b0.tar.gz.part-009",
+      "gitBlob": "401de1eaa04234703150e655be40e17f61c2ebbd",
+      "size": 44051202,
+      "sha256": "dceb84da35f3f31c08cde4c0bd90c26757bc2d95f3120d8d21a29d92571c2ca9",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/postcommit-5bf3e9b0.tar.gz.part-009"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/feature-gate-repair.tar.gz.part-000",
+      "gitBlob": "a8dd7b6d8230bb96e37f1ecf37d946ea958f55c0",
+      "size": 67108864,
+      "sha256": "9f3e6db6fd94c07ef16ad4550eb881a67c521f8de6352050b9ad496a5655890a",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/feature-gate-repair.tar.gz.part-000"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/feature-gate-repair.tar.gz.part-001",
+      "gitBlob": "b5b3cf4c4f48d2095058469fd7e87cdc17b0fac9",
+      "size": 40359431,
+      "sha256": "9c185ef2ede3b2a4f8ddb16809bdd71d0d8bed704dd285966fac7e0937b8202a",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/feature-gate-repair.tar.gz.part-001"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/admission-repair-development.tar.gz.part-000",
+      "gitBlob": "c3da2a54cff7d129725d8e271442a408479590a1",
+      "size": 67108864,
+      "sha256": "df090ab7448a8f7c520434e2b9a56fb20ad1cf2cb7d5ff22ddc026d0965f5d3a",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/admission-repair-development.tar.gz.part-000"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/admission-repair-development.tar.gz.part-001",
+      "gitBlob": "1307fc76d076fce06ab1416d8bbe03e8d31fce72",
+      "size": 67108864,
+      "sha256": "b5a00faa2a9b25390164bfdb045713f2dc418de99cf2f8861efbef343e30c53a",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/admission-repair-development.tar.gz.part-001"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/admission-repair-development.tar.gz.part-002",
+      "gitBlob": "9bdb0a38d6112e1b3b957677c8427c4a37db49e4",
+      "size": 67108864,
+      "sha256": "0e5cd06664a017ea0433851d53ff23d510ad50ead38a0b863450a6eb5125c326",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/admission-repair-development.tar.gz.part-002"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/admission-repair-development.tar.gz.part-003",
+      "gitBlob": "6c1755a3aa8efdef0f3ed95f02c75a37f1de1f31",
+      "size": 67108864,
+      "sha256": "e14a9aca65ffb9172dc7be046354828c4a6ae2cf241833e893d7ed5d8fd79abb",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/admission-repair-development.tar.gz.part-003"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/admission-repair-development.tar.gz.part-004",
+      "gitBlob": "f4edb0df604d1451905e8af97d88405f268d56c2",
+      "size": 20838517,
+      "sha256": "c4c0defea6f40c7216b529410050f2c556a7a1a6b3f49e69546ada464be0f06c",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/admission-repair-development.tar.gz.part-004"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/postcommit-728d147.tar.gz.part-000",
+      "gitBlob": "d5324ecdaea43433066ec17e8618e8c729501122",
+      "size": 67108864,
+      "sha256": "c03d85535ea4b49bc9c7cb8b0eff4f6a33095d31da316f8fe489100fa3224ba9",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/postcommit-728d147.tar.gz.part-000"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/postcommit-728d147.tar.gz.part-001",
+      "gitBlob": "7671c044ccf05bed66818f3fce18037791840fd0",
+      "size": 67108864,
+      "sha256": "ac361042ab9039f1a4496937827de2ee5277eef5d8b9830e960c9476de44710f",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/postcommit-728d147.tar.gz.part-001"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/postcommit-728d147.tar.gz.part-002",
+      "gitBlob": "5de6474e9250d9504d873449eb0e99cf83ec72ef",
+      "size": 3531186,
+      "sha256": "34f903f7be5098ca5cb08bdb421b1a09b93aabad10339e1914e9bfd7f8399ae2",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/postcommit-728d147.tar.gz.part-002"
+    },
+    {
+      "path": "docs/diagnostics/gelu-program-integration/ci-gate-repair.tar.gz",
+      "gitBlob": "b901132a3eafb9d02fa8e29ee94648ffff7fda3c",
+      "size": 14244866,
+      "sha256": "c610005aa867450465b7509e1738454cfb180b1978994c0560330314f8113b33",
+      "source_commit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+      "url": "https://github.com/bobrenjc93/pytorch-rs/blob/34dcc47454b3faaa27ef46a5189b34e81d3802f2/docs/diagnostics/gelu-program-integration/ci-gate-repair.tar.gz"
+    }
+  ],
+  "raw_receipts": "target/warm-repair/archive-proof"
+}

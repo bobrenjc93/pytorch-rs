@@ -1,0 +1,288 @@
+{
+  "kind": "bounded Python call-profile diagnostic; not ordinary latency or parity",
+  "sourceChangedFiles": [
+    "python/torch_rs/_compile_pointwise.py"
+  ],
+  "sourceCommit": "34dcc47454b3faaa27ef46a5189b34e81d3802f2",
+  "afterIsUncommitted": true,
+  "matchedIdentityAndOutputs": true,
+  "compiledInvocationsPerSide": 280,
+  "profiledInvocationsPerSide": 256,
+  "reports": {
+    "before": {
+      "path": "target/warm-repair/profile-before/report.json.gz",
+      "sha256": "effdc4c63eb19defd9509d72b7bb11cac5975351c433fb49d55594666b0ae533",
+      "wheelSha256": "6849ef99804fee16aa63bd3410ef0affb446e0034434a6524c9cae0fb1ef36a2",
+      "sourceStatus": "?? docs/diagnostics/gelu-program-integration/archive-preservation-observation.json\n?? docs/diagnostics/gelu-program-integration/archive-preservation.md\n?? docs/diagnostics/pointwise-admission-repair/warm-profile.py\n?? docs/diagnostics/pointwise-admission-repair/warm-repair-scope.md"
+    },
+    "after": {
+      "path": "target/warm-repair/profile-after/report.json.gz",
+      "sha256": "8ddbb74d1e2627d94cafa2329fd682f8700f6477bf7412f36f6bae6e829c8f2e",
+      "wheelSha256": "157fca449141e748030269b6f626243b67baa4c4f2254dc8648d716f0b87f1c6",
+      "sourceStatus": "M python/torch_rs/_compile_pointwise.py\n?? docs/diagnostics/gelu-program-integration/archive-preservation-observation.json\n?? docs/diagnostics/gelu-program-integration/archive-preservation.md\n?? docs/diagnostics/pointwise-admission-repair/warm-profile.py\n?? docs/diagnostics/pointwise-admission-repair/warm-repair-scope.md\n?? tests/test_compile_pointwise_projection.py"
+    }
+  },
+  "cases": [
+    {
+      "case": "unaryflat",
+      "functions": {
+        "execute": {
+          "before": {
+            "calls": 64,
+            "cumulativeMicroseconds": 6307.537
+          },
+          "after": {
+            "calls": 64,
+            "cumulativeMicroseconds": 5916.962
+          }
+        },
+        "bind_arguments": {
+          "before": {
+            "calls": 64,
+            "cumulativeMicroseconds": 293.598
+          },
+          "after": {
+            "calls": 64,
+            "cumulativeMicroseconds": 720.6980000000001
+          }
+        },
+        "_resolve_bindings": {
+          "before": {
+            "calls": 64,
+            "cumulativeMicroseconds": 815.698
+          },
+          "after": {
+            "calls": 64,
+            "cumulativeMicroseconds": 383.747
+          }
+        },
+        "snapshot": {
+          "before": {
+            "calls": 0,
+            "cumulativeMicroseconds": 0.0
+          },
+          "after": {
+            "calls": 0,
+            "cumulativeMicroseconds": 0.0
+          }
+        },
+        "parameter": {
+          "before": {
+            "calls": 128,
+            "cumulativeMicroseconds": 310.689
+          },
+          "after": {
+            "calls": 0,
+            "cumulativeMicroseconds": 0.0
+          }
+        },
+        "child": {
+          "before": {
+            "calls": 0,
+            "cumulativeMicroseconds": 0.0
+          },
+          "after": {
+            "calls": 0,
+            "cumulativeMicroseconds": 0.0
+          }
+        }
+      }
+    },
+    {
+      "case": "unarynested",
+      "functions": {
+        "execute": {
+          "before": {
+            "calls": 64,
+            "cumulativeMicroseconds": 9224.515000000001
+          },
+          "after": {
+            "calls": 64,
+            "cumulativeMicroseconds": 10278.578
+          }
+        },
+        "bind_arguments": {
+          "before": {
+            "calls": 64,
+            "cumulativeMicroseconds": 2256.77
+          },
+          "after": {
+            "calls": 64,
+            "cumulativeMicroseconds": 4337.2970000000005
+          }
+        },
+        "_resolve_bindings": {
+          "before": {
+            "calls": 64,
+            "cumulativeMicroseconds": 1514.1580000000001
+          },
+          "after": {
+            "calls": 64,
+            "cumulativeMicroseconds": 374.153
+          }
+        },
+        "snapshot": {
+          "before": {
+            "calls": 256,
+            "cumulativeMicroseconds": 1780.756
+          },
+          "after": {
+            "calls": 256,
+            "cumulativeMicroseconds": 3776.7
+          }
+        },
+        "parameter": {
+          "before": {
+            "calls": 256,
+            "cumulativeMicroseconds": 1042.9950000000001
+          },
+          "after": {
+            "calls": 0,
+            "cumulativeMicroseconds": 0.0
+          }
+        },
+        "child": {
+          "before": {
+            "calls": 192,
+            "cumulativeMicroseconds": 428.826
+          },
+          "after": {
+            "calls": 192,
+            "cumulativeMicroseconds": 462.926
+          }
+        }
+      }
+    },
+    {
+      "case": "binaryflat",
+      "functions": {
+        "execute": {
+          "before": {
+            "calls": 64,
+            "cumulativeMicroseconds": 9726.18
+          },
+          "after": {
+            "calls": 64,
+            "cumulativeMicroseconds": 7053.587
+          }
+        },
+        "bind_arguments": {
+          "before": {
+            "calls": 64,
+            "cumulativeMicroseconds": 423.06600000000003
+          },
+          "after": {
+            "calls": 64,
+            "cumulativeMicroseconds": 760.263
+          }
+        },
+        "_resolve_bindings": {
+          "before": {
+            "calls": 64,
+            "cumulativeMicroseconds": 885.2280000000001
+          },
+          "after": {
+            "calls": 64,
+            "cumulativeMicroseconds": 385.372
+          }
+        },
+        "snapshot": {
+          "before": {
+            "calls": 0,
+            "cumulativeMicroseconds": 0.0
+          },
+          "after": {
+            "calls": 0,
+            "cumulativeMicroseconds": 0.0
+          }
+        },
+        "parameter": {
+          "before": {
+            "calls": 192,
+            "cumulativeMicroseconds": 357.967
+          },
+          "after": {
+            "calls": 0,
+            "cumulativeMicroseconds": 0.0
+          }
+        },
+        "child": {
+          "before": {
+            "calls": 0,
+            "cumulativeMicroseconds": 0.0
+          },
+          "after": {
+            "calls": 0,
+            "cumulativeMicroseconds": 0.0
+          }
+        }
+      }
+    },
+    {
+      "case": "binarynested",
+      "functions": {
+        "execute": {
+          "before": {
+            "calls": 64,
+            "cumulativeMicroseconds": 12000.533000000001
+          },
+          "after": {
+            "calls": 64,
+            "cumulativeMicroseconds": 12391.854000000001
+          }
+        },
+        "bind_arguments": {
+          "before": {
+            "calls": 64,
+            "cumulativeMicroseconds": 2044.2820000000002
+          },
+          "after": {
+            "calls": 64,
+            "cumulativeMicroseconds": 4209.0470000000005
+          }
+        },
+        "_resolve_bindings": {
+          "before": {
+            "calls": 64,
+            "cumulativeMicroseconds": 2821.549
+          },
+          "after": {
+            "calls": 64,
+            "cumulativeMicroseconds": 399.34700000000004
+          }
+        },
+        "snapshot": {
+          "before": {
+            "calls": 384,
+            "cumulativeMicroseconds": 1771.723
+          },
+          "after": {
+            "calls": 384,
+            "cumulativeMicroseconds": 3831.783
+          }
+        },
+        "parameter": {
+          "before": {
+            "calls": 384,
+            "cumulativeMicroseconds": 2329.983
+          },
+          "after": {
+            "calls": 0,
+            "cumulativeMicroseconds": 0.0
+          }
+        },
+        "child": {
+          "before": {
+            "calls": 320,
+            "cumulativeMicroseconds": 1477.4660000000001
+          },
+          "after": {
+            "calls": 320,
+            "cumulativeMicroseconds": 747.234
+          }
+        }
+      }
+    }
+  ],
+  "limitation": "An existing broad-suite test also emitted unplanned timings in target/dispatch-smoke-hmruts7w; retained separately, excluded from all performance claims. No further timing phase is authorized."
+}
