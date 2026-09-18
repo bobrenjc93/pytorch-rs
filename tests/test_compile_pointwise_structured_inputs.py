@@ -470,6 +470,9 @@ class InputHardware(unittest.TestCase):
             x, rx = self.tensors(step, shape, offset=True)
             actual = self.check(pair, ({'x': x},), ({'x': rx},))
             self.assertIs(actual[1], x)
+            for entry in cache(pair[1]).graphs.values():
+                for observation in entry.observations.values():
+                    self.assertEqual(len(observation), 5)  # Never persist the current offset.
 
     def test_helper_local_unpack_loop_shape_branch_and_failed_recovery(self):
         pair = self.pair('def f(p):\n x=p["x"]\n for i in range(2):\n  a,b=helper([x,p["gain"]])\n if x.shape[0]<4:\n  return (a*b,x)\n return (a-b,x)',

@@ -11,6 +11,7 @@ CONTRIBUTING = REPOSITORY_ROOT / "CONTRIBUTING.md"
 FIRST_SUCCESS_EXAMPLE = REPOSITORY_ROOT / "examples" / "first_success.py"
 FEATURES = REPOSITORY_ROOT / "FEATURES.md"
 DOCS_README = REPOSITORY_ROOT / "docs" / "README.md"
+VALIDATION_HISTORY = REPOSITORY_ROOT / "docs" / "validation-history.md"
 TROUBLESHOOTING = REPOSITORY_ROOT / "docs" / "troubleshooting.md"
 SUPPORTED_SURFACE = REPOSITORY_ROOT / "docs" / "supported-surface.md"
 HISTORICAL_TIMING_REPORTS = (
@@ -679,6 +680,8 @@ class ReadmeQuickstartTests(unittest.TestCase):
         # Check hand-authored entry points, including cross-document anchors.
         sources = {
             README: README.read_text(encoding="utf-8").split("## License", 1)[0],
+            DOCS_README: DOCS_README.read_text(encoding="utf-8"),
+            VALIDATION_HISTORY: VALIDATION_HISTORY.read_text(encoding="utf-8"),
             SUPPORTED_SURFACE: SUPPORTED_SURFACE.read_text(encoding="utf-8"),
             TROUBLESHOOTING: TROUBLESHOOTING.read_text(encoding="utf-8"),
             REPOSITORY_ROOT / "docs/compile-cuda-add.md": (
@@ -911,11 +914,26 @@ class ReadmeQuickstartTests(unittest.TestCase):
 
     def test_docs_readme_indexes_contracts_guides_and_timing_evidence(self):
         docs_readme = DOCS_README.read_text(encoding="utf-8")
+        history = VALIDATION_HISTORY.read_text(encoding="utf-8")
+        self.assertIn("[Historical validation and timing catalog](validation-history.md)", docs_readme)
+        self.assertIn("[task-oriented documentation index](README.md)", history)
+        self.assertIn("Legacy 100 scores", history)
+        self.assertIn("not comparable to the current public-default compiler gates", " ".join(history.split()))
+        self.assertIn('`torch_rs.compile(fn)`', docs_readme)
+        self.assertIn('`torch_rs.compile(fn, backend="eager")`', docs_readme)
+        self.assertIn('`CUDA_VISIBLE_DEVICES=0`', docs_readme)
+        self.assertIn('skip when CUDA is unavailable', docs_readme)
+        for target in ("cuda-contiguous-validation.md", "composite-cuda-vector-dstack.md"):
+            self.assertIn(f"]({target})", history)
+            self.assertNotIn(f"]({target})", docs_readme)
+        for target in ("compile-cuda-neg-validation.md", "compile-cuda-mul-scalar-validation.md",
+                       "compile-cuda-trailing-vector-validation.md"):
+            self.assertIn(f"]({target})", docs_readme)
         sections = (
             "## Current Contracts",
             "## Examples",
             "## Contributor Guides",
-            "## Historical Timing Evidence",
+            "## Validation and timing history",
         )
         previous_position = docs_readme.index("# Documentation Index")
         for heading in sections:
@@ -960,7 +978,7 @@ class ReadmeQuickstartTests(unittest.TestCase):
 
         contributor_guides = docs_readme[
             docs_readme.index("## Contributor Guides") : docs_readme.index(
-                "## Historical Timing Evidence"
+                "## Validation and timing history"
             )
         ]
         for label, target, description in DOCS_INDEX_GUIDES:
@@ -973,8 +991,8 @@ class ReadmeQuickstartTests(unittest.TestCase):
                 self.assertTrue(path.is_relative_to(REPOSITORY_ROOT))
                 self.assertTrue(path.is_file())
 
-        timing_evidence = docs_readme[
-            docs_readme.index("## Historical Timing Evidence") :
+        timing_evidence = history[
+            history.index("## Historical Timing Evidence") :
         ]
         normalized_timing_evidence = re.sub(r"\s+", " ", timing_evidence).lower()
         self.assertIn("historical release evidence snapshots", normalized_timing_evidence)
@@ -987,7 +1005,7 @@ class ReadmeQuickstartTests(unittest.TestCase):
         self.assertEqual(set(links.values()), expected_targets)
         for _, target in HISTORICAL_TIMING_REPORTS:
             with self.subTest(timing_report=target):
-                path = DOCS_README.parent / Path(target).name
+                path = VALIDATION_HISTORY.parent / Path(target).name
                 self.assertTrue(path.is_file())
 
         previous_position = -1

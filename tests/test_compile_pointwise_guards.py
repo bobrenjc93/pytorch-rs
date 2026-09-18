@@ -41,6 +41,44 @@ def hostile_key(target, effects, string_subclass=False):
 
 
 class ShapeGuardContract(unittest.TestCase):
+    def test_index_bound_group_cardinalities_and_exact_products(self):
+        cases = (
+            ((), (), True),
+            ((), ((),), True),
+            (((),), ((0,),), True),
+            (((0,),), ((0,),), True),
+            (((-1,),), ((0,),), False),
+            (((2147483647,),), ((0,),), True),
+            (((2147483648,),), ((0,),), False),
+            (((65536, 65536),), ((0,),), False),
+            (((2**70, 2**70),), ((0,),), False),
+            (((2**70, 0, 2**70),), ((0,),), True),
+            (((65536, 1), (1, 65536)), ((0,), (1,)), True),
+            (((65536, 1), (1, 65536)), ((0,), (1,), (0, 1)), False),
+            (((0, 2), (1, 2)), ((0, 1),), True),
+            (((0, 2), (1, 3)), ((0, 1),), False),
+            (((0, 2), (1, 2), (1, 3)), ((0, 1, 2),), False),
+            (((), (2, 1, 3), (4, 1)), ((0, 1, 2),), True),
+        )
+        for shapes, groups, expected in cases:
+            with self.subTest(shapes=shapes, groups=groups):
+                guards = frontend.ShapeGuards((), (), groups)
+                self.assertIs(guards.matches({i: (shape,) for i, shape in enumerate(shapes)}), expected)
+        # Reject the first bound before looking up any later group's source.
+        guards = frontend.ShapeGuards((), (), ((0,), (1,)))
+        self.assertFalse(guards.matches({0: ((2147483648,),)}))
+
+    def test_native_six_field_metadata_matches_without_guarding_offset(self):
+        base = native.tensor([9., 1., 2., 3.])
+        metadata = bridge._compile_trace_tensor_metadata(base[:2])
+        self.assertEqual(len(metadata), 6)
+        guard = frontend.TensorGuard((2,), (1,), metadata[2:5])
+        guards = frontend.ShapeGuards((('x', guard),), (), (('x',),))
+        for offset in (0, 1, 2):
+            current = bridge._compile_trace_tensor_metadata(base[offset:offset+2])
+            self.assertEqual(current[5], offset)
+            self.assertTrue(guards.matches({'x': current}))
+
     def test_dynamic_sizes_stride_relations_and_current_properties(self):
         properties = ('float32', False, 'cuda:0')
         guard = frontend.TensorGuard((None, 2), (('product', 1), 1), properties)
