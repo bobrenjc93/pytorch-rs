@@ -1522,7 +1522,8 @@ Choose the backend contract explicitly:
 | Public `x.add_(scalar, alpha=1)` | [Dense CUDA float32 scalar mutation](cuda-add-inplace.md). Returned input views share the mutation; independent computed results do not. Compiled use follows the narrower alias-only contract above. |
 
 Neither compiler backend provides general Inductor/training parity or eager
-fallback. The default guide owns its exact language, guards and cache contract;
+fallback. Default compilation has documented [object-identity and warm-scalar compatibility limits](compile-pointwise-jit.md#observable-differences-from-upstream-default-compilation).
+The default guide owns its exact language, guards and cache contract;
 the following capture guides describe the separate explicit-eager subset.
 
 [Compiled CUDA `Tensor.contiguous()`](compile-cuda-contiguous.md) supports only

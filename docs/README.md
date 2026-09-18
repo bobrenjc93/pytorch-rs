@@ -20,7 +20,7 @@ skip when CUDA is unavailable; this does not establish accelerator or training p
 - [Feature coverage contract](../FEATURES.md): Weighted feature areas and what counts toward coverage.
 - [Benchmark policy](../BENCHMARKING.md): Correctness gates, measurement rules, provenance, and anti-gaming policy.
 - [Default compiler evaluations](torch-compile-default-evaluator.md): Versioned public-default Inductor coverage and real-CUDA performance gates; legacy scores are non-comparable.
-- [Native default CUDA compiler](compile-pointwise-jit.md): Fused pointwise outputs and terminal input-rooted transpose views through ordinary `torch_rs.compile(fn)`, with examples and exact boundaries.
+- [Native default CUDA compiler](compile-pointwise-jit.md): Fused pointwise outputs and separate alias-only view/mutation programs through ordinary `torch_rs.compile(fn)`; see its [observable compatibility limits](compile-pointwise-jit.md#observable-differences-from-upstream-default-compilation).
 - [Hardware heterogeneity evaluator](hardware-heterogeneity-evaluator.md): Fixed accelerator-family and feature-depth matrix, evidence rules, and real-hardware scoring policy.
 - [Generated creation validator](../scripts/validate_creation_factory_benchmark.py): Held-out seeded shape path for creation-factory benchmark review.
 

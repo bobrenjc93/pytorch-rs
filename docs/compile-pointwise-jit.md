@@ -158,8 +158,25 @@ visible. Cache entries, history and recency publish only after successful
 reconstruction; failed cache publication is not storage rollback. Calls through
 different compiled wrappers gain no additional ordering guarantee. There is no
 CPU mutation, autograd support, general mutation capture or Inductor parity.
-See the [developer validation index](diagnostics/default-alias-mutation-qa-20260918.md)
-for source-bound checks and observed reference limitations.
+See the [committed-source validation](diagnostics/default-alias-mutation-qa-postcommit-95bdbf2.md)
+for focused checks.
+
+#### Observable differences from upstream default compilation
+
+Supported syntax does not imply identical Python object behavior to PyTorch
+2.13's default compiler. In checked ordered alias-write results, PyTorch returned
+distinct wrappers for repeated references to one `add_` receiver; native returns
+that exact receiver. Native also retains admitted immutable integer tuples from `co_consts`,
+where the reference reconstructs tuple objects. Matching values and shared storage
+therefore do not establish `is` equivalence. The native guarantees above remain
+intentional; code depending on object identity must account for these differences.
+
+The [recorded exceptional-value scalar history](diagnostics/default-alias-mutation-20260918.md)
+also exposed a warm signed-zero difference. A fresh reference compilation, or an
+agreeing simpler scalar history, does not resolve that failed warm comparison.
+These are compatibility limits, not claims of general compiler parity. The
+[focused contract check](diagnostics/alias-contract-quality-20260918.md) separates
+default-compiler observations from independent eager semantics.
 
 ### Numerical broadcasting
 
