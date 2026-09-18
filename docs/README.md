@@ -38,7 +38,8 @@ Choose the entry point before following an operation guide:
 For measurement tooling and its limits, see the
 [full public-call diagnostic](diagnostics/default-compile-full-call-20260918.md),
 its [offline replay guide](diagnostics/default-compile-full-call-20260918-replay.md),
-and the [profiled guard investigation](diagnostics/profiled-full-call-20260918.md).
+the [profiled guard investigation](diagnostics/profiled-full-call-20260918.md),
+and its [clean-commit three-way capture](diagnostics/default-compile-full-call-postcommit-ed614665.md).
 
 Neither compiler entry point provides full upstream Inductor or training parity.
 Historical validation records describe their recorded source revisions; they do
