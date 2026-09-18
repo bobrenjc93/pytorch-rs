@@ -1,7 +1,9 @@
 # Native default CUDA pointwise compilation
 
 `torch_rs.compile(fn)` with untouched public defaults now lowers a bounded
-pointwise language to a generated fused CUDA kernel. Backend resolution still
+pointwise language to a generated fused CUDA kernel and supports terminal
+input-rooted transpose views. Pure-view results need no numerical kernel.
+Backend resolution still
 chooses `inductor`; this native implementation does not import or execute
 PyTorch. It is not general Inductor, CPU compiler, or training equivalence.
 
@@ -88,6 +90,11 @@ inputs, and caches publish only after successful wrapping and reconstruction.
 Transpose binding guards apply only to programs that admit transpose; warm
 same-arm reuse preserves the existing inactive-helper behavior. These changes
 extend metadata compilation coverage and make no performance-parity claim.
+The input views share storage with their original owners. After the compiled
+call, public [CUDA scalar `Tensor.add_`](cuda-add-inplace.md) can mutate a dense
+returned view; a computed output remains independent. Mutation inside the
+compiled function is unsupported. For the broader explicit-eager view language,
+see [CUDA transpose capture](compile-cuda-t.md).
 Focused validation is recorded in [input transpose validation](compile-input-transpose-validation.md).
 
 Unequal input shapes additionally require either the tensor-leaf multiply-add
@@ -555,6 +562,10 @@ restores the caller's device on compilation, execution and module destruction.
 Wrapper locks serialize cache publication and reset.
 
 ## Validation and campaign evidence
+
+The [guard traversal author diagnostic](diagnostics/default-compile-guard-scan-20260918.md)
+records bounded public-call measurements and validation attempts. It is separate
+from canonical performance evaluation.
 
 The [positional binding evidence index](diagnostics/compile-pointwise-positional/README.md)
 links the clean `7dd1a811` fixed measurements against main `a281503f`, 37 passing

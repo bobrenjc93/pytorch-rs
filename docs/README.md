@@ -10,7 +10,7 @@ artifacts are generated at merge time and are not source documentation.
 - [Feature coverage contract](../FEATURES.md): Weighted feature areas and what counts toward coverage.
 - [Benchmark policy](../BENCHMARKING.md): Correctness gates, measurement rules, provenance, and anti-gaming policy.
 - [Default compiler evaluations](torch-compile-default-evaluator.md): Versioned public-default Inductor coverage and real-CUDA performance gates; legacy scores are non-comparable.
-- [Native default CUDA compiler](compile-pointwise-jit.md): Fused pointwise compilation through ordinary `torch_rs.compile(fn)`, a runnable example, supported boundaries, and current H100 evidence.
+- [Native default CUDA compiler](compile-pointwise-jit.md): Fused pointwise outputs and terminal input-rooted transpose views through ordinary `torch_rs.compile(fn)`, with examples and exact boundaries.
 - [Hardware heterogeneity evaluator](hardware-heterogeneity-evaluator.md): Fixed accelerator-family and feature-depth matrix, evidence rules, and real-hardware scoring policy.
 - [Generated creation validator](../scripts/validate_creation_factory_benchmark.py): Held-out seeded shape path for creation-factory benchmark review.
 
@@ -20,7 +20,7 @@ artifacts are generated at merge time and are not source documentation.
 
 ## Contributor Guides
 
-The default fused compiler is described above. The older compiled-operation
+The default pointwise/view compiler is described above. The older compiled-operation
 guides below describe bounded `backend="eager"` capture, not general default
 Inductor support.
 
@@ -39,6 +39,7 @@ Inductor support.
   Includes positional module/imported add/neg/ReLU/squeeze/t calls with precise binding guards.
 - [Compiled CUDA scalar multiplication validation](compile-cuda-mul-scalar-validation.md): Guarded scalar grammar, independent diagnostics, and H100 checks.
 - [Compiled CUDA negation validation](compile-cuda-neg-validation.md): Integrated-commit results, provenance, and current neg/add diagnostic commands.
+- [CUDA scalar `Tensor.add_`](cuda-add-inplace.md): Dense shared-storage mutation, exact alpha/operand limits and synchronous completion; unsupported inside compiled bodies.
 - [CUDA scalar multiplication validation](cuda-mul-scalar-validation.md): General eager float32 kernel, conversion/layout boundaries, and H100 evidence.
 - [Native and compiled CUDA ReLU](cuda-relu.md): Method and trusted top-level capture, IEEE bit semantics, layout bounds and H100 development checks.
 - [CUDA negation validation](cuda-neg-validation.md): Contiguous float32 eager scope, H100 checks, and retained evaluation evidence.

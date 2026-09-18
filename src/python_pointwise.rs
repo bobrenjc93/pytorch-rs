@@ -15,6 +15,7 @@ use std::sync::Arc;
 type Payload = (String, usize, usize, u64);
 
 #[pyfunction(name = "_pointwise_namespace_keys_exact")]
+#[allow(unsafe_code)] // Borrowed dict keys stay inside the callback-free critical section.
 pub(super) fn namespace_keys_exact(value: &Bound<'_, PyAny>) -> bool {
     let Ok(namespace) = value.cast_exact::<PyDict>() else {
         return false;
@@ -22,9 +23,27 @@ pub(super) fn namespace_keys_exact(value: &Bound<'_, PyAny>) -> bool {
     // Protect iterator construction as well as traversal. Exact type checks
     // invoke no callbacks; Python retains namespace selection and error policy.
     pyo3::sync::critical_section::with_critical_section(value, || {
-        namespace
-            .iter()
-            .all(|(key, _)| key.is_exact_instance_of::<PyString>())
+        let mut position = 0;
+        let mut key = std::ptr::null_mut();
+        // SAFETY: namespace is an exact, live dict. The critical section (or
+        // GIL) prevents mutation throughout traversal; neither C API releases
+        // it or calls Python. PyDict_Next lends a non-null key on success. We
+        // inspect only its exact type and never retain it or read the value.
+        // Avoid creating owned key/value references for every warm guard scan.
+        unsafe {
+            while pyo3::ffi::PyDict_Next(
+                namespace.as_ptr(),
+                &raw mut position,
+                &raw mut key,
+                std::ptr::null_mut(),
+            ) != 0
+            {
+                if pyo3::ffi::PyUnicode_CheckExact(key) == 0 {
+                    return false;
+                }
+            }
+        }
+        true
     })
 }
 

@@ -7,8 +7,10 @@ Tensors for one- and two-input scalar-multiply/negation/ReLU/addition graphs, pl
 native operation execution, with one Rust/CUDA kernel per recorded operation.
 This is unfused bounded capture, not a general Inductor compiler or a
 performance-parity claim.
-It does not provide Inductor-style fusion, general default-backend CUDA
-compilation, or a new CUDA performance score.
+For untouched-default compilation with fused pointwise outputs and terminal
+input-rooted views, use the separate [default compiler guide](compile-pointwise-jit.md).
+Public [CUDA scalar `Tensor.add_`](cuda-add-inplace.md) runs outside compiled
+bodies; neither backend captures mutation.
 
 ```python
 import torch_rs as torch
