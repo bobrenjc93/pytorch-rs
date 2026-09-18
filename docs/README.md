@@ -20,14 +20,30 @@ artifacts are generated at merge time and are not source documentation.
 
 ## Contributor Guides
 
-The default pointwise/view compiler is described above. The older compiled-operation
-guides below describe bounded `backend="eager"` capture, not general default
-Inductor support.
-
 - [Contributing guide](../CONTRIBUTING.md): Locked setup, environment expectations, test selection, draft workflow, and documentation ownership.
 - [Setup troubleshooting](troubleshooting.md): Short fixes for common environment, import, reference dependency, and stale wheel failures.
 - [Repository README](../README.md): Install commands, first-success example, scope summary, and validation entry points.
 - [Architecture map](../ARCHITECTURE.md): Source map for the Rust core, Python bindings, wrappers, and test layout.
+
+### Compiler guides
+
+Choose the entry point before following an operation guide:
+
+| Entry point | Contract |
+| --- | --- |
+| `torch_rs.compile(fn)` | [Native default compiler](compile-pointwise-jit.md): supported programs, input admission, views, cache behavior and runtime requirements. |
+| `torch_rs.compile(fn, backend="eager")` | [Explicit eager capture](compile-cuda-add.md): bounded graph execution; the operation guides below extend this path. |
+| Numerical behavior | [Pointwise numerical contract](compile-pointwise-numerics.md): rounding, realization and FMA rules. |
+
+For measurement tooling and its limits, see the
+[full public-call diagnostic](diagnostics/default-compile-full-call-20260918.md).
+
+Neither compiler entry point provides full upstream Inductor or training parity.
+Historical validation records describe their recorded source revisions; they do
+not expand the current contracts.
+
+#### Explicit eager CUDA operations
+
 - [Compiled CUDA squeeze](compile-cuda-squeeze.md): Method and one-argument module/imported singleton removal, shared-storage wrappers and H100 validation.
 - [Compiled CUDA view](compile-cuda-view.md): Alias-only constant shapes, strict stride compatibility and H100 validation.
 - [Compiled CUDA reshape](compile-cuda-reshape.md): Method and positional native/imported constant tuple/list shapes, rank-0/1/2 alias-or-pack semantics and H100 validation.
@@ -39,6 +55,9 @@ Inductor support.
   Includes positional module/imported add/neg/ReLU/squeeze/t calls with precise binding guards.
 - [Compiled CUDA scalar multiplication validation](compile-cuda-mul-scalar-validation.md): Guarded scalar grammar, independent diagnostics, and H100 checks.
 - [Compiled CUDA negation validation](compile-cuda-neg-validation.md): Integrated-commit results, provenance, and current neg/add diagnostic commands.
+
+### Eager tensor operations and diagnostics
+
 - [CUDA scalar `Tensor.add_`](cuda-add-inplace.md): Dense shared-storage mutation, exact alpha/operand limits and synchronous completion; unsupported inside compiled bodies.
 - [CUDA scalar multiplication validation](cuda-mul-scalar-validation.md): General eager float32 kernel, conversion/layout boundaries, and H100 evidence.
 - [Native and compiled CUDA ReLU](cuda-relu.md): Method and trusted top-level capture, IEEE bit semantics, layout bounds and H100 development checks.

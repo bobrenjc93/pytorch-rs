@@ -87,8 +87,10 @@ release wheel from the current worktree and verifies extension provenance.
 `HEAD`, excluding local edits; see [validation details](docs/troubleshooting.md#exact-head-validation).
 Both use available CUDA hardware and skip hardware-only cases when unavailable.
 
-Browse [docs/README.md](docs/README.md) for focused guides and
-[ARCHITECTURE.md](ARCHITECTURE.md) for the source map. Public tests are the floor;
+For compilation, start with the [native default compiler](docs/compile-pointwise-jit.md)
+contract. The guide index in [docs/README.md](docs/README.md) separates
+default compilation from explicit eager capture; [ARCHITECTURE.md](ARCHITECTURE.md)
+maps their source owners. Public tests are the floor;
 Burner also runs independent generated workloads and differential checks.
 
 ## License
