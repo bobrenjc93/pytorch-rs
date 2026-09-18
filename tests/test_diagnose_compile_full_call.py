@@ -7,6 +7,8 @@ import io
 import json
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -139,6 +141,87 @@ class FullCallReceiptTests(unittest.TestCase):
         report['cells'][0]['status'] = 'invented'
         with self.assertRaisesRegex(ValueError, 'unknown cell status'):
             self.compare(report)
+
+
+class ProfiledBundleTests(unittest.TestCase):
+    def setUp(self):
+        folder = ROOT / 'target'
+        folder.mkdir(exist_ok=True)
+        temporary = tempfile.TemporaryDirectory(dir=folder)
+        self.addCleanup(temporary.cleanup)
+        self.folder = Path(temporary.name)
+        self.base = ROOT / 'docs/diagnostics/default-compile-full-call-20260918-raw.tar.xz'
+        committed = ROOT / 'docs/diagnostics/profiled-full-call-20260918.tar.xz'
+        self.assertEqual(committed.stat().st_size, 203344)
+        self.assertEqual(diag.sha(committed), 'de35b43f2fc8fa5e31f9917953126f0244dcd1efd687c253351e47ba67f0370d')
+        with tarfile.open(committed) as archive:
+            helper = archive.extractfile('profiled-call/bundle.py').read()
+        self.assertEqual(hashlib.sha256(helper).hexdigest(),
+                         'a4f6f8e9ca0d64df3d07e337da709ab22aeb09a3eecb892d3145f25b30acbe1d')
+        original_helper = self.folder / 'bundle.py'
+        original_helper.write_bytes(helper)
+        capture = self.folder / 'capture'
+        capture.mkdir()
+        with tarfile.open(self.base) as archive:
+            manifest = json.load(archive.extractfile('full-call/manifest.json'))
+            member = next(name for name in manifest if name.endswith('.npz'))
+            (capture / 'mapped.npz').write_bytes(archive.extractfile('full-call/' + member).read())
+        np.savez_compressed(capture / 'embedded.npz', novel=np.array([123.25], dtype=np.float32))
+        for name in ('mapped', 'embedded'):
+            arrays = capture / (name + '.npz')
+            receipt = dict(arrays=str(arrays), arrays_sha256=diag.sha(arrays))
+            (capture / (name + '.json')).write_text(json.dumps(receipt, indent=3) + '\n\n')
+        self.expected = {path.name: path.read_bytes() for path in capture.iterdir()}
+        packed = self.folder / 'packed.tar.xz'
+        result = self.cli(original_helper, 'pack', capture, self.base, packed)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.relocated = self.folder / 'elsewhere' / 'profiled-call'
+        self.relocated.mkdir(parents=True)
+        with tarfile.open(packed) as archive:
+            self.members = {Path(member.name).name for member in archive.getmembers()}
+            for member in archive.getmembers():
+                (self.relocated / Path(member.name).name).write_bytes(archive.extractfile(member).read())
+        shutil.rmtree(capture)  # Only synthetic test data; recorded absolute paths now fail.
+        original_helper.unlink()
+        self.assertFalse(capture.exists())
+        self.helper = self.relocated / 'bundle.py'
+        self.manifest = self.relocated / 'bundle-manifest.json'
+
+    def cli(self, helper, *arguments):
+        return subprocess.run([sys.executable, '-B', '-I', str(helper), *map(str, arguments)],
+                              cwd=self.folder, capture_output=True, text=True)
+
+    def test_pack_relocate_restore_preserves_mapped_and_embedded_bytes(self):
+        metadata = json.loads(self.manifest.read_text())
+        self.assertIn('base_member', metadata['arrays']['mapped.npz'])
+        self.assertNotIn('mapped.npz', metadata['payloads'])
+        self.assertNotIn('mapped.npz', self.members)
+        self.assertNotIn('base_member', metadata['arrays']['embedded.npz'])
+        self.assertIn('embedded.npz', metadata['payloads'])
+        self.assertIn('embedded.npz', self.members)
+        result = self.cli(self.helper, 'restore', self.relocated, self.base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('restored 2 NPZ files', result.stdout)
+        for name, data in self.expected.items():
+            self.assertEqual((self.relocated / name).read_bytes(), data, name)
+
+    def test_restore_rejects_wrong_base(self):
+        wrong_base = self.folder / 'wrong-base.tar.xz'
+        wrong_base.write_bytes(b'not the committed base archive')
+        result = self.cli(self.helper, 'restore', self.relocated, wrong_base)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('base archive hash/size mismatch', result.stderr)
+
+    def test_restore_rejects_tampered_ordinary_and_mapped_receipts(self):
+        original = self.manifest.read_bytes()
+        for section, name in (('payloads', 'embedded.json'), ('arrays', 'mapped.npz')):
+            with self.subTest(section=section, name=name):
+                metadata = json.loads(original)
+                metadata[section][name]['sha256'] = '0' * 64
+                self.manifest.write_text(json.dumps(metadata))
+                result = self.cli(self.helper, 'restore', self.relocated, self.base)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('payload hash/size mismatch', result.stderr)
 
 
 class HistoricalFullCallReplayTests(unittest.TestCase):
