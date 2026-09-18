@@ -194,9 +194,12 @@ class InputLanguage(unittest.TestCase):
         for source, captures in cases:
             with self.subTest(source=source):
                 self.assertEqual(self.lower(source, tree, **captures), expected)
-        # Even zero-trip bodies must validate rotations without touching the iterator.
-        self.assertEqual(self.lower(f'def f(p):\n for i in range(0):\n  {assignment}\n return -p[0]', tree),
-                         self.lower('def f(p):\n return -p[0]', tree))
+        # Zero-trip bodies do not change computation, but their traversed
+        # children remain part of this lowering's whole-program admission.
+        skipped = self.lower(f'def f(p):\n for i in range(0):\n  {assignment}\n return -p[0]', tree)
+        plain = self.lower('def f(p):\n return -p[0]', tree)
+        self.assertEqual(dataclasses.replace(skipped, structural_admission=plain.structural_admission), plain)
+        self.assertGreater(set(skipped.structural_admission), set(plain.structural_admission))
 
     def test_two_item_local_tuple_assignment(self):
         self.check_local_tuple_assignment(('a', 'b'), 'a-b')

@@ -254,10 +254,12 @@ selection inside the compiled function.
 
 Observation remains lazy. Selecting/unpacking a sequence checks its exact type
 and length; dict selection checks its type and the selected path, without guarding
-unrelated keys or insertion order. Sequence structure used in retained inactive
-effects is also guarded: changing its length must re-admit normalized paths such
-as `items[-1]` before any write. Retained effect scalars remain current preflight
-inputs, not new specialization guards. Scalar history follows the public parameter
+unrelated keys or insertion order. Each cached lowering retains its own container
+signatures and selected child paths, including inactive recipes. A structure or
+selected-key mismatch re-admits that lowering before any write, using current
+inputs with the logical entry's frozen active semantics. Other ABI lowerings
+keep their own admission evidence. Retained effect scalars remain current
+preflight inputs, not new specialization guards. Scalar history follows the public parameter
 and normalized item path: list and tuple indices share source identity under
 separate structural guards. On a logical hit, changed Tensor traversal order
 rebinds current operands while preserving the selected specialization's frozen

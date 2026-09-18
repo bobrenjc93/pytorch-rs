@@ -203,6 +203,10 @@ class InputTree:
     keys: tuple = ()
 
 
+def container_signature(value):
+    return (value.kind,) if value.kind == "dict" else (value.kind, len(value.items))
+
+
 @dataclass(frozen=True, eq=False)
 class Container:
     """A constructor identity in the frame, never a mutable Python result."""
@@ -262,6 +266,9 @@ class Lowering:
     operations: tuple = ()
     operation_bindings: tuple = ()
     active_operations: tuple = ()
+    # Each concrete ABI may admit different inactive paths. None means child
+    # presence only; container signatures retain no invocation-local owners.
+    structural_admission: tuple = ()
 
 
 def preflight_operations(lowering, values, metadata):
@@ -1049,7 +1056,7 @@ def _resolve_bindings(model, program, parameters):
     def parameter(source, value):
         values[source] = value
         if type(value) is InputTree:
-            keys[source] = (value.kind,) if value.kind == "dict" else (value.kind, len(value.items))
+            keys[source] = container_signature(value)
             for item, child in zip(value.keys if value.kind == "dict" else range(len(value.items)), value.items):
                 parameter(source.child(item), child)
         elif type(value) is Value:
@@ -1123,6 +1130,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
     construction_edges = 0
     operations, active_operations = [], []
     operation_bindings = set()
+    structural_admission = {}
     has_effect = has_numerical = False
     returns = []
     literal_tuples = {}  # Constant-pool identity, local to this lowering.
@@ -1148,6 +1156,8 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
 
     def realize(obj):
         if type(obj) is BoundValue:
+            if type(obj.value) is InputTree:
+                structural_admission[obj.source] = container_signature(obj.value)
             if observed is not None and obj.source not in observed:
                 observed.append(obj.source)
             return obj.value
@@ -1162,6 +1172,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
     def child(obj, item, index):
         if type(item) is InputTree:
             source = obj.source.child(item.keys[index] if item.kind == "dict" else index)
+            structural_admission.setdefault(source, None)
             return data(BoundValue(source, values[source], obj.predicate_origin))
         return item.items[index]
 
@@ -1223,7 +1234,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
     def isolated(instructions, locals_, *, charge=True, snapshot=False):
         nonlocal observed, data_sources, predicates, checked_nodes
         saved = observed, data_sources, predicates
-        observed, data_sources, predicates = [], None, None
+        observed, data_sources, predicates = None, None, None
         node_start = len(nodes)
         try:
             result = frame(instructions, locals_, check_only=True, charge=charge)
@@ -1233,13 +1244,6 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
             # Only numerical instructions are discarded after body admission.
             checked_nodes += len(nodes) - node_start
             del nodes[node_start:]
-            # Retained effect sources use normalized item paths. Keep the
-            # sequence structure that gave those paths meaning, without
-            # observing inactive scalar values, helpers or Tensor owners.
-            if saved[0] is not None:
-                for source in observed:
-                    if type(values[source]) is InputTree and source not in saved[0]:
-                        saved[0].append(source)
             observed, data_sources, predicates = saved
 
     def result_spec(obj, view_slots=None, *, require_root=True, numerical=None):
@@ -1641,7 +1645,8 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
         unsupported("mutation-bearing programs cannot contain numerical Tensor operations")
     outputs, specification = result_spec(result, {index: slot for slot, index in enumerate(active_operations)})
     return Lowering(Graph(arity, tuple(nodes), outputs) if outputs else None,
-                    specification, tuple(operations), tuple(sorted(operation_bindings)), tuple(active_operations))
+                    specification, tuple(operations), tuple(sorted(operation_bindings)),
+                    tuple(active_operations), tuple(structural_admission.items()))
 
 
 def _prepared_entry_bytes(key, prepared, code_key):
@@ -1771,7 +1776,10 @@ def implementation(model, recompile_limit):
                    tuple(static_values[source].index for source in entry.tensor_sources))
             if selected is not None:
                 lowering = entry.lowerings.get(abi)
-                if lowering is None:
+                if lowering is None or any(
+                        source not in static_bindings or
+                        (expected is not None and static_bindings[source] != expected)
+                        for source, expected in lowering.structural_admission):
                     values = dict(static_values)
                     values.update((s, v) for s, v in entry.values.items() if type(v) is not Value)
                     lowering = lower(program, values, len(tensors), input_ids, metadata=metadata)

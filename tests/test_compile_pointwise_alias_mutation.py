@@ -1,10 +1,12 @@
 """Bounded default alias mutation: admission and real public default comparisons."""
+import dataclasses
 import dis
 from contextlib import nullcontext
 import gc
 import os
 import subprocess
 import sys
+import types
 import unittest
 from unittest.mock import patch
 
@@ -592,6 +594,162 @@ class AliasMutationHardware(unittest.TestCase):
             np.testing.assert_array_equal(read_bits(x),bits)
             self.assertEqual(StructuredCache.snapshot(self,compiled),before)
             self.assertIs(compiled(x,[0.137,1.0]),x)
+
+    def test_later_abi_retains_its_own_inactive_sequence_admission(self):
+        helper = program('def f(a,s):\n return a.add_(1)')
+        fn = program('def f(x,s,ignored):\n if x.shape[0]<4:\n'
+                     '  return x.add_(1)\n return helper(x,s)', helper=helper)
+        compiled = native.compile(fn)
+        x = native.ones(2,3).to('cuda:0')
+        y = native.ones(2,3).to('cuda:0')
+        with no_bodies(fn,helper):
+            self.assertIs(compiled(x,[1.0],False),x)
+        entry = next(iter(cache(compiled).graphs.values()))
+        old_abi, old_lowering = next(iter(entry.lowerings.items()))
+        helper.__code__ = program('def f(a,s):\n return a.add_(0.137,alpha=s[-1])').__code__
+        with no_bodies(fn,helper):
+            self.assertIs(compiled(x,[1.0],y),x)
+        self.assertEqual(len(cache(compiled).graphs),1)
+        new_abi = next(key for key in entry.lowerings if key != old_abi)
+        for invalid in ([1.0,1.5], [1.0,True], (1.0,1.5)):
+            before,bits = StructuredCache.snapshot(self,compiled),read_bits(x)
+            with no_bodies(fn,helper), self.assertRaises((NotImplementedError,RuntimeError)):
+                compiled(x,invalid,y)
+            np.testing.assert_array_equal(read_bits(x),bits)
+            self.assertEqual(StructuredCache.snapshot(self,compiled),before)
+        for items in ([1.5,1.0], [1.0], (1.5,1.0), (1.0,)):
+            with no_bodies(fn,helper):
+                self.assertIs(compiled(x,items,y),x)
+            self.assertIs(entry.lowerings[old_abi],old_lowering)
+            # Later-ABI evidence must not be unioned into the original logical
+            # entry: its already-admitted helper never selected anything in s.
+            with no_bodies(fn,helper), patch.object(frontend,'lower',side_effect=AssertionError('old ABI reparsed')):
+                self.assertIs(compiled(x,[1.5],False),x)
+            self.assertIs(entry.lowerings[old_abi],old_lowering)
+        current = entry.lowerings[new_abi]
+        helper.__code__ = program('def f(a,s):\n return a.sin()').__code__
+        with no_bodies(fn,helper), patch.object(frontend,'lower',side_effect=AssertionError('valid retained ABI reparsed')):
+            self.assertIs(compiled(x,(1.0,),y),x)
+        self.assertIs(entry.lowerings[new_abi],current)
+        self.assertFalse(cache(compiled).executors)
+        self.assertFalse(cache(compiled).prepared)
+
+    def test_later_abi_selected_dict_paths_and_unpack_preflight(self):
+        for selection in ('s["selected"]["items"][-1]', 's["selected"]["alpha"]', 'unpack'):
+            helper = program('def f(a,s):\n return a.add_(1)')
+            fn = program('def f(x,s,ignored):\n if x.shape[0]<4:\n'
+                         '  return x.add_(1)\n return helper(x,s)', helper=helper)
+            compiled = native.compile(fn)
+            x,y = native.ones(2,3).to('cuda:0'),native.ones(2,3).to('cuda:0')
+            compiled(x,False,False)
+            if selection == 'unpack':
+                helper.__code__ = program('def f(a,s):\n other,alpha=s\n return a.add_(other,alpha=alpha)').__code__
+                valid = [0.137,1.0]
+                invalid = ([0.137], [0.137,1.0,1.0])
+            else:
+                helper.__code__ = program('def f(a,s):\n return a.add_(0.137,alpha='+selection+')').__code__
+                if selection.endswith('["alpha"]'):
+                    valid = {'selected': {'alpha': 1.0}}
+                    # Both traversed dict signatures still match; only the
+                    # selected scalar leaf disappears from the current tree.
+                    invalid = ({'selected': {'other': 1.0}}, {'selected': {}})
+                else:
+                    valid = {'selected': {'items': [1.0]}}
+                    invalid = ({'other': {'items': [1.0]}}, {'selected': {'other': [1.0]}})
+            with no_bodies(fn,helper):
+                compiled(x,valid,y)
+            for items in invalid:
+                before,bits = StructuredCache.snapshot(self,compiled),read_bits(x)
+                with self.subTest(selection=selection,items=items), no_bodies(fn,helper), self.assertRaises(NotImplementedError):
+                    compiled(x,items,y)
+                np.testing.assert_array_equal(read_bits(x),bits)
+                self.assertEqual(StructuredCache.snapshot(self,compiled),before)
+                with no_bodies(fn,helper):
+                    self.assertIs(compiled(x,valid,y),x)
+            if selection != 'unpack':
+                helper.__code__ = program('def f(a,s):\n return a.sin()').__code__
+                # Keyed lookup observes presence, not all keys or insertion order.
+                for items in ({'extra': False,'selected': {'extra': True,**valid['selected']}},
+                              {'selected': {**valid['selected'],'extra': False},'extra': True}):
+                    with no_bodies(fn,helper), patch.object(frontend,'lower',side_effect=AssertionError('unrelated key guard')):
+                        self.assertIs(compiled(x,items,y),x)
+
+    def test_retained_structure_replacement_preserves_frozen_scalar_bits(self):
+        helper = program('def f(s):\n return s[-1].view(3,2)')
+        fn = program('def f(x,s,gain):\n if x.shape[0]<4:\n'
+                     '  return x*gain\n return helper(s)',helper=helper)
+        nan_values = np.array([0x7ff8000000001234,0xfff8000000004321],dtype=np.uint64).view(np.float64)
+        for first,current in ((-0.0,0.0), (float(nan_values[0]),float(nan_values[1]))):
+            compiled = native.compile(fn)
+            x = native.tensor([1.,-1.,2.,-2.,3.,-3.]).to('cuda:0').view(2,3)
+            with no_bodies(fn,helper):
+                expected = read_bits(compiled(x,[x],first))
+            entry = next(iter(cache(compiled).graphs.values()))
+            for items in ([False,x], (x,), [x]):
+                with no_bodies(fn,helper):
+                    actual = compiled(x,items,current)
+                np.testing.assert_array_equal(read_bits(actual),expected)
+                self.assertEqual(len(cache(compiled).graphs),1)
+                self.assertIs(next(iter(cache(compiled).graphs.values())),entry)
+            before,bits = StructuredCache.snapshot(self,compiled),read_bits(x)
+            with no_bodies(fn,helper), self.assertRaises(NotImplementedError):
+                compiled(x,[x,False],current)
+            np.testing.assert_array_equal(read_bits(x),bits)
+            self.assertEqual(StructuredCache.snapshot(self,compiled),before)
+
+    def test_scalar_promotion_lowering_retains_inactive_structure(self):
+        helper = program('def f(s):\n return s[-1].view(3,2)')
+        fn = program('def f(x,s,gain):\n if x.shape[0]<4:\n'
+                     '  return x*gain\n return helper(s)',helper=helper)
+        compiled = native.compile(fn)
+        x = native.ones(2,3).to('cuda:0')
+        with no_bodies(fn,helper):
+            compiled(x,[x],1.0)
+            np.testing.assert_array_equal(read_bits(compiled(x,[x],2.0)).view(np.float32),np.full(6,2,dtype=np.float32))
+        entry = next(reversed(cache(compiled).graphs.values()))
+        self.assertTrue(any(type(value) is frontend.RuntimeScalar for value in entry.values.values()))
+        before,bits = StructuredCache.snapshot(self,compiled),read_bits(x)
+        with no_bodies(fn,helper), self.assertRaises(NotImplementedError):
+            compiled(x,[x,False],3.0)
+        np.testing.assert_array_equal(read_bits(x),bits)
+        self.assertEqual(StructuredCache.snapshot(self,compiled),before)
+        with no_bodies(fn,helper):
+            actual = compiled(x,(False,x),3.0)
+        np.testing.assert_array_equal(read_bits(actual).view(np.float32),np.full(6,3,dtype=np.float32))
+        self.assertIs(next(reversed(cache(compiled).graphs.values())),entry)
+
+    def test_retained_structure_does_not_own_caller_containers_or_tensors(self):
+        helper = program('def f(a,s):\n return a.add_(0.137,alpha=s["items"][-1])')
+        fn = program('def f(x,s,ignored):\n if x.shape[0]<4:\n'
+                     '  return x.add_(1)\n return helper(x,s)',helper=helper)
+        compiled = native.compile(fn)
+        inputs = []
+        for length in (1,2):
+            x,y = native.ones(2,3).to('cuda:0'),native.ones(2,3).to('cuda:0')
+            tree = {'items': [1.0]*length}
+            with no_bodies(fn,helper):
+                compiled(x,tree,False)
+                compiled(x,tree,y)
+            inputs.extend((x,y,tree,tree['items']))
+        forbidden = {id(value) for value in inputs}
+        pending,seen = [cache(compiled).graphs],set()
+        while pending:
+            value = pending.pop()
+            if id(value) in seen:
+                continue
+            seen.add(id(value))
+            self.assertNotIn(id(value),forbidden)
+            self.assertIsNot(type(value),frontend.InputTree)
+            self.assertIsNot(type(value),native.Tensor)
+            if type(value) is dict:
+                pending.extend(value.keys())
+                pending.extend(value.values())
+            elif type(value) in (list,tuple):
+                pending.extend(value)
+            elif dataclasses.is_dataclass(value) or type(value) is types.SimpleNamespace:
+                pending.extend(vars(value).values())
+            elif type(value) is types.FunctionType and value.__closure__:
+                pending.extend(cell.cell_contents for cell in value.__closure__)
 
     def test_literal_effect_results_inactive_calls_and_reset(self):
         for result in ('None','7','(7,9)'):
