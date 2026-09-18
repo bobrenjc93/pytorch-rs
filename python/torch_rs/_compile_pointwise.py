@@ -49,8 +49,9 @@ _REVERSE_COMPARE = {"<": ">", "<=": ">=", "==": "==", "!=": "!=", ">=": "<=", ">
 # Imported during package initialization, before public bindings can be patched.
 _FUNCTIONS = tuple((name, _ROOT.__dict__.get(name)) for name in
                    ("neg", "negative", "relu", "sin", "cos", "add", "sub", "subtract", "mul", "multiply"))
-_METHOD_GUARDS = tuple((cls, name, cls.__dict__.get(name, _MISSING))
-                      for cls in (_ROOT.Tensor, _ROOT.Tensor.__base__) for name in _METHODS)
+_METHOD_GUARDS = tuple((cls, tuple((name, cls.__dict__.get(name, _MISSING))
+                                 for name in _METHODS))
+                       for cls in (_ROOT.Tensor, _ROOT.Tensor.__base__))
 
 
 def unsupported(reason):
@@ -1434,13 +1435,7 @@ def _prepared_entry_bytes(key, prepared):
 
 
 def _publish_preparation(cache, key, prepared, retained_bytes, recompile_limit):
-    """Called under the existing lock only after successful reconstruction."""
-    # A prepared Arc must not retain a module whose executor was evicted. The
-    # executable transaction above is authoritative, not an independent module cache.
-    for old_key in tuple(cache.prepared):
-        if old_key[0] not in cache.executors:
-            _, old_bytes = cache.prepared.pop(old_key)
-            cache.prepared_bytes -= old_bytes
+    """Publish under the lock after success and executor-eviction cleanup."""
     if retained_bytes <= _PREPARED_CACHE_BYTES:
         newest = (cache.prepared and next(reversed(cache.prepared)) == key
                   and next(reversed(cache.prepared.values()))[0] is prepared)
@@ -1470,9 +1465,11 @@ def implementation(model, recompile_limit):
         tensors, parameters = bind_arguments(args)
         if _ROOT.overrides._get_current_function_mode() is not None:
             unsupported("active __torch_function__ mode")
-        for cls, name, expected in _METHOD_GUARDS:
-            if cls.__dict__.get(name, _MISSING) is not expected:
-                unsupported("patched Tensor operation binding: " + name)
+        for cls, checks in _METHOD_GUARDS:
+            namespace = cls.__dict__
+            for name, expected in checks:
+                if namespace.get(name, _MISSING) is not expected:
+                    unsupported("patched Tensor operation binding: " + name)
         # The native bridge checks all metadata and storage bounds again on launch.
         metadata = _native._pointwise_admit_inputs(tensors)
         with cache.lock:
@@ -1566,7 +1563,15 @@ def implementation(model, recompile_limit):
                 mapping.pop(item_key, None)
                 mapping[item_key] = item
                 while len(mapping) > recompile_limit:
-                    del mapping[next(iter(mapping))]
+                    evicted_key = next(iter(mapping))
+                    del mapping[evicted_key]
+                    if mapping is cache.executors:
+                        # Preparations must not retain an evicted module. Scan
+                        # only at actual executor eviction in this transaction.
+                        for old_key in tuple(cache.prepared):
+                            if old_key[0] == evicted_key:
+                                _, old_bytes = cache.prepared.pop(old_key)
+                                cache.prepared_bytes -= old_bytes
             _publish_preparation(cache, prepared_key, prepared, retained_bytes, recompile_limit)
             return result
 
