@@ -40,17 +40,23 @@ The version-sensitive reference rules come from PyTorch 2.13
 `scheduler.py::Scheduler`. The repair evidence retains the inspected reference
 identity and detailed symbol pointers alongside generated FX and scheduler IR.
 
-One graph-keyed CUDA kernel interprets that bounded program in one launch.
-Container topology does not create additional native executables. Instruction
+One selected CUDA executable executes that bounded Program in one launch.
+Within the fixed code-generation caps, it mechanically emits the exact validated
+words; empty and over-cap executions use the existing interpreter. Original Graph,
+actual addresses, native context and exact Program identity select direct modules.
+Container topology alone does not create additional native executables. Instruction
 validation and register allocation precede device allocation. Matching warm calls
-reuse an immutable validated program and completed instruction upload. Selection
-includes exact admitted input shapes, retained numerical hint and observable
+reuse an immutable validated preparation (including completed instruction upload
+for VM executions). Selection includes exact admitted input shapes, retained
+numerical hint and observable
 output order; rank-zero and length-one inputs are distinct signatures. The Rust
 planner remains the only numerical authority, including for oversized ephemeral
 preparations. This reuse changes neither instructions nor admission: current
-input metadata must still match the checked native signature. Register scratch
-and outputs remain fresh invocation-owned storage through launch, completion and
-failure. The usage guide describes the bounded data cache and its memory limits;
+input metadata must still match the checked native signature. VM register scratch
+and all computed outputs remain fresh invocation-owned storage through launch,
+completion and failure. Direct code needs no instruction buffer or scratch; it
+retains the same launch geometry and completion boundary. The usage guide
+describes the bounded data cache and its memory limits;
 no performance improvement is implied without a new measurement.
 
 ## Expression sharing and contraction

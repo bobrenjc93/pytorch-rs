@@ -235,7 +235,8 @@ pub(crate) struct CudaFloat32Storage {
 /// Empty means the computed output is empty; unused inputs may still be nonempty.
 #[cfg(any(feature = "python-bindings", test))]
 pub(crate) struct PointwisePlan {
-    instruction_count: usize,
+    pub(crate) instruction_count: usize,
+    pub(crate) register_count: usize,
     instructions: Option<CudaFloat32Storage>,
     layout: jit::LaunchLayout,
 }
@@ -245,7 +246,7 @@ impl PointwisePlan {
     pub(crate) fn new(
         kernel: &jit::Kernel,
         elements: usize,
-        program: crate::pointwise_ir::program::Program,
+        program: &crate::pointwise_ir::program::Program,
     ) -> Result<Self, TensorError> {
         let layout = jit::LaunchLayout::new(elements, program.register_count())?;
         let instruction_words = program
@@ -261,7 +262,8 @@ impl PointwisePlan {
         // Device ordinal alone does not certify the context that owns the module.
         // Check it before allocation/upload, including for an empty preparation.
         kernel.validate_context()?;
-        let instructions = if elements == 0 {
+        let instructions = if elements == 0 || kernel.identity.as_ref().is_some_and(|id| id.direct)
+        {
             None
         } else {
             Some(CudaFloat32Storage::pointwise_plan_upload(
@@ -295,11 +297,11 @@ impl PointwisePlan {
                 },
             )?)
         };
-        // Upload completion owns the host program's last use. Keep only
-        // the launch count; diagnostics build their own listing on demand.
+        // VM upload completion owns the host program's last device-copy use.
+        // Direct code embeds the words; retain truthful counts, not a buffer.
         let instruction_count = program.instruction_count();
-        drop(program);
         Ok(Self {
+            register_count: program.register_count(),
             instruction_count,
             instructions,
             layout,
@@ -704,14 +706,18 @@ impl CudaFloat32Storage {
         }
         let _guard = self.runtime.guard(self.device_index)?;
         kernel.validate_context()?;
-        // Immutable plan instructions were completed at preparation. Scratch is
-        // never shared: every run owns it alongside all new output allocations.
+        // VM instructions completed at preparation and scratch is invocation-local.
+        // Direct code reads neither buffer, but shares output/launch completion.
         self.pointwise_outputs(
             elements,
             kernel.graph.outputs.len(),
             || {
-                Self::allocate(plan.layout.scratch_elements, self.device_index)
-                    .map(|(scratch, _guard)| scratch)
+                if kernel.identity.as_ref().is_some_and(|id| id.direct) {
+                    Ok(None)
+                } else {
+                    Self::allocate(plan.layout.scratch_elements, self.device_index)
+                        .map(|(scratch, _guard)| Some(scratch))
+                }
             },
             || Self::allocate(elements, self.device_index).map(|(output, _guard)| output),
             |scratch, results| {
@@ -726,7 +732,10 @@ impl CudaFloat32Storage {
                         (input.data_ptr + offset * 4) as u64
                     }
                 };
-                let instructions = plan.instructions.as_ref().expect("nonempty preparation");
+                let instructions = plan
+                    .instructions
+                    .as_ref()
+                    .map_or(0, |data| data.data_ptr as u64);
                 // SAFETY: checked input ranges and all distinct output owners
                 // remain live through pointwise_outputs' completion boundary.
                 unsafe {
@@ -735,9 +744,9 @@ impl CudaFloat32Storage {
                         pointer(other, offsets[1], input_elements[1]),
                         &pointers,
                         elements as u64,
-                        instructions.data_ptr as u64,
+                        instructions,
                         plan.instruction_count as u64,
-                        scratch.data_ptr as u64,
+                        scratch.as_ref().map_or(0, |data| data.data_ptr as u64),
                         plan.layout,
                         scalars,
                     )
@@ -790,6 +799,8 @@ impl CudaFloat32Storage {
         // One guard spans every allocation, launch, completion and failure. A
         // partial allocation failure releases only local, unpublished owners.
         let _guard = self.runtime.guard(self.device_index)?;
+        // The outer Option describes work, not resource presence: nonempty
+        // direct calls carry Some(None) and must still launch and complete.
         let scratch = if elements == 0 {
             None
         } else {
@@ -1220,6 +1231,10 @@ fn complete_inplace_launch<T>(
 }
 
 #[cfg(test)]
+#[path = "cuda/pointwise_direct_failure_tests.rs"]
+mod pointwise_direct_failure_tests;
+
+#[cfg(test)]
 mod tests {
     use crate::{Device, Tensor};
 
@@ -1443,14 +1458,14 @@ mod tests {
         let kernel = super::jit::Kernel::compile(&graph, 0).unwrap();
         let program = Program::build(&graph, &[Address::Linear], 13, &[0], false).unwrap();
         let instruction_count = program.instruction_count();
-        let plan = super::PointwisePlan::new(&kernel, 13, program).unwrap();
+        let plan = super::PointwisePlan::new(&kernel, 13, &program).unwrap();
         let storage = plan.instructions.as_ref().unwrap();
         assert_eq!(plan.instruction_count, instruction_count);
         assert!(storage.allocation_bytes >= instruction_count * size_of::<[u32; 6]>());
         assert_eq!(plan.retained_heap_bytes(), storage.allocation_bytes);
         let empty_program = Program::build(&graph, &[Address::Linear], 0, &[0], false).unwrap();
         let instruction_count = empty_program.instruction_count();
-        let empty = super::PointwisePlan::new(&kernel, 0, empty_program).unwrap();
+        let empty = super::PointwisePlan::new(&kernel, 0, &empty_program).unwrap();
         assert!(empty.instructions.is_none());
         assert_eq!(empty.instruction_count, instruction_count);
         assert_eq!(empty.retained_heap_bytes(), 0);

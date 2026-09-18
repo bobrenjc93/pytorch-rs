@@ -14,6 +14,8 @@ the [profiled guard investigation](diagnostics/profiled-full-call-20260918.md),
 and its [clean-commit three-way capture](diagnostics/default-compile-full-call-postcommit-ed614665.md).
 The [guard allocation investigation](diagnostics/guard-allocation-20260918.md)
 records discarded author prototypes and their replayable evidence.
+The [direct executable resource experiment](diagnostics/direct-resources-20260918.md)
+records donor integration, direct-only resource removal and their separate author captures.
 
 ## Historical Validation Evidence
 

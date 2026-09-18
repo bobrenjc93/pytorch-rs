@@ -6,6 +6,10 @@ use crate::pointwise_ir::{Graph, invalid};
 use std::ffi::{CStr, CString};
 use std::sync::Arc;
 
+#[path = "pointwise_identity.rs"]
+mod identity;
+pub(crate) use identity::ExecutableIdentity;
+
 type Program = *mut c_void;
 struct Nvrtc {
     _library: Library,
@@ -186,6 +190,7 @@ impl LaunchLayout {
 }
 
 pub(crate) struct Kernel {
+    pub(crate) identity: Option<ExecutableIdentity>,
     pub(crate) graph: Graph,
     pub(crate) addresses: Vec<crate::pointwise_ir::indexing::Address>,
     pub(crate) device: usize,
@@ -213,8 +218,36 @@ impl Kernel {
         addresses: Vec<crate::pointwise_ir::indexing::Address>,
     ) -> Result<Arc<Self>, TensorError> {
         let source = graph.indexed_source(&addresses)?;
+        Self::compile_source(graph, device, addresses, source, None)
+    }
+
+    pub(crate) fn checked_context(device: usize) -> Result<usize, TensorError> {
+        let _guard = runtime()?.guard(device)?;
+        current_context()
+    }
+
+    pub(crate) fn compile_selected(
+        graph: &Graph,
+        device: usize,
+        addresses: Vec<crate::pointwise_ir::indexing::Address>,
+        source: String,
+        identity: ExecutableIdentity,
+    ) -> Result<Arc<Self>, TensorError> {
+        Self::compile_source(graph, device, addresses, source, Some(identity))
+    }
+
+    fn compile_source(
+        graph: &Graph,
+        device: usize,
+        addresses: Vec<crate::pointwise_ir::indexing::Address>,
+        source: String,
+        identity: Option<ExecutableIdentity>,
+    ) -> Result<Arc<Self>, TensorError> {
         let _guard = runtime()?.guard(device)?;
         let context = current_context()?;
+        if identity.as_ref().is_some_and(|id| id.context != context) {
+            return Err(invalid("host plan context mismatch"));
+        }
         let driver = driver()?;
         let mut ordinal = 0;
         let mut major = 0;
@@ -260,6 +293,7 @@ impl Kernel {
             }
         }
         Ok(Arc::new(Self {
+            identity,
             graph: graph.clone(),
             addresses,
             device,
@@ -367,6 +401,45 @@ impl Drop for Kernel {
 mod tests {
     use super::*;
     use crate::pointwise_ir::Node;
+
+    #[test]
+    fn direct_context_rejection_precedes_allocation_without_instruction_storage() {
+        if crate::cuda::device_count() == 0 {
+            eprintln!("skipping direct context admission: CUDA unavailable");
+            return;
+        }
+        let graph = Graph {
+            inputs: 1,
+            nodes: vec![Node::Input(0), Node::Neg(0)],
+            outputs: vec![1],
+        };
+        let addresses = vec![crate::pointwise_ir::indexing::Address::Linear];
+        let program =
+            crate::pointwise_ir::program::Program::build(&graph, &addresses, 3, &[0], false)
+                .unwrap();
+        let source = program.direct_source(&graph, &addresses).unwrap().unwrap();
+        let identity = ExecutableIdentity::new(
+            &graph,
+            &addresses,
+            0,
+            Kernel::checked_context(0).unwrap(),
+            Some(&program),
+        );
+        let mut kernel = Kernel::compile_selected(&graph, 0, addresses, source, identity).unwrap();
+        for elements in [0, 3] {
+            let context = kernel.context;
+            let allocations = crate::cuda::STORAGE_ALLOCATIONS.get();
+            let uploads = crate::cuda::pointwise_upload_count();
+            Arc::get_mut(&mut kernel).unwrap().context = usize::MAX;
+            let result = crate::cuda::PointwisePlan::new(&kernel, elements, &program);
+            // Restore before assertions or module destruction, including on failure.
+            Arc::get_mut(&mut kernel).unwrap().context = context;
+            assert!(matches!(result, Err(error) if error.to_string().contains("context mismatch")));
+            assert_eq!(crate::cuda::STORAGE_ALLOCATIONS.get(), allocations);
+            assert_eq!(crate::cuda::pointwise_upload_count(), uploads);
+            assert!(crate::cuda::PointwisePlan::new(&kernel, elements, &program).is_ok());
+        }
+    }
 
     #[test]
     fn preparation_rejects_kernel_context_mismatch_before_upload() {

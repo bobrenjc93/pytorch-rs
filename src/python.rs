@@ -26071,6 +26071,9 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
     module.add_function(wrap_pyfunction!(compile_trace_binary, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_scalar, module)?)?;
     module.add_function(wrap_pyfunction!(compile_trace_reduction, module)?)?;
+    module.add_class::<pointwise::HostPlan>()?;
+    module.add_class::<pointwise::Executable>()?;
+    module.add_function(wrap_pyfunction!(pointwise::host_plan, module)?)?;
     module.add_class::<pointwise::Compiled>()?;
     module.add_class::<pointwise::Prepared>()?;
     module.add_function(wrap_pyfunction!(pointwise::source, module)?)?;
@@ -26091,6 +26094,9 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
     module.add_function(wrap_pyfunction!(compile_trace_mul_scalar_value, module)?)?;
     let exports = module.getattr("__all__")?;
     for name in [
+        "_PointwiseHostPlan",
+        "_PointwiseExecutable",
+        "_pointwise_host_plan",
         "_PointwiseKernel",
         "_PointwisePrepared",
         "_pointwise_source",

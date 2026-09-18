@@ -138,6 +138,49 @@ class Transactions(unittest.TestCase):
         self.aliases = self.stack.enter_context(patch.object(bridge, '_compile_trace_cuda_graph',
             side_effect=lambda inputs, nodes: tuple(object() for _ in nodes)))
 
+    def test_selected_receipt_tracks_graph_free_and_mixed_results(self):
+        for expression, numerical in (('[v,v,x]', False), ('[v,-x,v,x]', True)):
+            compiled = native.compile(program('def f(x):\n v=x.transpose(0,1)\n return '+expression))
+            previous = None
+            for shape in ((2,3), (4,3), (2,3)):
+                x = native.ones(*shape)
+                result, selected = compiled._torch_rs_pointwise_receipt(x)
+                self.assertIs(result[-1], x)
+                self.assertIs(result[0], result[2] if numerical else result[1])
+                if previous is not None:
+                    self.assertIsNot(result[0], previous[0])
+                if numerical:
+                    actual = next(reversed(cache(compiled).prepared.values()))[0]
+                    self.assertIs(selected, actual)
+                    self.assertTrue(selected.belongs_to(
+                        next(reversed(cache(compiled).executors.values()))))
+                else:
+                    self.assertIsNone(selected)
+                    self.assertFalse(cache(compiled).executors)
+                    self.assertFalse(cache(compiled).prepared)
+                    self.assertEqual(cache(compiled).prepared_bytes, 0)
+                    self.host_plan.assert_not_called()
+                    self.codegen.assert_not_called()
+                previous = result
+
+    def test_receipt_failure_preserves_pure_and_mixed_cache_transactions(self):
+        for expression in ('[v,v,x]', '[v,-x,v,x]'):
+            fn = program('def f(x):\n v=x.transpose(0,1)\n return '+expression)
+            compiled = native.compile(fn)
+            for shape in ((2,3), (4,3)):
+                compiled(native.ones(*shape))
+            before = self.snapshot(compiled)
+            with patch.object(frontend, '_receipt', side_effect=MemoryError('receipt allocation')):
+                for shape in ((2,3), (7,3)):
+                    with self.assertRaisesRegex(MemoryError, 'receipt allocation'):
+                        compiled._torch_rs_pointwise_receipt(native.ones(*shape))
+                    self.assertEqual(self.snapshot(compiled), before)
+                cold = native.compile(fn)
+                with self.assertRaisesRegex(MemoryError, 'receipt allocation'):
+                    cold._torch_rs_pointwise_receipt(native.ones(2,3))
+                self.assertEqual(self.snapshot(cold), ([], [], [], 0))
+            compiled._torch_rs_pointwise_receipt(native.ones(2,3))
+
     def test_pure_no_numerical_cache_and_late_preflight(self):
         for body in ('v=x.transpose(0,1); return [v,v,x]',
                      'y=-x; v=x.transpose(0,1); return (y,v)'):
@@ -159,12 +202,12 @@ class Transactions(unittest.TestCase):
                 self.assertFalse(cache(compiled).executors)
                 self.assertFalse(cache(compiled).prepared)
                 self.assertEqual(cache(compiled).prepared_bytes, 0)
-        self.codegen.reset_mock(); self.aliases.reset_mock()
+        self.codegen.reset_mock(); self.host_plan.reset_mock(); self.aliases.reset_mock()
         for tail in ('v=x.transpose(0,9)', 'v=x.transpose(0,1); w=v.transpose(0,9)'):
             compiled = native.compile(program('def f(x):\n y=-x\n '+tail+'\n return y'))
             with self.assertRaises(IndexError): compiled(native.ones(2,3))
             self.assertEqual(self.snapshot(compiled), ([], [], [], 0))
-        self.codegen.assert_not_called(); self.aliases.assert_not_called()
+        self.codegen.assert_not_called(); self.host_plan.assert_not_called(); self.aliases.assert_not_called()
 
     def test_conditional_binding_guard_and_inactive_helper_warm_reuse(self):
         helper = program('def f(x):\n return x.transpose(0,1)')
@@ -235,6 +278,7 @@ class Transactions(unittest.TestCase):
                         compiled(native.ones(2,3), argument)
                     self.assertEqual(self.snapshot(compiled), ([], [], [], 0))
         self.codegen.assert_not_called()
+        self.host_plan.assert_not_called()
         self.aliases.assert_not_called()
         self.assertEqual(self.launches, [])
 
@@ -307,6 +351,31 @@ class Hardware(unittest.TestCase):
             self.assertEqual(list(actual),list(expected))
             for key in expected: self.compare(actual[key],expected[key])
         else: self.assertEqual(actual, expected)
+
+    def test_selected_receipt_keeps_view_aliases_and_actual_numerical_owner(self):
+        for expression, numerical in (('[v,v,x]', False), ('[v,-x,v,x]', True)):
+            fn = program('def f(x):\n v=x.transpose(0,1)\n return '+expression)
+            compiled = native.compile(fn)
+            reference = self.torch.compile(program(
+                'def f(x):\n v=x.transpose(0,1)\n return '+expression, self.torch))
+            for shape in ((2,3), (4,5), (2,3)):
+                x = self.upload(shape, 3)
+                tx = self.upload(shape, 3, framework=self.torch)
+                with no_bodies(fn):
+                    output, selected = compiled._torch_rs_pointwise_receipt(x)
+                self.compare(output, reference(tx))
+                self.assertIs(output[-1], x)
+                self.assertIs(output[0], output[2] if numerical else output[1])
+                self.assertEqual(output[0].data_ptr(), x.data_ptr())
+                if numerical:
+                    self.assertIs(selected, next(reversed(cache(compiled).prepared.values()))[0])
+                    self.assertTrue(selected.belongs_to(
+                        next(reversed(cache(compiled).executors.values()))))
+                    self.assertNotEqual(output[1].data_ptr(), x.data_ptr())
+                else:
+                    self.assertIsNone(selected)
+                    self.assertFalse(cache(compiled).executors)
+                    self.assertFalse(cache(compiled).prepared)
 
     def test_default_pairs_shape_history_alias_identity_offset_and_lifetime(self):
         histories = (((),), ((1,), (7,), (0,), (7,)),

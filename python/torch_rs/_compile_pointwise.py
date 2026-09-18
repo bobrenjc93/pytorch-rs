@@ -1520,7 +1520,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     specification, tuple(views), uses_transpose, tuple(active_views))
 
 
-def _prepared_entry_bytes(key, prepared):
+def _prepared_entry_bytes(key, prepared, code_key):
     """Conservative incremental retention charge, calculated only on a miss.
 
     Native accounting uses actual Vec capacities and device allocation bytes.
@@ -1538,16 +1538,18 @@ def _prepared_entry_bytes(key, prepared):
                     + key_bytes(value.outputs) + key_bytes(value._hash))
         return sys.getsizeof(value)
 
-    return prepared.retained_bytes + sys.getsizeof(prepared) + key_bytes(key) + 512
+    return (prepared.retained_bytes + sys.getsizeof(prepared)
+            + key_bytes(key) + key_bytes(code_key) + 512)
 
 
-def _publish_preparation(cache, key, prepared, retained_bytes, recompile_limit):
+def _publish_preparation(cache, key, prepared, retained_bytes, recompile_limit, code_key, executor):
     """Called under the existing lock only after successful reconstruction."""
     # A prepared Arc must not retain a module whose executor was evicted. The
     # executable transaction above is authoritative, not an independent module cache.
     for old_key in tuple(cache.prepared):
-        if old_key[0] not in cache.executors:
-            _, old_bytes = cache.prepared.pop(old_key)
+        _, old_bytes, old_code, old_executor = cache.prepared[old_key]
+        if cache.executors.get(old_code) is not old_executor:
+            cache.prepared.pop(old_key)
             cache.prepared_bytes -= old_bytes
     if retained_bytes <= _PREPARED_CACHE_BYTES:
         newest = (cache.prepared and next(reversed(cache.prepared)) == key
@@ -1556,12 +1558,17 @@ def _publish_preparation(cache, key, prepared, retained_bytes, recompile_limit):
             previous = cache.prepared.pop(key, None)
             if previous is not None:
                 cache.prepared_bytes -= previous[1]
-            cache.prepared[key] = (prepared, retained_bytes)
+            cache.prepared[key] = (prepared, retained_bytes, code_key, executor)
             cache.prepared_bytes += retained_bytes
     while (len(cache.prepared) > recompile_limit
            or cache.prepared_bytes > _PREPARED_CACHE_BYTES):
-        _, old_bytes = cache.prepared.pop(next(iter(cache.prepared)))
+        _, old_bytes, _, _ = cache.prepared.pop(next(iter(cache.prepared)))
         cache.prepared_bytes -= old_bytes
+
+
+def _receipt(result, prepared):
+    # Allocate before publication, including warm selected-invocation receipts.
+    return result, prepared
 
 
 def implementation(model, recompile_limit):
@@ -1569,7 +1576,7 @@ def implementation(model, recompile_limit):
     cache = _state.new_native_eager_compile_cache()
     program = None
 
-    def compiled(*args, **kwargs):
+    def execute(args, kwargs, want_receipt):
         nonlocal program
         if kwargs:
             unsupported("expected positional arguments without keywords")
@@ -1653,26 +1660,36 @@ def implementation(model, recompile_limit):
             view_nodes = preflight_views(lowering, static_values, metadata) if lowering.views else ()
             publications = [(entry.lowerings, abi, lowering), (cache.graphs, key, entry)]
             outputs = ()
+            prepared = None
             if lowering.graph is not None:
                 graph = lowering.graph
                 shapes = tuple(m[0] for m in metadata)
                 indexing_key = None if all(s == shapes[0] for s in shapes) else shapes
-                code_key = (graph, metadata[0][4], indexing_key)
-                executor = cache.executors.get(code_key)
-                if executor is None:
-                    executor = _native._pointwise_compile(tensors, graph.nodes, graph.outputs)
-                prepared_key = (code_key, shapes, entry.numerical_hint, lowering.result.output_order)
+                logical_code_key = (graph, metadata[0][4], indexing_key)
+                prepared_key = (logical_code_key, shapes, entry.numerical_hint, lowering.result.output_order)
                 cached_preparation = cache.prepared.get(prepared_key)
+                if cached_preparation is not None:
+                    prepared, retained_bytes, code_key, executor = cached_preparation
+                    if cache.executors.get(code_key) is not executor:
+                        cached_preparation = None
                 if cached_preparation is None:
-                    prepared = executor.prepare(tensors, entry.numerical_hint, lowering.result.output_order)
-                    # Metadata was read before taking this lock. Bind the published
-                    # key to the same native snapshot that passed graph admission;
-                    # never label an artifact with a stale Python shape signature.
+                    host = _native._pointwise_host_plan(
+                        tensors, graph.nodes, graph.outputs,
+                        entry.numerical_hint, lowering.result.output_order)
+                    code_key = host.executable_identity
+                    executor = cache.executors.get(code_key)
+                    if executor is None:
+                        executor = host.compile()
+                    prepared = executor.bind(host)
+                    # Drop construction-only graph, source, words and shape vectors.
+                    del host
                     if prepared.input_shapes != shapes:
                         unsupported("input shapes changed during pointwise preparation")
-                    retained_bytes = _prepared_entry_bytes(prepared_key, prepared)
-                else:
-                    prepared, retained_bytes = cached_preparation
+                    # Frozen native owners preserve this relation for the lifetime
+                    # of a frontend-admitted tuple. Hits still check the map owner.
+                    if not prepared.belongs_to(executor):
+                        unsupported("prepared executable owner mismatch")
+                    retained_bytes = _prepared_entry_bytes(prepared_key, prepared, code_key)
                 outputs = prepared.run(tensors, scalars)
                 publications.insert(1, (cache.executors, code_key, executor))
             if lowering.active_views:
@@ -1680,6 +1697,8 @@ def implementation(model, recompile_limit):
                 result = lowering.result.reconstruct(outputs, static_values, tensors, metadata, views)
             else:
                 result = lowering.result.reconstruct(outputs, static_values, tensors, metadata)
+            if want_receipt:
+                result = _receipt(result, prepared)
             # Publish every cache level only after success. Executable/lowering
             # eviction bounds retention without consuming logical slots.
             for mapping, item_key, item in publications:
@@ -1693,8 +1712,15 @@ def implementation(model, recompile_limit):
                 while len(mapping) > recompile_limit:
                     del mapping[next(iter(mapping))]
             if lowering.graph is not None:
-                _publish_preparation(cache, prepared_key, prepared, retained_bytes, recompile_limit)
+                _publish_preparation(cache, prepared_key, prepared, retained_bytes, recompile_limit, code_key, executor)
             return result
 
+    def compiled(*args, **kwargs):
+        return execute(args, kwargs, False)
+
+    def receipt(*args, **kwargs):
+        return execute(args, kwargs, True)
+
+    compiled._torch_rs_pointwise_receipt = receipt
     compiled._torch_rs_pointwise_cache = cache
     return compiled
