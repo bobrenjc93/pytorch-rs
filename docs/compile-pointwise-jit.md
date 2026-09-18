@@ -235,8 +235,9 @@ and every computed root must satisfy the existing numerical domain. Returned
 intermediates do not impose eager rounding: consumers can still use fused FMA.
 
 One native graph, output-vector ABI and CUDA launch serve all computed leaves.
-The immutable Python result specification carries topology separately, so changes
-to keys or container order do not fragment native executable caching. Current
+The immutable Python result specification carries topology separately, so cosmetic
+key or container changes preserve native executable reuse when the effective
+computed-root order and resulting Program stay equal. Current
 input aliases and dimensions are reconstructed after native completion and before
 any cache publication or LRU update. Inputs and all output allocations remain
 owned through launch, synchronization and Python conversion, including failures.
@@ -596,6 +597,9 @@ restores the caller's device on compilation, execution and module destruction.
 Wrapper locks serialize cache publication and reset.
 
 ## Validation and campaign evidence
+
+The [committed-source direct-resource validation](diagnostics/direct-resources-validation-20260918.md)
+records fresh B/H/D public-call comparisons and focused regression checks.
 
 The [guard traversal author diagnostic](diagnostics/default-compile-guard-scan-20260918.md)
 records bounded public-call measurements and validation attempts. It is separate

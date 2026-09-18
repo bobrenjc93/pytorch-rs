@@ -130,10 +130,10 @@ Consequently this subset has no competing product contraction to select. Address
 calculation only chooses input elements; it no longer changes numerical
 materialization ranks to approximate a reference autotuner.
 
-The existing numerical planner and generic CUDA instruction executor also own
-one-stage trig; admission adds no trigonometric implementation or launch path.
+The existing numerical planner and selected direct or VM executable also own
+one-stage trig; admission adds no separate trigonometric implementation or launch path.
 Constant-only trig is not runtime-input evidence, and empty outputs execute no
-trig. Finite regression results and generic VM PTX do not prove all-program or
+trig. Finite regression results and generated PTX do not prove all-program or
 performance parity, nor independently trace a selected scalar plan on-device.
 Static scalar `-0.0` may reuse a `+0.0` specialization; tests retain that history
 rather than treating each sign as a separately specialized execution.

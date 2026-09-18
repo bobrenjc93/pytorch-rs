@@ -4,10 +4,76 @@ import os
 from pathlib import Path
 import subprocess
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import torch_rs as native
 from tests.test_compile_pointwise_jit import available, cache, program
+
+
+def real_nvrtc_provider(environment):
+    """Mirror native NVRTC loader names/override precedence before interposing.
+
+    Keep the verified library alive; loader-resolved sonames are valid pins.
+    An explicit pin never falls through to another provider.
+    """
+    pin = environment.get('TEST_PROGRAM_IDENTITY_REAL_NVRTC',
+                          environment.get('TORCH_RS_NVRTC'))
+    paths = [pin] if pin is not None else ['libnvrtc.so.13', 'libnvrtc.so.12', 'libnvrtc.so']
+    errors = []
+    for path in paths:
+        try:
+            library = ctypes.CDLL(path)
+            for symbol in ('nvrtcVersion', 'nvrtcCreateProgram', 'nvrtcCompileProgram',
+                           'nvrtcGetProgramLogSize', 'nvrtcGetProgramLog',
+                           'nvrtcGetPTXSize', 'nvrtcGetPTX', 'nvrtcDestroyProgram'):
+                getattr(library, symbol)
+        except (OSError, AttributeError) as error:
+            errors.append(f'{path}: {error}')
+            continue
+        library.nvrtcVersion.argtypes = [ctypes.POINTER(ctypes.c_int)] * 2
+        library.nvrtcVersion.restype = ctypes.c_int
+        major, minor = ctypes.c_int(), ctypes.c_int()
+        status = library.nvrtcVersion(ctypes.byref(major), ctypes.byref(minor))
+        if status != 0:
+            raise RuntimeError(f'{path}: nvrtcVersion status {status}')
+        return path, library
+    raise RuntimeError('cannot load real NVRTC: ' + '; '.join(errors))
+
+
+class NvrtcProviderSetup(unittest.TestCase):
+    def test_default_discovery_and_explicit_loader_names(self):
+        library = Mock()
+        library.nvrtcVersion.return_value = 0
+        for environment, expected in (
+                ({}, 'libnvrtc.so.13'),
+                ({'TORCH_RS_NVRTC': 'libnvrtc.so.13'}, 'libnvrtc.so.13'),
+                ({'TORCH_RS_NVRTC': '/owned/libnvrtc.so.13'}, '/owned/libnvrtc.so.13'),
+                ({'TEST_PROGRAM_IDENTITY_REAL_NVRTC': 'libnvrtc.so.13',
+                  'TORCH_RS_NVRTC': '/interposer.so'}, 'libnvrtc.so.13')):
+            with self.subTest(environment=environment), patch.object(ctypes, 'CDLL', return_value=library) as load:
+                self.assertEqual(real_nvrtc_provider(environment), (expected, library))
+                load.assert_called_once_with(expected)
+        with patch.object(ctypes, 'CDLL', side_effect=[OSError('absent'), library]) as load:
+            self.assertEqual(real_nvrtc_provider({}), ('libnvrtc.so.12', library))
+            self.assertEqual([call.args[0] for call in load.call_args_list],
+                             ['libnvrtc.so.13', 'libnvrtc.so.12'])
+
+    def test_selected_provider_version_failure_is_not_hidden(self):
+        library = Mock()
+        library.nvrtcVersion.return_value = 7
+        with patch.object(ctypes, 'CDLL', return_value=library) as load:
+            with self.assertRaisesRegex(RuntimeError, 'nvrtcVersion status 7'):
+                real_nvrtc_provider({})
+            load.assert_called_once_with('libnvrtc.so.13')
+
+    def test_explicit_invalid_pin_does_not_fall_back(self):
+        for key in ('TORCH_RS_NVRTC', 'TEST_PROGRAM_IDENTITY_REAL_NVRTC'):
+            with self.subTest(key=key), patch.object(ctypes, 'CDLL', side_effect=OSError('invalid pin')) as load:
+                with self.assertRaisesRegex(RuntimeError, 'cannot load real NVRTC.*invalid pin'):
+                    real_nvrtc_provider({key: '/invalid/nvrtc.so'})
+                load.assert_called_once_with('/invalid/nvrtc.so')
+        with self.assertRaisesRegex(RuntimeError, 'cannot load real NVRTC'):
+            real_nvrtc_provider({'TORCH_RS_NVRTC': str(Path(__file__) / 'missing-nvrtc.so')})
 
 
 @unittest.skipUnless(available(), 'requires native CUDA and reference PyTorch CUDA')
@@ -15,10 +81,7 @@ class ProgramIdentityCompilerFailures(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         root = Path(__file__).resolve().parents[1]
-        cls.real_nvrtc = os.environ.get('TEST_PROGRAM_IDENTITY_REAL_NVRTC',
-                                        os.environ.get('TORCH_RS_NVRTC', ''))
-        if not cls.real_nvrtc or not Path(cls.real_nvrtc).is_file():
-            raise RuntimeError('pin TEST_PROGRAM_IDENTITY_REAL_NVRTC to the actual NVRTC library')
+        cls.real_nvrtc, cls.real_library = real_nvrtc_provider(os.environ)
         destination = root / 'target' / 'program-identity-compiler-failures'
         destination.mkdir(parents=True, exist_ok=True)
         cls.library = destination / 'libprogram_identity_nvrtc.so'

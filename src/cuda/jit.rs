@@ -403,6 +403,78 @@ mod tests {
     use crate::pointwise_ir::Node;
 
     #[test]
+    fn stale_host_context_rejects_before_nvrtc_discovery_and_allows_retry() {
+        if crate::cuda::device_count() == 0 {
+            eprintln!("skipping stale host context admission: CUDA unavailable");
+            return;
+        }
+        let graph = Graph {
+            inputs: 1,
+            nodes: vec![Node::Input(0), Node::Neg(0)],
+            outputs: vec![1],
+        };
+        let addresses = vec![crate::pointwise_ir::indexing::Address::Linear];
+        let program =
+            crate::pointwise_ir::program::Program::build(&graph, &addresses, 3, &[0], false)
+                .unwrap();
+        let source = program.direct_source(&graph, &addresses).unwrap().unwrap();
+        let context = Kernel::checked_context(0).unwrap();
+        let identity = ExecutableIdentity::new(&graph, &addresses, 0, context, Some(&program));
+        if std::env::var_os("TORCH_RS_TEST_STALE_HOST_CONTEXT").is_some() {
+            let stale = ExecutableIdentity::new(&graph, &addresses, 0, context ^ 1, Some(&program));
+            let allocations = crate::cuda::STORAGE_ALLOCATIONS.get();
+            let uploads = crate::cuda::pointwise_upload_count();
+            let rejected =
+                Kernel::compile_selected(&graph, 0, addresses.clone(), source.clone(), stale);
+            assert!(
+                matches!(rejected, Err(error) if error.to_string().contains("host plan context mismatch"))
+            );
+            assert_eq!(current_context().unwrap(), context);
+            assert_eq!(crate::cuda::STORAGE_ALLOCATIONS.get(), allocations);
+            assert_eq!(crate::cuda::pointwise_upload_count(), uploads);
+            // Control: the same valid source/identity reaches the unavailable
+            // compiler. The stale identity must reject before its discovery.
+            let discovered = Kernel::compile_selected(&graph, 0, addresses, source, identity);
+            assert!(
+                matches!(discovered, Err(error) if error.to_string().contains("cannot load NVRTC"))
+            );
+            assert_eq!(current_context().unwrap(), context);
+            return;
+        }
+        let absent = std::env::current_dir()
+            .unwrap()
+            .join("target/direct-validation/nonexistent-stale-host-context-nvrtc.so");
+        assert!(!absent.exists());
+        // Child-only environment selection avoids races with other native tests.
+        let child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "cuda::pointwise::jit::tests::stale_host_context_rejects_before_nvrtc_discovery_and_allows_retry", "--nocapture"])
+            .env("TORCH_RS_TEST_STALE_HOST_CONTEXT", "1")
+            .env("TORCH_RS_NVRTC", absent)
+            .output()
+            .unwrap();
+        assert!(
+            child.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&child.stdout),
+            String::from_utf8_lossy(&child.stderr)
+        );
+        assert!(String::from_utf8_lossy(&child.stdout).contains("1 passed"));
+        let kernel = Kernel::compile_selected(&graph, 0, addresses, source, identity).unwrap();
+        assert!(kernel.ptx.contains("torch_rs_pointwise"));
+        assert_eq!(current_context().unwrap(), context);
+        let mut device = -1;
+        // SAFETY: runtime writes the current ordinal to a live integer.
+        runtime()
+            .unwrap()
+            .check(
+                unsafe { (runtime().unwrap().get_device)(&raw mut device) },
+                "cudaGetDevice",
+            )
+            .unwrap();
+        assert_eq!(device, 0);
+    }
+
+    #[test]
     fn direct_context_rejection_precedes_allocation_without_instruction_storage() {
         if crate::cuda::device_count() == 0 {
             eprintln!("skipping direct context admission: CUDA unavailable");

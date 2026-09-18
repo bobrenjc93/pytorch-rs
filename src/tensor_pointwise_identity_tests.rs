@@ -274,6 +274,26 @@ fn over_cap_host_programs_use_one_vm_identity_and_keep_independent_uploads() {
     }
 }
 
+fn read_vm_outputs(outputs: &[Tensor]) -> Vec<Vec<f32>> {
+    outputs
+        .iter()
+        .map(|output| output.try_copy_cuda_to_cpu().unwrap().try_to_vec().unwrap())
+        .collect()
+}
+
+fn assert_vm_output_bits(actual: &[Vec<f32>], expected: &[Vec<f32>]) {
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert_eq!(actual.len(), expected.len());
+        for (&actual, &expected) in actual.iter().zip(expected) {
+            assert_eq!(actual.is_nan(), expected.is_nan());
+            if !expected.is_nan() {
+                assert_eq!(actual.to_bits(), expected.to_bits());
+            }
+        }
+    }
+}
+
 #[test]
 fn different_uploaded_programs_share_only_the_vm_executable() {
     if !available() {
@@ -286,26 +306,77 @@ fn different_uploaded_programs_share_only_the_vm_executable() {
         nodes,
         outputs: vec![2, 263],
     };
-    let input = cuda_input(vec![0.125; 13], &[13]);
+    // The underflow lane distinguishes fused negative product (-0) from
+    // subtraction after positive-product realization (+0). Other lanes retain
+    // ordinary values, both zero signs, subnormals and nonfinite masks/signs.
+    let input = cuda_input(
+        vec![
+            1e-38,
+            -1e-38,
+            0.,
+            -0.,
+            f32::from_bits(1),
+            -f32::from_bits(1),
+            0.125,
+            -0.125,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+            1.,
+            -1.,
+        ],
+        &[13],
+    );
     let mut hosts = Vec::new();
     for hint in [1, 2, 13] {
         for order in [[0, 1], [1, 0]] {
-            hosts.push(HostPointwise::new(&[&input], graph.clone(), Some(hint), &order).unwrap());
+            hosts.push((
+                hint,
+                order,
+                HostPointwise::new(&[&input], graph.clone(), Some(hint), &order).unwrap(),
+            ));
         }
     }
-    assert!(hosts.iter().all(|host| !host.identity.direct));
+    assert!(hosts.iter().all(|(_, _, host)| !host.identity.direct));
     assert!(
         hosts
             .iter()
-            .any(|host| host.program.instructions() != hosts[0].program.instructions())
+            .any(|(_, _, host)| host.program.instructions() != hosts[0].2.program.instructions())
     );
-    let kernel = hosts[0].compile().unwrap();
-    for host in &hosts {
-        assert_eq!(host.identity, hosts[0].identity);
+    let kernel = hosts[0].2.compile().unwrap();
+    let legacy = Kernel::compile(&graph, 0).unwrap();
+    assert!(!Arc::ptr_eq(&kernel, &legacy));
+    let mut retained = Vec::new();
+    let mut witness = Vec::new();
+    for (hint, order, host) in &hosts {
+        assert_eq!(host.identity, hosts[0].2.identity);
         let prepared = host.bind(Arc::clone(&kernel)).unwrap();
         assert!(Arc::ptr_eq(prepared.kernel(), &kernel));
+        // Independently replan the corresponding legacy invocation; do not use
+        // the first host's words or a regenerated diagnostic as the oracle.
+        let expected =
+            Tensor::prepare_pointwise(&[&input], Arc::clone(&legacy), Some(*hint), Some(order))
+                .unwrap()
+                .run(&[&input], &[])
+                .unwrap();
+        let expected = read_vm_outputs(&expected);
         let outputs = prepared.run(&[&input], &[]).unwrap();
         assert_eq!(outputs.len(), 2);
         assert!(!outputs[0].shares_storage_with(&outputs[1]));
+        assert!(
+            outputs
+                .iter()
+                .all(|output| !output.shares_storage_with(&input))
+        );
+        assert_vm_output_bits(&read_vm_outputs(&outputs), &expected);
+        witness.push(expected[0][0].to_bits());
+        retained.push((outputs, expected));
+        for (earlier, expected) in &retained {
+            assert_vm_output_bits(&read_vm_outputs(earlier), expected);
+        }
     }
+    // Demonstrate a numerical witness, not merely differing instruction words.
+    assert_eq!(witness[0], (-0.0_f32).to_bits());
+    assert_eq!(witness[4], 0.0_f32.to_bits());
+    assert_ne!(witness[0], witness[4]);
 }
