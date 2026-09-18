@@ -1,8 +1,9 @@
-# Native default CUDA pointwise compilation
+# Native default CUDA compilation
 
-`torch_rs.compile(fn)` with untouched public defaults now lowers a bounded
-pointwise language to a generated fused CUDA kernel and supports terminal
-input-rooted transpose views. Pure-view results need no numerical kernel.
+`torch_rs.compile(fn)` with untouched public defaults supports fused CUDA
+pointwise programs with terminal input-rooted views, and separate
+[alias-only programs](#alias-only-views-and-scalar-mutation) with ordered views
+and scalar mutation. Alias-only programs need no numerical graph or dummy kernel.
 Backend resolution still
 chooses `inductor`; this native implementation does not import or execute
 PyTorch. It is not general Inductor, CPU compiler, or training equivalence.
@@ -58,12 +59,16 @@ are bounded to 4096 nodes and 16384 bytecode instructions. Return a computed Ten
 or a bounded nested result as described below.
 Scalars and empty tensor shapes and contiguous views with storage offsets are
 supported. Computed outputs have fresh storage and canonical contiguous strides;
-returned input aliases preserve their original storage and strides. Inputs are
-unchanged. Input-only returns remain outside this subset.
+returned input aliases preserve their original storage and strides. These
+numerical programs leave inputs unchanged. Input-only returns remain outside
+this subset; the alias-only mutation contract is described below.
 
-Terminal `Tensor.transpose(dim0, dim1)` results are also admitted when rooted
-in an original input Tensor leaf or an earlier such transpose, at rank 0, 1 or 2.
-Axes must be two positional exact integer constants (literal, local, global or
+Terminal `Tensor.transpose(dim0, dim1)` and `Tensor.view` results are also
+admitted when rooted in an original input Tensor leaf or earlier input-rooted
+view, at rank 0, 1 or 2. `view` accepts a literal tuple of exact integer
+dimensions or positional constant integer dimensions, including native inferred
+`-1`; layout compatibility is checked natively without copying storage.
+Transpose axes must be two positional exact integer constants (literal, local, global or
 closure). Runtime input leaves remain ineligible axes through unary negation,
 local assignment, helper forwarding and container selection, even when negation
 turns a boolean into an exact integer. Nested results may mix these views with original aliases, computed
@@ -74,28 +79,87 @@ the original storage. A function returning only metadata/views must return at
 least one view and perform no numerical Tensor operation. Mixed numerical
 functions still require a computed output root.
 
-Computed-source transposes, arithmetic or shape queries consuming a view,
-`t`, `view`, `reshape`, `contiguous`, top-level transpose, keyword/runtime axes,
-strided inputs and training remain outside the default subset. All original
-inputs, including unused leaves, retain the contiguous CUDA float32 admission.
+Computed-source views, arithmetic or shape queries consuming a view,
+`t`, `reshape`, `contiguous`, top-level transpose, keyword/runtime axes,
+runtime view dimensions, strided inputs and training remain outside the default
+subset. All original inputs, including unused leaves, retain the contiguous CUDA
+float32 admission.
 
-View recipes retain only source/construction slots and axes. Every current view
-is preflighted through the native planner before numerical compilation or
+View recipes retain only source/construction slots and constant view operations.
+Every current view is preflighted through the native planner before numerical compilation or
 execution. Warm calls also preflight retained inactive and zero-trip recipes
 against current inputs, without rescanning inactive helper bodies. Mixed
 calls run the unchanged pointwise pipeline, then the existing native alias
 bridge, then result reconstruction. Pure-view calls create no numerical graph,
 kernel, executor or preparation entry. The bridge independently replans actual
 inputs, and caches publish only after successful wrapping and reconstruction.
-Transpose binding guards apply only to programs that admit transpose; warm
+View-method binding guards apply only to programs that admit those methods; warm
 same-arm reuse preserves the existing inactive-helper behavior. These changes
 extend metadata compilation coverage and make no performance-parity claim.
 The input views share storage with their original owners. After the compiled
 call, public [CUDA scalar `Tensor.add_`](cuda-add-inplace.md) can mutate a dense
-returned view; a computed output remains independent. Mutation inside the
-compiled function is unsupported. For the broader explicit-eager view language,
+returned view; a computed output remains independent. Mutation inside a compiled
+function follows the separate alias-only contract below. For the broader
+explicit-eager view language,
 see [CUDA transpose capture](compile-cuda-t.md).
 Focused validation is recorded in [input transpose validation](compile-input-transpose-validation.md).
+
+### Alias-only views and scalar mutation
+
+An alias-only program may construct input-rooted `Tensor.view` and
+`Tensor.transpose` aliases and apply `Tensor.add_(other, *, alpha=1)` to an
+original input or earlier alias. All original Tensor leaves, including unused
+ones, must still be one or two exact contiguous CUDA float32 tensors without
+gradients on one device. Intermediate aliases may be dense transposes. View
+planning uses native rank-0/1/2 layout rules and never copies storage.
+
+The input-rooted view forms and construction identities follow the terminal
+view contract above. Views remain admissible in numerical programs without
+mutation; adding an effect selects the alias-only restrictions below.
+
+`add_` accepts exact Python bool/int/float `other`, positional or keyword, with
+an optional keyword `alpha` that must be numeric exactly one and not a bool.
+Literal, global and closure integer operands use the existing scalar range.
+Runtime scalar arguments remain exact Python float/bool leaves; positional or
+input-tree integers remain unsupported. Runtime float `alpha=1.0` is allowed;
+bool alpha is always rejected. The compiler accepts no NumPy scalars or scalar
+subclasses. Current runtime scalars are resolved from their original source slots
+on every call and checked before any effect; their values and Tensor owners are
+not retained in recipes. The method returns the exact receiver and mutates its
+existing shared CUDA allocation, including dense transposed or offset aliases. Empty mutations
+launch no kernel. See the [native scalar mutation contract](cuda-add-inplace.md)
+for density, bounds, rounding and completion semantics.
+
+```python
+def update(x, increment):
+    flat = x.view(-1)
+    flat.add_(other=increment, alpha=1)
+    return (flat, flat, x)
+```
+
+A mutation-bearing admitted program must contain no numerical Tensor operations,
+including unused computations and required inactive or zero-trip bodies.
+Existing bounded root shape branches, non-nested literal loops and exact helpers
+are statically lowered; they do not replay Python bodies. Selected view and
+effect instructions execute in source order, including discarded calls. A program
+with an admitted effect may return original inputs directly or bounded literal
+results, including `None`. Without effects or numerical operations, at least one
+view must be returned. Numerical programs retain their computed-root requirement
+and never pass computed outputs to the view bridge.
+
+The complete required plan, scalar conversions and layouts are preflighted
+before this call issues any writes. Native execution independently revalidates
+current inputs. Pre-launch rejection does not undo concurrent work or callback
+effects outside this operation. Once execution starts, a later launch,
+completion, wrapping or reconstruction failure may leave earlier mutations
+visible. Cache entries, history and recency publish only after successful
+reconstruction; failed cache publication is not storage rollback. Calls through
+different compiled wrappers gain no additional ordering guarantee. There is no
+CPU mutation, autograd support, general mutation capture or Inductor parity.
+See the [developer validation index](diagnostics/default-alias-mutation-20260918.md)
+for source-bound checks and observed reference limitations.
+
+### Numerical broadcasting
 
 Unequal input shapes additionally require either the tensor-leaf multiply-add
 described below, or at most one arithmetic stage, including live sin/cos. Input and scalar nodes start at depth
@@ -130,8 +194,8 @@ or performance parity. Generic executor PTX and reconstructed scalar plans are
 not independent device traces; empty outputs execute no trig.
 
 Strided inputs, other dtypes, gradients (even inside no-grad),
-mutation, control flow outside the bounded root branches and literal loops below, module calls, keyword operator
-arguments, reductions, matrix operations, and device/dtype conversions are
+mutation outside the alias-only contract, control flow outside the bounded root branches and literal loops below, module calls, keyword operator
+arguments outside the documented `add_` form, reductions, matrix operations, and device/dtype conversions are
 explicitly rejected. No original body or Python operator is run during
 admission or warm execution. Unsupported configurations keep their existing
 contracts; `disable=True`, configured/custom backend resolution, and the
@@ -182,7 +246,7 @@ whole-tree transaction.
 
 Container subclasses, custom mappings, positional int/None/string leaves,
 runtime or captured selectors, slices, dict iteration/unpacking, starred forms,
-mutation, and captured/default containers remain unsupported. Constant-pool and
+container mutation, and captured/default containers remain unsupported. Constant-pool and
 shape-predicate provenance rules are unchanged: a helper cannot grant an input
 shape predicate new authority. This is a bounded frontend extension, not general
 pytree, Dynamo, Inductor or accelerator parity.
@@ -196,7 +260,7 @@ remains pending; the diagnostic timings are not performance or coverage scores.
 ### Bounded nested results
 
 Small exact tuple/list/dict constructors can combine computed Tensor leaves,
-input-rooted transpose views, original input aliases, exact literal `None`/bool/int/float/string metadata and
+input-rooted views, original input aliases, exact literal `None`/bool/int/float/string metadata and
 current `input.shape[literal_integer_axis]` values:
 
 ```python
@@ -219,10 +283,10 @@ They share a 4096 construction/reference-edge budget and depth limit 64, includi
 overwrites and expanded iterations. Shared container DAGs are accounted and
 rebuilt without exponential expansion. The admitted constructor bytecodes are
 `BUILD_TUPLE`, `BUILD_LIST`, `BUILD_MAP` and `BUILD_CONST_KEY_MAP`; bounded exact
-string key tuples are checked before disassembly. Compiler-optimized constant
-containers (including `()`) and large literals requiring other opcodes are
-unsupported. Literal selection and fixed tuple/list unpacking are supported
-for these symbolic containers too. Mutation, starred forms,
+string key tuples and exact integer tuples (including `()`) are checked before
+disassembly. Other compiler-optimized constant containers and large literals
+requiring other opcodes are unsupported. Literal selection and fixed tuple/list unpacking are supported
+for these symbolic containers too. Container mutation, starred forms,
 comprehensions, constructor calls, whole `torch.Size` returns and shape arithmetic
 remain unsupported.
 Forms optimized to identical admitted bytecode are indistinguishable.
@@ -320,7 +384,8 @@ def recurrence(x, scale):
 One to three literal exact integer arguments and a nonzero step are required.
 Positive/negative steps and zero/one/many trips are supported. Bounds retain the
 existing integer scalar range. Runtime/captured bounds, iterator expressions,
-nested/helper-local loops, conditional/early-exit edges and mutation are rejected.
+nested/helper-local loops, conditional/early-exit edges and mutation outside the
+alias-only `add_` contract are rejected.
 Admission follows CPython 3.10–3.14 bytecode semantics; source forms optimized to
 identical bytecode are indistinguishable. Loop bodies use the same pointwise
 operations and direct helpers as straight-line programs; index use adds no new
@@ -408,13 +473,15 @@ source-bound checks and their limits.
 
 ## Runtime requirements
 
-NVRTC is discovered by ordinary shared-library names (`libnvrtc.so.13`,
+Numerical compilation requires NVRTC, discovered by ordinary shared-library names (`libnvrtc.so.13`,
 `libnvrtc.so.12`, `libnvrtc.so`) or an explicit `TORCH_RS_NVRTC` override.
 The installed toolkit supplies NVRTC's libdevice implementation. Missing or
 incompatible tooling produces a diagnostic failure, never eager fallback.
 The target compute capability comes from the actual guarded CUDA device.
 The private kernel object exposes generated source/PTX, compiler version,
-options and device for regression evidence.
+options and device for regression evidence. Alias-only calls use the existing
+CUDA view/mutation runtime and require no NVRTC compilation; each nonempty
+`add_` completes its native scalar-add launch before the next effect.
 
 ## Compiler pipeline
 
@@ -571,7 +638,7 @@ reconstruction publishes no entry, history or LRU change. All cache publication
 happens after successful result reconstruction and optional selected-invocation
 receipt allocation. The private `_torch_rs_pointwise_receipt` calls the same
 implementation body and returns `(result, prepared)` with the exact successfully
-used owner, or `(result, None)` for graph-free input views. Source/PTX is not
+used owner, or `(result, None)` for graph-free alias-only programs. Source/PTX is not
 independent execution tracing or physical GPU UUID attestation. `torch.compiler.reset()` clears
 all three levels under the same lock; the next call recompiles. Explicitly held
 private prepared objects have ordinary independent ownership, like held private

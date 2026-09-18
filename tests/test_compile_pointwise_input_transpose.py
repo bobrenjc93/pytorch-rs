@@ -23,7 +23,7 @@ def lower(source, shapes=((2, 3),), **bindings):
     metadata = tuple((shape, (3, 1) if len(shape) == 2 else (1,) if shape else (),
                       False, 'torch.float32', 'cuda:0', 0) for shape in shapes)
     result = frontend.lower(p, values, len(shapes), metadata=metadata)
-    frontend.preflight_views(result, values, metadata)
+    frontend.preflight_operations(result, values, metadata)
     return result
 
 
@@ -92,8 +92,8 @@ class Admission(unittest.TestCase):
         mixed = lower('def f(x):\n v=x.transpose(0,1)\n a=x.sin()\n w=v.transpose(0,1)\n b=x+2\n return (v,b,x,w,a,v,x.transpose(0,1))')
         self.assertEqual(plain.graph, mixed.graph)
         self.assertEqual(plain.result.output_order, mixed.result.output_order)
-        self.assertEqual(mixed.views, (('input', frontend.BindingSource('parameter','x',0), (0, 1)), ('view', 0, (0, 1)), ('input', frontend.BindingSource('parameter','x',0), (0, 1))))
-        owners = [object() for _ in mixed.views]
+        self.assertEqual(mixed.operations, (('transpose', 'input', frontend.BindingSource('parameter','x',0), (0, 1)), ('transpose', 'view', 0, (0, 1)), ('transpose', 'input', frontend.BindingSource('parameter','x',0), (0, 1))))
+        owners = [object() for _ in mixed.operations]
         values = {frontend.BindingSource('parameter', 'x', 0): frontend.Value(0)}
         result = mixed.result.reconstruct(('a', 'b'), values, ('x',), (), owners)
         self.assertIs(result[0], result[5]); self.assertIsNot(result[0], result[6])
@@ -108,7 +108,7 @@ class Admission(unittest.TestCase):
         axis = 1
         def closure(x): return x.transpose(0, axis)
         p = frontend.analyze(closure, 1); _, values = frontend.resolve(closure, p)
-        self.assertEqual(frontend.lower(p, values, 1).views[0][2], (0, 1))
+        self.assertEqual(frontend.lower(p, values, 1).operations[0][3], (0, 1))
 
     def test_rejections_include_unused_computed_sources_and_consumers(self):
         bodies = ['y=-x; v=y.transpose(0,1); return y',

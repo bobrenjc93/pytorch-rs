@@ -236,7 +236,7 @@ class HelperAdmission(unittest.TestCase):
             def __float__(self):
                 effects.append('float')
                 return 1.0
-        for constant in (Constant(), (1,), 2**64, -2**63-1, object(), str.__new__(type('Text', (str,), {}), 's')):
+        for constant in (Constant(), (Constant(),), (2**64,), 2**64, -2**63-1, object(), str.__new__(type('Text', (str,), {}), 's')):
             helper = program('def f(a):\n return -a')
             helper.__code__ = helper.__code__.replace(co_consts=helper.__code__.co_consts + (constant,))
             for expression in ('helper(x)', 'x + 1.0'):

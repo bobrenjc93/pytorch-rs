@@ -9808,15 +9808,43 @@ fn compile_trace_binary(
 // contract. In particular parse_top_level_mul_scalar assumes a numeric operand.
 #[pyfunction(name = "_compile_trace_mul_scalar_value", signature = (scalar, /))]
 fn compile_trace_mul_scalar_value(scalar: &Bound<'_, PyAny>) -> PyResult<f32> {
+    compile_trace_exact_scalar(scalar, "scalar multiplication")
+        .map(ParsedArithmeticScalar::into_f32)
+}
+
+// One callback-free constant gate, shared by compiled scalar operations. Keep
+// the public scalar parser's integer overflow behavior and exact-one decision.
+fn compile_trace_exact_scalar(
+    scalar: &Bound<'_, PyAny>,
+    operation: &str,
+) -> PyResult<ParsedArithmeticScalar> {
     if !(scalar.is_exact_instance_of::<PyBool>()
         || scalar.is_exact_instance_of::<PyInt>()
         || scalar.is_exact_instance_of::<PyFloat>())
     {
-        return Err(PyNotImplementedError::new_err(
-            "torch.compile scalar multiplication requires an exact bool, int or float constant",
+        return Err(PyNotImplementedError::new_err(format!(
+            "torch.compile {operation} requires an exact bool, int or float constant",
+        )));
+    }
+    parse_supported_arithmetic_scalar(scalar)
+}
+
+fn compile_trace_add_scalar_value(
+    other: &Bound<'_, PyAny>,
+    alpha: &Bound<'_, PyAny>,
+) -> PyResult<f32> {
+    let alpha = compile_trace_exact_scalar(alpha, "add_ alpha")?;
+    if alpha.is_python_bool() {
+        return Err(PyRuntimeError::new_err(
+            "Boolean alpha only supported for Boolean results.",
         ));
     }
-    parse_top_level_mul_scalar(scalar)
+    if !alpha.is_one() {
+        return Err(PyNotImplementedError::new_err(
+            "add_(): alpha values other than 1 are not supported",
+        ));
+    }
+    compile_trace_exact_scalar(other, "scalar addition").map(ParsedArithmeticScalar::into_f32)
 }
 
 // Exact constant options only: never invoke Python numeric/bool conversions.
@@ -26088,6 +26116,10 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
     )?)?;
     module.add_function(wrap_pyfunction!(compile_cuda_graph::view_metadata, module)?)?;
     module.add_function(wrap_pyfunction!(
+        compile_cuda_graph::alias_metadata,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
         compile_cuda_graph::transpose_metadata,
         module
     )?)?;
@@ -26115,6 +26147,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
         "_compile_trace_cuda_reshape_metadata",
         "_compile_trace_cuda_view_metadata",
         "_compile_trace_cuda_transpose_metadata",
+        "_compile_trace_cuda_alias_metadata",
         "_compile_trace_mul_scalar_value",
     ] {
         exports.call_method1("remove", (name,))?;

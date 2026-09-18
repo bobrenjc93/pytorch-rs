@@ -2,7 +2,7 @@
 
 The frontend never invokes the function, Tensor methods, or a Python operator
 on user objects. Warm numerical calls resolve binding/metadata guards and enter
-one native kernel; terminal input-rooted transpose recipes construct aliases.
+one native kernel; ordered input-rooted alias recipes construct views/effects.
 It deliberately has no graph breaks or eager fallback.
 """
 from dataclasses import dataclass, field
@@ -32,7 +32,7 @@ _ALLOWED = _IGNORED | _ROTATIONS.keys() | {"LOAD_FAST", "LOAD_FAST_CHECK", "LOAD
     "BINARY_ADD", "BINARY_SUBTRACT", "BINARY_MULTIPLY", "UNARY_NEGATIVE", "CALL", "CALL_FUNCTION",
     "CALL_METHOD", "RETURN_VALUE", "RETURN_CONST", "COPY", "DUP_TOP", "SWAP",
     "BUILD_TUPLE", "BUILD_LIST", "BUILD_MAP", "BUILD_CONST_KEY_MAP",
-    "BINARY_SUBSCR", "UNPACK_SEQUENCE"}
+    "BINARY_SUBSCR", "UNPACK_SEQUENCE", "POP_TOP", "KW_NAMES", "CALL_KW"}
 _METHODS = tuple(_UNARY) + tuple(_BINARY) + ("__getattribute__", "shape")
 _MISSING = object()
 _RANGE = range
@@ -40,7 +40,7 @@ _RANGE = range
 # transient allocation budget. Larger admitted plans execute without retention.
 _PREPARED_CACHE_BYTES = 32 * 1024 * 1024
 _LOOP_OPS = {"GET_ITER", "FOR_ITER", "JUMP_ABSOLUTE", "JUMP_BACKWARD",
-             "END_FOR", "POP_TOP", "POP_ITER"}
+             "END_FOR", "POP_ITER"}
 _CONDITIONALS = {"POP_JUMP_IF_FALSE", "POP_JUMP_IF_TRUE",
                  "POP_JUMP_FORWARD_IF_FALSE", "POP_JUMP_FORWARD_IF_TRUE"}
 _BRANCH_OPS = _CONDITIONALS | {"JUMP_FORWARD", "COMPARE_OP", "BINARY_SUBSCR", "TO_BOOL"}
@@ -54,16 +54,17 @@ _METHOD_GUARDS = tuple((cls, tuple((name, cls.__dict__.get(name, _MISSING)) for 
                       for cls in (_ROOT.Tensor, _ROOT.Tensor.__base__))
 
 
-# Transpose is guarded only for lowerings that admitted it, including inactive
-# bodies. View-free programs keep their existing operation-binding contract.
-_TRANSPOSE_GUARDS = tuple((cls, cls.__dict__.get("transpose", _MISSING))
-                          for cls in (_ROOT.Tensor, _ROOT.Tensor.__base__))
+# Guard only alias operations admitted by this lowering, including inactive bodies.
+_ALIAS_GUARDS = {name: tuple((cls, cls.__dict__.get(name, _MISSING))
+                            for cls in (_ROOT.Tensor, _ROOT.Tensor.__base__))
+                 for name in ("transpose", "view", "add_")}
 
 
-def validate_transpose_binding():
-    for cls, expected in _TRANSPOSE_GUARDS:
-        if cls.__dict__.get("transpose", _MISSING) is not expected:
-            unsupported("patched Tensor operation binding: transpose")
+def validate_alias_bindings(names):
+    for name in names:
+        for cls, expected in _ALIAS_GUARDS[name]:
+            if cls.__dict__.get(name, _MISSING) is not expected:
+                unsupported("patched Tensor operation binding: " + name)
 
 
 def unsupported(reason):
@@ -176,6 +177,7 @@ class BoundValue:
     source: BindingSource
     value: object
     predicate_origin: bool = True
+    negative: bool = False
 
 
 @dataclass(frozen=True)
@@ -252,22 +254,22 @@ class Lowering:
     """Pair native computation with Python topology at the lowering cache owner."""
     graph: Graph | None
     result: ResultSpec
-    # All admitted constructions, including inactive/zero-trip bodies. Sources
-    # are original BindingSources or earlier view slots; no concrete geometry.
-    views: tuple = ()
-    uses_transpose: bool = False
-    active_views: tuple = ()
+    # Retained admission includes inactive bodies; one ordered selected sequence
+    # controls execution. Sources/payloads are immutable slots, never owners.
+    operations: tuple = ()
+    operation_bindings: tuple = ()
+    active_operations: tuple = ()
 
 
-def preflight_views(lowering, values, metadata):
-    """Replan every admitted view; only active constructions become aliases."""
+def preflight_operations(lowering, values, metadata):
+    """Validate every retained operation before executing the selected sequence."""
     layouts, nodes = [], []
-    slots = {index: slot for slot, index in enumerate(lowering.active_views)}
-    for index, (kind, source, axes) in enumerate(lowering.views):
+    slots = {index: slot for slot, index in enumerate(lowering.active_operations)}
+    for index, (operation, kind, source, payload) in enumerate(lowering.operations):
         if kind == "input":
             value = values.get(source)
             if type(value) is not Value:
-                unsupported("transpose requires a current original input Tensor")
+                unsupported("alias operation requires a current original input Tensor")
             current = metadata[value.index]
             shape, strides, offset = current[0], current[1], current[5]
             operand = value.index
@@ -275,10 +277,26 @@ def preflight_views(lowering, values, metadata):
             shape, strides, offset = layouts[source]
             if index in slots:
                 operand = len(metadata) + slots[source]
-        layout = _native._compile_trace_cuda_transpose_metadata(shape, strides, offset, axes)
+        if operation == "add_scalar_":
+            args = []
+            for spec in payload:
+                if spec[0] == "source":
+                    value = values[spec[1]]
+                    if not is_scalar(value):
+                        unsupported("add_ requires exact scalar values")
+                    if spec[3]:
+                        value = int(value)  # Exact bool negation produces an integer.
+                    args.append(-value if spec[2] else value)
+                else:
+                    args.append(spec[1])
+            payload = tuple(args)
+        if operation == "transpose":
+            layout = _native._compile_trace_cuda_transpose_metadata(shape, strides, offset, payload)
+        else:
+            layout = _native._compile_trace_cuda_alias_metadata(shape, strides, offset, operation, payload)
         layouts.append(layout)
         if index in slots:
-            nodes.append(("transpose", (operand,), axes, layout[0], layout[1]))
+            nodes.append((operation, (operand,), payload, layout[0], layout[1]))
     return nodes
 
 
@@ -323,7 +341,7 @@ def without_origin(obj, memo=None):
     if type(obj) is Literal:
         return Literal(obj.value, False)
     if type(obj) is BoundValue:
-        return BoundValue(obj.source, obj.value, False)
+        return BoundValue(obj.source, obj.value, False, obj.negative)
     if type(obj) is ShapeValue:
         return ShapeValue(obj.source, obj.axis, False)
     if type(obj) is Container:
@@ -620,8 +638,12 @@ def validate_code(code, arity, *, helper=False):
         if type(constant) is tuple:
             # CPython <=3.13 stores BUILD_CONST_KEY_MAP keys in co_consts.
             # Check before disassembly can format even an unused object.
-            if len(constant) > 4096 or any(type(key) is not str for key in constant):
-                unsupported("constant tuples must contain bounded exact string keys")
+            if (len(constant) > 4096 or not (all(type(key) is str for key in constant)
+                                              or all(type(key) is int for key in constant))):
+                unsupported("constant tuples require bounded exact string keys or integer dimensions")
+            for item in constant:
+                if type(item) is int:
+                    scalar_bits(item)
         elif constant is not None and type(constant) is not str:
             scalar_bits(constant)
 
@@ -632,6 +654,8 @@ def instructions_for(code, *, helper=False):
     instructions = tuple(islice(dis.get_instructions(code), 16385))
     if len(instructions) > 16384:
         unsupported("function exceeds pointwise instruction limit")
+    instructions = tuple(i._replace(argval=code.co_consts[i.arg]) if i.opname == "KW_NAMES" else i
+                         for i in instructions)
     for instruction in instructions:
         if (instruction.opname not in (_ALLOWED if helper else _ALLOWED | _LOOP_OPS | _BRANCH_OPS)
                 or (helper and instruction.opname in ("LOAD_GLOBAL", "LOAD_DEREF"))):
@@ -674,9 +698,11 @@ def validate_loop_stack(body):
     for instruction in body:
         op, arg = instruction.opname, instruction.arg
         required, delta = 0, 0
-        if op in _IGNORED:
+        if op in _IGNORED or op == "KW_NAMES":
             continue
-        if op.startswith("LOAD_FAST"):
+        if op == "POP_TOP":
+            required, delta = 1, -1
+        elif op.startswith("LOAD_FAST"):
             delta = 2 if op in ("LOAD_FAST_LOAD_FAST", "LOAD_FAST_BORROW_LOAD_FAST_BORROW") else 1
         elif op in ("LOAD_CONST", "LOAD_SMALL_INT", "LOAD_GLOBAL", "LOAD_DEREF"):
             delta = 1
@@ -698,8 +724,8 @@ def validate_loop_stack(body):
         elif op in ("BUILD_TUPLE", "BUILD_LIST", "BUILD_MAP", "BUILD_CONST_KEY_MAP"):
             required = arg * 2 if op == "BUILD_MAP" else arg + (op == "BUILD_CONST_KEY_MAP")
             delta = 1 - required
-        elif op in ("CALL", "CALL_FUNCTION", "CALL_METHOD"):
-            required, delta = arg + 1, -arg
+        elif op in ("CALL", "CALL_FUNCTION", "CALL_METHOD", "CALL_KW"):
+            required, delta = arg + 1 + (op == "CALL_KW"), -arg - (op == "CALL_KW")
         elif op in ("COPY", "DUP_TOP"):
             required, delta = (arg if op == "COPY" else 1), 1
         elif op == "SWAP":
@@ -1091,8 +1117,21 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
     helper_instructions = {}  # Per lowering only; warm hits never parse helpers.
     pending_checks = []  # Early-return continuations; no recursion per condition.
     construction_edges = 0
-    views, active_views = [], []
-    uses_transpose = False
+    operations, active_operations = [], []
+    operation_bindings = set()
+    has_effect = has_numerical = False
+    returns = []
+    literal_tuples = {}  # Constant-pool identity, local to this lowering.
+
+    def integer_tuple(items):
+        nonlocal construction_edges
+        identity = id(items)
+        if identity not in literal_tuples:
+            construction_edges += len(items)
+            if construction_edges > 4096:
+                unsupported("result exceeds 4096 output construction edge limit")
+            literal_tuples[identity] = Container("tuple", tuple(Literal(x) for x in items))
+        return literal_tuples[identity]
 
     def data(obj):
         # Validate without realizing a lazy root source. Ignored parameters must
@@ -1152,13 +1191,30 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
         return Value(len(nodes) - 1, False, "bool" if boolean else "float32")
 
     def emit(op, operands):
+        nonlocal has_numerical
+        has_numerical = True
         args = [value(arg) for arg in operands]
         if len(args) == 1 and not args[0].tensor or not any(arg.tensor for arg in args):
             unsupported("operators require tensor expressions")
         nodes.append((op, args[0].index, args[1].index if len(args) == 2 else 0, 0))
-        if len(nodes) + len(views) + checked_nodes > 4096:
+        if len(nodes) + len(operations) + checked_nodes > 4096:
             unsupported("graph exceeds 4096-node limit")
         return Value(len(nodes) - 1)
+
+    def effect_scalar(obj):
+        value = realize(obj)
+        if type(obj) is BoundValue:
+            if not is_scalar(value) and type(value) is not RuntimeScalar:
+                unsupported("add_ requires exact bool/int/float scalars")
+            return ("source", obj.source, obj.negative,
+                    type(value) is int and type(values[obj.source]) is bool)
+        if type(value) is RuntimeScalar:
+            source = next(source for source, v in values.items()
+                          if type(v) is RuntimeScalar and v.index == value.index)
+            return ("source", source, value.negative, False)
+        if not is_scalar(value):
+            unsupported("add_ requires exact bool/int/float scalars")
+        return ("constant", value)
 
     def isolated(instructions, locals_, *, charge=True, snapshot=False):
         nonlocal observed, data_sources, predicates, checked_nodes
@@ -1175,7 +1231,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
             del nodes[node_start:]
             observed, data_sources, predicates = saved
 
-    def result_spec(obj, view_slots=None):
+    def result_spec(obj, view_slots=None, *, require_root=True, numerical=None):
         """Separate result topology from sorted distinct computed SSA roots.
 
         Repeated container identities are memoized; repeated computed roots map
@@ -1217,9 +1273,10 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
             return index
 
         root = visit(obj)
-        if not roots:
-            numerical = any(node[0] in set(_UNARY.values()) | set(_BINARY.values()) for node in nodes)
-            if numerical or not any(kind == "view" for kind, _ in entries):
+        if not roots and require_root:
+            if numerical is None:
+                numerical = any(node[0] in set(_UNARY.values()) | set(_BINARY.values()) for node in nodes)
+            if numerical or (not has_effect and not any(kind == "view" for kind, _ in entries)):
                 unsupported("return at least one computed pointwise tensor or a purely input-rooted view")
         if len(roots) > 64:
             unsupported("result exceeds 64 computed output limit")
@@ -1231,15 +1288,20 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
         return outputs, ResultSpec(entries, root, order)
 
     def root_result(obj):
-        result_spec(obj)  # Also admit every inactive return before cache publication.
+        result_spec(obj, require_root=False)
+        # Preserve the path-local numerical admission when checking returns
+        # after all bodies have established whether the program has effects.
+        numerical = any(node[0] in set(_UNARY.values()) | set(_BINARY.values()) for node in nodes)
+        returns.append((obj, numerical))
         return obj
 
     def frame(instructions, locals_, *, check_only=False, helper=False, charge=True):
-        nonlocal remaining, checked_nodes, construction_edges, uses_transpose
+        nonlocal remaining, checked_nodes, construction_edges, has_effect
         remaining -= len(instructions) if charge else 0
         if remaining < 0:
             unsupported("expanded function exceeds pointwise instruction limit")
         stack = []
+        keywords = ()
 
         def load(name):
             if name not in locals_:
@@ -1274,7 +1336,14 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
             op, arg = instruction.opname, instruction.argval
             if op in _IGNORED:
                 continue
-            if op == "_LOOP_CHECK_START":
+            if op == "KW_NAMES":
+                keywords = arg
+            elif op == "POP_TOP":
+                discarded = stack.pop()
+                if not (type(discarded) is View or (type(discarded) is BoundValue
+                        and type(discarded.value) is Value)):
+                    unsupported("only alias/effect results may be discarded")
+            elif op == "_LOOP_CHECK_START":
                 # Reuse typed operator/helper/data admission without executing
                 # Python or changing the real frame/IR. Realized sources keep
                 # the existing warm semantic and ignored-data guards.
@@ -1304,7 +1373,8 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     scalar_bits(arg)
                     stack.append(arg)
                 elif type(arg) is tuple:
-                    stack.append(arg)  # Admitted key tuples only; never output data.
+                    stack.append(integer_tuple(arg)
+                                 if all(type(x) is int for x in arg) else arg)
                 else:
                     if arg is not None and type(arg) is not str:
                         scalar_bits(arg)
@@ -1355,17 +1425,17 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     if arg not in dict(_FUNCTIONS):
                         unsupported("unsupported native function: " + arg)
                     stack.append(binding(_ROOT.__dict__.get(arg))[1])
-                elif arg == "transpose":
-                    validate_transpose_binding()
-                    uses_transpose = True
+                elif arg in _ALIAS_GUARDS:
+                    validate_alias_bindings((arg,))
+                    operation_bindings.add(arg)
                     if type(owner) is View:
                         source = ("view", owner.index)
                     elif (type(original) is BoundValue and original.source.kind == "parameter"
                           and type(owner) is Value and 0 <= owner.index < arity):
                         source = ("input", original.source)
                     else:
-                        unsupported("transpose requires an original input or input-rooted transpose")
-                    stack.append(Call("transpose", source))
+                        unsupported("alias operations require an original input or input-rooted view")
+                    stack.append(Call(arg, source))
                 elif isinstance(owner, Value) and owner.tensor and arg in (_UNARY | _BINARY):
                     stack.append(Call((_UNARY | _BINARY)[arg], owner, arg == "__rsub__"))
                 else:
@@ -1387,7 +1457,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     # Keep the source when bool negation produces an exact int.
                     # Helpers/constructors must not turn runtime input leaves
                     # into constants eligible for metadata-only operations.
-                    stack.append(BoundValue(original.source, -operand, False)
+                    stack.append(BoundValue(original.source, -operand, False, not original.negative)
                                  if type(original) is BoundValue else -operand)
             elif op == "BINARY_SUBSCR" or (op == "BINARY_OP" and instruction.argrepr == "[]"):
                 axis, shape = stack.pop(), stack.pop()
@@ -1438,9 +1508,13 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     unsupported("unsupported binary operator: " + symbol)
                 right, left = stack.pop(), stack.pop()
                 stack.append(emit({"+": "add", "-": "sub", "*": "mul"}[symbol], [left, right]))
-            elif op in ("CALL", "CALL_FUNCTION", "CALL_METHOD"):
+            elif op in ("CALL", "CALL_FUNCTION", "CALL_METHOD", "CALL_KW"):
+                if op == "CALL_KW":
+                    keywords = stack.pop()
                 operands = [stack.pop() for _ in range(instruction.arg)][::-1]
                 target = realize(stack.pop())
+                if keywords and (type(target) is not Call or target.op != "add_"):
+                    unsupported("keywords are supported only for scalar add_")
                 if type(target) is Helper:
                     if len(operands) != target.code.co_argcount:
                         unsupported("helper argument count mismatch")
@@ -1454,18 +1528,47 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     continue
                 if type(target) is not Call:
                     unsupported("only native pointwise operators and direct helpers may be called")
-                if target.op == "transpose":
-                    axes = tuple(realize(operand) for operand in operands)
-                    if (len(axes) != 2 or any(type(axis) is not int for axis in axes)
-                            or any(type(operand) is BoundValue and operand.source.kind == "parameter"
-                                   for operand in operands)):
-                        unsupported("transpose requires two exact integer constants")
-                    views.append((*target.receiver, axes))
-                    if len(nodes) + len(views) + checked_nodes > 4096:
+                if target.op in _ALIAS_GUARDS:
+                    if target.op == "transpose":
+                        payload = tuple(realize(operand) for operand in operands)
+                        if (len(payload) != 2 or any(type(axis) is not int for axis in payload)
+                                or any(type(operand) is BoundValue and operand.source.kind == "parameter"
+                                       for operand in operands)):
+                            unsupported("transpose requires two exact integer constants")
+                    elif target.op == "view":
+                        if len(operands) == 1 and type(operands[0]) is Container:
+                            shape = operands[0]
+                            if shape.kind != "tuple":
+                                unsupported("view shape requires an exact integer tuple")
+                            operands = shape.items
+                        payload = tuple(realize(operand) for operand in operands)
+                        if (not operands and instruction.arg == 0) or any(type(x) is not int for x in payload):
+                            unsupported("view requires literal integer dimensions")
+                        if any(type(x) is BoundValue and x.source.kind == "parameter" for x in operands):
+                            unsupported("view dimensions must be constants")
+                    else:
+                        has_effect = True
+                        positional = len(operands) - len(keywords)
+                        if positional > 1 or len(set(keywords)) != len(keywords) or any(k not in ("other", "alpha") for k in keywords):
+                            unsupported("add_ expects other and keyword-only alpha")
+                        supplied = dict(zip(keywords, operands[positional:]))
+                        if positional:
+                            if "other" in supplied:
+                                unsupported("add_ got duplicate other")
+                            supplied["other"] = operands[0]
+                        if "other" not in supplied:
+                            unsupported("add_ requires other")
+                        payload = tuple(effect_scalar(x) for x in (supplied["other"], supplied.get("alpha", Literal(1))))
+                    keywords = ()
+                    operation = "add_scalar_" if target.op == "add_" else target.op
+                    operations.append((operation, *target.receiver, payload))
+                    if len(nodes) + len(operations) + checked_nodes > 4096:
                         unsupported("graph exceeds 4096-node limit")
                     if not check_only:
-                        active_views.append(len(views) - 1)
-                    stack.append(View(len(views) - 1))
+                        active_operations.append(len(operations) - 1)
+                    kind, source = target.receiver
+                    result = (BoundValue(source, values[source]) if kind == "input" else View(source)) if target.op == "add_" else View(len(operations) - 1)
+                    stack.append(result)
                     continue
                 if target.receiver is not None:
                     operands.insert(0, target.receiver)
@@ -1486,7 +1589,10 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     unsupported("invalid rotation stack")
                 stack[-count:] = stack[-1:] + stack[-count:-1]
             elif op in ("RETURN_VALUE", "RETURN_CONST"):
-                result = data(stack.pop() if op == "RETURN_VALUE" else Literal(arg, not helper))
+                constant = (integer_tuple(arg)
+                            if op == "RETURN_CONST" and type(arg) is tuple
+                            and all(type(x) is int for x in arg) else Literal(arg, not helper))
+                result = data(stack.pop() if op == "RETURN_VALUE" else constant)
                 if stack:
                     unsupported("return one data value")
                 return without_origin(result) if helper else root_result(result)
@@ -1515,9 +1621,13 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
         finally:
             nodes[:] = active_nodes
             checked_nodes -= budget_delta
-    outputs, specification = result_spec(result, {index: slot for slot, index in enumerate(active_views)})
+    for returned, numerical in returns:
+        result_spec(returned, numerical=numerical)
+    if has_effect and has_numerical:
+        unsupported("mutation-bearing programs cannot contain numerical Tensor operations")
+    outputs, specification = result_spec(result, {index: slot for slot, index in enumerate(active_operations)})
     return Lowering(Graph(arity, tuple(nodes), outputs) if outputs else None,
-                    specification, tuple(views), uses_transpose, tuple(active_views))
+                    specification, tuple(operations), tuple(sorted(operation_bindings)), tuple(active_operations))
 
 
 def _prepared_entry_bytes(key, prepared, code_key):
@@ -1655,9 +1765,9 @@ def implementation(model, recompile_limit):
             # specialize the full native ABI and exact broadcast address formula.
             # Preparation checks all original-IR admission. Exact native shapes
             # certify that result on reuse; offsets/storage are checked each run.
-            if lowering.uses_transpose:
-                validate_transpose_binding()
-            view_nodes = preflight_views(lowering, static_values, metadata) if lowering.views else ()
+            if lowering.operation_bindings:
+                validate_alias_bindings(lowering.operation_bindings)
+            view_nodes = preflight_operations(lowering, static_values, metadata) if lowering.operations else ()
             publications = [(entry.lowerings, abi, lowering), (cache.graphs, key, entry)]
             outputs = ()
             prepared = None
@@ -1692,7 +1802,7 @@ def implementation(model, recompile_limit):
                     retained_bytes = _prepared_entry_bytes(prepared_key, prepared, code_key)
                 outputs = prepared.run(tensors, scalars)
                 publications.insert(1, (cache.executors, code_key, executor))
-            if lowering.active_views:
+            if lowering.active_operations:
                 views = _native._compile_trace_cuda_graph(tensors, view_nodes)
                 result = lowering.result.reconstruct(outputs, static_values, tensors, metadata, views)
             else:

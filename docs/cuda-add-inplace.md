@@ -13,9 +13,12 @@ and dense, independently of rank, dimension order or singleton strides.
 Dense offset subspans are supported. Empty tensors perform no pointer arithmetic
 or kernel launch, including views whose offset exceeds the allocation extent.
 CPU/meta receivers, tensor operands and nonempty holey/overlapping layouts are
-unsupported. This does not add compiler-side mutation support: an `add_` inside
-a default-compiled function still rejects. Public `add_` can mutate an admitted
-input-rooted view returned by that function; materialized outputs stay independent.
+unsupported. Public `add_` can mutate an input-rooted view returned by a
+compiled function; materialized outputs with separate storage stay independent. Inside
+untouched-default compilation, only the separate [alias-only contract](compile-pointwise-jit.md#alias-only-views-and-scalar-mutation)
+admits ordered `view`/`transpose`/`add_` programs without numerical Tensor
+operations. That compiler language accepts exact Python scalars, excluding
+NumPy scalars; the direct method retains the broader scalar parser above.
 
 ## Ownership and completion
 
@@ -40,7 +43,13 @@ does not undo user callback effects or concurrent work. An uncertain post-launch
 failure promises neither rollback nor usable contents. Concurrent mutations have
 no additional ordering guarantee.
 
-## Clean-commit verification
+## Historical verification
+
+These records measure the named earlier revisions of the public mutation method,
+not the current compiled alias/effect extension. Current developer validation is
+indexed in [compiled alias mutation](diagnostics/default-alias-mutation-20260918.md).
+
+### Clean-commit verification
 
 After the operator released the author boundary, the focused checks were
 captured from clean commit `8ac9d0e768e2cd6faab558dc6838240231ccf585`.
@@ -65,14 +74,10 @@ PyTorch 2.13.0+cu130. The native-only transpose subprocess reports NVRTC 13.0;
 not the compiler for that primitive. Every capture command passed on its first
 attempt; the reference's existing script-method deprecation warning is retained.
 
-This is capability evidence, not a canonical score or an independent review.
-The current requirements prohibit manually running the canonical evaluator.
-Consequently the older scored reports remain unchanged and stale for this
-revision; their refresh remains outstanding for Burner's canonical evaluation
-stage. These focused checks neither substitute for nor waive that measurement.
-The Linux/macOS and GPU0-only limitations below still apply.
+This is historical capability evidence, not a canonical score or an independent
+review. The Linux/macOS and GPU0-only limitations below still apply.
 
-## Original author verification
+### Original author verification
 
 The original author-only verification was based on published source
 `41499a26015380a5d6c09dae80e0a0b9f7354dbf`. The accompanying

@@ -345,7 +345,7 @@ class CudaAddInplaceTests(unittest.TestCase):
                 self.compare_storage(source, target)
                 np.testing.assert_array_equal(read_bits(out[1]), independent)
                 self.compare_storage(out[1], expected[1])
-            for body in ('return x.add_(1)', 'y=x.add_(1)\n return x.transpose(0,1)'):
+            for body in ('y=-x\n return x.add_(1)', 'x.add_(1)\n return x+1'):
                 rejected = native.compile(program('def f(x):\n '+body))
                 before = read_bits(a).copy()
                 with self.assertRaises(NotImplementedError):

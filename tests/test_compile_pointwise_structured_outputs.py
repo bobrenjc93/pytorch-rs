@@ -92,7 +92,7 @@ class StructuredAdmission(unittest.TestCase):
             def __repr__(self):
                 effects.append('repr tuple')
                 return 'keys'
-        for invalid in ((Key('k'),), Keys(('k',)), (1,), (('k',),), ('k', object())):
+        for invalid in ((Key('k'),), Keys(('k',)), (2**64,), (('k',),), ('k', object())):
             fn = program('def f(x):\n return -x')
             fn.__code__ = fn.__code__.replace(co_consts=fn.__code__.co_consts+(invalid,))
             with patch.object(frontend.dis, 'get_instructions', side_effect=AssertionError('disassembled unsafe constants')):
