@@ -499,10 +499,11 @@ including shared/repeated references and its graph, plus the wrapper and a
 memory, CUDA allocator pools, modules, outputs, scratch or transient preparation.
 An oversized preparation executes by the same mechanism without being retained.
 Evicting an executor drops all its cached preparations.
-Prepared keys are staged before executor deletion. If that allocation fails,
-no executor is deleted; insertion may already have left an excess executor,
-which the next successful publication trims even on a newest-key hit. If an
-executor recency reinsertion fails after removal, the preparation table and its
+On a capacity-increasing executor miss, prepared keys are staged before any
+cache publication. If that allocation fails, no cache entry or recency order
+changes: repeated staging failures from a bounded cache retain neither extra
+executors nor orphaned preparations. Retained hits do not stage prepared keys.
+If an executor recency reinsertion fails after removal, the preparation table and its
 byte charge are cleared under the existing lock, and the original exception is
 re-raised. Other executors keep their order and can prepare again. A successful
 recency touch preserves preparations; it is not executor eviction. These local

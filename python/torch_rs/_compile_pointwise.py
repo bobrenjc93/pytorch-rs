@@ -1534,7 +1534,8 @@ def implementation(model, recompile_limit):
             indexing_key = None if all(s == shapes[0] for s in shapes) else shapes
             code_key = (graph, metadata[0][4], indexing_key)
             executor = cache.executors.get(code_key)
-            if executor is None:
+            executor_miss = executor is None
+            if executor_miss:
                 executor = _native._pointwise_compile(tensors, graph.nodes, graph.outputs)
             prepared_key = (code_key, shapes, entry.numerical_hint, lowering.result.output_order)
             cached_preparation = cache.prepared.get(prepared_key)
@@ -1550,6 +1551,11 @@ def implementation(model, recompile_limit):
                 prepared, retained_bytes = cached_preparation
             outputs = prepared.run(tensors, scalars)
             result = lowering.result.reconstruct(outputs, static_values, tensors, metadata)
+            if executor_miss and len(cache.executors) >= recompile_limit:
+                # Only a capacity-increasing miss can evict an executor. Stage
+                # before publishing anything, so repeated allocation failures
+                # cannot accumulate retained executors beyond the count limit.
+                prepared_keys = tuple(cache.prepared)
             # Publish every cache level only after success. Executable/lowering
             # eviction bounds retention without consuming logical slots.
             for mapping, item_key, item in ((entry.lowerings, abi, lowering),
@@ -1557,27 +1563,22 @@ def implementation(model, recompile_limit):
                                             (cache.graphs, key, entry)):
                 # Recency belongs to each map independently: a shared executor
                 # can already be newest while its logical entry/lowering is not.
-                if not (mapping and next(reversed(mapping)) == item_key
+                if (mapping and next(reversed(mapping)) == item_key
                         and next(reversed(mapping.values())) is item):
-                    mapping.pop(item_key, None)
-                    try:
-                        mapping[item_key] = item
-                    except BaseException:
-                        if mapping is cache.executors:
-                            # A failed recency reinsertion can remove an owner.
-                            # Drop preparation retention without allocating a
-                            # repair index or taking the already-held lock again.
-                            cache.prepared.clear()
-                            cache.prepared_bytes = 0
-                        raise
-                # Even a newest hit must trim an excess entry left by a failed
-                # eviction-staging attempt on an earlier publication.
+                    continue
+                mapping.pop(item_key, None)
+                try:
+                    mapping[item_key] = item
+                except BaseException:
+                    if mapping is cache.executors:
+                        # A failed recency reinsertion can remove an owner.
+                        # Drop preparation retention without allocating a
+                        # repair index or taking the already-held lock again.
+                        cache.prepared.clear()
+                        cache.prepared_bytes = 0
+                    raise
                 while len(mapping) > recompile_limit:
                     evicted_key = next(iter(mapping))
-                    if mapping is cache.executors:
-                        # Snapshot before removing the owner: allocation failure
-                        # must leave all retained preparations with an executor.
-                        prepared_keys = tuple(cache.prepared)
                     del mapping[evicted_key]
                     if mapping is cache.executors:
                         # Preparations must not retain an evicted module. Scan

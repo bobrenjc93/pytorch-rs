@@ -90,18 +90,15 @@ Archive: f667dfa3cf48e377f899a8af3678f3f026115a4abfc70392d8d5d71730b1cb2b
 Manifest: 8b7272431b957b008594216feaadd5013d18cd565392efd328b59bd4f562aa74
 ```
 
-## Publication-recovery correction: author validation
+## Historical publication-recovery correction F: author validation
 
-The subsequent correction against Q stages prepared keys before executor removal,
-clears prepared retention and charges if executor reinsertion fails, and trims
-excess executors even on a newest-key hit. A staging failure can temporarily
-leave an extra executor until a later successful publication; it removes no owner.
-The original exception is preserved. Successful recency touches preserve plans.
-These are specific recovery boundaries, not arbitrary allocator-failure atomicity;
-the [cache guide](compile-pointwise-jit.md#recompilation-and-reset) retains its
-phase-limited guarantee for failures before publication.
+F (`8256303d7526a2d3176a520ad9a36751fa3cb764`) added failure-only clearing
+of prepared retention and charges after executor reinsertion failure. Its staging
+order still allowed repeated failing misses to accumulate executors; the capacity
+correction below supersedes that behavior. The following validation and hashes
+remain historical evidence of F's source, not of the capacity correction.
 
-Fresh validation of the uncommitted correction passed 49 focused checks plus 15
+Precommit validation of F passed 49 focused checks plus 15
 additional CUDA checks; two second-GPU checks were skipped. The
 [regressions](../tests/test_compile_pointwise_warm_overhead.py) inject both faults,
 recover through a different survivor or newest key, check ownership/order/charges
@@ -111,7 +108,7 @@ after eviction/reset. The first new recency assertion incorrectly required the
 bookkeeping tuple itself to retain identity; the corrected test checks the
 preparation identity and charges. Both fixture snapshots and the failed run remain.
 
-Fresh operator-host artifacts are in worktree-local
+Historical F operator-host artifacts are in worktree-local
 `target/compile-input-admission-publication-repair/`, including
 `repair-evidence.tar.gz`. These ignored files are not public repository downloads;
 retention beyond this host is not promised. Each command has an execution-time
@@ -130,4 +127,45 @@ Tested source manifest: ce669272cebc8e6d4a16f7da56feecb6a03208b1725b39f80fe3a4d6
 Repair wheel: 975ebde6a3a7cb6ca6fa96938c709acd4b5c4d29f48e7f8df92b0e5760548790
 Repair archive: 62b99bf8a9b21b13d807970f2f3be5924e606af18d3c71036ebe72797e3ff38c
 Repair archive manifest: b1cf69df26dce057ecc6ae476f03057ccb1a721381b8cecc873ad892998a7843
+```
+
+## Capacity-safe staging correction: author validation
+
+The successor to F stages eviction bookkeeping after successful reconstruction
+and before any cache publication, only on a capacity-increasing executor miss.
+Starting with a bounded cache, repeated failures at that staging boundary leave
+all cache contents, owner identities, recency orders and charges unchanged.
+Retained hits avoid staging/scans. F's failure-only preparation clearing on failed
+executor reinsertion remains. These specific boundaries do not imply universal
+allocation-failure atomicity; the guide's earlier phase-limited guarantee remains.
+
+Fresh validation passed all 49 focused checks and 15 additional real CUDA checks;
+two checks requiring a second GPU were skipped. One staging fault stays enabled
+across five distinct unused-input-shape misses in each recovery order. Every
+failure checks the limit, exact charge, owners/order and original exception identity
+before retained-hit recovery, successful later eviction and reset. The existing
+public CUDA history changes used-input values and rechecks retained old outputs.
+All commands passed on their first attempt. No timing or scoring was run; neither
+Q's timings nor F's validation above measure this successor.
+
+New operator-host evidence is in
+`target/compile-input-admission-capacity-repair/capacity-evidence.tar.gz`, with
+adjacent `retention-manifest.json`. These ignored host files are not tracked or
+publicly downloadable repository files and do not promise permanent storage.
+The archive contains the final source, execution-time command/return/timestamp
+receipts, stdout/stderr, wheel/import bindings and GPU0/provider metadata.
+`tested-source.json`, `binding.json` and `audit.json` identify the tested uncommitted
+source against F. Validation used the isolated CPython 3.12.14 interpreter with
+`-B` and explicit `sys.flags.optimize=0`, PyTorch 2.13.0+cu130 and CUDA/NVRTC 13.0.
+Historical scratch and evidence remain unchanged.
+
+SHA-256 identities for this correction:
+
+```text
+Frontend: fff728e9222a948dd1fb752a527380f789cd74577ad27ad3eb742d31fd564624
+Final test: 2d895e0eb606cbd596bffdb1318df8b17e0f2d541f9308c936faa84d046e960b
+Tested source manifest: c4d5dca63aeb092f537198f6ebb35473d5956d1a1c69c92502ddbb42bd58f3f6
+Wheel: bd5f7bf16d41a28f6fd788f7bf61438b577de5a543b36d26776cdddd7c1ae18e
+Archive: 68c0fee38f7054facb3aab208e9ef1d84060859278f32be7b546b76953dd8dd3
+Archive manifest: 283ab4d776bb022185df816b95adc543e1102fbb76c5bdebd4b47fab44facd7c
 ```

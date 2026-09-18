@@ -206,14 +206,16 @@ class WarmOverhead(unittest.TestCase):
         compiled(False, x)
         self.assert_retention(state)
 
-    def test_failed_eviction_staging_recovers_on_survivor_or_newest_hit(self):
+    def test_repeated_failed_eviction_staging_preserves_capacity_and_survivors(self):
         for newest in (False, True):
             with self.subTest(newest=newest):
                 initial_compiles = self.codegen.call_count
                 compiled, x, state = self.two_executors()
                 first, second = state.executors
+                old_executors = list(state.executors.items())
                 old_preparations = list(state.prepared.items())
                 old_charge = state.prepared_bytes
+                before = self.snapshot(compiled)
                 failure = MemoryError('prepared key snapshot')
 
                 class FailSnapshot(dict):
@@ -225,30 +227,53 @@ class WarmOverhead(unittest.TestCase):
                         return super().__iter__()
 
                 state.prepared = FailSnapshot(state.prepared)
-                with self.assertRaises(MemoryError) as error:
-                    compiled(native.ones(1), x)
-                self.assertIs(error.exception, failure)
-                # No owner was removed. Insertion preceded failed staging, so
-                # the executor count needs trimming on the next successful call.
-                third = next(reversed(state.executors))
-                self.assertEqual(list(state.executors), [first, second, third])
-                self.assertEqual(list(state.prepared.items()), old_preparations)
-                for key, value in old_preparations:
-                    self.assertIs(state.prepared[key], value)
-                self.assertEqual(state.prepared_bytes, old_charge)
-                self.assertTrue(all(key[0] in state.executors for key, _ in old_preparations))
+                # Distinct unused-input shapes miss the native executor without
+                # consuming logical specializations. Keep the same fault active.
+                misses = (1, 2, 4, 5, 6)
+                for size in misses:
+                    with self.subTest(size=size):
+                        with self.assertRaises(MemoryError) as error:
+                            compiled(native.ones(size), x)
+                        self.assertIs(error.exception, failure)
+                        self.assertEqual(self.snapshot(compiled), before)
+                        self.assertLessEqual(len(state.executors), 2)
+                        self.assertLessEqual(len(state.prepared), 2)
+                        self.assertEqual(list(state.executors.items()), old_executors)
+                        self.assertEqual(list(state.prepared.items()), old_preparations)
+                        for key, value in old_executors:
+                            self.assertIs(state.executors[key], value)
+                        for key, value in old_preparations:
+                            self.assertIs(state.prepared[key], value)
+                            self.assertIn(key[0], state.executors)
+                        self.assertEqual(state.prepared_bytes, old_charge)
+                        self.assertEqual(state.prepared_bytes,
+                                         sum(value[1] for value in state.prepared.values()))
+                        self.assertLessEqual(state.prepared_bytes, frontend._PREPARED_CACHE_BYTES)
                 state.prepared.fail = False
-                survivor = state.executors[third if newest else second]
-                compiled(native.ones(1 if newest else 3), x)
-                self.assertEqual(self.codegen.call_count, initial_compiles + 3)
+                selected = second if newest else first
+                survivor = state.executors[selected]
+                compiled(native.ones(3) if newest else False, x)
+                self.assertEqual(self.codegen.call_count, initial_compiles + 2 + len(misses))
                 self.assertIs(next(reversed(state.executors.values())), survivor)
-                self.assertEqual(list(state.executors), [second, third] if newest else [third, second])
-                self.assertNotIn(first, state.executors)
+                self.assertEqual(list(state.executors), [first, second] if newest else [second, first])
                 self.assert_retention(state)
-                surviving_key, surviving_value = old_preparations[1]
-                self.assertIs(state.prepared[surviving_key], surviving_value)
-                self.assertEqual(next(iter(state.prepared)), surviving_key)
+                for key, value in old_preparations:
+                    self.assertIs(state.prepared[key][0], value[0])
+                    self.assertEqual(state.prepared[key][1], value[1])
+                self.assertEqual(state.prepared_bytes, old_charge)
+                # Only a successful later miss evicts the oldest retained owner.
+                evicted = next(iter(state.executors))
+                compiled(native.ones(1), x)
+                third = next(reversed(state.executors))
+                self.assertEqual(list(state.executors), [selected, third])
+                self.assertNotIn(evicted, state.executors)
+                self.assertIs(state.executors[selected], survivor)
+                selected_key, selected_value = old_preparations[1 if newest else 0]
+                self.assertEqual(next(iter(state.prepared)), selected_key)
+                self.assertIs(state.prepared[selected_key][0], selected_value[0])
+                self.assert_retention(state)
                 native.compiler.reset()
+                self.assertFalse(state.graphs)
                 self.assertFalse(state.prepared)
                 self.assertFalse(state.executors)
                 self.assertEqual(state.prepared_bytes, 0)
