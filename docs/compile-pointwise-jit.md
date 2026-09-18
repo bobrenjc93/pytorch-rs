@@ -88,14 +88,14 @@ float32 admission.
 View recipes retain only source/construction slots and constant view operations.
 Every current view is preflighted through the native planner before numerical compilation or
 execution. Warm calls also preflight retained inactive and zero-trip recipes
-against current inputs, without rescanning inactive helper bodies. Mixed
-calls run the unchanged pointwise pipeline, then the existing native alias
+against current inputs. Reuse of a matching retained lowering does not rescan
+inactive helper bodies; a missing ABI or retained-structure re-admission can
+admit current bodies. Mixed calls run the unchanged pointwise pipeline, then the existing native alias
 bridge, then result reconstruction. Pure-view calls create no numerical graph,
 kernel, executor or preparation entry. The bridge independently replans actual
 inputs, and caches publish only after successful wrapping and reconstruction.
-View-method binding guards apply only to programs that admit those methods; warm
-same-arm reuse preserves the existing inactive-helper behavior. These changes
-extend metadata compilation coverage and make no performance-parity claim.
+View-method binding guards apply only to programs that admit those methods.
+These changes extend metadata compilation coverage and make no performance-parity claim.
 The input views share storage with their original owners. After the compiled
 call, public [CUDA scalar `Tensor.add_`](cuda-add-inplace.md) can mutate a dense
 returned view; a computed output remains independent. Mutation inside a compiled
@@ -255,11 +255,14 @@ selection inside the compiled function.
 Observation remains lazy. Selecting/unpacking a sequence checks its exact type
 and length; dict selection checks its type and the selected path, without guarding
 unrelated keys or insertion order. Each cached lowering retains its own container
-signatures and selected child paths, including inactive recipes. A structure or
-selected-key mismatch re-admits that lowering before any write, using current
-inputs with the logical entry's frozen active semantics. Other ABI lowerings
-keep their own admission evidence. Retained effect scalars remain current
-preflight inputs, not new specialization guards. Scalar history follows the public parameter
+signatures and selected child paths, including inactive recipes. On a logical
+hit, a mismatch in the selected lowering's own structure or selected-path
+evidence re-admits that lowering before any write, using current inputs with
+that entry's frozen active semantics. Active observed structure changes can
+instead miss the logical guards and select or create another logical entry
+using current values. Other ABI lowerings keep their own admission evidence.
+Retained effect scalars remain current preflight inputs, not new specialization
+guards. Scalar history follows the public parameter
 and normalized item path: list and tuple indices share source identity under
 separate structural guards. On a logical hit, changed Tensor traversal order
 rebinds current operands while preserving the selected specialization's frozen
@@ -378,9 +381,11 @@ descriptors on both Tensor classes remain identity-guarded.
 Both arms pass bounded language/type admission on each new lowering. Inactive
 locals, numerical IR and scalar/helper observations do not enter the selected
 graph; container-structure guards remain necessary for retained input paths.
-Warm calls check capture/signature bindings and active helper code, without
-reparsing inactive helper bodies. A later branch crossing or new ABI lowering
-admits those bodies again; invalid bodies fail without publishing cache changes.
+Warm calls check capture/signature bindings and active helper code. Matching
+retained-lowering reuse does not reparse inactive helper bodies. A new lowering
+after a branch crossing, a missing ABI, or retained-structure re-admission can
+admit current inactive bodies again; invalid bodies fail without publishing
+cache changes.
 
 Straight-line helpers can occur in arms, and root literal loops can occur outside
 branch regions. Nested branches, branches in loops/helpers, loops in arms,

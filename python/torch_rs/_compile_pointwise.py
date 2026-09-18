@@ -440,8 +440,8 @@ class ShapeGuards:
 @dataclass
 class Specialization:
     """Frozen logical semantics with lowerings for concrete tensor operand ABIs."""
-    # Scalars/operators are frozen here; tensor Values are rebound to the current
-    # filtered ABI only when a concrete lowering is missing. No tensor is retained.
+    # Scalars/operators are frozen here; tensor Values use the current filtered
+    # ABI when creating or re-admitting a lowering. No tensor is retained.
     values: dict
     observed: tuple
     observations: dict
@@ -1125,7 +1125,8 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
     nodes.extend(("scalar", index, 0, 0) for index in runtime)
     remaining = 16384 - program.loop_overhead
     checked_nodes = 0
-    helper_instructions = {}  # Per lowering only; warm hits never parse helpers.
+    # Per lowering; matching retained-lowering reuse does not parse helpers.
+    helper_instructions = {}
     pending_checks = []  # Early-return continuations; no recursion per condition.
     construction_edges = 0
     operations, active_operations = [], []
