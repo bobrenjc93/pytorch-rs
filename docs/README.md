@@ -68,7 +68,7 @@ not expand the current contracts.
 
 ### Eager tensor operations and diagnostics
 
-- [CUDA scalar `Tensor.add_`](cuda-add-inplace.md): Dense shared-storage mutation, exact alpha/operand limits and synchronous completion; unsupported inside compiled bodies.
+- [CUDA scalar `Tensor.add_`](cuda-add-inplace.md): Dense shared-storage mutation, exact alpha/operand limits and synchronous completion; default compilation supports the [alias-only subset](compile-pointwise-jit.md#alias-only-views-and-scalar-mutation), while `backend="eager"` capture rejects mutation.
 - [CUDA scalar multiplication validation](cuda-mul-scalar-validation.md): General eager float32 kernel, conversion/layout boundaries, and H100 evidence.
 - [Native and compiled CUDA ReLU](cuda-relu.md): Method and trusted top-level capture, IEEE bit semantics, layout bounds and H100 development checks.
 - [CUDA negation validation](cuda-neg-validation.md): Contiguous float32 eager scope, H100 checks, and retained evaluation evidence.

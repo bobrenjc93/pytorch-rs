@@ -9,8 +9,9 @@ This is unfused bounded capture, not a general Inductor compiler or a
 performance-parity claim.
 For untouched-default compilation with fused pointwise outputs and terminal
 input-rooted views, use the separate [default compiler guide](compile-pointwise-jit.md).
-Public [CUDA scalar `Tensor.add_`](cuda-add-inplace.md) runs outside compiled
-bodies; neither backend captures mutation.
+Explicit `backend="eager"` capture rejects mutation. Untouched-default compilation
+admits [alias-only view and scalar `Tensor.add_` programs](compile-pointwise-jit.md#alias-only-views-and-scalar-mutation);
+see the [public CUDA scalar `Tensor.add_` contract](cuda-add-inplace.md) for direct calls.
 
 ```python
 import torch_rs as torch

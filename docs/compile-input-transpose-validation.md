@@ -1,14 +1,19 @@
 # Default input-rooted transpose validation
 
-**Current capability capture:** after the operator released the author boundary,
-clean commit `8ac9d0e768e2cd6faab558dc6838240231ccf585` passed the focused
+**Current validation:** the [committed-source QA capture at `95bdbf2`](diagnostics/default-alias-mutation-qa-postcommit-95bdbf2.md)
+covers the current alias-mutation and input-transpose regressions. It records
+focused correctness checks, not a performance measurement or canonical score.
+The [default compiler guide](compile-pointwise-jit.md) defines the current capability.
+
+## Historical capability capture at `8ac9d0e`
+
+Clean commit `8ac9d0e768e2cd6faab558dc6838240231ccf585` passed the focused
 transpose and public CUDA scalar `add_` checks. [Clean-commit verification](cuda-add-inplace.md#clean-commit-verification)
 links the generated report and raw receipts: 39 focused tests passed, 18 portable
 tests passed with 21 hardware skips, and 23 native tests passed. No implementation
-or test changed during capture. The older scored artifacts below remain unchanged
-and do not measure this revision. Their refresh remains outstanding for Burner's
-canonical evaluation stage: the current requirements prohibit manual evaluator
-runs. No current-candidate coverage or performance score is claimed here.
+or test changed during capture. This capture and the older scored artifacts below
+are historical: they measure their named revisions, not the current candidate.
+Their original receipts and measurements remain unchanged.
 
 Implemented from `60202557b4f110d07777f585e804ab5f55e1ff7b`. This is bounded
 metadata-compilation support, not general Inductor or performance parity.
@@ -48,7 +53,7 @@ measured that corrected candidate before the subsequent author revision. The ear
 repair receipts remain unchanged and supply no current-candidate performance
 credit. No scoring run was performed during the uncommitted repair.
 
-## Prior scored capture (current scores pending)
+## Historical scored capture at `48c7b82`
 
 Captured on 2026-09-17 from clean implementation commit
 `48c7b82cd55318e8be455d792f2410d3a0f2ff95`, before these evidence-only updates.
@@ -114,7 +119,7 @@ verifies that those files and the development archives are unchanged.
 
 The following records describe the earlier dirty development checkout. Their
 original archive and first failures are preserved unchanged. The `48c7b82`
-scored capture above predates the current `8ac9d0e` capability capture.
+scored capture above predates the historical `8ac9d0e` capability capture.
 
 All GPU checks used `CUDA_VISIBLE_DEVICES=0`. Both frameworks were invoked as
 `compile(fn)` without compiler overrides. Numerical tolerances remained
