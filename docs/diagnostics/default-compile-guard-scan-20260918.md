@@ -69,7 +69,7 @@ as tar hard links. No existing diagnostic, benchmark or evaluator was edited.
 GPU0 was H100 UUID `GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1`, driver 580.82.07.
 The driver UUID agrees with the selected physical inventory. Release builds used
 Rust 1.92.0, PyO3 0.29.2 and Python 3.12.12; reference PyTorch was 2.13.0+cu130.
-The loaded CUDA runtime and NVRTC were 13.0; installed nvcc 12.6 was inventory,
+The loaded CUDA runtime and NVRTC were 13.0; installed nvcc 12.8 (V12.8.93) was inventory,
 not the pointwise compiler. Prefix/destination checks and source/wheel/import
 hash comparisons passed for the worktree-local environment and both wheels.
 
