@@ -48,8 +48,8 @@ The same assertion-only smoke check is available as
 | Surface | Supported today | Limits |
 | --- | --- | --- |
 | CPU tensors | Native `float32` construction, views, selected math and NN functions, limited first-order autograd. | No additional tensor dtypes or full training stack. |
-| NVIDIA CUDA | Native storage, synchronous CPU transfers, same-shape contiguous `float32` addition, [matrix/vector addition](docs/cuda-add-trailing-vector.md), negation, [scalar multiplication](docs/cuda-mul-scalar-validation.md), [rank-2 matmul](docs/cuda-matmul.md), and [contiguous matrix row sums](docs/cuda-sum-rows.md) without gradients. | Direct factories: 1-D and 2-D float32 zeros only. No general CUDA math or accelerator training. |
-| `torch.compile` | Default: [fused CUDA pointwise kernels with bounded nested outputs](docs/compile-pointwise-jit.md). Bounded eager CPU capture, [CUDA mul/neg/add capture](docs/compile-cuda-add.md), and [rank-2 matmul](docs/compile-cuda-matmul.md) use explicit `backend="eager"`, without fusion. | Default compilation requires one or two broadcast-compatible contiguous CUDA `float32` inputs without gradients. No full Inductor compiler, general graph capture, or eager fallback. |
+| NVIDIA CUDA | Native `float32` storage, views, synchronous CPU transfers, and [bounded numerical operations](docs/supported-surface.md), including [dense scalar mutation](docs/cuda-add-inplace.md), without gradients. | Direct factories: 1-D and 2-D float32 zeros only. No general CUDA math or accelerator training. |
+| `torch.compile` | Default: [fused CUDA pointwise and alias-only view/mutation programs](docs/compile-pointwise-jit.md). Bounded eager CPU capture, [CUDA mul/neg/add capture](docs/compile-cuda-add.md), and [rank-2 matmul](docs/compile-cuda-matmul.md) use explicit `backend="eager"`, without fusion. | Default compilation requires one or two contiguous CUDA `float32` inputs without gradients. No full Inductor compiler, general graph capture, or eager fallback. |
 | Compatibility helpers | Selected device/backend probes, state, data, and JIT helpers. | No full module, `DataLoader`, optimizer, model-serialization, or distributed stacks. |
 
 The [exhaustive supported surface](docs/supported-surface.md) owns exact method
@@ -87,8 +87,10 @@ release wheel from the current worktree and verifies extension provenance.
 `HEAD`, excluding local edits; see [validation details](docs/troubleshooting.md#exact-head-validation).
 Both use available CUDA hardware and skip hardware-only cases when unavailable.
 
-Browse [docs/README.md](docs/README.md) for focused guides and
-[ARCHITECTURE.md](ARCHITECTURE.md) for the source map. Public tests are the floor;
+For compilation, start with the [native default compiler](docs/compile-pointwise-jit.md)
+contract. The guide index in [docs/README.md](docs/README.md) separates
+default compilation from explicit eager capture; [ARCHITECTURE.md](ARCHITECTURE.md)
+maps their source owners. Public tests are the floor;
 Burner also runs independent generated workloads and differential checks.
 
 ## License

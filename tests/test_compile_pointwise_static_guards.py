@@ -79,7 +79,7 @@ class StaticGuardHardware(unittest.TestCase):
                     install_key(fn, effects, subclass)
                     before = len(cache(compiled).graphs)
                     with self.subTest(warm=warm, invalid=invalid, string_subclass=subclass):
-                        with mock.patch.object(bridge, '_pointwise_compile', side_effect=AssertionError('codegen before admission')):
+                        with mock.patch.object(bridge, '_pointwise_host_plan', side_effect=AssertionError('codegen before admission')):
                             with self.assertRaises(NotImplementedError):
                                 compiled(x)
                         self.assertEqual(effects, [])

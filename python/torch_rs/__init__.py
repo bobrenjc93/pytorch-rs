@@ -409,6 +409,7 @@ def _make_compile_wrapper(
 ):
     metadata_attribute_names = (
         "_torch_rs_pointwise_cache",
+        "_torch_rs_pointwise_receipt",
         "_torch_rs_cuda_compile_executor",
         "_torch_rs_cuda_compile_preparation",
     )
@@ -970,7 +971,7 @@ def compile(
     isolate_recompiles=False,
     shapes_spec=None,
 ):
-    """Compile the bounded native pointwise language, or an explicit backend.
+    """Compile bounded native CUDA pointwise or alias-only programs, or an explicit backend.
 
     With untouched defaults, bounded pointwise functions over one or two broadcast-compatible
     contiguous no-grad native CUDA float32 inputs lower to generated fused CUDA
@@ -984,26 +985,45 @@ def compile(
     one/two-tensor limit). Scalar leaves, identity wrappers, subtraction,
     negation, ReLU/sin/cos and extra live arithmetic do not qualify for this
     exception, which also requires no live sin/cos in any returned root. The
-    existing numerical planner and generic CUDA instruction executor are reused;
-    finite evidence does not establish general Inductor or performance parity.
+    existing numerical planner is reused. Validated Programs select bounded
+    straight-line CUDA or, for empty/over-cap plans, the generic VM; executables
+    are reused by exact identity. Unsupported graphs and compiler failures still
+    raise. See ``docs/compile-pointwise-jit.md`` for the bounds and admission
+    contract. Finite evidence does not establish general Inductor or performance parity.
     Root functions may also use sequential, non-nested loops over the
     actual built-in range (including direct aliases), with one to three literal
     exact-integer bounds and a nonzero step. Zero/one/many trips and signed steps
-    are supported. Bodies use the same pointwise language and approved direct,
-    data-only Python helpers; even skipped bodies receive admission checks.
+    are supported. Bodies use the same numerical or alias-only language and
+    approved direct Python helpers; even skipped bodies receive admission checks.
     Root input-shape branches with literal integer axes and thresholds support
     early returns and assignment joins. Loops may appear outside branch arms,
     and straight-line helpers may appear inside them.
     Bounded tuple/list/string-keyed dict constructors may return up to 64 distinct
-    computed Tensor roots of one actual shape, input aliases, literal metadata and current
-    input shape-axis values. Repeated leaves/containers preserve identity; dynamic
-    computed outputs are fresh per call. At least one computed Tensor is required.
-    CPU compilation, mutation, reductions, data-dependent or nested conditionals,
+    computed Tensor roots of one actual shape, input aliases, input-rooted terminal
+    views, literal metadata and current input shape-axis values. Repeated leaves
+    and containers preserve identity. Computed outputs and dynamic containers are
+    fresh per call; admitted constant-pool integer tuples retain their identity.
+    Numerical programs require at least one computed Tensor.
+    Alias-only programs may construct rank-0/1/2 input-rooted ``view`` and
+    ``transpose`` aliases and perform ordered scalar ``add_(other, *, alpha=1)``
+    effects. They use the same contiguous CUDA float32/no-grad input boundary.
+    Shapes and axes must be admitted exact integer constants; current scalar
+    operands are exact Python types and alpha must be numeric exactly one, not
+    bool. Effects return their exact receiver and may be discarded. A program
+    with an admitted effect may return inputs or literal metadata; otherwise a
+    program without numerical operations must return at least one view.
+    Effects cannot coexist with numerical Tensor operations, including in
+    required inactive or zero-trip bodies. All required layouts and current
+    scalars pass preflight before writes; runtime failures can leave completed
+    effects visible without publishing a new cache entry.
+    CPU compilation, mutation outside this alias-only subset, reductions, data-dependent or nested conditionals,
     branches inside loops/helpers, loops inside branch arms, nested/helper-local
     loops, runtime range bounds, arbitrary iterators, module calls and training
     are outside this default JIT subset.
-    NVRTC and the CUDA driver compile/cache code; no PyTorch forwarding or eager
-    replay is used. See docs/compile-pointwise-jit.md for guards and scope.
+    Numerical programs use NVRTC and the CUDA driver to compile/cache code;
+    alias-only programs use the native view/mutation bridge without a numerical
+    graph or NVRTC compilation. No PyTorch forwarding or eager replay is used.
+    See docs/compile-pointwise-jit.md for guards, syntax and scope.
 
     This entrypoint implements Python argument binding, ``disable=True``
     pass-through, and backend resolution through ``torch.compiler``. It also

@@ -181,17 +181,18 @@ class RuntimeScalarHardware(unittest.TestCase):
         compiled(x)
         fn.__globals__['scale'] = 2.0
         compiled(x)
-        kernel = kernels(compiled)[-1]
+        prepared = next(reversed(cache(compiled).prepared.values()))[0]
+        legacy = jit_tests.legacy_kernel(compiled, (x,))
         values = (1.25, -3.5, 8.0, 0.0) * 4
         def run(value):
-            result = kernel.run((x,), (value,))[0]
+            result = prepared.run((x,), (value,))[0]
             return result.cpu().tolist()
         with ThreadPoolExecutor(max_workers=4) as pool:
             results = list(pool.map(run, values))
         self.assertEqual(results, [[v, -2*v] for v in values])
         empty = native.tensor([]).to('cuda:0')
         with self.assertRaisesRegex(RuntimeError, 'scalar arity'):
-            kernel.run((empty,), ())
+            legacy.run((empty,), ())
 
     @unittest.skipUnless(two_device_reservation(),
                          'requires explicit two-device validation')
@@ -208,10 +209,12 @@ class RuntimeScalarHardware(unittest.TestCase):
                     compiled(x)
                     self.assertEqual(self.torch.cuda.current_device(), 1-target)
         entries = kernels(compiled)
-        kernel = next(entry for entry in entries if entry.device == 0 and 'float s0' in entry.source)
+        selected = next(entry for entry in entries if entry.device == 0 and 'float s0' in entry.source)
+        prepared = next(item[0] for item in cache(compiled).prepared.values()
+                        if item[0].belongs_to(selected))
         with self.torch.cuda.device(1):
             with self.assertRaisesRegex(RuntimeError, 'device guard'):
-                kernel.run((x,), (1.0,))
+                prepared.run((x,), (1.0,))
             native.compiler.reset()
             self.assertEqual(self.torch.cuda.current_device(), 1)
 
@@ -221,12 +224,12 @@ class RuntimeScalarHardware(unittest.TestCase):
         x = native.tensor([1.]).to('cuda:0')
         compiled(x)
         fn.__globals__['scale'] = 16777217.0
-        with mock.patch.object(bridge, '_pointwise_compile', side_effect=RuntimeError('injected compilation failure')):
+        with mock.patch.object(bridge, '_pointwise_host_plan', side_effect=RuntimeError('injected compilation failure')):
             with self.assertRaisesRegex(RuntimeError, 'injected compilation failure'):
                 compiled(x)
         self.assertEqual(len(cache(compiled).graphs), 1)
         compiled(x)
-        kernel = kernels(compiled)[-1]
+        kernel = jit_tests.legacy_kernel(compiled, (x,))
         callbacks = []
         class CustomFloat(float):
             def __float__(self):
@@ -393,15 +396,15 @@ class PositionalScalarHardware(unittest.TestCase):
         x, tx = self.upload([1., -1.], (2,)), self.upload([1., -1.], (2,), self.torch)
         self.check(fn, compiled, reference, (16777217., x), (16777217., tx))
         before = dict(cache(compiled).graphs)
-        with mock.patch.object(bridge, '_pointwise_compile', side_effect=RuntimeError('injected compile failure')):
+        with mock.patch.object(bridge, '_pointwise_host_plan', side_effect=RuntimeError('injected compile failure')):
             with self.assertRaisesRegex(RuntimeError, 'injected compile failure'):
                 compiled(16777218., x)
         self.assertEqual(cache(compiled).graphs, before)
         class FailedLaunch:
             def run(self, *args):
                 raise RuntimeError('injected launch failure')
-        with mock.patch.object(bridge, '_pointwise_compile',
-                               return_value=jit_tests.mock_pointwise_executor(FailedLaunch().run)):
+        with mock.patch.object(bridge, '_pointwise_host_plan', side_effect=
+                               jit_tests.mock_host_plan_with_executor(jit_tests.mock_pointwise_executor(FailedLaunch().run))):
             with self.assertRaisesRegex(RuntimeError, 'injected launch failure'):
                 compiled(16777218., x)
         self.assertEqual(cache(compiled).graphs, before)
@@ -415,7 +418,7 @@ class PositionalScalarHardware(unittest.TestCase):
         self.check(fn, compiled, reference, (16777218., x), (16777218., tx))
         with mock.patch.object(frontend, 'lower', side_effect=AssertionError('warm lowering')), \
              mock.patch.object(frontend, 'analyze', side_effect=AssertionError('warm analysis')), \
-             mock.patch.object(bridge, '_pointwise_compile', side_effect=AssertionError('warm compilation')):
+             mock.patch.object(bridge, '_pointwise_host_plan', side_effect=AssertionError('warm planning/compilation')):
             self.check(fn, compiled, reference, (16777217., x), (16777217., tx))
         for args in ((True, x), (16777217., x[:1])):
             with self.assertRaisesRegex(NotImplementedError, 'recompile_limit=2'):
@@ -784,7 +787,7 @@ class PersistentSpecializationHardware(unittest.TestCase):
                     # that graph's sign on later +0.0 guard hits.
                     self.assertTrue(self.host(actual).signbit().all().item())
 
-    def test_logical_hit_new_broadcast_executor_keeps_frozen_zero(self):
+    def test_logical_hit_equivalent_broadcast_code_keeps_frozen_zero(self):
         pair = self.pair('def f(s,x,y):\n return x*s')
         selected = None
         for step, (count, scalar) in enumerate(((2, 0.), (3, -0.), (4, 0.), (5, -0.))):
@@ -798,7 +801,9 @@ class PersistentSpecializationHardware(unittest.TestCase):
             elif step > 1:
                 self.assertIs(current, selected)
                 self.assertEqual(len(cache(pair[1]).graphs), 2)
-                self.assertIsNot(kernels(pair[1])[-1], previous_executor)
+                self.assertEqual(kernels(pair[1])[-1].executable_identity,
+                                 previous_executor.executable_identity)
+                self.assertIs(kernels(pair[1])[-1], previous_executor)
             previous_executor = kernels(pair[1])[-1]
 
     def test_failed_compile_and_launch_preserve_both_cache_orders_and_history(self):
@@ -827,9 +832,10 @@ class PersistentSpecializationHardware(unittest.TestCase):
             for failure in ('compile', 'launch'):
                 effect = ({'side_effect': RuntimeError('injected transactional compile failure')}
                           if failure == 'compile' else
-                          {'return_value': jit_tests.mock_pointwise_executor(FailedLaunch().run)})
+                          {'side_effect': jit_tests.mock_host_plan_with_executor(
+                              jit_tests.mock_pointwise_executor(FailedLaunch().run))})
                 with self.subTest(scalar=scalar, failure=failure), \
-                     mock.patch.object(bridge, '_pointwise_compile', **effect):
+                     mock.patch.object(bridge, '_pointwise_host_plan', **effect):
                     with self.assertRaisesRegex(RuntimeError, 'injected transactional'):
                         compiled(scalar, x, y)
                 self.assertEqual(snapshot(), before)

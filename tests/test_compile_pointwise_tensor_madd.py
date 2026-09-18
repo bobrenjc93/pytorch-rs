@@ -11,7 +11,7 @@ import torch_rs as native
 from torch_rs import _compile_pointwise as frontend
 from torch_rs import torch_rs as bridge
 from test_compile_pointwise_jit import (
-    Hardware, available, cache, lower, program, two_device_reservation,
+    Hardware, available, cache, legacy_kernel, lower, program, two_device_reservation,
 )
 
 
@@ -133,7 +133,7 @@ class TensorMadd(unittest.TestCase):
                     self.assertIn('fma.rn.f32', selected.ptx)
                     with patch.object(frontend, 'analyze', side_effect=AssertionError('warm analysis')), \
                          patch.object(frontend, 'lower', side_effect=AssertionError('warm lowering')), \
-                         patch.object(bridge, '_pointwise_compile', side_effect=AssertionError('warm compile')):
+                         patch.object(bridge, '_pointwise_host_plan', side_effect=AssertionError('warm compile')):
                         caller_device = self.torch.cuda.current_device()
                         again = self.without_replay(fn, compiled, args)
                         self.assertEqual(self.torch.cuda.current_device(), caller_device)
@@ -222,7 +222,8 @@ class TensorMadd(unittest.TestCase):
             compiled = native.compile(fn)
             x, y = self.upload([1.,-2.], (2,)), self.upload([3.,4.], (2,))
             equal = compiled(x,y)
-            selected = dispatched(compiled)  # Real NVRTC compilation and launch.
+            original = dispatched(compiled)
+            selected = legacy_kernel(compiled, (x, y))
             before = snapshot(compiled)
             unequal = y.reshape(1,2)
             if expression in ('x*y+x', 'x+x*y'):
@@ -245,7 +246,7 @@ class TensorMadd(unittest.TestCase):
             self.assertFalse(cache(compiled).executors)
             self.assertEqual(selected.run((x,y))[0].cpu().tolist(), equal.cpu().tolist())
             compiled(x,y)
-            self.assertIsNot(dispatched(compiled), selected)
+            self.assertIsNot(dispatched(compiled), original)
             native.compiler.reset()
             self.torch.compiler.reset()
 
@@ -253,7 +254,7 @@ class TensorMadd(unittest.TestCase):
         dead = native.compile(program('def f(x,y):\n dead=x+y\n return x*x+x'))
         dx, dy = self.upload([1.,2.], (2,)), self.upload([3.,4.], (2,))
         equal = dead(dx,dy)
-        selected = dispatched(dead)
+        selected = legacy_kernel(dead, (dx, dy))
         before = snapshot(dead)
         # An unused argument still participates in the existing address ABI.
         with self.assertRaisesRegex(RuntimeError, 'indexing guard'):
@@ -270,14 +271,27 @@ class TensorMadd(unittest.TestCase):
         x = self.upload([1.,2.], (2,))
         unused = self.upload([3.], (1,))
         compiled(1.,x,unused)
+        retained_executor = dispatched(compiled)
         before = snapshot(compiled)
         for invalid in (native.ones(1), native.tensor([1.], requires_grad=True), self.upload([1.,2.,3.,4.],(2,2)).t()):
             with self.assertRaises(NotImplementedError):
                 compiled(2.,x,invalid)
             self.assertEqual(snapshot(compiled), before)
         with patch.dict(os.environ, TORCH_RS_NVRTC='/nonexistent/tensor-madd-test'):
+            actual = compiled(2.,x.reshape(1,2),unused)
+            self.assertEqual(actual.cpu().tolist(), [[2., 6.]])
+            self.assertEqual(dispatched(compiled).executable_identity,
+                             retained_executor.executable_identity)
+            self.assertIs(dispatched(compiled), retained_executor)
+        # Rank changes with identical checked addresses/Program reuse retained
+        # code. The same fixture still requires NVRTC in a fresh wrapper.
+        cold = native.compile(program('def f(scale,x,unused):\n return x*x+x'))
+        cold_before = snapshot(cold)
+        before = snapshot(compiled)
+        with patch.dict(os.environ, TORCH_RS_NVRTC='/nonexistent/tensor-madd-test'):
             with self.assertRaisesRegex(RuntimeError, 'NVRTC'):
-                compiled(2.,x.reshape(1,2),unused)
+                cold(2.,x.reshape(1,2),unused)
+        self.assertEqual(snapshot(cold), cold_before)
         self.assertEqual(snapshot(compiled), before)
         compiled(2.,x.reshape(1,2),unused)
 
@@ -297,7 +311,7 @@ class TensorMadd(unittest.TestCase):
                 self.assertFalse(cache(compiled).graphs)
                 self.assertEqual(self.torch.cuda.current_device(), 1-device)
                 compiled(*args)
-                selected = dispatched(compiled)
+                selected = legacy_kernel(compiled, args)
                 with self.assertRaisesRegex(RuntimeError, 'same-device'):
                     selected.run((args[0],native.tensor([1.]).to(f'cuda:{1-device}')))
                 native.compiler.reset()

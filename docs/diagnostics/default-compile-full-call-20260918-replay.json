@@ -1,0 +1,417 @@
+{
+  "kind": "offline historical replay, no GPU capture or timing rerun",
+  "timestamp_utc": "2026-09-18T05:06:23.151326+00:00",
+  "parent_commit": "c48b91880e7379d952839c74eaf1d2fe97cdd1aa",
+  "diagnostic_sha256": "4c32f0329f7cd602517ffd7b34fcc324f5b6ce5c89c5dde3b82ba479224cb70e",
+  "raw_archive": {
+    "path": "default-compile-full-call-20260918-raw.tar.xz",
+    "bytes": 20204660,
+    "sha256": "82ac63e93cee8d76d2f78226f9324ec92e032becf154bfac84861cd42c2ea265"
+  },
+  "archive_members": 91,
+  "verified_manifest_payloads": 90,
+  "portable_tests": {
+    "command": "python -B -m unittest tests.test_diagnose_compile_full_call -v",
+    "ran": 10,
+    "failed": 0
+  },
+  "comparisons": {
+    "relocated-accepted-native-first": {
+      "compared": 58,
+      "candidate_rejections": [
+        [
+          [
+            "views",
+            [],
+            "reused"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "views",
+            [
+              0
+            ],
+            "reused"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "views",
+            [
+              257
+            ],
+            "reused"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "views",
+            [
+              13,
+              29
+            ],
+            "reused"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "views",
+            [],
+            "fresh"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "views",
+            [
+              0
+            ],
+            "fresh"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "views",
+            [
+              257
+            ],
+            "fresh"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "views",
+            [
+              13,
+              29
+            ],
+            "fresh"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "mixed",
+            [],
+            "reused"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "mixed",
+            [
+              0
+            ],
+            "reused"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "mixed",
+            [
+              257
+            ],
+            "reused"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "mixed",
+            [
+              13,
+              29
+            ],
+            "reused"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "mixed",
+            [
+              4097
+            ],
+            "reused"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "mixed",
+            [],
+            "fresh"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "mixed",
+            [
+              0
+            ],
+            "fresh"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "mixed",
+            [
+              257
+            ],
+            "fresh"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "mixed",
+            [
+              13,
+              29
+            ],
+            "fresh"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "mixed",
+            [
+              4097
+            ],
+            "fresh"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ]
+      ],
+      "errors": [],
+      "rtol": 1e-05,
+      "atol": 1e-06
+    },
+    "relocated-accepted-native-second": {
+      "compared": 58,
+      "candidate_rejections": [
+        [
+          [
+            "views",
+            [],
+            "reused"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "views",
+            [
+              0
+            ],
+            "reused"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "views",
+            [
+              257
+            ],
+            "reused"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "views",
+            [
+              13,
+              29
+            ],
+            "reused"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "views",
+            [],
+            "fresh"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "views",
+            [
+              0
+            ],
+            "fresh"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "views",
+            [
+              257
+            ],
+            "fresh"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "views",
+            [
+              13,
+              29
+            ],
+            "fresh"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "mixed",
+            [],
+            "reused"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "mixed",
+            [
+              0
+            ],
+            "reused"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "mixed",
+            [
+              257
+            ],
+            "reused"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "mixed",
+            [
+              13,
+              29
+            ],
+            "reused"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "mixed",
+            [
+              4097
+            ],
+            "reused"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "mixed",
+            [],
+            "fresh"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "mixed",
+            [
+              0
+            ],
+            "fresh"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "mixed",
+            [
+              257
+            ],
+            "fresh"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "mixed",
+            [
+              13,
+              29
+            ],
+            "fresh"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ],
+        [
+          [
+            "mixed",
+            [
+              4097
+            ],
+            "fresh"
+          ],
+          "NotImplementedError: torch.compile(): native CUDA pointwise: unsupported attribute: transpose"
+        ]
+      ],
+      "errors": [],
+      "rtol": 1e-05,
+      "atol": 1e-06
+    },
+    "relocated-incoming-native-first": {
+      "compared": 76,
+      "candidate_rejections": [],
+      "errors": [],
+      "rtol": 1e-05,
+      "atol": 1e-06
+    },
+    "relocated-incoming-native-second": {
+      "compared": 76,
+      "candidate_rejections": [],
+      "errors": [],
+      "rtol": 1e-05,
+      "atol": 1e-06
+    },
+    "relocated-measured-native-first": {
+      "compared": 76,
+      "candidate_rejections": [],
+      "errors": [],
+      "rtol": 1e-05,
+      "atol": 1e-06
+    },
+    "relocated-measured-native-second": {
+      "compared": 76,
+      "candidate_rejections": [],
+      "errors": [],
+      "rtol": 1e-05,
+      "atol": 1e-06
+    }
+  },
+  "recorded_absolute_array_paths_blocked_during_replay": 12
+}

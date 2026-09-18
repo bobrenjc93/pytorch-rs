@@ -9,6 +9,9 @@ use super::{Graph, indexing::Address, invalid};
 use crate::tensor_error::TensorError;
 use std::fmt::Write;
 
+#[path = "pointwise_codegen.rs"]
+mod codegen;
+
 // Each branch of normalization interns at most eight expressions per original
 // node, including converted constants and exposed signs. Contraction replaces
 // an operation with one FMA; it does not expand the instruction stream.
@@ -243,6 +246,16 @@ fn last_uses(operations: &[Operation], roots: &[usize]) -> Result<Vec<Option<usi
 }
 
 impl Program {
+    /// Emit only the validated instruction stream, never a diagnostic listing.
+    pub(crate) fn direct_source(
+        &self,
+        graph: &Graph,
+        addresses: &[Address],
+    ) -> Result<Option<String>, TensorError> {
+        self.validate(graph)?;
+        codegen::source(self, graph, addresses)
+    }
+
     pub(crate) fn build(
         graph: &Graph,
         addresses: &[Address],

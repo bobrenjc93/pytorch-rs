@@ -92,7 +92,7 @@ class StructuredAdmission(unittest.TestCase):
             def __repr__(self):
                 effects.append('repr tuple')
                 return 'keys'
-        for invalid in ((Key('k'),), Keys(('k',)), (1,), (('k',),), ('k', object())):
+        for invalid in ((Key('k'),), Keys(('k',)), (2**64,), (('k',),), ('k', object())):
             fn = program('def f(x):\n return -x')
             fn.__code__ = fn.__code__.replace(co_consts=fn.__code__.co_consts+(invalid,))
             with patch.object(frontend.dis, 'get_instructions', side_effect=AssertionError('disassembled unsafe constants')):
@@ -218,6 +218,8 @@ class StructuredCache(unittest.TestCase):
                 return result
             return jit_tests.mock_pointwise_executor(run)
         self.codegen = self.stack.enter_context(patch.object(bridge, '_pointwise_compile', side_effect=compile_))
+        self.host_plan = self.stack.enter_context(patch.object(
+            bridge, '_pointwise_host_plan', side_effect=jit_tests.mock_pointwise_host_plan))
 
     def snapshot(self, compiled):
         state = cache(compiled)
@@ -389,6 +391,20 @@ class StructuredHardware(unittest.TestCase):
     upload = jit_tests.Hardware.upload
     compare = jit_tests.Hardware.compare
     without_replay = jit_tests.Hardware.without_replay
+
+    def check_executable_identity_reuse(self, compiled, observed):
+        """Numerical histories may split a Graph into distinct actual Programs."""
+        current = kernel(compiled)
+        identity = current.executable_identity
+        if identity in observed:
+            self.assertIs(current, observed[identity])
+        else:
+            self.assertTrue(all(current is not previous for previous in observed.values()))
+            observed[identity] = current
+        self.assertEqual(len(cache(compiled).executors), len(observed))
+        for prepared, _, code_key, executor in cache(compiled).prepared.values():
+            self.assertIs(cache(compiled).executors[code_key], executor)
+            self.assertTrue(prepared.belongs_to(executor))
 
     def compare_tree(self, actual, expected):
         if isinstance(expected, self.torch.Tensor):
@@ -682,6 +698,7 @@ class StructuredHardware(unittest.TestCase):
                 self.torch.compiler.reset()
                 fn = program(source)
                 compiled = native.compile(fn)
+                observed = {}
                 reference = self.torch.compile(program(source, self.torch))
                 for size in (1, 2, 3, 13, 257):
                     for history, (left, right) in enumerate(histories):
@@ -696,7 +713,7 @@ class StructuredHardware(unittest.TestCase):
                                             compiled, actual, expected)
                                 self.compare_tree(actual, expected)
                                 self.assertEqual(kernel(compiled).ptx.count('.visible .entry'), 1)
-                    self.assertEqual(len(cache(compiled).executors), 1)
+                    self.check_executable_identity_reuse(compiled, observed)
 
     def test_nonlinear_single_input_cold_and_persistent_histories(self):
         for order, result in enumerate(('(q,r)', '(r,q)')):
@@ -707,6 +724,7 @@ class StructuredHardware(unittest.TestCase):
                 self.torch.compiler.reset()
                 fn = program(source)
                 compiled = native.compile(fn)
+                observed = {}
                 reference = self.torch.compile(program(source, self.torch))
                 for size in sequence:
                     args = (self.upload([1e-38]*size, (size,)),)
@@ -718,14 +736,14 @@ class StructuredHardware(unittest.TestCase):
                             self.retain(f'history-{order}-{sequence}-{size}-{repeat}',
                                         compiled, actual, expected)
                             self.compare_tree(actual, expected)
-                            self.assertEqual(len(cache(compiled).executors), 1)
+                            self.check_executable_identity_reuse(compiled, observed)
                             self.assertEqual(kernel(compiled).ptx.count('.visible .entry'), 1)
 
     def test_private_numerical_hint_admission_never_calls_integer_hooks(self):
         x = self.upload([1e-38]*13, (13,))
         compiled = native.compile(program('def f(x):\n p=x*x\n return (-p,p.sin())'))
         compiled(x)
-        generated = kernel(compiled)
+        generated = jit_tests.legacy_kernel(compiled, (x,))
         effects = []
         class Integer(int):
             def __index__(self):
@@ -744,7 +762,8 @@ class StructuredHardware(unittest.TestCase):
         x = self.upload([1e-38]*13, (13,))
         compiled = native.compile(fn)
         expected = compiled(x)
-        generated = kernel(compiled)
+        selected = kernel(compiled)
+        generated = jit_tests.legacy_kernel(compiled, (x,))
         effects = []
         class Integer(int):
             def __index__(self):
@@ -766,7 +785,7 @@ class StructuredHardware(unittest.TestCase):
             generated.plan(13, (0, 1), scalar_output=SpoofBoolean())
         self.assertEqual(effects, [])
         actual = compiled(x)
-        self.assertIs(kernel(compiled), generated)
+        self.assertIs(kernel(compiled), selected)
         for before, after in zip(expected, actual):
             self.assertEqual(before.cpu().tolist(), after.cpu().tolist())
 
@@ -987,7 +1006,7 @@ class StructuredHardware(unittest.TestCase):
                        ' shared=[r,q,r]\n return {"first":shared,"again":shared,"q":q}')
             for shape in ((), (1,), (13,), (257,)):
                 compiled = None
-                generated = None
+                observed = {}
                 for order, result in enumerate(returns):
                     self.torch.compiler.reset()
                     source = body+result
@@ -1008,10 +1027,7 @@ class StructuredHardware(unittest.TestCase):
                             self.compare_tree(actual, expected)
                             self.assertIs(actual['first'], actual['again'])
                             self.assertIs(actual['first'][0], actual['first'][2])
-                            if generated is None:
-                                generated = kernel(compiled)
-                            self.assertIs(kernel(compiled), generated)
-                            self.assertEqual(len(cache(compiled).executors), 1)
+                            self.check_executable_identity_reuse(compiled, observed)
 
     def test_maximum_output_and_runtime_scalar_abi(self):
         def balanced(names):
@@ -1124,8 +1140,9 @@ class StructuredHardware(unittest.TestCase):
                 self.compare_tree(actual,reference(rx))
                 self.assertIs(actual['b'][1],x)
         selected=next(executor for executor in cache(compiled).executors.values() if executor.device==0)
+        prepared = next(item[0] for item in cache(compiled).prepared.values() if item[0].belongs_to(selected))
         with torch.cuda.device(1):
-            with self.assertRaises(RuntimeError): selected.run((inputs[1],))
+            with self.assertRaises(RuntimeError): prepared.run((inputs[1],), ())
             self.assertEqual(torch.cuda.current_device(),1)
             native.compiler.reset()
             gc.collect()
