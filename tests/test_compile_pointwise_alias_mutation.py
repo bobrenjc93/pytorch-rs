@@ -539,6 +539,60 @@ class AliasMutationHardware(unittest.TestCase):
                     np.testing.assert_array_equal(read_bits(x), bits)
                     self.assertEqual(StructuredCache.snapshot(self, compiled), before)
 
+    def test_inactive_effect_sequence_paths_rebind_after_structure_changes(self):
+        helper = program('def f(x,s):\n return x.add_(0.137,alpha=s[-1])')
+        for mode in ('direct', 'helper', 'zero_trip'):
+            source = ('def f(x,s):\n if x.shape[0]<4:\n  return x.add_(1)\n'
+                      ' return x.add_(0.137,alpha=s[-1])')
+            if mode == 'helper':
+                source = source.replace('x.add_(0.137,alpha=s[-1])', 'helper(x,s["items"])')
+            elif mode == 'zero_trip':
+                source = ('def f(x,s):\n for i in range(0):\n  helper(x,s)\n return x.add_(1)')
+            fn = program(source, helper=helper)
+            wrap = (lambda s: {'items': s}) if mode == 'helper' else (lambda s: s)
+            compiled = native.compile(fn)
+            x = native.ones(2,3).to('cuda:0')
+            with self.subTest(mode=mode), no_bodies(fn, helper):
+                self.assertIs(compiled(x,wrap([1.0])),x)
+                # Keep an older matching small-arm specialization: rejected
+                # current admission must not publish or change its recency.
+                compiled(native.ones(5,3).to('cuda:0'),wrap([1.0]))
+                for invalid in ([1.0,1.5], [1.0,True], [1.0,1.0,1.5]):
+                    before, bits = StructuredCache.snapshot(self,compiled), read_bits(x)
+                    with self.assertRaises((NotImplementedError,RuntimeError)):
+                        compiled(x,wrap(invalid))
+                    np.testing.assert_array_equal(read_bits(x),bits)
+                    self.assertEqual(StructuredCache.snapshot(self,compiled),before)
+                    cold = native.compile(fn)
+                    with self.assertRaises((NotImplementedError,RuntimeError)):
+                        cold(x,wrap(invalid))
+                    np.testing.assert_array_equal(read_bits(x),bits)
+                    self.assertFalse(cache(cold).graphs)
+                # Growth, shrinkage and list/tuple changes all select the
+                # current last item, including new Tensor owners and offsets.
+                for items in ([1.5,1.0], [1.0], (1.5,1.0), (1.0,)):
+                    owner = native.ones(9).to('cuda:0')
+                    current = owner[1:7].view(2,3)
+                    self.assertIs(compiled(current,wrap(items)),current)
+                    np.testing.assert_array_equal(read_bits(current).view(np.float32),
+                                                  np.full(6,2,dtype=np.float32))
+                    self.assertFalse(cache(compiled).executors)
+                    self.assertFalse(cache(compiled).prepared)
+
+    def test_inactive_unpack_keeps_whole_program_length_admission(self):
+        fn = program('def f(x,s):\n if x.shape[0]<4:\n  return x.add_(1)\n'
+                     ' a,b=s\n return x.add_(a,alpha=b)')
+        compiled = native.compile(fn)
+        x = native.ones(2,3).to('cuda:0')
+        with no_bodies(fn):
+            compiled(x,[0.137,1.0])
+            before,bits = StructuredCache.snapshot(self,compiled),read_bits(x)
+            with self.assertRaises(NotImplementedError):
+                compiled(x,[0.137,1.0,1.0])
+            np.testing.assert_array_equal(read_bits(x),bits)
+            self.assertEqual(StructuredCache.snapshot(self,compiled),before)
+            self.assertIs(compiled(x,[0.137,1.0]),x)
+
     def test_literal_effect_results_inactive_calls_and_reset(self):
         for result in ('None','7','(7,9)'):
             source = ('def f(x):\n for i in range(0):\n  x.add_(100)\n'

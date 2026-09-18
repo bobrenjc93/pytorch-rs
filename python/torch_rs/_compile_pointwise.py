@@ -1223,7 +1223,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
     def isolated(instructions, locals_, *, charge=True, snapshot=False):
         nonlocal observed, data_sources, predicates, checked_nodes
         saved = observed, data_sources, predicates
-        observed, data_sources, predicates = None, None, None
+        observed, data_sources, predicates = [], None, None
         node_start = len(nodes)
         try:
             result = frame(instructions, locals_, check_only=True, charge=charge)
@@ -1233,6 +1233,13 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
             # Only numerical instructions are discarded after body admission.
             checked_nodes += len(nodes) - node_start
             del nodes[node_start:]
+            # Retained effect sources use normalized item paths. Keep the
+            # sequence structure that gave those paths meaning, without
+            # observing inactive scalar values, helpers or Tensor owners.
+            if saved[0] is not None:
+                for source in observed:
+                    if type(values[source]) is InputTree and source not in saved[0]:
+                        saved[0].append(source)
             observed, data_sources, predicates = saved
 
     def result_spec(obj, view_slots=None, *, require_root=True, numerical=None):

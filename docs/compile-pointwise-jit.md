@@ -254,7 +254,10 @@ selection inside the compiled function.
 
 Observation remains lazy. Selecting/unpacking a sequence checks its exact type
 and length; dict selection checks its type and the selected path, without guarding
-unrelated keys or insertion order. Scalar history follows the public parameter
+unrelated keys or insertion order. Sequence structure used in retained inactive
+effects is also guarded: changing its length must re-admit normalized paths such
+as `items[-1]` before any write. Retained effect scalars remain current preflight
+inputs, not new specialization guards. Scalar history follows the public parameter
 and normalized item path: list and tuple indices share source identity under
 separate structural guards. On a logical hit, changed Tensor traversal order
 rebinds current operands while preserving the selected specialization's frozen
@@ -371,7 +374,8 @@ crossing a threshold selects or lowers the appropriate graph. Public `shape`
 descriptors on both Tensor classes remain identity-guarded.
 
 Both arms pass bounded language/type admission on each new lowering. Inactive
-locals, numerical IR and source observations do not enter the selected graph.
+locals, numerical IR and scalar/helper observations do not enter the selected
+graph; container-structure guards remain necessary for retained input paths.
 Warm calls check capture/signature bindings and active helper code, without
 reparsing inactive helper bodies. A later branch crossing or new ABI lowering
 admits those bodies again; invalid bodies fail without publishing cache changes.
