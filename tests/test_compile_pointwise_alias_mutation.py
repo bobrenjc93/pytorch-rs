@@ -1,4 +1,6 @@
 """Bounded default alias mutation: admission and real public default comparisons."""
+import dis
+from contextlib import nullcontext
 import gc
 import os
 import subprocess
@@ -77,6 +79,49 @@ class AliasMutationAdmission(unittest.TestCase):
             with self.assertRaises(NotImplementedError):
                 frontend.analyze(fn,1)
         self.assertEqual(calls,[])
+
+    def test_python310_stack_keyword_form_admission_loop_and_helper(self):
+        # This is a synthetic opcode fixture, not execution on Python 3.10.
+        # Keep real offsets/control flow and replace only keyword-call spelling.
+        original = dis.get_instructions
+        seen = []
+        def stack_keywords(code, *args, **kwargs):
+            pending = False
+            for instruction in original(code, *args, **kwargs):
+                if instruction.opname == 'KW_NAMES':
+                    pending = True
+                    yield instruction._replace(opname='LOAD_CONST',
+                        argval=code.co_consts[instruction.arg])
+                elif instruction.opname == 'CALL_KW' or (
+                        pending and instruction.opname in ('CALL', 'CALL_FUNCTION', 'CALL_METHOD')):
+                    pending = False
+                    seen.append('CALL_FUNCTION_KW')
+                    yield instruction._replace(opname='CALL_FUNCTION_KW')
+                else:
+                    if instruction.opname == 'CALL_FUNCTION_KW':
+                        seen.append(instruction.opname)
+                    yield instruction
+        helper = program('def f(x):\n return x.add_(other=0.137,alpha=1)')
+        cases = (
+            'def f(x):\n return x.add_(other=0.137,alpha=1)',
+            'def f(x):\n for i in range(2):\n  x.add_(other=0.137,alpha=1)\n return x',
+            'def f(x):\n for i in range(2):\n  helper(x)\n return x',
+        )
+        for source in cases:
+            with self.subTest(source=source), patch.object(frontend.dis, 'get_instructions', stack_keywords):
+                seen.clear()
+                result = lowered(source, helper=helper)
+                self.assertIsNone(result.graph)
+                self.assertTrue(seen)
+        for expression in ('x.add_(x2=1)', 'x.add_(1,other=2)',
+                           'x.add_(1,alpha=True)', 'x.view(shape=(3,2))',
+                           'helper(x=x)'):
+            with self.subTest(expression=expression), patch.object(frontend.dis, 'get_instructions', stack_keywords):
+                seen.clear()
+                error = RuntimeError if expression == 'x.add_(1,alpha=True)' else NotImplementedError
+                with self.assertRaises(error):
+                    lowered('def f(x):\n return '+expression, helper=helper)
+                self.assertTrue(seen)
 
     def test_view_and_mutation_language_remains_bounded(self):
         for expression in ('x.reshape(3,2)', 'x.t()', 'x.contiguous()',
@@ -416,6 +461,84 @@ class AliasMutationHardware(unittest.TestCase):
             self.compare(actual,reference(tx))
             self.compare_bits(x,tx)
 
+    def test_retained_unary_alpha_uses_current_scalar_type_before_any_write(self):
+        # The scalar is used only by a retained inactive body. Its old type is
+        # not an active specialization guard, and warm preflight must reapply
+        # Python unary conversion to the current exact scalar.
+        for mode in ('parameter', 'parameter_zero_trip', 'tree_zero_trip', 'closure'):
+            for initial, sequence in ((True, ((1.5, False), (1.0, True), (True, True), (False, False), (True, True))),
+                                      (1.0, ((True, True), (1.5, False), (True, True)))):
+                helper = program('def f(x,s):\n return x.add_(0.137,alpha=-(-s))')
+                if mode == 'parameter':
+                    fn = program('def f(x,s):\n if x.shape[0]<4:\n  return x.add_(1)\n return helper(x,s)', helper=helper)
+                    arguments = lambda x, scalar: (x, scalar)
+                elif mode == 'parameter_zero_trip':
+                    fn = program('def f(x,s):\n for i in range(0):\n  helper(x,s)\n return x.add_(1)', helper=helper)
+                    arguments = lambda x, scalar: (x, scalar)
+                elif mode == 'tree_zero_trip':
+                    fn = program('def f(p):\n x=p["x"]\n for i in range(0):\n  helper(x,p["s"])\n return x.add_(1)', helper=helper)
+                    arguments = lambda x, scalar: ({'x': x, 's': scalar},)
+                else:
+                    # Keep the helper global: a branch target at closure-call
+                    # PUSH_NULL is outside the existing normalized boundary.
+                    namespace = {'helper': helper}
+                    exec('def factory(captured):\n def f(x):\n  if x.shape[0]<4:\n'
+                         '   return x.add_(1)\n  return helper(x,captured)\n return f', namespace)
+                    fn = namespace['factory'](initial)
+                    cell = dict(zip(fn.__code__.co_freevars, fn.__closure__))['captured']
+                    def arguments(x, scalar):
+                        cell.cell_contents = scalar
+                        return (x,)
+                compiled = native.compile(fn)
+                x = native.ones(2,3).to('cuda:0')
+                compiled(*arguments(x, initial))
+                if mode in ('parameter', 'closure'):
+                    # A different predicate arm leaves the original entry older;
+                    # failed small-arm preflight must not reorder either entry.
+                    compiled(*arguments(native.ones(5,3).to('cuda:0'), initial))
+                for scalar, valid in sequence:
+                    with self.subTest(mode=mode, initial=initial, scalar=scalar):
+                        before = StructuredCache.snapshot(self, compiled)
+                        bits = read_bits(x)
+                        # Zero-trip admission retains its existing observed
+                        # bindings; source changes may require a new lowering.
+                        warm = (nullcontext() if mode.endswith('zero_trip') else
+                                patch.object(frontend, 'lower', side_effect=AssertionError(
+                                    'retained warm recipe was lowered again')))
+                        with no_bodies(fn, helper), warm:
+                            if valid:
+                                self.assertIs(compiled(*arguments(x, scalar)), x)
+                            else:
+                                with self.assertRaises((NotImplementedError, RuntimeError)):
+                                    compiled(*arguments(x, scalar))
+                        if valid:
+                            np.testing.assert_array_equal(read_bits(x).view(np.float32),
+                                                          bits.view(np.float32) + np.float32(1))
+                        else:
+                            np.testing.assert_array_equal(read_bits(x), bits)
+                            self.assertEqual(StructuredCache.snapshot(self, compiled), before)
+
+    def test_retained_alpha_no_unary_and_odd_unary_do_not_coerce_floats(self):
+        for expression, initial, sequence in (
+                ('s', 1.0, ((True, False), (1.5, False), (1.0, True))),
+                ('-s', -1.0, ((True, False), (-1.5, False), (-1.0, True)))):
+            fn = program('def f(x,s):\n if x.shape[0]<4:\n  return x.add_(1)\n return x.add_(0.137,alpha='+expression+')')
+            compiled = native.compile(fn)
+            x = native.ones(2,3).to('cuda:0')
+            compiled(x, initial)
+            for scalar, valid in sequence:
+                before, bits = StructuredCache.snapshot(self, compiled), read_bits(x)
+                with self.subTest(expression=expression, scalar=scalar), no_bodies(fn), patch.object(
+                        frontend, 'lower', side_effect=AssertionError('unexpected warm lowering')):
+                    if valid:
+                        self.assertIs(compiled(x, scalar), x)
+                    else:
+                        with self.assertRaises((NotImplementedError, RuntimeError)):
+                            compiled(x, scalar)
+                if not valid:
+                    np.testing.assert_array_equal(read_bits(x), bits)
+                    self.assertEqual(StructuredCache.snapshot(self, compiled), before)
+
     def test_literal_effect_results_inactive_calls_and_reset(self):
         for result in ('None','7','(7,9)'):
             source = ('def f(x):\n for i in range(0):\n  x.add_(100)\n'
@@ -469,16 +592,39 @@ class AliasMutationHardware(unittest.TestCase):
             compiled(x,False)
         np.testing.assert_array_equal(read_bits(x),bits)
 
-    def test_constant_tuple_references_keep_result_identity(self):
-        fn, compiled, reference = self.pair(
-            'def f(x):\n x.add_(0.137)\n a=(2,3)\n b=(2,3)\n return (a,b,x)')
-        x = native.ones(2,3).to('cuda:0')
-        tx = self.torch.ones(2,3,device='cuda:0')
-        for _ in range(2):
-            with no_bodies(fn):
-                out = compiled(x)
-            self.assertIs(out[0],out[1])
-            self.compare(out,reference(tx))
+    def test_constant_tuple_identity_survives_calls_reset_and_code_change(self):
+        helper = program('def f(unused):\n return (7,9)')
+        fn = program('def f(x):\n x.add_(0.137)\n a=(2,3)\n b=(2,3)\n return (a,b,helper(x),[a,x])', helper=helper)
+        compiled = native.compile(fn)
+        constant = next(value for value in fn.__code__.co_consts if type(value) is tuple)
+        helper_constant = next(value for value in helper.__code__.co_consts if type(value) is tuple)
+        retained = []
+        for reset in (False, False, True):
+            if reset:
+                native.compiler.reset()
+            x = native.ones(2,3).to('cuda:0')
+            for _ in range(2):
+                with no_bodies(fn, helper):
+                    out = compiled(x)
+                self.assertIs(out[0], constant)
+                self.assertIs(out[1], constant)
+                self.assertIs(out[2], helper_constant)
+                self.assertIs(out[3][0], constant)
+                self.assertIs(out[3][1], x)
+                for previous in retained:
+                    self.assertIsNot(out, previous)
+                    self.assertIsNot(out[3], previous[3])
+                    self.assertIs(out[0], previous[0])
+                retained.append(out)
+        replacement = tuple([11,13])
+        fn.__code__ = fn.__code__.replace(co_consts=tuple(
+            replacement if value is constant else value for value in fn.__code__.co_consts))
+        with no_bodies(fn, helper):
+            changed = compiled(native.ones(2,3).to('cuda:0'))
+        self.assertIs(changed[0], replacement)
+        self.assertIs(changed[1], replacement)
+        self.assertIs(changed[2], helper_constant)
+        self.assertIs(retained[0][0], constant)
 
     def test_alias_owner_lifetime_and_recompile_budget_before_writes(self):
         fn, compiled, reference = self.pair(

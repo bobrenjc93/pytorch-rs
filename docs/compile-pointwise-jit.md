@@ -39,8 +39,8 @@ def f(scale, x, enabled, y):
     return x * scale + y * enabled
 ```
 
-Positional integers, numeric subclasses, keyword arguments, default expansion and scalar-only
-programs are unsupported. Equal-shape inputs support
+Positional integers, numeric subclasses, keyword arguments to the compiled
+function, default expansion and scalar-only programs are unsupported. Equal-shape inputs support
 local intermediate variables, reused expressions, binary
 add/subtract/multiply (tensor/tensor or tensor/scalar in either order), and
 unary negation/ReLU/sin/cos. Operator syntax, positional Tensor methods, and
@@ -122,8 +122,10 @@ an optional keyword `alpha` that must be numeric exactly one and not a bool.
 Literal, global and closure integer operands use the existing scalar range.
 Runtime scalar arguments remain exact Python float/bool leaves; positional or
 input-tree integers remain unsupported. Runtime float `alpha=1.0` is allowed;
-bool alpha is always rejected. The compiler accepts no NumPy scalars or scalar
-subclasses. Current runtime scalars are resolved from their original source slots
+a bool passed directly as alpha is rejected. Unary negation follows the current
+exact scalar type, including Python's bool-to-int conversion; `-(-enabled)` is
+therefore integer one only when the current boolean is true. The compiler accepts
+no NumPy scalars or scalar subclasses. Current runtime scalars are resolved from their original source slots
 on every call and checked before any effect; their values and Tensor owners are
 not retained in recipes. The method returns the exact receiver and mutates its
 existing shared CUDA allocation, including dense transposed or offset aliases. Empty mutations
@@ -156,7 +158,7 @@ visible. Cache entries, history and recency publish only after successful
 reconstruction; failed cache publication is not storage rollback. Calls through
 different compiled wrappers gain no additional ordering guarantee. There is no
 CPU mutation, autograd support, general mutation capture or Inductor parity.
-See the [developer validation index](diagnostics/default-alias-mutation-20260918.md)
+See the [developer validation index](diagnostics/default-alias-mutation-qa-20260918.md)
 for source-bound checks and observed reference limitations.
 
 ### Numerical broadcasting
@@ -276,7 +278,10 @@ retain another shape. Dict keys must be exact literal strings; insertion order
 and duplicate-key replacement follow Python. Repeated Tensor or container leaves
 preserve identity within a call. Separate equal computations get separate output
 storage, even when kernel arithmetic is shared. Computed outputs and dynamic
-containers are fresh across calls, so retaining earlier results is safe.
+containers are fresh across calls, so retaining earlier results is safe. An
+admitted immutable integer tuple from the function's constant pool retains that
+original tuple identity across calls, including after cache reset; replacing
+the code uses the replacement code's constants.
 
 Constructors work in direct helpers and expanded root literal loops and branches.
 They share a 4096 construction/reference-edge budget and depth limit 64, including
@@ -387,18 +392,20 @@ existing integer scalar range. Runtime/captured bounds, iterator expressions,
 nested/helper-local loops, conditional/early-exit edges and mutation outside the
 alias-only `add_` contract are rejected.
 Admission follows CPython 3.10–3.14 bytecode semantics; source forms optimized to
-identical bytecode are indistinguishable. Loop bodies use the same pointwise
-operations and direct helpers as straight-line programs; index use adds no new
+identical bytecode are indistinguishable. Loop bodies use the same numerical or
+alias-only operations and direct helpers as straight-line programs; index use adds no new
 scalar arithmetic or indexing operations.
 
 Normalization validates complete loop regions and stack cleanup, bounds expansion,
 then expands before lazy source binding and frame lowering. Index assignments and
 carry-over locals retain frame semantics. Zero trips preserve previous locals and
-initial parameters; an index never assigned remains unbound. A zero-trip loop
-does not admit an identity-only root return. Its body still passes the existing
+initial parameters; an index never assigned remains unbound. Numerical programs
+still require a computed root; an alias-only program with an admitted effect,
+even in a zero-trip body, may return an original input. Its body still passes
 typed operator, helper and data admission in an isolated local frame; its
-temporary assignments and IR are discarded, while helper code/binding and data
-guards remain active on warm calls. Unbound local reads in this skipped frame
+temporary assignments and numerical IR are discarded. Realized data and helper
+bindings retain their warm guards; retained view/effect recipes are preflighted against current
+inputs and scalars without executing skipped effects. Unbound local reads in this skipped frame
 (including its helper calls) use temporary data placeholders, not executed-local
 lookups; no placeholder or skipped assignment escapes into the executing frame
 or native IR. A genuinely executed unbound read still rejects. Reductions and
@@ -430,7 +437,7 @@ A root global or closure binding may be an exact Python function with one or
 more positional parameters. Calls must match its positional arity. Helpers may
 use parameters, admitted scalar literals, local assignments, native Tensor
 methods and the arithmetic above. Repeated calls, multiple helpers and calls
-composed in the root all emit operations into the same graph:
+composed in the root all lower through the same numerical or alias-only owners:
 
 ```python
 def wave(x):
@@ -440,9 +447,11 @@ def pointwise(x):
     return wave(x) + wave(x + 0.25)
 ```
 
-Helpers cannot read globals or closures, look up other helpers, branch, mutate,
-handle exceptions, yield or await. Keyword-only/variadic parameters, nonempty
-defaults and closures, and compiler directive attributes (`_torchdynamo_inline`,
+Helpers cannot read globals or closures, look up other helpers, branch,
+handle exceptions, yield or await. Mutation is limited to the alias-only `add_`
+contract; helper calls retain source-order effects and whole-program preflight.
+Keyword-only/variadic parameters, nonempty defaults and closures, and compiler
+directive attributes (`_torchdynamo_inline`,
 `_dynamo_marked_constant`, `_torchdynamo_disable`) are rejected. Container types,
 attribute keys and the entire constant pool are validated without callbacks,
 including unused constants and warm calls. Strings and `None` are literal result metadata only.
@@ -527,8 +536,9 @@ preserves these failures. They are excluded expressions, not numerical repairs.
 
 ### Tensor metadata and identity
 
-Each wrapper caches validated graphs and compiled modules, never tensor data,
-results or input pointers. Shape/stride/dtype/device/gradient, live
+Each wrapper caches validated recipes, graphs and compiled modules, never tensor data,
+dynamic results or input pointers. Result recipes may retain admitted immutable
+constant-pool tuples. Shape/stride/dtype/device/gradient, live
 scalar/function bindings, and repeated-input object relationships are guarded.
 Contiguous storage offsets are read from the current inputs at launch and
 bounds-checked on every call; they do not require separate specializations.
@@ -543,12 +553,13 @@ Every positional parameter and captured global/closure cell has an explicit lazy
 source identity; the frame determines which values are observed.
 Public parameter positions are distinct from filtered tensor indices and runtime
 scalar operand indices. All tensors, including unused ones, enter the same
-validation, alias, shape, code-generation and launch path. Scalar parameters that are unused or overwritten before their first read have
+input validation and alias checks; alias-only programs create no numerical
+executable or preparation. Scalar parameters that are unused or overwritten before their first read have
 no value guards; exact-type admission still checks every
-argument. Boolean bindings stay static. Integer literals and captures retain their
+argument. Observed Boolean bindings do not participate in scalar promotion. Integer literals and captures retain their
 existing support; positional integers are rejected before user hooks can run.
 
-Used positional and captured scalars are initially constant
+In numerical programs, used positional and captured scalars are initially constant
 specializations. Static float guards equate positive and negative
 zero: a cache hit retains the sign captured by that graph, while a new graph
 uses the current value. Literal zeros and promoted runtime parameters retain
@@ -564,7 +575,15 @@ static specialization. Only a complete guard miss consults successful source
 history for new promotion. New traces specialize nonfinite values even after
 runtime promotion. Reset clears this history. Integer and Boolean bindings retain
 their scalar kinds.
-At most 64 runtime scalar parameters are supported in total across captures and
+
+Alias-only effects instead resolve their scalar source slots and unary operations
+from the current exact values on every call, including retained inactive and
+zero-trip effects. They do not use a selected numerical graph's frozen zero or
+NaN bits. The canonical native scalar parser validates current `other` and
+`alpha` before any write, even when no scalar value guard was recorded for the
+inactive body.
+
+Numerical kernels support at most 64 runtime scalar parameters across captures and
 positional arguments, by the existing single promotion pass. Their current values are
 passed by value at launch and are never retained in graph or code cache keys.
 The binding regressions keep both wrappers alive across changes without
@@ -582,7 +601,7 @@ one reset owner. A source's changed dimensions generalize after a guard miss;
 zero and singleton dimensions remain static. Rank, stride relations, broadcast
 equalities and applicable 32-bit upper bounds constrain reuse. Unused tensors
 create no logical shape guards but still participate in all native validation.
-A generalized specialization retains its frozen constants when an older shape
+A generalized numerical specialization retains its frozen constants when an older shape
 returns, including the sign of zero.
 
 A checked native host plan performs original-graph admission and builds one

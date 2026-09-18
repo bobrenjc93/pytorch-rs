@@ -32,7 +32,7 @@ _ALLOWED = _IGNORED | _ROTATIONS.keys() | {"LOAD_FAST", "LOAD_FAST_CHECK", "LOAD
     "BINARY_ADD", "BINARY_SUBTRACT", "BINARY_MULTIPLY", "UNARY_NEGATIVE", "CALL", "CALL_FUNCTION",
     "CALL_METHOD", "RETURN_VALUE", "RETURN_CONST", "COPY", "DUP_TOP", "SWAP",
     "BUILD_TUPLE", "BUILD_LIST", "BUILD_MAP", "BUILD_CONST_KEY_MAP",
-    "BINARY_SUBSCR", "UNPACK_SEQUENCE", "POP_TOP", "KW_NAMES", "CALL_KW"}
+    "BINARY_SUBSCR", "UNPACK_SEQUENCE", "POP_TOP", "KW_NAMES", "CALL_KW", "CALL_FUNCTION_KW"}
 _METHODS = tuple(_UNARY) + tuple(_BINARY) + ("__getattribute__", "shape")
 _MISSING = object()
 _RANGE = range
@@ -178,6 +178,7 @@ class BoundValue:
     value: object
     predicate_origin: bool = True
     negative: bool = False
+    numeric_unary: bool = False
 
 
 @dataclass(frozen=True)
@@ -210,6 +211,8 @@ class Container:
     keys: tuple = ()
     depth: int = 1
     identity: object = field(default_factory=object)
+    # Only exact admitted co_consts integer tuples; never an input container.
+    constant: tuple | None = None
 
 
 @dataclass(frozen=True)
@@ -225,7 +228,7 @@ class ResultSpec:
     output_order: tuple = ()
 
     def reconstruct(self, outputs, values, tensors, metadata, views=()):
-        """Build fresh containers from this call's owners before cache publication."""
+        """Build dynamic containers from current owners, retaining literal identity."""
         objects = []
         for kind, payload in self.entries:
             if kind == "output":
@@ -284,7 +287,7 @@ def preflight_operations(lowering, values, metadata):
                     value = values[spec[1]]
                     if not is_scalar(value):
                         unsupported("add_ requires exact scalar values")
-                    if spec[3]:
+                    if spec[3] and type(value) is bool:
                         value = int(value)  # Exact bool negation produces an integer.
                     args.append(-value if spec[2] else value)
                 else:
@@ -341,13 +344,13 @@ def without_origin(obj, memo=None):
     if type(obj) is Literal:
         return Literal(obj.value, False)
     if type(obj) is BoundValue:
-        return BoundValue(obj.source, obj.value, False, obj.negative)
+        return BoundValue(obj.source, obj.value, False, obj.negative, obj.numeric_unary)
     if type(obj) is ShapeValue:
         return ShapeValue(obj.source, obj.axis, False)
     if type(obj) is Container:
         if id(obj) not in memo:
             memo[id(obj)] = Container(obj.kind, tuple(without_origin(item, memo) for item in obj.items),
-                                      obj.keys, obj.depth, obj.identity)
+                                      obj.keys, obj.depth, obj.identity, obj.constant)
         return memo[id(obj)]
     return obj
 
@@ -724,8 +727,9 @@ def validate_loop_stack(body):
         elif op in ("BUILD_TUPLE", "BUILD_LIST", "BUILD_MAP", "BUILD_CONST_KEY_MAP"):
             required = arg * 2 if op == "BUILD_MAP" else arg + (op == "BUILD_CONST_KEY_MAP")
             delta = 1 - required
-        elif op in ("CALL", "CALL_FUNCTION", "CALL_METHOD", "CALL_KW"):
-            required, delta = arg + 1 + (op == "CALL_KW"), -arg - (op == "CALL_KW")
+        elif op in ("CALL", "CALL_FUNCTION", "CALL_METHOD", "CALL_KW", "CALL_FUNCTION_KW"):
+            names = op in ("CALL_KW", "CALL_FUNCTION_KW")
+            required, delta = arg + 1 + names, -arg - names
         elif op in ("COPY", "DUP_TOP"):
             required, delta = (arg if op == "COPY" else 1), 1
         elif op == "SWAP":
@@ -1130,7 +1134,8 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
             construction_edges += len(items)
             if construction_edges > 4096:
                 unsupported("result exceeds 4096 output construction edge limit")
-            literal_tuples[identity] = Container("tuple", tuple(Literal(x) for x in items))
+            literal_tuples[identity] = Container("tuple", tuple(Literal(x) for x in items),
+                                                 constant=items)
         return literal_tuples[identity]
 
     def data(obj):
@@ -1206,8 +1211,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
         if type(obj) is BoundValue:
             if not is_scalar(value) and type(value) is not RuntimeScalar:
                 unsupported("add_ requires exact bool/int/float scalars")
-            return ("source", obj.source, obj.negative,
-                    type(value) is int and type(values[obj.source]) is bool)
+            return ("source", obj.source, obj.negative, obj.numeric_unary)
         if type(value) is RuntimeScalar:
             source = next(source for source, v in values.items()
                           if type(v) is RuntimeScalar and v.index == value.index)
@@ -1245,7 +1249,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     return memo[item.identity]
                 children = tuple(visit(child) for child in item.items)
                 payload = tuple(zip(item.keys, children)) if item.kind == "dict" else children
-                entry = (item.kind, payload)
+                entry = ("literal", item.constant) if item.constant is not None else (item.kind, payload)
             elif type(item) is BoundValue:
                 resolved = realize(item)
                 if type(resolved) is InputTree:
@@ -1457,7 +1461,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     # Keep the source when bool negation produces an exact int.
                     # Helpers/constructors must not turn runtime input leaves
                     # into constants eligible for metadata-only operations.
-                    stack.append(BoundValue(original.source, -operand, False, not original.negative)
+                    stack.append(BoundValue(original.source, -operand, False, not original.negative, True)
                                  if type(original) is BoundValue else -operand)
             elif op == "BINARY_SUBSCR" or (op == "BINARY_OP" and instruction.argrepr == "[]"):
                 axis, shape = stack.pop(), stack.pop()
@@ -1508,9 +1512,12 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     unsupported("unsupported binary operator: " + symbol)
                 right, left = stack.pop(), stack.pop()
                 stack.append(emit({"+": "add", "-": "sub", "*": "mul"}[symbol], [left, right]))
-            elif op in ("CALL", "CALL_FUNCTION", "CALL_METHOD", "CALL_KW"):
-                if op == "CALL_KW":
+            elif op in ("CALL", "CALL_FUNCTION", "CALL_METHOD", "CALL_KW", "CALL_FUNCTION_KW"):
+                if op in ("CALL_KW", "CALL_FUNCTION_KW"):
                     keywords = stack.pop()
+                if (type(keywords) is not tuple or any(type(name) is not str for name in keywords)
+                        or len(keywords) > instruction.arg):
+                    unsupported("keyword names must be exact literal strings")
                 operands = [stack.pop() for _ in range(instruction.arg)][::-1]
                 target = realize(stack.pop())
                 if keywords and (type(target) is not Call or target.op != "add_"):

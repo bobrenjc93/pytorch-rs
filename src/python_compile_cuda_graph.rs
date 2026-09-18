@@ -460,7 +460,6 @@ mod tests {
                 c"(2,0)",
                 c"(2**100,1)",
                 c"(2,2**100)",
-                c"(type('X', (), {'__float__': lambda self: 1/0})(),1)",
                 c"(2,type('I', (int,), {})(1))",
             ] {
                 assert!(
@@ -496,6 +495,41 @@ mod tests {
                 )
                 .is_err()
             );
+        });
+    }
+
+    #[test]
+    fn alias_scalar_rejection_never_calls_hostile_float_conversion() {
+        Python::initialize();
+        Python::attach(|py| {
+            let namespace = pyo3::types::PyDict::new(py);
+            py.run(
+                c"calls = []\nclass Hostile:\n    def __float__(self):\n        calls.append('float')\n        raise RuntimeError('conversion callback ran')\nhostile = Hostile()",
+                Some(&namespace),
+                None,
+            )
+            .unwrap();
+            for (payload, operation) in [
+                (c"(hostile, 1)", "scalar addition"),
+                (c"(2, hostile)", "add_ alpha"),
+            ] {
+                let error = alias_metadata(
+                    &py.eval(c"(2,3)", None, None).unwrap(),
+                    &py.eval(c"(3,1)", None, None).unwrap(),
+                    &py.eval(c"0", None, None).unwrap(),
+                    &py.eval(c"'add_scalar_'", None, None).unwrap(),
+                    &py.eval(payload, Some(&namespace), None).unwrap(),
+                )
+                .unwrap_err();
+                assert!(error.is_instance_of::<PyNotImplementedError>(py));
+                assert!(error.to_string().contains(&format!(
+                    "torch.compile {operation} requires an exact bool, int or float constant"
+                )));
+                assert_eq!(
+                    namespace.get_item("calls").unwrap().unwrap().len().unwrap(),
+                    0
+                );
+            }
         });
     }
 
@@ -582,6 +616,105 @@ mod tests {
             assert!(!outputs[0].is(&owner));
             assert!(outputs[2].is(&owner));
             assert_eq!(input.try_copy_cuda_to_cpu().unwrap().as_slice(), &[5.; 6]);
+        });
+    }
+
+    #[test]
+    fn late_valid_packing_rejects_before_mutation_but_alias_layouts_execute() {
+        if cuda::device_count() == 0 {
+            eprintln!("skipping mutation packing prevalidation: CUDA unavailable");
+            return;
+        }
+        Python::initialize();
+        Python::attach(|py| {
+            let values = vec![0., -0., 1., -2., 3., 4.];
+            let input = CoreTensor::from_vec(values.clone(), [2, 3])
+                .unwrap()
+                .try_copy_cpu_to_cuda(Device::Cuda(0))
+                .unwrap();
+            let owner = Py::new(py, PyTensor::new(input.transpose(0, 1).unwrap())).unwrap();
+            let inputs = PyTuple::new(py, [owner]).unwrap();
+            let scalar = py.eval(c"(2.0,1)", None, None).unwrap();
+            let add = alias_node(py, "add_scalar_", 0, &scalar, &[3, 2], &[1, 3]);
+            let packs = [
+                alias_node(
+                    py,
+                    "contiguous",
+                    0,
+                    &py.None().into_bound(py),
+                    &[3, 2],
+                    &[2, 1],
+                ),
+                alias_node(
+                    py,
+                    "reshape",
+                    0,
+                    &py.eval(c"(6,)", None, None).unwrap(),
+                    &[6],
+                    &[1],
+                ),
+            ];
+            for pack in packs {
+                let before = EXECUTIONS.get();
+                let error = execute(&inputs, vec![add.clone(), pack.clone()]).unwrap_err();
+                assert!(error.is_instance_of::<PyNotImplementedError>(py));
+                assert!(error.to_string().contains(
+                    "CUDA mutation graphs cannot contain numerical or packing producers"
+                ));
+                assert_eq!(EXECUTIONS.get(), before);
+                assert_eq!(
+                    input
+                        .try_copy_cuda_to_cpu()
+                        .unwrap()
+                        .as_slice()
+                        .iter()
+                        .map(|v| v.to_bits())
+                        .collect::<Vec<_>>(),
+                    values.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+                );
+                // The late node is valid and requires a pack, rather than failing
+                // payload/layout validation before reaching mutation exclusion.
+                let packed = execute(&inputs, vec![pack]).unwrap();
+                let tensor = packed[0].borrow(py);
+                assert_ne!(tensor.inner.data_ptr(), input.data_ptr());
+                assert_eq!(
+                    tensor.inner.try_copy_cuda_to_cpu().unwrap().as_slice(),
+                    &[0., -2., -0., 3., 1., 4.]
+                );
+            }
+            let owner = Py::new(py, PyTensor::new(input.metadata_alias().unwrap())).unwrap();
+            let inputs = PyTuple::new(py, [owner.clone_ref(py)]).unwrap();
+            let outputs = execute(
+                &inputs,
+                vec![
+                    alias_node(py, "add_scalar_", 0, &scalar, &[2, 3], &[3, 1]),
+                    alias_node(
+                        py,
+                        "contiguous",
+                        0,
+                        &py.None().into_bound(py),
+                        &[2, 3],
+                        &[3, 1],
+                    ),
+                    alias_node(
+                        py,
+                        "reshape",
+                        0,
+                        &py.eval(c"(6,)", None, None).unwrap(),
+                        &[6],
+                        &[1],
+                    ),
+                ],
+            )
+            .unwrap();
+            assert!(outputs[0].is(&owner));
+            assert!(outputs[1].is(&owner));
+            assert!(!outputs[2].is(&owner));
+            assert_eq!(outputs[2].borrow(py).inner.data_ptr(), input.data_ptr());
+            assert_eq!(
+                input.try_copy_cuda_to_cpu().unwrap().as_slice(),
+                &[2., 2., 3., 0., 5., 6.]
+            );
         });
     }
 

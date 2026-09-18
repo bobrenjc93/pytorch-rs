@@ -262,8 +262,8 @@ impl Layout {
 impl Operation {
     pub(crate) fn layout(self, values: &[Layout]) -> Result<Layout, TensorError> {
         let get = |index| Layout::get(values, index);
-        // Input admission allows views, but every arithmetic operand must
-        // independently satisfy its contiguous-only contract during planning.
+        // Input admission allows views, but out-of-place arithmetic operands
+        // independently satisfy their contiguous-only contract during planning.
         let get_contiguous = |index| get(index)?.require_contiguous();
         let shape = match self {
             Self::AddScalarInplace(input, _) => return get(input)?.add_scalar_inplace(),
