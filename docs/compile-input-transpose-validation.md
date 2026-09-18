@@ -1,9 +1,40 @@
 # Default input-rooted transpose validation
 
-**Current validation:** the [committed-source QA capture at `95bdbf2`](diagnostics/default-alias-mutation-qa-postcommit-95bdbf2.md)
-covers the current alias-mutation and input-transpose regressions. It records
-focused correctness checks, not a performance measurement or canonical score.
+**Current validation:** focused correctness checks captured on 2026-09-18 from
+clean commit `320bbe35c8259fd150222b7323d528ab8f824482`, including retained-lowering
+structural admission and re-admission. A fresh locked release wheel was built
+from a Git export inside the worktree and installed in its own environment;
+914 exported files and wheel/RECORD/import identities were verified.
 The [default compiler guide](compile-pointwise-jit.md) defines the current capability.
+
+| Check | Recorded result |
+| --- | --- |
+| Alias, input-tree/view, helper, branch/loop, result, guard/scalar and eager-bridge Python modules on GPU0 | 280 executions: 274 passed, six multi-device skips (272 distinct labels) |
+| Same modules with CUDA hidden | 280 executions: 153 passed, 127 hardware skips |
+| Native CUDA graph bridge tests | 14 passed |
+| Native-only later-ABI witness | Invalid retained alpha rejected before writes or cache changes; no Torch import or body replay |
+
+The first GPU run had one missing-module setup error: its export omitted a frozen
+module imported by an existing test. Adding that exact committed dependency and
+rerunning the complete selection with the same wheel passed. An initial native
+filter selected zero tests; the corrected filter ran the 14 tests above. Both
+attempts remain in the receipts. The separate untouched default-PyTorch witness
+executes the active arm where native whole-program admission deliberately rejects
+an invalid inactive operand; this is not a parity claim.
+
+Raw commands, outputs, source exports, the release wheel, provider observations,
+failed attempts and a size/SHA256 manifest are retained under
+`target/compile-retained-guard-docs/postcommit-320bbe35/` in
+`retained-guard-postcommit-320bbe35.tar.gz`; `archive-verification.json` records its
+hash and verified member count. GPU0 was H100 UUID
+`GPU-8f8e55a5-a9eb-eb79-bc43-807a19bcb1c1`; separate provider probes observed CUDA
+runtime/NVRTC 13.0. These probes are not per-test provider attestations, and idle
+snapshots are not reservations. This Python 3.12 capture supplies no new actual
+Python 3.10, multi-device, runtime-coverage, performance or qualification result.
+Earlier warm-default identity, signed-zero and history failures remain unwaived.
+
+The [earlier committed-source QA capture at `95bdbf2`](diagnostics/default-alias-mutation-qa-postcommit-95bdbf2.md)
+is historical and remains unchanged; it predates the retained-lowering repair.
 
 ## Historical capability capture at `8ac9d0e`
 
