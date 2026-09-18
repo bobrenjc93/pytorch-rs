@@ -90,82 +90,40 @@ Archive: f667dfa3cf48e377f899a8af3678f3f026115a4abfc70392d8d5d71730b1cb2b
 Manifest: 8b7272431b957b008594216feaadd5013d18cd565392efd328b59bd4f562aa74
 ```
 
-## Historical publication-recovery correction F: author validation
+## Recorded correctness validation
 
-F (`8256303d7526a2d3176a520ad9a36751fa3cb764`) added failure-only clearing
-of prepared retention and charges after executor reinsertion failure. Its staging
-order still allowed repeated failing misses to accumulate executors; the capacity
-correction below supersedes that behavior. The following validation and hashes
-remain historical evidence of F's source, not of the capacity correction.
+The tested production and test files match G
+(`8ee0c29458dcf7b057581830d50344f4c66fd996`). Its recorded focused log has
+49 successful checks. The additional selected group has 13 successful GPU-path
+methods, two successful metadata-only methods, and two explicit two-device skips.
+The metadata methods inspect generated source and rejected shapes; they do not
+execute GPU work. This breakdown is supported by source and logs, not independent
+per-test device traces.
 
-Precommit validation of F passed 49 focused checks plus 15
-additional CUDA checks; two second-GPU checks were skipped. The
-[regressions](../tests/test_compile_pointwise_warm_overhead.py) inject both faults,
-recover through a different survivor or newest key, check ownership/order/charges
-and reset, alternate retained executors without scans, and exercise empty-plan
-eviction. Real default public calls vary inputs and recheck retained old outputs
-after eviction/reset. The first new recency assertion incorrectly required the
-bookkeeping tuple itself to retain identity; the corrected test checks the
-preparation identity and charges. Both fixture snapshots and the failed run remain.
+The [cache guide](compile-pointwise-jit.md#recompilation-and-reset) is the canonical
+home for current publication guarantees; the
+[regressions](../tests/test_compile_pointwise_warm_overhead.py) cover their scoped
+failure boundaries. No later repair was timed. These recorded tests are not a
+fresh benchmark, clean-commit qualification or general compile-parity claim.
 
-Historical F operator-host artifacts are in worktree-local
-`target/compile-input-admission-publication-repair/`, including
-`repair-evidence.tar.gz`. These ignored files are not public repository downloads;
-retention beyond this host is not promised. Each command has an execution-time
-argv/cwd/environment/start/end/return-code receipt and separate stdout/stderr.
-`tested-source-final.json`, `binding.json` and `audit.json` bind the final source,
-wheel and imports. The isolated interpreter used `-B`, `sys.flags.optimize=0`,
-CPython 3.12.14 and PyTorch 2.13.0+cu130; GPU0 UUID matches the historical device,
-with libcudart/NVRTC 13.0 provider hashes recorded. Build and dependency commands
-used locked inputs. No new timing or frozen evaluation was run. Historical archive
-hashes above were verified read-only. Archive contents passed a round-trip audit.
+Original G evidence remains under `target/compile-input-admission-capacity-repair/`.
+The operator retained an exact copy at:
 
 ```text
-Repair frontend: b20c9bfbe7ea22bc3902a50f99c9955ca1574c551928506aca7e461742d4cbe7
-Final test: 7ee6eceb6ed93c25639ed9244346fcd0d4e8f183cfa6e209d0284897c6a60949
-Tested source manifest: ce669272cebc8e6d4a16f7da56feecb6a03208b1725b39f80fe3a4d625704fcc
-Repair wheel: 975ebde6a3a7cb6ca6fa96938c709acd4b5c4d29f48e7f8df92b0e5760548790
-Repair archive: 62b99bf8a9b21b13d807970f2f3be5924e606af18d3c71036ebe72797e3ff38c
-Repair archive manifest: b1cf69df26dce057ecc6ae476f03057ccb1a721381b8cecc873ad892998a7843
+/tmp/burner-approved-default-compile.UA2M6I/compile-input-admission-warm-capacity-safe-staging-cli.DwzjJq/evidence/
 ```
 
-## Capacity-safe staging correction: author validation
-
-The successor to F stages eviction bookkeeping after successful reconstruction
-and before any cache publication, only on a capacity-increasing executor miss.
-Starting with a bounded cache, repeated failures at that staging boundary leave
-all cache contents, owner identities, recency orders and charges unchanged.
-Retained hits avoid staging/scans. F's failure-only preparation clearing on failed
-executor reinsertion remains. These specific boundaries do not imply universal
-allocation-failure atomicity; the guide's earlier phase-limited guarantee remains.
-
-Fresh validation passed all 49 focused checks and 15 additional real CUDA checks;
-two checks requiring a second GPU were skipped. One staging fault stays enabled
-across five distinct unused-input-shape misses in each recovery order. Every
-failure checks the limit, exact charge, owners/order and original exception identity
-before retained-hit recovery, successful later eviction and reset. The existing
-public CUDA history changes used-input values and rechecks retained old outputs.
-All commands passed on their first attempt. No timing or scoring was run; neither
-Q's timings nor F's validation above measure this successor.
-
-New operator-host evidence is in
-`target/compile-input-admission-capacity-repair/capacity-evidence.tar.gz`, with
-adjacent `retention-manifest.json`. These ignored host files are not tracked or
-publicly downloadable repository files and do not promise permanent storage.
-The archive contains the final source, execution-time command/return/timestamp
-receipts, stdout/stderr, wheel/import bindings and GPU0/provider metadata.
-`tested-source.json`, `binding.json` and `audit.json` identify the tested uncommitted
-source against F. Validation used the isolated CPython 3.12.14 interpreter with
-`-B` and explicit `sys.flags.optimize=0`, PyTorch 2.13.0+cu130 and CUDA/NVRTC 13.0.
-Historical scratch and evidence remain unchanged.
-
-SHA-256 identities for this correction:
+These are operator-host locations, not tracked or publicly downloadable repository
+files; permanent storage is not promised. `capacity-evidence.tar.gz` and the
+adjacent `retention-manifest.json` identify the retained artifacts. The archive
+contains the tested production/test snapshot against parent F (`8256303d7526a2d3176a520ad9a36751fa3cb764`),
+command receipts, stdout/stderr and source/wheel/import bindings. Its documentation
+snapshot predates G's finalized note. `tested-source.json`, `binding.json` and
+`audit.json` record those identities; earlier failures and intermediate identities
+remain in retained evidence. This prose correction does not regenerate evidence.
 
 ```text
-Frontend: fff728e9222a948dd1fb752a527380f789cd74577ad27ad3eb742d31fd564624
-Final test: 2d895e0eb606cbd596bffdb1318df8b17e0f2d541f9308c936faa84d046e960b
-Tested source manifest: c4d5dca63aeb092f537198f6ebb35473d5956d1a1c69c92502ddbb42bd58f3f6
-Wheel: bd5f7bf16d41a28f6fd788f7bf61438b577de5a543b36d26776cdddd7c1ae18e
+Tested-source manifest: c4d5dca63aeb092f537198f6ebb35473d5956d1a1c69c92502ddbb42bd58f3f6
 Archive: 68c0fee38f7054facb3aab208e9ef1d84060859278f32be7b546b76953dd8dd3
 Archive manifest: 283ab4d776bb022185df816b95adc543e1102fbb76c5bdebd4b47fab44facd7c
 ```
