@@ -360,7 +360,7 @@ call. Helpers share root source realization, runtime scalar slots, SSA nodes and
 budgets: every call charges its full instruction count toward the 16384 expanded
 instruction limit, with the same 4096-node limit. Parsing is local to lowering;
 ordinary warm hits do not disassemble helpers. Neither Python body executes.
-Original-IR numerical admission, executor sharing, failure-atomic publication,
+Original-IR numerical admission, executor sharing, publication after reconstruction,
 LRU bounds and reset ownership remain unchanged.
 
 See the [helper diagnostics](diagnostics/compile-pointwise-helpers/README.md) for
@@ -499,6 +499,15 @@ including shared/repeated references and its graph, plus the wrapper and a
 memory, CUDA allocator pools, modules, outputs, scratch or transient preparation.
 An oversized preparation executes by the same mechanism without being retained.
 Evicting an executor drops all its cached preparations.
+Prepared keys are staged before executor deletion. If that allocation fails,
+no executor is deleted; insertion may already have left an excess executor,
+which the next successful publication trims even on a newest-key hit. If an
+executor recency reinsertion fails after removal, the preparation table and its
+byte charge are cleared under the existing lock, and the original exception is
+re-raised. Other executors keep their order and can prepare again. A successful
+recency touch preserves preparations; it is not executor eviction. These local
+recovery rules are not a guarantee of atomicity under arbitrary allocator failures
+throughout Python publication.
 
 Failed admission, preparation, compilation, execution, output conversion or result
 reconstruction publishes no entry, history or LRU change. All cache publication

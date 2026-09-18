@@ -1,14 +1,17 @@
 # Default compile warm-call author experiment (2026-09-18)
 
-This author-only revision changes `python/torch_rs/_compile_pointwise.py`:
+This historical author experiment measured the production source later committed
+as Q (`3779fd0e6ac6fea2e0216d5c8c944423873c9023`). Its
+[frontend change](../python/torch_rs/_compile_pointwise.py) grouped guard owners:
 all 38 expected/missing method identities retain their order, with one current
 namespace read per class owner on every invocation; prepared-plan cleanup runs
 only upon executor eviction in the existing locked, successful publication.
 Admission coalescing already existed in C and is not a new change here.
 
 C is `9b640c20dc7bee602ef997180eea6cce72d86e77`, based on
-`60202557b4f110d07777f585e804ab5f55e1ff7b`. R is the uncommitted author
-implementation, identified by snapshots and hashes below. These are development
+`60202557b4f110d07777f585e804ab5f55e1ff7b`. R names Q's precommit author
+source, identified by snapshots and hashes below. It does not measure the
+subsequent publication-recovery correction described at the end of this note. These are development
 measurements, not clean-commit qualification or a replacement for C's recorded
 negative evaluation. No frozen evaluator was invoked or changed.
 
@@ -54,9 +57,9 @@ was 12.6.85; these pointwise kernels compile through NVRTC. A separately labeled
 untimed post-capture loader check identifies the native NVRTC provider. C and R
 wheels contain the identical native extension; their packaged Python differs.
 
-Final targeted checks passed 62 tests; two second-GPU tests were skipped.
+The historical targeted checks passed 62 tests; two second-GPU tests were skipped.
 Coverage includes all owner identities and pre-admission order, no-scan warm
-calls, eviction/survivor order and charges, oversized plans, failure atomicity,
+calls, eviction/survivor order and charges, oversized plans, no publication on admission/preparation/run/reconstruction failure,
 reset, and real CUDA fresh/offset/unused/duplicate/scalar/empty/broadcast inputs.
 New CUDA coverage crosses the default executor limit through unused inputs.
 The first new-test fixture hit the logical limit prematurely; it was corrected.
@@ -64,12 +67,18 @@ A broadcast import-path failure was corrected by rerunning that module with the
 repository test directory on PYTHONPATH. Both failures and a corrected untimed
 provider-helper failure are retained. Production was unchanged through testing.
 
-Retained evidence is in [target/compile-input-admission-warm](../target/compile-input-admission-warm/):
-`commands.md` indexes actual invocations and every failure; `plan.json`,
-`paired-receipt.json`, `comparison.json`, `audit.json`, and `retention-manifest.json`
-index the complete raw logs, reports, snapshots and wheel identities. Final tests
-are in `source-tests`; measured C/R snapshots remain immutable. The verified
-`author-evidence.tar.gz` is ready for retention before scratch cleanup.
+The prior archive is retained as an **operator-host artifact**, not a tracked or
+publicly downloadable repository file, at:
+
+```text
+/tmp/burner-approved-default-compile.UA2M6I/compile-input-admission-warm-author-cli.9qETRD/evidence/author-evidence.tar.gz
+```
+
+Its manifest and receipt are adjacent. This location is not a promise of permanent
+storage. Inside the archive, `commands.md`, `plan.json`, `paired-receipt.json`,
+`comparison.json`, `audit.json` and `retention-manifest.json` index all rounds,
+failures, snapshots and wheel identities; `source-tests` holds the historical
+final tests. No historical artifact or measurement was regenerated for this repair.
 
 SHA-256 identities (full manifests are in the archive):
 
@@ -79,4 +88,46 @@ R frontend: 64e8dee17d344b5ed5c1c25f17951276208f17bafc3ba1146b7b71d9f4bf117a
 Final test: 14d18b93b68cd328a0e6b299cc296175e35e601873723c03cb2247cbc731fe32
 Archive: f667dfa3cf48e377f899a8af3678f3f026115a4abfc70392d8d5d71730b1cb2b
 Manifest: 8b7272431b957b008594216feaadd5013d18cd565392efd328b59bd4f562aa74
+```
+
+## Publication-recovery correction: author validation
+
+The subsequent correction against Q stages prepared keys before executor removal,
+clears prepared retention and charges if executor reinsertion fails, and trims
+excess executors even on a newest-key hit. A staging failure can temporarily
+leave an extra executor until a later successful publication; it removes no owner.
+The original exception is preserved. Successful recency touches preserve plans.
+These are specific recovery boundaries, not arbitrary allocator-failure atomicity;
+the [cache guide](compile-pointwise-jit.md#recompilation-and-reset) retains its
+phase-limited guarantee for failures before publication.
+
+Fresh validation of the uncommitted correction passed 49 focused checks plus 15
+additional CUDA checks; two second-GPU checks were skipped. The
+[regressions](../tests/test_compile_pointwise_warm_overhead.py) inject both faults,
+recover through a different survivor or newest key, check ownership/order/charges
+and reset, alternate retained executors without scans, and exercise empty-plan
+eviction. Real default public calls vary inputs and recheck retained old outputs
+after eviction/reset. The first new recency assertion incorrectly required the
+bookkeeping tuple itself to retain identity; the corrected test checks the
+preparation identity and charges. Both fixture snapshots and the failed run remain.
+
+Fresh operator-host artifacts are in worktree-local
+`target/compile-input-admission-publication-repair/`, including
+`repair-evidence.tar.gz`. These ignored files are not public repository downloads;
+retention beyond this host is not promised. Each command has an execution-time
+argv/cwd/environment/start/end/return-code receipt and separate stdout/stderr.
+`tested-source-final.json`, `binding.json` and `audit.json` bind the final source,
+wheel and imports. The isolated interpreter used `-B`, `sys.flags.optimize=0`,
+CPython 3.12.14 and PyTorch 2.13.0+cu130; GPU0 UUID matches the historical device,
+with libcudart/NVRTC 13.0 provider hashes recorded. Build and dependency commands
+used locked inputs. No new timing or frozen evaluation was run. Historical archive
+hashes above were verified read-only. Archive contents passed a round-trip audit.
+
+```text
+Repair frontend: b20c9bfbe7ea22bc3902a50f99c9955ca1574c551928506aca7e461742d4cbe7
+Final test: 7ee6eceb6ed93c25639ed9244346fcd0d4e8f183cfa6e209d0284897c6a60949
+Tested source manifest: ce669272cebc8e6d4a16f7da56feecb6a03208b1725b39f80fe3a4d625704fcc
+Repair wheel: 975ebde6a3a7cb6ca6fa96938c709acd4b5c4d29f48e7f8df92b0e5760548790
+Repair archive: 62b99bf8a9b21b13d807970f2f3be5924e606af18d3c71036ebe72797e3ff38c
+Repair archive manifest: b1cf69df26dce057ecc6ae476f03057ccb1a721381b8cecc873ad892998a7843
 ```

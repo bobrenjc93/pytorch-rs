@@ -130,10 +130,141 @@ class WarmOverhead(unittest.TestCase):
         for size in (3, 5, 3, 7):
             compiled(native.ones(size))
             self.assertEqual(state.prepared_bytes, sum(v[1] for v in state.prepared.values()))
+        alternating, x, other = self.two_executors()
+        other.prepared = NoScan(other.prepared)
+        other.executors = NoMembership(other.executors)
+        values = dict(other.prepared.items())
+        charge = other.prepared_bytes
+        for unused in (False, native.ones(3), False, native.ones(3)):
+            before = list(other.prepared.items())
+            alternating(unused, x)
+            selected = next(reversed(other.prepared))
+            self.assertEqual(list(other.prepared.items()),
+                             [(key, value) for key, value in before if key != selected]
+                             + [(selected, values[selected])])
+            for key, value in before:
+                self.assertIs(other.prepared[key][0], value[0])
+                self.assertEqual(other.prepared[key][1], value[1])
+                if key != selected:
+                    self.assertIs(other.prepared[key], value)
+            self.assertEqual(other.prepared_bytes, charge)
+        self.assertEqual(len(other.executors), 2)
         native.compiler.reset()
         self.assertEqual(state.prepared_bytes, 0)
         self.assertFalse(state.prepared)
         compiled(native.ones(3))
+
+    def two_executors(self):
+        compiled = frontend.implementation(program('def f(unused,x):\n return -x'), 2)
+        x = native.ones(3)
+        compiled(False, x)
+        compiled(native.ones(3), x)
+        return compiled, x, cache(compiled)
+
+    def assert_retention(self, state, limit=2):
+        self.assertLessEqual(len(state.executors), limit)
+        self.assertLessEqual(len(state.prepared), limit)
+        self.assertLessEqual(state.prepared_bytes, frontend._PREPARED_CACHE_BYTES)
+        self.assertEqual(state.prepared_bytes, sum(value[1] for value in state.prepared.values()))
+        self.assertTrue(all(key[0] in state.executors for key in state.prepared))
+
+    def test_recency_reinsertion_failure_drops_preparations_and_preserves_other_executors(self):
+        compiled, x, state = self.two_executors()
+        first, second = state.executors
+        survivor = state.executors[second]
+        failure = MemoryError('executor reinsertion')
+
+        class FailReinsertion(dict):
+            def __setitem__(self, key, value):
+                if key == first:
+                    raise failure
+                super().__setitem__(key, value)
+
+        state.executors = FailReinsertion(state.executors)
+        with self.assertRaises(MemoryError) as error:
+            compiled(False, x)
+        self.assertIs(error.exception, failure)
+        self.assertEqual(list(state.executors), [second])
+        self.assertIs(state.executors[second], survivor)
+        self.assertFalse(state.prepared)
+        self.assertEqual(state.prepared_bytes, 0)
+        self.assert_retention(state)
+        # Calling the other survivor must not rebuild the lost key to mask an orphan.
+        compiled(native.ones(3), x)
+        self.assertEqual(self.codegen.call_count, 2)
+        self.assertEqual(list(state.executors), [second])
+        self.assert_retention(state)
+        state.executors = dict(state.executors)
+        compiled(False, x)
+        self.assertEqual(self.codegen.call_count, 3)
+        self.assert_retention(state)
+        native.compiler.reset()
+        self.assertFalse(state.graphs)
+        self.assertFalse(state.executors)
+        self.assertFalse(state.prepared)
+        self.assertEqual(state.prepared_bytes, 0)
+        compiled(False, x)
+        self.assert_retention(state)
+
+    def test_failed_eviction_staging_recovers_on_survivor_or_newest_hit(self):
+        for newest in (False, True):
+            with self.subTest(newest=newest):
+                initial_compiles = self.codegen.call_count
+                compiled, x, state = self.two_executors()
+                first, second = state.executors
+                old_preparations = list(state.prepared.items())
+                old_charge = state.prepared_bytes
+                failure = MemoryError('prepared key snapshot')
+
+                class FailSnapshot(dict):
+                    fail = True
+
+                    def __iter__(self):
+                        if self.fail:
+                            raise failure
+                        return super().__iter__()
+
+                state.prepared = FailSnapshot(state.prepared)
+                with self.assertRaises(MemoryError) as error:
+                    compiled(native.ones(1), x)
+                self.assertIs(error.exception, failure)
+                # No owner was removed. Insertion preceded failed staging, so
+                # the executor count needs trimming on the next successful call.
+                third = next(reversed(state.executors))
+                self.assertEqual(list(state.executors), [first, second, third])
+                self.assertEqual(list(state.prepared.items()), old_preparations)
+                for key, value in old_preparations:
+                    self.assertIs(state.prepared[key], value)
+                self.assertEqual(state.prepared_bytes, old_charge)
+                self.assertTrue(all(key[0] in state.executors for key, _ in old_preparations))
+                state.prepared.fail = False
+                survivor = state.executors[third if newest else second]
+                compiled(native.ones(1 if newest else 3), x)
+                self.assertEqual(self.codegen.call_count, initial_compiles + 3)
+                self.assertIs(next(reversed(state.executors.values())), survivor)
+                self.assertEqual(list(state.executors), [second, third] if newest else [third, second])
+                self.assertNotIn(first, state.executors)
+                self.assert_retention(state)
+                surviving_key, surviving_value = old_preparations[1]
+                self.assertIs(state.prepared[surviving_key], surviving_value)
+                self.assertEqual(next(iter(state.prepared)), surviving_key)
+                native.compiler.reset()
+                self.assertFalse(state.prepared)
+                self.assertFalse(state.executors)
+                self.assertEqual(state.prepared_bytes, 0)
+                compiled(False, x)
+                self.assert_retention(state)
+
+    def test_eviction_with_no_retained_preparations(self):
+        compiled, x, state = self.two_executors()
+        first = next(iter(state.executors))
+        state.prepared.clear()
+        state.prepared_bytes = 0
+        with patch.object(frontend, '_prepared_entry_bytes', return_value=frontend._PREPARED_CACHE_BYTES + 1):
+            compiled(native.ones(1), x)
+        self.assertNotIn(first, state.executors)
+        self.assertFalse(state.prepared)
+        self.assert_retention(state)
 
     def test_executor_eviction_preserves_surviving_preparation_order_and_charge(self):
         compiled = frontend.implementation(program('def f(unused,x):\n return -x'), 2)
@@ -200,9 +331,10 @@ class WarmOverheadHardware(unittest.TestCase):
         old_key = None
         # The ignored input changes the native ABI/address formula while the
         # used input keeps the same logical guard. Cross the default count bound.
-        for size in (None, *range(1, 10), None):
-            x = self.upload([0.25, -0.5, 1.], (3,))
-            tx = self.upload([0.25, -0.5, 1.], (3,), self.torch)
+        for index, size in enumerate((None, *range(1, 10), None)):
+            values = [0.25 + index, -0.5 - index, 1. + index]
+            x = self.upload(values, (3,))
+            tx = self.upload(values, (3,), self.torch)
             unused = False if size is None else self.upload([1.] * size, (size,))
             tu = False if size is None else self.upload([1.] * size, (size,), self.torch)
             output = self.without_replay(fn, compiled, (unused, x))
@@ -211,6 +343,9 @@ class WarmOverheadHardware(unittest.TestCase):
             self.assertIs(output[1], x)
             self.assertTrue(all(output[0].data_ptr() != earlier[0].data_ptr() for earlier in retained))
             retained.append(output)
+            for earlier_index, earlier in enumerate(retained):
+                self.assertEqual(earlier[0].cpu().tolist(),
+                                 [-0.25 - earlier_index, 0.5 + earlier_index, -1. - earlier_index])
             state = cache(compiled)
             if old_key is None:
                 old_key = next(iter(state.executors))
@@ -223,6 +358,8 @@ class WarmOverheadHardware(unittest.TestCase):
         self.assertFalse(state.prepared)
         self.assertEqual(state.prepared_bytes, 0)
         self.compare(compiled(False, x)[0], reference(False, tx)[0])
+        for index, earlier in enumerate(retained):
+            self.assertEqual(earlier[0].cpu().tolist(), [-0.25 - index, 0.5 + index, -1. - index])
 
 
 if __name__ == '__main__':

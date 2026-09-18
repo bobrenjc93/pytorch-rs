@@ -1557,18 +1557,32 @@ def implementation(model, recompile_limit):
                                             (cache.graphs, key, entry)):
                 # Recency belongs to each map independently: a shared executor
                 # can already be newest while its logical entry/lowering is not.
-                if (mapping and next(reversed(mapping)) == item_key
+                if not (mapping and next(reversed(mapping)) == item_key
                         and next(reversed(mapping.values())) is item):
-                    continue
-                mapping.pop(item_key, None)
-                mapping[item_key] = item
+                    mapping.pop(item_key, None)
+                    try:
+                        mapping[item_key] = item
+                    except BaseException:
+                        if mapping is cache.executors:
+                            # A failed recency reinsertion can remove an owner.
+                            # Drop preparation retention without allocating a
+                            # repair index or taking the already-held lock again.
+                            cache.prepared.clear()
+                            cache.prepared_bytes = 0
+                        raise
+                # Even a newest hit must trim an excess entry left by a failed
+                # eviction-staging attempt on an earlier publication.
                 while len(mapping) > recompile_limit:
                     evicted_key = next(iter(mapping))
+                    if mapping is cache.executors:
+                        # Snapshot before removing the owner: allocation failure
+                        # must leave all retained preparations with an executor.
+                        prepared_keys = tuple(cache.prepared)
                     del mapping[evicted_key]
                     if mapping is cache.executors:
                         # Preparations must not retain an evicted module. Scan
                         # only at actual executor eviction in this transaction.
-                        for old_key in tuple(cache.prepared):
+                        for old_key in prepared_keys:
                             if old_key[0] == evicted_key:
                                 _, old_bytes = cache.prepared.pop(old_key)
                                 cache.prepared_bytes -= old_bytes
