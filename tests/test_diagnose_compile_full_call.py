@@ -6,6 +6,8 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import shutil
+import tarfile
 import tempfile
 import unittest
 
@@ -50,6 +52,38 @@ class FullCallReceiptTests(unittest.TestCase):
 
     def test_complete_equal_receipts(self):
         self.assertFalse(self.compare(self.report))
+
+    def test_relocated_receipts_after_original_directory_is_removed(self):
+        original = self.folder / 'capture'
+        relocated = self.folder / 'relocated'
+        original.mkdir()
+        shutil.move(self.folder / 'arrays.npz', original / 'arrays.npz')
+        report = copy.deepcopy(self.report)
+        report['arrays'] = str(original / 'arrays.npz')
+        for name in ('reference.json', 'candidate.json'):
+            (original / name).write_text(json.dumps(report))
+        shutil.copytree(original, relocated)
+        shutil.rmtree(original)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertFalse(diag.compare(relocated / 'reference.json', relocated / 'candidate.json'))
+
+    def test_missing_local_arrays_do_not_fall_back_to_original(self):
+        relocated = self.folder / 'relocated'
+        relocated.mkdir()
+        for name in ('reference.json', 'candidate.json'):
+            (relocated / name).write_text(json.dumps(self.report))
+        self.assertTrue(Path(self.report['arrays']).is_file())
+        with self.assertRaisesRegex(ValueError, 'missing array archive beside report'):
+            diag.compare(relocated / 'reference.json', relocated / 'candidate.json')
+
+    def test_corrupted_relocated_archive_does_not_use_valid_original(self):
+        relocated = self.folder / 'relocated'
+        relocated.mkdir()
+        for name in ('reference.json', 'candidate.json'):
+            (relocated / name).write_text(json.dumps(self.report))
+        (relocated / 'arrays.npz').write_bytes(b'corrupted NPZ')
+        with self.assertRaisesRegex(ValueError, 'array archive hash mismatch'):
+            diag.compare(relocated / 'reference.json', relocated / 'candidate.json')
 
     def test_missing_samples_outputs_or_replay_check(self):
         for field in ('samples_ns', 'outputs', 'no_body_replay'):
@@ -105,6 +139,41 @@ class FullCallReceiptTests(unittest.TestCase):
         report['cells'][0]['status'] = 'invented'
         with self.assertRaisesRegex(ValueError, 'unknown cell status'):
             self.compare(report)
+
+
+class HistoricalFullCallReplayTests(unittest.TestCase):
+    def test_committed_archive_manifest_and_historical_replay(self):
+        archive = ROOT / 'docs/diagnostics/default-compile-full-call-20260918-raw.tar.xz'
+        self.assertEqual(archive.stat().st_size, 20204660)
+        self.assertEqual(diag.sha(archive), '82ac63e93cee8d76d2f78226f9324ec92e032becf154bfac84861cd42c2ea265')
+        with tarfile.open(archive) as bundle:
+            manifest = json.load(bundle.extractfile('full-call/manifest.json'))
+            self.assertEqual(len(bundle.getmembers()), 91)
+            self.assertEqual(len(manifest), 90)
+            for name, receipt in manifest.items():
+                # extractfile resolves the historical tar's deduplicated hard links.
+                data = bundle.extractfile('full-call/' + name).read()
+                self.assertEqual(len(data), receipt['bytes'], name)
+                self.assertEqual(hashlib.sha256(data).hexdigest(), receipt['sha256'], name)
+            folder = ROOT / 'target'
+            folder.mkdir(exist_ok=True)
+            with tempfile.TemporaryDirectory(dir=folder) as temporary:
+                relocated = Path(temporary)
+                # Only these two reports and their arrays are needed for a historical
+                # pair; no imports, extension, GPU, or recorded absolute paths.
+                for name in ('incoming-reference-first.json', 'incoming-native-first.json'):
+                    data = bundle.extractfile('full-call/' + name).read()
+                    report = json.loads(data)
+                    (relocated / name).write_bytes(data)
+                    array_name = Path(report['arrays']).name
+                    (relocated / array_name).write_bytes(bundle.extractfile('full-call/' + array_name).read())
+                with contextlib.redirect_stdout(io.StringIO()) as output:
+                    self.assertFalse(diag.compare(relocated / 'incoming-reference-first.json',
+                                                  relocated / 'incoming-native-first.json'))
+                result = json.loads(output.getvalue())
+                self.assertEqual(result['compared'], 76)
+                self.assertEqual(result['candidate_rejections'], [])
+                self.assertEqual(result['errors'], [])
 
 
 if __name__ == '__main__':

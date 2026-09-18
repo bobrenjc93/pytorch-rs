@@ -364,9 +364,9 @@ class TensorGuard:
         shape, strides = metadata[:2]
         if len(shape) != len(self.sizes) or metadata[2:5] != self.properties:
             return False
-        if any((size < 2 if expected is None else size != expected)
-               for size, expected in zip(shape, self.sizes)):
-            return False
+        for size, expected in zip(shape, self.sizes):
+            if (size < 2 if expected is None else size != expected):
+                return False
         for stride, expected in zip(strides, self.strides):
             if expected is None:
                 if stride < 2:
@@ -392,14 +392,21 @@ class ShapeGuards:
     predicates: tuple = ()
 
     def matches(self, metadata):
-        if not all(predicate.matches(metadata) for predicate in self.predicates):
-            return False
-        if not all(guard.matches(metadata[source], metadata) for source, guard in self.tensors):
-            return False
-        if any(metadata[a][0][i] != metadata[b][0][j] for a, i, b, j in self.equal_axes):
-            return False
-        return all(0 <= _broadcast_elements([metadata[s][0] for s in group]) <= 2147483647
-                   for group in self.index_bounds)
+        # Warm matching needs ordered short-circuit checks, not temporary
+        # generator frames for each predicate, tensor, equality and bound group.
+        for predicate in self.predicates:
+            if not predicate.matches(metadata):
+                return False
+        for source, guard in self.tensors:
+            if not guard.matches(metadata[source], metadata):
+                return False
+        for a, i, b, j in self.equal_axes:
+            if metadata[a][0][i] != metadata[b][0][j]:
+                return False
+        for group in self.index_bounds:
+            if not 0 <= _broadcast_elements([metadata[s][0] for s in group]) <= 2147483647:
+                return False
+        return True
 
 
 @dataclass

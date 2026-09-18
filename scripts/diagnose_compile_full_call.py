@@ -155,14 +155,21 @@ def snapshot(value, args, arrays):
 
 
 def compare(reference_path, candidate_path):
-    reference, candidate = [json.loads(Path(p).read_text()) for p in (reference_path, candidate_path)]
+    paths = [Path(p) for p in (reference_path, candidate_path)]
+    reference, candidate = [json.loads(p.read_text()) for p in paths]
+    # Absolute capture paths remain provenance, never a live replay dependency.
+    # Captures and extracted bundles both keep each NPZ beside its JSON receipt.
+    array_paths = [path.parent / Path(report['arrays']).name
+                   for path, report in zip(paths, (reference, candidate))]
     errors, unsupported, compared = [], [], 0
     expected = [(fn.__name__, tuple(shape), mode) for fn, shapes in PROGRAMS
                 for mode in ('reused', 'fresh') for shape in shapes]
-    for report in (reference, candidate):
+    for report, array_path in zip((reference, candidate), array_paths):
         if (report.get('samples'), report.get('warmups'), report.get('calls_per_sample')) != (SAMPLES, WARMUPS, 1):
             raise ValueError('capture sampling contract mismatch')
-        if sha(report['arrays']) != report['arrays_sha256']:
+        if not array_path.is_file():
+            raise ValueError(f'missing array archive beside report: {array_path}')
+        if sha(array_path) != report['arrays_sha256']:
             raise ValueError('array archive hash mismatch')
         observed = [(c['program'], tuple(c['shape']), c['mode']) for c in report['cells']]
         if observed != expected:
@@ -175,7 +182,7 @@ def compare(reference_path, candidate_path):
                 raise ValueError('incomplete successful cell')
             if any(type(n) is not int or n <= 0 for n in cell['samples_ns']):
                 raise ValueError('invalid timing sample')
-    with np.load(reference['arrays']) as ra, np.load(candidate['arrays']) as ca:
+    with np.load(array_paths[0], allow_pickle=False) as ra, np.load(array_paths[1], allow_pickle=False) as ca:
         for archive in (ra, ca):
             for key in archive.files:
                 if hashlib.sha256(archive[key].tobytes()).hexdigest() != key:

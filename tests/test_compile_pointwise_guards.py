@@ -40,6 +40,42 @@ def hostile_key(target, effects, string_subclass=False):
     return StringKey(target) if string_subclass else Key()
 
 
+class ShapeGuardContract(unittest.TestCase):
+    def test_dynamic_sizes_stride_relations_and_current_properties(self):
+        properties = ('float32', False, 'cuda:0')
+        guard = frontend.TensorGuard((None, 2), (('product', 1), 1), properties)
+        metadata = ((4, 2), (2, 1), *properties)
+        self.assertTrue(guard.matches(metadata, {'x': metadata}))
+        for invalid in (
+            ((1, 2), (2, 1), *properties),
+            ((0, 2), (2, 1), *properties),
+            ((4, 3), (3, 1), *properties),
+            ((4, 2), (3, 1), *properties),
+            ((4, 2), (2, 1), 'float32', True, 'cuda:0'),
+        ):
+            with self.subTest(metadata=invalid):
+                self.assertFalse(guard.matches(invalid, {'x': invalid}))
+
+    def test_cross_tensor_equalities_and_index_limit(self):
+        guard = frontend.ShapeGuards((), (('x', 0, 'y', 0),), (('x', 'y'),))
+        for size, expected in ((0, True), (1, True), (2147483647, True), (2147483648, False)):
+            metadata = {'x': ((size,),), 'y': ((size,),)}
+            self.assertEqual(guard.matches(metadata), expected)
+        self.assertFalse(guard.matches({'x': ((2,),), 'y': ((3,),)}))
+
+    def test_predicates_short_circuit_before_current_tensor_lookup(self):
+        calls = []
+        class Predicate:
+            def __init__(self, value): self.value = value
+            def matches(self, metadata):
+                calls.append(self.value)
+                return self.value
+        guard = frontend.ShapeGuards((('missing', None),), (), (),
+                                     (Predicate(True), Predicate(False), Predicate(True)))
+        self.assertFalse(guard.matches({}))
+        self.assertEqual(calls, [True, False])
+
+
 class NamespacePredicate(unittest.TestCase):
     def test_sparse_large_unicode_namespace_and_late_rejection(self):
         predicate = bridge._pointwise_namespace_keys_exact
