@@ -268,8 +268,22 @@ class Lowering:
     operation_bindings: tuple = ()
     active_operations: tuple = ()
     # Each concrete ABI may admit different inactive paths. None means child
-    # presence only; container/tensor signatures retain no invocation-local owners.
+    # presence only; tensor signatures contain (kind, slot, minimum rank).
+    # These signatures retain no invocation-local owners or exact dimensions.
     structural_admission: tuple = ()
+
+    def admits(self, resolved, metadata):
+        for source, expected in self.structural_admission:
+            current = resolved.get(source)
+            if current is None:
+                return False
+            if expected is not None:
+                if expected[0] == "tensor":
+                    if current != expected[:2] or len(metadata[current[1]][0]) < expected[2]:
+                        return False
+                elif current != expected:
+                    return False
+        return True
 
 
 def preflight_operations(lowering, values, metadata):
@@ -1230,6 +1244,12 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
             return obj.value
         return obj.value if type(obj) is Literal else obj
 
+    def admit_tensor(source, value, minimum_rank=0):
+        previous = structural_admission.get(source)
+        if previous is not None:
+            minimum_rank = max(minimum_rank, previous[2])
+        structural_admission[source] = ("tensor", value.index, minimum_rank)
+
     def container(obj):
         item = realize(obj)
         if type(item) is not InputTree and type(item) is not Container:
@@ -1336,7 +1356,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     unsupported("result metadata must be literal or an input shape axis")
                 # Inactive aliases require current tensor admission on reuse,
                 # independently of the active path's logical shape guards.
-                structural_admission[item.source] = ("tensor", resolved.index)
+                admit_tensor(item.source, resolved)
                 entry = ("input", item.source)
             elif type(item) is Value and item.tensor and (item.index >= arity or item.index == -1):
                 roots.add(item.index)
@@ -1505,6 +1525,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     if (helper or type(original) is not BoundValue
                             or original.source.kind != "parameter" or type(owner) is not Value):
                         unsupported("shape queries require an original input Tensor")
+                    admit_tensor(original.source, owner)
                     stack.append(ShapeValue(original.source, predicate_origin=original.predicate_origin))
                 elif owner is _ROOT:
                     if arg not in dict(_FUNCTIONS):
@@ -1557,6 +1578,7 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     unsupported("shape axis requires input metadata")
                 if not -len(metadata[source.index][0]) <= axis.value < len(metadata[source.index][0]):
                     unsupported("shape axis is out of range")
+                admit_tensor(shape.source, source, axis.value + 1 if axis.value >= 0 else -axis.value)
                 stack.append(ShapeValue(shape.source, axis.value, shape.predicate_origin))
             elif op == "UNPACK_SEQUENCE":
                 count = instruction.arg
@@ -1866,10 +1888,7 @@ def implementation(model, recompile_limit):
                    tuple(static_values[source].index for source in payload.tensor_sources))
             if selected is not None:
                 lowering = entry.lowerings.get(abi)
-                if lowering is None or any(
-                        (current := resolved.get(source)) is None or
-                        (expected is not None and current != expected)
-                        for source, expected in lowering.structural_admission):
+                if lowering is None or not lowering.admits(resolved, metadata):
                     _, static_values = resolved.complete()
                     values = dict(static_values)
                     values.update((s, v) for s, v in payload.values.items() if type(v) is not Value)

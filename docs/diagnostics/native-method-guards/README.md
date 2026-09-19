@@ -10,10 +10,10 @@ Replacement evidence requires clean exports and builds inside the composite,
 followed by the declared correctness gates and complete timing sequence. That
 capture is pending Burner's `gpu` and `cpu-heavy` resource leases; the composite
 author has only the `composite-build` lease and cannot modify external lock state.
-The subsequent inactive-return guard repair changes runtime behavior and adds a
-regression test. Its replacement capture must use Burner's committed repair and
+The subsequent inactive-return and shape-read admission repairs change runtime
+behavior and add regression tests. Replacement capture must use Burner's committed repairs and
 derive the updated test inventory before freezing; the earlier capture does not
-validate that repair either.
+validate those repairs either.
 
 This candidate carries C's required R publication repair plus one stateless
 native method-identity batch. Python retains the inventory and expected objects;

@@ -30,6 +30,49 @@ def lowered(source, **bindings):
         return result
 
 
+def check_inactive_shape_reads(test, make_tensor):
+    for axis, returned_alias in ((1, False), (-2, False), (1, True), (-2, True)):
+        for condition in ('<4', '>4'):
+            # The later axis-zero read and returned alias must not erase the
+            # stronger rank requirement from the first shape read.
+            inactive = f'(x.add_(1),y.shape[{axis}],y.shape[0]' + (',y)' if returned_alias else ')')
+            first, last = ('x.add_(1)', inactive) if condition == '<4' else (inactive, 'x.add_(1)')
+            fn = program('def f(x,y,z):\n if x.shape[0]' + condition
+                         + ':\n  return ' + first + '\n return ' + last)
+            compiled = native.compile(fn, recompile_limit=1)
+            x, y = make_tensor((3,)), make_tensor((2, 3))
+            with test.subTest(axis=axis, condition=condition, returned_alias=returned_alias), no_bodies(fn):
+                test.assertIs(compiled(x, y, False), x)
+                entry = next(iter(cache(compiled).graphs.values()))
+                # Different sizes and a larger rank remain admissible without
+                # reparsing or creating logical guards for the inactive input.
+                with patch.object(frontend, 'lower', side_effect=AssertionError('valid inactive shape reparsed')):
+                    for shape in ((4, 5, 6), (7, 8)):
+                        test.assertIs(compiled(x, make_tensor(shape), False), x)
+                        test.assertIs(next(iter(cache(compiled).graphs.values())), entry)
+                for bad_y, z in ((1.0, y), (make_tensor((3,)), False)):
+                    before = StructuredCache.snapshot(test, compiled)
+                    contents = x.cpu().tolist()
+                    with patch.object(bridge, '_compile_trace_cuda_graph',
+                                      side_effect=AssertionError('rejected input reached mutation bridge')):
+                        with test.assertRaises(NotImplementedError):
+                            compiled(x, bad_y, z)
+                        with test.assertRaises(NotImplementedError):
+                            native.compile(fn)(x, bad_y, z)
+                    test.assertEqual(x.cpu().tolist(), contents)
+                    test.assertEqual(StructuredCache.snapshot(test, compiled), before)
+                test.assertIs(compiled(x, y, False), x)
+
+
+class InactiveShapeAdmission(unittest.TestCase):
+    setUp = StructuredCache.setUp
+
+    def test_retained_shape_reads_reject_before_mutation_bridge(self):
+        with patch.object(bridge, '_compile_trace_cuda_graph',
+                          side_effect=lambda inputs, nodes: tuple(object() for _ in nodes)):
+            check_inactive_shape_reads(self, lambda shape: native.ones(*shape))
+
+
 class AliasMutationAdmission(unittest.TestCase):
     def test_cpu_and_gradient_calls_reject_without_mutation(self):
         for grad in (False, True):
@@ -150,6 +193,9 @@ class AliasMutationHardware(unittest.TestCase):
     def tearDown(self):
         native.compiler.reset()
         self.torch.compiler.reset()
+
+    def test_retained_shape_reads_reject_without_device_writes(self):
+        check_inactive_shape_reads(self, lambda shape: native.ones(*shape).to('cuda:0'))
 
     def pair(self, source, **bindings):
         fn = program(source, **bindings)
