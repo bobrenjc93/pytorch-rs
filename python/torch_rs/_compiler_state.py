@@ -43,10 +43,15 @@ class NativeEagerCompileCache:
 
     def clear(self):
         with self.lock:
-            self.graphs.clear()
-            self.prepared.clear()
-            self.prepared_bytes = 0
-            self.executors.clear()
+            dict.clear(self.graphs)
+            self._clear_derived_locked()
+
+    def _clear_derived_locked(self):
+        # Publication recovery already holds the lock. Bypass overridden dict
+        # cleanup and preserve the committed logical/numerical history.
+        dict.clear(self.executors)
+        dict.clear(self.prepared)
+        self.prepared_bytes = 0
 
 
 def new_native_eager_compile_cache():

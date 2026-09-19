@@ -135,8 +135,8 @@ class WarmSourceResolution(unittest.TestCase):
         compiled({'a': native.ones(3), 'b': native.ones(3)})
         newer = next(reversed(cache(compiled).graphs.values()))
         self.assertIsNot(newer, older)
-        self.assertEqual(len(newer.tensor_sources), 1)
-        self.assertEqual(len(older.tensor_sources), 2)
+        self.assertEqual(len(newer.payload.tensor_sources), 1)
+        self.assertEqual(len(older.payload.tensor_sources), 2)
         with patch.object(frontend.BindingSource, 'child', side_effect=AssertionError('new source')), \
              patch.object(frontend._BindingResolution, 'complete', side_effect=AssertionError('full walk')):
             compiled({'a': native.ones(5), 'b': native.ones(5)})
@@ -188,9 +188,13 @@ class WarmSourceResolution(unittest.TestCase):
         values = lowering.call_args.args[1]
         gain = next(value for source, value in values.items() if source.name == 'gain')
         self.assertEqual(frontend.struct.pack('!d', gain), frontend.struct.pack('!d', -0.0))
-        self.assertIs(next(iter(cache(compiled).graphs.values())), entry)
+        current = next(iter(cache(compiled).graphs.values()))
+        from tests.test_compile_pointwise_helpers import assert_replaced_shell
+        assert_replaced_shell(self, entry, current)
         self.assertEqual(len(cache(compiled).graphs), 1)
-        self.assertIsNot(next(iter(entry.lowerings.values())), retained)
+        self.assertEqual(tuple(current.lowerings), tuple(entry.lowerings))
+        self.assertIs(next(iter(entry.lowerings.values())), retained)
+        self.assertIsNot(next(iter(current.lowerings.values())), retained)
 
     def test_projection_failure_publishes_nothing_and_reset_recovers(self):
         fn = program('def f(p):\n return -p["pair"][0]')
@@ -492,7 +496,7 @@ class InputTransactions(InputContracts):
             compiled({'x': native.ones(3), 'ignored': ignored})
         self.assertEqual(len(cache(compiled).graphs), 1)
         entry = next(iter(cache(compiled).graphs.values()))
-        self.assertNotIn(frontend.BindingSource('parameter', 'p', 0, ('ignored',)), entry.observed)
+        self.assertNotIn(frontend.BindingSource('parameter', 'p', 0, ('ignored',)), entry.payload.observed)
         for source in (
                 'def f(p):\n x=p["x"]\n if x.shape[0]<4:\n  return -x\n return x*p["other"]',
                 'def f(p):\n x=p["x"]\n for i in range(0):\n  unused=x*p["other"]\n return -x'):
@@ -527,12 +531,20 @@ class InputTransactions(InputContracts):
             if type(value) is dict:
                 pending.extend(value.keys())
                 pending.extend(value.values())
+            elif type(value) in (frontend.Specialization, frontend.SpecializationPayload):
+                pending.extend(getattr(value, name) for name in value._fields)
             elif type(value) in (list, tuple):
                 pending.extend(value)
             elif dataclasses.is_dataclass(value) or type(value) is types.SimpleNamespace:
                 pending.extend(vars(value).values())
             elif type(value) is types.FunctionType and value.__closure__:
                 pending.extend(cell.cell_contents for cell in value.__closure__)
+        self.assertTrue(cache(compiled).graphs)
+        for entry in cache(compiled).graphs.values():
+            self.assertIn(id(entry), seen)
+            for record in (entry, entry.payload):
+                for name in record._fields:
+                    self.assertIn(id(getattr(record, name)), seen, name)
         native.compiler.reset()
         self.assertFalse(cache(compiled).graphs)
         self.assertFalse(cache(compiled).executors)
@@ -683,7 +695,7 @@ class InputHardware(unittest.TestCase):
             actual = self.check(pair, ({'x': x},), ({'x': rx},))
             self.assertIs(actual[1], x)
             for entry in cache(pair[1]).graphs.values():
-                for observation in entry.observations.values():
+                for observation in entry.payload.observations.values():
                     self.assertEqual(len(observation), 5)  # Never persist the current offset.
 
     def test_helper_local_unpack_loop_shape_branch_and_failed_recovery(self):

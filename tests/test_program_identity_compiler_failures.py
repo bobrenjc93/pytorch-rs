@@ -103,7 +103,7 @@ class ProgramIdentityCompilerFailures(unittest.TestCase):
     def snapshot(self, compiled):
         state = cache(compiled)
         return (tuple((key, id(entry), tuple(entry.lowerings.items()),
-                       tuple(entry.observations.items()), entry.numerical_hint)
+                       tuple(entry.payload.observations.items()), entry.payload.numerical_hint)
                       for key, entry in state.graphs.items()),
                 tuple(state.executors.items()), tuple(state.prepared.items()), state.prepared_bytes)
 

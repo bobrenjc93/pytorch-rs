@@ -95,6 +95,141 @@ class MethodGuardContract(unittest.TestCase):
         # identifies the individual owner/name as a failure, never a broad skip.
 
 
+class NativeMethodIdentityBoundary(unittest.TestCase):
+    def check(self, table, missing=ABSENT):
+        return bridge._pointwise_method_identity_mismatch(table, missing)
+
+    def assert_invalid(self, table):
+        with self.assertRaises(TypeError) as caught:
+            self.check(table)
+        self.assertEqual(str(caught.exception),
+                         'expected native owner and exact method identity tuples')
+
+    def test_malformed_tuples_and_names_do_not_invoke_protocols(self):
+        calls = []
+        def forbidden(*args, **kwargs):
+            calls.append('callback')
+            raise AssertionError('native boundary invoked a protocol')
+
+        class Tuple(tuple):
+            __iter__ = __len__ = __getitem__ = __bool__ = __eq__ = __repr__ = forbidden
+
+        class Name(str):
+            __hash__ = __eq__ = __bool__ = __repr__ = __str__ = forbidden
+
+        class Proxy:
+            __iter__ = __len__ = __getitem__ = __bool__ = __eq__ = __repr__ = forbidden
+
+        owner, expected = OWNERS[0], object()
+        binding = ('neg', expected)
+        row = (owner, (binding,))
+        malformed = (
+            None, [], Proxy(), Tuple((row,)),
+            (None,), ([],), (Proxy(),), (Tuple(row),),
+            ((),), ((owner,),), ((owner, (), None),),
+            ((owner, []),), ((owner, Proxy()),), ((owner, Tuple((binding,))),),
+            ((owner, (None,)),), ((owner, ([],)),), ((owner, (Proxy(),)),),
+            ((owner, (Tuple(binding),)),), ((owner, ((),)),),
+            ((owner, (('neg',),)),), ((owner, (('neg', expected, None),)),),
+            ((owner, ((None, expected),)),), ((owner, ((b'neg', expected),)),),
+            ((owner, ((Name('neg'), expected),)),),
+            ((owner, ((Proxy(), expected),)),),
+        )
+        for index, table in enumerate(malformed):
+            with self.subTest(index=index):
+                self.assert_invalid(table)
+                self.assertEqual(calls, [])
+        # Validate later rows even if the first valid row would mismatch.
+        for table in malformed[4:]:
+            self.assert_invalid((row,) + table)
+        self.assertEqual(calls, [])
+
+    def test_foreign_owners_are_rejected_before_namespace_access(self):
+        calls = []
+        def forbidden(*args, **kwargs):
+            calls.append('namespace/protocol')
+            raise AssertionError('foreign owner was inspected')
+
+        class Heap:
+            pass
+
+        class TensorBaseChild(OWNERS[1]):
+            pass
+
+        class Meta(type):
+            __getattribute__ = __eq__ = __bool__ = __repr__ = forbidden
+
+        class Custom(metaclass=Meta):
+            pass
+
+        class Owner:
+            __getattribute__ = __eq__ = __bool__ = __repr__ = forbidden
+
+        class Namespace:
+            get = __getitem__ = __iter__ = __bool__ = __repr__ = forbidden
+
+        # Static builtins must not reach GenericGetDict: their storage differs
+        # from these original PyO3 heap owners. Empty bindings still validate.
+        for index, owner in enumerate((Heap, TensorBaseChild, Custom, Owner(), Namespace(),
+                                       object, type, int, str, tuple, dict, None)):
+            for bindings in ((), (('neg', object()),)):
+                with self.subTest(index=index, empty=not bindings):
+                    row = (owner, bindings)
+                    self.assert_invalid((row,))
+                    self.assert_invalid(((OWNERS[0], (('neg', object()),)), row))
+                    self.assertEqual(calls, [])
+
+    def test_missing_sentinel_and_present_none_use_literal_identity(self):
+        calls = []
+        name = '_native_method_guard_identity_test'
+        sentinel, other = object(), object()
+        poison = Poison(calls)
+        for index, owner in enumerate(OWNERS):
+            self.assertNotIn(name, owner.__dict__)
+            for actual in (ABSENT, sentinel, None, poison):
+                with ExitStack() as stack:
+                    if actual is not ABSENT:
+                        stack.enter_context(direct_binding(owner, name, actual))
+                    for missing in (sentinel, other, None, poison):
+                        for expected in (sentinel, other, None, poison):
+                            with self.subTest(owner=index):
+                                result = self.check(((owner, ((name, expected),)),), missing)
+                                if owner.__dict__.get(name, missing) is expected:
+                                    self.assertIsNone(result)
+                                else:
+                                    self.assertIs(result, name)
+                                self.assertEqual(calls, [])
+
+    def test_supplied_table_and_unicode_names_define_order(self):
+        first, second, third = '_guard_\u03bb', '_guard_\ud800', ''
+        expected, replacement = object(), object()
+        with ExitStack() as stack:
+            for owner, name in ((OWNERS[1], first), (OWNERS[1], second), (OWNERS[0], third)):
+                stack.enter_context(direct_binding(owner, name, expected))
+            table = ((OWNERS[1], ((second, expected), (first, expected))),
+                     (OWNERS[0], ((third, expected),)))
+            self.assertIsNone(self.check(()))
+            self.assertIsNone(self.check(((OWNERS[0], ()),)))
+            self.assertIsNone(self.check(table))
+            with direct_binding(OWNERS[0], third, replacement):
+                self.assertIs(self.check(table), third)
+                with direct_binding(OWNERS[1], first, replacement):
+                    self.assertIs(self.check(table), first)
+                    with direct_binding(OWNERS[1], second, replacement):
+                        self.assertIs(self.check(table), second)
+            self.assertIsNone(self.check(table))
+
+    def test_original_owners_survive_public_rebinding_without_exports(self):
+        name = '_pointwise_method_identity_mismatch'
+        self.assertNotIn(name, bridge.__all__)
+        self.assertNotIn(name, native.__all__)
+        self.assertNotIn(name, native.__dict__)
+        with patch.object(native, 'Tensor', object()):
+            self.assertIsNone(self.check(frontend._METHOD_GUARDS, frontend._MISSING))
+            with direct_binding(OWNERS[1], 'shape', None):
+                self.assertEqual(self.check(frontend._METHOD_GUARDS, frontend._MISSING), 'shape')
+
+
 class MethodGuardAdmission(unittest.TestCase):
     setUp = structured.StructuredCache.setUp
     snapshot = structured.StructuredCache.snapshot
@@ -242,6 +377,30 @@ class MethodGuardAdmission(unittest.TestCase):
                     gc.collect()
                     self.assertIsNone(reference())
                     compiled(x)
+        self.assertEqual(calls, [])
+
+    def test_real_checks_repeat_on_ordinary_and_receipt_calls_across_abis(self):
+        x = native.ones(3)
+        compiled = native.compile(program('def f(unused,x):\n return -x'))
+        calls = []
+        for invoke in (compiled, compiled._torch_rs_pointwise_receipt):
+            for args in ((False, x), (x, x), (False, x), (x, x)):
+                invoke(*args)
+                before = self.snapshot(compiled)
+                launches = len(self.launches)
+                self.admit.reset_mock()
+                with direct_binding(OWNERS[1], 'cos', Poison(calls)):
+                    with self.assertRaises(NotImplementedError) as caught:
+                        invoke(*args)
+                    self.assertEqual(str(caught.exception), PREFIX + 'patched Tensor operation binding: cos')
+                    self.admit.assert_not_called()
+                    self.assertEqual(self.snapshot(compiled), before)
+                    self.assertEqual(len(self.launches), launches)
+                invoke(*args)
+                self.assertEqual(len(self.launches), launches + 1)
+        self.assertEqual(len(cache(compiled).graphs), 1)
+        entry = next(iter(cache(compiled).graphs.values()))
+        self.assertEqual(len(entry.lowerings), 2)
         self.assertEqual(calls, [])
 
 

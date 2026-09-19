@@ -26115,6 +26115,10 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
     module.add_function(wrap_pyfunction!(pointwise::validate_inputs, module)?)?;
     module.add_function(wrap_pyfunction!(pointwise::admit_inputs, module)?)?;
     module.add_function(wrap_pyfunction!(pointwise::namespace_keys_exact, module)?)?;
+    module.add_function(wrap_pyfunction!(
+        pointwise::method_identity_mismatch,
+        module
+    )?)?;
     module.add_function(wrap_pyfunction!(compile_cuda_graph::execute, module)?)?;
     module.add_function(wrap_pyfunction!(
         compile_cuda_graph::reshape_metadata,
@@ -26142,6 +26146,7 @@ fn add_private_autograd_and_compile_trace_builtins(module: &Bound<'_, PyModule>)
         "_pointwise_validate_inputs",
         "_pointwise_admit_inputs",
         "_pointwise_namespace_keys_exact",
+        "_pointwise_method_identity_mismatch",
         "_MAX_BACKWARD_LEAF_ROOTS",
         "_backward_leaf_roots",
         "_compile_trace_tensor_metadata",

@@ -77,40 +77,24 @@ class WarmOverhead(unittest.TestCase):
             self.admit.assert_not_called()
             self.assertEqual(self.snapshot(compiled), before)
 
-    def test_each_invocation_reads_two_namespaces_and_every_identity(self):
-        reads, checks_seen = [], []
-
-        class Namespace:
-            def __init__(self, owner):
-                self.owner = owner
-
-            def get(self, name, missing):
-                checks_seen.append((self.owner, name))
-                return self.owner.__dict__.get(name, missing)
-
-        class Owner:
-            def __init__(self, owner):
-                self.owner = owner
-
-            @property
-            def __dict__(self):
-                reads.append(self.owner)
-                return Namespace(self.owner)
-
-        guards = tuple((Owner(owner), checks) for owner, checks in frontend._METHOD_GUARDS)
-        owners = [native.Tensor, native.Tensor.__base__]
+    def test_each_invocation_delegates_complete_inventory_to_native_helper(self):
+        helper = frontend._native._pointwise_method_identity_mismatch
+        guards, missing = frontend._METHOD_GUARDS, frontend._MISSING
         compiled = native.compile(program('def f(unused,x):\n return -x'))
         x = native.ones(3)
-        with patch.object(frontend, '_METHOD_GUARDS', guards):
-            for args in ((False, x), (False, x), (x, x), (x, x)):
-                reads.clear()
-                checks_seen.clear()
-                self.admit.reset_mock()
-                compiled(*args)
-                self.assertEqual(reads, owners)
-                self.assertEqual(checks_seen, [(owner, name) for owner in owners
-                                               for name in frontend._METHODS])
-                self.admit.assert_called_once_with(tuple(v for v in args if type(v) is native.Tensor))
+        with patch.object(frontend._native, '_pointwise_method_identity_mismatch',
+                          wraps=helper) as check:
+            for invoke in (compiled, compiled._torch_rs_pointwise_receipt):
+                for args in ((False, x), (False, x), (x, x), (x, x)):
+                    check.reset_mock()
+                    self.admit.reset_mock()
+                    invoke(*args)
+                    self.assertEqual(check.call_count, 1)
+                    actual, = check.call_args_list
+                    self.assertIs(actual.args[0], guards)
+                    self.assertIs(actual.args[1], missing)
+                    self.assertEqual(actual.kwargs, {})
+                    self.admit.assert_called_once_with(tuple(v for v in args if type(v) is native.Tensor))
 
     def test_recency_preserves_preparations_accounting_and_reset(self):
         # Same-key owner replacement requires a bounded scan even without
@@ -159,10 +143,11 @@ class WarmOverhead(unittest.TestCase):
         self.assertEqual(state.prepared_bytes, sum(value[1] for value in state.prepared.values()))
         self.assertTrue(all(state.executors.get(value[2]) is value[3] for value in state.prepared.values()))
 
-    def test_recency_reinsertion_failure_drops_preparations_and_preserves_other_executors(self):
+    def test_recency_reinsertion_failure_preserves_history_and_clears_derived(self):
         compiled, x, state = self.two_executors()
         first, second = state.executors
-        survivor = state.executors[second]
+        history = state.graphs
+        before = self.snapshot(compiled)[0]
         failure = MemoryError('executor reinsertion')
 
         class FailReinsertion(dict):
@@ -175,19 +160,20 @@ class WarmOverhead(unittest.TestCase):
         with self.assertRaises(MemoryError) as error:
             compiled(False, x)
         self.assertIs(error.exception, failure)
-        self.assertEqual(list(state.executors), [second])
-        self.assertIs(state.executors[second], survivor)
+        self.assertIs(state.graphs, history)
+        self.assertEqual(self.snapshot(compiled)[0], before)
+        self.assertFalse(state.executors)
         self.assertFalse(state.prepared)
         self.assertEqual(state.prepared_bytes, 0)
         self.assert_retention(state)
-        # Calling the other survivor must not rebuild the lost key to mask an orphan.
+        # Unrelated derived survivors are intentionally lost; logical history stays.
         compiled(native.ones(3), x)
-        self.assertEqual(self.codegen.call_count, 2)
+        self.assertEqual(self.codegen.call_count, 3)
         self.assertEqual(list(state.executors), [second])
         self.assert_retention(state)
         state.executors = dict(state.executors)
         compiled(False, x)
-        self.assertEqual(self.codegen.call_count, 3)
+        self.assertEqual(self.codegen.call_count, 4)
         self.assert_retention(state)
         native.compiler.reset()
         self.assertFalse(state.graphs)

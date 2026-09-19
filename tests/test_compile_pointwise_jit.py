@@ -196,7 +196,7 @@ class Admission(unittest.TestCase):
         actual_cache = frontend._state.NativeEagerCompileCache()
         compiled = types.SimpleNamespace(_torch_rs_pointwise_cache=actual_cache)
         # Logical entries deliberately have the current non-tuple value layout.
-        actual_cache.graphs[object()] = frontend.Specialization({}, (), {}, {})
+        actual_cache.graphs[object()] = frontend.Specialization(frontend.SpecializationPayload({}, (), {}), {})
         first, second, third = object(), object(), object()
         actual_cache.executors.update(first=first, second=second, third=third)
         for path, select in diagnostic_capture_selectors():

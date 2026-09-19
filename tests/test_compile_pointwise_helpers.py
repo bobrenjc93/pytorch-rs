@@ -13,6 +13,14 @@ from torch_rs import _compile_pointwise as frontend, torch_rs as bridge
 from tests.test_compile_pointwise_jit import available, cache, lower, mock_pointwise_executor, program, two_device_reservation
 
 
+def assert_replaced_shell(test, old, current):
+    test.assertIsNot(current, old)
+    test.assertIsNot(current.lowerings, old.lowerings)
+    test.assertIs(current.payload, old.payload)
+    for name in old.payload._fields:
+        test.assertIs(getattr(current.payload, name), getattr(old.payload, name), name)
+
+
 @contextmanager
 def no_bodies(*functions):
     codes = tuple(fn.__code__ for fn in functions)
@@ -61,7 +69,7 @@ def check_ignored_capture_admission(test, x):
         executor = next(iter(state.executors.values()))
         def snapshot():
             return ([(key, id(entry), tuple(entry.lowerings.items()),
-                      dict(entry.values), dict(entry.observations))
+                      dict(entry.payload.values), dict(entry.payload.observations))
                      for key, entry in state.graphs.items()],
                     list(state.executors.items()))
         before = snapshot()
@@ -90,11 +98,11 @@ def check_ignored_capture_admission(test, x):
                 test.assertEqual(actual.cpu().tolist(), [-v for v in x.cpu().tolist()])
             test.assertEqual(len(state.graphs), 2)
             test.assertEqual(len(state.executors), 1)
-        source = next(s for s in next(iter(state.graphs.values())).data_sources if s.name == 'captured')
+        source = next(s for s in next(iter(state.graphs.values())).payload.data_sources if s.name == 'captured')
         for entry in state.graphs.values():
-            test.assertNotIn(source, entry.values)
-            test.assertNotIn(source, entry.observed)
-            test.assertNotIn(source, entry.observations)
+            test.assertNotIn(source, entry.payload.values)
+            test.assertNotIn(source, entry.payload.observed)
+            test.assertNotIn(source, entry.payload.observations)
 
 
 class HelperAdmission(unittest.TestCase):
@@ -371,7 +379,7 @@ class HelperCache(unittest.TestCase):
         fn = root(f1, 'helper(x)', 'x, ignored')
         compiled = native.compile(fn)
         initial = compiled(self.x, 1.0)
-        entry = next(iter(cache(compiled).graphs.values()))
+        entry_key, entry = next(iter(cache(compiled).graphs.items()))
         f1.__code__ = program('def f(a):\n return a.sin()').__code__
         changed = compiled(self.x, 1.0)
         self.assertNotEqual(initial[0], changed[0])
@@ -380,8 +388,14 @@ class HelperCache(unittest.TestCase):
         with no_bodies(fn, f1, f2):
             actual = compiled(self.x, self.x)  # New ABI, existing logical guard.
         self.assertEqual(actual[0][-1], ('neg', 0, 0, 0))
-        self.assertIs(next(reversed(cache(compiled).graphs.values())), entry)
-        self.assertEqual(len(entry.lowerings), 2)
+        current = next(reversed(cache(compiled).graphs.values()))
+        assert_replaced_shell(self, entry, current)
+        self.assertEqual(next(reversed(cache(compiled).graphs)), entry_key)
+        self.assertEqual(len(entry.lowerings), 1)
+        old_abi, old_lowering = next(iter(entry.lowerings.items()))
+        self.assertIs(current.lowerings[old_abi], old_lowering)
+        self.assertEqual(next(iter(current.lowerings)), old_abi)
+        self.assertEqual(len(current.lowerings), 2)
         self.assertEqual(len(cache(compiled).graphs), 2)
         f1.__code__ = code_a
         fn.__globals__['helper'] = f1
@@ -490,7 +504,7 @@ class HelperCache(unittest.TestCase):
         compiled = native.compile(fn)
         compiled(self.x, 1.0)
         state = cache(compiled)
-        entry = next(iter(state.graphs.values()))
+        entry_key, entry = next(iter(state.graphs.items()))
         before = (list(state.graphs.items()), list(state.executors.items()), list(entry.lowerings.items()))
         executor = mock_pointwise_executor(lambda *args: (_ for _ in ()).throw(RuntimeError('new ABI failure')))
         with patch.object(bridge, '_pointwise_compile', return_value=executor):
@@ -498,7 +512,14 @@ class HelperCache(unittest.TestCase):
                 compiled(self.x, self.x)
         self.assertEqual(before, (list(state.graphs.items()), list(state.executors.items()), list(entry.lowerings.items())))
         compiled(self.x, self.x)
-        self.assertEqual(len(entry.lowerings), 2)
+        current = next(iter(state.graphs.values()))
+        assert_replaced_shell(self, entry, current)
+        self.assertEqual(next(reversed(cache(compiled).graphs)), entry_key)
+        self.assertEqual(len(entry.lowerings), 1)
+        old_abi, old_lowering = next(iter(entry.lowerings.items()))
+        self.assertIs(current.lowerings[old_abi], old_lowering)
+        self.assertEqual(next(iter(current.lowerings)), old_abi)
+        self.assertEqual(len(current.lowerings), 2)
         self.assertEqual(len(state.graphs), 1)
 
     def test_recompile_limit_lowering_lru_and_reset_release_helper_code(self):
