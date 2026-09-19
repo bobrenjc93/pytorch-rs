@@ -1,9 +1,12 @@
 //! One bridge for composed CUDA captures; eager Tensor methods stay unchanged.
-use super::{CoreTensor, DType, PyTensor, compile_trace_mul_scalar_value, tensor_error};
+use super::{
+    CoreTensor, DType, PyTensor, compile_trace_add_scalar_value, compile_trace_mul_scalar_value,
+    tensor_error,
+};
 use crate::tensor::cuda_graph::{Layout, Operation, Shape};
 use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyInt, PyList, PyTuple};
+use pyo3::types::{PyInt, PyList, PyString, PyTuple};
 
 // Shape/stride declarations have already passed the frontend's whole-graph
 // checks. Recompute them natively too, before any storage allocation or launch.
@@ -119,12 +122,111 @@ fn shape_metadata(
     Ok((output.shape, output.strides, output.offset))
 }
 
+// Pure preflight for the default input-rooted view recipe. No storage owner,
+// device context, allocation or Python conversion callback is involved.
+#[pyfunction(name = "_compile_trace_cuda_transpose_metadata", signature = (shape, strides, offset, axes, /))]
+pub(super) fn transpose_metadata(
+    shape: &Bound<'_, PyAny>,
+    strides: &Bound<'_, PyAny>,
+    offset: &Bound<'_, PyAny>,
+    axes: &Bound<'_, PyAny>,
+) -> PyResult<(Vec<usize>, Vec<usize>, usize)> {
+    if !offset.is_exact_instance_of::<PyInt>() {
+        return Err(PyTypeError::new_err(
+            "transpose offset requires an exact integer",
+        ));
+    }
+    let input = Layout {
+        shape: exact_indices(shape)?,
+        strides: exact_indices(strides)?,
+        offset: offset.extract()?,
+    };
+    // The planner consumes trusted tensor layouts elsewhere. This metadata-only
+    // boundary must check length and address arithmetic before planner indexing.
+    if input.shape.len() != input.strides.len() {
+        return Err(PyValueError::new_err(
+            "transpose shape/stride rank mismatch",
+        ));
+    }
+    if !input.shape.contains(&0) {
+        input
+            .shape
+            .iter()
+            .try_fold(1usize, |n, &size| n.checked_mul(size))
+            .ok_or_else(|| PyValueError::new_err("transpose element count overflow"))?;
+        input
+            .shape
+            .iter()
+            .zip(&input.strides)
+            .try_fold(input.offset, |last, (&size, &stride)| {
+                (size - 1)
+                    .checked_mul(stride)
+                    .and_then(|span| last.checked_add(span))
+            })
+            .ok_or_else(|| PyValueError::new_err("transpose address overflow"))?;
+    }
+    let output = parse_operation("transpose", &[0], axes)?
+        .layout(&[input])
+        .map_err(|error| tensor_error(&error))?;
+    Ok((output.shape, output.strides, output.offset))
+}
+
+// Pure admission for every retained alias/effect instruction, including unused
+// ones. Execution independently repeats the whole plan with actual owners.
+#[pyfunction(name = "_compile_trace_cuda_alias_metadata", signature = (shape, strides, offset, target, payload, /))]
+pub(super) fn alias_metadata(
+    shape: &Bound<'_, PyAny>,
+    strides: &Bound<'_, PyAny>,
+    offset: &Bound<'_, PyAny>,
+    target: &Bound<'_, PyAny>,
+    payload: &Bound<'_, PyAny>,
+) -> PyResult<(Vec<usize>, Vec<usize>, usize)> {
+    if !target.is_exact_instance_of::<PyString>() || !offset.is_exact_instance_of::<PyInt>() {
+        return Err(PyTypeError::new_err(
+            "alias target/offset require exact str/int",
+        ));
+    }
+    let target: &str = target.extract()?;
+    if !matches!(target, "transpose" | "view" | "add_scalar_") {
+        return Err(PyNotImplementedError::new_err(
+            "unsupported compiled alias operation",
+        ));
+    }
+    let input = Layout {
+        shape: exact_indices(shape)?,
+        strides: exact_indices(strides)?,
+        offset: offset.extract()?,
+    };
+    input
+        .validate_alias_metadata()
+        .map_err(|error| tensor_error(&error))?;
+    let output = parse_operation(target, &[0], payload)?
+        .layout(&[input])
+        .map_err(|error| tensor_error(&error))?;
+    Ok((output.shape, output.strides, output.offset))
+}
+
 fn parse_operation(
     target: &str,
     indices: &[usize],
     payload: &Bound<'_, PyAny>,
 ) -> PyResult<Operation> {
     let operation = match (target, indices) {
+        ("add_scalar_", &[input]) => {
+            if !payload.is_exact_instance_of::<PyTuple>() {
+                return Err(PyTypeError::new_err("add_ payload requires an exact tuple"));
+            }
+            let args = payload.cast::<PyTuple>()?;
+            if args.len() != 2 {
+                return Err(PyTypeError::new_err(
+                    "add_ payload requires other and alpha",
+                ));
+            }
+            Operation::AddScalarInplace(
+                input,
+                compile_trace_add_scalar_value(&args.get_item(0)?, &args.get_item(1)?)?,
+            )
+        }
         ("mul_scalar", &[input]) => {
             Operation::MulScalar(input, compile_trace_mul_scalar_value(payload)?)
         }
@@ -178,6 +280,27 @@ fn parse_operation(
     Ok(operation)
 }
 
+fn validate_mutation_layouts(
+    layouts: &[Layout],
+    roots: &[Option<usize>],
+    tensors: &[&CoreTensor],
+    materialized: bool,
+) -> PyResult<()> {
+    if materialized {
+        return Err(PyNotImplementedError::new_err(
+            "CUDA mutation graphs cannot contain numerical or packing producers",
+        ));
+    }
+    // All original owners, including unused inputs and distinct aliases,
+    // must be valid before the first effect. Density was checked per add_.
+    for (layout, root) in layouts.iter().zip(roots) {
+        layout
+            .validate_alias_storage(tensors[root.expect("alias-only graph")])
+            .map_err(|error| tensor_error(&error))?;
+    }
+    Ok(())
+}
+
 #[pyfunction(name = "_compile_trace_cuda_graph", signature = (inputs, nodes, /))]
 pub(super) fn execute(
     inputs: &Bound<'_, PyTuple>,
@@ -217,6 +340,9 @@ pub(super) fn execute(
         .collect();
     let mut operations = Vec::with_capacity(nodes.len());
     let mut aliases = Vec::with_capacity(nodes.len());
+    let mut roots: Vec<_> = (0..tensors.len()).map(Some).collect();
+    let mut mutation = false;
+    let mut materialized = false;
     for (target, indices, payload, shape, strides) in nodes {
         let indices = exact_indices(&indices)?;
         let shape = exact_indices(&shape)?;
@@ -228,7 +354,15 @@ pub(super) fn execute(
         if layout.shape != shape || layout.strides != strides {
             return Err(PyValueError::new_err("CUDA graph output metadata mismatch"));
         }
+        let root = operation
+            .alias_source(&layouts)
+            .map_err(|error| tensor_error(&error))?
+            .and_then(|source| roots[source]);
+        materialized |= root.is_none();
+        mutation |= matches!(operation, Operation::AddScalarInplace(..));
+        roots.push(root);
         aliases.push(match operation {
+            Operation::AddScalarInplace(input, _) => Some(input),
             Operation::Contiguous(input)
                 if layouts[input]
                     .is_contiguous()
@@ -241,11 +375,15 @@ pub(super) fn execute(
         layouts.push(layout);
         operations.push(operation);
     }
+    if mutation {
+        validate_mutation_layouts(&layouts, &roots, &tensors, materialized)?;
+    }
     // Retain all input borrows and every intermediate, including unused nodes.
     // Existing core operations synchronize even on launch errors and restore
     // the current device. No Python call or PyO3 crossing occurs between nodes.
     // Packing stays native; contiguous aliases preserve their original owner.
     // Squeeze, T, Transpose, Reshape and View always wrap fresh objects.
+    // Runtime or wrapping failure after execution does not roll back mutations.
     let mut outputs = Vec::with_capacity(operations.len());
     for (index, operation) in operations.into_iter().enumerate() {
         let output = operation
@@ -264,21 +402,24 @@ pub(super) fn execute(
     }
     drop(tensors);
     drop(guards);
-    wrap_outputs(inputs.py(), owners, outputs, aliases)
+    wrap_outputs(owners, outputs, aliases, |output| {
+        Py::new(inputs.py(), PyTensor::new(output))
+    })
 }
 
-fn wrap_outputs<'py>(
-    py: Python<'py>,
-    owners: Vec<Bound<'py, PyTensor>>,
+fn wrap_outputs(
+    owners: Vec<Bound<'_, PyTensor>>,
     outputs: Vec<CoreTensor>,
     aliases: Vec<Option<usize>>,
+    mut convert: impl FnMut(CoreTensor) -> PyResult<Py<PyTensor>>,
 ) -> PyResult<Vec<Py<PyTensor>>> {
+    let py = owners[0].py();
     let input_count = owners.len();
     let mut objects: Vec<Py<PyTensor>> = owners.into_iter().map(Bound::unbind).collect();
     for (output, alias) in outputs.into_iter().zip(aliases) {
         let object = match alias {
             Some(input) => objects[input].clone_ref(py),
-            None => Py::new(py, PyTensor::new(output))?,
+            None => convert(output)?,
         };
         objects.push(object);
     }
@@ -289,6 +430,428 @@ fn wrap_outputs<'py>(
 mod tests {
     use super::*;
     use crate::{Device, cuda, tensor::cuda_graph::EXECUTIONS};
+
+    #[test]
+    fn alias_metadata_checks_exact_scalars_alpha_and_shared_geometry() {
+        Python::initialize();
+        Python::attach(|py| {
+            let shape = py.eval(c"(2,3)", None, None).unwrap();
+            let strides = py.eval(c"(1,2)", None, None).unwrap();
+            let offset = py.eval(c"4", None, None).unwrap();
+            let target = py.eval(c"'add_scalar_'", None, None).unwrap();
+            for payload in [c"(True, 1)", c"(2, 1.0)", c"(float('nan'), 1)"] {
+                assert_eq!(
+                    alias_metadata(
+                        &shape,
+                        &strides,
+                        &offset,
+                        &target,
+                        &py.eval(payload, None, None).unwrap()
+                    )
+                    .unwrap(),
+                    (vec![2, 3], vec![1, 2], 4)
+                );
+            }
+            for payload in [
+                c"[2,1]",
+                c"(2,)",
+                c"(2,True)",
+                c"(2,1.0000000000000002)",
+                c"(2,0)",
+                c"(2**100,1)",
+                c"(2,2**100)",
+                c"(2,type('I', (int,), {})(1))",
+            ] {
+                assert!(
+                    alias_metadata(
+                        &shape,
+                        &strides,
+                        &offset,
+                        &target,
+                        &py.eval(payload, None, None).unwrap()
+                    )
+                    .is_err()
+                );
+            }
+            for invalid in [c"(4,1)", c"(0,1)", c"(1,)"] {
+                assert!(
+                    alias_metadata(
+                        &shape,
+                        &py.eval(invalid, None, None).unwrap(),
+                        &offset,
+                        &target,
+                        &py.eval(c"(2,1)", None, None).unwrap()
+                    )
+                    .is_err()
+                );
+            }
+            assert!(
+                alias_metadata(
+                    &shape,
+                    &strides,
+                    &offset,
+                    &py.eval(c"'neg'", None, None).unwrap(),
+                    &py.None().into_bound(py)
+                )
+                .is_err()
+            );
+        });
+    }
+
+    #[test]
+    fn alias_scalar_rejection_never_calls_hostile_float_conversion() {
+        Python::initialize();
+        Python::attach(|py| {
+            let namespace = pyo3::types::PyDict::new(py);
+            py.run(
+                c"calls = []\nclass Hostile:\n    def __float__(self):\n        calls.append('float')\n        raise RuntimeError('conversion callback ran')\nhostile = Hostile()",
+                Some(&namespace),
+                None,
+            )
+            .unwrap();
+            for (payload, operation) in [
+                (c"(hostile, 1)", "scalar addition"),
+                (c"(2, hostile)", "add_ alpha"),
+            ] {
+                let error = alias_metadata(
+                    &py.eval(c"(2,3)", None, None).unwrap(),
+                    &py.eval(c"(3,1)", None, None).unwrap(),
+                    &py.eval(c"0", None, None).unwrap(),
+                    &py.eval(c"'add_scalar_'", None, None).unwrap(),
+                    &py.eval(payload, Some(&namespace), None).unwrap(),
+                )
+                .unwrap_err();
+                assert!(error.is_instance_of::<PyNotImplementedError>(py));
+                assert!(error.to_string().contains(&format!(
+                    "torch.compile {operation} requires an exact bool, int or float constant"
+                )));
+                assert_eq!(
+                    namespace.get_item("calls").unwrap().unwrap().len().unwrap(),
+                    0
+                );
+            }
+        });
+    }
+
+    fn alias_node<'py>(
+        py: Python<'py>,
+        target: &str,
+        input: usize,
+        payload: &Bound<'py, PyAny>,
+        shape: &[usize],
+        strides: &[usize],
+    ) -> Node<'py> {
+        (
+            target.into(),
+            PyTuple::new(py, [input]).unwrap().into_any(),
+            payload.clone(),
+            PyTuple::new(py, shape).unwrap().into_any(),
+            PyTuple::new(py, strides).unwrap().into_any(),
+        )
+    }
+
+    #[test]
+    fn mutation_bridge_preserves_receiver_identity_and_rejects_late_nodes_before_effects() {
+        if cuda::device_count() == 0 {
+            eprintln!("skipping native mutation bridge: CUDA unavailable");
+            return;
+        }
+        Python::initialize();
+        Python::attach(|py| {
+            let input = CoreTensor::from_vec(vec![1.; 6], [2, 3])
+                .unwrap()
+                .try_copy_cpu_to_cuda(Device::Cuda(0))
+                .unwrap();
+            let owner = Py::new(py, PyTensor::new(input.metadata_alias().unwrap())).unwrap();
+            let inputs = PyTuple::new(py, [owner.clone_ref(py)]).unwrap();
+            let scalar = py.eval(c"(2.0,1)", None, None).unwrap();
+            let add = alias_node(py, "add_scalar_", 0, &scalar, &[2, 3], &[3, 1]);
+            let bad_alpha = alias_node(
+                py,
+                "add_scalar_",
+                1,
+                &py.eval(c"(1,True)", None, None).unwrap(),
+                &[2, 3],
+                &[3, 1],
+            );
+            let bad_view = alias_node(
+                py,
+                "view",
+                1,
+                &py.eval(c"(7,)", None, None).unwrap(),
+                &[7],
+                &[1],
+            );
+            let numerical = alias_node(py, "neg", 0, &py.None().into_bound(py), &[2, 3], &[3, 1]);
+            for nodes in [
+                vec![add.clone(), bad_alpha],
+                vec![add.clone(), bad_view],
+                vec![add.clone(), numerical.clone()],
+                vec![numerical, add],
+            ] {
+                let before = EXECUTIONS.get();
+                assert!(execute(&inputs, nodes).is_err());
+                assert_eq!(EXECUTIONS.get(), before);
+                assert_eq!(input.try_copy_cuda_to_cpu().unwrap().as_slice(), &[1.; 6]);
+            }
+            let transpose = alias_node(
+                py,
+                "transpose",
+                0,
+                &py.eval(c"(0,1)", None, None).unwrap(),
+                &[3, 2],
+                &[1, 3],
+            );
+            let add = alias_node(py, "add_scalar_", 1, &scalar, &[3, 2], &[1, 3]);
+            let outputs = execute(
+                &inputs,
+                vec![
+                    transpose,
+                    add,
+                    alias_node(py, "add_scalar_", 0, &scalar, &[2, 3], &[3, 1]),
+                ],
+            )
+            .unwrap();
+            assert!(outputs[0].is(&outputs[1]));
+            assert!(!outputs[0].is(&owner));
+            assert!(outputs[2].is(&owner));
+            assert_eq!(input.try_copy_cuda_to_cpu().unwrap().as_slice(), &[5.; 6]);
+        });
+    }
+
+    #[test]
+    fn late_valid_packing_rejects_before_mutation_but_alias_layouts_execute() {
+        if cuda::device_count() == 0 {
+            eprintln!("skipping mutation packing prevalidation: CUDA unavailable");
+            return;
+        }
+        Python::initialize();
+        Python::attach(|py| {
+            let values = vec![0., -0., 1., -2., 3., 4.];
+            let input = CoreTensor::from_vec(values.clone(), [2, 3])
+                .unwrap()
+                .try_copy_cpu_to_cuda(Device::Cuda(0))
+                .unwrap();
+            let owner = Py::new(py, PyTensor::new(input.transpose(0, 1).unwrap())).unwrap();
+            let inputs = PyTuple::new(py, [owner]).unwrap();
+            let scalar = py.eval(c"(2.0,1)", None, None).unwrap();
+            let add = alias_node(py, "add_scalar_", 0, &scalar, &[3, 2], &[1, 3]);
+            let packs = [
+                alias_node(
+                    py,
+                    "contiguous",
+                    0,
+                    &py.None().into_bound(py),
+                    &[3, 2],
+                    &[2, 1],
+                ),
+                alias_node(
+                    py,
+                    "reshape",
+                    0,
+                    &py.eval(c"(6,)", None, None).unwrap(),
+                    &[6],
+                    &[1],
+                ),
+            ];
+            for pack in packs {
+                let before = EXECUTIONS.get();
+                let error = execute(&inputs, vec![add.clone(), pack.clone()]).unwrap_err();
+                assert!(error.is_instance_of::<PyNotImplementedError>(py));
+                assert!(error.to_string().contains(
+                    "CUDA mutation graphs cannot contain numerical or packing producers"
+                ));
+                assert_eq!(EXECUTIONS.get(), before);
+                assert_eq!(
+                    input
+                        .try_copy_cuda_to_cpu()
+                        .unwrap()
+                        .as_slice()
+                        .iter()
+                        .map(|v| v.to_bits())
+                        .collect::<Vec<_>>(),
+                    values.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+                );
+                // The late node is valid and requires a pack, rather than failing
+                // payload/layout validation before reaching mutation exclusion.
+                let packed = execute(&inputs, vec![pack]).unwrap();
+                let tensor = packed[0].borrow(py);
+                assert_ne!(tensor.inner.data_ptr(), input.data_ptr());
+                assert_eq!(
+                    tensor.inner.try_copy_cuda_to_cpu().unwrap().as_slice(),
+                    &[0., -2., -0., 3., 1., 4.]
+                );
+            }
+            let owner = Py::new(py, PyTensor::new(input.metadata_alias().unwrap())).unwrap();
+            let inputs = PyTuple::new(py, [owner.clone_ref(py)]).unwrap();
+            let outputs = execute(
+                &inputs,
+                vec![
+                    alias_node(py, "add_scalar_", 0, &scalar, &[2, 3], &[3, 1]),
+                    alias_node(
+                        py,
+                        "contiguous",
+                        0,
+                        &py.None().into_bound(py),
+                        &[2, 3],
+                        &[3, 1],
+                    ),
+                    alias_node(
+                        py,
+                        "reshape",
+                        0,
+                        &py.eval(c"(6,)", None, None).unwrap(),
+                        &[6],
+                        &[1],
+                    ),
+                ],
+            )
+            .unwrap();
+            assert!(outputs[0].is(&owner));
+            assert!(outputs[1].is(&owner));
+            assert!(!outputs[2].is(&owner));
+            assert_eq!(outputs[2].borrow(py).inner.data_ptr(), input.data_ptr());
+            assert_eq!(
+                input.try_copy_cuda_to_cpu().unwrap().as_slice(),
+                &[2., 2., 3., 0., 5., 6.]
+            );
+        });
+    }
+
+    #[test]
+    fn wrapping_failure_after_mutation_keeps_completed_effect_and_releases_aliases() {
+        if cuda::device_count() == 0 {
+            eprintln!("skipping mutation wrapping failure: CUDA unavailable");
+            return;
+        }
+        Python::initialize();
+        Python::attach(|py| {
+            let input = CoreTensor::from_vec(vec![1.; 6], [2, 3])
+                .unwrap()
+                .try_copy_cpu_to_cuda(Device::Cuda(0))
+                .unwrap();
+            let owner = Py::new(py, PyTensor::new(input.metadata_alias().unwrap())).unwrap();
+            let effect = Operation::AddScalarInplace(0, 2.)
+                .execute(&[&input], &[])
+                .unwrap();
+            let view = input.transpose(0, 1).unwrap();
+            let result = wrap_outputs(
+                vec![owner.bind(py).clone()],
+                vec![effect, view],
+                vec![Some(0), None],
+                |_| {
+                    Err(pyo3::exceptions::PyMemoryError::new_err(
+                        "injected post-effect wrapping failure",
+                    ))
+                },
+            );
+            assert!(
+                result
+                    .unwrap_err()
+                    .is_instance_of::<pyo3::exceptions::PyMemoryError>(py)
+            );
+            assert_eq!(input.try_copy_cuda_to_cpu().unwrap().as_slice(), &[3.; 6]);
+            let effect = Operation::AddScalarInplace(0, 1.)
+                .execute(&[&input], &[])
+                .unwrap();
+            let recovered = wrap_outputs(
+                vec![owner.bind(py).clone()],
+                vec![effect],
+                vec![Some(0)],
+                |_| panic!("mutation receiver must reuse Python owner"),
+            )
+            .unwrap();
+            assert!(recovered[0].is(&owner));
+            assert_eq!(input.try_copy_cuda_to_cpu().unwrap().as_slice(), &[4.; 6]);
+        });
+    }
+
+    #[test]
+    fn transpose_query_checks_exact_payloads_and_layout_before_indexing() {
+        Python::initialize();
+        Python::attach(|py| {
+            let shape = py.eval(c"(2, 3)", None, None).unwrap();
+            let strides = py.eval(c"(3, 1)", None, None).unwrap();
+            let offset = py.eval(c"7", None, None).unwrap();
+            let axes = py.eval(c"(-1, 0)", None, None).unwrap();
+            assert_eq!(
+                transpose_metadata(&shape, &strides, &offset, &axes).unwrap(),
+                (vec![3, 2], vec![1, 3], 7)
+            );
+            for expr in [
+                c"(True, 0)",
+                c"(0.0, 1)",
+                c"[0, 1]",
+                c"(0,)",
+                c"(0, 2**100)",
+            ] {
+                assert!(
+                    transpose_metadata(
+                        &shape,
+                        &strides,
+                        &offset,
+                        &py.eval(expr, None, None).unwrap()
+                    )
+                    .is_err()
+                );
+            }
+            for expr in [c"()", c"(1,)", c"(1, -1)", c"(2**64-1, 1)"] {
+                assert!(
+                    transpose_metadata(&shape, &py.eval(expr, None, None).unwrap(), &offset, &axes)
+                        .is_err()
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn transpose_wrapping_failure_releases_partial_and_pending_aliases() {
+        use pyo3::exceptions::PyMemoryError;
+        #[allow(unsafe_code)]
+        fn refcount(owner: &Bound<'_, PyTensor>) -> isize {
+            // SAFETY: Bound supplies a live object while attached to Python;
+            // borrowing it does not increment the count being observed.
+            unsafe { pyo3::ffi::Py_REFCNT(owner.as_ptr()) }
+        }
+        Python::initialize();
+        Python::attach(|py| {
+            let input = CoreTensor::from_vec(vec![1.; 6], [2, 3]).unwrap();
+            let owner = Py::new(py, PyTensor::new(input.clone())).unwrap();
+            let baseline = refcount(owner.bind(py));
+            let outputs = (0..3).map(|_| input.transpose(0, 1).unwrap()).collect();
+            let mut wrapped = Vec::new();
+            let mut count = 0;
+            let result = wrap_outputs(
+                vec![owner.bind(py).clone()],
+                outputs,
+                vec![None; 3],
+                |output| {
+                    count += 1;
+                    if count == 2 {
+                        return Err(PyMemoryError::new_err("injected alias wrapping failure"));
+                    }
+                    let object = Py::new(py, PyTensor::new(output))?;
+                    wrapped.push(object.clone_ref(py));
+                    Ok(object)
+                },
+            );
+            assert!(result.unwrap_err().is_instance_of::<PyMemoryError>(py));
+            assert_eq!(count, 2);
+            assert_eq!(refcount(owner.bind(py)), baseline);
+            assert_eq!(refcount(wrapped[0].bind(py)), 1);
+            drop(wrapped);
+            let outputs = vec![input.transpose(0, 1).unwrap()];
+            let result = wrap_outputs(
+                vec![owner.bind(py).clone()],
+                outputs,
+                vec![None],
+                |output| Py::new(py, PyTensor::new(output)),
+            )
+            .unwrap();
+            assert_eq!(result.len(), 1);
+            assert!(!result[0].is(&owner));
+        });
+    }
 
     #[test]
     fn shape_payloads_reject_before_early_or_late_execution() {

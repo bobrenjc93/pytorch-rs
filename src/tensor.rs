@@ -421,7 +421,9 @@ fn requires_grad_flag(requires_grad: bool) -> Arc<AtomicBool> {
     Arc::new(AtomicBool::new(requires_grad))
 }
 
-/// A tensor with immutable shared storage and native shape/stride metadata.
+/// A tensor with shared storage and native shape/stride metadata. CPU numerical
+/// storage is immutable; bounded CUDA scalar `add_scalar_` mutates the shared
+/// device allocation, preserving every alias without exposing mutable host slices.
 ///
 /// Metadata-only views may have a nonzero storage offset and non-contiguous
 /// strides. Materializing operations produce independent storage.
@@ -5097,6 +5099,32 @@ impl Tensor {
     pub fn add_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
         let output = self.map_scalar(scalar, |value, scalar| value + scalar)?;
         self.finish_copy_transform(output, TransformMapping::Identity, AutogradNode::Add)
+    }
+
+    /// Adds a scalar in place to a non-overlapping dense CUDA float32 interval.
+    /// Shared aliases observe the same completed writes; storage and metadata
+    /// are never replaced. Empty inputs do not form a pointer or launch a kernel.
+    ///
+    /// # Errors
+    /// Rejects CPU/meta, gradients, and nonempty holey/overlapping layouts. This
+    /// native operation issues no writes on pre-launch rejection. A runtime
+    /// failure after launch does not promise rollback or usable contents after
+    /// uncertain completion. Concurrent calls have unspecified ordering.
+    pub fn add_scalar_(&mut self, scalar: f32) -> Result<(), TensorError> {
+        let reason = if !self.is_cuda() || self.dtype() != DType::Float32 {
+            Some("input must be CUDA float32")
+        } else if self.requires_grad() {
+            Some("autograd is unsupported")
+        } else if !self.is_non_overlapping_and_dense() {
+            Some("input must be non-overlapping and dense")
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            return Err(TensorError::UnsupportedCudaInplaceAddition { reason });
+        }
+        self.storage
+            .cuda_add_scalar_inplace_float32(self.offset, self.elements, scalar)
     }
 
     /// Subtracts a scalar from every element.
@@ -19575,5 +19603,88 @@ mod cuda_upload_tests {
             output.try_copy_cuda_to_cpu().unwrap().try_to_vec().unwrap(),
             [3.25, -9.5]
         );
+    }
+}
+
+#[cfg(test)]
+mod cuda_add_inplace_tests {
+    use super::*;
+
+    #[test]
+    fn scalar_add_inplace_dense_geometry_is_independent_of_rank_and_order() {
+        for (shape, strides, elements, dense) in [
+            (vec![], vec![], 1, true),
+            (vec![2, 3, 4], vec![1, 8, 2], 24, true),
+            (vec![1, 2, 1, 3], vec![usize::MAX, 3, 0, 1], 6, true),
+            (vec![0, 7], vec![usize::MAX, 0], 0, true),
+            (vec![2, 2], vec![1, 1], 4, false),
+            (vec![2, 3], vec![4, 1], 6, false),
+            (vec![2], vec![0], 2, false),
+            (vec![usize::MAX, 2], vec![1, usize::MAX], usize::MAX, false),
+        ] {
+            assert_eq!(
+                layout_is_non_overlapping_and_dense(&shape, &strides, elements),
+                dense
+            );
+        }
+        let mut cpu = Tensor::from_vec(vec![1., -2.], [2]).unwrap();
+        let alias = cpu.detach().unwrap();
+        assert!(matches!(
+            cpu.add_scalar_(1.),
+            Err(TensorError::UnsupportedCudaInplaceAddition { .. })
+        ));
+        assert!(cpu.shares_storage_with(&alias));
+        assert_eq!(alias.as_slice(), [1., -2.]);
+    }
+
+    #[test]
+    fn scalar_add_inplace_tensor_policy_and_shared_dense_interval() {
+        if crate::cuda::device_count() == 0 {
+            eprintln!("skipping in-place Tensor policy: no CUDA runtime/device");
+            return;
+        }
+        let base = Tensor::from_vec(vec![1.; 12], [12])
+            .unwrap()
+            .try_copy_cpu_to_cuda(Device::Cuda(0))
+            .unwrap();
+        let mut view = base.detach().unwrap();
+        // Synthetic metadata exercises overlapping/holey layouts unavailable in
+        // the Python surface without broadening public view construction.
+        view.shape = vec![2, 3];
+        view.elements = 6;
+        view.offset = 2;
+        for strides in [vec![1, 1], vec![4, 1], vec![0, 1]] {
+            view.strides = strides;
+            assert!(matches!(
+                view.add_scalar_(3.),
+                Err(TensorError::UnsupportedCudaInplaceAddition { .. })
+            ));
+            assert_eq!(base.try_copy_cuda_to_cpu().unwrap().as_slice(), [1.; 12]);
+        }
+        view.strides = vec![1, 2];
+        view.view_requires_grad = Some(requires_grad_flag(true));
+        assert!(view.requires_grad());
+        assert!(matches!(
+            view.add_scalar_(3.),
+            Err(TensorError::UnsupportedCudaInplaceAddition { .. })
+        ));
+        assert_eq!(base.try_copy_cuda_to_cpu().unwrap().as_slice(), [1.; 12]);
+        view.view_requires_grad = None;
+        let storage = Arc::clone(&view.storage);
+        view.add_scalar_(0.25).unwrap();
+        assert!(Arc::ptr_eq(&view.storage, &storage));
+        assert!(view.shares_storage_with(&base));
+        assert_eq!(view.strides, [1, 2]);
+        assert_eq!(view.offset, 2);
+        assert_eq!(
+            base.try_copy_cuda_to_cpu().unwrap().as_slice(),
+            [1., 1., 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1., 1., 1., 1.]
+        );
+        view.shape = vec![0];
+        view.strides = vec![usize::MAX];
+        view.offset = usize::MAX;
+        view.elements = 0;
+        view.add_scalar_(f32::NAN).unwrap();
+        assert!(Arc::ptr_eq(&view.storage, &storage));
     }
 }

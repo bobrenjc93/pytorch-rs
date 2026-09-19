@@ -95,7 +95,200 @@ class InputContracts(unittest.TestCase):
         self.assertEqual(len(cache(compiled).graphs), 2)
 
 
+class SourceResolution(unittest.TestCase):
+    def test_projection_matches_full_resolution_and_restores_binding_order(self):
+        fn = program('def f(p,q):\n return p["x"]+q+scale', scale=0.75)
+        parsed = frontend.analyze(fn, 2)
+        x = native.ones(3)
+        for tree in ({'x': x, 'rest': [(False, -0.0)]},
+                     {'rest': [(True, 1.5)], 'x': x},
+                     (x, {'rest': [0.25, False]})):
+            _, parameters = frontend.bind_arguments((tree, 1.25))
+            keys, values = frontend.resolve(fn, parsed, parameters)
+            projected = frontend._BindingResolution(parsed)
+            projected.dependencies(fn, parameters, projected.bind)
+            self.assertEqual(tuple(projected.keys), parsed.dependencies)
+            for source in reversed(keys):
+                self.assertEqual(projected.get(source), keys[source])
+                self.assertEqual(projected.values[source], values[source])
+            for path in (('missing',), (99,), ('rest', 99), ('x', 0)):
+                self.assertIsNone(projected.get(frontend.BindingSource('parameter', 'p', 0, path)))
+            actual_keys, actual_values = projected.complete()
+            self.assertEqual(list(actual_keys.items()), list(keys.items()))
+            self.assertEqual(list(actual_values.items()), list(values.items()))
+            # Projection order must not affect scalar promotion or ABI slots.
+            history = {(parsed.code, tuple((s, (float, b'\0'*8)) for s, v in values.items()
+                                          if type(v) is float)): None}
+            self.assertEqual(frontend.runtime_bindings(parsed, actual_keys, actual_values, history),
+                             frontend.runtime_bindings(parsed, keys, values, history))
+
+
+class WarmSourceResolution(unittest.TestCase):
+    setUp = output_tests.StructuredCache.setUp
+    snapshot = output_tests.StructuredCache.snapshot
+
+    def test_older_match_projects_additional_tensor_after_newer_shape_miss(self):
+        fn = program('def f(p):\n if p["a"].shape[0]<4:\n  return -p["a"]\n return -p["b"]')
+        compiled = native.compile(fn)
+        compiled({'a': native.ones(5), 'b': native.ones(5)})
+        older = next(reversed(cache(compiled).graphs.values()))
+        compiled({'a': native.ones(3), 'b': native.ones(3)})
+        newer = next(reversed(cache(compiled).graphs.values()))
+        self.assertIsNot(newer, older)
+        self.assertEqual(len(newer.payload.tensor_sources), 1)
+        self.assertEqual(len(older.payload.tensor_sources), 2)
+        with patch.object(frontend.BindingSource, 'child', side_effect=AssertionError('new source')), \
+             patch.object(frontend._BindingResolution, 'complete', side_effect=AssertionError('full walk')):
+            compiled({'a': native.ones(5), 'b': native.ones(5)})
+        self.assertIs(next(reversed(cache(compiled).graphs.values())), older)
+        self.assertEqual(len(cache(compiled).graphs), 2)
+
+    def test_retained_hits_reuse_sources_and_read_current_snapshots(self):
+        fn = program('def f(p):\n x,g=p["pair"][0]\n return (x*g,x)')
+        compiled = native.compile(fn)
+        for gain in (0.5, 1.5, 2.5):
+            compiled({'pair': [(native.ones(3), gain)], 'unused': False})
+        before = self.snapshot(compiled)
+        self.admit.reset_mock()
+        with patch.object(frontend.BindingSource, 'child', side_effect=AssertionError('new source')), \
+             patch.object(frontend._BindingResolution, 'complete', side_effect=AssertionError('full walk')):
+            for gain in (3.5, -0.0, 0.75):
+                x = native.ones(3)
+                with no_bodies(fn):
+                    actual = compiled({'unused': [False], 'pair': [(x, gain)]})
+                self.assertIs(actual[1], x)
+                self.admit.assert_called_with((x,))
+        self.assertEqual(self.admit.call_count, 3)
+        self.assertEqual(self.snapshot(compiled), before)
+
+    def test_inactive_nested_projection_and_complete_readmission_keep_frozen_scalars(self):
+        helper = program('def f(s):\n return s[-1].view(3)')
+        fn = program('def f(x,p,gain):\n if x.shape[0]<4:\n'
+                     '  return x*gain\n return helper(p["items"])', helper=helper)
+        compiled = native.compile(fn)
+        x = native.ones(3)
+        compiled(x, {'items': [x]}, -0.0)
+        entry = next(iter(cache(compiled).graphs.values()))
+        retained = next(iter(entry.lowerings.values()))
+        current = native.ones(3)
+        with no_bodies(fn, helper), \
+             patch.object(frontend.BindingSource, 'child', side_effect=AssertionError('new source')), \
+             patch.object(frontend._BindingResolution, 'complete', side_effect=AssertionError('full walk')), \
+             patch.object(frontend, 'lower', side_effect=AssertionError('warm lowering')):
+            compiled(current, {'unused': False, 'items': [current]}, 0.0)
+        self.assertIs(next(iter(entry.lowerings.values())), retained)
+        complete = frontend._BindingResolution.complete
+        with no_bodies(fn, helper), \
+             patch.object(frontend._BindingResolution, 'complete', autospec=True,
+                          side_effect=complete) as expansion, \
+             patch.object(frontend, 'lower', wraps=frontend.lower) as lowering:
+            compiled(current, {'items': [False, current]}, 0.0)
+        expansion.assert_called_once()
+        lowering.assert_called_once()
+        values = lowering.call_args.args[1]
+        gain = next(value for source, value in values.items() if source.name == 'gain')
+        self.assertEqual(frontend.struct.pack('!d', gain), frontend.struct.pack('!d', -0.0))
+        current = next(iter(cache(compiled).graphs.values()))
+        from tests.test_compile_pointwise_helpers import assert_replaced_shell
+        assert_replaced_shell(self, entry, current)
+        self.assertEqual(len(cache(compiled).graphs), 1)
+        self.assertEqual(tuple(current.lowerings), tuple(entry.lowerings))
+        self.assertIs(next(iter(entry.lowerings.values())), retained)
+        self.assertIsNot(next(iter(current.lowerings.values())), retained)
+
+    def test_projection_failure_publishes_nothing_and_reset_recovers(self):
+        fn = program('def f(p):\n return -p["pair"][0]')
+        compiled = native.compile(fn)
+        compiled({'pair': [native.ones(3)]})
+        before = self.snapshot(compiled)
+        original = frontend._BindingResolution.bind
+        error = MemoryError('project current leaf')
+        def fail(resolved, source, value):
+            if source.path == ('pair', 0):
+                raise error
+            return original(resolved, source, value)
+        with patch.object(frontend._BindingResolution, 'bind', fail):
+            with self.assertRaises(MemoryError) as raised:
+                compiled({'pair': [native.ones(3)]})
+        self.assertIs(raised.exception, error)
+        self.assertEqual(self.snapshot(compiled), before)
+        compiled({'pair': [native.ones(3)]})
+        native.compiler.reset()
+        self.assertFalse(cache(compiled).graphs)
+        self.assertFalse(cache(compiled).executors)
+        self.assertEqual(cache(compiled).prepared_bytes, 0)
+        compiled({'pair': [native.ones(3)]})
+
+    def test_captures_reject_before_stale_source_guard_resolution(self):
+        fn = program('def f(p):\n return p["x"]+scale', scale=0.5)
+        compiled = native.compile(fn)
+        compiled({'x': native.ones(3)})
+        before = self.snapshot(compiled)
+        fn.__globals__['scale'] = object()
+        with self.assertRaisesRegex(NotImplementedError, 'only native operators'):
+            compiled({'different': native.ones(3)})
+        self.assertEqual(self.snapshot(compiled), before)
+        fn.__globals__['scale'] = 0.5
+        with self.assertRaisesRegex(NotImplementedError, 'existing exact literal string key'):
+            compiled({'different': native.ones(3)})
+        self.assertEqual(self.snapshot(compiled), before)
+        compiled({'x': native.ones(3)})
+
+
 class InputAdmission(unittest.TestCase):
+    def test_mutable_children_are_admitted_from_one_snapshot(self):
+        x, y = native.ones(1), native.ones(1)
+        original_islice = frontend.islice
+        for kind in (list, dict):
+            with self.subTest(kind=kind):
+                root = [x, 0.5] if kind is list else {'x': x, 'gain': 0.5}
+
+                def changing(iterator, limit):
+                    yield from original_islice(iterator, limit)
+                    # Mutation after the snapshot must not change its owners,
+                    # scalar values or dictionary key/value correspondence.
+                    if kind is list:
+                        root[:] = [y, 1.5]
+                    else:
+                        root.clear()
+                        root.update({'new': y, 'other': 1.5})
+
+                with patch.object(frontend, 'islice', changing):
+                    tensors, parameters = frontend.bind_arguments((root,))
+                self.assertIs(tensors[0], x)
+                self.assertEqual(parameters[0].items, (frontend.Value(0), 0.5))
+                self.assertEqual(parameters[0].keys, () if kind is list else ('x', 'gain'))
+                tensors, parameters = frontend.bind_arguments((root,))
+                self.assertIs(tensors[0], y)
+                self.assertEqual(parameters[0].items, (frontend.Value(0), 1.5))
+                self.assertEqual(parameters[0].keys, () if kind is list else ('new', 'other'))
+
+    def test_dictionary_key_and_snapshot_size_errors_precede_child_admission(self):
+        x = native.ones(1)
+        # Even an earlier bad leaf is not inspected before all key types.
+        with self.assertRaisesRegex(NotImplementedError, 'keys must be exact strings'):
+            frontend.bind_arguments(({'bad': None, 1: x},))
+        original_islice = frontend.islice
+        for root in ([x, None], {'x': x, 'bad': None}):
+            def shorter(iterator, limit):
+                return original_islice(iterator, 1)
+            with patch.object(frontend, 'islice', shorter):
+                with self.assertRaisesRegex(NotImplementedError, 'container changed during admission'):
+                    frontend.bind_arguments((root,))
+
+    def test_tuple_and_dictionary_depth_bounds_include_unused_children(self):
+        x = native.ones(1)
+        for wrap in (lambda child: (child,), lambda child: {'child': child}):
+            tree = x
+            for _ in range(64):
+                tree = wrap(tree)
+            tensors, _ = frontend.bind_arguments((tree,))
+            self.assertIs(tensors[0], x)
+            with self.assertRaisesRegex(NotImplementedError, 'depth 64'):
+                frontend.bind_arguments((wrap(tree),))
+            with self.assertRaisesRegex(NotImplementedError, '4096 reference edges'):
+                frontend.bind_arguments(((x,) + (False,) * 4095,))
+
     def test_structured_restart_counts_the_flat_prefix_once(self):
         x, y = native.ones(1), native.ones(1)
         for second in (x, y):
@@ -194,9 +387,12 @@ class InputLanguage(unittest.TestCase):
         for source, captures in cases:
             with self.subTest(source=source):
                 self.assertEqual(self.lower(source, tree, **captures), expected)
-        # Even zero-trip bodies must validate rotations without touching the iterator.
-        self.assertEqual(self.lower(f'def f(p):\n for i in range(0):\n  {assignment}\n return -p[0]', tree),
-                         self.lower('def f(p):\n return -p[0]', tree))
+        # Zero-trip bodies do not change computation, but their traversed
+        # children remain part of this lowering's whole-program admission.
+        skipped = self.lower(f'def f(p):\n for i in range(0):\n  {assignment}\n return -p[0]', tree)
+        plain = self.lower('def f(p):\n return -p[0]', tree)
+        self.assertEqual(dataclasses.replace(skipped, structural_admission=plain.structural_admission), plain)
+        self.assertGreater(set(skipped.structural_admission), set(plain.structural_admission))
 
     def test_two_item_local_tuple_assignment(self):
         self.check_local_tuple_assignment(('a', 'b'), 'a-b')
@@ -300,7 +496,7 @@ class InputTransactions(InputContracts):
             compiled({'x': native.ones(3), 'ignored': ignored})
         self.assertEqual(len(cache(compiled).graphs), 1)
         entry = next(iter(cache(compiled).graphs.values()))
-        self.assertNotIn(frontend.BindingSource('parameter', 'p', 0, ('ignored',)), entry.observed)
+        self.assertNotIn(frontend.BindingSource('parameter', 'p', 0, ('ignored',)), entry.payload.observed)
         for source in (
                 'def f(p):\n x=p["x"]\n if x.shape[0]<4:\n  return -x\n return x*p["other"]',
                 'def f(p):\n x=p["x"]\n for i in range(0):\n  unused=x*p["other"]\n return -x'):
@@ -335,12 +531,20 @@ class InputTransactions(InputContracts):
             if type(value) is dict:
                 pending.extend(value.keys())
                 pending.extend(value.values())
+            elif type(value) in (frontend.Specialization, frontend.SpecializationPayload):
+                pending.extend(getattr(value, name) for name in value._fields)
             elif type(value) in (list, tuple):
                 pending.extend(value)
             elif dataclasses.is_dataclass(value) or type(value) is types.SimpleNamespace:
                 pending.extend(vars(value).values())
             elif type(value) is types.FunctionType and value.__closure__:
                 pending.extend(cell.cell_contents for cell in value.__closure__)
+        self.assertTrue(cache(compiled).graphs)
+        for entry in cache(compiled).graphs.values():
+            self.assertIn(id(entry), seen)
+            for record in (entry, entry.payload):
+                for name in record._fields:
+                    self.assertIn(id(getattr(record, name)), seen, name)
         native.compiler.reset()
         self.assertFalse(cache(compiled).graphs)
         self.assertFalse(cache(compiled).executors)
@@ -390,6 +594,26 @@ class InputHardware(unittest.TestCase):
             return tuple(self.upload(data, (size + 1,), module)[1:].reshape(shape)
                          for module in (native, self.torch))
         return tuple(self.upload(data, shape, module) for module in (native, self.torch))
+
+    def test_projected_source_history_keeps_old_outputs_across_reset(self):
+        pair = self.pair('def f(p):\n if p["a"].shape[0]<4:\n  return (-p["a"],p["a"])\n return (-p["b"],p["b"])')
+        held = []
+        for step, size in enumerate((5, 3, 5, 3, 5, 3, 5)):
+            a, ra = self.tensors(step, (size,), offset=True)
+            b, rb = self.tensors(step + 11, (size,), offset=True)
+            if step == 4:
+                native.compiler.reset()
+                self.torch.compiler.reset()
+            # Reordering changes native operand indices while source paths stay
+            # fixed, including when the older logical specialization wins.
+            keys = ('a', 'b') if step % 2 == 0 else ('b', 'a')
+            p = {key: {'a': a, 'b': b}[key] for key in keys}
+            rp = {key: {'a': ra, 'b': rb}[key] for key in keys}
+            actual = self.check(pair, (p,), (rp,))
+            self.assertIs(actual[1], a if size < 4 else b)
+            held.append((actual[0], actual[0].cpu().tolist()))
+            for result, original in held:
+                self.assertEqual(result.cpu().tolist(), original)
 
     def test_dict_signed_zero_abi_churn_and_unequal_current_replacements(self):
         pair = self.pair('def f(p):\n x=p["x"]\n return (x*p["gain"],x)')
@@ -470,6 +694,9 @@ class InputHardware(unittest.TestCase):
             x, rx = self.tensors(step, shape, offset=True)
             actual = self.check(pair, ({'x': x},), ({'x': rx},))
             self.assertIs(actual[1], x)
+            for entry in cache(pair[1]).graphs.values():
+                for observation in entry.payload.observations.values():
+                    self.assertEqual(len(observation), 5)  # Never persist the current offset.
 
     def test_helper_local_unpack_loop_shape_branch_and_failed_recovery(self):
         pair = self.pair('def f(p):\n x=p["x"]\n for i in range(2):\n  a,b=helper([x,p["gain"]])\n if x.shape[0]<4:\n  return (a*b,x)\n return (a-b,x)',

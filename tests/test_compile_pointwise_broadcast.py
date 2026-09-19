@@ -10,7 +10,7 @@ import torch_rs as native
 from torch_rs import torch_rs as bridge
 from torch_rs import _compile_pointwise as frontend
 from test_compile_pointwise_jit import (
-    Hardware, available, cache, kernel, kernels, lower, program, two_device_reservation,
+    Hardware, available, cache, kernel, kernels, legacy_kernel, lower, program, two_device_reservation,
 )
 
 
@@ -112,24 +112,29 @@ class Broadcast(unittest.TestCase):
         tx, ty = self.upload([1., 2., 3.], (3, 1), self.torch), self.upload([0.1, 0.2], (2,), self.torch)
         first = compiled(x, y)
         old = kernel(compiled)
+        old_prepared = next(reversed(cache(compiled).prepared.values()))[0]
         for scale in (0.713, -1.137, 0.337):
             fn.__globals__['scale'] = ref_fn.__globals__['scale'] = scale
             self.compare(compiled(x, y), reference(tx, ty))
         with patch.object(frontend, 'lower', side_effect=AssertionError('warm lowering')), \
-             patch.object(bridge, '_pointwise_compile', side_effect=AssertionError('warm compile')):
+             patch.object(bridge, '_pointwise_host_plan', side_effect=AssertionError('warm compile')):
             self.compare(self.without_replay(fn, compiled, (x, y)), reference(tx, ty))
         guarded = native.compile(program('def f(x, y):\n return x - y'))
         guarded(x, y)
+        guarded_owner = kernel(guarded)
+        legacy = legacy_kernel(guarded, (x, y))
         with self.assertRaisesRegex(RuntimeError, 'indexing guard'):
-            kernel(guarded).run((y, x))
+            legacy.run((y, x))
+        self.assertIs(kernel(guarded), guarded_owner)
         fn.__globals__['fw'] = object()
         with self.assertRaises(NotImplementedError):
             compiled(x, y)
         fn.__globals__['fw'] = native
         native.compiler.reset()
         self.assertFalse(cache(compiled).graphs)
-        self.compare(old.run((x, y))[0], tx.relu() * 0.713)
-        del compiled, old, x, y
+        self.assertTrue(old_prepared.belongs_to(old))
+        self.compare(old_prepared.run((x, y))[0], tx.relu() * 0.713)
+        del compiled, old, old_prepared, legacy, guarded, guarded_owner, x, y
         gc.collect()
         self.compare(first, tx.relu() * 0.713)
 

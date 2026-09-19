@@ -10,7 +10,7 @@ build from the repository root:
 
 ```bash
 uv venv --clear --python 3.12
-uv sync --locked --no-install-project --group dev
+uv sync --locked --no-install-project --group dev --group reference
 VIRTUAL_ENV="$PWD/.venv" PYO3_PYTHON="$PWD/.venv/bin/python" \
   .venv/bin/maturin develop --release --locked
 ```
@@ -41,7 +41,7 @@ PY
 rustc --version && cargo --version
 ```
 
-If `torch` is missing, run `uv sync --locked --no-install-project --group reference`.
+The reference group provides test-only PyTorch. If `torch` is missing, run `uv sync --locked --no-install-project --group reference`.
 After a manual release wheel install, run `.venv/bin/python .github/scripts/verify_native_extension.py`; `./scripts/test-python.sh` runs that check before the suite. See [docs/troubleshooting.md](docs/troubleshooting.md) for setup recovery steps.
 
 ## Environment Expectations

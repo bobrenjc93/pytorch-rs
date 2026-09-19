@@ -365,15 +365,18 @@ class SharedCacheGuards(unittest.TestCase):
         self.metadata = {}
         self.arguments = []
         self.launch_failure = None
-        for name, replacement in (
-                ('_compile_trace_tensor_metadata', lambda arg: self.metadata[id(arg)]),
-                ('_pointwise_validate_inputs', lambda args: None)):
-            patcher = mock.patch.object(frontend._native, name, side_effect=replacement)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(frontend._native, '_pointwise_admit_inputs',
+                                    side_effect=lambda args: tuple(self.metadata[id(arg)] for arg in args))
+        patcher.start()
+        self.addCleanup(patcher.stop)
         patcher = mock.patch.object(frontend._native, '_pointwise_compile',
                                     side_effect=self.make_executor)
         self.compile_bridge = patcher.start()
+        self.addCleanup(patcher.stop)
+        from tests.test_compile_pointwise_jit import mock_pointwise_host_plan
+        patcher = mock.patch.object(frontend._native, '_pointwise_host_plan',
+                                   side_effect=mock_pointwise_host_plan)
+        patcher.start()
         self.addCleanup(patcher.stop)
 
     def make_executor(self, tensors, nodes, output):
@@ -382,7 +385,7 @@ class SharedCacheGuards(unittest.TestCase):
             run.side_effect = self.launch_failure
         else:
             run.side_effect = lambda args, scalars, numerical_hint, output_order: ((nodes, tuple(scalars)),)
-        return mock_pointwise_executor(run)
+        return mock_pointwise_executor(run, metadata=lambda arg: self.metadata[id(arg)])
 
     def argument(self, shape, strides=None):
         if strides is None:
@@ -393,8 +396,15 @@ class SharedCacheGuards(unittest.TestCase):
             strides = tuple(reversed(reversed_strides))
         arg = native.tensor([1.])
         self.arguments.append(arg)  # Keep identities stable for metadata lookup.
-        self.metadata[id(arg)] = (shape, strides, 'float32', False, 'cuda:0', 0)
+        self.metadata[id(arg)] = (shape, strides, False, 'torch.float32', 'cuda:0', 0)
         return arg
+
+    def test_synthetic_metadata_schema_matches_the_native_projection(self):
+        arg = self.argument((1,))
+        actual = list(frontend._native._compile_trace_tensor_metadata(arg))
+        actual[4] = 'cuda:0'  # Only the device is synthetic for this real shape.
+        self.assertEqual(self.metadata[id(arg)], tuple(actual))
+        self.assertEqual(tuple(map(type, self.metadata[id(arg)])), tuple(map(type, actual)))
 
     def compiled(self, source='def f(scale,x):\n return x*scale'):
         return frontend.implementation(program(source), recompile_limit=8)
@@ -433,7 +443,9 @@ class SharedCacheGuards(unittest.TestCase):
         owner.executors = self.MutationDict(owner.executors)
         owner.prepared = self.MutationDict(owner.prepared)
         entry = next(iter(owner.graphs.values()))
-        entry.lowerings = self.MutationDict(entry.lowerings)
+        key = next(iter(owner.graphs))
+        entry = frontend.Specialization(entry.payload, self.MutationDict(entry.lowerings))
+        dict.__setitem__(owner.graphs, key, entry)
         before = self.ordered_contents(owner)
         with mock.patch.object(frontend, 'analyze', side_effect=AssertionError('warm analyze')), \
                 mock.patch.object(frontend, 'lower', side_effect=AssertionError('warm lower')):
@@ -487,6 +499,10 @@ class SharedCacheGuards(unittest.TestCase):
         first = next(iter(owner.graphs))
         entry = owner.graphs[first]
         compiled(False, x, other)
+        from tests.test_compile_pointwise_helpers import assert_replaced_shell
+        current = owner.graphs[first]
+        assert_replaced_shell(self, entry, current)
+        entry = current
         abi_a, abi_b = tuple(entry.lowerings)
         executable_a, executable_b = tuple(owner.executors)
         # Another logical specialization reuses A's executable, making it
@@ -498,10 +514,21 @@ class SharedCacheGuards(unittest.TestCase):
         owner.executors = self.MutationDict(owner.executors)
         compiled(False, x, 0.)
         self.assertEqual(tuple(owner.graphs), (second, first))
+        current = owner.graphs[first]
+        assert_replaced_shell(self, entry, current)
+        self.assertEqual(tuple(entry.lowerings), (abi_a, abi_b))
+        for abi, value in entry.lowerings.items():
+            self.assertIs(current.lowerings[abi], value)
+        entry = current
         self.assertEqual(tuple(entry.lowerings), (abi_b, abi_a))
         self.assertEqual(tuple(owner.executors), (executable_b, executable_a))
         self.assertEqual(owner.executors.mutations, [])
         compiled(other, x, False)
+        current = owner.graphs[first]
+        assert_replaced_shell(self, entry, current)
+        self.assertEqual(tuple(entry.lowerings), (abi_b, abi_a))
+        self.assertIs(current.lowerings[abi_a], entry.lowerings[abi_a])
+        entry = current
         abi_c, executable_c = next(reversed(entry.lowerings)), next(reversed(owner.executors))
         self.assertNotIn(abi_c, (abi_a, abi_b))
         self.assertNotIn(executable_c, (executable_a, executable_b))
@@ -536,7 +563,8 @@ class SharedCacheGuards(unittest.TestCase):
         history = (((False, x, 0.), (x,), 0),
                    ((unused, x, False), (unused, x), 1),
                    ((True, x, unused), (x, unused), 0))
-        with mock.patch.object(frontend._native, '_pointwise_validate_inputs') as validate:
+        with mock.patch.object(frontend._native, '_pointwise_admit_inputs',
+                               side_effect=frontend._native._pointwise_admit_inputs) as validate:
             for args, tensors, input_index in history:
                 for _ in range(2):
                     nodes, _ = compiled(*args)
@@ -611,7 +639,7 @@ class SharedCacheGuards(unittest.TestCase):
                 self.assertEqual(len(owner.graphs), 1)
                 self.assertEqual(len(owner.executors), 1)
                 frozen = next(iter(owner.graphs.values()))
-                scalar = next(v for v in frozen.values.values() if type(v) is float)
+                scalar = next(v for v in frozen.payload.values.values() if type(v) is float)
                 self.assertEqual(frontend.scalar_bits(scalar), frontend.scalar_bits(values[0]))
                 # NaN history promotes the next finite binding. Later NaNs hit
                 # that runtime graph, retaining their actual ABI bits.
@@ -734,10 +762,20 @@ class SharedCacheGuards(unittest.TestCase):
                     self.assertEqual(len(owner.graphs), 1)
                     current = next(iter(owner.graphs.values()))
                     if entry is None:
-                        entry = current
-                    self.assertIs(current, entry)
+                        logical_key = next(iter(owner.graphs))
+                    elif cycle == 1 and step == 0:
+                        # The last and first calls have the same tensor ABI.
+                        self.assertIs(current, entry)
+                        self.assertIs(owner.graphs, previous_root)
+                    else:
+                        from tests.test_compile_pointwise_helpers import assert_replaced_shell
+                        assert_replaced_shell(self, entry, current)
+                        self.assertEqual(next(iter(owner.graphs)), logical_key)
+                        self.assertEqual(len(entry.lowerings), 1)
+                    entry = current
+                    previous_root = owner.graphs
                     self.assertEqual(len(owner.executors), 1)
-                    self.assertEqual(len(entry.lowerings), 1)
+                    self.assertEqual(len(current.lowerings), 1)
         # Revisited ABIs require rebuilding evicted executables while the
         # original logical specialization remains selected throughout.
         self.assertGreater(self.compile_bridge.call_count, len(history))

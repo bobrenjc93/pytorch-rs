@@ -24,13 +24,16 @@ def newest_prepared(compiled):
 
 class PreparedExports(unittest.TestCase):
     def test_prepared_helper_is_private_to_the_native_bridge(self):
-        self.assertTrue(hasattr(bridge, '_PointwisePrepared'))
-        self.assertNotIn('_PointwisePrepared', bridge.__all__)
-        self.assertNotIn('_PointwisePrepared', native.__all__)
-        self.assertFalse(hasattr(native, '_PointwisePrepared'))
         namespace = {}
         exec('from torch_rs import *', namespace)
-        self.assertNotIn('_PointwisePrepared', namespace)
+        for name in ('_PointwisePrepared', '_PointwiseHostPlan', '_PointwiseExecutable',
+                     '_pointwise_host_plan'):
+            with self.subTest(name=name):
+                self.assertTrue(hasattr(bridge, name))
+                self.assertNotIn(name, bridge.__all__)
+                self.assertNotIn(name, native.__all__)
+                self.assertFalse(hasattr(native, name))
+                self.assertNotIn(name, namespace)
 
 
 class PreparedCache(unittest.TestCase):
@@ -57,6 +60,7 @@ class PreparedCache(unittest.TestCase):
         prepared = newest_prepared(compiled)
         current = native.ones(3)
         with patch.object(self.created[0], 'prepare', side_effect=AssertionError('warm preparation')), \
+                patch.object(bridge, '_pointwise_host_plan', side_effect=AssertionError('warm planning/emission')), \
                 patch.object(frontend, '_prepared_entry_bytes', side_effect=AssertionError('warm accounting')):
             second = compiled(current)
         self.assertIs(newest_prepared(compiled), prepared)
@@ -77,6 +81,8 @@ class PreparedCache(unittest.TestCase):
         self.assertEqual(len(cache(compiled).graphs), 2)
         self.assertEqual(len(cache(compiled).executors), 1)
         self.assertEqual(self.created[0].prepare.call_count, 5)
+        self.assertEqual(self.host_plan.call_count, 5)
+        self.assertEqual(self.codegen.call_count, 1)
         self.assertEqual([key[1] for key in cache(compiled).prepared], [((9,),), ((5,),)])
         self.assertEqual([key[2] for key in cache(compiled).prepared], [5, 5])
 
@@ -176,7 +182,7 @@ class PreparedCache(unittest.TestCase):
         before = self.snapshot(compiled)
         executor = self.created[0]
         for target, name, exception, args in (
-                (bridge, '_pointwise_validate_inputs', RuntimeError('admission'), (x,)),
+                (bridge, '_pointwise_admit_inputs', RuntimeError('admission'), (x,)),
                 (executor, 'prepare', RuntimeError('preparation'), (native.ones(7),)),
                 (frontend, '_prepared_entry_bytes', MemoryError('accounting'), (native.ones(7),)),
                 (older, 'run', RuntimeError('launch/conversion'), (x,)),
@@ -197,15 +203,16 @@ class PreparedCache(unittest.TestCase):
         owner = frontend._state.NativeEagerCompileCache()
         keys = [(('code',), ((size,),), 3, (0,)) for size in (3, 5, 7)]
         owner.executors[('code',)] = object()
-        values = [object() for _ in keys]
+        executor = owner.executors[('code',)]
+        values = [types.SimpleNamespace(belongs_to=lambda owner: owner is executor) for _ in keys]
         with owner.lock, patch.object(frontend, '_PREPARED_CACHE_BYTES', 128):
             for key, value in zip(keys, values):
-                frontend._publish_preparation(owner, key, value, 64, 8)
+                frontend._publish_preparation(owner, key, value, 64, 8, ('code',), executor, tuple(owner.prepared))
             self.assertEqual(list(owner.prepared), keys[1:])
             self.assertEqual(owner.prepared_bytes, 128)
-            frontend._publish_preparation(owner, keys[1], values[1], 64, 8)
+            frontend._publish_preparation(owner, keys[1], values[1], 64, 8, ('code',), executor, tuple(owner.prepared))
             self.assertEqual(list(owner.prepared), [keys[2], keys[1]])
-            frontend._publish_preparation(owner, keys[0], values[0], 64, 1)
+            frontend._publish_preparation(owner, keys[0], values[0], 64, 1, ('code',), executor, tuple(owner.prepared))
             self.assertEqual(list(owner.prepared), keys[:1])
             self.assertEqual(owner.prepared_bytes, 64)
         owner.clear()
@@ -217,12 +224,17 @@ class PreparedCache(unittest.TestCase):
         prepared = types.SimpleNamespace(retained_bytes=4096)
         code_key = (graph, 'cuda:0', None)
         key = (code_key, ((13,),), 13, (0,))
-        actual = frontend._prepared_entry_bytes(key, prepared)
+        actual = frontend._prepared_entry_bytes(key, prepared, code_key)
         self.assertGreater(actual, 4096 + sys.getsizeof(prepared) + sys.getsizeof(key) + 512)
         larger_key = (code_key, ((1, 1, 13),), 13, (0,))
-        self.assertGreater(frontend._prepared_entry_bytes(larger_key, prepared), actual)
+        self.assertGreater(frontend._prepared_entry_bytes(larger_key, prepared, code_key), actual)
         prepared.retained_bytes += 8192
-        self.assertEqual(frontend._prepared_entry_bytes(key, prepared), actual + 8192)
+        self.assertEqual(frontend._prepared_entry_bytes(key, prepared, code_key), actual + 8192)
+        # The actual executable key can be independent of the logical shape key
+        # and contains exact Program bytes. Charge that retained referent too.
+        actual_key = ('direct', bytes(8192))
+        self.assertGreater(frontend._prepared_entry_bytes(key, prepared, actual_key),
+                           frontend._prepared_entry_bytes(key, prepared, ('direct', b'')) + 8191)
 
     def test_oversize_is_ephemeral_and_cannot_keep_evicted_executors_alive_in_cache(self):
         compiled = frontend.implementation(program('def f(unused,x):\n return -x'), 2)
@@ -269,6 +281,291 @@ class PreparedCache(unittest.TestCase):
         compiled(x)
         self.assertIsNot(newest_prepared(compiled), old)
         self.assertEqual(self.codegen.call_count, 2)
+
+    def test_equal_code_key_does_not_certify_a_replaced_executor_owner(self):
+        compiled = native.compile(program('def f(x):\n return -x'))
+        x = native.ones(3)
+        compiled(x)
+        old = newest_prepared(compiled)
+        state = cache(compiled)
+        code_key, original = next(iter(state.executors.items()))
+        replacement = jit_tests.mock_pointwise_executor(original.run)
+        bind = replacement.bind
+
+        def owned_bind(host):
+            value = bind(host)
+            value.belongs_to = lambda executor: executor is replacement
+            return value
+
+        replacement.bind = Mock(side_effect=owned_bind)
+        state.executors[code_key] = replacement
+        with patch.object(old, 'run', side_effect=AssertionError('stale owner executed')):
+            compiled(x)
+        current = newest_prepared(compiled)
+        self.assertIsNot(current, old)
+        self.assertTrue(current.belongs_to(replacement))
+        self.assertFalse(current.belongs_to(original))
+        replacement.bind.assert_called_once()
+        self.assertEqual(self.codegen.call_count, 1)
+
+    def test_missing_executor_rebuilds_and_replaces_stale_preparation(self):
+        compiled = native.compile(program('def f(x):\n return -x'))
+        x = native.ones(3)
+        compiled(x)
+        stale = newest_prepared(compiled)
+        cache(compiled).executors.clear()
+        with patch.object(stale, 'run', side_effect=AssertionError('unowned preparation executed')):
+            compiled(x)
+        self.assertIsNot(newest_prepared(compiled), stale)
+        self.assertEqual(self.codegen.call_count, 2)
+        self.assertEqual(cache(compiled).prepared_bytes,
+                         sum(item[1] for item in cache(compiled).prepared.values()))
+
+    def test_bind_owner_mismatch_and_query_errors_never_run_or_publish(self):
+        fn = program('def f(x):\n return -x')
+        warm = native.compile(fn)
+        warm(native.ones(3))
+        warm(native.ones(5))
+        self.assertEqual(len(cache(warm).prepared), 2)
+        build = self.host_plan.side_effect
+        for cold in (False, True):
+            for query_error in (False, True):
+                compiled = native.compile(fn) if cold else warm
+                x = native.ones(3 if cold else 7)
+                before = self.snapshot(compiled)
+                query = Mock(side_effect=RuntimeError('owner query')) if query_error else Mock(return_value=False)
+                wrong = types.SimpleNamespace(input_shapes=(tuple(x.shape),), retained_bytes=0,
+                                              belongs_to=query, run=Mock())
+                executors = []
+
+                def host_with_wrong_bind(*args):
+                    host = build(*args)
+                    compile_ = host.compile
+
+                    def wrong_compile():
+                        executor = compile_()
+                        executor.bind = Mock(return_value=wrong)
+                        executors.append(executor)
+                        return executor
+
+                    host.compile = wrong_compile
+                    return host
+
+                with self.subTest(cold=cold, query_error=query_error), ExitStack() as stack:
+                    stack.enter_context(patch.object(bridge, '_pointwise_host_plan', host_with_wrong_bind))
+                    if not cold:
+                        executor = next(iter(cache(warm).executors.values()))
+                        executors.append(executor)
+                        stack.enter_context(patch.object(executor, 'bind', return_value=wrong))
+                    accounting = stack.enter_context(patch.object(frontend, '_prepared_entry_bytes'))
+                    receipt = stack.enter_context(patch.object(frontend, '_receipt'))
+                    exception = RuntimeError if query_error else NotImplementedError
+                    message = 'owner query' if query_error else 'prepared executable owner mismatch'
+                    with self.assertRaisesRegex(exception, message):
+                        compiled._torch_rs_pointwise_receipt(x)
+                    query.assert_called_once_with(executors[0])
+                    wrong.run.assert_not_called()
+                    accounting.assert_not_called()
+                    receipt.assert_not_called()
+                    self.assertEqual(self.snapshot(compiled), before)
+
+    def test_owner_admission_once_per_bind_and_never_on_hits_or_current_pruning(self):
+        build = self.host_plan.side_effect
+        queries = []
+
+        def tracked_host(*args):
+            host = build(*args)
+            compile_ = host.compile
+
+            def tracked_compile():
+                executor = compile_()
+                bind = executor.bind
+
+                def tracked_bind(plan):
+                    prepared = bind(plan)
+                    query = Mock(wraps=prepared.belongs_to)
+                    prepared.belongs_to = query
+                    queries.append(query)
+                    return prepared
+
+                executor.bind = tracked_bind
+                return executor
+
+            host.compile = tracked_compile
+            return host
+
+        compiled = native.compile(program('def f(x):\n return -x'))
+        x, y = native.ones(3), native.ones(5)
+        with patch.object(bridge, '_pointwise_host_plan', tracked_host):
+            for value in (x, y, x):
+                compiled(value)
+        self.assertEqual(len(cache(compiled).prepared), 3)
+        self.assertEqual(len(queries), 3)
+        for query in queries:
+            self.assertEqual(query.call_count, 1)
+            # Mutable stand-ins prove absence of queries, not native immutability.
+            query.side_effect = AssertionError('repeated immutable owner query')
+        with patch.object(bridge, '_pointwise_host_plan', side_effect=AssertionError('warm build')), \
+                patch.object(frontend, '_prepared_entry_bytes', side_effect=AssertionError('warm accounting')):
+            for value in (x, y, x, y):  # Newest, older, then recency changes.
+                compiled(value)
+        self.assertEqual([query.call_count for query in queries], [1, 1, 1])
+        self.assertEqual(cache(compiled).prepared_bytes,
+                         sum(entry[1] for entry in cache(compiled).prepared.values()))
+
+    def test_nonselected_replaced_owner_prunes_all_its_preparations_only_after_success(self):
+        fn = program('def f(x):\n return -x')
+        compiled = native.compile(fn)
+        x, y = native.ones(3), native.ones(5)
+        compiled(x)
+        compiled(y)
+        state = cache(compiled)
+        old_entries = list(state.prepared.values())
+        self.assertEqual(len(old_entries), 2)
+        old_key, old_executor = next(iter(state.executors.items()))
+        fn.__code__ = program('def f(x):\n return x+x').__code__
+        compiled(y)
+        selected = newest_prepared(compiled)
+        state.executors[old_key] = jit_tests.mock_pointwise_executor(old_executor.run)
+        before = self.snapshot(compiled)
+        before_bytes = state.prepared_bytes
+        with ExitStack() as stack:
+            for prepared, _, _, _ in old_entries:
+                stack.enter_context(patch.object(prepared, 'run', side_effect=AssertionError('stale run')))
+                stack.enter_context(patch.object(prepared, 'belongs_to', side_effect=AssertionError('prune queried owner')))
+            for target, name in ((selected, 'run'), (frontend.ResultSpec, 'reconstruct')):
+                with self.subTest(phase=name), patch.object(target, name, side_effect=RuntimeError(name)):
+                    with self.assertRaisesRegex(RuntimeError, name):
+                        compiled(y)
+                    self.assertEqual(self.snapshot(compiled), before)
+            compiled(y)
+        self.assertEqual(len(state.prepared), 1)
+        self.assertIs(newest_prepared(compiled), selected)
+        self.assertEqual(state.prepared_bytes, before_bytes - sum(entry[1] for entry in old_entries))
+        self.assertEqual(state.prepared_bytes, sum(entry[1] for entry in state.prepared.values()))
+
+    def test_selected_replaced_owner_failures_leave_all_old_entries_until_success(self):
+        compiled = native.compile(program('def f(x):\n return -x'))
+        x, y = native.ones(3), native.ones(5)
+        compiled(x)
+        compiled(y)
+        state = cache(compiled)
+        old_entries = list(state.prepared.values())
+        code_key, original = next(iter(state.executors.items()))
+        replacement = jit_tests.mock_pointwise_executor(original.run)
+        state.executors[code_key] = replacement
+        before = self.snapshot(compiled)
+        old_bytes = state.prepared_bytes
+        with ExitStack() as stack:
+            for prepared, _, _, _ in old_entries:
+                stack.enter_context(patch.object(prepared, 'run', side_effect=AssertionError('stale run')))
+            for target, name in ((replacement, 'bind'), (replacement, 'run'),
+                                 (frontend.ResultSpec, 'reconstruct')):
+                with self.subTest(phase=name), patch.object(target, name, side_effect=RuntimeError(name)):
+                    with self.assertRaisesRegex(RuntimeError, name):
+                        compiled(y)
+                    self.assertEqual(self.snapshot(compiled), before)
+            compiled(y)
+        self.assertEqual(len(state.prepared), 1)
+        entry = next(iter(state.prepared.values()))
+        self.assertIs(entry[3], replacement)
+        self.assertTrue(entry[0].belongs_to(replacement))
+        self.assertTrue(all(entry[0] is not old[0] for old in old_entries))
+        self.assertEqual(state.prepared_bytes, old_bytes - sum(old[1] for old in old_entries) + entry[1])
+        self.assertEqual(state.prepared_bytes, sum(item[1] for item in state.prepared.values()))
+
+    def test_actual_program_identity_controls_sharing_and_eviction(self):
+        compiled = frontend.implementation(program('def f(x):\n return -x'), 2)
+        build = self.host_plan.side_effect
+
+        def explicit_program(*args):
+            host = build(*args)
+            # Model effective Programs, deliberately distinct from exact shape
+            # and raw hint. Native tests establish actual planner equivalence.
+            shape = tuple(args[0][0].shape)
+            words = b'program-a' if shape[0] in (3, 5, 7) else bytes([shape[0]])
+            host.executable_identity = (host.executable_identity, 'direct', words)
+            return host
+
+        self.host_plan.side_effect = explicit_program
+        for size in (3, 5, 7, 5):
+            compiled(native.ones(size))
+        self.assertEqual(self.codegen.call_count, 1)
+        first_key = next(iter(cache(compiled).executors))
+        compiled(native.ones(9))
+        self.assertEqual(self.codegen.call_count, 2)
+        self.assertEqual(len(cache(compiled).executors), 2)
+        compiled(native.ones(11))
+        self.assertEqual(self.codegen.call_count, 3)
+        self.assertNotIn(first_key, cache(compiled).executors)
+        self.assertTrue(all(item[2] in cache(compiled).executors
+                            for item in cache(compiled).prepared.values()))
+        self.assertTrue(all(item[2] != first_key for item in cache(compiled).prepared.values()))
+
+    def test_host_preparation_and_selected_compile_failures_never_publish(self):
+        fn = program('def f(x):\n return -x')
+        compiled = native.compile(fn)
+        compiled(native.ones(3))
+        before = self.snapshot(compiled)
+        build = self.host_plan.side_effect
+        for phase in ('planning', 'emission', 'compiler discovery', 'compiler create',
+                      'compiler compile', 'module load', 'upload'):
+            def failure(*args, phase=phase):
+                if phase in ('planning', 'emission'):
+                    raise RuntimeError(phase)
+                host = build(*args)
+                host.executable_identity = ('new-code', phase)
+                if phase == 'upload':
+                    executor = jit_tests.mock_pointwise_executor(Mock())
+                    executor.bind = Mock(side_effect=RuntimeError(phase))
+                    host.compile = Mock(return_value=executor)
+                else:
+                    host.compile = Mock(side_effect=RuntimeError(phase))
+                return host
+
+            with self.subTest(phase=phase), patch.object(bridge, '_pointwise_host_plan', side_effect=failure):
+                with self.assertRaisesRegex(RuntimeError, phase):
+                    compiled(native.ones(5))
+                self.assertEqual(self.snapshot(compiled), before)
+                cold = native.compile(fn)
+                with self.assertRaisesRegex(RuntimeError, phase):
+                    cold(native.ones(3))
+                self.assertEqual(self.snapshot(cold), ([], [], [], 0))
+
+    def test_receipt_allocation_failure_preserves_cold_and_warm_cache_state(self):
+        fn = program('def f(x):\n return -x')
+        compiled = native.compile(fn)
+        x = native.ones(3)
+        compiled(x)
+        before = self.snapshot(compiled)
+        with patch.object(frontend, '_receipt', side_effect=MemoryError('receipt allocation')):
+            with self.assertRaisesRegex(MemoryError, 'receipt allocation'):
+                compiled._torch_rs_pointwise_receipt(x)
+            self.assertEqual(self.snapshot(compiled), before)
+            with self.assertRaisesRegex(MemoryError, 'receipt allocation'):
+                compiled._torch_rs_pointwise_receipt(native.ones(5))
+            self.assertEqual(self.snapshot(compiled), before)
+            cold = native.compile(fn)
+            with self.assertRaisesRegex(MemoryError, 'receipt allocation'):
+                cold._torch_rs_pointwise_receipt(x)
+            self.assertEqual(self.snapshot(cold), ([], [], [], 0))
+
+    def test_receipt_identifies_the_actual_warm_preparation(self):
+        compiled = native.compile(program('def f(x):\n return [-x,x]'))
+        first_input, second_input = native.ones(3), native.ones(5)
+        compiled(first_input)
+        compiled(second_input)
+        # Promotion changes numerical history; retain both shapes under it.
+        compiled(first_input)
+        first = newest_prepared(compiled)
+        compiled(second_input)
+        second = newest_prepared(compiled)
+        self.assertIsNot(first, second)
+        with patch.object(bridge, '_pointwise_host_plan', side_effect=AssertionError('receipt rebuilt plan')):
+            output, used = compiled._torch_rs_pointwise_receipt(first_input)
+        self.assertIs(used, first)
+        self.assertIs(output[1], first_input)
+        self.assertIs(newest_prepared(compiled), first)
 
 
 @unittest.skipUnless(available(), 'requires native CUDA and reference PyTorch CUDA')
@@ -321,17 +618,8 @@ class PreparedHardware(unittest.TestCase):
         fn = program(source)
         compiled = native.compile(fn)
         reference = self.torch.compile(program(source, self.torch))
-        compile_ = bridge._pointwise_compile
-        executors = []
-
-        def observed_compile(*args):
-            real = compile_(*args)
-            proxy = types.SimpleNamespace(prepare=Mock(wraps=real.prepare))
-            executors.append(proxy)
-            return proxy
-
         retained = []
-        with patch.object(bridge, '_pointwise_compile', side_effect=observed_compile):
+        with patch.object(bridge, '_pointwise_host_plan', wraps=bridge._pointwise_host_plan) as build:
             for value in (0.25, -0.75, 1.125):
                 x = self.upload([value] * 13, (13,))
                 tx = self.upload([value] * 13, (13,), self.torch)
@@ -345,8 +633,8 @@ class PreparedHardware(unittest.TestCase):
                         self.compare(actual, wanted)
                     self.assertTrue(all(a.data_ptr() != b.data_ptr() for a in outputs for b in earlier))
                 retained.append((outputs, expected))
-        self.assertEqual(len(executors), 1)
-        self.assertEqual(executors[0].prepare.call_count, 1)
+        self.assertEqual(len(cache(compiled).executors), 1)
+        self.assertEqual(build.call_count, 1)
         prepared = newest_prepared(compiled)
         self.assertEqual(prepared.input_shapes, ((13,),))
         self.assertGreater(prepared.retained_bytes, 0)
@@ -357,6 +645,8 @@ class PreparedHardware(unittest.TestCase):
         compiled = native.compile(fn)
         compiled(x, x)
         executor = next(iter(cache(compiled).executors.values()))
+        graph = jit_tests.lower(fn, 2)
+        legacy = bridge._pointwise_compile((x, x), graph.nodes, graph.outputs)
         prepared = newest_prepared(compiled)
         for name in ('input_shapes', 'retained_bytes'):
             with self.assertRaises(AttributeError):
@@ -367,7 +657,10 @@ class PreparedHardware(unittest.TestCase):
         # Public admission now accepts this graph, but this old kernel has a
         # different address map for its unused argument. Neither guard changes.
         with self.assertRaisesRegex(RuntimeError, 'broadcast indexing guard'):
-            executor.prepare((x, reshaped))
+            legacy.prepare((x, reshaped))
+        host = bridge._pointwise_host_plan((x, reshaped), graph.nodes, graph.outputs, 2, (0,))
+        with self.assertRaises(RuntimeError):
+            executor.bind(host)
         for inputs in ((x,), (x, native.ones(2)), (x, object())):
             with self.subTest(inputs=len(inputs)), self.assertRaises((RuntimeError, TypeError)):
                 prepared.run(inputs)
@@ -421,12 +714,15 @@ class PreparedHardware(unittest.TestCase):
         compiled(inputs[0])
         prepared = newest_prepared(compiled)
         executor = next(iter(cache(compiled).executors.values()))
+        graph = jit_tests.lower(program('def f(x):\n return x*2.0'))
+        legacy = bridge._pointwise_compile((inputs[0],), graph.nodes, graph.outputs)
         with self.torch.cuda.device(1):
-            for action in (lambda: prepared.run((inputs[1],)), lambda: executor.prepare((inputs[1],))):
+            for action in (lambda: prepared.run((inputs[1],)), lambda: legacy.prepare((inputs[1],))):
                 with self.assertRaises(RuntimeError):
                     action()
                 self.assertEqual(self.torch.cuda.current_device(), 1)
-            fresh = executor.prepare((inputs[0],))
+            host = bridge._pointwise_host_plan((inputs[0],), graph.nodes, graph.outputs, 2, (0,))
+            fresh = executor.bind(host)
             self.assertEqual(self.torch.cuda.current_device(), 1)
             self.assertEqual(fresh.run((inputs[0],))[0].cpu().tolist(), [2., 4.])
             self.assertEqual(self.torch.cuda.current_device(), 1)

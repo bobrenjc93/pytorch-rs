@@ -192,7 +192,7 @@ class ShapeBranchCache(unittest.TestCase):
 
     def snapshot(self, compiled):
         state = cache(compiled)
-        return ([(key, id(entry), tuple(entry.lowerings.items()), dict(entry.observations))
+        return ([(key, id(entry), tuple(entry.lowerings.items()), dict(entry.payload.observations))
                  for key, entry in state.graphs.items()], list(state.executors.items()))
 
     def test_generalized_threshold_crossing_and_crossing_back(self):
@@ -289,6 +289,39 @@ class ShapeBranchCache(unittest.TestCase):
         self.assertEqual(len(cache(compiled).graphs), 1)
         self.assertEqual(len(next(iter(cache(compiled).graphs.values())).lowerings), 2)
 
+    def test_evicted_abi_must_readmit_changed_inactive_helper_at_small_limit(self):
+        helper = program('def f(a):\n return a.relu()')
+        fn = program('def f(x, ignored):\n if x.shape[0] < 8:\n  return -x\n return helper(x)', helper=helper)
+        compiled = frontend.implementation(fn, 2)
+        other = native.ones(2)
+        compiled(self.x, 0.5)
+        compiled(self.x, self.x)
+        owner = cache(compiled)
+        key, entry = next(iter(owner.graphs.items()))
+        abi_scalar, abi_alias = tuple(entry.lowerings)
+        compiled(self.x, 0.75)  # Promote the scalar ABI before a third ABI evicts.
+        promoted = owner.graphs[key]
+        from tests.test_compile_pointwise_helpers import assert_replaced_shell
+        assert_replaced_shell(self, entry, promoted)
+        self.assertEqual(tuple(entry.lowerings), (abi_scalar, abi_alias))
+        self.assertEqual(tuple(promoted.lowerings), (abi_alias, abi_scalar))
+        compiled(self.x, other)
+        current = owner.graphs[key]
+        assert_replaced_shell(self, promoted, current)
+        self.assertIn(abi_scalar, current.lowerings)
+        self.assertNotIn(abi_alias, current.lowerings)
+        self.assertEqual(len(current.lowerings), 2)
+        helper.__code__ = program('def f(a):\n return a.sum()').__code__
+        with patch.object(frontend, 'lower', side_effect=AssertionError('retained ABI reparsed')):
+            compiled(self.x, 0.5)
+            compiled(self.x, other)
+        from tests.test_compile_pointwise_publication import snapshot
+        before = snapshot(owner)
+        with self.assertRaises(NotImplementedError):
+            compiled(self.x, self.x)  # Evicted ABI must rebuild and reject sum.
+        self.assertEqual(snapshot(owner), before)
+        self.assertEqual(len(owner.graphs), 1)
+
     def test_descriptor_code_mutation_failure_atomicity_and_reset(self):
         fn = program('def f(x):\n if x.shape[0] < 8:\n  return -x\n return x.relu()')
         compiled = native.compile(fn)
@@ -355,7 +388,7 @@ class ShapeBranchCache(unittest.TestCase):
         with patch.object(frontend, 'lower', side_effect=AssertionError('unused source caused lowering')):
             compiled(self.x, *([float('nan')]*120))
         entry = next(iter(cache(compiled).graphs.values()))
-        self.assertEqual([s.name for s in entry.observed], ['x'])
+        self.assertEqual([s.name for s in entry.payload.observed], ['x'])
         self.assertEqual(len(cache(compiled).graphs), 1)
 
     def test_branch_caches_keep_independent_lru_bounds_and_reset(self):
@@ -373,7 +406,11 @@ class ShapeBranchCache(unittest.TestCase):
         with patch.object(frontend, 'lower', wraps=frontend.lower) as lowering:
             compiled(self.x, 1.0)
         self.assertEqual(lowering.call_count, 1)  # The oldest concrete ABI was evicted.
-        self.assertEqual(len(entry.lowerings), 2)
+        from tests.test_compile_pointwise_helpers import assert_replaced_shell
+        current = next(iter(state.graphs.values()))
+        assert_replaced_shell(self, entry, current)
+        self.assertEqual(len(current.lowerings), 2)
+        self.assertIs(next(iter(current.lowerings.values())), next(reversed(entry.lowerings.values())))
         self.assertEqual(len(state.executors), 2)
         helper.__code__ = helper.__code__.replace()
         compiled(self.x, 1.0)

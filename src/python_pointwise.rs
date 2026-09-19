@@ -1,20 +1,91 @@
 //! Private typed JIT bridge; no arbitrary source strings or raw pointers accepted.
-use super::{CoreTensor, PyTensor, tensor_error};
+use super::{CoreTensor, PyTensor, PyTensorBase, tensor_error};
 use crate::{
     cuda::jit::Kernel,
     pointwise_ir::{Graph, Node},
-    tensor::pointwise_jit::PreparedPointwise,
+    tensor::pointwise_jit::{HostAdmission, HostPointwise, PreparedPointwise},
 };
 use pyo3::{
     exceptions::{PyNotImplementedError, PyTypeError, PyValueError},
     prelude::*,
-    types::{PyBool, PyDict, PyFloat, PyInt, PyString, PyTuple},
+    types::{PyBool, PyBytes, PyDict, PyFloat, PyInt, PyString, PyTuple},
 };
 use std::sync::Arc;
 
 type Payload = (String, usize, usize, u64);
 
+#[pyfunction(name = "_pointwise_method_identity_mismatch")]
+#[allow(unsafe_code)] // GenericGetDict returns an owned namespace of a validated native heap type.
+pub(super) fn method_identity_mismatch<'py>(
+    table: &Bound<'py, PyAny>,
+    missing: &Bound<'py, PyAny>,
+) -> PyResult<Option<Bound<'py, PyString>>> {
+    let invalid = || PyTypeError::new_err("expected native owner and exact method identity tuples");
+    let rows = table.cast_exact::<PyTuple>().map_err(|_| invalid())?;
+    let py = table.py();
+    let tensor = py.get_type::<PyTensor>();
+    let base = py.get_type::<PyTensorBase>();
+    // Validate the whole supplied table before any namespace access. Indexed
+    // exact tuples and exact strings cannot dispatch user protocol callbacks.
+    for i in 0..rows.len() {
+        let row = rows.get_item(i)?;
+        let row = row.cast_exact::<PyTuple>().map_err(|_| invalid())?;
+        if row.len() != 2 {
+            return Err(invalid());
+        }
+        let owner = row.get_item(0)?;
+        if !owner.is(&tensor) && !owner.is(&base) {
+            return Err(invalid());
+        }
+        let bindings = row.get_item(1)?;
+        let bindings = bindings.cast_exact::<PyTuple>().map_err(|_| invalid())?;
+        for j in 0..bindings.len() {
+            let binding = bindings.get_item(j)?;
+            let binding = binding.cast_exact::<PyTuple>().map_err(|_| invalid())?;
+            if binding.len() != 2 || !binding.get_item(0)?.is_exact_instance_of::<PyString>() {
+                return Err(invalid());
+            }
+        }
+    }
+    for i in 0..rows.len() {
+        let row = rows.get_item(i)?.cast_into::<PyTuple>()?;
+        let owner = row.get_item(0)?;
+        let bindings = row.get_item(1)?.cast_into::<PyTuple>()?;
+        let mismatch =
+            pyo3::sync::critical_section::with_critical_section(&owner, || -> PyResult<_> {
+                // SAFETY: identity validation above admits only our initialized
+                // PyO3 heap types. In particular, static builtins have different
+                // dictionary storage and must never reach GenericGetDict. The
+                // stable ABI call returns a new reference or an exception.
+                let namespace = unsafe {
+                    Bound::from_owned_ptr_or_err(
+                        py,
+                        pyo3::ffi::PyObject_GenericGetDict(owner.as_ptr(), std::ptr::null_mut()),
+                    )?
+                };
+                let namespace = namespace.cast_exact::<PyDict>().map_err(|_| invalid())?;
+                for j in 0..bindings.len() {
+                    let binding = bindings.get_item(j)?.cast_into::<PyTuple>()?;
+                    let name = binding.get_item(0)?.cast_into::<PyString>()?;
+                    let expected = binding.get_item(1)?;
+                    // Owned optional lookup propagates errors and distinguishes
+                    // absence from a present None. Never bind or compare values.
+                    let current = namespace.get_item(&name)?;
+                    if !current.as_ref().unwrap_or(missing).is(&expected) {
+                        return Ok(Some(name));
+                    }
+                }
+                Ok(None)
+            })?;
+        if mismatch.is_some() {
+            return Ok(mismatch);
+        }
+    }
+    Ok(None)
+}
+
 #[pyfunction(name = "_pointwise_namespace_keys_exact")]
+#[allow(unsafe_code)] // Borrowed dict keys stay inside the callback-free critical section.
 pub(super) fn namespace_keys_exact(value: &Bound<'_, PyAny>) -> bool {
     let Ok(namespace) = value.cast_exact::<PyDict>() else {
         return false;
@@ -22,9 +93,27 @@ pub(super) fn namespace_keys_exact(value: &Bound<'_, PyAny>) -> bool {
     // Protect iterator construction as well as traversal. Exact type checks
     // invoke no callbacks; Python retains namespace selection and error policy.
     pyo3::sync::critical_section::with_critical_section(value, || {
-        namespace
-            .iter()
-            .all(|(key, _)| key.is_exact_instance_of::<PyString>())
+        let mut position = 0;
+        let mut key = std::ptr::null_mut();
+        // SAFETY: namespace is an exact, live dict. The critical section (or
+        // GIL) prevents mutation throughout traversal; neither C API releases
+        // it or calls Python. PyDict_Next lends a non-null key on success. We
+        // inspect only its exact type and never retain it or read the value.
+        // Avoid creating owned key/value references for every warm guard scan.
+        unsafe {
+            while pyo3::ffi::PyDict_Next(
+                namespace.as_ptr(),
+                &raw mut position,
+                &raw mut key,
+                std::ptr::null_mut(),
+            ) != 0
+            {
+                if pyo3::ffi::PyUnicode_CheckExact(key) == 0 {
+                    return false;
+                }
+            }
+        }
+        true
     })
 }
 
@@ -130,6 +219,29 @@ pub(super) fn validate_inputs(inputs: &Bound<'_, PyTuple>) -> PyResult<usize> {
     with_inputs(inputs, |tensors| {
         CoreTensor::validate_pointwise_inputs(tensors)
             .map_err(|e| PyNotImplementedError::new_err(e.to_string()))
+    })
+}
+
+#[pyfunction(name = "_pointwise_admit_inputs")]
+pub(super) fn admit_inputs(py: Python<'_>, inputs: &Bound<'_, PyTuple>) -> PyResult<Py<PyTuple>> {
+    with_inputs(inputs, |tensors| {
+        let metadata = tensors
+            .iter()
+            .map(|tensor| super::compile_tensor_metadata(py, tensor))
+            .collect::<PyResult<Vec<_>>>()?;
+        // Preserve the frontend's any-CPU diagnostic before whole-input admission,
+        // including when another slot has unsupported dtype, gradients or layout.
+        if tensors
+            .iter()
+            .any(|tensor| tensor.device() == crate::Device::Cpu)
+        {
+            return Err(PyNotImplementedError::new_err(
+                "torch.compile(): native CUDA pointwise: default backend does not compile CPU tensors; use backend='eager' for the documented CPU capture subset; see docs/compile-pointwise-jit.md",
+            ));
+        }
+        CoreTensor::validate_pointwise_inputs(tensors)
+            .map_err(|e| PyNotImplementedError::new_err(e.to_string()))?;
+        Ok(PyTuple::new(py, metadata)?.unbind())
     })
 }
 
@@ -277,6 +389,131 @@ pub(super) fn compile(
     })
 }
 
+/// Typed preparation precedes any compiler discovery or device upload.
+#[pyfunction(name = "_pointwise_host_plan")]
+#[pyo3(signature = (inputs, nodes, outputs, numerical_hint=None, output_order=None))]
+pub(super) fn host_plan(
+    inputs: &Bound<'_, PyTuple>,
+    nodes: &Bound<'_, PyTuple>,
+    outputs: &Bound<'_, PyTuple>,
+    numerical_hint: Option<&Bound<'_, PyAny>>,
+    output_order: Option<&Bound<'_, PyAny>>,
+) -> PyResult<HostPlan> {
+    let graph = graph(nodes, outputs, inputs.len())?;
+    let output_count = graph.outputs.len();
+    with_inputs(inputs, |tensors| {
+        let admission = HostAdmission::new(tensors, graph)
+            .map_err(|error| PyNotImplementedError::new_err(error.to_string()))?;
+        let hint = parse_numerical_hint(numerical_hint)?;
+        let order = parse_output_order(output_order, output_count)?;
+        admission
+            .prepare(hint, &order)
+            .map(|host| HostPlan { host })
+            .map_err(|error| tensor_error(&error))
+    })
+}
+
+#[pyclass(frozen, module = "torch_rs.torch_rs", name = "_PointwiseHostPlan")]
+pub(super) struct HostPlan {
+    host: HostPointwise,
+}
+#[pymethods]
+impl HostPlan {
+    #[getter]
+    fn executable_identity<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        PyBytes::new(py, &self.host.identity.bytes)
+    }
+    fn compile(&self) -> PyResult<Executable> {
+        self.host
+            .compile()
+            .map(|kernel| Executable { kernel })
+            .map_err(|error| tensor_error(&error))
+    }
+}
+
+/// Ordinary-default handles cannot call the legacy VM re-planning APIs.
+#[pyclass(frozen, module = "torch_rs.torch_rs", name = "_PointwiseExecutable")]
+pub(super) struct Executable {
+    kernel: Arc<Kernel>,
+}
+#[pymethods]
+impl Executable {
+    fn bind(&self, host: &HostPlan) -> PyResult<Prepared> {
+        host.host
+            .bind(Arc::clone(&self.kernel))
+            .map(|invocation| Prepared { invocation })
+            .map_err(|error| tensor_error(&error))
+    }
+    #[getter]
+    fn executable_identity<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        PyBytes::new(
+            py,
+            &self
+                .kernel
+                .identity
+                .as_ref()
+                .expect("selected executable")
+                .bytes,
+        )
+    }
+    #[getter]
+    fn kind(&self) -> &'static str {
+        if self
+            .kernel
+            .identity
+            .as_ref()
+            .expect("selected executable")
+            .direct
+        {
+            "direct"
+        } else {
+            "vm"
+        }
+    }
+    #[getter]
+    fn source(&self) -> &str {
+        &self.kernel.source
+    }
+    #[getter]
+    fn ptx(&self) -> &str {
+        &self.kernel.ptx
+    }
+    #[getter]
+    fn nvrtc_version(&self) -> (i32, i32) {
+        self.kernel.version
+    }
+    #[getter]
+    fn options(&self) -> Vec<String> {
+        self.kernel.options.clone()
+    }
+    #[getter]
+    fn device(&self) -> usize {
+        self.kernel.device
+    }
+    #[getter]
+    fn context(&self) -> usize {
+        self.kernel
+            .identity
+            .as_ref()
+            .expect("selected executable")
+            .context
+    }
+    /// Regenerated diagnostic only, never selected-invocation evidence.
+    #[pyo3(signature = (numerical_hint, output_order=None, scalar_output=None))]
+    fn plan(
+        &self,
+        numerical_hint: &Bound<'_, PyAny>,
+        output_order: Option<&Bound<'_, PyAny>>,
+        scalar_output: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<String> {
+        Compiled {
+            kernel: Arc::clone(&self.kernel),
+            arity: self.kernel.graph.inputs,
+        }
+        .plan(numerical_hint, output_order, scalar_output)
+    }
+}
+
 pub(crate) fn convert_outputs(
     py: Python<'_>,
     outputs: Vec<CoreTensor>,
@@ -415,6 +652,67 @@ pub(super) struct Prepared {
 
 #[pymethods]
 impl Prepared {
+    fn belongs_to(&self, executable: &Executable) -> bool {
+        Arc::ptr_eq(self.invocation.kernel(), &executable.kernel)
+    }
+    #[getter]
+    fn executable_identity<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyBytes>> {
+        self.invocation
+            .kernel()
+            .identity
+            .as_ref()
+            .map(|id| PyBytes::new(py, &id.bytes))
+    }
+    #[getter]
+    fn kind(&self) -> &'static str {
+        if self
+            .invocation
+            .kernel()
+            .identity
+            .as_ref()
+            .is_some_and(|id| id.direct)
+        {
+            "direct"
+        } else {
+            "vm"
+        }
+    }
+    #[getter]
+    fn source(&self) -> &str {
+        &self.invocation.kernel().source
+    }
+    #[getter]
+    fn ptx(&self) -> &str {
+        &self.invocation.kernel().ptx
+    }
+    #[getter]
+    fn nvrtc_version(&self) -> (i32, i32) {
+        self.invocation.kernel().version
+    }
+    #[getter]
+    fn options(&self) -> Vec<String> {
+        self.invocation.kernel().options.clone()
+    }
+    #[getter]
+    fn device(&self) -> usize {
+        self.invocation.kernel().device
+    }
+    #[getter]
+    fn context(&self) -> Option<usize> {
+        self.invocation
+            .kernel()
+            .identity
+            .as_ref()
+            .map(|id| id.context)
+    }
+    #[getter]
+    fn instruction_count(&self) -> usize {
+        self.invocation.instruction_count()
+    }
+    #[getter]
+    fn register_count(&self) -> usize {
+        self.invocation.register_count()
+    }
     #[pyo3(signature = (inputs, scalars=None))]
     fn run<'py>(
         &self,

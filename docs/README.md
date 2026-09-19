@@ -1,8 +1,18 @@
 # Documentation Index
 
-Use this page to find the durable project contracts, runnable examples,
-contributor guides, and historical validation and timing evidence. Burner-managed progress
-artifacts are generated at merge time and are not source documentation.
+Choose a task below; detailed support boundaries live in the linked contracts.
+Burner-managed progress artifacts are generated at merge time, not source documentation.
+
+| Task | Start here |
+| --- | --- |
+| Install and run a first example | [Repository quickstart](../README.md), [first-success example](../examples/first_success.py) |
+| Check an API or unsupported case | [Supported surface](supported-surface.md) |
+| Compile a function | [Compiler entry points](#compiler-guides) |
+| Reproduce a measurement | [Benchmark policy](../BENCHMARKING.md), [recorded validation](validation-history.md) |
+
+The development host has real H100 GPUs. Follow [optional CUDA setup](troubleshooting.md#optional-native-cuda-runtime)
+and use `CUDA_VISIBLE_DEVICES=0` for reserved single-GPU checks. Hardware-only tests
+skip when CUDA is unavailable; this does not establish accelerator or training parity.
 
 ## Current Contracts
 
@@ -10,7 +20,7 @@ artifacts are generated at merge time and are not source documentation.
 - [Feature coverage contract](../FEATURES.md): Weighted feature areas and what counts toward coverage.
 - [Benchmark policy](../BENCHMARKING.md): Correctness gates, measurement rules, provenance, and anti-gaming policy.
 - [Default compiler evaluations](torch-compile-default-evaluator.md): Versioned public-default Inductor coverage and real-CUDA performance gates; legacy scores are non-comparable.
-- [Native default CUDA compiler](compile-pointwise-jit.md): Fused pointwise compilation through ordinary `torch_rs.compile(fn)`, a runnable example, supported boundaries, and current H100 evidence.
+- [Native default CUDA compiler](compile-pointwise-jit.md): Fused pointwise outputs and separate alias-only view/mutation programs through ordinary `torch_rs.compile(fn)`; see its [observable compatibility limits](compile-pointwise-jit.md#observable-differences-from-upstream-default-compilation).
 - [Hardware heterogeneity evaluator](hardware-heterogeneity-evaluator.md): Fixed accelerator-family and feature-depth matrix, evidence rules, and real-hardware scoring policy.
 - [Generated creation validator](../scripts/validate_creation_factory_benchmark.py): Held-out seeded shape path for creation-factory benchmark review.
 
@@ -20,14 +30,30 @@ artifacts are generated at merge time and are not source documentation.
 
 ## Contributor Guides
 
-The default fused compiler is described above. The older compiled-operation
-guides below describe bounded `backend="eager"` capture, not general default
-Inductor support.
-
 - [Contributing guide](../CONTRIBUTING.md): Locked setup, environment expectations, test selection, draft workflow, and documentation ownership.
 - [Setup troubleshooting](troubleshooting.md): Short fixes for common environment, import, reference dependency, and stale wheel failures.
 - [Repository README](../README.md): Install commands, first-success example, scope summary, and validation entry points.
 - [Architecture map](../ARCHITECTURE.md): Source map for the Rust core, Python bindings, wrappers, and test layout.
+
+### Compiler guides
+
+Choose the entry point before following an operation guide:
+
+| Entry point | Contract |
+| --- | --- |
+| `torch_rs.compile(fn)` | [Native default compiler](compile-pointwise-jit.md): supported programs, input admission, views, cache behavior and runtime requirements. |
+| `torch_rs.compile(fn, backend="eager")` | [Explicit eager capture](compile-cuda-add.md): bounded graph execution; the operation guides below extend this path. |
+| Numerical behavior | [Pointwise numerical contract](compile-pointwise-numerics.md): rounding, realization and FMA rules. |
+
+For measurement tooling and recorded results, see the
+[validation history](validation-history.md).
+
+Neither compiler entry point provides full upstream Inductor or training parity.
+Historical validation records describe their recorded source revisions; they do
+not expand the current contracts.
+
+#### Explicit eager CUDA operations
+
 - [Compiled CUDA squeeze](compile-cuda-squeeze.md): Method and one-argument module/imported singleton removal, shared-storage wrappers and H100 validation.
 - [Compiled CUDA view](compile-cuda-view.md): Alias-only constant shapes, strict stride compatibility and H100 validation.
 - [Compiled CUDA reshape](compile-cuda-reshape.md): Method and positional native/imported constant tuple/list shapes, rank-0/1/2 alias-or-pack semantics and H100 validation.
@@ -39,78 +65,24 @@ Inductor support.
   Includes positional module/imported add/neg/ReLU/squeeze/t calls with precise binding guards.
 - [Compiled CUDA scalar multiplication validation](compile-cuda-mul-scalar-validation.md): Guarded scalar grammar, independent diagnostics, and H100 checks.
 - [Compiled CUDA negation validation](compile-cuda-neg-validation.md): Integrated-commit results, provenance, and current neg/add diagnostic commands.
+
+### Eager tensor operations and diagnostics
+
+- [CUDA scalar `Tensor.add_`](cuda-add-inplace.md): Dense shared-storage mutation, exact alpha/operand limits and synchronous completion; default compilation supports the [alias-only subset](compile-pointwise-jit.md#alias-only-views-and-scalar-mutation), while `backend="eager"` capture rejects mutation.
 - [CUDA scalar multiplication validation](cuda-mul-scalar-validation.md): General eager float32 kernel, conversion/layout boundaries, and H100 evidence.
 - [Native and compiled CUDA ReLU](cuda-relu.md): Method and trusted top-level capture, IEEE bit semantics, layout bounds and H100 development checks.
 - [CUDA negation validation](cuda-neg-validation.md): Contiguous float32 eager scope, H100 checks, and retained evaluation evidence.
-- [CUDA view packing validation](cuda-contiguous-validation.md): Bounded contiguous/reshape materialization, aliasing contracts and clean-commit H100 correctness evidence.
 - [Text collation diagnostics](text-collation-diagnostics.md): Public-call timings and identity checks for text-led metadata passthrough.
 - [CUDA-add diagnostics](cuda-add-diagnostics.md): Latency, sustained throughput, cache saturation, and release provenance.
 - [CUDA matrix/vector addition](cuda-add-trailing-vector.md): Bounded eager broadcast support, H100 differentials, and six-case math validation.
-- [CUDA vector addition and depth-stack integration](composite-cuda-vector-dstack.md): Records composite repairs, diagnostics, and the clean-commit delivery gate.
 - [Native CUDA matrix multiplication](cuda-matmul.md): Contiguous same-device rank-2 float32 matmul, native cuBLAS setup, numerical regressions, and capture commands.
 - [CUDA matrix row sums](cuda-sum-rows.md): Contiguous rank-2 float32 dim=1/-1 reduction, numerical behavior, and validation.
 - [Rank-2 mean diagnostics](rank2-mean-diagnostics.md): Both reduction axes and layouts at matched CPU worker budgets.
 
-## Historical Validation Evidence
-
-- [Legacy eager compile evaluator](torch-compile-coverage-evaluator.md): Historical eager/custom-backend diagnostic, no longer the default compiler scoring gate.
-- [Compiler analysis and CPU tanh composite validation](diagnostics/compile-cuda-graph/composite-postcommit-d94daecd/README.md): Historical measurements of implementation `d94daecd`, with
-  [source clean](diagnostics/compile-cuda-graph/postcommit-4cb0432/README.md) (`4cb0432`) and
-  [source development](diagnostics/compile-cuda-graph/static-analysis-b7936239-development/README.md) predecessors.
-  Measured revisions are distinct from evidence publication commits; each report retains its provenance and performance caveats.
-- [Compiled CUDA row-sum validation](compile-cuda-sum-rows-validation.md): Commit-bound source captures, retained development attempts, and timing-artifact limitations.
-- [Matmul diagnostic index](diagnostics/composite-matmul-unflatten-l1/README.md): Current evidence and earlier source/composite captures, with their original identities and raw results.
-- [Matmul, unflatten and L1 integration history](composite-matmul-unflatten-l1-validation.md): Repair history, development validation and managed handoff notes.
-- [CUDA addition capture validation](compile-cuda-add-validation.md): Source validation history, baseline caveats, and composite correctness evidence; no performance score.
-
-## Historical Timing Evidence
-
-These reports are historical release evidence snapshots, not live benchmark
-gates.
-
-### Reductions
-
-- [Rank-1 sum timings](rank1-sum-release-timings.md): Rank-1 `Tensor.sum` release evidence.
-- [Rank-9 sum timings](rank9-sum-release-timings.md): Rank-9 `Tensor.sum` release evidence.
-- [Rank-10 sum timings](rank10-sum-release-timings.md): Rank-10 `Tensor.sum` release evidence.
-- [Rank-11 sum timings](rank11-sum-release-timings.md): Rank-11 `Tensor.sum` release evidence.
-- [Rank-12 sum timings](rank12-sum-release-timings.md): Rank-12 `Tensor.sum` release evidence.
-- [Mean timings](tensor-mean-release-timings.md): Full-reduction `Tensor.mean` and `torch.mean` release evidence.
-
-### Creation
-
-- [Creation factory timings](creation-factory-release-timings.md): `torch.empty`, `torch.zeros`, and `torch.ones` eager CPU factory benchmark coverage.
-
-### Elementwise ops
-
-- [Addition timings](tensor-add-release-timings.md): `+` and `Tensor.add` release evidence.
-- [Subtraction timings](top-level-subtract-release-timings.md): `torch.sub` and `torch.subtract` release evidence with retained raw JSON in [benchmark-data/top-level-subtract-release-timings.json](benchmark-data/top-level-subtract-release-timings.json).
-- [Stack timings](top-level-stack-release-timings.md): `torch.stack` same-shape release evidence with retained raw JSON in [benchmark-data/top-level-stack-release-timings.json](benchmark-data/top-level-stack-release-timings.json).
-- [Multiplication timings](tensor-mul-release-timings.md): `*`, `Tensor.mul`/`Tensor.multiply`, and top-level multiplication release evidence.
-- [Division timings](top-level-division-release-timings.md): `torch.div` and `torch.divide` release evidence.
-- [Absolute value timings](tensor-abs-release-timings.md): `Tensor.abs` and `torch.abs` release evidence.
-- [Square-root timings](tensor-sqrt-release-timings.md): `Tensor.sqrt` and `torch.sqrt` release evidence.
-- [Reciprocal timings](tensor-reciprocal-release-timings.md): `Tensor.reciprocal` and `torch.reciprocal` release evidence.
-- [Softsign timings](softsign-release-timings.md): `torch.nn.functional.softsign` release evidence.
-
-### Compilation
-
-- [Compile CPU timings](torch-compile-cpu-release-timings.md): `torch.compile(..., backend="eager")` fullgraph and no-break `fullgraph=False` CPU release evidence with retained raw JSON in [benchmark-data/torch-compile-cpu-v4.json](benchmark-data/torch-compile-cpu-v4.json).
-- [Compile H100 CUDA prepared-executor timings](torch-compile-cuda-h100-release-timings.md): `torch.compile(..., backend="inductor")` H100 CUDA four-shape forward-output prepared-executor release evidence with retained raw JSON in [benchmark-data/torch-compile-cuda-h100-shape-matrix-v11.json](benchmark-data/torch-compile-cuda-h100-shape-matrix-v11.json).
-
-### Layout/view ops
-
-- [View and reshape timings](tensor-view-release-timings.md): View, reshape, flatten, ravel, unbind, and edge-unsqueeze release evidence.
-
-### Linear algebra
-
-- [Rank-2 matmul timings](rank2-matmul-release-timings.md): Rank-2 `@`, `Tensor.matmul`, and `torch.matmul` release evidence.
-
-### NN losses
-
-- [MSE loss timings](mse-loss-release-timings.md): `torch.nn.functional.mse_loss` release evidence.
-- [L1 loss timings](l1-loss-release-timings.md): `torch.nn.functional.l1_loss(reduction="none")` release evidence.
-- [L1 loss sum timings](l1-loss-sum-release-timings.md): `torch.nn.functional.l1_loss(reduction="sum")` release evidence.
-
 [Compiled CUDA matrix/vector addition](compile-cuda-trailing-vector-validation.md)
 records the bounded shape extension and non-scoring diagnostic commands.
+
+## Validation and timing history
+
+[Historical validation and timing catalog](validation-history.md): Recorded revisions,
+raw evidence and all release timing groups. These records do not expand current support.

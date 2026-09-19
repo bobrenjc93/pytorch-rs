@@ -1,4 +1,9 @@
-# Compiled CUDA transpose views
+# Explicit-eager CUDA transpose capture
+
+For `torch_rs.compile(fn)` without backend options, see the narrower
+[terminal input-rooted transpose contract](compile-pointwise-jit.md#supported-programs).
+That default path excludes `t`, top-level transpose, computed-source views and
+view consumers. This guide describes `backend="eager"`.
 
 The bounded eager compiler captures `Tensor.t()`, one-positional-argument
 `torch.t(x)` and genuine direct-import aliases, plus `Tensor.transpose(dim0, dim1)`

@@ -1,7 +1,10 @@
-# Native default CUDA pointwise compilation
+# Native default CUDA compilation
 
-`torch_rs.compile(fn)` with untouched public defaults now lowers a bounded
-pointwise language to a generated fused CUDA kernel. Backend resolution still
+`torch_rs.compile(fn)` with untouched public defaults supports fused CUDA
+pointwise programs with terminal input-rooted views, and separate
+[alias-only programs](#alias-only-views-and-scalar-mutation) with ordered views
+and scalar mutation. Alias-only programs need no numerical graph or dummy kernel.
+Backend resolution still
 chooses `inductor`; this native implementation does not import or execute
 PyTorch. It is not general Inductor, CPU compiler, or training equivalence.
 
@@ -36,8 +39,8 @@ def f(scale, x, enabled, y):
     return x * scale + y * enabled
 ```
 
-Positional integers, numeric subclasses, keyword arguments, default expansion and scalar-only
-programs are unsupported. Equal-shape inputs support
+Positional integers, numeric subclasses, keyword arguments to the compiled
+function, default expansion and scalar-only programs are unsupported. Equal-shape inputs support
 local intermediate variables, reused expressions, binary
 add/subtract/multiply (tensor/tensor or tensor/scalar in either order), and
 unary negation/ReLU/sin/cos. Operator syntax, positional Tensor methods, and
@@ -56,8 +59,139 @@ are bounded to 4096 nodes and 16384 bytecode instructions. Return a computed Ten
 or a bounded nested result as described below.
 Scalars and empty tensor shapes and contiguous views with storage offsets are
 supported. Computed outputs have fresh storage and canonical contiguous strides;
-returned input aliases preserve their original storage and strides. Inputs are
-unchanged. Input-only returns remain outside this subset.
+returned input aliases preserve their original storage and strides. These
+numerical programs leave inputs unchanged. Input-only returns remain outside
+this subset; the alias-only mutation contract is described below.
+
+After argument and function-mode validation, ordinary and receipt calls check
+the original Tensor and Tensor-base method namespaces before metadata admission
+or the cache lock. Python owns the
+ordered 19-name inventory and expected objects; one private stateless native
+helper returns the first identity mismatch. It validates exact tuples, exact
+string names and original native owner identities before accessing a namespace,
+then uses an owned stable-ABI dictionary lookup. Missing entries use the supplied
+sentinel, distinct from a present `None`. Ordinary `setattr`/`delattr` changes are
+observed on the next call without binding or invoking retrieved values. This
+contract covers the original native namespaces, not foreign-key injection,
+arbitrary concurrent monkeypatch interleavings or untested free-threaded Python.
+Conditional alias-operation binding checks remain separate.
+
+Terminal `Tensor.transpose(dim0, dim1)` and `Tensor.view` results are also
+admitted when rooted in an original input Tensor leaf or earlier input-rooted
+view, at rank 0, 1 or 2. `view` accepts a literal tuple of exact integer
+dimensions or positional constant integer dimensions, including native inferred
+`-1`; layout compatibility is checked natively without copying storage.
+Transpose axes must be two positional exact integer constants (literal, local, global or
+closure). Runtime input leaves remain ineligible axes through unary negation,
+local assignment, helper forwarding and container selection, even when negation
+turns a boolean into an exact integer. Nested results may mix these views with original aliases, computed
+outputs and the existing literal/current-input-shape metadata. Repeated
+references to a construction share one Python wrapper; distinct constructions,
+including equal-axis and inverse transposes, create distinct wrappers sharing
+the original storage. A function returning only metadata/views must return at
+least one view and perform no numerical Tensor operation. Mixed numerical
+functions still require a computed output root.
+
+Computed-source views, arithmetic or shape queries consuming a view,
+`t`, `reshape`, `contiguous`, top-level transpose, keyword/runtime axes,
+runtime view dimensions, strided inputs and training remain outside the default
+subset. All original inputs, including unused leaves, retain the contiguous CUDA
+float32 admission.
+
+View recipes retain only source/construction slots and constant view operations.
+Every current view is preflighted through the native planner before numerical compilation or
+execution. Warm calls also preflight retained inactive and zero-trip recipes
+against current inputs. Reuse of a matching retained lowering does not rescan
+inactive helper bodies; a missing ABI or retained-structure re-admission can
+admit current bodies. Mixed calls run the unchanged pointwise pipeline, then the existing native alias
+bridge, then result reconstruction. Pure-view calls create no numerical graph,
+kernel, executor or preparation entry. The bridge independently replans actual
+inputs, and caches publish only after successful wrapping and reconstruction.
+View-method binding guards apply only to programs that admit those methods.
+These changes extend metadata compilation coverage and make no performance-parity claim.
+The input views share storage with their original owners. After the compiled
+call, public [CUDA scalar `Tensor.add_`](cuda-add-inplace.md) can mutate a dense
+returned view; a computed output remains independent. Mutation inside a compiled
+function follows the separate alias-only contract below. For the broader
+explicit-eager view language,
+see [CUDA transpose capture](compile-cuda-t.md).
+Focused validation is recorded in [input transpose validation](compile-input-transpose-validation.md).
+
+### Alias-only views and scalar mutation
+
+An alias-only program may construct input-rooted `Tensor.view` and
+`Tensor.transpose` aliases and apply `Tensor.add_(other, *, alpha=1)` to an
+original input or earlier alias. All original Tensor leaves, including unused
+ones, must still be one or two exact contiguous CUDA float32 tensors without
+gradients on one device. Intermediate aliases may be dense transposes. View
+planning uses native rank-0/1/2 layout rules and never copies storage.
+
+The input-rooted view forms and construction identities follow the terminal
+view contract above. Views remain admissible in numerical programs without
+mutation; adding an effect selects the alias-only restrictions below.
+
+`add_` accepts exact Python bool/int/float `other`, positional or keyword, with
+an optional keyword `alpha` that must be numeric exactly one and not a bool.
+Literal, global and closure integer operands use the existing scalar range.
+Runtime scalar arguments remain exact Python float/bool leaves; positional or
+input-tree integers remain unsupported. Runtime float `alpha=1.0` is allowed;
+a bool passed directly as alpha is rejected. Unary negation follows the current
+exact scalar type, including Python's bool-to-int conversion; `-(-enabled)` is
+therefore integer one only when the current boolean is true. The compiler accepts
+no NumPy scalars or scalar subclasses. Current runtime scalars are resolved from their original source slots
+on every call and checked before any effect; their values and Tensor owners are
+not retained in recipes. The method returns the exact receiver and mutates its
+existing shared CUDA allocation, including dense transposed or offset aliases. Empty mutations
+launch no kernel. See the [native scalar mutation contract](cuda-add-inplace.md)
+for density, bounds, rounding and completion semantics.
+
+```python
+def update(x, increment):
+    flat = x.view(-1)
+    flat.add_(other=increment, alpha=1)
+    return (flat, flat, x)
+```
+
+A mutation-bearing admitted program must contain no numerical Tensor operations,
+including unused computations and required inactive or zero-trip bodies.
+Existing bounded root shape branches, non-nested literal loops and exact helpers
+are statically lowered; they do not replay Python bodies. Selected view and
+effect instructions execute in source order, including discarded calls. A program
+with an admitted effect may return original inputs directly or bounded literal
+results, including `None`. Without effects or numerical operations, at least one
+view must be returned. Numerical programs retain their computed-root requirement
+and never pass computed outputs to the view bridge.
+
+The complete required plan, scalar conversions and layouts are preflighted
+before this call issues any writes. Native execution independently revalidates
+current inputs. Pre-launch rejection does not undo concurrent work or callback
+effects outside this operation. Once execution starts, a later launch,
+completion, wrapping or reconstruction failure may leave earlier mutations
+visible. Cache entries, history and recency publish only after successful
+reconstruction; failed cache publication is not storage rollback. Calls through
+different compiled wrappers gain no additional ordering guarantee. There is no
+CPU mutation, autograd support, general mutation capture or Inductor parity.
+See the [committed-source validation](diagnostics/default-alias-mutation-qa-postcommit-95bdbf2.md)
+for focused checks.
+
+#### Observable differences from upstream default compilation
+
+Supported syntax does not imply identical Python object behavior to PyTorch
+2.13's default compiler. In checked ordered alias-write results, PyTorch returned
+distinct wrappers for repeated references to one `add_` receiver; native returns
+that exact receiver. Native also retains admitted immutable integer tuples from `co_consts`,
+where the reference reconstructs tuple objects. Matching values and shared storage
+therefore do not establish `is` equivalence. The native guarantees above remain
+intentional; code depending on object identity must account for these differences.
+
+The [recorded exceptional-value scalar history](diagnostics/default-alias-mutation-20260918.md)
+also exposed a warm signed-zero difference. A fresh reference compilation, or an
+agreeing simpler scalar history, does not resolve that failed warm comparison.
+These are compatibility limits, not claims of general compiler parity. The
+[focused contract check](diagnostics/alias-contract-quality-20260918.md) separates
+default-compiler observations from independent eager semantics.
+
+### Numerical broadcasting
 
 Unequal input shapes additionally require either the tensor-leaf multiply-add
 described below, or at most one arithmetic stage, including live sin/cos. Input and scalar nodes start at depth
@@ -85,15 +219,15 @@ and trig consumers and is excluded in both output orders. This graph-wide guard
 preserves the bounded single-FMA exception. Dead trig does not restrict live
 admission. The exception reuses the existing lowering and checked addresses.
 
-One-stage trig uses the existing numerical planner and generic native CUDA
-instruction executor, including its scalar-kind and shape-history behavior.
+One-stage trig uses the existing numerical planner and selected native CUDA
+executable, including its scalar-kind and shape-history behavior.
 Finite default-Inductor comparisons do not establish general Inductor coverage
 or performance parity. Generic executor PTX and reconstructed scalar plans are
 not independent device traces; empty outputs execute no trig.
 
 Strided inputs, other dtypes, gradients (even inside no-grad),
-mutation, control flow outside the bounded root branches and literal loops below, module calls, keyword operator
-arguments, reductions, matrix operations, and device/dtype conversions are
+mutation outside the alias-only contract, control flow outside the bounded root branches and literal loops below, module calls, keyword operator
+arguments outside the documented `add_` form, reductions, matrix operations, and device/dtype conversions are
 explicitly rejected. No original body or Python operator is run during
 admission or warm execution. Unsupported configurations keep their existing
 contracts; `disable=True`, configured/custom backend resolution, and the
@@ -133,7 +267,18 @@ selection inside the compiled function.
 
 Observation remains lazy. Selecting/unpacking a sequence checks its exact type
 and length; dict selection checks its type and the selected path, without guarding
-unrelated keys or insertion order. Scalar history follows the public parameter
+unrelated keys or insertion order. Each cached lowering retains its own container
+signatures and selected child paths, including inactive recipes. Shape reads
+retain tensor-source and minimum-rank admission, without guarding inactive
+dimensions. Scalar operations retain exact scalar-type and integer-range checks,
+including negated operands, without guarding inactive scalar values.
+On a logical hit, a mismatch in the selected lowering's own admission
+evidence re-admits that lowering before any write, using current inputs with
+that entry's frozen active semantics. Active observed structure changes can
+instead miss the logical guards and select or create another logical entry
+using current values. Other ABI lowerings keep their own admission evidence.
+Retained effect scalars remain current preflight inputs, not new specialization
+guards. Scalar history follows the public parameter
 and normalized item path: list and tuple indices share source identity under
 separate structural guards. On a logical hit, changed Tensor traversal order
 rebinds current operands while preserving the selected specialization's frozen
@@ -142,9 +287,16 @@ caller containers, Tensor owners, input descriptors or unused keys. Admission
 snapshots are invocation-local; concurrent caller mutation is not an atomic
 whole-tree transaction.
 
+After complete admission, warm guards project their existing immutable source
+paths from those snapshots. Captures still receive eager binding validation.
+The same binding conversion supplies full dependency/DFS-ordered maps for private
+`resolve()` callers, logical misses and lowering creation or re-admission; guard lookup order does
+not change scalar promotion or slot order. Projection state lasts only for the
+invocation. It adds neither a retained topology plan nor a validation verdict cache.
+
 Container subclasses, custom mappings, positional int/None/string leaves,
 runtime or captured selectors, slices, dict iteration/unpacking, starred forms,
-mutation, and captured/default containers remain unsupported. Constant-pool and
+container mutation, and captured/default containers remain unsupported. Constant-pool and
 shape-predicate provenance rules are unchanged: a helper cannot grant an input
 shape predicate new authority. This is a bounded frontend extension, not general
 pytree, Dynamo, Inductor or accelerator parity.
@@ -158,7 +310,7 @@ remains pending; the diagnostic timings are not performance or coverage scores.
 ### Bounded nested results
 
 Small exact tuple/list/dict constructors can combine computed Tensor leaves,
-original input aliases, exact literal `None`/bool/int/float/string metadata and
+input-rooted views, original input aliases, exact literal `None`/bool/int/float/string metadata and
 current `input.shape[literal_integer_axis]` values:
 
 ```python
@@ -168,23 +320,26 @@ def structured(x, y):
     return {"shared": shared, "again": shared, "sum": product + x, "tag": "native"}
 ```
 
-At least one computed Tensor is required, with at most 64 distinct original SSA
-roots. Every computed root must have the same actual shape; input aliases may
+Numerical functions require at least one computed Tensor, with at most 64 distinct
+original SSA roots; purely input-rooted view functions follow the rule above. Every computed root must have the same actual shape; input aliases may
 retain another shape. Dict keys must be exact literal strings; insertion order
 and duplicate-key replacement follow Python. Repeated Tensor or container leaves
 preserve identity within a call. Separate equal computations get separate output
 storage, even when kernel arithmetic is shared. Computed outputs and dynamic
-containers are fresh across calls, so retaining earlier results is safe.
+containers are fresh across calls, so retaining earlier results is safe. An
+admitted immutable integer tuple from the function's constant pool retains that
+original tuple identity across calls, including after cache reset; replacing
+the code uses the replacement code's constants.
 
 Constructors work in direct helpers and expanded root literal loops and branches.
 They share a 4096 construction/reference-edge budget and depth limit 64, including
 overwrites and expanded iterations. Shared container DAGs are accounted and
 rebuilt without exponential expansion. The admitted constructor bytecodes are
 `BUILD_TUPLE`, `BUILD_LIST`, `BUILD_MAP` and `BUILD_CONST_KEY_MAP`; bounded exact
-string key tuples are checked before disassembly. Compiler-optimized constant
-containers (including `()`) and large literals requiring other opcodes are
-unsupported. Literal selection and fixed tuple/list unpacking are supported
-for these symbolic containers too. Mutation, starred forms,
+string key tuples and exact integer tuples (including `()`) are checked before
+disassembly. Other compiler-optimized constant containers and large literals
+requiring other opcodes are unsupported. Literal selection and fixed tuple/list unpacking are supported
+for these symbolic containers too. Container mutation, starred forms,
 comprehensions, constructor calls, whole `torch.Size` returns and shape arithmetic
 remain unsupported.
 Forms optimized to identical admitted bytecode are indistinguishable.
@@ -197,8 +352,9 @@ and every computed root must satisfy the existing numerical domain. Returned
 intermediates do not impose eager rounding: consumers can still use fused FMA.
 
 One native graph, output-vector ABI and CUDA launch serve all computed leaves.
-The immutable Python result specification carries topology separately, so changes
-to keys or container order do not fragment native executable caching. Current
+The immutable Python result specification carries topology separately, so cosmetic
+key or container changes preserve native executable reuse when the effective
+computed-root order and resulting Program stay equal. Current
 input aliases and dimensions are reconstructed after native completion and before
 any cache publication or LRU update. Inputs and all output allocations remain
 owned through launch, synchronization and Python conversion, including failures.
@@ -208,14 +364,15 @@ The result specification also projects the first observable occurrence of each
 computed root into native numerical planning. Realization and fusion determine
 logical regions, including rounded intermediate imports and exports. A native
 scalar instruction plan executes those regions within one generated CUDA kernel;
-changing return order supplies different plan data to the same graph-keyed
-executable. An immutable preparation retains the validated plan and completed
-read-only instruction upload for matching warm calls. Register scratch and
-computed outputs remain invocation-owned through synchronization and failure;
+changing return order may supply a different Program and executable. An immutable
+preparation retains the validated metadata for matching warm calls, plus a
+completed read-only instruction upload for VM execution. Computed outputs and
+VM scratch remain invocation-owned through synchronization and failure;
 neither input tensors nor previous outputs are retained by preparations.
-Register scratch is capped at 64 MiB by limiting active workers and
-using a grid-stride loop. This execution strategy adds instruction-dispatch and
-scratch traffic; correctness captures do not establish a performance improvement.
+VM scratch is capped at 64 MiB by limiting active workers and using a grid-stride
+loop. Direct executables keep the same launch geometry and completion boundary,
+using local registers without instruction upload or scratch. Correctness tests
+do not establish a performance improvement.
 
 The [structured-output evidence index](diagnostics/compile-pointwise-structured-outputs/README.md)
 links the clean `d0f965a2` correctness capture, bounded guard timing diagnostic,
@@ -245,10 +402,13 @@ crossing a threshold selects or lowers the appropriate graph. Public `shape`
 descriptors on both Tensor classes remain identity-guarded.
 
 Both arms pass bounded language/type admission on each new lowering. Inactive
-locals, numerical IR and source observations do not enter the selected graph.
-Warm calls check capture/signature bindings and active helper code, without
-reparsing inactive helper bodies. A later branch crossing or new ABI lowering
-admits those bodies again; invalid bodies fail without publishing cache changes.
+locals, numerical IR and scalar/helper observations do not enter the selected
+graph; container-structure guards remain necessary for retained input paths.
+Warm calls check capture/signature bindings and active helper code. Matching
+retained-lowering reuse does not reparse inactive helper bodies. A new lowering
+after a branch crossing, a missing ABI, or retained-structure re-admission can
+admit current inactive bodies again; invalid bodies fail without publishing
+cache changes.
 
 Straight-line helpers can occur in arms, and root literal loops can occur outside
 branch regions. Nested branches, branches in loops/helpers, loops in arms,
@@ -280,20 +440,23 @@ def recurrence(x, scale):
 One to three literal exact integer arguments and a nonzero step are required.
 Positive/negative steps and zero/one/many trips are supported. Bounds retain the
 existing integer scalar range. Runtime/captured bounds, iterator expressions,
-nested/helper-local loops, conditional/early-exit edges and mutation are rejected.
+nested/helper-local loops, conditional/early-exit edges and mutation outside the
+alias-only `add_` contract are rejected.
 Admission follows CPython 3.10–3.14 bytecode semantics; source forms optimized to
-identical bytecode are indistinguishable. Loop bodies use the same pointwise
-operations and direct helpers as straight-line programs; index use adds no new
+identical bytecode are indistinguishable. Loop bodies use the same numerical or
+alias-only operations and direct helpers as straight-line programs; index use adds no new
 scalar arithmetic or indexing operations.
 
 Normalization validates complete loop regions and stack cleanup, bounds expansion,
 then expands before lazy source binding and frame lowering. Index assignments and
 carry-over locals retain frame semantics. Zero trips preserve previous locals and
-initial parameters; an index never assigned remains unbound. A zero-trip loop
-does not admit an identity-only root return. Its body still passes the existing
+initial parameters; an index never assigned remains unbound. Numerical programs
+still require a computed root; an alias-only program with an admitted effect,
+even in a zero-trip body, may return an original input. Its body still passes
 typed operator, helper and data admission in an isolated local frame; its
-temporary assignments and IR are discarded, while helper code/binding and data
-guards remain active on warm calls. Unbound local reads in this skipped frame
+temporary assignments and numerical IR are discarded. Realized data and helper
+bindings retain their warm guards; retained view/effect recipes are preflighted against current
+inputs and scalars without executing skipped effects. Unbound local reads in this skipped frame
 (including its helper calls) use temporary data placeholders, not executed-local
 lookups; no placeholder or skipped assignment escapes into the executing frame
 or native IR. A genuinely executed unbound read still rejects. Reductions and
@@ -325,7 +488,7 @@ A root global or closure binding may be an exact Python function with one or
 more positional parameters. Calls must match its positional arity. Helpers may
 use parameters, admitted scalar literals, local assignments, native Tensor
 methods and the arithmetic above. Repeated calls, multiple helpers and calls
-composed in the root all emit operations into the same graph:
+composed in the root all lower through the same numerical or alias-only owners:
 
 ```python
 def wave(x):
@@ -335,9 +498,11 @@ def pointwise(x):
     return wave(x) + wave(x + 0.25)
 ```
 
-Helpers cannot read globals or closures, look up other helpers, branch, mutate,
-handle exceptions, yield or await. Keyword-only/variadic parameters, nonempty
-defaults and closures, and compiler directive attributes (`_torchdynamo_inline`,
+Helpers cannot read globals or closures, look up other helpers, branch,
+handle exceptions, yield or await. Mutation is limited to the alias-only `add_`
+contract; helper calls retain source-order effects and whole-program preflight.
+Keyword-only/variadic parameters, nonempty defaults and closures, and compiler
+directive attributes (`_torchdynamo_inline`,
 `_dynamo_marked_constant`, `_torchdynamo_disable`) are rejected. Container types,
 attribute keys and the entire constant pool are validated without callbacks,
 including unused constants and warm calls. Strings and `None` are literal result metadata only.
@@ -345,7 +510,7 @@ including unused constants and warm calls. Strings and `None` are literal result
 Arguments and returns may also contain admitted small constructors and literal metadata; functions,
 native call objects and modules cannot pass through helpers even as ignored
 arguments. Identity and scalar-literal returns may feed later tensor operations;
-the root must still contain at least one computed tensor. Scalar binary arithmetic remains
+numerical functions must still return at least one computed tensor. Scalar binary arithmetic remains
 unsupported. Both `RETURN_VALUE` and Python 3.12 `RETURN_CONST` use this data-only
 boundary. Passing an ignored input through a helper creates no scalar value guard,
 but its data admission is rechecked on warm cache hits, including global and
@@ -359,8 +524,8 @@ Defaults, closures, constants and directive presence are revalidated on every
 call. Helpers share root source realization, runtime scalar slots, SSA nodes and
 budgets: every call charges its full instruction count toward the 16384 expanded
 instruction limit, with the same 4096-node limit. Parsing is local to lowering;
-ordinary warm hits do not disassemble helpers. Neither Python body executes.
-Original-IR numerical admission, executor sharing, failure-atomic publication,
+matching retained-lowering reuse does not disassemble helpers. Neither Python body executes.
+Original-IR numerical admission, executor sharing, publication after reconstruction,
 LRU bounds and reset ownership remain unchanged.
 
 See the [helper diagnostics](diagnostics/compile-pointwise-helpers/README.md) for
@@ -368,13 +533,15 @@ source-bound checks and their limits.
 
 ## Runtime requirements
 
-NVRTC is discovered by ordinary shared-library names (`libnvrtc.so.13`,
+Numerical compilation requires NVRTC, discovered by ordinary shared-library names (`libnvrtc.so.13`,
 `libnvrtc.so.12`, `libnvrtc.so`) or an explicit `TORCH_RS_NVRTC` override.
 The installed toolkit supplies NVRTC's libdevice implementation. Missing or
 incompatible tooling produces a diagnostic failure, never eager fallback.
 The target compute capability comes from the actual guarded CUDA device.
 The private kernel object exposes generated source/PTX, compiler version,
-options and device for regression evidence.
+options and device for regression evidence. Alias-only calls use the existing
+CUDA view/mutation runtime and require no NVRTC compilation; each nonempty
+`add_` completes its native scalar-add launch before the next effect.
 
 ## Compiler pipeline
 
@@ -385,8 +552,15 @@ constructs typed SSA nodes with float32 tensor values and scalar kinds.
 plans realization, locality ordering and fusion over the admitted graph.
 `pointwise_lowering.rs` canonicalizes each region into declarative scalar
 instructions with explicit rounding and FMA decisions. `pointwise_program.rs`
-allocates registers, validates instruction dataflow and emits the shared CUDA
-instruction kernel. Plan disassembly is separate from actual kernel source/PTX.
+allocates registers and validates instruction dataflow. `pointwise_codegen.rs`
+mechanically emits those exact words when there are at most 256 instructions,
+128 registers and 65,536 complete UTF-8 source bytes, including addresses and ABI.
+Empty or over-cap plans use the existing VM. Both domains retain the existing
+precise intrinsics, compiler options, launch geometry and completion path. Direct
+code embeds its instructions and needs neither a device instruction buffer nor
+invocation scratch. VM preparations still upload instructions and VM calls retain
+bounded scratch. Compiler failures propagate; they never trigger VM fallback.
+Plan disassembly is separate from actual selected kernel source/PTX.
 `pointwise_indexing.rs` checks every expression's broadcast shape and size before
 numerical rewriting, including dead expressions. The same Rust admission check
 enforces the unequal-shape original-IR boundary during compilation and direct
@@ -413,8 +587,9 @@ preserves these failures. They are excluded expressions, not numerical repairs.
 
 ### Tensor metadata and identity
 
-Each wrapper caches validated graphs and compiled modules, never tensor data,
-results or input pointers. Shape/stride/dtype/device/gradient, live
+Each wrapper caches validated recipes, graphs and compiled modules, never tensor data,
+dynamic results or input pointers. Result recipes may retain admitted immutable
+constant-pool tuples. Shape/stride/dtype/device/gradient, live
 scalar/function bindings, and repeated-input object relationships are guarded.
 Contiguous storage offsets are read from the current inputs at launch and
 bounds-checked on every call; they do not require separate specializations.
@@ -429,12 +604,13 @@ Every positional parameter and captured global/closure cell has an explicit lazy
 source identity; the frame determines which values are observed.
 Public parameter positions are distinct from filtered tensor indices and runtime
 scalar operand indices. All tensors, including unused ones, enter the same
-validation, alias, shape, code-generation and launch path. Scalar parameters that are unused or overwritten before their first read have
+input validation and alias checks; alias-only programs create no numerical
+executable or preparation. Scalar parameters that are unused or overwritten before their first read have
 no value guards; exact-type admission still checks every
-argument. Boolean bindings stay static. Integer literals and captures retain their
+argument. Observed Boolean bindings do not participate in scalar promotion. Integer literals and captures retain their
 existing support; positional integers are rejected before user hooks can run.
 
-Used positional and captured scalars are initially constant
+In numerical programs, used positional and captured scalars are initially constant
 specializations. Static float guards equate positive and negative
 zero: a cache hit retains the sign captured by that graph, while a new graph
 uses the current value. Literal zeros and promoted runtime parameters retain
@@ -450,7 +626,15 @@ static specialization. Only a complete guard miss consults successful source
 history for new promotion. New traces specialize nonfinite values even after
 runtime promotion. Reset clears this history. Integer and Boolean bindings retain
 their scalar kinds.
-At most 64 runtime scalar parameters are supported in total across captures and
+
+Alias-only effects instead resolve their scalar source slots and unary operations
+from the current exact values on every call, including retained inactive and
+zero-trip effects. They do not use a selected numerical graph's frozen zero or
+NaN bits. The canonical native scalar parser validates current `other` and
+`alpha` before any write, even when no scalar value guard was recorded for the
+inactive body.
+
+Numerical kernels support at most 64 runtime scalar parameters across captures and
 positional arguments, by the existing single promotion pass. Their current values are
 passed by value at launch and are never retained in graph or code cache keys.
 The binding regressions keep both wrappers alive across changes without
@@ -468,11 +652,18 @@ one reset owner. A source's changed dimensions generalize after a guard miss;
 zero and singleton dimensions remain static. Rank, stride relations, broadcast
 equalities and applicable 32-bit upper bounds constrain reuse. Unused tensors
 create no logical shape guards but still participate in all native validation.
-A generalized specialization retains its frozen constants when an older shape
+A generalized numerical specialization retains its frozen constants when an older shape
 returns, including the sign of zero.
 
-Native executors specialize the full filtered tensor ABI, device and exact
-broadcast address formulas. Equal-shaped inputs share linear-load code. A logical
+A checked native host plan performs original-graph admission and builds one
+validated Program before compiler discovery or upload. Native executable identity
+contains versioned exact bytes for the structural original Graph, complete ABI,
+device/context, checked address formulas and VM/direct domain. Direct identity
+also includes every instruction word and the register count; VM identity omits
+the uploaded Program. Shapes and raw numerical hints are not executable identity.
+Equal Programs and addresses share an executable even after preparation eviction;
+different resulting Programs may require a new compilation. A retained identical
+executable can rebuild a preparation without discovering or loading NVRTC. A logical
 hit may compile a new concrete executor without consuming a logical slot or
 updating promotion history. Preparation checks original-IR numerical admission on
 actual shapes, including unused tensors and singleton-only linear maps. A warm
@@ -483,26 +674,80 @@ bounds and exact shapes, and uses current offsets and runtime scalar values.
 
 `recompile_limit` defaults to eight logical specializations. The executable LRU
 and each specialization's ABI-lowering LRU are independently bounded by the same
-limit. Immutable preparations form a separate data LRU keyed by executor key,
+limit. Immutable preparations form a separate data LRU keyed by logical graph/device/indexing,
 exact input shapes, the retained numerical hint and computed-root output order.
 Container-only changes do not fragment this data cache. Different exact shapes
 may prepare or evict data within one generalized logical specialization without
-consuming another logical slot or creating another module.
+consuming another logical slot. Equivalent executable identity avoids another module.
 
 The preparation LRU is bounded by the same entry count and a 32 MiB per-wrapper
-retained-data budget. The host instruction vector is dropped after completed
-upload. Native charges include device allocation bytes (including best-fit excess
-capacity), and owned
-signature/layout storage. Python charges conservatively count every key referent,
-including shared/repeated references and its graph, plus the wrapper and a
+retained-data budget. Construction-only host instruction vectors are dropped
+after binding; VM upload completes before their release. Native charges include
+actual retained device allocation bytes (including best-fit excess capacity) and
+owned signature/layout storage. Direct preparations retain instruction/register
+counts without device instruction storage. Python charges conservatively count every key referent,
+including shared/repeated references, its graph and the value-carried actual
+executor key, plus the wrapper and a
 512-byte per-entry bookkeeping allowance. This is not a bound on total process
 memory, CUDA allocator pools, modules, outputs, scratch or transient preparation.
 An oversized preparation executes by the same mechanism without being retained.
-Evicting an executor drops all its cached preparations.
+Kernel/module/source/PTX and the exact native executable identity belong to the
+count-bounded executor LRU. Construction-only host plans are dropped after bind.
+Eviction prunes preparations by their recorded actual executor identity and owner.
+Each newly bound preparation certifies its native Arc ownership before execution,
+accounting or publication. Frozen native owners preserve that relation in the
+frontend-admitted cache tuple. Every selected hit checks that the recorded
+executor is still the exact current map owner; it performs no native ownership
+query, planning, emission, compilation, upload or retention reaccounting. The
+existing bounded scan prunes stale map owners only after success. Executor-map
+replacement and clear remain supported; manually fabricating an inconsistent
+tuple in the private preparation dictionary is outside this contract.
+Prepared keys for that bounded scan are staged after successful reconstruction
+and before any retained-map publication, including warm same-key owner replacement.
+If staging fails, cache entries, accounting and recency stay unchanged; repeated
+failures cannot grow retention. Logical history is semantic state: its order
+selects the newest matching specialization, including frozen scalar bits and
+numerical hints. Each logical capture owns one shallow-frozen
+`SpecializationPayload`: values, observed sources, observations, binding checks,
+tensor sources, data sources and numerical hint. The fields retain their original
+objects; freezing the record does not copy or deep-freeze its contents. A published
+`Specialization` contains only that payload and its lowering map. Publication
+shallow-copies a changed lowering map and constructs a two-field shell with the
+same payload, then stages the graph map. Facts live for the logical capture;
+shells live for their published lowering history. Neither belongs to the broader
+Program lifetime or to a particular ABI. Retained lowerings preserve structural
+admission: an inactive helper can remain admitted after its code changes, while
+rebuilding an evicted ABI can reject the changed helper. Unchanged newest key/value hits compare keys by equality and
+values by identity and reuse both maps, including fresh equal ABI tuples.
+For changed values, overwriting the identical newest key skips removal while
+preserving key identity and order; equal-but-distinct keys still require removal
+and reinsertion. Both changed-map paths enforce the same capacity bound.
+Graph-only recency transitions cost O(G); lowering transitions cost O(L+G) and
+one shell, for retained graph/lowering counts G and L.
+
+Executor recency, count eviction, preparation-owner pruning, insertion, byte
+accounting and count/byte eviction share one `BaseException` recovery boundary.
+Failure clears only executor and preparation ownership, with base `dict.clear`
+under the already-held lock, and resets the charge to zero. It re-raises the
+identical exception without retrying execution. Committed logical history and
+other compiled wrappers stay unchanged; unrelated derived survivors may be
+lost and later rebuilt. After all fallible publication succeeds, one graph-root
+assignment commits the staged logical tree and the already-built result returns.
+Alias-only calls use the same logical commit without numerical cache publication.
+Already-completed storage effects are not rolled back or replayed on failure.
+
+This boundary does not promise immunity to arbitrary tracing or repeated
+asynchronous interruption of cleanup, lock exit or frame return. Dropping cache
+ownership does not guarantee immediate module/device destruction: external
+references and exception tracebacks can retain native payloads.
 
 Failed admission, preparation, compilation, execution, output conversion or result
 reconstruction publishes no entry, history or LRU change. All cache publication
-happens after successful result reconstruction. `torch.compiler.reset()` clears
+happens after successful result reconstruction and optional selected-invocation
+receipt allocation. The private `_torch_rs_pointwise_receipt` calls the same
+implementation body and returns `(result, prepared)` with the exact successfully
+used owner, or `(result, None)` for graph-free alias-only programs. Source/PTX is not
+independent execution tracing or physical GPU UUID attestation. `torch.compiler.reset()` clears
 all three levels under the same lock; the next call recompiles. Explicitly held
 private prepared objects have ordinary independent ownership, like held private
 kernel objects, and may outlive wrapper reset.
@@ -511,19 +756,35 @@ kernel objects, and may outlive wrapper reset.
 
 A native bridge revalidates input layouts, ranges and device before allocation
 or launch. Preparation and execution both check the kernel's recorded driver
-context under the existing device guard; preparation checks before uploading
-instructions. A successful upload has its own completion boundary, which is not
-repeated on a cache hit. Storage owners remain borrowed through legacy-stream completion,
+context under the existing device guard; preparation checks before any device
+allocation, including direct preparations without instruction storage. A successful
+VM upload has its own completion boundary, which is not repeated on a cache hit.
+Nonempty direct calls still launch and complete through the same owner as VM calls.
+Storage owners remain borrowed through legacy-stream completion,
 including errors. One launch produces fresh computed outputs; empty outputs need
 no launch, instruction upload, scratch or input pointer. An empty computed output
 does not require every input to be empty; unused inputs still receive validation.
-The private legacy kernel `.run` uses the same preparation/execution mechanism
-ephemerally. Modules are shared with immutable preparations, keyed by device
+The private legacy kernel `.run` and `.prepare` remain VM-only; ordinary-default
+executables instead bind a typed checked host plan. No arbitrary CUDA source or
+caller-provided instruction stream is accepted by the Python bridge. Modules are shared with immutable preparations, keyed by device
 and checked against the active driver context. The existing device guard
 restores the caller's device on compilation, execution and module destruction.
 Wrapper locks serialize cache publication and reset.
 
 ## Validation and campaign evidence
+
+The [native method boundary record](diagnostics/native-method-guards/README.md)
+records fresh composite-rooted builds, complete correctness gates and the fixed
+ordinary-call comparison at `e2dd9ec`, including slower controls and reference
+drift. Earlier source captures remain separate; no uniform speedup or
+current default-Inductor performance parity is claimed.
+
+The [committed-source direct-resource validation](diagnostics/direct-resources-validation-20260918.md)
+records fresh B/H/D public-call comparisons and focused regression checks.
+
+The [guard traversal author diagnostic](diagnostics/default-compile-guard-scan-20260918.md)
+records bounded public-call measurements and validation attempts. It is separate
+from canonical performance evaluation.
 
 The [positional binding evidence index](diagnostics/compile-pointwise-positional/README.md)
 links the clean `7dd1a811` fixed measurements against main `a281503f`, 37 passing

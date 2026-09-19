@@ -349,7 +349,7 @@ class TensorAddMethodTests(unittest.TestCase):
         reloaded = importlib.reload(torch)
         self.assertIs(reloaded, torch)
         self.assertIs(inspect.getattr_static(torch.Tensor, "add"), descriptor)
-        self.assertFalse(hasattr(torch.Tensor, "add_"))
+        self.assertTrue(inspect.ismethoddescriptor(torch.Tensor.add_))
         self.assertIsNot(torch.add, descriptor)
 
     def test_descriptor_pickle_survives_package_reinitialization(self):

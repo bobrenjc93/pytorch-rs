@@ -13,6 +13,14 @@ from torch_rs import _compile_pointwise as frontend, torch_rs as bridge
 from tests.test_compile_pointwise_jit import available, cache, lower, mock_pointwise_executor, program, two_device_reservation
 
 
+def assert_replaced_shell(test, old, current):
+    test.assertIsNot(current, old)
+    test.assertIsNot(current.lowerings, old.lowerings)
+    test.assertIs(current.payload, old.payload)
+    for name in old.payload._fields:
+        test.assertIs(getattr(current.payload, name), getattr(old.payload, name), name)
+
+
 @contextmanager
 def no_bodies(*functions):
     codes = tuple(fn.__code__ for fn in functions)
@@ -61,7 +69,7 @@ def check_ignored_capture_admission(test, x):
         executor = next(iter(state.executors.values()))
         def snapshot():
             return ([(key, id(entry), tuple(entry.lowerings.items()),
-                      dict(entry.values), dict(entry.observations))
+                      dict(entry.payload.values), dict(entry.payload.observations))
                      for key, entry in state.graphs.items()],
                     list(state.executors.items()))
         before = snapshot()
@@ -90,11 +98,11 @@ def check_ignored_capture_admission(test, x):
                 test.assertEqual(actual.cpu().tolist(), [-v for v in x.cpu().tolist()])
             test.assertEqual(len(state.graphs), 2)
             test.assertEqual(len(state.executors), 1)
-        source = next(s for s in next(iter(state.graphs.values())).data_sources if s.name == 'captured')
+        source = next(s for s in next(iter(state.graphs.values())).payload.data_sources if s.name == 'captured')
         for entry in state.graphs.values():
-            test.assertNotIn(source, entry.values)
-            test.assertNotIn(source, entry.observed)
-            test.assertNotIn(source, entry.observations)
+            test.assertNotIn(source, entry.payload.values)
+            test.assertNotIn(source, entry.payload.observed)
+            test.assertNotIn(source, entry.payload.observations)
 
 
 class HelperAdmission(unittest.TestCase):
@@ -236,7 +244,7 @@ class HelperAdmission(unittest.TestCase):
             def __float__(self):
                 effects.append('float')
                 return 1.0
-        for constant in (Constant(), (1,), 2**64, -2**63-1, object(), str.__new__(type('Text', (str,), {}), 's')):
+        for constant in (Constant(), (Constant(),), (2**64,), 2**64, -2**63-1, object(), str.__new__(type('Text', (str,), {}), 's')):
             helper = program('def f(a):\n return -a')
             helper.__code__ = helper.__code__.replace(co_consts=helper.__code__.co_consts + (constant,))
             for expression in ('helper(x)', 'x + 1.0'):
@@ -350,13 +358,16 @@ class HelperCache(unittest.TestCase):
             result = list(metadata(tensor))
             result[4] = 'cuda:0'
             return tuple(result)
-        self.stack.enter_context(patch.object(bridge, '_compile_trace_tensor_metadata', fake_metadata))
-        self.validate = self.stack.enter_context(patch.object(bridge, '_pointwise_validate_inputs'))
+        self.validate = self.stack.enter_context(patch.object(
+            bridge, '_pointwise_admit_inputs',
+            side_effect=lambda tensors: tuple(fake_metadata(tensor) for tensor in tensors)))
         def compile_(tensors, nodes, output):
             # Use the actual hardware-free native IR/codegen boundary.
             bridge._pointwise_source(nodes, output, len(tensors))
-            return mock_pointwise_executor(lambda tensors, scalars, numerical_hint, output_order: ((nodes, output, scalars),))
+            return mock_pointwise_executor(lambda tensors, scalars, numerical_hint, output_order: ((nodes, output, scalars),), metadata=fake_metadata)
         self.codegen = self.stack.enter_context(patch.object(bridge, '_pointwise_compile', side_effect=compile_))
+        from tests.test_compile_pointwise_jit import mock_pointwise_host_plan
+        self.stack.enter_context(patch.object(bridge, '_pointwise_host_plan', side_effect=mock_pointwise_host_plan))
         self.x = native.tensor([1.0, -2.0])
 
     def test_ignored_global_and_closure_arguments_revalidated_on_warm_hits(self):
@@ -368,7 +379,7 @@ class HelperCache(unittest.TestCase):
         fn = root(f1, 'helper(x)', 'x, ignored')
         compiled = native.compile(fn)
         initial = compiled(self.x, 1.0)
-        entry = next(iter(cache(compiled).graphs.values()))
+        entry_key, entry = next(iter(cache(compiled).graphs.items()))
         f1.__code__ = program('def f(a):\n return a.sin()').__code__
         changed = compiled(self.x, 1.0)
         self.assertNotEqual(initial[0], changed[0])
@@ -377,8 +388,14 @@ class HelperCache(unittest.TestCase):
         with no_bodies(fn, f1, f2):
             actual = compiled(self.x, self.x)  # New ABI, existing logical guard.
         self.assertEqual(actual[0][-1], ('neg', 0, 0, 0))
-        self.assertIs(next(reversed(cache(compiled).graphs.values())), entry)
-        self.assertEqual(len(entry.lowerings), 2)
+        current = next(reversed(cache(compiled).graphs.values()))
+        assert_replaced_shell(self, entry, current)
+        self.assertEqual(next(reversed(cache(compiled).graphs)), entry_key)
+        self.assertEqual(len(entry.lowerings), 1)
+        old_abi, old_lowering = next(iter(entry.lowerings.items()))
+        self.assertIs(current.lowerings[old_abi], old_lowering)
+        self.assertEqual(next(iter(current.lowerings)), old_abi)
+        self.assertEqual(len(current.lowerings), 2)
         self.assertEqual(len(cache(compiled).graphs), 2)
         f1.__code__ = code_a
         fn.__globals__['helper'] = f1
@@ -473,7 +490,7 @@ class HelperCache(unittest.TestCase):
         compiled = native.compile(fn)
         compiled(self.x, self.x)
         before = self.codegen.call_count
-        with patch.object(bridge, '_pointwise_validate_inputs', side_effect=ValueError('native invalid input')):
+        with patch.object(bridge, '_pointwise_admit_inputs', side_effect=ValueError('native invalid input')):
             with self.assertRaisesRegex(ValueError, 'native invalid input'):
                 compiled(self.x, self.x)
         self.assertEqual(self.codegen.call_count, before)
@@ -487,7 +504,7 @@ class HelperCache(unittest.TestCase):
         compiled = native.compile(fn)
         compiled(self.x, 1.0)
         state = cache(compiled)
-        entry = next(iter(state.graphs.values()))
+        entry_key, entry = next(iter(state.graphs.items()))
         before = (list(state.graphs.items()), list(state.executors.items()), list(entry.lowerings.items()))
         executor = mock_pointwise_executor(lambda *args: (_ for _ in ()).throw(RuntimeError('new ABI failure')))
         with patch.object(bridge, '_pointwise_compile', return_value=executor):
@@ -495,7 +512,14 @@ class HelperCache(unittest.TestCase):
                 compiled(self.x, self.x)
         self.assertEqual(before, (list(state.graphs.items()), list(state.executors.items()), list(entry.lowerings.items())))
         compiled(self.x, self.x)
-        self.assertEqual(len(entry.lowerings), 2)
+        current = next(iter(state.graphs.values()))
+        assert_replaced_shell(self, entry, current)
+        self.assertEqual(next(reversed(cache(compiled).graphs)), entry_key)
+        self.assertEqual(len(entry.lowerings), 1)
+        old_abi, old_lowering = next(iter(entry.lowerings.items()))
+        self.assertIs(current.lowerings[old_abi], old_lowering)
+        self.assertEqual(next(iter(current.lowerings)), old_abi)
+        self.assertEqual(len(current.lowerings), 2)
         self.assertEqual(len(state.graphs), 1)
 
     def test_recompile_limit_lowering_lru_and_reset_release_helper_code(self):
