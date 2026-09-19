@@ -495,20 +495,20 @@ def _shape_guards(program, graph, first, metadata, history, predicates=()):
             observations, numerical_hint)
 
 
-def _select_specialization(program, bindings, values, tensors, metadata, graphs):
+def _select_specialization(program, resolved, tensors, metadata, graphs):
     """Select newest matching semantics before considering new scalar promotion.
 
     A generalized entry can supersede an older exact shape even when its native
     broadcast executable is absent. Conversely, a rank miss can expose an older
     static scalar entry beneath a newer runtime entry.
     """
-    by_source = None
+    values = resolved.values
     for key, entry in reversed(graphs.items()):
         if key[0] is not program.code:
             continue
         scalars = []
         for source, expected in entry.binding_checks:
-            current = bindings.get(source)
+            current = resolved.get(source)
             if current is None:
                 break
             if expected[0] == "runtime_float" and type(values[source]) is float:
@@ -529,12 +529,13 @@ def _select_specialization(program, bindings, values, tensors, metadata, graphs)
                     owner = len(first)
                     first.append(tensor)
                 aliases.append(owner)
-            if any(source not in values for source in entry.data_sources):
+            if any(resolved.get(source) is None for source in entry.data_sources):
                 continue
             if tuple(aliases) != key[3]:
                 continue
-            if by_source is None:
-                by_source = {s: metadata[v.index][:5] for s, v in values.items() if type(v) is Value}
+            # Each candidate can project additional sources. Shape guards use
+            # its realized tensor sources, whose kinds were checked above.
+            by_source = {s: metadata[values[s].index][:5] for s in entry.tensor_sources}
             if key[2].matches(by_source):
                 return key, entry, tuple(scalars)
     return None
@@ -950,45 +951,104 @@ def resolve(model, program, parameters=None):
     return _resolve_bindings(model, program, parameters)
 
 
-def _resolve_bindings(model, program, parameters):
-    """Resolve mutable bindings after the caller validates the root/signature."""
-    validate_namespaces(model)
-    validate_ranges(model, program.range_sources)
-    globals_ = model.__globals__
-    values, keys = {}, {}
-    closure = dict(zip(program.code.co_freevars, model.__closure__ or ()))
-    if parameters is None:
-        # Private hardware-free lowering callers model a tensor-only signature.
-        parameters = tuple(Value(i) for i in range(program.code.co_argcount))
-    def parameter(source, value):
-        values[source] = value
-        if type(value) is InputTree:
-            keys[source] = (value.kind,) if value.kind == "dict" else (value.kind, len(value.items))
-            for item, child in zip(value.keys if value.kind == "dict" else range(len(value.items)), value.items):
-                parameter(source.child(item), child)
-        elif type(value) is Value:
-            keys[source] = ("tensor", value.index)
-        else:
-            keys[source], values[source] = binding(value)
+class _BindingResolution:
+    """Invocation-local projection of admitted snapshots onto immutable sources.
 
-    for source in program.dependencies:
-        kind, name = source.kind, source.name
-        if kind == "parameter":
-            parameter(source, parameters[source.position])
-            continue
-        elif kind == "LOAD_GLOBAL":
-            if name not in globals_:
-                unsupported("unbound global: " + name)
-            value = globals_[name]
+    Captures remain eager. Warm guards supply their existing source identities;
+    lowering enumerates the complete snapshot in the original binding order.
+    Neither this resolver nor its snapshots belong to a retained cache entry.
+    """
+    def __init__(self, program):
+        self.program = program
+        self.keys, self.values = {}, {}
+
+    def bind(self, source, value):
+        self.values[source] = value
+        if type(value) is InputTree:
+            self.keys[source] = (value.kind,) if value.kind == "dict" else (value.kind, len(value.items))
+        elif type(value) is Value:
+            self.keys[source] = ("tensor", value.index)
         else:
-            try:
-                value = closure[name].cell_contents
-            except (KeyError, ValueError):
-                unsupported("empty closure binding: " + name)
-        key, value = binding(value)
-        keys[source] = key
-        values[source] = value
-    return keys, values
+            self.keys[source], self.values[source] = binding(value)
+
+    def expand(self, source, value):
+        self.bind(source, value)
+        if type(value) is InputTree:
+            for item, child in zip(value.keys if value.kind == "dict" else range(len(value.items)), value.items):
+                self.expand(source.child(item), child)
+
+    def dependencies(self, model, parameters, parameter):
+        validate_namespaces(model)
+        validate_ranges(model, self.program.range_sources)
+        globals_ = model.__globals__
+        closure = dict(zip(self.program.code.co_freevars, model.__closure__ or ()))
+        if parameters is None:
+            # Private hardware-free lowering callers model a tensor-only signature.
+            parameters = tuple(Value(i) for i in range(self.program.code.co_argcount))
+        for source in self.program.dependencies:
+            kind, name = source.kind, source.name
+            if kind == "parameter":
+                parameter(source, parameters[source.position])
+                continue
+            elif kind == "LOAD_GLOBAL":
+                if name not in globals_:
+                    unsupported("unbound global: " + name)
+                value = globals_[name]
+            else:
+                try:
+                    value = closure[name].cell_contents
+                except (KeyError, ValueError):
+                    unsupported("empty closure binding: " + name)
+            self.keys[source], self.values[source] = binding(value)
+
+    def get(self, source):
+        key = self.keys.get(source)
+        if key is not None:
+            return key
+        if source.kind != "parameter" or not source.path:
+            return None
+        root = self.program.dependencies[source.position]
+        if root.name != source.name:
+            return None
+        value = self.values[root]
+        # Only read the admitted snapshot, never the caller's mutable containers.
+        # A stale path is a guard miss, not an input-admission failure.
+        for item in source.path:
+            if type(value) is not InputTree:
+                return None
+            if value.kind == "dict":
+                if type(item) is not str:
+                    return None
+                try:
+                    index = value.keys.index(item)
+                except ValueError:
+                    return None
+            else:
+                if type(item) is not int or not 0 <= item < len(value.items):
+                    return None
+                index = item
+            value = value.items[index]
+        self.bind(source, value)
+        return self.keys[source]
+
+    def complete(self):
+        # Guard lookup order must not become scalar-promotion/ABI order. Rebuild
+        # the full maps in dependency/DFS order, keeping already-frozen captures.
+        keys, values = self.keys, self.values
+        self.keys, self.values = {}, {}
+        for source in self.program.dependencies:
+            if source.kind == "parameter":
+                self.expand(source, values[source])
+            else:
+                self.keys[source], self.values[source] = keys[source], values[source]
+        return self.keys, self.values
+
+
+def _resolve_bindings(model, program, parameters):
+    """Resolve all mutable bindings for private lowering callers."""
+    resolved = _BindingResolution(program)
+    resolved.dependencies(model, parameters, resolved.expand)
+    return resolved.keys, resolved.values
 
 
 def runtime_bindings(program, bindings, values, graphs, *, observed=None):
@@ -1482,11 +1542,13 @@ def implementation(model, recompile_limit):
             # identity check above repeats admission on replacement; mutable
             # signature containers still receive their one check on every call.
             # Private resolve() remains fully validating for independent callers.
-            static_bindings, static_values = _resolve_bindings(model, program, parameters)
+            resolved = _BindingResolution(program)
+            resolved.dependencies(model, parameters, resolved.bind)
+            static_values = resolved.values
             input_ids = (0, 0) if len(tensors) == 2 and tensors[0] is tensors[1] else tuple(range(len(tensors)))
-            selected = _select_specialization(program, static_bindings, static_values,
-                                              tensors, metadata, cache.graphs)
+            selected = _select_specialization(program, resolved, tensors, metadata, cache.graphs)
             if selected is None:
+                static_bindings, static_values = resolved.complete()
                 if len(cache.graphs) >= recompile_limit:
                     unsupported(f"hit recompile_limit={recompile_limit}")
                 # The same lowering records which sources actually materialize,
@@ -1522,6 +1584,7 @@ def implementation(model, recompile_limit):
             if selected is not None:
                 lowering = entry.lowerings.get(abi)
                 if lowering is None:
+                    _, static_values = resolved.complete()
                     values = dict(static_values)
                     values.update((s, v) for s, v in entry.values.items() if type(v) is not Value)
                     lowering = lower(program, values, len(tensors), input_ids, metadata=metadata)

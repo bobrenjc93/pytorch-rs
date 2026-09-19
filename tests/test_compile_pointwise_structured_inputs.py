@@ -95,6 +95,111 @@ class InputContracts(unittest.TestCase):
         self.assertEqual(len(cache(compiled).graphs), 2)
 
 
+class SourceResolution(unittest.TestCase):
+    def test_projection_matches_full_resolution_and_restores_binding_order(self):
+        fn = program('def f(p,q):\n return p["x"]+q+scale', scale=0.75)
+        parsed = frontend.analyze(fn, 2)
+        x = native.ones(3)
+        for tree in ({'x': x, 'rest': [(False, -0.0)]},
+                     {'rest': [(True, 1.5)], 'x': x},
+                     (x, {'rest': [0.25, False]})):
+            _, parameters = frontend.bind_arguments((tree, 1.25))
+            keys, values = frontend.resolve(fn, parsed, parameters)
+            projected = frontend._BindingResolution(parsed)
+            projected.dependencies(fn, parameters, projected.bind)
+            self.assertEqual(tuple(projected.keys), parsed.dependencies)
+            for source in reversed(keys):
+                self.assertEqual(projected.get(source), keys[source])
+                self.assertEqual(projected.values[source], values[source])
+            for path in (('missing',), (99,), ('rest', 99), ('x', 0)):
+                self.assertIsNone(projected.get(frontend.BindingSource('parameter', 'p', 0, path)))
+            actual_keys, actual_values = projected.complete()
+            self.assertEqual(list(actual_keys.items()), list(keys.items()))
+            self.assertEqual(list(actual_values.items()), list(values.items()))
+            # Projection order must not affect scalar promotion or ABI slots.
+            history = {(parsed.code, tuple((s, (float, b'\0'*8)) for s, v in values.items()
+                                          if type(v) is float)): None}
+            self.assertEqual(frontend.runtime_bindings(parsed, actual_keys, actual_values, history),
+                             frontend.runtime_bindings(parsed, keys, values, history))
+
+
+class WarmSourceResolution(unittest.TestCase):
+    setUp = output_tests.StructuredCache.setUp
+    snapshot = output_tests.StructuredCache.snapshot
+
+    def test_older_match_projects_additional_tensor_after_newer_shape_miss(self):
+        fn = program('def f(p):\n if p["a"].shape[0]<4:\n  return -p["a"]\n return -p["b"]')
+        compiled = native.compile(fn)
+        compiled({'a': native.ones(5), 'b': native.ones(5)})
+        older = next(reversed(cache(compiled).graphs.values()))
+        compiled({'a': native.ones(3), 'b': native.ones(3)})
+        newer = next(reversed(cache(compiled).graphs.values()))
+        self.assertIsNot(newer, older)
+        self.assertEqual(len(newer.tensor_sources), 1)
+        self.assertEqual(len(older.tensor_sources), 2)
+        with patch.object(frontend.BindingSource, 'child', side_effect=AssertionError('new source')), \
+             patch.object(frontend._BindingResolution, 'complete', side_effect=AssertionError('full walk')):
+            compiled({'a': native.ones(5), 'b': native.ones(5)})
+        self.assertIs(next(reversed(cache(compiled).graphs.values())), older)
+        self.assertEqual(len(cache(compiled).graphs), 2)
+
+    def test_retained_hits_reuse_sources_and_read_current_snapshots(self):
+        fn = program('def f(p):\n x,g=p["pair"][0]\n return (x*g,x)')
+        compiled = native.compile(fn)
+        for gain in (0.5, 1.5, 2.5):
+            compiled({'pair': [(native.ones(3), gain)], 'unused': False})
+        before = self.snapshot(compiled)
+        self.admit.reset_mock()
+        with patch.object(frontend.BindingSource, 'child', side_effect=AssertionError('new source')), \
+             patch.object(frontend._BindingResolution, 'complete', side_effect=AssertionError('full walk')):
+            for gain in (3.5, -0.0, 0.75):
+                x = native.ones(3)
+                with no_bodies(fn):
+                    actual = compiled({'unused': [False], 'pair': [(x, gain)]})
+                self.assertIs(actual[1], x)
+                self.admit.assert_called_with((x,))
+        self.assertEqual(self.admit.call_count, 3)
+        self.assertEqual(self.snapshot(compiled), before)
+
+    def test_projection_failure_publishes_nothing_and_reset_recovers(self):
+        fn = program('def f(p):\n return -p["pair"][0]')
+        compiled = native.compile(fn)
+        compiled({'pair': [native.ones(3)]})
+        before = self.snapshot(compiled)
+        original = frontend._BindingResolution.bind
+        error = MemoryError('project current leaf')
+        def fail(resolved, source, value):
+            if source.path == ('pair', 0):
+                raise error
+            return original(resolved, source, value)
+        with patch.object(frontend._BindingResolution, 'bind', fail):
+            with self.assertRaises(MemoryError) as raised:
+                compiled({'pair': [native.ones(3)]})
+        self.assertIs(raised.exception, error)
+        self.assertEqual(self.snapshot(compiled), before)
+        compiled({'pair': [native.ones(3)]})
+        native.compiler.reset()
+        self.assertFalse(cache(compiled).graphs)
+        self.assertFalse(cache(compiled).executors)
+        self.assertEqual(cache(compiled).prepared_bytes, 0)
+        compiled({'pair': [native.ones(3)]})
+
+    def test_captures_reject_before_stale_source_guard_resolution(self):
+        fn = program('def f(p):\n return p["x"]+scale', scale=0.5)
+        compiled = native.compile(fn)
+        compiled({'x': native.ones(3)})
+        before = self.snapshot(compiled)
+        fn.__globals__['scale'] = object()
+        with self.assertRaisesRegex(NotImplementedError, 'only native operators'):
+            compiled({'different': native.ones(3)})
+        self.assertEqual(self.snapshot(compiled), before)
+        fn.__globals__['scale'] = 0.5
+        with self.assertRaisesRegex(NotImplementedError, 'existing exact literal string key'):
+            compiled({'different': native.ones(3)})
+        self.assertEqual(self.snapshot(compiled), before)
+        compiled({'x': native.ones(3)})
+
+
 class InputAdmission(unittest.TestCase):
     def test_mutable_children_are_admitted_from_one_snapshot(self):
         x, y = native.ones(1), native.ones(1)
@@ -443,6 +548,26 @@ class InputHardware(unittest.TestCase):
             return tuple(self.upload(data, (size + 1,), module)[1:].reshape(shape)
                          for module in (native, self.torch))
         return tuple(self.upload(data, shape, module) for module in (native, self.torch))
+
+    def test_projected_source_history_keeps_old_outputs_across_reset(self):
+        pair = self.pair('def f(p):\n if p["a"].shape[0]<4:\n  return (-p["a"],p["a"])\n return (-p["b"],p["b"])')
+        held = []
+        for step, size in enumerate((5, 3, 5, 3, 5, 3, 5)):
+            a, ra = self.tensors(step, (size,), offset=True)
+            b, rb = self.tensors(step + 11, (size,), offset=True)
+            if step == 4:
+                native.compiler.reset()
+                self.torch.compiler.reset()
+            # Reordering changes native operand indices while source paths stay
+            # fixed, including when the older logical specialization wins.
+            keys = ('a', 'b') if step % 2 == 0 else ('b', 'a')
+            p = {key: {'a': a, 'b': b}[key] for key in keys}
+            rp = {key: {'a': ra, 'b': rb}[key] for key in keys}
+            actual = self.check(pair, (p,), (rp,))
+            self.assertIs(actual[1], a if size < 4 else b)
+            held.append((actual[0], actual[0].cpu().tolist()))
+            for result, original in held:
+                self.assertEqual(result.cpu().tolist(), original)
 
     def test_dict_signed_zero_abi_churn_and_unequal_current_replacements(self):
         pair = self.pair('def f(p):\n x=p["x"]\n return (x*p["gain"],x)')

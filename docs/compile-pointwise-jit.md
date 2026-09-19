@@ -142,6 +142,13 @@ caller containers, Tensor owners, input descriptors or unused keys. Admission
 snapshots are invocation-local; concurrent caller mutation is not an atomic
 whole-tree transaction.
 
+After complete admission, warm guards project their existing immutable source
+paths from those snapshots. Captures still receive eager binding validation.
+The same binding conversion supplies full dependency/DFS-ordered maps for private
+`resolve()` callers, logical misses and new ABI lowerings; guard lookup order does
+not change scalar promotion or slot order. Projection state lasts only for the
+invocation. It adds neither a retained topology plan nor a validation verdict cache.
+
 Container subclasses, custom mappings, positional int/None/string leaves,
 runtime or captured selectors, slices, dict iteration/unpacking, starred forms,
 mutation, and captured/default containers remain unsupported. Constant-pool and
