@@ -771,7 +771,8 @@ Wrapper locks serialize cache publication and reset.
 ## Validation and campaign evidence
 
 The [native method boundary record](diagnostics/native-method-guards/README.md)
-separates development correctness evidence from the pending committed-source comparison.
+records the clean committed-source correctness gates and ordinary-call comparison,
+including slower controls, separately from historical development evidence.
 
 The [committed-source direct-resource validation](diagnostics/direct-resources-validation-20260918.md)
 records fresh B/H/D public-call comparisons and focused regression checks.
