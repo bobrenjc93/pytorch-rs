@@ -1,5 +1,16 @@
 # Native compile method identity batch
 
+**Composite validation pending.** The raw capture below identifies builds and
+imports in the sibling `agent_c3ca04c7` worktree. Its measured implementation
+`d58211d` matches the runtime and tests at composite `5ff110a`, but its paths do
+not satisfy the composite's current-candidate provenance contract. The original
+archives and measurements remain unchanged; this is an unresolved evidence
+defect, not a historical relabeling or a fresh validation of the composite.
+Replacement evidence requires clean exports and builds inside the composite,
+followed by the declared correctness gates and complete timing sequence. That
+capture is pending Burner's `gpu` and `cpu-heavy` resource leases; the composite
+author has only the `composite-build` lease and cannot modify external lock state.
+
 This candidate carries C's required R publication repair plus one stateless
 native method-identity batch. Python retains the inventory and expected objects;
 no ShapeGuards hash change or other runtime optimization is included. The
