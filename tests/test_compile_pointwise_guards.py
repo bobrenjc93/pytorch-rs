@@ -40,7 +40,115 @@ def hostile_key(target, effects, string_subclass=False):
     return StringKey(target) if string_subclass else Key()
 
 
+class ShapeGuardContract(unittest.TestCase):
+    def test_index_bound_group_cardinalities_and_exact_products(self):
+        cases = (
+            ((), (), True),
+            ((), ((),), True),
+            (((),), ((0,),), True),
+            (((0,),), ((0,),), True),
+            (((-1,),), ((0,),), False),
+            (((2147483647,),), ((0,),), True),
+            (((2147483648,),), ((0,),), False),
+            (((65536, 65536),), ((0,),), False),
+            (((2**70, 2**70),), ((0,),), False),
+            (((2**70, 0, 2**70),), ((0,),), True),
+            (((65536, 1), (1, 65536)), ((0,), (1,)), True),
+            (((65536, 1), (1, 65536)), ((0,), (1,), (0, 1)), False),
+            (((0, 2), (1, 2)), ((0, 1),), True),
+            (((0, 2), (1, 3)), ((0, 1),), False),
+            (((0, 2), (1, 2), (1, 3)), ((0, 1, 2),), False),
+            (((), (2, 1, 3), (4, 1)), ((0, 1, 2),), True),
+        )
+        for shapes, groups, expected in cases:
+            with self.subTest(shapes=shapes, groups=groups):
+                guards = frontend.ShapeGuards((), (), groups)
+                self.assertIs(guards.matches({i: (shape,) for i, shape in enumerate(shapes)}), expected)
+        # Reject the first bound before looking up any later group's source.
+        guards = frontend.ShapeGuards((), (), ((0,), (1,)))
+        self.assertFalse(guards.matches({0: ((2147483648,),)}))
+
+    def test_native_six_field_metadata_matches_without_guarding_offset(self):
+        base = native.tensor([9., 1., 2., 3.])
+        metadata = bridge._compile_trace_tensor_metadata(base[:2])
+        self.assertEqual(len(metadata), 6)
+        guard = frontend.TensorGuard((2,), (1,), metadata[2:5])
+        guards = frontend.ShapeGuards((('x', guard),), (), (('x',),))
+        for offset in (0, 1, 2):
+            current = bridge._compile_trace_tensor_metadata(base[offset:offset+2])
+            self.assertEqual(current[5], offset)
+            self.assertTrue(guards.matches({'x': current}))
+
+    def test_dynamic_sizes_stride_relations_and_current_properties(self):
+        properties = ('float32', False, 'cuda:0')
+        guard = frontend.TensorGuard((None, 2), (('product', 1), 1), properties)
+        metadata = ((4, 2), (2, 1), *properties)
+        self.assertTrue(guard.matches(metadata, {'x': metadata}))
+        for invalid in (
+            ((1, 2), (2, 1), *properties),
+            ((0, 2), (2, 1), *properties),
+            ((4, 3), (3, 1), *properties),
+            ((4, 2), (3, 1), *properties),
+            ((4, 2), (2, 1), 'float32', True, 'cuda:0'),
+        ):
+            with self.subTest(metadata=invalid):
+                self.assertFalse(guard.matches(invalid, {'x': invalid}))
+
+    def test_cross_tensor_equalities_and_index_limit(self):
+        guard = frontend.ShapeGuards((), (('x', 0, 'y', 0),), (('x', 'y'),))
+        for size, expected in ((0, True), (1, True), (2147483647, True), (2147483648, False)):
+            metadata = {'x': ((size,),), 'y': ((size,),)}
+            self.assertEqual(guard.matches(metadata), expected)
+        self.assertFalse(guard.matches({'x': ((2,),), 'y': ((3,),)}))
+
+    def test_predicates_short_circuit_before_current_tensor_lookup(self):
+        calls = []
+        class Predicate:
+            def __init__(self, value): self.value = value
+            def matches(self, metadata):
+                calls.append(self.value)
+                return self.value
+        guard = frontend.ShapeGuards((('missing', None),), (), (),
+                                     (Predicate(True), Predicate(False), Predicate(True)))
+        self.assertFalse(guard.matches({}))
+        self.assertEqual(calls, [True, False])
+
+
 class NamespacePredicate(unittest.TestCase):
+    def test_sparse_large_unicode_namespace_and_late_rejection(self):
+        predicate = bridge._pointwise_namespace_keys_exact
+        namespace = {f'key_{i}_\N{SNOWMAN}': object() for i in range(2048)}
+        for i in range(0, 2048, 2):
+            del namespace[f'key_{i}_\N{SNOWMAN}']
+        self.assertIs(predicate(namespace), True)
+        effects = []
+        key = hostile_key('missing', effects, string_subclass=True)
+        namespace[key] = None
+        effects.clear()
+        self.assertIs(predicate(namespace), False)
+        self.assertEqual(effects, [])
+        del namespace[key]
+        self.assertIs(predicate(namespace), True)
+        namespace.clear()
+        namespace[0] = None
+        namespace.update({str(i): None for i in range(2048)})
+        self.assertIs(predicate(namespace), False)
+
+    def test_scan_does_not_retain_values_or_rejection_keys(self):
+        class Value:
+            pass
+
+        value = Value()
+        key = hostile_key('late', [])
+        value_ref, key_ref = weakref.ref(value), weakref.ref(key)
+        namespace = {'first': value, key: value}
+        self.assertIs(bridge._pointwise_namespace_keys_exact(namespace), False)
+        namespace.clear()
+        del value, key
+        gc.collect()
+        self.assertIsNone(value_ref())
+        self.assertIsNone(key_ref())
+
     def test_exact_types_and_private_exports(self):
         predicate = bridge._pointwise_namespace_keys_exact
         for value in ({}, {'': object(), 'unicode \N{SNOWMAN}': None}):
@@ -114,6 +222,30 @@ class NamespacePredicate(unittest.TestCase):
 class NamespaceCache(unittest.TestCase):
     setUp = structured_tests.StructuredCache.setUp
     snapshot = structured_tests.StructuredCache.snapshot
+
+    def test_all_method_guards_still_reject_unused_shadowing_and_recover(self):
+        fn = program('def f(x):\n return -x')
+        compiled = native.compile(fn)
+        x = native.ones(3)
+        compiled(x)
+        before = self.snapshot(compiled)
+        launches = len(self.launches)
+        # Include aliases and inherited metadata access, even though the body
+        # only uses negation. Each public shadow must reject before execution.
+        names = ('neg', 'negative', '__neg__', 'relu', 'sin', 'cos',
+                 'add', '__add__', '__radd__', 'sub', 'subtract', '__sub__',
+                 '__rsub__', 'mul', 'multiply', '__mul__', '__rmul__',
+                 '__getattribute__', 'shape')
+        for name in names:
+            with self.subTest(name=name), patch.object(native.Tensor, name, object()):
+                with self.assertRaisesRegex(NotImplementedError, 'patched Tensor operation binding'):
+                    compiled(x)
+                self.assertEqual(self.snapshot(compiled), before)
+                self.assertEqual(len(self.launches), launches)
+        with no_bodies(fn):
+            compiled(x)
+        self.assertEqual(len(self.launches), launches + 1)
+        self.assertEqual(self.snapshot(compiled), before)
 
     def test_warm_namespace_rejection_deletion_recovery_and_retention(self):
         for which, target in (('globals', 'helper'), ('builtins', 'range')):

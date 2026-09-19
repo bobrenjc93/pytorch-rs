@@ -161,6 +161,37 @@ class WarmSourceResolution(unittest.TestCase):
         self.assertEqual(self.admit.call_count, 3)
         self.assertEqual(self.snapshot(compiled), before)
 
+    def test_inactive_nested_projection_and_complete_readmission_keep_frozen_scalars(self):
+        helper = program('def f(s):\n return s[-1].view(3)')
+        fn = program('def f(x,p,gain):\n if x.shape[0]<4:\n'
+                     '  return x*gain\n return helper(p["items"])', helper=helper)
+        compiled = native.compile(fn)
+        x = native.ones(3)
+        compiled(x, {'items': [x]}, -0.0)
+        entry = next(iter(cache(compiled).graphs.values()))
+        retained = next(iter(entry.lowerings.values()))
+        current = native.ones(3)
+        with no_bodies(fn, helper), \
+             patch.object(frontend.BindingSource, 'child', side_effect=AssertionError('new source')), \
+             patch.object(frontend._BindingResolution, 'complete', side_effect=AssertionError('full walk')), \
+             patch.object(frontend, 'lower', side_effect=AssertionError('warm lowering')):
+            compiled(current, {'unused': False, 'items': [current]}, 0.0)
+        self.assertIs(next(iter(entry.lowerings.values())), retained)
+        complete = frontend._BindingResolution.complete
+        with no_bodies(fn, helper), \
+             patch.object(frontend._BindingResolution, 'complete', autospec=True,
+                          side_effect=complete) as expansion, \
+             patch.object(frontend, 'lower', wraps=frontend.lower) as lowering:
+            compiled(current, {'items': [False, current]}, 0.0)
+        expansion.assert_called_once()
+        lowering.assert_called_once()
+        values = lowering.call_args.args[1]
+        gain = next(value for source, value in values.items() if source.name == 'gain')
+        self.assertEqual(frontend.struct.pack('!d', gain), frontend.struct.pack('!d', -0.0))
+        self.assertIs(next(iter(cache(compiled).graphs.values())), entry)
+        self.assertEqual(len(cache(compiled).graphs), 1)
+        self.assertIsNot(next(iter(entry.lowerings.values())), retained)
+
     def test_projection_failure_publishes_nothing_and_reset_recovers(self):
         fn = program('def f(p):\n return -p["pair"][0]')
         compiled = native.compile(fn)
@@ -352,9 +383,12 @@ class InputLanguage(unittest.TestCase):
         for source, captures in cases:
             with self.subTest(source=source):
                 self.assertEqual(self.lower(source, tree, **captures), expected)
-        # Even zero-trip bodies must validate rotations without touching the iterator.
-        self.assertEqual(self.lower(f'def f(p):\n for i in range(0):\n  {assignment}\n return -p[0]', tree),
-                         self.lower('def f(p):\n return -p[0]', tree))
+        # Zero-trip bodies do not change computation, but their traversed
+        # children remain part of this lowering's whole-program admission.
+        skipped = self.lower(f'def f(p):\n for i in range(0):\n  {assignment}\n return -p[0]', tree)
+        plain = self.lower('def f(p):\n return -p[0]', tree)
+        self.assertEqual(dataclasses.replace(skipped, structural_admission=plain.structural_admission), plain)
+        self.assertGreater(set(skipped.structural_admission), set(plain.structural_admission))
 
     def test_two_item_local_tuple_assignment(self):
         self.check_local_tuple_assignment(('a', 'b'), 'a-b')
@@ -648,6 +682,9 @@ class InputHardware(unittest.TestCase):
             x, rx = self.tensors(step, shape, offset=True)
             actual = self.check(pair, ({'x': x},), ({'x': rx},))
             self.assertIs(actual[1], x)
+            for entry in cache(pair[1]).graphs.values():
+                for observation in entry.observations.values():
+                    self.assertEqual(len(observation), 5)  # Never persist the current offset.
 
     def test_helper_local_unpack_loop_shape_branch_and_failed_recovery(self):
         pair = self.pair('def f(p):\n x=p["x"]\n for i in range(2):\n  a,b=helper([x,p["gain"]])\n if x.shape[0]<4:\n  return (a*b,x)\n return (a-b,x)',

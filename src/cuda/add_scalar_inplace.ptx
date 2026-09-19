@@ -1,0 +1,34 @@
+// Appended to add.ptx, which supplies the shared PTX version/target directives.
+// Density makes physical interval iteration equivalent to logical iteration.
+// Do not elide zero addition or flush subnormals: both change IEEE results.
+.visible .entry add_scalar_inplace_f32(
+    .param .u64 input, .param .u64 count, .param .f32 scalar
+) {
+    .reg .pred done;
+    .reg .b32 tid, block, width, blocks;
+    .reg .f32 value, increment;
+    .reg .b64 a, n, i, step, offset, address, lane;
+    ld.param.u64 a, [input];
+    ld.param.u64 n, [count];
+    ld.param.f32 increment, [scalar];
+    mov.u32 tid, %tid.x;
+    mov.u32 block, %ctaid.x;
+    mov.u32 width, %ntid.x;
+    mov.u32 blocks, %nctaid.x;
+    mul.wide.u32 i, block, width;
+    cvt.u64.u32 lane, tid;
+    add.u64 i, i, lane;
+    mul.wide.u32 step, blocks, width;
+loop:
+    setp.ge.u64 done, i, n;
+    @done bra end;
+    shl.b64 offset, i, 2;
+    add.u64 address, a, offset;
+    ld.global.f32 value, [address];
+    add.rn.f32 value, value, increment;
+    st.global.f32 [address], value;
+    add.u64 i, i, step;
+    bra loop;
+end:
+    ret;
+}

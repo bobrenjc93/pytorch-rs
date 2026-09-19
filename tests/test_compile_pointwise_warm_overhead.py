@@ -1,4 +1,4 @@
-"""Portable checks for guard ownership and event-local prepared-plan cleanup."""
+"""Portable checks for guard ownership and bounded prepared-owner cleanup."""
 import unittest
 from unittest.mock import patch
 
@@ -112,27 +112,18 @@ class WarmOverhead(unittest.TestCase):
                                                for name in frontend._METHODS])
                 self.admit.assert_called_once_with(tuple(v for v in args if type(v) is native.Tensor))
 
-    def test_no_preparation_scan_without_executor_eviction(self):
-        class NoScan(dict):
-            def __iter__(self):
-                raise AssertionError('prepared scan without executor eviction')
-
-        class NoMembership(dict):
-            def __contains__(self, key):
-                raise AssertionError('executor membership scan')
-
+    def test_recency_preserves_preparations_accounting_and_reset(self):
+        # Same-key owner replacement requires a bounded scan even without
+        # eviction. Preserve the recency/retention checks, not the old no-scan
+        # assertion, under the native executable ownership contract.
         compiled = frontend.implementation(program('def f(x):\n return -x'), 8)
         for size in (3, 5, 3):
             compiled(native.ones(size))
         state = cache(compiled)
-        state.prepared = NoScan(state.prepared)
-        state.executors = NoMembership(state.executors)
         for size in (3, 5, 3, 7):
             compiled(native.ones(size))
             self.assertEqual(state.prepared_bytes, sum(v[1] for v in state.prepared.values()))
         alternating, x, other = self.two_executors()
-        other.prepared = NoScan(other.prepared)
-        other.executors = NoMembership(other.executors)
         values = dict(other.prepared.items())
         charge = other.prepared_bytes
         for unused in (False, native.ones(3), False, native.ones(3)):
@@ -166,7 +157,7 @@ class WarmOverhead(unittest.TestCase):
         self.assertLessEqual(len(state.prepared), limit)
         self.assertLessEqual(state.prepared_bytes, frontend._PREPARED_CACHE_BYTES)
         self.assertEqual(state.prepared_bytes, sum(value[1] for value in state.prepared.values()))
-        self.assertTrue(all(key[0] in state.executors for key in state.prepared))
+        self.assertTrue(all(state.executors.get(value[2]) is value[3] for value in state.prepared.values()))
 
     def test_recency_reinsertion_failure_drops_preparations_and_preserves_other_executors(self):
         compiled, x, state = self.two_executors()
@@ -204,6 +195,32 @@ class WarmOverhead(unittest.TestCase):
         self.assertFalse(state.prepared)
         self.assertEqual(state.prepared_bytes, 0)
         compiled(False, x)
+        self.assert_retention(state)
+
+    def test_warm_owner_replacement_staging_failure_preserves_all_maps(self):
+        compiled, x, state = self.two_executors()
+        selected_key = next(iter(state.prepared))
+        old_prepared, _, code_key, original = state.prepared[selected_key]
+        replacement = prepared_tests.jit_tests.mock_pointwise_executor(original.run)
+        state.executors[code_key] = replacement
+        before = self.snapshot(compiled)
+        failure = MemoryError('warm owner cleanup snapshot')
+
+        class FailSnapshot(dict):
+            def __iter__(self):
+                raise failure
+
+        state.prepared = FailSnapshot(state.prepared)
+        with self.assertRaises(MemoryError) as raised:
+            compiled(False, x)
+        self.assertIs(raised.exception, failure)
+        self.assertEqual(self.snapshot(compiled), before)
+        self.assertIs(state.prepared[selected_key][0], old_prepared)
+        self.assertIs(state.executors[code_key], replacement)
+        state.prepared = dict(state.prepared.items())
+        compiled(False, x)
+        self.assertIsNot(state.prepared[selected_key][0], old_prepared)
+        self.assertIs(state.prepared[selected_key][3], replacement)
         self.assert_retention(state)
 
     def test_repeated_failed_eviction_staging_preserves_capacity_and_survivors(self):
@@ -244,7 +261,7 @@ class WarmOverhead(unittest.TestCase):
                             self.assertIs(state.executors[key], value)
                         for key, value in old_preparations:
                             self.assertIs(state.prepared[key], value)
-                            self.assertIn(key[0], state.executors)
+                            self.assertIs(state.executors[value[2]], value[3])
                         self.assertEqual(state.prepared_bytes, old_charge)
                         self.assertEqual(state.prepared_bytes,
                                          sum(value[1] for value in state.prepared.values()))
@@ -306,7 +323,7 @@ class WarmOverhead(unittest.TestCase):
         third_key = next(reversed(state.prepared))
         self.assertEqual(list(state.prepared), [first_key, third_key])
         self.assertIs(state.prepared[first_key], first_value)
-        self.assertEqual(list(state.executors), [first_key[0], third_key[0]])
+        self.assertEqual(list(state.executors), [first_value[2], state.prepared[third_key][2]])
         self.assertEqual(state.prepared_bytes, first_value[1] + state.prepared[third_key][1])
 
     def test_executor_eviction_removes_all_its_preparations_only_after_success(self):
@@ -376,7 +393,7 @@ class WarmOverheadHardware(unittest.TestCase):
                 old_key = next(iter(state.executors))
             if size == 9:
                 self.assertNotIn(old_key, state.executors)
-            self.assertTrue(all(key[0] in state.executors for key in state.prepared))
+            self.assertTrue(all(state.executors.get(value[2]) is value[3] for value in state.prepared.values()))
             self.assertEqual(state.prepared_bytes, sum(value[1] for value in state.prepared.values()))
         native.compiler.reset()
         self.assertFalse(state.executors)

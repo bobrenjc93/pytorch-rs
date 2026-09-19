@@ -39,7 +39,7 @@ struct Driver {
 struct Module {
     context: usize,
     _handle: usize,
-    functions: [usize; 9],
+    functions: [usize; 10],
 }
 
 enum Kernel {
@@ -53,6 +53,7 @@ enum Kernel {
     #[cfg(any(feature = "python-bindings", test))]
     Negate = 7,
     Relu = 8,
+    AddScalarInplace = 9,
 }
 
 static DRIVER: OnceLock<Result<Driver, String>> = OnceLock::new();
@@ -147,7 +148,7 @@ impl Driver {
             .try_reserve(1)
             .map_err(|_| TensorError::AllocationFailed { elements: 1 })?;
         let mut module = std::ptr::null_mut();
-        let mut functions = [0; 9];
+        let mut functions = [0; 10];
         // SAFETY: static NUL-terminated PTX and entry names; writable handles.
         unsafe {
             self.check(
@@ -167,6 +168,8 @@ impl Driver {
                         include_str!("contiguous.ptx"),
                         "\n",
                         include_str!("relu.ptx"),
+                        "\n",
+                        include_str!("add_scalar_inplace.ptx"),
                         "\0"
                     )
                     .as_ptr()
@@ -184,6 +187,7 @@ impl Driver {
                 c"contiguous_f32",
                 c"neg_f32",
                 c"relu_f32",
+                c"add_scalar_inplace_f32",
             ]) {
                 let mut function = std::ptr::null_mut();
                 if let Err(error) = self.check(
@@ -430,6 +434,46 @@ pub(super) unsafe fn launch_mul_scalar(
     let blocks = u32::try_from(elements.div_ceil(256).min(4096)).expect("bounded grid");
     // SAFETY: parameters survive the launch argument copy; the cached function
     // belongs to this context. CU_STREAM_LEGACY matches runtime copies/zero-fill.
+    driver.check(
+        unsafe {
+            (driver.launch)(
+                function as *mut c_void,
+                blocks,
+                1,
+                1,
+                256,
+                1,
+                1,
+                0,
+                std::ptr::without_provenance_mut(1),
+                arguments.as_mut_ptr(),
+                std::ptr::null_mut(),
+            )
+        },
+        "cuLaunchKernel",
+    )
+}
+
+/// # Safety
+/// `input` addresses `elements` writable contiguous floats on the guarded
+/// device. The borrowed allocation must survive legacy-stream completion,
+/// including launch failure; other aliases may observe the mutation.
+pub(super) unsafe fn launch_add_scalar_inplace(
+    mut input: u64,
+    elements: usize,
+    mut scalar: f32,
+) -> Result<(), TensorError> {
+    let driver = driver()?;
+    let function = driver.function(Kernel::AddScalarInplace)?;
+    let mut count = elements as u64;
+    let mut arguments = [
+        (&raw mut input).cast(),
+        (&raw mut count).cast(),
+        (&raw mut scalar).cast(),
+    ];
+    let blocks = u32::try_from(elements.div_ceil(256).min(4096)).expect("bounded grid");
+    // SAFETY: arguments survive the launch copy; the context-keyed module is
+    // retained for process lifetime. Explicit legacy stream matches completion.
     driver.check(
         unsafe {
             (driver.launch)(

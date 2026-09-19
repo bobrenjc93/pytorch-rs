@@ -556,7 +556,7 @@ class TopLevelAddTests(unittest.TestCase):
         ):
             type("TensorSubclass", (torch.Tensor,), {})
         self.assertFalse(hasattr(torch, "add_"))
-        self.assertFalse(hasattr(torch.Tensor, "add_"))
+        self.assertTrue(inspect.ismethoddescriptor(torch.Tensor.add_))
 
     def test_callable_metadata_copy_pickle_reload_and_exports(self):
         function = torch.add

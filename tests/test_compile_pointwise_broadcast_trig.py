@@ -1,7 +1,6 @@
 """One-stage original-IR trig admission and ordinary default CUDA execution."""
 import math
 from contextlib import ExitStack
-from types import SimpleNamespace
 import struct
 import unittest
 from unittest.mock import Mock, patch
@@ -183,13 +182,7 @@ class BroadcastTrig(unittest.TestCase):
         compiled, reference = native.compile(fn), self.torch.compile(program(source))
         shapes = ((2, 1), (1, 3))
         retained = []
-        executors = []
-        compile_native = bridge._pointwise_compile
-
-        def observe_compile(*args):
-            executor = SimpleNamespace(prepare=Mock(wraps=compile_native(*args).prepare))
-            executors.append(executor)
-            return executor
+        host_plans = Mock(wraps=bridge._pointwise_host_plan)
 
         for warm in range(3):
             args = self.args(shapes, [0.375+warm, -1.25], native, offset=True)
@@ -200,12 +193,10 @@ class BroadcastTrig(unittest.TestCase):
             # are forbidden: the existing immutable native preparation executes.
             with ExitStack() as guards:
                 if warm:
-                    guards.enter_context(patch.object(bridge, '_pointwise_compile',
-                                                       side_effect=AssertionError('recompile')))
-                    guards.enter_context(patch.object(executors[0], 'prepare',
-                                                       side_effect=AssertionError('prepare')))
+                    guards.enter_context(patch.object(bridge, '_pointwise_host_plan',
+                                                       side_effect=AssertionError('planning/compile/upload')))
                 else:
-                    guards.enter_context(patch.object(bridge, '_pointwise_compile', observe_compile))
+                    guards.enter_context(patch.object(bridge, '_pointwise_host_plan', host_plans))
                 actual = self.without_replay(fn, compiled, args)
             self.assertIs(actual['out'][0], actual['out'][1])
             self.assertIs(actual['input'], args[0])
@@ -221,7 +212,8 @@ class BroadcastTrig(unittest.TestCase):
             retained.extend((result, self.host(result))
                             for result in (actual['out'][0], actual['out'][2]))
             self.assertEqual(len(cache(compiled).prepared), 1)
-        self.assertEqual(executors[0].prepare.call_count, 1)
+        self.assertEqual(host_plans.call_count, 1)
+        self.assertEqual(len(cache(compiled).executors), 1)
 
 
 del Hardware

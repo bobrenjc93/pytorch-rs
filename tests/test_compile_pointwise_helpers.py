@@ -236,7 +236,7 @@ class HelperAdmission(unittest.TestCase):
             def __float__(self):
                 effects.append('float')
                 return 1.0
-        for constant in (Constant(), (1,), 2**64, -2**63-1, object(), str.__new__(type('Text', (str,), {}), 's')):
+        for constant in (Constant(), (Constant(),), (2**64,), 2**64, -2**63-1, object(), str.__new__(type('Text', (str,), {}), 's')):
             helper = program('def f(a):\n return -a')
             helper.__code__ = helper.__code__.replace(co_consts=helper.__code__.co_consts + (constant,))
             for expression in ('helper(x)', 'x + 1.0'):
@@ -358,6 +358,8 @@ class HelperCache(unittest.TestCase):
             bridge._pointwise_source(nodes, output, len(tensors))
             return mock_pointwise_executor(lambda tensors, scalars, numerical_hint, output_order: ((nodes, output, scalars),), metadata=fake_metadata)
         self.codegen = self.stack.enter_context(patch.object(bridge, '_pointwise_compile', side_effect=compile_))
+        from tests.test_compile_pointwise_jit import mock_pointwise_host_plan
+        self.stack.enter_context(patch.object(bridge, '_pointwise_host_plan', side_effect=mock_pointwise_host_plan))
         self.x = native.tensor([1.0, -2.0])
 
     def test_ignored_global_and_closure_arguments_revalidated_on_warm_hits(self):

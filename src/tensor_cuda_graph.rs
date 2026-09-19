@@ -2,8 +2,8 @@
 //! of tensor storage or kernel launch is allowed while constructing this plan.
 use super::{
     ElementwiseLayout, MemoryFormat, Tensor, TensorError, contiguous_strides, element_count,
-    elementwise_output_strides, layout_is_contiguous, normalize_transpose_dimension,
-    reshape_view_strides, squeeze_layout, validated_layout,
+    elementwise_output_strides, layout_is_contiguous, layout_is_non_overlapping_and_dense,
+    normalize_transpose_dimension, reshape_view_strides, squeeze_layout, validated_layout,
 };
 
 #[derive(Clone, Copy)]
@@ -17,6 +17,7 @@ pub(crate) enum Operation {
     Neg(usize),
     Relu(usize),
     MulScalar(usize, f32),
+    AddScalarInplace(usize, f32),
     Add(usize, usize),
     Matmul(usize, usize),
     SumRows(usize, bool),
@@ -57,6 +58,12 @@ pub(crate) struct Layout {
 }
 
 impl Layout {
+    fn get(values: &[Self], index: usize) -> Result<&Self, TensorError> {
+        values
+            .get(index)
+            .ok_or(TensorError::IndexCalculationOverflow)
+    }
+
     pub(crate) fn from_tensor(tensor: &Tensor) -> Self {
         Self {
             shape: tensor.shape().to_vec(),
@@ -179,6 +186,72 @@ impl Layout {
         })
     }
 
+    /// Validate untrusted alias metadata before any planner indexes it.
+    pub(crate) fn validate_alias_metadata(&self) -> Result<(), TensorError> {
+        if self.shape.len() != self.strides.len() || self.shape.len() > 2 {
+            return Err(TensorError::UnsupportedCudaContiguous {
+                reason: "compiled alias operation requires matching rank 0, 1 or 2 metadata",
+            });
+        }
+        let elements = element_count(&self.shape)?;
+        if elements != 0 {
+            self.shape.iter().zip(&self.strides).try_fold(
+                self.offset,
+                |last, (&size, &stride)| {
+                    (size - 1)
+                        .checked_mul(stride)
+                        .and_then(|span| last.checked_add(span))
+                        .ok_or(TensorError::IndexCalculationOverflow)
+                },
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Bounds refer to the original allocation, not an earlier view's extent.
+    pub(crate) fn validate_alias_storage(&self, original: &Tensor) -> Result<(), TensorError> {
+        // Unused original inputs retain their existing arbitrary-rank boundary.
+        // Only participating alias operations impose the planner rank limit.
+        if self.shape.len() != self.strides.len() || original.shape.len() != original.strides.len()
+        {
+            return Err(TensorError::IndexCalculationOverflow);
+        }
+        if element_count(&original.shape)? != original.elements {
+            return Err(TensorError::IndexCalculationOverflow);
+        }
+        if element_count(&self.shape)? != 0 {
+            let last = self.shape.iter().zip(&self.strides).try_fold(
+                self.offset,
+                |last, (&size, &stride)| {
+                    (size - 1)
+                        .checked_mul(stride)
+                        .and_then(|span| last.checked_add(span))
+                        .ok_or(TensorError::IndexCalculationOverflow)
+                },
+            )?;
+            if last >= original.storage.len() {
+                return Err(TensorError::IndexCalculationOverflow);
+            }
+        }
+        Ok(())
+    }
+
+    fn add_scalar_inplace(&self) -> Result<Self, TensorError> {
+        self.validate_alias_metadata()?;
+        let elements = element_count(&self.shape)?;
+        if !layout_is_non_overlapping_and_dense(&self.shape, &self.strides, elements) {
+            return Err(TensorError::UnsupportedCudaInplaceAddition {
+                reason: "input must be non-overlapping and dense",
+            });
+        }
+        if elements != 0 {
+            self.offset
+                .checked_add(elements)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+        }
+        Ok(self.clone())
+    }
+
     pub(crate) fn matches(&self, tensor: &Tensor) -> bool {
         self.shape == tensor.shape()
             && self.strides == tensor.stride()
@@ -188,15 +261,12 @@ impl Layout {
 
 impl Operation {
     pub(crate) fn layout(self, values: &[Layout]) -> Result<Layout, TensorError> {
-        let get = |index: usize| {
-            values
-                .get(index)
-                .ok_or(TensorError::IndexCalculationOverflow)
-        };
-        // Input admission allows views, but every arithmetic operand must
-        // independently satisfy its contiguous-only contract during planning.
+        let get = |index| Layout::get(values, index);
+        // Input admission allows views, but out-of-place arithmetic operands
+        // independently satisfy their contiguous-only contract during planning.
         let get_contiguous = |index| get(index)?.require_contiguous();
         let shape = match self {
+            Self::AddScalarInplace(input, _) => return get(input)?.add_scalar_inplace(),
             Self::Squeeze(input) => return get(input)?.squeeze(),
             Self::T(input) => return get(input)?.t(),
             Self::Reshape(input, shape) => return get(input)?.reshape(shape, false),
@@ -293,6 +363,25 @@ impl Operation {
         })
     }
 
+    /// Storage provenance for mutation-bearing graphs. Packing and numerical
+    /// producers cannot participate in their alias-only effect sequence.
+    pub(crate) fn alias_source(self, values: &[Layout]) -> Result<Option<usize>, TensorError> {
+        Ok(match self {
+            Self::T(input)
+            | Self::Squeeze(input)
+            | Self::Transpose(input, _, _)
+            | Self::View(input, _)
+            | Self::AddScalarInplace(input, _) => Some(input),
+            Self::Contiguous(input) if Layout::get(values, input)?.is_contiguous()? => Some(input),
+            Self::Reshape(input, shape)
+                if Layout::get(values, input)?.reshape(shape, true).is_ok() =>
+            {
+                Some(input)
+            }
+            _ => None,
+        })
+    }
+
     pub(crate) fn execute(
         self,
         inputs: &[&Tensor],
@@ -318,6 +407,13 @@ impl Operation {
             Self::Neg(input) => get(input).negate(),
             Self::Relu(input) => get(input).relu(),
             Self::MulScalar(input, scalar) => get(input).mul_scalar(scalar),
+            Self::AddScalarInplace(input, scalar) => {
+                // Clone would materialize CUDA data. Build only an alias wrapper
+                // before the canonical mutation; Python returns the receiver.
+                let mut output = get(input).metadata_alias()?;
+                output.add_scalar_(scalar)?;
+                Ok(output)
+            }
             Self::Add(left, right) => get(left).add(get(right)),
             Self::Matmul(left, right) => get(left).matmul(get(right)),
             Self::SumRows(input, keepdim) => get(input).sum_rank_two_dimension(1, keepdim),
@@ -335,6 +431,73 @@ thread_local! {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unused_original_storage_validation_is_rank_independent() {
+        let mut original = Tensor::from_vec(vec![1.; 24], [2, 3, 4]).unwrap();
+        let layout = Layout::from_tensor(&original);
+        layout.validate_alias_storage(&original).unwrap();
+        assert!(
+            Operation::AddScalarInplace(0, 1.)
+                .layout(std::slice::from_ref(&layout))
+                .is_err()
+        );
+        let mut malformed = layout.clone();
+        malformed.strides.pop();
+        assert!(malformed.validate_alias_storage(&original).is_err());
+        original.strides.pop();
+        assert!(layout.validate_alias_storage(&original).is_err());
+    }
+
+    #[test]
+    fn mutation_layout_checks_density_interval_and_original_allocation() {
+        let original = Tensor::from_vec(vec![1.; 12], [12]).unwrap();
+        for (shape, strides, offset) in [
+            (vec![2, 3], vec![1, 2], 2),
+            (vec![], vec![], 11),
+            (vec![0, 3], vec![99, 0], usize::MAX),
+        ] {
+            let layout = Layout {
+                shape,
+                strides,
+                offset,
+            };
+            let output = Operation::AddScalarInplace(0, 2.)
+                .layout(std::slice::from_ref(&layout))
+                .unwrap();
+            assert_eq!(output.offset, offset);
+            assert_eq!(output.strides, layout.strides);
+            output.validate_alias_storage(&original).unwrap();
+        }
+        for strides in [vec![4, 1], vec![1, 1], vec![0, 1], vec![1]] {
+            let layout = Layout {
+                shape: vec![2, 3],
+                strides,
+                offset: 0,
+            };
+            assert!(
+                Operation::AddScalarInplace(0, 2.)
+                    .layout(&[layout])
+                    .is_err()
+            );
+        }
+        let out_of_bounds = Layout {
+            shape: vec![2, 3],
+            strides: vec![3, 1],
+            offset: 7,
+        };
+        assert!(out_of_bounds.validate_alias_storage(&original).is_err());
+        let overflow = Layout {
+            shape: vec![1],
+            strides: vec![1],
+            offset: usize::MAX,
+        };
+        assert!(
+            Operation::AddScalarInplace(0, 2.)
+                .layout(&[overflow])
+                .is_err()
+        );
+    }
 
     #[test]
     fn squeeze_plans_surviving_strides_and_retains_storage_even_when_empty() {

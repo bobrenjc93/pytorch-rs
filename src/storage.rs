@@ -7,6 +7,9 @@ use crate::dtype::DType;
 use crate::tensor_error::TensorError;
 
 /// Crate-private float32 storage shared by tensors and autograd snapshots.
+/// CPU numerical payloads remain immutable. The bounded CUDA scalar mutator
+/// writes external device memory through the existing shared allocation owner;
+/// it neither exposes a mutable host slice nor changes CPU saved-value semantics.
 pub(crate) struct Storage {
     payload: StoragePayload,
 }
@@ -311,6 +314,22 @@ impl Storage {
                     reason: "input must be CUDA",
                 })
             }
+        }
+    }
+
+    pub(crate) fn cuda_add_scalar_inplace_float32(
+        &self,
+        offset: usize,
+        elements: usize,
+        scalar: f32,
+    ) -> Result<(), TensorError> {
+        match &self.payload {
+            StoragePayload::CudaFloat32(input) => {
+                input.add_scalar_inplace(offset, elements, scalar)
+            }
+            StoragePayload::CpuFloat32(_) => Err(TensorError::UnsupportedCudaInplaceAddition {
+                reason: "input must be CUDA",
+            }),
         }
     }
 
