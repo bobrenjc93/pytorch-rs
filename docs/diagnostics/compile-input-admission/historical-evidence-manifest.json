@@ -1,0 +1,343 @@
+{
+  "source_commit": "0d4ed07976368a8f79b9c8d5766f59f053e46fcd",
+  "archive": "historical-evidence.tar.gz",
+  "archive_sha256": "ced4922371009d54c92dae0ac6f132566deaab8f636c33cda3d3b3d516c2b21d",
+  "members": [
+    {
+      "path": "docs/compile-input-admission-warm.md",
+      "sha256": "51a0d09227dc0df8862e3ab8c0398747bd08afe2440df5978b0e9b97ec07bf02",
+      "bytes": 7593,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/README.md",
+      "sha256": "9b4d9262dd1e6d86b03379e1ea706a1f04c346e0351d39852d7148d2f82ff942",
+      "bytes": 6624,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/commands.sh",
+      "sha256": "f77194e5ebfde246e3503bae4d74eeacfc79c50c1b9b48d0881c96c476705545",
+      "bytes": 2837,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/env.sh",
+      "sha256": "2725224de85c36d11811570c55aba668343c4b1b2ed3e44e6af7110a52513e09",
+      "bytes": 625,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/environment.json",
+      "sha256": "0453ac1cf290db834cbab81e13f99e9fb0a0e57e7847a01d841af92df845c61b",
+      "bytes": 2254,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/fmt-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/fmt-first.log",
+      "sha256": "f61566989e72d5ec8faf64ca455323ea4c296c69efed4904ef2bc11d7ce40ffd",
+      "bytes": 795,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/focused-before-install.log",
+      "sha256": "b79d8557da2350c161c4059083d344cee977e46872c886f25902f614e2602d7e",
+      "bytes": 10811,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/focused-final.log",
+      "sha256": "1d1582cd70f5625f98383c574e80f39a3ed3c0565a125e33dfffde0ce7f50921",
+      "bytes": 19605,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/focused-first.log",
+      "sha256": "093e8bf99dfcb9b00ed7bdeb155e6d84503290a4e1a28144fab30cb2499f8f87",
+      "bytes": 22234,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/focused-second.log",
+      "sha256": "7893de2a806a6a965372ac063da3156e0ee5a1ffcfeb576e757b0e563dabe7a7",
+      "bytes": 20352,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/gpu-after-tracing.csv",
+      "sha256": "0d02a7ade27f28d445b42aa6ccba0a9dd0fda1bc9c32cdd5321b1265856e58b1",
+      "bytes": 767,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/gpu-after.csv",
+      "sha256": "0d02a7ade27f28d445b42aa6ccba0a9dd0fda1bc9c32cdd5321b1265856e58b1",
+      "bytes": 767,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/gpu-before.csv",
+      "sha256": "0d02a7ade27f28d445b42aa6ccba0a9dd0fda1bc9c32cdd5321b1265856e58b1",
+      "bytes": 767,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/gpu-correctness.log",
+      "sha256": "8c3071dac3ba130be42c14b360a302a60fd9923299b4a82837547be3093a5d17",
+      "bytes": 3600,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/identity.json",
+      "sha256": "c3efd8a0cded4c5d5bd3dbc347f2ae7b7095c76e1b61f32d70e77014d7c6e6c8",
+      "bytes": 1550,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/README.md",
+      "sha256": "daf973b928c7fccbdc8520ea994c9a647a3d9cb8c4c5b78d1f86d11db77a927e",
+      "bytes": 8245,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/SHA256SUMS",
+      "sha256": "de6173d4b039166147f29d1be19e702d09e8be7b2a80d378c3a3c8215393a949",
+      "bytes": 2761,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/archive-receipt.json",
+      "sha256": "69dc92c5068cd718476423fff81866b34a9686c450f21d7c7ca3d646edd4a648",
+      "bytes": 844,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/archive.log",
+      "sha256": "4f95c45cc6e6957e8289712eefeca4bcb5d5053152eb4ab85a29e7774db69730",
+      "bytes": 942,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/archive.py.txt",
+      "sha256": "dd60ad9015bdca8db4260b904d3078f09f659138a83720a42c3a56df20e6789b",
+      "bytes": 1940,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/audit.json",
+      "sha256": "cd2a97b63ec496467d78e49ec216a2b445c8f83fd1e4c3598d2623c314e7ee19",
+      "bytes": 16335,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/audit.log",
+      "sha256": "2f267365636fe12a8e00f19475bedb38ce840e705c4a1ec5a299a8a022d0e040",
+      "bytes": 565,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/audit.py.txt",
+      "sha256": "266f75d180997c70b2f2b4655cfee5a16332dd99089f6d2cf356a218e2f4d95b",
+      "bytes": 6305,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/candidate-command.json",
+      "sha256": "b47223ad2685674532ea90de7716d8d9c5f2a6a384dec3c4ae0e7bafc1f4e974",
+      "bytes": 3938,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/candidate-command.log",
+      "sha256": "740660c6a2013da7d9871695f2b1b1abc07e5a09b383c63d158ac378e553d94c",
+      "bytes": 5817,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/candidate-environment-command.json",
+      "sha256": "8c72b5d7e9cc00b42470f3fcb23a94e68b3b865bd8c25678908d8230c84c41f8",
+      "bytes": 3721,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/candidate-environment-command.log",
+      "sha256": "6b3ddf28335dcc71cbad08e74406d73c3ef8588c6ae7eb920d4b06b3408b5a51",
+      "bytes": 1483,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/candidate-report.json",
+      "sha256": "6fc3a56c17881a964e9213f8cb6b38bc1b35248c5b72ab9b620399bc4ad1eeb0",
+      "bytes": 391075,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/clean-gpu-checks.json",
+      "sha256": "4a283dc3154bff4f7ef01ceb49d98f7cec7375e970ba4d91e351e6ac808941bc",
+      "bytes": 4244,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/clean-gpu-checks.log",
+      "sha256": "1aeb84dc259ca484dfc840b0ccb97e05307c96c6e47fedc090c5a45efeeee890",
+      "bytes": 5200,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/common-cells.md",
+      "sha256": "ad86d783f6ef2d6ab3f46818b6d6deea314d5ac50fbdc249b38cf4690221e344",
+      "bytes": 1275,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/env.sh",
+      "sha256": "2725224de85c36d11811570c55aba668343c4b1b2ed3e44e6af7110a52513e09",
+      "bytes": 625,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/environment.py.txt",
+      "sha256": "06e5da9f8cdafe30f5bb7269894cec3c183612ad6c31346c796918f4236ecb17",
+      "bytes": 1106,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/main-command.json",
+      "sha256": "c733738a3aac687b98ba3e9f0a205255a593d03afead7d215ca50a74ed6db08d",
+      "bytes": 4257,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/main-command.log",
+      "sha256": "cfcfad6359741e17125b280769125070294352eba1172d56478978b13be8ca69",
+      "bytes": 7098,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/main-environment-command.json",
+      "sha256": "031ebb8f018dfd31d97190909dc9cbd7f5d8c6265c8bc77fa28ef252f2858087",
+      "bytes": 4114,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/main-environment-command.log",
+      "sha256": "67220d04b5b8e297317b04a938317d5c28911c530187aff3adaaef3de89050b2",
+      "bytes": 1675,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/main-preparation-command.json",
+      "sha256": "1125146fc09624f8e8202b2dcc8efe5b34581fd5e32763ae7db99a7739259c9b",
+      "bytes": 3682,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/main-preparation-command.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/main-report.json",
+      "sha256": "01ef429f0a5417a7e7d2771acb388cbda67466f1d90a993479ce98a499c41ef5",
+      "bytes": 392640,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/payload-manifest.json",
+      "sha256": "e96e1c45b352066f13cd6d191a4a5a9f1ce87e8e720814c7847c3c3d132dd55a",
+      "bytes": 12330,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/prepare-main.sh.txt",
+      "sha256": "b1d716a2302feefb736bf5f7f13b73789157cfb310e4ea7ce8b173d67c848807",
+      "bytes": 1342,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/publication-final.log",
+      "sha256": "7e7cdade33004628f25e243c9444de886ce8197303863611973bc564b6193d83",
+      "bytes": 174,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/publication-first-failure.log",
+      "sha256": "3de7592b0643fb6efd7fdcd20bedfa9ded9d4d4d9162ff8efbf81840f72d3378",
+      "bytes": 474,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/publish.py.txt",
+      "sha256": "541af253494fbb320547a717a141ce0d8c9308d991ae4256bd5b39fd6de492b1",
+      "bytes": 3018,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/raw-retention-manifest.json",
+      "sha256": "d3d1ab24866df90043b1180660953e966b10fd3566cb233c4a1b896dde092742",
+      "bytes": 12303,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/record.py.txt",
+      "sha256": "c020f37bac2557b8654e437446fe6fb7e53769ce8810cb282c3fdd7a0564a7b0",
+      "bytes": 1415,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/postcommit-32105a22/resources.json",
+      "sha256": "0def8d5c52ad3c19bf6746b83de0a5e1622e8e7690b770a20c9044c6578a3ebd",
+      "bytes": 327,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/resources.json",
+      "sha256": "27e370c68f0cc25ce00193ba10405ef0a4a06006e81cc76d8cb35df1a794329a",
+      "bytes": 229,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/rust-pointwise.log",
+      "sha256": "a25a73ee6a8c419e70aa4aa2e135d19b2ed010dd9b01f24188fc61ea15eb87d2",
+      "bytes": 7444,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/setup-final.log",
+      "sha256": "5e70726059f65acbd5c725ebd8474e2a4ba2afc2f177811d76b9c049db48ef24",
+      "bytes": 2181,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/setup-retry.log",
+      "sha256": "33f0ddd0b2daf9ffaf843d1a2581293961854a343484cae6ca152fc1ee1362fa",
+      "bytes": 2843,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/setup.log",
+      "sha256": "674de7924bb7624ac09dea988466dd4c9f653789cf920f1fdc7c27843b149e67",
+      "bytes": 521,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/test-source-sha256.json",
+      "sha256": "18e5ad3b4e08530b7eb3090d50524b2416317ddd1492faba81598d2075625309",
+      "bytes": 591,
+      "mode": "0o644"
+    },
+    {
+      "path": "docs/diagnostics/compile-input-admission/tracing-regression.log",
+      "sha256": "3154f11d4e2e05b44dc2e29358f13d02035b360b66e263f29948b6750d8691da",
+      "bytes": 11726,
+      "mode": "0o644"
+    }
+  ]
+}
