@@ -133,6 +133,29 @@ pub(super) fn validate_inputs(inputs: &Bound<'_, PyTuple>) -> PyResult<usize> {
     })
 }
 
+#[pyfunction(name = "_pointwise_admit_inputs")]
+pub(super) fn admit_inputs(py: Python<'_>, inputs: &Bound<'_, PyTuple>) -> PyResult<Py<PyTuple>> {
+    with_inputs(inputs, |tensors| {
+        let metadata = tensors
+            .iter()
+            .map(|tensor| super::compile_tensor_metadata(py, tensor))
+            .collect::<PyResult<Vec<_>>>()?;
+        // Preserve the frontend's any-CPU diagnostic before whole-input admission,
+        // including when another slot has unsupported dtype, gradients or layout.
+        if tensors
+            .iter()
+            .any(|tensor| tensor.device() == crate::Device::Cpu)
+        {
+            return Err(PyNotImplementedError::new_err(
+                "torch.compile(): native CUDA pointwise: default backend does not compile CPU tensors; use backend='eager' for the documented CPU capture subset; see docs/compile-pointwise-jit.md",
+            ));
+        }
+        CoreTensor::validate_pointwise_inputs(tensors)
+            .map_err(|e| PyNotImplementedError::new_err(e.to_string()))?;
+        Ok(PyTuple::new(py, metadata)?.unbind())
+    })
+}
+
 fn parse_numerical_hint(hint: Option<&Bound<'_, PyAny>>) -> PyResult<Option<u64>> {
     hint.map(|hint| {
         if !hint.is_exact_instance_of::<PyInt>() {

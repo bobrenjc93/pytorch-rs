@@ -142,6 +142,13 @@ caller containers, Tensor owners, input descriptors or unused keys. Admission
 snapshots are invocation-local; concurrent caller mutation is not an atomic
 whole-tree transaction.
 
+After complete admission, warm guards project their existing immutable source
+paths from those snapshots. Captures still receive eager binding validation.
+The same binding conversion supplies full dependency/DFS-ordered maps for private
+`resolve()` callers, logical misses and new ABI lowerings; guard lookup order does
+not change scalar promotion or slot order. Projection state lasts only for the
+invocation. It adds neither a retained topology plan nor a validation verdict cache.
+
 Container subclasses, custom mappings, positional int/None/string leaves,
 runtime or captured selectors, slices, dict iteration/unpacking, starred forms,
 mutation, and captured/default containers remain unsupported. Constant-pool and
@@ -360,7 +367,7 @@ call. Helpers share root source realization, runtime scalar slots, SSA nodes and
 budgets: every call charges its full instruction count toward the 16384 expanded
 instruction limit, with the same 4096-node limit. Parsing is local to lowering;
 ordinary warm hits do not disassemble helpers. Neither Python body executes.
-Original-IR numerical admission, executor sharing, failure-atomic publication,
+Original-IR numerical admission, executor sharing, publication after reconstruction,
 LRU bounds and reset ownership remain unchanged.
 
 See the [helper diagnostics](diagnostics/compile-pointwise-helpers/README.md) for
@@ -499,6 +506,16 @@ including shared/repeated references and its graph, plus the wrapper and a
 memory, CUDA allocator pools, modules, outputs, scratch or transient preparation.
 An oversized preparation executes by the same mechanism without being retained.
 Evicting an executor drops all its cached preparations.
+On a capacity-increasing executor miss, prepared keys are staged before any
+cache publication. If that allocation fails, no cache entry or recency order
+changes: repeated staging failures from a bounded cache retain neither extra
+executors nor orphaned preparations. Retained hits do not stage prepared keys.
+If an executor recency reinsertion fails after removal, the preparation table and its
+byte charge are cleared under the existing lock, and the original exception is
+re-raised. Other executors keep their order and can prepare again. A successful
+recency touch preserves preparations; it is not executor eviction. These local
+recovery rules are not a guarantee of atomicity under arbitrary allocator failures
+throughout Python publication.
 
 Failed admission, preparation, compilation, execution, output conversion or result
 reconstruction publishes no entry, history or LRU change. All cache publication

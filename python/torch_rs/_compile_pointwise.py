@@ -49,8 +49,9 @@ _REVERSE_COMPARE = {"<": ">", "<=": ">=", "==": "==", "!=": "!=", ">=": "<=", ">
 # Imported during package initialization, before public bindings can be patched.
 _FUNCTIONS = tuple((name, _ROOT.__dict__.get(name)) for name in
                    ("neg", "negative", "relu", "sin", "cos", "add", "sub", "subtract", "mul", "multiply"))
-_METHOD_GUARDS = tuple((cls, name, cls.__dict__.get(name, _MISSING))
-                      for cls in (_ROOT.Tensor, _ROOT.Tensor.__base__) for name in _METHODS)
+_METHOD_GUARDS = tuple((cls, tuple((name, cls.__dict__.get(name, _MISSING))
+                                 for name in _METHODS))
+                       for cls in (_ROOT.Tensor, _ROOT.Tensor.__base__))
 
 
 def unsupported(reason):
@@ -494,20 +495,20 @@ def _shape_guards(program, graph, first, metadata, history, predicates=()):
             observations, numerical_hint)
 
 
-def _select_specialization(program, bindings, values, tensors, metadata, graphs):
+def _select_specialization(program, resolved, tensors, metadata, graphs):
     """Select newest matching semantics before considering new scalar promotion.
 
     A generalized entry can supersede an older exact shape even when its native
     broadcast executable is absent. Conversely, a rank miss can expose an older
     static scalar entry beneath a newer runtime entry.
     """
-    by_source = None
+    values = resolved.values
     for key, entry in reversed(graphs.items()):
         if key[0] is not program.code:
             continue
         scalars = []
         for source, expected in entry.binding_checks:
-            current = bindings.get(source)
+            current = resolved.get(source)
             if current is None:
                 break
             if expected[0] == "runtime_float" and type(values[source]) is float:
@@ -528,12 +529,13 @@ def _select_specialization(program, bindings, values, tensors, metadata, graphs)
                     owner = len(first)
                     first.append(tensor)
                 aliases.append(owner)
-            if any(source not in values for source in entry.data_sources):
+            if any(resolved.get(source) is None for source in entry.data_sources):
                 continue
             if tuple(aliases) != key[3]:
                 continue
-            if by_source is None:
-                by_source = {s: metadata[v.index][:5] for s, v in values.items() if type(v) is Value}
+            # Each candidate can project additional sources. Shape guards use
+            # its realized tensor sources, whose kinds were checked above.
+            by_source = {s: metadata[values[s].index][:5] for s in entry.tensor_sources}
             if key[2].matches(by_source):
                 return key, entry, tuple(scalars)
     return None
@@ -890,7 +892,12 @@ def bind_arguments(args):
     # Discard the prefix so every root and Tensor occurrence is counted once.
     tensors = []
 
-    def leaf(arg):
+    seen, edges = set(), len(args)
+    if edges > 4096:
+        unsupported("input tree exceeds 4096 reference edges")
+
+    def snapshot(arg, depth):
+        nonlocal edges
         kind = type(arg)
         if kind is _TENSOR_TYPE:
             value = Value(len(tensors))
@@ -900,19 +907,10 @@ def bind_arguments(args):
             return value
         if kind is float or kind is bool:
             return arg
-        unsupported("default backend requires exact native CUDA float32 Tensor inputs "
-                    "and exact float/bool leaves in bounded exact tuple/list/dict trees; "
-                    "see docs/compile-pointwise-jit.md")
-
-    seen, edges = set(), len(args)
-    if edges > 4096:
-        unsupported("input tree exceeds 4096 reference edges")
-
-    def snapshot(arg, depth):
-        nonlocal edges
-        kind = type(arg)
         if kind is not tuple and kind is not list and kind is not dict:
-            return leaf(arg)
+            unsupported("default backend requires exact native CUDA float32 Tensor inputs "
+                        "and exact float/bool leaves in bounded exact tuple/list/dict trees; "
+                        "see docs/compile-pointwise-jit.md")
         if depth >= 64:
             unsupported("input tree exceeds container depth 64")
         if id(arg) in seen:
@@ -926,14 +924,18 @@ def bind_arguments(args):
             pairs = tuple(islice(arg.items(), 4097))
             if any(type(key) is not str for key, _ in pairs):
                 unsupported("input dict keys must be exact strings")
+            if len(pairs) != width:
+                unsupported("input container changed during admission")
             keys = tuple(key for key, _ in pairs)
-            children = tuple(value for _, value in pairs)
-        else:
-            keys, children = (), tuple(islice(arg, 4097))
+            # The pairs already own a consistent snapshot. Do not project a
+            # second temporary tuple of values before admitting its children.
+            return InputTree("dict", tuple(snapshot(value, depth + 1) for _, value in pairs), keys)
+        # An exact tuple is already immutable; only lists need a child snapshot.
+        children = arg if kind is tuple else tuple(islice(arg, 4097))
         # A concurrent growth cannot bypass the budget at expansion.
         if len(children) != width:
             unsupported("input container changed during admission")
-        return InputTree(kind.__name__, tuple(snapshot(child, depth + 1) for child in children), keys)
+        return InputTree(kind.__name__, tuple(snapshot(child, depth + 1) for child in children))
 
     parameters = tuple(snapshot(arg, 0) for arg in args)
     if len(tensors) not in (1, 2):
@@ -949,45 +951,104 @@ def resolve(model, program, parameters=None):
     return _resolve_bindings(model, program, parameters)
 
 
-def _resolve_bindings(model, program, parameters):
-    """Resolve mutable bindings after the caller validates the root/signature."""
-    validate_namespaces(model)
-    validate_ranges(model, program.range_sources)
-    globals_ = model.__globals__
-    values, keys = {}, {}
-    closure = dict(zip(program.code.co_freevars, model.__closure__ or ()))
-    if parameters is None:
-        # Private hardware-free lowering callers model a tensor-only signature.
-        parameters = tuple(Value(i) for i in range(program.code.co_argcount))
-    def parameter(source, value):
-        values[source] = value
-        if type(value) is InputTree:
-            keys[source] = (value.kind,) if value.kind == "dict" else (value.kind, len(value.items))
-            for item, child in zip(value.keys if value.kind == "dict" else range(len(value.items)), value.items):
-                parameter(source.child(item), child)
-        elif type(value) is Value:
-            keys[source] = ("tensor", value.index)
-        else:
-            keys[source], values[source] = binding(value)
+class _BindingResolution:
+    """Invocation-local projection of admitted snapshots onto immutable sources.
 
-    for source in program.dependencies:
-        kind, name = source.kind, source.name
-        if kind == "parameter":
-            parameter(source, parameters[source.position])
-            continue
-        elif kind == "LOAD_GLOBAL":
-            if name not in globals_:
-                unsupported("unbound global: " + name)
-            value = globals_[name]
+    Captures remain eager. Warm guards supply their existing source identities;
+    lowering enumerates the complete snapshot in the original binding order.
+    Neither this resolver nor its snapshots belong to a retained cache entry.
+    """
+    def __init__(self, program):
+        self.program = program
+        self.keys, self.values = {}, {}
+
+    def bind(self, source, value):
+        self.values[source] = value
+        if type(value) is InputTree:
+            self.keys[source] = (value.kind,) if value.kind == "dict" else (value.kind, len(value.items))
+        elif type(value) is Value:
+            self.keys[source] = ("tensor", value.index)
         else:
-            try:
-                value = closure[name].cell_contents
-            except (KeyError, ValueError):
-                unsupported("empty closure binding: " + name)
-        key, value = binding(value)
-        keys[source] = key
-        values[source] = value
-    return keys, values
+            self.keys[source], self.values[source] = binding(value)
+
+    def expand(self, source, value):
+        self.bind(source, value)
+        if type(value) is InputTree:
+            for item, child in zip(value.keys if value.kind == "dict" else range(len(value.items)), value.items):
+                self.expand(source.child(item), child)
+
+    def dependencies(self, model, parameters, parameter):
+        validate_namespaces(model)
+        validate_ranges(model, self.program.range_sources)
+        globals_ = model.__globals__
+        closure = dict(zip(self.program.code.co_freevars, model.__closure__ or ()))
+        if parameters is None:
+            # Private hardware-free lowering callers model a tensor-only signature.
+            parameters = tuple(Value(i) for i in range(self.program.code.co_argcount))
+        for source in self.program.dependencies:
+            kind, name = source.kind, source.name
+            if kind == "parameter":
+                parameter(source, parameters[source.position])
+                continue
+            elif kind == "LOAD_GLOBAL":
+                if name not in globals_:
+                    unsupported("unbound global: " + name)
+                value = globals_[name]
+            else:
+                try:
+                    value = closure[name].cell_contents
+                except (KeyError, ValueError):
+                    unsupported("empty closure binding: " + name)
+            self.keys[source], self.values[source] = binding(value)
+
+    def get(self, source):
+        key = self.keys.get(source)
+        if key is not None:
+            return key
+        if source.kind != "parameter" or not source.path:
+            return None
+        root = self.program.dependencies[source.position]
+        if root.name != source.name:
+            return None
+        value = self.values[root]
+        # Only read the admitted snapshot, never the caller's mutable containers.
+        # A stale path is a guard miss, not an input-admission failure.
+        for item in source.path:
+            if type(value) is not InputTree:
+                return None
+            if value.kind == "dict":
+                if type(item) is not str:
+                    return None
+                try:
+                    index = value.keys.index(item)
+                except ValueError:
+                    return None
+            else:
+                if type(item) is not int or not 0 <= item < len(value.items):
+                    return None
+                index = item
+            value = value.items[index]
+        self.bind(source, value)
+        return self.keys[source]
+
+    def complete(self):
+        # Guard lookup order must not become scalar-promotion/ABI order. Rebuild
+        # the full maps in dependency/DFS order, keeping already-frozen captures.
+        keys, values = self.keys, self.values
+        self.keys, self.values = {}, {}
+        for source in self.program.dependencies:
+            if source.kind == "parameter":
+                self.expand(source, values[source])
+            else:
+                self.keys[source], self.values[source] = keys[source], values[source]
+        return self.keys, self.values
+
+
+def _resolve_bindings(model, program, parameters):
+    """Resolve all mutable bindings for private lowering callers."""
+    resolved = _BindingResolution(program)
+    resolved.dependencies(model, parameters, resolved.expand)
+    return resolved.keys, resolved.values
 
 
 def runtime_bindings(program, bindings, values, graphs, *, observed=None):
@@ -1434,13 +1495,7 @@ def _prepared_entry_bytes(key, prepared):
 
 
 def _publish_preparation(cache, key, prepared, retained_bytes, recompile_limit):
-    """Called under the existing lock only after successful reconstruction."""
-    # A prepared Arc must not retain a module whose executor was evicted. The
-    # executable transaction above is authoritative, not an independent module cache.
-    for old_key in tuple(cache.prepared):
-        if old_key[0] not in cache.executors:
-            _, old_bytes = cache.prepared.pop(old_key)
-            cache.prepared_bytes -= old_bytes
+    """Publish under the lock after success and executor-eviction cleanup."""
     if retained_bytes <= _PREPARED_CACHE_BYTES:
         newest = (cache.prepared and next(reversed(cache.prepared)) == key
                   and next(reversed(cache.prepared.values()))[0] is prepared)
@@ -1470,15 +1525,13 @@ def implementation(model, recompile_limit):
         tensors, parameters = bind_arguments(args)
         if _ROOT.overrides._get_current_function_mode() is not None:
             unsupported("active __torch_function__ mode")
-        for cls, name, expected in _METHOD_GUARDS:
-            if cls.__dict__.get(name, _MISSING) is not expected:
-                unsupported("patched Tensor operation binding: " + name)
+        for cls, checks in _METHOD_GUARDS:
+            namespace = cls.__dict__
+            for name, expected in checks:
+                if namespace.get(name, _MISSING) is not expected:
+                    unsupported("patched Tensor operation binding: " + name)
         # The native bridge checks all metadata and storage bounds again on launch.
-        metadata = tuple(_native._compile_trace_tensor_metadata(arg) for arg in tensors)
-        if any(m[4] == "cpu" for m in metadata):
-            unsupported("default backend does not compile CPU tensors; use backend='eager' "
-                        "for the documented CPU capture subset; see docs/compile-pointwise-jit.md")
-        _native._pointwise_validate_inputs(tensors)
+        metadata = _native._pointwise_admit_inputs(tensors)
         with cache.lock:
             if program is None or program.code is not model.__code__:
                 program = analyze(model, len(args))
@@ -1489,11 +1542,13 @@ def implementation(model, recompile_limit):
             # identity check above repeats admission on replacement; mutable
             # signature containers still receive their one check on every call.
             # Private resolve() remains fully validating for independent callers.
-            static_bindings, static_values = _resolve_bindings(model, program, parameters)
+            resolved = _BindingResolution(program)
+            resolved.dependencies(model, parameters, resolved.bind)
+            static_values = resolved.values
             input_ids = (0, 0) if len(tensors) == 2 and tensors[0] is tensors[1] else tuple(range(len(tensors)))
-            selected = _select_specialization(program, static_bindings, static_values,
-                                              tensors, metadata, cache.graphs)
+            selected = _select_specialization(program, resolved, tensors, metadata, cache.graphs)
             if selected is None:
+                static_bindings, static_values = resolved.complete()
                 if len(cache.graphs) >= recompile_limit:
                     unsupported(f"hit recompile_limit={recompile_limit}")
                 # The same lowering records which sources actually materialize,
@@ -1529,6 +1584,7 @@ def implementation(model, recompile_limit):
             if selected is not None:
                 lowering = entry.lowerings.get(abi)
                 if lowering is None:
+                    _, static_values = resolved.complete()
                     values = dict(static_values)
                     values.update((s, v) for s, v in entry.values.items() if type(v) is not Value)
                     lowering = lower(program, values, len(tensors), input_ids, metadata=metadata)
@@ -1541,7 +1597,8 @@ def implementation(model, recompile_limit):
             indexing_key = None if all(s == shapes[0] for s in shapes) else shapes
             code_key = (graph, metadata[0][4], indexing_key)
             executor = cache.executors.get(code_key)
-            if executor is None:
+            executor_miss = executor is None
+            if executor_miss:
                 executor = _native._pointwise_compile(tensors, graph.nodes, graph.outputs)
             prepared_key = (code_key, shapes, entry.numerical_hint, lowering.result.output_order)
             cached_preparation = cache.prepared.get(prepared_key)
@@ -1557,6 +1614,11 @@ def implementation(model, recompile_limit):
                 prepared, retained_bytes = cached_preparation
             outputs = prepared.run(tensors, scalars)
             result = lowering.result.reconstruct(outputs, static_values, tensors, metadata)
+            if executor_miss and len(cache.executors) >= recompile_limit:
+                # Only a capacity-increasing miss can evict an executor. Stage
+                # before publishing anything, so repeated allocation failures
+                # cannot accumulate retained executors beyond the count limit.
+                prepared_keys = tuple(cache.prepared)
             # Publish every cache level only after success. Executable/lowering
             # eviction bounds retention without consuming logical slots.
             for mapping, item_key, item in ((entry.lowerings, abi, lowering),
@@ -1568,9 +1630,26 @@ def implementation(model, recompile_limit):
                         and next(reversed(mapping.values())) is item):
                     continue
                 mapping.pop(item_key, None)
-                mapping[item_key] = item
+                try:
+                    mapping[item_key] = item
+                except BaseException:
+                    if mapping is cache.executors:
+                        # A failed recency reinsertion can remove an owner.
+                        # Drop preparation retention without allocating a
+                        # repair index or taking the already-held lock again.
+                        cache.prepared.clear()
+                        cache.prepared_bytes = 0
+                    raise
                 while len(mapping) > recompile_limit:
-                    del mapping[next(iter(mapping))]
+                    evicted_key = next(iter(mapping))
+                    del mapping[evicted_key]
+                    if mapping is cache.executors:
+                        # Preparations must not retain an evicted module. Scan
+                        # only at actual executor eviction in this transaction.
+                        for old_key in prepared_keys:
+                            if old_key[0] == evicted_key:
+                                _, old_bytes = cache.prepared.pop(old_key)
+                                cache.prepared_bytes -= old_bytes
             _publish_preparation(cache, prepared_key, prepared, retained_bytes, recompile_limit)
             return result
 

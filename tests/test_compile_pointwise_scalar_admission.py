@@ -365,12 +365,10 @@ class SharedCacheGuards(unittest.TestCase):
         self.metadata = {}
         self.arguments = []
         self.launch_failure = None
-        for name, replacement in (
-                ('_compile_trace_tensor_metadata', lambda arg: self.metadata[id(arg)]),
-                ('_pointwise_validate_inputs', lambda args: None)):
-            patcher = mock.patch.object(frontend._native, name, side_effect=replacement)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(frontend._native, '_pointwise_admit_inputs',
+                                    side_effect=lambda args: tuple(self.metadata[id(arg)] for arg in args))
+        patcher.start()
+        self.addCleanup(patcher.stop)
         patcher = mock.patch.object(frontend._native, '_pointwise_compile',
                                     side_effect=self.make_executor)
         self.compile_bridge = patcher.start()
@@ -382,7 +380,7 @@ class SharedCacheGuards(unittest.TestCase):
             run.side_effect = self.launch_failure
         else:
             run.side_effect = lambda args, scalars, numerical_hint, output_order: ((nodes, tuple(scalars)),)
-        return mock_pointwise_executor(run)
+        return mock_pointwise_executor(run, metadata=lambda arg: self.metadata[id(arg)])
 
     def argument(self, shape, strides=None):
         if strides is None:
@@ -393,8 +391,15 @@ class SharedCacheGuards(unittest.TestCase):
             strides = tuple(reversed(reversed_strides))
         arg = native.tensor([1.])
         self.arguments.append(arg)  # Keep identities stable for metadata lookup.
-        self.metadata[id(arg)] = (shape, strides, 'float32', False, 'cuda:0', 0)
+        self.metadata[id(arg)] = (shape, strides, False, 'torch.float32', 'cuda:0', 0)
         return arg
+
+    def test_synthetic_metadata_schema_matches_the_native_projection(self):
+        arg = self.argument((1,))
+        actual = list(frontend._native._compile_trace_tensor_metadata(arg))
+        actual[4] = 'cuda:0'  # Only the device is synthetic for this real shape.
+        self.assertEqual(self.metadata[id(arg)], tuple(actual))
+        self.assertEqual(tuple(map(type, self.metadata[id(arg)])), tuple(map(type, actual)))
 
     def compiled(self, source='def f(scale,x):\n return x*scale'):
         return frontend.implementation(program(source), recompile_limit=8)
@@ -536,7 +541,8 @@ class SharedCacheGuards(unittest.TestCase):
         history = (((False, x, 0.), (x,), 0),
                    ((unused, x, False), (unused, x), 1),
                    ((True, x, unused), (x, unused), 0))
-        with mock.patch.object(frontend._native, '_pointwise_validate_inputs') as validate:
+        with mock.patch.object(frontend._native, '_pointwise_admit_inputs',
+                               side_effect=frontend._native._pointwise_admit_inputs) as validate:
             for args, tensors, input_index in history:
                 for _ in range(2):
                     nodes, _ = compiled(*args)
