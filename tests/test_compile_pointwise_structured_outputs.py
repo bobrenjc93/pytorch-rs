@@ -351,6 +351,28 @@ class StructuredCache(unittest.TestCase):
         with patch.object(frontend, 'lower', side_effect=AssertionError('warm reparse')):
             self.assertIs(compiled(x)[1],x)
 
+    def test_inactive_return_alias_does_not_guard_unused_input_shape(self):
+        # Exercise both an inactive arm and a deferred early-return continuation.
+        for condition in ('<4', '>4'):
+            arm, continuation = ('x', 'y') if condition == '<4' else ('y', 'x')
+            fn = program('def f(x,y):\n if x.shape[0]' + condition
+                         + ':\n  return (-x,' + arm + ')\n return (-x,' + continuation + ')')
+            compiled = native.compile(fn, recompile_limit=1)
+            x = native.ones(3)
+            with self.subTest(condition=condition), no_bodies(fn):
+                self.assertIs(compiled(x, native.ones(3))[1], x)
+                payload = next(iter(cache(compiled).graphs.values())).payload
+                for shape in ((1, 3), (3,)):
+                    y = native.ones(*shape)
+                    result = compiled(x, y)
+                    self.assertIs(result[0], self.launches[-1][0])
+                    self.assertIs(result[1], x)
+                    self.assertIs(next(iter(cache(compiled).graphs.values())).payload, payload)
+                self.assertEqual(len(cache(compiled).graphs), 1)
+                # A changed predicate still needs another logical specialization.
+                with self.assertRaisesRegex(NotImplementedError, 'recompile_limit=1'):
+                    compiled(native.ones(8), native.ones(3))
+
     def test_same_graph_different_topology_shares_executor(self):
         fn = program('def f(x):\n a=-x\n return (a,x)')
         compiled = native.compile(fn)
@@ -365,6 +387,22 @@ class StructuredCache(unittest.TestCase):
         self.assertEqual(self.codegen.call_count, 1)
         self.assertEqual(len(cache(compiled).executors), 1)
         self.assertEqual(len(cache(compiled).graphs), 2)
+
+    def test_inactive_return_alias_retains_admission_on_same_abi(self):
+        fn = program('def f(x,y,z):\n if x.shape[0]<4:\n  return (-x,x)\n return (-x,y)')
+        compiled = native.compile(fn, recompile_limit=1)
+        x, y = native.ones(3), native.ones(3)
+        with no_bodies(fn):
+            compiled(x, y, False)
+            before = self.snapshot(compiled)
+            launches = len(self.launches)
+            # Moving the second tensor to an unused parameter preserves the
+            # concrete ABI, but y is no longer a valid returned input alias.
+            with self.assertRaisesRegex(NotImplementedError, 'result metadata'):
+                compiled(x, 1.0, y)
+            self.assertEqual(self.snapshot(compiled), before)
+            self.assertEqual(len(self.launches), launches)
+            self.assertIs(compiled(x, native.ones(1, 3), False)[1], x)
 
     def test_reconstruction_and_launch_failure_preserve_all_cache_orders(self):
         fn = program('def f(x):\n return [-x,x.shape[0]]')

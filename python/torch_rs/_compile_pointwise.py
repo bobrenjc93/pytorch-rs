@@ -268,7 +268,7 @@ class Lowering:
     operation_bindings: tuple = ()
     active_operations: tuple = ()
     # Each concrete ABI may admit different inactive paths. None means child
-    # presence only; container signatures retain no invocation-local owners.
+    # presence only; container/tensor signatures retain no invocation-local owners.
     structural_admission: tuple = ()
 
 
@@ -1334,6 +1334,9 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     unsupported("original input container result passthrough is unsupported")
                 if type(resolved) is not Value or not resolved.tensor or item.source.kind != "parameter":
                     unsupported("result metadata must be literal or an input shape axis")
+                # Inactive aliases require current tensor admission on reuse,
+                # independently of the active path's logical shape guards.
+                structural_admission[item.source] = ("tensor", resolved.index)
                 entry = ("input", item.source)
             elif type(item) is Value and item.tensor and (item.index >= arity or item.index == -1):
                 roots.add(item.index)
@@ -1706,8 +1709,15 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
         finally:
             nodes[:] = active_nodes
             checked_nodes -= budget_delta
-    for returned, numerical in returns:
-        result_spec(returned, numerical=numerical)
+    # Root returns already recorded observations in their own active/isolated
+    # frames. Deferred validation must not promote inactive aliases into guards.
+    saved_observed = observed
+    observed = None
+    try:
+        for returned, numerical in returns:
+            result_spec(returned, numerical=numerical)
+    finally:
+        observed = saved_observed
     if has_effect and has_numerical:
         unsupported("mutation-bearing programs cannot contain numerical Tensor operations")
     outputs, specification = result_spec(result, {index: slot for slot, index in enumerate(active_operations)})
