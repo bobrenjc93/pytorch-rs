@@ -63,6 +63,19 @@ returned input aliases preserve their original storage and strides. These
 numerical programs leave inputs unchanged. Input-only returns remain outside
 this subset; the alias-only mutation contract is described below.
 
+After argument and function-mode validation, ordinary and receipt calls check
+the original Tensor and Tensor-base method namespaces before metadata admission
+or the cache lock. Python owns the
+ordered 19-name inventory and expected objects; one private stateless native
+helper returns the first identity mismatch. It validates exact tuples, exact
+string names and original native owner identities before accessing a namespace,
+then uses an owned stable-ABI dictionary lookup. Missing entries use the supplied
+sentinel, distinct from a present `None`. Ordinary `setattr`/`delattr` changes are
+observed on the next call without binding or invoking retrieved values. This
+contract covers the original native namespaces, not foreign-key injection,
+arbitrary concurrent monkeypatch interleavings or untested free-threaded Python.
+Conditional alias-operation binding checks remain separate.
+
 Terminal `Tensor.transpose(dim0, dim1)` and `Tensor.view` results are also
 admitted when rooted in an original input Tensor leaf or earlier input-rooted
 view, at rank 0, 1 or 2. `view` accepts a literal tuple of exact integer
@@ -689,12 +702,41 @@ tuple in the private preparation dictionary is outside this contract.
 Prepared keys for that bounded scan are staged after successful reconstruction
 and before any retained-map publication, including warm same-key owner replacement.
 If staging fails, cache entries, accounting and recency stay unchanged; repeated
-failures cannot grow executor retention beyond capacity. If executor recency
-reinsertion fails after removal, the preparation table and its byte charge are
-cleared under the existing lock and the original exception is re-raised. Other
-executors keep their order and can prepare again. Successful recency touches
-preserve preparations whose exact owners survive. These local recovery rules do
-not guarantee atomicity under arbitrary allocator failures throughout publication.
+failures cannot grow retention. Logical history is semantic state: its order
+selects the newest matching specialization, including frozen scalar bits and
+numerical hints. Each logical capture owns one shallow-frozen
+`SpecializationPayload`: values, observed sources, observations, binding checks,
+tensor sources, data sources and numerical hint. The fields retain their original
+objects; freezing the record does not copy or deep-freeze its contents. A published
+`Specialization` contains only that payload and its lowering map. Publication
+shallow-copies a changed lowering map and constructs a two-field shell with the
+same payload, then stages the graph map. Facts live for the logical capture;
+shells live for their published lowering history. Neither belongs to the broader
+Program lifetime or to a particular ABI. Retained lowerings preserve structural
+admission: an inactive helper can remain admitted after its code changes, while
+rebuilding an evicted ABI can reject the changed helper. Unchanged newest key/value hits compare keys by equality and
+values by identity and reuse both maps, including fresh equal ABI tuples.
+For changed values, overwriting the identical newest key skips removal while
+preserving key identity and order; equal-but-distinct keys still require removal
+and reinsertion. Both changed-map paths enforce the same capacity bound.
+Graph-only recency transitions cost O(G); lowering transitions cost O(L+G) and
+one shell, for retained graph/lowering counts G and L.
+
+Executor recency, count eviction, preparation-owner pruning, insertion, byte
+accounting and count/byte eviction share one `BaseException` recovery boundary.
+Failure clears only executor and preparation ownership, with base `dict.clear`
+under the already-held lock, and resets the charge to zero. It re-raises the
+identical exception without retrying execution. Committed logical history and
+other compiled wrappers stay unchanged; unrelated derived survivors may be
+lost and later rebuilt. After all fallible publication succeeds, one graph-root
+assignment commits the staged logical tree and the already-built result returns.
+Alias-only calls use the same logical commit without numerical cache publication.
+Already-completed storage effects are not rolled back or replayed on failure.
+
+This boundary does not promise immunity to arbitrary tracing or repeated
+asynchronous interruption of cleanup, lock exit or frame return. Dropping cache
+ownership does not guarantee immediate module/device destruction: external
+references and exception tracebacks can retain native payloads.
 
 Failed admission, preparation, compilation, execution, output conversion or result
 reconstruction publishes no entry, history or LRU change. All cache publication
@@ -727,6 +769,10 @@ restores the caller's device on compilation, execution and module destruction.
 Wrapper locks serialize cache publication and reset.
 
 ## Validation and campaign evidence
+
+The [native method boundary record](diagnostics/native-method-guards/README.md)
+records the clean committed-source correctness gates and ordinary-call comparison,
+including slower controls, separately from historical development evidence.
 
 The [committed-source direct-resource validation](diagnostics/direct-resources-validation-20260918.md)
 records fresh B/H/D public-call comparisons and focused regression checks.

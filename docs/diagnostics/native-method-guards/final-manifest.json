@@ -1,0 +1,2568 @@
+{
+  "request": "compile-native-method-guards-20260919-0n4jvB",
+  "candidate_commit": "d58211d07f15800971d7507426207af677514cfc",
+  "references": {
+    "T": "d58211d07f15800971d7507426207af677514cfc",
+    "C": "81a1e9606571914711491285ad8534451f7dcf3a",
+    "R": "00bea94caaf70017cb347733fe7633a7b2b52637"
+  },
+  "capture": {
+    "timestamp": "2026-09-19T15:18:08.338658+00:00",
+    "measured_commit": "d58211d07f15800971d7507426207af677514cfc",
+    "status": "complete",
+    "final_correctness_all_passed": true,
+    "ordinary_timings_available": true,
+    "raw_ordinary_samples_retained": 28944,
+    "required_ordinary_samples": 28944,
+    "gates": {
+      "312/pointwise": {
+        "available": true,
+        "error": null,
+        "result": {
+          "testsRun": 525,
+          "successful": true,
+          "skips": [
+            [
+              "test_compile_pointwise_broadcast.Broadcast.test_device_restoration_on_compile_run_failure_and_module_release",
+              "requires explicit reservation of two CUDA devices"
+            ],
+            [
+              "test_compile_pointwise_helpers.HelperHardware.test_two_h100_devices_restore_context_and_share_helper_semantics",
+              "requires explicit two-device reservation"
+            ],
+            [
+              "test_compile_pointwise_jit.Hardware.test_two_device_restoration_and_module_ownership",
+              "requires explicit two-device reservation"
+            ],
+            [
+              "test_compile_pointwise_loops.LoopHardware.test_original_ir_unequal_shapes_and_device_restoration",
+              "requires two explicitly reserved GPUs for restoration"
+            ],
+            [
+              "test_compile_pointwise_prepared.PreparedHardware.test_private_preparation_and_run_restore_device_and_reject_cross_device",
+              "requires explicit two-device reservation"
+            ],
+            [
+              "test_compile_pointwise_runtime_scalars.PositionalScalarHardware.test_positional_runtime_parameters_restore_device_on_success_and_failure",
+              "requires explicit two-device reservation"
+            ],
+            [
+              "test_compile_pointwise_runtime_scalars.RuntimeScalarHardware.test_runtime_parameters_restore_current_device",
+              "requires explicit two-device validation"
+            ],
+            [
+              "test_compile_pointwise_structured_outputs.StructuredHardware.test_two_device_restoration_and_wrong_device_failure",
+              "requires explicit two-device reservation"
+            ],
+            [
+              "test_compile_pointwise_tensor_madd.TensorMadd.test_both_devices_restore_current_device_on_success_failure_and_reset",
+              "requires explicit reservation of two CUDA devices"
+            ]
+          ],
+          "failures": [],
+          "errors": [],
+          "expectedFailures": [],
+          "unexpectedSuccesses": [],
+          "passing": 516
+        }
+      },
+      "312/owner": {
+        "available": true,
+        "error": null,
+        "result": {
+          "testsRun": 8,
+          "successful": true,
+          "skips": [],
+          "failures": [],
+          "errors": [],
+          "expectedFailures": [],
+          "unexpectedSuccesses": [],
+          "passing": 8
+        }
+      },
+      "314/pointwise": {
+        "available": true,
+        "error": null,
+        "result": {
+          "testsRun": 525,
+          "successful": true,
+          "skips": [
+            [
+              "test_compile_pointwise_broadcast.Broadcast.test_device_restoration_on_compile_run_failure_and_module_release",
+              "requires explicit reservation of two CUDA devices"
+            ],
+            [
+              "test_compile_pointwise_helpers.HelperHardware.test_two_h100_devices_restore_context_and_share_helper_semantics",
+              "requires explicit two-device reservation"
+            ],
+            [
+              "test_compile_pointwise_jit.Hardware.test_two_device_restoration_and_module_ownership",
+              "requires explicit two-device reservation"
+            ],
+            [
+              "test_compile_pointwise_loops.LoopHardware.test_original_ir_unequal_shapes_and_device_restoration",
+              "requires two explicitly reserved GPUs for restoration"
+            ],
+            [
+              "test_compile_pointwise_prepared.PreparedHardware.test_private_preparation_and_run_restore_device_and_reject_cross_device",
+              "requires explicit two-device reservation"
+            ],
+            [
+              "test_compile_pointwise_runtime_scalars.PositionalScalarHardware.test_positional_runtime_parameters_restore_device_on_success_and_failure",
+              "requires explicit two-device reservation"
+            ],
+            [
+              "test_compile_pointwise_runtime_scalars.RuntimeScalarHardware.test_runtime_parameters_restore_current_device",
+              "requires explicit two-device validation"
+            ],
+            [
+              "test_compile_pointwise_structured_outputs.StructuredHardware.test_two_device_restoration_and_wrong_device_failure",
+              "requires explicit two-device reservation"
+            ],
+            [
+              "test_compile_pointwise_tensor_madd.TensorMadd.test_both_devices_restore_current_device_on_success_failure_and_reset",
+              "requires explicit reservation of two CUDA devices"
+            ]
+          ],
+          "failures": [],
+          "errors": [],
+          "expectedFailures": [],
+          "unexpectedSuccesses": [],
+          "passing": 516
+        }
+      },
+      "314/owner": {
+        "available": true,
+        "error": null,
+        "result": {
+          "testsRun": 8,
+          "successful": true,
+          "skips": [],
+          "failures": [],
+          "errors": [],
+          "expectedFailures": [],
+          "unexpectedSuccesses": [],
+          "passing": 8
+        }
+      }
+    },
+    "ordinary_phases": {
+      "312/C1": {
+        "available": true,
+        "error": null
+      },
+      "312/R1": {
+        "available": true,
+        "error": null
+      },
+      "312/T1": {
+        "available": true,
+        "error": null
+      },
+      "312/T2": {
+        "available": true,
+        "error": null
+      },
+      "312/R2": {
+        "available": true,
+        "error": null
+      },
+      "312/C2": {
+        "available": true,
+        "error": null
+      },
+      "314/C1": {
+        "available": true,
+        "error": null
+      },
+      "314/R1": {
+        "available": true,
+        "error": null
+      },
+      "314/T1": {
+        "available": true,
+        "error": null
+      },
+      "314/T2": {
+        "available": true,
+        "error": null
+      },
+      "314/R2": {
+        "available": true,
+        "error": null
+      },
+      "314/C2": {
+        "available": true,
+        "error": null
+      }
+    },
+    "frozen_hash_errors": [],
+    "process_snapshot": [],
+    "packaging_pid": 724709,
+    "head": "d58211d07f15800971d7507426207af677514cfc",
+    "worktree_status": "",
+    "evidence_only_allowed_paths": [
+      "docs/compile-pointwise-jit.md",
+      "docs/diagnostics/native-method-guards/README.md",
+      "docs/diagnostics/native-method-guards/final-manifest.json",
+      "docs/diagnostics/native-method-guards/final.tar.gz"
+    ],
+    "runtime_and_tests_unchanged_from_measured_commit": true,
+    "independent_review_evaluation_or_qualification": false
+  },
+  "archive": {
+    "file": "final.tar.gz",
+    "sha256": "4565ced52a317eb026b7d8f7502ad471e1a469e9f0b2419ae75218c898bfd1ac",
+    "bytes": 2417983
+  },
+  "files": {
+    "target/native-method-guard-trial/final/312/C/binding.json": {
+      "sha256": "c5d9f736bb51fd12e42aaba06c4b74323aab5138ca2d2a819d0860cbcf4dece0",
+      "bytes": 14153
+    },
+    "target/native-method-guard-trial/final/312/C/interpreter.json": {
+      "sha256": "4d43360c5c5f13c380e69a4e48ba9b8bcfb9dc8d44d966cc56a55c1f6b3e1bfa",
+      "bytes": 334648
+    },
+    "target/native-method-guard-trial/final/312/C/layout-probe-input.json": {
+      "sha256": "29f420cd6ef5120466ff5895d3419781e5001d5ae61451d9d31931ff0d2a4bde",
+      "bytes": 1263
+    },
+    "target/native-method-guard-trial/final/312/C/release-build.lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/312/C/source-manifest.json": {
+      "sha256": "b3aea5ff35375f89c192f70d6a4e44d01050e5fedab42927f020b8e57e7e252f",
+      "bytes": 113404
+    },
+    "target/native-method-guard-trial/final/312/C/source/target/layout-probe/process-after.json": {
+      "sha256": "6572a21f91f5345ed56d4fee88646fb33c8df6100221059ed54d5eb876501b05",
+      "bytes": 3523
+    },
+    "target/native-method-guard-trial/final/312/C/source/target/layout-probe/process-before.json": {
+      "sha256": "3607e8f8a242badec65de4acd0c205410254fa94f591e60c5a2042a221e1cc68",
+      "bytes": 3368
+    },
+    "target/native-method-guard-trial/final/312/C/source/target/layout-probe/result.json": {
+      "sha256": "6cb40327db8102f08d49fe3589ecf351a0c5aad2f01d35fa15f7ca51ea5da84d",
+      "bytes": 2879
+    },
+    "target/native-method-guard-trial/final/312/C1/uninstrumented/post-verification-success.json": {
+      "sha256": "7f79e27f3d0416548ba6344e92738b1d9c68d02c7fd701c547318050dd7726b3",
+      "bytes": 15951
+    },
+    "target/native-method-guard-trial/final/312/C1/uninstrumented/process-after.json": {
+      "sha256": "3010fdbcada82d1082e43402ce6b241e1243ffa30824a6285070c4b1e611548f",
+      "bytes": 28650
+    },
+    "target/native-method-guard-trial/final/312/C1/uninstrumented/process-before.json": {
+      "sha256": "238e5d4364b8160ca8d74f472d239bdd32ca01609dfaae60a059e7dfba91f09d",
+      "bytes": 12603
+    },
+    "target/native-method-guard-trial/final/312/C1/uninstrumented/result.json": {
+      "sha256": "f2ff41bc221b06a8f0febbb9127a01a85756a2ab9058d6be75276e8ca54bf8cc",
+      "bytes": 118083
+    },
+    "target/native-method-guard-trial/final/312/C2/uninstrumented/post-verification-success.json": {
+      "sha256": "3699e7858818b91272d54dbe9459b4ba7e5f0cc5b583c6d001a9a6f9a96e0540",
+      "bytes": 15951
+    },
+    "target/native-method-guard-trial/final/312/C2/uninstrumented/process-after.json": {
+      "sha256": "943435b735e31729066271a352513b60f40e53409d18d4541d17c2eedcecc4e3",
+      "bytes": 28650
+    },
+    "target/native-method-guard-trial/final/312/C2/uninstrumented/process-before.json": {
+      "sha256": "713d83d8cb18882c1023c41a940c78567e142ead427f155a5d8a366e4fbb3db5",
+      "bytes": 12603
+    },
+    "target/native-method-guard-trial/final/312/C2/uninstrumented/result.json": {
+      "sha256": "ccf146f3f240eb8df7b3db93e874459cb07aff98579126c1c0116139d8f536a3",
+      "bytes": 118088
+    },
+    "target/native-method-guard-trial/final/312/R/binding.json": {
+      "sha256": "3893a56cf3a0a10be74df88cc26d8a3087d1d44902f077033550537c5e764b2b",
+      "bytes": 14153
+    },
+    "target/native-method-guard-trial/final/312/R/interpreter.json": {
+      "sha256": "6747200ce312b98e417ca1bb4035555fc0f9f0658a96b5d691be835cb99451ac",
+      "bytes": 334648
+    },
+    "target/native-method-guard-trial/final/312/R/layout-probe-input.json": {
+      "sha256": "ff30a6d42ece17e6ad0abf8603da36ea7fde71e68cb78502377a2be92a070c50",
+      "bytes": 1263
+    },
+    "target/native-method-guard-trial/final/312/R/release-build.lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/312/R/source-manifest.json": {
+      "sha256": "7c9f2261a594a58db345b2539c115ce5586d47f26ea40b52bba523272ff5538b",
+      "bytes": 113916
+    },
+    "target/native-method-guard-trial/final/312/R/source/target/layout-probe/process-after.json": {
+      "sha256": "026443350c21de5fbcd6c7bb0a0279b0f3f023dbce8acfd2e37be63e7aef4abf",
+      "bytes": 3523
+    },
+    "target/native-method-guard-trial/final/312/R/source/target/layout-probe/process-before.json": {
+      "sha256": "438373f6a32e308de091b4cada39f74f946fed52f26e2ed8af677a9de27e88f8",
+      "bytes": 3368
+    },
+    "target/native-method-guard-trial/final/312/R/source/target/layout-probe/result.json": {
+      "sha256": "a8d07841fa6911f9c49b9909ef9134d8b46998b5803108d49e7782f530f5fe3e",
+      "bytes": 2879
+    },
+    "target/native-method-guard-trial/final/312/R1/uninstrumented/post-verification-success.json": {
+      "sha256": "e6167a3623001a38c310c0eed1ee39699d2659e3def8c4a8c563fa0b4c10fc49",
+      "bytes": 15951
+    },
+    "target/native-method-guard-trial/final/312/R1/uninstrumented/process-after.json": {
+      "sha256": "b8b405244b2648217079dde29c2c2d68ab15e998963b018f2ffe8ad7feff6a6e",
+      "bytes": 28650
+    },
+    "target/native-method-guard-trial/final/312/R1/uninstrumented/process-before.json": {
+      "sha256": "bac9ce3ba82e771a3c1bb877e1e617ee00d701eb0e639d830d2d697b57a7b63a",
+      "bytes": 12603
+    },
+    "target/native-method-guard-trial/final/312/R1/uninstrumented/result.json": {
+      "sha256": "ac517a772e6bf4b47f227b785e44b00fba2617e1ba31180c19a18ce1967e84ea",
+      "bytes": 118080
+    },
+    "target/native-method-guard-trial/final/312/R2/uninstrumented/post-verification-success.json": {
+      "sha256": "b3daa1c681ee3762bb89b947396cdb5e0a201fa4bb960f0b38b8b233f10bd65d",
+      "bytes": 15951
+    },
+    "target/native-method-guard-trial/final/312/R2/uninstrumented/process-after.json": {
+      "sha256": "7385dfa267c8e25de2edd4cda0b1219900bac6f32a049f369c88be9d38989073",
+      "bytes": 28650
+    },
+    "target/native-method-guard-trial/final/312/R2/uninstrumented/process-before.json": {
+      "sha256": "a68bbb7b06ad8f341a47fb566a826486863dedfd1916bc330cd77cbb5d1f6bdc",
+      "bytes": 12603
+    },
+    "target/native-method-guard-trial/final/312/R2/uninstrumented/result.json": {
+      "sha256": "a62883ffc22a11f2ddd55f3dac8cbbfd8a82e43cc20f6f1f3a00c4d9f86d091c",
+      "bytes": 118086
+    },
+    "target/native-method-guard-trial/final/312/T/binding.json": {
+      "sha256": "0ddbe1557450e026ab67c67cd35f9d1d934383c4d7121f052624a08fd05ff770",
+      "bytes": 14153
+    },
+    "target/native-method-guard-trial/final/312/T/interpreter.json": {
+      "sha256": "7684881a644ecb586cd8182613d660d01da3d26b93fabfdcad673a4685e7c7f8",
+      "bytes": 334648
+    },
+    "target/native-method-guard-trial/final/312/T/layout-probe-input.json": {
+      "sha256": "6fcc4970732b24a15b16f67306cc595fb41b22f9597838d62ada8825788194e0",
+      "bytes": 1263
+    },
+    "target/native-method-guard-trial/final/312/T/owner/collection-before.json": {
+      "sha256": "fb5a3d30ce4c9b2377778cd2e5a6e8be56107b1f651b560208aa353c9f4a9cc3",
+      "bytes": 1370
+    },
+    "target/native-method-guard-trial/final/312/T/owner/post-verification-success.json": {
+      "sha256": "79d834f182caed23be9564ca0d0ae1b8fed09f126e848c831f90c74f16592fbf",
+      "bytes": 16101
+    },
+    "target/native-method-guard-trial/final/312/T/owner/process-after.json": {
+      "sha256": "ba30391ffd5e216cd14f703644cb7d51b239acd5c157cfaaf45459592c0ecaa7",
+      "bytes": 28550
+    },
+    "target/native-method-guard-trial/final/312/T/owner/process-before.json": {
+      "sha256": "078a9dca7894cf32061c68c6314de9309575959954266d60eadc40b5f194be51",
+      "bytes": 12503
+    },
+    "target/native-method-guard-trial/final/312/T/owner/result.json": {
+      "sha256": "6dca09a66ec773368f9ae7faff72f6058f2288a0e107155de75e4db094bf3b2e",
+      "bytes": 3716
+    },
+    "target/native-method-guard-trial/final/312/T/owner/test-ids.txt": {
+      "sha256": "554171597c46ada5679dd86a238e9e9abaee91a00f13959c97e76efc19c6e069",
+      "bytes": 984
+    },
+    "target/native-method-guard-trial/final/312/T/pointwise/collection-before.json": {
+      "sha256": "3f685055565070653b1488908e6bb0e25377fc1582a3efb46aa8f1025095511a",
+      "bytes": 66964
+    },
+    "target/native-method-guard-trial/final/312/T/pointwise/post-verification-success.json": {
+      "sha256": "ae5b1ebfe91fddbd6027c41ed2f6e885b22bf41b246646681c497468f502542b",
+      "bytes": 16133
+    },
+    "target/native-method-guard-trial/final/312/T/pointwise/process-after.json": {
+      "sha256": "7e145f3e295ec1025b486e144f8ce024a34033f7995d0be2c9006d38545c1dd7",
+      "bytes": 28591
+    },
+    "target/native-method-guard-trial/final/312/T/pointwise/process-before.json": {
+      "sha256": "2194f308eec9ce442498c54f7b5180836b612f29f823f990d0f8bca7877060c5",
+      "bytes": 12544
+    },
+    "target/native-method-guard-trial/final/312/T/pointwise/result.json": {
+      "sha256": "c3e11f6b4d0dc985c507c44746444f28714414a577d40668d372546526ae08da",
+      "bytes": 193920
+    },
+    "target/native-method-guard-trial/final/312/T/pointwise/test-ids.txt": {
+      "sha256": "09df4d7a4c1fca6f2766cfd456d7b4d06227386d89126c36c9f5305c962b69e6",
+      "bytes": 58812
+    },
+    "target/native-method-guard-trial/final/312/T/release-build.lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/312/T/source-manifest.json": {
+      "sha256": "1ae43f5a4942e6819af58ee28219d6202bd9e1611a15065fd0a91a1ac73b06fa",
+      "bytes": 113523
+    },
+    "target/native-method-guard-trial/final/312/T/source/target/dispatch-smoke-2izea_uu/native.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/312/T/source/target/dispatch-smoke-2izea_uu/native/report.json.gz": {
+      "sha256": "25ea6adeaa6a40c1d97fb958e28161b324eabecc465a707f69e4e59eba80429a",
+      "bytes": 62161
+    },
+    "target/native-method-guard-trial/final/312/T/source/target/dispatch-smoke-2izea_uu/reference.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/312/T/source/target/dispatch-smoke-2izea_uu/reference/report.json.gz": {
+      "sha256": "0ea984ebce4e55cf7db8e6ad6d32df647e17e20a789bc07f16178e403eb1da31",
+      "bytes": 62297
+    },
+    "target/native-method-guard-trial/final/312/T/source/target/layout-probe/process-after.json": {
+      "sha256": "6bdcca5128a9f503d71828b24b667a0d3412bd6ce9a70f931e403be576310076",
+      "bytes": 3523
+    },
+    "target/native-method-guard-trial/final/312/T/source/target/layout-probe/process-before.json": {
+      "sha256": "3e83ca3a1b5c2a638448d0b7b216c4cfd89d2c647f620e00658e3423f3f729cf",
+      "bytes": 3368
+    },
+    "target/native-method-guard-trial/final/312/T/source/target/layout-probe/result.json": {
+      "sha256": "e5235e8c7b2e004aaceadba6a574fa1583e17c19f71d824efc8e0899cef04737",
+      "bytes": 2879
+    },
+    "target/native-method-guard-trial/final/312/T/source/target/program-identity-compiler-failures/libprogram_identity_nvrtc.so": {
+      "sha256": "09c8c8f06441457b50eae8fbab5b1e1669537926edc0cfdde670fe3b5ff4ec5e",
+      "bytes": 17192
+    },
+    "target/native-method-guard-trial/final/312/T1/uninstrumented/post-verification-success.json": {
+      "sha256": "35e43bdd6aa2ead3811182f49d6ae07f27f14e5477bce25032e842c6c6eb4943",
+      "bytes": 15951
+    },
+    "target/native-method-guard-trial/final/312/T1/uninstrumented/process-after.json": {
+      "sha256": "f0786fa221de0922187533b8c280ebbc75063754b922751d45481803ac3932ee",
+      "bytes": 28650
+    },
+    "target/native-method-guard-trial/final/312/T1/uninstrumented/process-before.json": {
+      "sha256": "216d90ad75f07dca51916701a9519f156fa6eaae16dfacbb3d36b3e9d059be5b",
+      "bytes": 12603
+    },
+    "target/native-method-guard-trial/final/312/T1/uninstrumented/result.json": {
+      "sha256": "fe2c7b392ef506e0fe7b73d15370be85f140796de486b0e5f1d68a1d11f4290a",
+      "bytes": 118083
+    },
+    "target/native-method-guard-trial/final/312/T2/uninstrumented/post-verification-success.json": {
+      "sha256": "75aae62c2cef8aed0b0821bab72db94fe4cefaee93d3040bc636ce6487fd48ba",
+      "bytes": 15951
+    },
+    "target/native-method-guard-trial/final/312/T2/uninstrumented/process-after.json": {
+      "sha256": "b118f11d48d68c84474caee3b504424e94f63e80496e42750cffe3f9880de36e",
+      "bytes": 28650
+    },
+    "target/native-method-guard-trial/final/312/T2/uninstrumented/process-before.json": {
+      "sha256": "85e8be4a425f3faeef75ef644ed070e5e215459213baddf6d4d25366b4185c4a",
+      "bytes": 12603
+    },
+    "target/native-method-guard-trial/final/312/T2/uninstrumented/result.json": {
+      "sha256": "d3cf0432e95aa29fc0b3a815328bd49e8a5bd6a5db4172d329e688093eabc503",
+      "bytes": 118081
+    },
+    "target/native-method-guard-trial/final/312/bindings.json": {
+      "sha256": "faa57519e80bcbfc5a03b184951dc29055c25ed477676137b021c053006b0402",
+      "bytes": 43314
+    },
+    "target/native-method-guard-trial/final/312/complete.json": {
+      "sha256": "0abdcec75b852bc6cd3fcfe8c3a0d618d0014666d9831fa114dc4f8e49b520bd",
+      "bytes": 131
+    },
+    "target/native-method-guard-trial/final/312/expected-inventory.json": {
+      "sha256": "6f98c80f37e8f6154b85dc50448def703cd23c5b6f5a34665df8c5aeee28a369",
+      "bytes": 69491
+    },
+    "target/native-method-guard-trial/final/314/C/binding.json": {
+      "sha256": "328b587893f1dee29a216827dbc14f046617e4884a10d3d4556adc0879d70da9",
+      "bytes": 14153
+    },
+    "target/native-method-guard-trial/final/314/C/interpreter.json": {
+      "sha256": "f9e37501889623e57ed18a3095edcb13584073473202717767f77bfcd13a4e8a",
+      "bytes": 428629
+    },
+    "target/native-method-guard-trial/final/314/C/layout-probe-input.json": {
+      "sha256": "a1ea66fe5b5de62cf1017518a0ea29bcf427efdf0a068a94e43b58e0d7be06ee",
+      "bytes": 1263
+    },
+    "target/native-method-guard-trial/final/314/C/release-build.lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/314/C/source-manifest.json": {
+      "sha256": "b3aea5ff35375f89c192f70d6a4e44d01050e5fedab42927f020b8e57e7e252f",
+      "bytes": 113404
+    },
+    "target/native-method-guard-trial/final/314/C/source/target/layout-probe/process-after.json": {
+      "sha256": "510d2e3f8f364e55c4338798f262838a0b64d709cd9073b09546b4eefeea08e6",
+      "bytes": 3424
+    },
+    "target/native-method-guard-trial/final/314/C/source/target/layout-probe/process-before.json": {
+      "sha256": "f2f215a584510f974e20795acceece72e847620677f6a3dfdf5944bb9d3cfc43",
+      "bytes": 3269
+    },
+    "target/native-method-guard-trial/final/314/C/source/target/layout-probe/result.json": {
+      "sha256": "e4d03cd42b55d7bc8af3ac3f8ed29d79aabe9a89b8e1d7795241e09a0fbaee7c",
+      "bytes": 2880
+    },
+    "target/native-method-guard-trial/final/314/C1/uninstrumented/post-verification-success.json": {
+      "sha256": "69bf1bac5686af5c095f6fb1d9dac82c700e46bc11a8ca55a85f250bdd9277a8",
+      "bytes": 15949
+    },
+    "target/native-method-guard-trial/final/314/C1/uninstrumented/process-after.json": {
+      "sha256": "35e02affebf4ab75512561533bfae8c26f1bfecd4d1622d5ad72e0ffbad8781f",
+      "bytes": 28528
+    },
+    "target/native-method-guard-trial/final/314/C1/uninstrumented/process-before.json": {
+      "sha256": "f610456cc35b82b6489a624ed589ae243e966c2f17e747822ac5900e7191fa8b",
+      "bytes": 12504
+    },
+    "target/native-method-guard-trial/final/314/C1/uninstrumented/result.json": {
+      "sha256": "2e9c55d489a13694bc8edafd08ec0cfcae8f544f4f73a41582f22590459915f5",
+      "bytes": 117978
+    },
+    "target/native-method-guard-trial/final/314/C2/uninstrumented/post-verification-success.json": {
+      "sha256": "68d26731a0852e4f28d9ef3f7285fe4937f271860bcfad5cdf3e18e49d5e26fa",
+      "bytes": 15949
+    },
+    "target/native-method-guard-trial/final/314/C2/uninstrumented/process-after.json": {
+      "sha256": "065e11b84e16034e957252398e5c0e211d8e0f8defeacf0f4fc998c58073de27",
+      "bytes": 28528
+    },
+    "target/native-method-guard-trial/final/314/C2/uninstrumented/process-before.json": {
+      "sha256": "320a8da6a15281e589acc7896b5d38c98db316d8a8d3b6cc265dea4313a23c17",
+      "bytes": 12504
+    },
+    "target/native-method-guard-trial/final/314/C2/uninstrumented/result.json": {
+      "sha256": "78263fb787fb9e39cb7ca195c652e55f98ae0c6aeffe3bdddf6750087736dcf9",
+      "bytes": 117982
+    },
+    "target/native-method-guard-trial/final/314/R/binding.json": {
+      "sha256": "64cc8f2761b4d388e0351f5d3d7554f7d82d3763834e682f8c4477db6d7d76ec",
+      "bytes": 14153
+    },
+    "target/native-method-guard-trial/final/314/R/interpreter.json": {
+      "sha256": "ff22df6a1558a836af23c74d2b9d191601fc2a75b493ef2f059fa2b384bc86d3",
+      "bytes": 428629
+    },
+    "target/native-method-guard-trial/final/314/R/layout-probe-input.json": {
+      "sha256": "bd03d589d9528f1b2242baac96b3692c7f7b21e8feadcbe92efbcb7615816c0d",
+      "bytes": 1263
+    },
+    "target/native-method-guard-trial/final/314/R/release-build.lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/314/R/source-manifest.json": {
+      "sha256": "7c9f2261a594a58db345b2539c115ce5586d47f26ea40b52bba523272ff5538b",
+      "bytes": 113916
+    },
+    "target/native-method-guard-trial/final/314/R/source/target/layout-probe/process-after.json": {
+      "sha256": "aa06cc3de9e2dffd6aad054a3ff7ee55594d18b84c035a5c146fd10ab56ab9a4",
+      "bytes": 3424
+    },
+    "target/native-method-guard-trial/final/314/R/source/target/layout-probe/process-before.json": {
+      "sha256": "2611b42b473986f4401b06730fafb90aa8cbec3d2d10856472a777a5db1e760d",
+      "bytes": 3269
+    },
+    "target/native-method-guard-trial/final/314/R/source/target/layout-probe/result.json": {
+      "sha256": "0114f6f0a39006270386166e851680d2c3116b2f770d85921c84c27f3b11fc73",
+      "bytes": 2880
+    },
+    "target/native-method-guard-trial/final/314/R1/uninstrumented/post-verification-success.json": {
+      "sha256": "8058537c75eb32fff65abcfa6e8839aa81dc120543a1056dd6a887bcc490f9ba",
+      "bytes": 15949
+    },
+    "target/native-method-guard-trial/final/314/R1/uninstrumented/process-after.json": {
+      "sha256": "5dc0fe19d53186cea50f4075b4b68b767022048847ee6af35fc09417ebf911a0",
+      "bytes": 28528
+    },
+    "target/native-method-guard-trial/final/314/R1/uninstrumented/process-before.json": {
+      "sha256": "e79d7b080f902a19e4f7ff405f1285baff826d042a6b6b6a6862073956209600",
+      "bytes": 12504
+    },
+    "target/native-method-guard-trial/final/314/R1/uninstrumented/result.json": {
+      "sha256": "ff1b8f15a142b2d2ff675e03f79821a8b232304ab597d8b220e9451295887bb0",
+      "bytes": 117977
+    },
+    "target/native-method-guard-trial/final/314/R2/uninstrumented/post-verification-success.json": {
+      "sha256": "d7a6732fb58bf1cc837e57ffdb3e6c4e2896cfc14d08abbbe015cd140c89122f",
+      "bytes": 15949
+    },
+    "target/native-method-guard-trial/final/314/R2/uninstrumented/process-after.json": {
+      "sha256": "94a42abbae64df002d4d2daf29a8b9ae7bd4044ef6f7bbb8cc3bb5e502003f26",
+      "bytes": 28528
+    },
+    "target/native-method-guard-trial/final/314/R2/uninstrumented/process-before.json": {
+      "sha256": "7bfa50c0b12b441daf3701542f95ba5e01f0c2b0a4036188fe2636548d92e781",
+      "bytes": 12504
+    },
+    "target/native-method-guard-trial/final/314/R2/uninstrumented/result.json": {
+      "sha256": "f19165783444a79101d8bf7cc7ab6b40b5e7b1bb9eaf6ac3d0c6bc2451978b42",
+      "bytes": 117986
+    },
+    "target/native-method-guard-trial/final/314/T/binding.json": {
+      "sha256": "3e406031539850db755cab9767e8c9ef3daf7b80781f6033a6c1f52c365ffc9c",
+      "bytes": 14153
+    },
+    "target/native-method-guard-trial/final/314/T/interpreter.json": {
+      "sha256": "868bac42beaffaa21fcb7acb10a7227eae6274a14bed16c6d25da3c22d2440cb",
+      "bytes": 428629
+    },
+    "target/native-method-guard-trial/final/314/T/layout-probe-input.json": {
+      "sha256": "4ab8acd79dd07c18261d1b2538cb3a9e54d6c86aa99d02d4009e083859c1867c",
+      "bytes": 1263
+    },
+    "target/native-method-guard-trial/final/314/T/owner/collection-before.json": {
+      "sha256": "fb5a3d30ce4c9b2377778cd2e5a6e8be56107b1f651b560208aa353c9f4a9cc3",
+      "bytes": 1370
+    },
+    "target/native-method-guard-trial/final/314/T/owner/post-verification-success.json": {
+      "sha256": "c06d61807c632fbb7d9415fb1ae827a78317a52c34843520a773cc06fd08f66c",
+      "bytes": 16099
+    },
+    "target/native-method-guard-trial/final/314/T/owner/process-after.json": {
+      "sha256": "8c42c9c83465592bf265ca2448dfb89adee5d832fcf20e010534e33013e0a674",
+      "bytes": 28428
+    },
+    "target/native-method-guard-trial/final/314/T/owner/process-before.json": {
+      "sha256": "c6cce51152294763768ba0a3de665109f44f45efc409854be68b39cdac1bd069",
+      "bytes": 12404
+    },
+    "target/native-method-guard-trial/final/314/T/owner/result.json": {
+      "sha256": "6dca09a66ec773368f9ae7faff72f6058f2288a0e107155de75e4db094bf3b2e",
+      "bytes": 3716
+    },
+    "target/native-method-guard-trial/final/314/T/owner/test-ids.txt": {
+      "sha256": "554171597c46ada5679dd86a238e9e9abaee91a00f13959c97e76efc19c6e069",
+      "bytes": 984
+    },
+    "target/native-method-guard-trial/final/314/T/pointwise/collection-before.json": {
+      "sha256": "3f685055565070653b1488908e6bb0e25377fc1582a3efb46aa8f1025095511a",
+      "bytes": 66964
+    },
+    "target/native-method-guard-trial/final/314/T/pointwise/post-verification-success.json": {
+      "sha256": "6dcc078c63edc9eda411078897097ed29849b257352d00df41e602f6e947dbfc",
+      "bytes": 16131
+    },
+    "target/native-method-guard-trial/final/314/T/pointwise/process-after.json": {
+      "sha256": "b50ceefda46fc6e2419d16527583142302c5348918302b68075be26bc8d4197c",
+      "bytes": 28469
+    },
+    "target/native-method-guard-trial/final/314/T/pointwise/process-before.json": {
+      "sha256": "51ddbbe3af2b23cad1e6815fcfd860f5456d9f4c441b8f1a8c0dd93858c71b74",
+      "bytes": 12445
+    },
+    "target/native-method-guard-trial/final/314/T/pointwise/result.json": {
+      "sha256": "c3e11f6b4d0dc985c507c44746444f28714414a577d40668d372546526ae08da",
+      "bytes": 193920
+    },
+    "target/native-method-guard-trial/final/314/T/pointwise/test-ids.txt": {
+      "sha256": "09df4d7a4c1fca6f2766cfd456d7b4d06227386d89126c36c9f5305c962b69e6",
+      "bytes": 58812
+    },
+    "target/native-method-guard-trial/final/314/T/release-build.lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/314/T/source-manifest.json": {
+      "sha256": "1ae43f5a4942e6819af58ee28219d6202bd9e1611a15065fd0a91a1ac73b06fa",
+      "bytes": 113523
+    },
+    "target/native-method-guard-trial/final/314/T/source/target/dispatch-smoke-9opnyqfq/native.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/314/T/source/target/dispatch-smoke-9opnyqfq/native/report.json.gz": {
+      "sha256": "f1efce1ae1e0d62807810080aa634b1ca538cfbd6f32735906c3d82a7f49cb4c",
+      "bytes": 62936
+    },
+    "target/native-method-guard-trial/final/314/T/source/target/dispatch-smoke-9opnyqfq/reference.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/314/T/source/target/dispatch-smoke-9opnyqfq/reference/report.json.gz": {
+      "sha256": "8f16a3e2d1a3095cd9e8ab7c49f4840a1659295e731ebae89ea9f6e01d771a4b",
+      "bytes": 63104
+    },
+    "target/native-method-guard-trial/final/314/T/source/target/layout-probe/process-after.json": {
+      "sha256": "eb564d859c9a9644ea8afe6c623acaef9d7f1eacb1073b932ad7024d4ef4e889",
+      "bytes": 3424
+    },
+    "target/native-method-guard-trial/final/314/T/source/target/layout-probe/process-before.json": {
+      "sha256": "4324274fb573a8c48ec8892ee29dc267a4c48e417160253d62518ebfcdd258a1",
+      "bytes": 3269
+    },
+    "target/native-method-guard-trial/final/314/T/source/target/layout-probe/result.json": {
+      "sha256": "4f2dbae80990a29cdce56d468dbdd84a76bed6ab9a42132a60bb93fa721e11a2",
+      "bytes": 2880
+    },
+    "target/native-method-guard-trial/final/314/T/source/target/program-identity-compiler-failures/libprogram_identity_nvrtc.so": {
+      "sha256": "09c8c8f06441457b50eae8fbab5b1e1669537926edc0cfdde670fe3b5ff4ec5e",
+      "bytes": 17192
+    },
+    "target/native-method-guard-trial/final/314/T1/uninstrumented/post-verification-success.json": {
+      "sha256": "55c58c967fbb674a32c4f66b0561698bc8ace247918e3680cc76c450a76f5d81",
+      "bytes": 15949
+    },
+    "target/native-method-guard-trial/final/314/T1/uninstrumented/process-after.json": {
+      "sha256": "b1429d525bdc6acd9dba29533d00834a80c8efbeb673352c4b392df7a75ab796",
+      "bytes": 28528
+    },
+    "target/native-method-guard-trial/final/314/T1/uninstrumented/process-before.json": {
+      "sha256": "549640ddb9df7addc1ab5a4d191ef04fc7378d8bf0111f5a07caef189695c6c0",
+      "bytes": 12504
+    },
+    "target/native-method-guard-trial/final/314/T1/uninstrumented/result.json": {
+      "sha256": "c145ed0d546a9f5283790ea2e5a4cdbac478cb44dd40453919b1128eca511c59",
+      "bytes": 117982
+    },
+    "target/native-method-guard-trial/final/314/T2/uninstrumented/post-verification-success.json": {
+      "sha256": "9f3aa37f5411767f961ab69825a5adca6221997c3c7c4537fb6d091be8891056",
+      "bytes": 15949
+    },
+    "target/native-method-guard-trial/final/314/T2/uninstrumented/process-after.json": {
+      "sha256": "7fb5d013e4471647af8a4451bc63c8a817f4a15fb328ac3ab82995b29741752c",
+      "bytes": 28528
+    },
+    "target/native-method-guard-trial/final/314/T2/uninstrumented/process-before.json": {
+      "sha256": "0568c9ede2c186c93954dced41efb9bbb044171a8c3cb839348d77e3bc6a7e3e",
+      "bytes": 12504
+    },
+    "target/native-method-guard-trial/final/314/T2/uninstrumented/result.json": {
+      "sha256": "2f413c07df3b592b136bf335a79bad5441e26fad86eff487433de515483c9153",
+      "bytes": 117979
+    },
+    "target/native-method-guard-trial/final/314/bindings.json": {
+      "sha256": "e0fa0be41a63a28dd1ee85bb741d9d9cac5751d5aeaca2d82cbc7e0c1c2f01f8",
+      "bytes": 43314
+    },
+    "target/native-method-guard-trial/final/314/complete.json": {
+      "sha256": "6d0a4b849e2e59232773593fb6d35e45064492c3083e886891ce3def4631e201",
+      "bytes": 131
+    },
+    "target/native-method-guard-trial/final/314/expected-inventory.json": {
+      "sha256": "6f98c80f37e8f6154b85dc50448def703cd23c5b6f5a34665df8c5aeee28a369",
+      "bytes": 69491
+    },
+    "target/native-method-guard-trial/final/L-bind_expectations.py.txt": {
+      "sha256": "9362f511e401deb2ac7fa41c4bb77bb2694625a31b03e46fd4291ae1d1390b98",
+      "bytes": 2241
+    },
+    "target/native-method-guard-trial/final/L-build.py.txt": {
+      "sha256": "4b4d36bb25bdda39b05ad91cff8045a7a2a64f70ec2cc1dcfb0ae1597c43f252",
+      "bytes": 593
+    },
+    "target/native-method-guard-trial/final/L-common.py.txt": {
+      "sha256": "c2450480c495a7ca34ba6fdf2c486826d0144d3c7cc1ea1fc6153aa529eb9ded",
+      "bytes": 5310
+    },
+    "target/native-method-guard-trial/final/L-compiler_preflight.py.txt": {
+      "sha256": "98c182d6e8d8cd9af222311ac9715422ef92af27b7a564778ca23faadc57dc99",
+      "bytes": 1992
+    },
+    "target/native-method-guard-trial/final/L-input-verification.json": {
+      "sha256": "e4afeb0219dd3409728c38cac7233445feb1bcaff7f2e2412a7eab768425c2fe",
+      "bytes": 590
+    },
+    "target/native-method-guard-trial/final/L-layout_probe.py.txt": {
+      "sha256": "12fa61383308ec9990df980b6db9fcbf39e148637574bf4c00e132854688a181",
+      "bytes": 2502
+    },
+    "target/native-method-guard-trial/final/L-predeclare.py.txt": {
+      "sha256": "7b1ad8d0dee1aa82887c3e9c5f4f35d0c5e3c34dc672ee9e6ed9bad04ec88a06",
+      "bytes": 6473
+    },
+    "target/native-method-guard-trial/final/L-probe_layouts.py.txt": {
+      "sha256": "3b7edf608722db173c9a18bc6f03ab6479ca3e23fe2685b549c8a1f61195400c",
+      "bytes": 1889
+    },
+    "target/native-method-guard-trial/final/L-process.py.txt": {
+      "sha256": "e79372f5e075df3ea6bbb97948d60b8be0dfd382098aeed241fc65af7851f4c6",
+      "bytes": 8013
+    },
+    "target/native-method-guard-trial/final/L-recipe-binding.json": {
+      "sha256": "f459df12dac2567dcb6255e8b71521d896e3067e32707b547274732ae6b1cfe2",
+      "bytes": 1425
+    },
+    "target/native-method-guard-trial/final/L-run.py.txt": {
+      "sha256": "a58a4c2d2d32b610a8ffb558a1edb026766b417279f5b259438cb6975b43a9b9",
+      "bytes": 5371
+    },
+    "target/native-method-guard-trial/final/L-setup.py.txt": {
+      "sha256": "c0241ba663a4720298b595c6f04dec3cbf9b9464c29407fec1b243a9c8096ee1",
+      "bytes": 5467
+    },
+    "target/native-method-guard-trial/final/L-summarize.py.txt": {
+      "sha256": "fd463a61fb608441897edac1d4e74bde4a9fda272932d26aa0d2944f91b4aa84",
+      "bytes": 6168
+    },
+    "target/native-method-guard-trial/final/L-test-expectations.json": {
+      "sha256": "bef6f120304555aa58556a1c8c1c2a7f3382f1b11632c2d65e1ba829431e3036",
+      "bytes": 69808
+    },
+    "target/native-method-guard-trial/final/L-validation.py.txt": {
+      "sha256": "2c4fc873af888e738a8e06d2c7fbff6251b5062f3263a5827a45cc028a247f3c",
+      "bytes": 7087
+    },
+    "target/native-method-guard-trial/final/R-test-expectations.json": {
+      "sha256": "e517e008116045890c221c20024b9d6ada985aadfb0e5e2de86947bb50d4cd95",
+      "bytes": 69737
+    },
+    "target/native-method-guard-trial/final/all-correctness-passed.json": {
+      "sha256": "8f7f58579597350a355e8de903b2d048bb32480bb653774e7eee569cb110b759",
+      "bytes": 303
+    },
+    "target/native-method-guard-trial/final/build.py": {
+      "sha256": "4b4d36bb25bdda39b05ad91cff8045a7a2a64f70ec2cc1dcfb0ae1597c43f252",
+      "bytes": 593
+    },
+    "target/native-method-guard-trial/final/capture-adaptations.md": {
+      "sha256": "dd4ad44ccf4d4cbb635fb20f94a1b14951c236c872d0c5494b428bd4f03544d5",
+      "bytes": 3352
+    },
+    "target/native-method-guard-trial/final/capture-console.log": {
+      "sha256": "71619b310c794fbeed989deffe459adf8ba942d72d312c28983d751d9069a0ee",
+      "bytes": 448
+    },
+    "target/native-method-guard-trial/final/capture-launch-result.json": {
+      "sha256": "d4509666d788418991ebe69e23ced11e945e80e599c772ba2b81e35dece9ad5b",
+      "bytes": 271
+    },
+    "target/native-method-guard-trial/final/capture-launch.json": {
+      "sha256": "123a789bcbba1c4db17bef5eff8c167907f73bb8f0806248d76f5fd1a0abe6b4",
+      "bytes": 449
+    },
+    "target/native-method-guard-trial/final/common.py": {
+      "sha256": "787cfda4d3ca8d304cb66b83ea12a113aed9da220f7e133211738c88756a7bf5",
+      "bytes": 5356
+    },
+    "target/native-method-guard-trial/final/compiler-preflight.json": {
+      "sha256": "b3551a8bb2e6aa090fcba06495c3c2097763383360d8b63f04c499251d3f097e",
+      "bytes": 8833
+    },
+    "target/native-method-guard-trial/final/compiler_preflight.py": {
+      "sha256": "98c182d6e8d8cd9af222311ac9715422ef92af27b7a564778ca23faadc57dc99",
+      "bytes": 1992
+    },
+    "target/native-method-guard-trial/final/execution-ended.json": {
+      "sha256": "71e667ee559bdd5f23a6a23739d2022204b83def2307c2803c106cd307184771",
+      "bytes": 232
+    },
+    "target/native-method-guard-trial/final/exports/C-manifest.json": {
+      "sha256": "b3aea5ff35375f89c192f70d6a4e44d01050e5fedab42927f020b8e57e7e252f",
+      "bytes": 113404
+    },
+    "target/native-method-guard-trial/final/exports/R-manifest.json": {
+      "sha256": "7c9f2261a594a58db345b2539c115ce5586d47f26ea40b52bba523272ff5538b",
+      "bytes": 113916
+    },
+    "target/native-method-guard-trial/final/exports/T-manifest.json": {
+      "sha256": "1ae43f5a4942e6819af58ee28219d6202bd9e1611a15065fd0a91a1ac73b06fa",
+      "bytes": 113523
+    },
+    "target/native-method-guard-trial/final/inventory-delta.json": {
+      "sha256": "65ee2c507e651b89270c29c0c3d351a1f211e2fcb6b977f2d75fd4e8a7fb24f5",
+      "bytes": 2168
+    },
+    "target/native-method-guard-trial/final/inventory.py": {
+      "sha256": "e5e28f2fb7dad03d671b3aa3a18f8d0acae5fa7afde6409e0661b915f5680cb7",
+      "bytes": 1368
+    },
+    "target/native-method-guard-trial/final/launch-console.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/launch_capture.py": {
+      "sha256": "19c17699dd6109b8d94bc7e858d7cb469d6893c2c73c2d2ffe0ab4fd17d76b1f",
+      "bytes": 1540
+    },
+    "target/native-method-guard-trial/final/layout_probe.py": {
+      "sha256": "12fa61383308ec9990df980b6db9fcbf39e148637574bf4c00e132854688a181",
+      "bytes": 2502
+    },
+    "target/native-method-guard-trial/final/measure.py": {
+      "sha256": "a5590e1abdf90585d8d9ecd70eee9eb60007ceb34f1884e42cafc5a06be34ebd",
+      "bytes": 7158
+    },
+    "target/native-method-guard-trial/final/native-input-binding.json": {
+      "sha256": "a010a5031984ea319419e3ad27cfc7d4cf580b2e866ab6b2d0108f77393fce88",
+      "bytes": 22782
+    },
+    "target/native-method-guard-trial/final/package_final.py": {
+      "sha256": "72862bf4bd659fa30180420c0a2b9687a42b79bdb4d2952dbc86eee6edb2fa40",
+      "bytes": 10654
+    },
+    "target/native-method-guard-trial/final/packaging-console.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/packaging-receipt.json": {
+      "sha256": "e975a0ef7979abdd17c05cfff6e325eb5cdffd90839ba47628886c85247f4b9e",
+      "bytes": 6708
+    },
+    "target/native-method-guard-trial/final/predeclare.py": {
+      "sha256": "57460cd068c1dea56e47679e11709e7dbc93f544666885a3a8e4ce4d3c464f2c",
+      "bytes": 8062
+    },
+    "target/native-method-guard-trial/final/predeclared.json": {
+      "sha256": "8a29d018e99a3922e2ef71470946a5977ff7a7a458ef2829582148e9333469a2",
+      "bytes": 1161012
+    },
+    "target/native-method-guard-trial/final/process.py": {
+      "sha256": "aae86a06e6de4dd30ee13ffdf5f4d3de4f4b23ed7ec155e2d32d25f074320b2e",
+      "bytes": 8470
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-build-lock.json": {
+      "sha256": "e9b856c0a79c87f73469ba6abb770fb9c971b9da1b8672aebff6f1c8e103878b",
+      "bytes": 20699
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-build-lock.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-cc-underlying-version.json": {
+      "sha256": "24f3fab0fc0be43b07abc4eb31d702c3348814efe4fd544229b19dab38f0d534",
+      "bytes": 19801
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-cc-underlying-version.log": {
+      "sha256": "d24c446f729c141d55b128d1873ae105aafa2a8db64e5adb28732e0b11d9a896",
+      "bytes": 247
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-cc-version.json": {
+      "sha256": "66b2cbede7852296c1ff4ad111ae83fd6fe7ecb7c67ac1e398cb328f251530e5",
+      "bytes": 19635
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-cc-version.log": {
+      "sha256": "d24c446f729c141d55b128d1873ae105aafa2a8db64e5adb28732e0b11d9a896",
+      "bytes": 247
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-ccache-config.json": {
+      "sha256": "a5bd48e71129513585ad5c07dc23237bbb49cc41fce76fd045d26b4c5e8f2cab",
+      "bytes": 19672
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-ccache-config.log": {
+      "sha256": "a92dd1ddf352b7fe0e1ea3e276e33141ca93f781790f93662b22e8947f7b9125",
+      "bytes": 1437
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-ccache-version.json": {
+      "sha256": "0778e83d1bcab52ef1e21ce7a8d54391c0d3c5875397ff27a54deb86274e9b09",
+      "bytes": 19693
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-ccache-version.log": {
+      "sha256": "9c3008378530cbe9a300ccd0d037e839ac82210a5303bf17d06d315be562c10b",
+      "bytes": 489
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-compiler-identity.json": {
+      "sha256": "1304da5c8fe9e31c6c8c0effa704289c6e284ed2f7f7c4cbf18b47eba6cac639",
+      "bytes": 10340
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-compiler-preflight.json": {
+      "sha256": "80e27f815e8f24cef4d3be8bf2d32fb5cecc77809523eddbfb964e43b89cc77b",
+      "bytes": 20075
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-compiler-preflight.log": {
+      "sha256": "1304da5c8fe9e31c6c8c0effa704289c6e284ed2f7f7c4cbf18b47eba6cac639",
+      "bytes": 10340
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-cpp-underlying-version.json": {
+      "sha256": "013e769fcc4af7ed872116e2502e98759088af21655d81f98f13c2dd21b05923",
+      "bytes": 19818
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-cpp-underlying-version.log": {
+      "sha256": "62eb5fb5ee2a8b48f8de81ff95e2f40cffd5d11be248a993de50f3074458de35",
+      "bytes": 248
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-cpp-version.json": {
+      "sha256": "0a50431e5b9f65d211f8c50118a18dc1fe0ba9fb8e8214434b85bd2c5ca1bbaf",
+      "bytes": 19652
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-cpp-version.log": {
+      "sha256": "62eb5fb5ee2a8b48f8de81ff95e2f40cffd5d11be248a993de50f3074458de35",
+      "bytes": 248
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-dependencies.json": {
+      "sha256": "16af4dd7eb074f7e31fc5e8df726ff4dbccb7f5aa07362585b4ff57102f6d444",
+      "bytes": 16059
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-dependencies.log": {
+      "sha256": "04c3ba5d53c1cb3005a9b1c81604716df1383a7f45696b6f44d9dbf8e6872d35",
+      "bytes": 854
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-dependency-inventory.json": {
+      "sha256": "a51d870e22910e7eb4f75c98e35b3e7b70e0ec5a1dff44af54fc4114b7fd13a5",
+      "bytes": 20024
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-dependency-inventory.log": {
+      "sha256": "9b4934746495854d9fc6e4c6ea8ae475f80e38eb3d4e75135302e36b35b896ca",
+      "bytes": 919
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-gpu-after.json": {
+      "sha256": "46ac4e13c517901dc7104f89ade750b2cacf4080adc8c307f003f9c74a980f9a",
+      "bytes": 19688
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-gpu-after.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-gpu-before.json": {
+      "sha256": "f36de127662d5f0f2d1c4d4d1d871c61b6b726f7a62ad70bdbba095e8ddb4bef",
+      "bytes": 19704
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-gpu-before.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-install.json": {
+      "sha256": "b9c6c29451b7b304d3f6f10f19bf39b4e9593ea12bf58dfbfc0efac7e839358a",
+      "bytes": 20017
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-install.log": {
+      "sha256": "f9b4b8f6bd3694b69e9a97d3f3ff5e532bc3b28392242d418aa923da203fa878",
+      "bytes": 344
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-interpreter.json": {
+      "sha256": "c2976325d4e2a6645253e874f3a07910a0c5110bd2a6e70cdd19477ddaa6d4dd",
+      "bytes": 15681
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-interpreter.log": {
+      "sha256": "451feb51be30f8a8ad0db6d34d5c8ba8198bf991b55ba5baf8f3aabd2f5ab4a3",
+      "bytes": 2495
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-layout-probe.json": {
+      "sha256": "d0dfc0da5a5b90622c103cf657ee3331aad71180e7e8d192b3a879dd591d1f15",
+      "bytes": 20407
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-layout-probe.log": {
+      "sha256": "6cb40327db8102f08d49fe3589ecf351a0c5aad2f01d35fa15f7ca51ea5da84d",
+      "bytes": 2879
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-lock-acquired.json": {
+      "sha256": "c473ff1cc577c4e556832462a4baf48a8f5a9a3c6058cd16648827f420a448ff",
+      "bytes": 238
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-native-verifier.json": {
+      "sha256": "b9b517227cfb61fe08115af286b658f4ab9b8a3089ccd3a271ed85f6c38b0a4c",
+      "bytes": 20048
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-native-verifier.log": {
+      "sha256": "e22a5430ec9756eb8b7efffeb38b56aa03527fb1dc3178d4a4ce6bb9e43badef",
+      "bytes": 770
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-release.json": {
+      "sha256": "450a9a52d61478c9ac22e34acabb3cc0756d45c6fb1f70b61b7fc30a1461eb3d",
+      "bytes": 19952
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-release.log": {
+      "sha256": "ce05fd3267bd332bb6e006a2e016df87baedebab54189f5c90898755a34cbde3",
+      "bytes": 1495
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-venv.json": {
+      "sha256": "3e63da6a69408a37d8eba00e88e133a7e4ad1d7614e4913cf3ede717d93c9083",
+      "bytes": 15938
+    },
+    "target/native-method-guard-trial/final/receipts/312-C-venv.log": {
+      "sha256": "51bdc6d2148a7f25f317a0ef44c4c9f7f8c4b6a45622be9d56bf300e43a71d92",
+      "bytes": 330
+    },
+    "target/native-method-guard-trial/final/receipts/312-C1-uninstrumented-gpu-after.json": {
+      "sha256": "07f86fb9668d43c7a9fa8d0563df7aebce67667dad2c5319cb41c345ba938c76",
+      "bytes": 19942
+    },
+    "target/native-method-guard-trial/final/receipts/312-C1-uninstrumented-gpu-after.log": {
+      "sha256": "a9633ecbc8a23867a5bc3b21f924bcb76659950f9a3437b83fc2beae0f8f827f",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-C1-uninstrumented-gpu-before.json": {
+      "sha256": "a8298f4f58ab5759386bbfdb81129f21567fc3d6bc3206041f2db0acfdb1250f",
+      "bytes": 19958
+    },
+    "target/native-method-guard-trial/final/receipts/312-C1-uninstrumented-gpu-before.log": {
+      "sha256": "a9633ecbc8a23867a5bc3b21f924bcb76659950f9a3437b83fc2beae0f8f827f",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-C1-uninstrumented.json": {
+      "sha256": "992c80935a4bb60059c8884118324ccd81733178147672399fb02e52fb954ed6",
+      "bytes": 20850
+    },
+    "target/native-method-guard-trial/final/receipts/312-C1-uninstrumented.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/receipts/312-C2-uninstrumented-gpu-after.json": {
+      "sha256": "087dad7cb5593dfd6f7c055c6115cd994377f28537e1d2bd2c7d9b5ba13f28f3",
+      "bytes": 19943
+    },
+    "target/native-method-guard-trial/final/receipts/312-C2-uninstrumented-gpu-after.log": {
+      "sha256": "a9633ecbc8a23867a5bc3b21f924bcb76659950f9a3437b83fc2beae0f8f827f",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-C2-uninstrumented-gpu-before.json": {
+      "sha256": "d1b8e845b39a18e32a757ad3d026dcbd7fec77045e05fd087f54bd4f3e3aed3e",
+      "bytes": 19959
+    },
+    "target/native-method-guard-trial/final/receipts/312-C2-uninstrumented-gpu-before.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-C2-uninstrumented.json": {
+      "sha256": "c4921fa2a3b09f6b4644d9e51418097f6a5968ad2cf6c1e5cc30d98cf667e91f",
+      "bytes": 20850
+    },
+    "target/native-method-guard-trial/final/receipts/312-C2-uninstrumented.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-build-lock.json": {
+      "sha256": "7315b9521f3bc0322f667cb4a39a799ae55f0b929af40653dddec469c86103fa",
+      "bytes": 20701
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-build-lock.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-cc-underlying-version.json": {
+      "sha256": "6d3ff09c54964556e5e8377a41f2f99405e74b566c5ca0fd6471a942e4c4d655",
+      "bytes": 19801
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-cc-underlying-version.log": {
+      "sha256": "d24c446f729c141d55b128d1873ae105aafa2a8db64e5adb28732e0b11d9a896",
+      "bytes": 247
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-cc-version.json": {
+      "sha256": "6bf0700a30f669dded342eda19d42305f6713085eb0b247b0f35a818112fdc1b",
+      "bytes": 19634
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-cc-version.log": {
+      "sha256": "d24c446f729c141d55b128d1873ae105aafa2a8db64e5adb28732e0b11d9a896",
+      "bytes": 247
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-ccache-config.json": {
+      "sha256": "e946c8846b28f44e46d8dff48872916a20d10612281968904200af3ab7ebe3d6",
+      "bytes": 19673
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-ccache-config.log": {
+      "sha256": "a92dd1ddf352b7fe0e1ea3e276e33141ca93f781790f93662b22e8947f7b9125",
+      "bytes": 1437
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-ccache-version.json": {
+      "sha256": "ecc7cc97ad2134549b93503299eb769d230ebbbe54a2ea9a90cfa24ad26261cb",
+      "bytes": 19694
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-ccache-version.log": {
+      "sha256": "9c3008378530cbe9a300ccd0d037e839ac82210a5303bf17d06d315be562c10b",
+      "bytes": 489
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-compiler-identity.json": {
+      "sha256": "c48e4e00fc431e8c734d49c4e2bb63659962b0ea0531c4d32ed9a61af79bfa11",
+      "bytes": 10340
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-compiler-preflight.json": {
+      "sha256": "950af0562d913cb9e98b96e4f21c585a56bc3c620c29d9483e7d03250b100ea6",
+      "bytes": 20075
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-compiler-preflight.log": {
+      "sha256": "c48e4e00fc431e8c734d49c4e2bb63659962b0ea0531c4d32ed9a61af79bfa11",
+      "bytes": 10340
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-cpp-underlying-version.json": {
+      "sha256": "d9274db164994d47985ba5097002ee83055ea65961435cb417841f27216b6238",
+      "bytes": 19817
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-cpp-underlying-version.log": {
+      "sha256": "62eb5fb5ee2a8b48f8de81ff95e2f40cffd5d11be248a993de50f3074458de35",
+      "bytes": 248
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-cpp-version.json": {
+      "sha256": "bd24376bc5d2a87e650d5a501b253696077b22a2b5bd0ce616bd14b6068f88b4",
+      "bytes": 19651
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-cpp-version.log": {
+      "sha256": "62eb5fb5ee2a8b48f8de81ff95e2f40cffd5d11be248a993de50f3074458de35",
+      "bytes": 248
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-dependencies.json": {
+      "sha256": "15395b165ec183ac50eab8c05cf1d34e3260fb49b22dd26fcc95497d14962ee9",
+      "bytes": 16060
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-dependencies.log": {
+      "sha256": "f722b0c81eb16ff7ed3a0ea25e2eaf960624b12c5903da35e27c6428f6833b80",
+      "bytes": 854
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-dependency-inventory.json": {
+      "sha256": "6b18719cac371cbe490372b32e142cb3030c9c428fe967bca09d6ab53d18920f",
+      "bytes": 20025
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-dependency-inventory.log": {
+      "sha256": "9ed88d57acbf7f410f7076ac15fd461ef5b85f61d7c30366dcdf5a46138b1dd6",
+      "bytes": 919
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-gpu-after.json": {
+      "sha256": "4b637c6d932f2e40b469f5c097c2f600b00886f27f4a93cba6c68d5fc6129dbe",
+      "bytes": 19688
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-gpu-after.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-gpu-before.json": {
+      "sha256": "325491a5a0d42e067ed97fafa18bb29fe6a4ac164ba9057a68592edb51d3abdd",
+      "bytes": 19704
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-gpu-before.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-install.json": {
+      "sha256": "2600a36b2591e96eccad954af8be7cfe8f7dc911f083ab69ae1c019ca3e887ff",
+      "bytes": 20016
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-install.log": {
+      "sha256": "ed602ab9e05bd368271b21dc282d77aefb9d9522bfef35bbbffcfc08560ef7f3",
+      "bytes": 344
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-interpreter.json": {
+      "sha256": "c1b86f2cf0263165de3e86db725226632c8a60256b3345997024400277d727fa",
+      "bytes": 15681
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-interpreter.log": {
+      "sha256": "33d8217c8c8880bc7fb85841d6dca40ae7f19bc757ac18fd2214a0566f5d8eac",
+      "bytes": 2495
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-layout-probe.json": {
+      "sha256": "3a2b8f996f67765f4d354d286be724b630bb14479afdf7eba6dc1014b366f28e",
+      "bytes": 20409
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-layout-probe.log": {
+      "sha256": "a8d07841fa6911f9c49b9909ef9134d8b46998b5803108d49e7782f530f5fe3e",
+      "bytes": 2879
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-lock-acquired.json": {
+      "sha256": "1fcd8eae32269fc3da3c24a68a07c2ccd365051bc997c54bc1040161c681a82f",
+      "bytes": 238
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-native-verifier.json": {
+      "sha256": "0c3763258b3c2350e0b85938a336fc03c3b2dd07712490b821c6621ce0bed4fd",
+      "bytes": 20047
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-native-verifier.log": {
+      "sha256": "9181b3ef89e94be467abc5ef2ee6b1ecf611d1bdea354c5aff15997d814d7361",
+      "bytes": 770
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-release.json": {
+      "sha256": "6b42f1a55150310ffb3ba7be0e88d9e8ab49647cdc0e129ac1008e0e5656c4f9",
+      "bytes": 19953
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-release.log": {
+      "sha256": "b5ce0bb5e603cc7f55ccafd9be2f8224b4af1e993f67524496622523fa365391",
+      "bytes": 1495
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-venv.json": {
+      "sha256": "bdc044169af18d11780df700df04e42efcc528a6273e501989524c06c538c637",
+      "bytes": 15938
+    },
+    "target/native-method-guard-trial/final/receipts/312-R-venv.log": {
+      "sha256": "16fc83e71dc6ca92bf655bb3edeffad25c10ae8500d9ef3e706761f6acd89b56",
+      "bytes": 330
+    },
+    "target/native-method-guard-trial/final/receipts/312-R1-uninstrumented-gpu-after.json": {
+      "sha256": "93c039957fbc70ce47145badf108754d1fa4668cc5ef2910570ed0f011c19543",
+      "bytes": 19942
+    },
+    "target/native-method-guard-trial/final/receipts/312-R1-uninstrumented-gpu-after.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-R1-uninstrumented-gpu-before.json": {
+      "sha256": "ef348b90c18aa51d798743fc3d0307e05035d077e2eaaa16dc9a112f48c23eda",
+      "bytes": 19959
+    },
+    "target/native-method-guard-trial/final/receipts/312-R1-uninstrumented-gpu-before.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-R1-uninstrumented.json": {
+      "sha256": "4269c0bf55d096c9e014ebd48f2d812ca62ce43c1725feb5ebf6cfd3ac4d9f5f",
+      "bytes": 20850
+    },
+    "target/native-method-guard-trial/final/receipts/312-R1-uninstrumented.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/receipts/312-R2-uninstrumented-gpu-after.json": {
+      "sha256": "21b0fe00988e3cbbdc14f5e4d4f74848bac08e972dc1e74ea6fe9e60e9c8aee4",
+      "bytes": 19943
+    },
+    "target/native-method-guard-trial/final/receipts/312-R2-uninstrumented-gpu-after.log": {
+      "sha256": "a9633ecbc8a23867a5bc3b21f924bcb76659950f9a3437b83fc2beae0f8f827f",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-R2-uninstrumented-gpu-before.json": {
+      "sha256": "ece592cc6e49fc328b7b84a6251e134ede2ade8e0a8f08835d83d2a41045f73b",
+      "bytes": 19959
+    },
+    "target/native-method-guard-trial/final/receipts/312-R2-uninstrumented-gpu-before.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-R2-uninstrumented.json": {
+      "sha256": "737f56cd084c0308a427bc5d9dfdfd1e3ba20bf9961875df2185136c23c10227",
+      "bytes": 20850
+    },
+    "target/native-method-guard-trial/final/receipts/312-R2-uninstrumented.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-build-lock.json": {
+      "sha256": "4595e0ba1b81fab9c0166658bd426104dd927123d62be1688745345594aec595",
+      "bytes": 20700
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-build-lock.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-cc-underlying-version.json": {
+      "sha256": "f25bcceb576bb1d38541ce5efb8a52c8cc438077902f3043f539961d6e51e49d",
+      "bytes": 19802
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-cc-underlying-version.log": {
+      "sha256": "d24c446f729c141d55b128d1873ae105aafa2a8db64e5adb28732e0b11d9a896",
+      "bytes": 247
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-cc-version.json": {
+      "sha256": "de2729319f3d4cbb502776650fbc85b66640dd48d41ee5a8b512023b04a8b4be",
+      "bytes": 19634
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-cc-version.log": {
+      "sha256": "d24c446f729c141d55b128d1873ae105aafa2a8db64e5adb28732e0b11d9a896",
+      "bytes": 247
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-ccache-config.json": {
+      "sha256": "33bcca8b3e9ce6899e5fcdf0b7260d35ae961ce2d5145152fb6aa31f247bc8c0",
+      "bytes": 19673
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-ccache-config.log": {
+      "sha256": "a92dd1ddf352b7fe0e1ea3e276e33141ca93f781790f93662b22e8947f7b9125",
+      "bytes": 1437
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-ccache-version.json": {
+      "sha256": "b62d983eb665ccd686b0aa371da991684574f273d11665c4de60d955978e02e4",
+      "bytes": 19693
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-ccache-version.log": {
+      "sha256": "9c3008378530cbe9a300ccd0d037e839ac82210a5303bf17d06d315be562c10b",
+      "bytes": 489
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-compiler-identity.json": {
+      "sha256": "a0fd1d650ef290c6fbe8cd271cc2961f108c2e3d3369258a049b5399e5dfe8f1",
+      "bytes": 10340
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-compiler-preflight.json": {
+      "sha256": "8443e1819c0085689c3a69d32ba0b5833699d58b38b87eac62b1f6be51a47b17",
+      "bytes": 20075
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-compiler-preflight.log": {
+      "sha256": "a0fd1d650ef290c6fbe8cd271cc2961f108c2e3d3369258a049b5399e5dfe8f1",
+      "bytes": 10340
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-cpp-underlying-version.json": {
+      "sha256": "f8281248bd68e9d5d238f87267fdd8c2441f122a564f537befeb8c5fb07c3015",
+      "bytes": 19819
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-cpp-underlying-version.log": {
+      "sha256": "62eb5fb5ee2a8b48f8de81ff95e2f40cffd5d11be248a993de50f3074458de35",
+      "bytes": 248
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-cpp-version.json": {
+      "sha256": "43e44441a386fa4784476245221b61ab1f8cdd9c33f9761d587d5c7de9a29805",
+      "bytes": 19651
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-cpp-version.log": {
+      "sha256": "62eb5fb5ee2a8b48f8de81ff95e2f40cffd5d11be248a993de50f3074458de35",
+      "bytes": 248
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-dependencies.json": {
+      "sha256": "466062050f35b91dea0b062b996afc407c1ce58ce8682b23946f466cc9d0a264",
+      "bytes": 16060
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-dependencies.log": {
+      "sha256": "36254a524f8902472459f487ab5887a9c54686aacbefad68e5220489cdc1b79f",
+      "bytes": 2160
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-dependency-inventory.json": {
+      "sha256": "23e08ec1e2381a4bb1de7d059f63072faeed3c095c7ffb3bc5e0a911b810379d",
+      "bytes": 20024
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-dependency-inventory.log": {
+      "sha256": "0c112618b1d1fff7d83044e20dc80758b938b1e9636cc7272de875fee395f223",
+      "bytes": 919
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-gpu-after.json": {
+      "sha256": "3f67d266ed8edaf03e0cbf2e24fd8cfc3d5732a56f7b66d0e7c38c1f5fba62ee",
+      "bytes": 19688
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-gpu-after.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-gpu-before.json": {
+      "sha256": "4d15a4c98b7b694dd9943ce617ce47ffa3d677ffae9ade515c3eec123b34b0bd",
+      "bytes": 19704
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-gpu-before.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-install.json": {
+      "sha256": "70cb62266b069d0bccf8781945fa76601d79b34ce15c1bd98ec3d7ac1d5ee421",
+      "bytes": 20017
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-install.log": {
+      "sha256": "7a54d1261a1d8beaab3f520bd0e291eb68b43c8c3cb0071c2b25336222954fbe",
+      "bytes": 344
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-interpreter.json": {
+      "sha256": "25b825804bac01db1db456a7d284020cc0c3ad4fa8e3b34a2aed1bbdabb5fa72",
+      "bytes": 15681
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-interpreter.log": {
+      "sha256": "289c3680b60f43af9a3acbfb69db2538957171b7d9a389063964b92e667c8f83",
+      "bytes": 2495
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-inventory.json": {
+      "sha256": "fb665c309f379904a0115f8b81059c47f19578388053aab75565cc3bb967b73e",
+      "bytes": 20204
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-inventory.log": {
+      "sha256": "e679f469f1784886f80ca738784babb05084c892c282ef0e67ffbd3c67e04b01",
+      "bytes": 171
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-layout-probe.json": {
+      "sha256": "2df82b53c0152a7c1aa2f546c32a4a1b1d04e382d2185321b25117c636683947",
+      "bytes": 20409
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-layout-probe.log": {
+      "sha256": "e5235e8c7b2e004aaceadba6a574fa1583e17c19f71d824efc8e0899cef04737",
+      "bytes": 2879
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-lock-acquired.json": {
+      "sha256": "ff6e5a6391cb628123ef553ad23fbe404d9e3b67c0e972d6479a8b38273f32c6",
+      "bytes": 237
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-native-verifier.json": {
+      "sha256": "19a80b6ebcf9d2bdd7aed240199817ea7c4a31a4f73831c5a8325dbd2f5576dd",
+      "bytes": 20047
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-native-verifier.log": {
+      "sha256": "d3fe0b000b82bfa39b261c947261fbd9c1be54bd73fe8e04ad78be87d89ac62b",
+      "bytes": 770
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-owner-gpu-after.json": {
+      "sha256": "1b5102654806544c2a534661b4e215c7746e3799bd7e3c84f4e4c55d43f55c2f",
+      "bytes": 19783
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-owner-gpu-after.log": {
+      "sha256": "a9633ecbc8a23867a5bc3b21f924bcb76659950f9a3437b83fc2beae0f8f827f",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-owner-gpu-before.json": {
+      "sha256": "67fbd6118f028b449b494f4958838fc9797432552127b3b14609e838c3c03b94",
+      "bytes": 19799
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-owner-gpu-before.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-owner.json": {
+      "sha256": "32a30f939669d9b2f0d794c9db1e085636fe1acb9f6bb1ecf678f5483530de04",
+      "bytes": 20640
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-owner.log": {
+      "sha256": "eeaf3c8ded530bcdf6c02d583b0bb4aac2315c9eb68cc805b646604d74fea10c",
+      "bytes": 1553
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-pointwise-gpu-after.json": {
+      "sha256": "f29c7a4037f4fa3e94856d88e0ad01db979f39201a397290ca7a47dba4aef7ae",
+      "bytes": 19845
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-pointwise-gpu-after.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-pointwise-gpu-before.json": {
+      "sha256": "3452307d885ffacfbcdfdf8933efed7a2fad0c6017122d481c8af41623ea2418",
+      "bytes": 19863
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-pointwise-gpu-before.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-pointwise.json": {
+      "sha256": "014b2c28d3e4016721bf7bc863f30c6ac0ae87f991247ee92f05cbefaf17b45a",
+      "bytes": 20725
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-pointwise.log": {
+      "sha256": "5b5320604f4eb280054a264a89875e87f2bc80c5d0bdf054ee6f4ff2f43b62b1",
+      "bytes": 94761
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-release.json": {
+      "sha256": "946737d81524c2138d0bbf6d65eeb3a25be7bd1bbed6e816cccd399fdd10ffcf",
+      "bytes": 19952
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-release.log": {
+      "sha256": "01a5f1c9c548c6cd8260a3622d6fbd80935d84f30f5881f4aa629b388aa6afeb",
+      "bytes": 1495
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-venv.json": {
+      "sha256": "ebd999417282f112ac6dae07e5e9872c69619d7b6af1ee04a11e73f7eee172b0",
+      "bytes": 15938
+    },
+    "target/native-method-guard-trial/final/receipts/312-T-venv.log": {
+      "sha256": "592d6e946e1ba9eda67ed24a46a3adfa7737778ea4537abdb3aedebd246fc5f4",
+      "bytes": 330
+    },
+    "target/native-method-guard-trial/final/receipts/312-T1-uninstrumented-gpu-after.json": {
+      "sha256": "9a1315a94b79a007d14ddda9307a59f153cd210156edeefc6cbe476a39ae0132",
+      "bytes": 19943
+    },
+    "target/native-method-guard-trial/final/receipts/312-T1-uninstrumented-gpu-after.log": {
+      "sha256": "a9633ecbc8a23867a5bc3b21f924bcb76659950f9a3437b83fc2beae0f8f827f",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-T1-uninstrumented-gpu-before.json": {
+      "sha256": "4f6edc213accae57b415f4603f99c6fb7255d2a13ee60b59cdc6be44d09cbdce",
+      "bytes": 19959
+    },
+    "target/native-method-guard-trial/final/receipts/312-T1-uninstrumented-gpu-before.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-T1-uninstrumented.json": {
+      "sha256": "495d81f42d3d504e5d5e3d405fdc755d8bf6d52d55b377d5219266cea74181eb",
+      "bytes": 20850
+    },
+    "target/native-method-guard-trial/final/receipts/312-T1-uninstrumented.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/receipts/312-T2-uninstrumented-gpu-after.json": {
+      "sha256": "14898ea02c0604b45b12df902aef577b7335162e8ae12042ae657d22bacf236c",
+      "bytes": 19943
+    },
+    "target/native-method-guard-trial/final/receipts/312-T2-uninstrumented-gpu-after.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-T2-uninstrumented-gpu-before.json": {
+      "sha256": "1ab805ac72ba6b2fbc10a6a3f93236df3bc98478918eb4532b364add5fb43e73",
+      "bytes": 19959
+    },
+    "target/native-method-guard-trial/final/receipts/312-T2-uninstrumented-gpu-before.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/312-T2-uninstrumented.json": {
+      "sha256": "28a32f1252989d44f575124ec1d75e09128e56795ee8cab463b9f2278bbbb5f9",
+      "bytes": 20851
+    },
+    "target/native-method-guard-trial/final/receipts/312-T2-uninstrumented.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-build-lock.json": {
+      "sha256": "0c7c0df19ffd67c1650f6faa25a86427a24d2b3c68892844202f45300cefbc05",
+      "bytes": 20700
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-build-lock.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-cc-underlying-version.json": {
+      "sha256": "21164bed082f7ba30f04499c16f939f7dbaca612c0c0a7a471edfc52334262c5",
+      "bytes": 19801
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-cc-underlying-version.log": {
+      "sha256": "d24c446f729c141d55b128d1873ae105aafa2a8db64e5adb28732e0b11d9a896",
+      "bytes": 247
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-cc-version.json": {
+      "sha256": "25aa13e3987534b061cbec3b8783d51fc983670bd02e8fe9820ca9487d28baea",
+      "bytes": 19635
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-cc-version.log": {
+      "sha256": "d24c446f729c141d55b128d1873ae105aafa2a8db64e5adb28732e0b11d9a896",
+      "bytes": 247
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-ccache-config.json": {
+      "sha256": "ca6652193a823c5588dc1de1ac4f58bd4323eb3a85801908d177e74a26c483c5",
+      "bytes": 19673
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-ccache-config.log": {
+      "sha256": "a92dd1ddf352b7fe0e1ea3e276e33141ca93f781790f93662b22e8947f7b9125",
+      "bytes": 1437
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-ccache-version.json": {
+      "sha256": "ff4e2cd91b90a434caea59c1f7b5519f3da84a787077e5c647510fbbea35ea22",
+      "bytes": 19693
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-ccache-version.log": {
+      "sha256": "9c3008378530cbe9a300ccd0d037e839ac82210a5303bf17d06d315be562c10b",
+      "bytes": 489
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-compiler-identity.json": {
+      "sha256": "2434487f15c974a46257692e74c6e96f2e064c0b3b9db8d9a51fae0d2bec2ecc",
+      "bytes": 10340
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-compiler-preflight.json": {
+      "sha256": "9f3f06c5c71e6b9629a6ecd8c8181f6a13782d5ba5d2cc61e33f69d0d730214e",
+      "bytes": 20075
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-compiler-preflight.log": {
+      "sha256": "2434487f15c974a46257692e74c6e96f2e064c0b3b9db8d9a51fae0d2bec2ecc",
+      "bytes": 10340
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-cpp-underlying-version.json": {
+      "sha256": "b11a10717b682efe33002a295fd2b8f92c8d27ef91eecb375b35de423ba194f8",
+      "bytes": 19818
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-cpp-underlying-version.log": {
+      "sha256": "62eb5fb5ee2a8b48f8de81ff95e2f40cffd5d11be248a993de50f3074458de35",
+      "bytes": 248
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-cpp-version.json": {
+      "sha256": "c9fae866b862284064ab6de3779aec2ce2d432d84ce46d9bcccc8710435d01e3",
+      "bytes": 19652
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-cpp-version.log": {
+      "sha256": "62eb5fb5ee2a8b48f8de81ff95e2f40cffd5d11be248a993de50f3074458de35",
+      "bytes": 248
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-dependencies.json": {
+      "sha256": "bfbf0f7617b18213bdb2faae2325fbeeef9aedfab84898c1751477e07b526249",
+      "bytes": 16060
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-dependencies.log": {
+      "sha256": "eb9c2a2b1ab3d3e6954674e5e285875e83e5e2edb733f308332a7f789b8d78c8",
+      "bytes": 1057
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-dependency-inventory.json": {
+      "sha256": "f01bf17ee1249f8bbae52e255c334ee710e13bdaadc16a6cec7544397372e3ce",
+      "bytes": 20025
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-dependency-inventory.log": {
+      "sha256": "dcb3dbf201c53c83fb886d8ae94397943c18f5e64dbb2fada5eae99e6083b773",
+      "bytes": 913
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-gpu-after.json": {
+      "sha256": "e61bd844eadeaf68760880e60d10f63ced75fe48da87625b6647f33bb4be6695",
+      "bytes": 19686
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-gpu-after.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-gpu-before.json": {
+      "sha256": "4c2c288211dd0ecf291b1e834bd9151509219e1b126d62921a81f9507ba312c5",
+      "bytes": 19703
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-gpu-before.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-install.json": {
+      "sha256": "6cbcfaefb9c5bee3b4f2fbe4d0bc08008afe3c29d79974971685ff8c308cc2c2",
+      "bytes": 20016
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-install.log": {
+      "sha256": "ed431d378aff8ee8139bb89a9d3bca038cc2ef89404fd6a431c02c1107f1182c",
+      "bytes": 338
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-interpreter.json": {
+      "sha256": "8b61032b6f01a0eae1a320707fdcf8ed3d8bf8148082662b8eaaea40ec59b7a6",
+      "bytes": 15680
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-interpreter.log": {
+      "sha256": "43c6ca3eeed81cec6937eb56e3e35242559e061f65d590473d57d641d12d2e4e",
+      "bytes": 2396
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-layout-probe.json": {
+      "sha256": "fd68cc5effcf7309af96021fef5cd728f9acb14ef116a1adec557c0a349b668e",
+      "bytes": 20409
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-layout-probe.log": {
+      "sha256": "e4d03cd42b55d7bc8af3ac3f8ed29d79aabe9a89b8e1d7795241e09a0fbaee7c",
+      "bytes": 2880
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-lock-acquired.json": {
+      "sha256": "821426ff485ca7a07cbc4fdf7f00a4e8a5076922b2a3eabb16c1a2851469da58",
+      "bytes": 238
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-native-verifier.json": {
+      "sha256": "194f65e291494a7dbc3fa0d05505c628a0f0ce5b90473dc37c46ed5c70ad85e0",
+      "bytes": 20047
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-native-verifier.log": {
+      "sha256": "c54a00bf7f70feee8b65100e2178438dbe7136880331a1dcfe6ac32e62fb8306",
+      "bytes": 770
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-release.json": {
+      "sha256": "e18154ea23d023e653903dc52bdc4d96d5a44eb7f48a3ef72fae231810350efa",
+      "bytes": 19952
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-release.log": {
+      "sha256": "a1b0316313cad5ff3294bd75c42bfd9a39dbef772343f8bc1f691a25a717c4cd",
+      "bytes": 1495
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-venv.json": {
+      "sha256": "e8876e0ea1ea0b9714a5bd32afc0be44a77c46a634e3ca016614010782db2701",
+      "bytes": 15938
+    },
+    "target/native-method-guard-trial/final/receipts/314-C-venv.log": {
+      "sha256": "a055b2e146c2b38bd357bbb0fde0b0d92f11dfb938288d89598cd0eff77b153d",
+      "bytes": 324
+    },
+    "target/native-method-guard-trial/final/receipts/314-C1-uninstrumented-gpu-after.json": {
+      "sha256": "27d3d37cd715f3933b2a58f40ab927ca9821809506b59ffe1ed3c55e7d6f5f50",
+      "bytes": 19943
+    },
+    "target/native-method-guard-trial/final/receipts/314-C1-uninstrumented-gpu-after.log": {
+      "sha256": "a9633ecbc8a23867a5bc3b21f924bcb76659950f9a3437b83fc2beae0f8f827f",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/314-C1-uninstrumented-gpu-before.json": {
+      "sha256": "b86c174889a2896e573ed4828713d96f8aefb6302921e91f370e0296f47f0e18",
+      "bytes": 19959
+    },
+    "target/native-method-guard-trial/final/receipts/314-C1-uninstrumented-gpu-before.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/314-C1-uninstrumented.json": {
+      "sha256": "a903a59e119ce729a667f527bd17eb353ed2f440ca32c33368347ffa3d7d5753",
+      "bytes": 20849
+    },
+    "target/native-method-guard-trial/final/receipts/314-C1-uninstrumented.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/receipts/314-C2-uninstrumented-gpu-after.json": {
+      "sha256": "b5cb0c9a2b49263e492657876e50ced44fa9ca769b109b45df3311f41c373f5e",
+      "bytes": 19943
+    },
+    "target/native-method-guard-trial/final/receipts/314-C2-uninstrumented-gpu-after.log": {
+      "sha256": "a9633ecbc8a23867a5bc3b21f924bcb76659950f9a3437b83fc2beae0f8f827f",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/314-C2-uninstrumented-gpu-before.json": {
+      "sha256": "5a3303c0a135483c759765eb6e1320a1762272b4bf184dbdfa0f75b54bb01d07",
+      "bytes": 19959
+    },
+    "target/native-method-guard-trial/final/receipts/314-C2-uninstrumented-gpu-before.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/314-C2-uninstrumented.json": {
+      "sha256": "28efbd1414bf741d7967abcf808bfc8485b3090e103a814e02b579a81698dd6e",
+      "bytes": 20848
+    },
+    "target/native-method-guard-trial/final/receipts/314-C2-uninstrumented.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-build-lock.json": {
+      "sha256": "0262e44941ceeb726e46b80c6236b5d82a1922a578f863f60d0691b0cdbbdbde",
+      "bytes": 20700
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-build-lock.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-cc-underlying-version.json": {
+      "sha256": "f5ee4f39829b455b80721cd19288a3b1e1eb531ccd160c41f426a8851b691998",
+      "bytes": 19801
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-cc-underlying-version.log": {
+      "sha256": "d24c446f729c141d55b128d1873ae105aafa2a8db64e5adb28732e0b11d9a896",
+      "bytes": 247
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-cc-version.json": {
+      "sha256": "e48c6e33236043edf580eeaa6f3ba63a6b4531d5ed38a32e725bd668c0fde92c",
+      "bytes": 19634
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-cc-version.log": {
+      "sha256": "d24c446f729c141d55b128d1873ae105aafa2a8db64e5adb28732e0b11d9a896",
+      "bytes": 247
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-ccache-config.json": {
+      "sha256": "d6ecd2aec12f91975f4e8a9229397c3a6b16e2b60e7ce026c432915c666fc213",
+      "bytes": 19672
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-ccache-config.log": {
+      "sha256": "a92dd1ddf352b7fe0e1ea3e276e33141ca93f781790f93662b22e8947f7b9125",
+      "bytes": 1437
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-ccache-version.json": {
+      "sha256": "2357ff475765156305f805ce24260023969c37cc724c0f53a4455f79d22fde49",
+      "bytes": 19693
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-ccache-version.log": {
+      "sha256": "9c3008378530cbe9a300ccd0d037e839ac82210a5303bf17d06d315be562c10b",
+      "bytes": 489
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-compiler-identity.json": {
+      "sha256": "70cd9541e679b503f286260e47cd9d3c293d77b039d938a5c3f34010cda93f5c",
+      "bytes": 10340
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-compiler-preflight.json": {
+      "sha256": "13b66e3abbe6ee9a3e33321f1fe2aeeafb82ba44f0f52e4a317f997fa6cfe8b8",
+      "bytes": 20075
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-compiler-preflight.log": {
+      "sha256": "70cd9541e679b503f286260e47cd9d3c293d77b039d938a5c3f34010cda93f5c",
+      "bytes": 10340
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-cpp-underlying-version.json": {
+      "sha256": "6b3d843ce8a7dda116a9518102ffb3e0a3b300b4f360a062cc3e2337ea99cbb5",
+      "bytes": 19818
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-cpp-underlying-version.log": {
+      "sha256": "62eb5fb5ee2a8b48f8de81ff95e2f40cffd5d11be248a993de50f3074458de35",
+      "bytes": 248
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-cpp-version.json": {
+      "sha256": "083061d1e21267faafdf2a5a2c21ac3d2f3a5a5d8dc2ad426189c14ffde3fc2f",
+      "bytes": 19652
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-cpp-version.log": {
+      "sha256": "62eb5fb5ee2a8b48f8de81ff95e2f40cffd5d11be248a993de50f3074458de35",
+      "bytes": 248
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-dependencies.json": {
+      "sha256": "43664ca25622134c0d50e044f9b0f03abce253dbc303a9e8e512922afe0fdd13",
+      "bytes": 16059
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-dependencies.log": {
+      "sha256": "3988de266c9507b7b38a2e706e26e410a5e47f1ebde88cc6612b7415cd95a1aa",
+      "bytes": 854
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-dependency-inventory.json": {
+      "sha256": "eb2381e95c7e8c97c7182e0638bf6916d6e35a4de6fe390a7b0d2f312bc4ddf7",
+      "bytes": 20025
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-dependency-inventory.log": {
+      "sha256": "53a94c9f42e3131be016f4a1bc4b58eb09990416797c34476ca048c84964c98c",
+      "bytes": 913
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-gpu-after.json": {
+      "sha256": "c3d08c05d875ab9aae71cbbb718ef04cb474fecbd6ed842462d76b0371099267",
+      "bytes": 19688
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-gpu-after.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-gpu-before.json": {
+      "sha256": "e8d3bf61d5937a13fd1f7eab9c48d6c6f5b1ad9cd36c87d7dba51466476afa1c",
+      "bytes": 19703
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-gpu-before.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-install.json": {
+      "sha256": "151fe1deddca4cab0c5d363b1e618277d011da8485eab98f2f56a3da01b24e49",
+      "bytes": 20016
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-install.log": {
+      "sha256": "23735600417c2cf5e7fa9e95f7df0c189cb9c2743fc4457c541b72560063bf29",
+      "bytes": 338
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-interpreter.json": {
+      "sha256": "d0b996b1530ebb82ddf4c5dd7e07f73795d933b3f8f1c2696b8bdf51ab0b5a7a",
+      "bytes": 15680
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-interpreter.log": {
+      "sha256": "13aa6a18fe8b2dd483a724402d1fe4f6d81b947b43dffd24d0d4d35ab877c3d5",
+      "bytes": 2396
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-layout-probe.json": {
+      "sha256": "b9bdfd8cb4953ef53af20534130d7153b40868e578c6970b844de61286a88c2d",
+      "bytes": 20409
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-layout-probe.log": {
+      "sha256": "0114f6f0a39006270386166e851680d2c3116b2f770d85921c84c27f3b11fc73",
+      "bytes": 2880
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-lock-acquired.json": {
+      "sha256": "35dac457dc51b860639348d620ce5a4de32c7f9df13ebdf97f0d2a47cd147f6a",
+      "bytes": 235
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-native-verifier.json": {
+      "sha256": "a2c58961938824b00855bf0ff8e4d00df1b4499231d5c255b942cdb4b26af303",
+      "bytes": 20048
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-native-verifier.log": {
+      "sha256": "c26ae2ebfc0964c82e8890103068e3f33ebbfcbdefac74e619884af613fa439c",
+      "bytes": 770
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-release.json": {
+      "sha256": "72b68a0755a8f100c375a393ee4a7513f0151d0d9bb0df1cbab75327ac9a9348",
+      "bytes": 19953
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-release.log": {
+      "sha256": "a0f7f6357f94414862de16b4ccbe2fdba079f9680423a225c67c5ecf41f89d48",
+      "bytes": 1495
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-venv.json": {
+      "sha256": "3f669b001056f67fa26b8af026824519c68ba8e3dba2b2e3c5eb5c9b5a417724",
+      "bytes": 15938
+    },
+    "target/native-method-guard-trial/final/receipts/314-R-venv.log": {
+      "sha256": "7209b4682f0670a5263a531d9a12f83d951b892d3eb27bc10168682db51ec2bb",
+      "bytes": 324
+    },
+    "target/native-method-guard-trial/final/receipts/314-R1-uninstrumented-gpu-after.json": {
+      "sha256": "9d7e0f54a5ed6024892571763b7f0fd71b4569eff7ed36c8d3e6693d5654cebf",
+      "bytes": 19943
+    },
+    "target/native-method-guard-trial/final/receipts/314-R1-uninstrumented-gpu-after.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/314-R1-uninstrumented-gpu-before.json": {
+      "sha256": "188da23334032f218d5bbf5c25b3dfe57d43a317c1210a430da38ce246075949",
+      "bytes": 19957
+    },
+    "target/native-method-guard-trial/final/receipts/314-R1-uninstrumented-gpu-before.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/314-R1-uninstrumented.json": {
+      "sha256": "42b8eb16c4d975600e680c2f1fcd0ce366ca6de2d4b80bf58811b616bec3d620",
+      "bytes": 20848
+    },
+    "target/native-method-guard-trial/final/receipts/314-R1-uninstrumented.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/receipts/314-R2-uninstrumented-gpu-after.json": {
+      "sha256": "fd862196cf90f1a0c4c179b8b0cfccc56be97c5bfeb1f56ca7d2875cb90b419a",
+      "bytes": 19943
+    },
+    "target/native-method-guard-trial/final/receipts/314-R2-uninstrumented-gpu-after.log": {
+      "sha256": "a9633ecbc8a23867a5bc3b21f924bcb76659950f9a3437b83fc2beae0f8f827f",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/314-R2-uninstrumented-gpu-before.json": {
+      "sha256": "c171c2adbd883463aa8488cd06b8a3cc36d9aac64633bb1e0577d2d85ddbbcf2",
+      "bytes": 19959
+    },
+    "target/native-method-guard-trial/final/receipts/314-R2-uninstrumented-gpu-before.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/314-R2-uninstrumented.json": {
+      "sha256": "d8f42b68d46c13c4ccdb1048fdf93bf3ca5ccbd68e34e8a2f44a71cb239f1589",
+      "bytes": 20848
+    },
+    "target/native-method-guard-trial/final/receipts/314-R2-uninstrumented.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-build-lock.json": {
+      "sha256": "d6f86ade6776771c76ec2fd709386149646a5c76f6d0186dfd83283f84cbf907",
+      "bytes": 20701
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-build-lock.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-cc-underlying-version.json": {
+      "sha256": "9c975c828ca655e6f5be18cc633f922a9de560d025127c73029228b0f282148e",
+      "bytes": 19802
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-cc-underlying-version.log": {
+      "sha256": "d24c446f729c141d55b128d1873ae105aafa2a8db64e5adb28732e0b11d9a896",
+      "bytes": 247
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-cc-version.json": {
+      "sha256": "933e50a45affc11a67725c931841d2dc1d9aadca2709ee148409a8dcda592ec3",
+      "bytes": 19634
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-cc-version.log": {
+      "sha256": "d24c446f729c141d55b128d1873ae105aafa2a8db64e5adb28732e0b11d9a896",
+      "bytes": 247
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-ccache-config.json": {
+      "sha256": "d6e40e463da939aba7f17f60aa5310b6aa54f5ddf21cf1a23c54e2e4d31c9e45",
+      "bytes": 19672
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-ccache-config.log": {
+      "sha256": "a92dd1ddf352b7fe0e1ea3e276e33141ca93f781790f93662b22e8947f7b9125",
+      "bytes": 1437
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-ccache-version.json": {
+      "sha256": "600b4fa2b1e780a62d71c7d83c46da3ba48d5f018691754bd2454e051468d58e",
+      "bytes": 19694
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-ccache-version.log": {
+      "sha256": "9c3008378530cbe9a300ccd0d037e839ac82210a5303bf17d06d315be562c10b",
+      "bytes": 489
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-compiler-identity.json": {
+      "sha256": "3ffb208236bc6db44ab87cc5b7f9585b7a7f75f0977de1aab585b60bafcca73e",
+      "bytes": 10340
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-compiler-preflight.json": {
+      "sha256": "74d1e7350fa86345fcde06b7c97f8a2039b67a6f84af19c7ef02e873e403b836",
+      "bytes": 20074
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-compiler-preflight.log": {
+      "sha256": "3ffb208236bc6db44ab87cc5b7f9585b7a7f75f0977de1aab585b60bafcca73e",
+      "bytes": 10340
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-cpp-underlying-version.json": {
+      "sha256": "f9faa7f6f278e12eec9576e4fb6815ee18784855694e803526a53a95e06ef5de",
+      "bytes": 19819
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-cpp-underlying-version.log": {
+      "sha256": "62eb5fb5ee2a8b48f8de81ff95e2f40cffd5d11be248a993de50f3074458de35",
+      "bytes": 248
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-cpp-version.json": {
+      "sha256": "7f859b2989685fa720a680fb7641855448650ac707532fc1bd5dfc91663af816",
+      "bytes": 19650
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-cpp-version.log": {
+      "sha256": "62eb5fb5ee2a8b48f8de81ff95e2f40cffd5d11be248a993de50f3074458de35",
+      "bytes": 248
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-dependencies.json": {
+      "sha256": "0221a29e14166528e93a041c61b811ee4bf3c7ddd8adb5d8a8278e9dfb07b39a",
+      "bytes": 16060
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-dependencies.log": {
+      "sha256": "fe1bfa7b87b94f833facfcd4f05ae73147ce92dd2f2800596ab499ad2483bc10",
+      "bytes": 854
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-dependency-inventory.json": {
+      "sha256": "c6a5408f09983462549c7aa0d088878969b4030f6f825c657645d2e69706063e",
+      "bytes": 20024
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-dependency-inventory.log": {
+      "sha256": "be9510d03a222facac946434626823eef33e03c5250912357249b2af5341a4f3",
+      "bytes": 913
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-gpu-after.json": {
+      "sha256": "ba7f9d7f73f2f7498a9b3235e427f444d8b8d06e77240d63fb93fce16c9597d2",
+      "bytes": 19688
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-gpu-after.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-gpu-before.json": {
+      "sha256": "20e295e4997e2e216ef47118c13f885f54243494767cf3ce1f25b72f2b94fab5",
+      "bytes": 19702
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-gpu-before.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-install.json": {
+      "sha256": "f6d94c4b2551bf1f0c49ed33a8f4e6dcea15788c0cf118c85e107b3f04a8514a",
+      "bytes": 20017
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-install.log": {
+      "sha256": "7f122f023196a07a75882c6abe7e478109558a31a37093aadd520c3e9abd57d4",
+      "bytes": 338
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-interpreter.json": {
+      "sha256": "f09d1df7de4389654971732cc50c01f3f11727a871ae253cee595babbecfaf5b",
+      "bytes": 15680
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-interpreter.log": {
+      "sha256": "d20fbd36c17ea2012644d5a4d5f013e2150c9881b5b8f783ced65beeac1dbb1c",
+      "bytes": 2396
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-inventory.json": {
+      "sha256": "683260f5ff8e5185c677d53c4d521f18a0b249632fda687898f8bdfb73d3acc3",
+      "bytes": 20204
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-inventory.log": {
+      "sha256": "e679f469f1784886f80ca738784babb05084c892c282ef0e67ffbd3c67e04b01",
+      "bytes": 171
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-layout-probe.json": {
+      "sha256": "be26df9eb128ab73b681886fd5741379548a6309dae9ab87f4f467258b905e98",
+      "bytes": 20409
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-layout-probe.log": {
+      "sha256": "4f2dbae80990a29cdce56d468dbdd84a76bed6ab9a42132a60bb93fa721e11a2",
+      "bytes": 2880
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-lock-acquired.json": {
+      "sha256": "46f1fcf942fd82bdc89ceb8834a1b664211adb53eb34dffb4d80cce76d38ea58",
+      "bytes": 235
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-native-verifier.json": {
+      "sha256": "dd99b09615a3eb1e0cb75eaffd054bf8202f9c234b046a483baf348f38d87533",
+      "bytes": 20048
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-native-verifier.log": {
+      "sha256": "0385e437c3f5ab83d2ec8439a2a3c698a07fa304ddec48fee6d242a4f1e77b99",
+      "bytes": 770
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-owner-gpu-after.json": {
+      "sha256": "bace7e4cd6dbd157bd2c13e012748b4e09ed8b9f8bf16ac0cd5f4910ef3a8e55",
+      "bytes": 19783
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-owner-gpu-after.log": {
+      "sha256": "b2e36a2270ec370b8117631c7b425f3a8d143b87e8eb264a06e81bcf5ef4e47d",
+      "bytes": 716
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-owner-gpu-before.json": {
+      "sha256": "cfc9ab39ad9f8b275c0775ce7608647e541617c396b64b7d598d32c3e21d88a6",
+      "bytes": 19799
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-owner-gpu-before.log": {
+      "sha256": "644c441992e7534960b39acbf4a01c71ba551d66d725841e110dc9cebe2e8b5a",
+      "bytes": 716
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-owner.json": {
+      "sha256": "a529d1835b746759176897a9a270f9af994b9461c3535e47225e889433e384f3",
+      "bytes": 20638
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-owner.log": {
+      "sha256": "4a4db55127c42240ba4931963f7767ea2b89d69bbba9f63e954c59d1be728eea",
+      "bytes": 1553
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-pointwise-gpu-after.json": {
+      "sha256": "b820584269ab58183104dc6d353166b0f4384e0d4f0df83352b2a1481c0015d8",
+      "bytes": 19846
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-pointwise-gpu-after.log": {
+      "sha256": "644c441992e7534960b39acbf4a01c71ba551d66d725841e110dc9cebe2e8b5a",
+      "bytes": 716
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-pointwise-gpu-before.json": {
+      "sha256": "5541879c154bcb5fa4cf17627e569acaa466404fa7a12282bb8c71f5ee2b8388",
+      "bytes": 19864
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-pointwise-gpu-before.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-pointwise.json": {
+      "sha256": "53d5e2cac8091c5d762722bc705a8cbbc32828892013690e53711d0e3c44463e",
+      "bytes": 20723
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-pointwise.log": {
+      "sha256": "e6eef7e13e804ab693bfdea09af576b141b87506c0c1bb613a332621d6b106b0",
+      "bytes": 94761
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-release.json": {
+      "sha256": "4c61a5e8e6e6b5c61ee955c08c6d6ed93528eae7541e99bbbd2d6ab20ee41ef2",
+      "bytes": 19952
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-release.log": {
+      "sha256": "84e8748f570b59e7526fa72ccec775cf28cade51cce1c6a7bf12dff6bf7048a8",
+      "bytes": 1495
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-venv.json": {
+      "sha256": "c7e24e889ba5a57ffddcdffb357b73d0eeecc023d0b6aec5c35f779982c1897e",
+      "bytes": 15937
+    },
+    "target/native-method-guard-trial/final/receipts/314-T-venv.log": {
+      "sha256": "8314ba031472be17d3a839f626550629a2666ef2784fda55041140172a12ab7a",
+      "bytes": 324
+    },
+    "target/native-method-guard-trial/final/receipts/314-T1-uninstrumented-gpu-after.json": {
+      "sha256": "539a5638f560427a14abe15bd12aef78b00cf82f1651a021a450e3de3c7289a4",
+      "bytes": 19943
+    },
+    "target/native-method-guard-trial/final/receipts/314-T1-uninstrumented-gpu-after.log": {
+      "sha256": "a9633ecbc8a23867a5bc3b21f924bcb76659950f9a3437b83fc2beae0f8f827f",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/314-T1-uninstrumented-gpu-before.json": {
+      "sha256": "dff05ebf6113c1385cd47b46e9bcdb0e46723b195ccbf5f6e46c9d181130a5d0",
+      "bytes": 19959
+    },
+    "target/native-method-guard-trial/final/receipts/314-T1-uninstrumented-gpu-before.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/314-T1-uninstrumented.json": {
+      "sha256": "95d6cbd74833152af70fcfc52b3a8623660ab0d1c8d04145c08d7b50cdf67c80",
+      "bytes": 20848
+    },
+    "target/native-method-guard-trial/final/receipts/314-T1-uninstrumented.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/receipts/314-T2-uninstrumented-gpu-after.json": {
+      "sha256": "f08b7f1e143ea3e7a688c2194c3321065d88aa319408b0dce69ac332818fbefe",
+      "bytes": 19942
+    },
+    "target/native-method-guard-trial/final/receipts/314-T2-uninstrumented-gpu-after.log": {
+      "sha256": "a9633ecbc8a23867a5bc3b21f924bcb76659950f9a3437b83fc2beae0f8f827f",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/314-T2-uninstrumented-gpu-before.json": {
+      "sha256": "f4aa8ce1e2df5be89df2271b15137f462198b42ee20e94b7673949d169a32e6a",
+      "bytes": 19959
+    },
+    "target/native-method-guard-trial/final/receipts/314-T2-uninstrumented-gpu-before.log": {
+      "sha256": "58e51b28cea670c6f5b8f3ac1c7df45d7bf7e78dd73d350b10a718b202153174",
+      "bytes": 714
+    },
+    "target/native-method-guard-trial/final/receipts/314-T2-uninstrumented.json": {
+      "sha256": "2ac2cfb1d5ec65448c04e29db54d6947768b03261295b4d55dd547575cd9af8d",
+      "bytes": 20849
+    },
+    "target/native-method-guard-trial/final/receipts/314-T2-uninstrumented.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/receipts/cargo-fetch.json": {
+      "sha256": "cbb1f75dca0447c289ae05e084cb7b7f48e59106d4b2461effdc65a0f48735d8",
+      "bytes": 15166
+    },
+    "target/native-method-guard-trial/final/receipts/cargo-fetch.log": {
+      "sha256": "a5174cd8e1726ad6c8a09b05289cd5ffe0edf41baf2fea39df99f19220438a9c",
+      "bytes": 852
+    },
+    "target/native-method-guard-trial/final/receipts/cargo-version.json": {
+      "sha256": "f63b0582eea116fccb66c14d777f362b5b085a21345635648d130ce17f68b9e0",
+      "bytes": 15140
+    },
+    "target/native-method-guard-trial/final/receipts/cargo-version.log": {
+      "sha256": "eb24d517cda02ee331f0f23f3da8150456969a12bcd3f07b531c45a44f67d9aa",
+      "bytes": 36
+    },
+    "target/native-method-guard-trial/final/receipts/compiler-preflight.json": {
+      "sha256": "3cf9bfeb07cbad189c53abfb10a4812893d75b3a3ef29111c0b69a28c41213b4",
+      "bytes": 15391
+    },
+    "target/native-method-guard-trial/final/receipts/compiler-preflight.log": {
+      "sha256": "b3551a8bb2e6aa090fcba06495c3c2097763383360d8b63f04c499251d3f097e",
+      "bytes": 8833
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-312-C-maturin.json": {
+      "sha256": "449eabb22228e41aeeaa48eb5ef415efac176db58eae3e72520b4e8b8ef4a373",
+      "bytes": 15394
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-312-C-maturin.log": {
+      "sha256": "2da348627a0e28c0b287cc44076dd4d26bcd35d5ccdbe28483a0352912cbe408",
+      "bytes": 15
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-312-R-maturin.json": {
+      "sha256": "d55f5cc0b05fce1fbc373343e062bfe84953e1887a8416d4f505a43cdfdd3850",
+      "bytes": 15395
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-312-R-maturin.log": {
+      "sha256": "2da348627a0e28c0b287cc44076dd4d26bcd35d5ccdbe28483a0352912cbe408",
+      "bytes": 15
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-312-T-maturin.json": {
+      "sha256": "1a88c62a19c388c34d37f50cafb435e5b4a8c56e75216741b6eb4f78833f2bb1",
+      "bytes": 15395
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-312-T-maturin.log": {
+      "sha256": "2da348627a0e28c0b287cc44076dd4d26bcd35d5ccdbe28483a0352912cbe408",
+      "bytes": 15
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-314-C-maturin.json": {
+      "sha256": "eee45c4c9e4d7546984704d32bd28c4a7525835ca900e1f49de19db165bb674e",
+      "bytes": 15394
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-314-C-maturin.log": {
+      "sha256": "2da348627a0e28c0b287cc44076dd4d26bcd35d5ccdbe28483a0352912cbe408",
+      "bytes": 15
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-314-R-maturin.json": {
+      "sha256": "c8055e93210c7545b9148a4d1f3be887850ad6fc2e4e18e9555c4477f96f82bb",
+      "bytes": 15394
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-314-R-maturin.log": {
+      "sha256": "2da348627a0e28c0b287cc44076dd4d26bcd35d5ccdbe28483a0352912cbe408",
+      "bytes": 15
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-314-T-maturin.json": {
+      "sha256": "2fe7b264873b90f249954f765fa5542d221676e48d5c7014d1beeab343aa2b5f",
+      "bytes": 15394
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-314-T-maturin.log": {
+      "sha256": "2da348627a0e28c0b287cc44076dd4d26bcd35d5ccdbe28483a0352912cbe408",
+      "bytes": 15
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-resolved-cargo.json": {
+      "sha256": "4a9a28bd0ae162a57695ad05d5c3b469ea110a2bb29f0e7a6511d8be58420956",
+      "bytes": 15278
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-resolved-cargo.log": {
+      "sha256": "c00defe0f0acb02e4a4d6bb7fb9e15a25cbca667ae91b0bf71bc55c5b76d2610",
+      "bytes": 74
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-resolved-rustc.json": {
+      "sha256": "c919628e4a157e722e2a575dc1d4ab63c553dea83225fae0aa19c33e788f27e0",
+      "bytes": 15277
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-resolved-rustc.log": {
+      "sha256": "ecd9bce6c31a6186372557574809f28d73d9cb41f499a65f89ea9c95a0e71792",
+      "bytes": 74
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-version-cargo.json": {
+      "sha256": "78bde83081eb16f0871088cc6e1c9ca11decf8ffb5a1d6313a6c1419a84fa9f5",
+      "bytes": 15251
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-version-cargo.log": {
+      "sha256": "eb24d517cda02ee331f0f23f3da8150456969a12bcd3f07b531c45a44f67d9aa",
+      "bytes": 36
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-version-cc.json": {
+      "sha256": "49790a8508fa0e723bfb88be45fa07f8fd4bfb6cab2d8072157061bb024ea5cb",
+      "bytes": 15201
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-version-cc.log": {
+      "sha256": "d24c446f729c141d55b128d1873ae105aafa2a8db64e5adb28732e0b11d9a896",
+      "bytes": 247
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-version-nvcc.json": {
+      "sha256": "d7eb3a2a75eccfc1fba19ed310dde9f67cd660f178098dd9a5a04619238daa5d",
+      "bytes": 15236
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-version-nvcc.log": {
+      "sha256": "d039bce5999cd136f7ea930eee0408e108a8887b3ae7b0050de6071f20cd9817",
+      "bytes": 208
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-version-rustc.json": {
+      "sha256": "962fdffdab13f6c388f556688d9fae31a5c57ccd3131bd2830280e105b859409",
+      "bytes": 15246
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-version-rustc.log": {
+      "sha256": "8f97c91e920ce0d02680e3d01eb87afa0c77290dcd5d19eb901ae194d4700d90",
+      "bytes": 196
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-version-uv.json": {
+      "sha256": "093d89617ba3c0c9efcae738464d238948563fcb081a9a8f1eb85669c6a689eb",
+      "bytes": 15201
+    },
+    "target/native-method-guard-trial/final/receipts/freeze-version-uv.log": {
+      "sha256": "ef0f6dd3867f9da1e62ea052b0b3c828019e8d16e31c10f9c800984106e77b7d",
+      "bytes": 38
+    },
+    "target/native-method-guard-trial/final/receipts/freeze.json": {
+      "sha256": "de52f7448e5b042bdf1dc84c1510db8289929c62c6d80f41527c41303062580a",
+      "bytes": 15189
+    },
+    "target/native-method-guard-trial/final/receipts/freeze.log": {
+      "sha256": "8694017697616500367cba03734f5a9d5e060f83ebd5ae6311ddad52aef1801b",
+      "bytes": 77
+    },
+    "target/native-method-guard-trial/final/receipts/initial-cc-underlying-version.json": {
+      "sha256": "b4d469ffc10b077b1f8b7979f6990d899472a3a79d8435ebc281d7448f9f9d7f",
+      "bytes": 15403
+    },
+    "target/native-method-guard-trial/final/receipts/initial-cc-underlying-version.log": {
+      "sha256": "d24c446f729c141d55b128d1873ae105aafa2a8db64e5adb28732e0b11d9a896",
+      "bytes": 247
+    },
+    "target/native-method-guard-trial/final/receipts/initial-cc-version.json": {
+      "sha256": "4c4a6cbab9a20b2320f460880384777d8156a61b1b8c70d19dc28bd01351ef49",
+      "bytes": 15235
+    },
+    "target/native-method-guard-trial/final/receipts/initial-cc-version.log": {
+      "sha256": "d24c446f729c141d55b128d1873ae105aafa2a8db64e5adb28732e0b11d9a896",
+      "bytes": 247
+    },
+    "target/native-method-guard-trial/final/receipts/initial-ccache-config.json": {
+      "sha256": "e6b4fb3eeaed97c3d7a0e104fea49dd69a3db98c109eb7d69950e635c331f6b6",
+      "bytes": 15274
+    },
+    "target/native-method-guard-trial/final/receipts/initial-ccache-config.log": {
+      "sha256": "a92dd1ddf352b7fe0e1ea3e276e33141ca93f781790f93662b22e8947f7b9125",
+      "bytes": 1437
+    },
+    "target/native-method-guard-trial/final/receipts/initial-ccache-version.json": {
+      "sha256": "3fc8e4b3e32d199bc12602d35f09c160ce5e8d54857f992a9d2c74fd89c618b0",
+      "bytes": 15295
+    },
+    "target/native-method-guard-trial/final/receipts/initial-ccache-version.log": {
+      "sha256": "9c3008378530cbe9a300ccd0d037e839ac82210a5303bf17d06d315be562c10b",
+      "bytes": 489
+    },
+    "target/native-method-guard-trial/final/receipts/initial-cpp-underlying-version.json": {
+      "sha256": "30037af624496a049e0c3cc78e80e613344d5aff975ade666f22ae5f2cc0ec4e",
+      "bytes": 15419
+    },
+    "target/native-method-guard-trial/final/receipts/initial-cpp-underlying-version.log": {
+      "sha256": "62eb5fb5ee2a8b48f8de81ff95e2f40cffd5d11be248a993de50f3074458de35",
+      "bytes": 248
+    },
+    "target/native-method-guard-trial/final/receipts/initial-cpp-version.json": {
+      "sha256": "6e4f324ad25840d680f0ecd7bcacb69bbe110e1677bfd8096d7d013b6fd01c23",
+      "bytes": 15252
+    },
+    "target/native-method-guard-trial/final/receipts/initial-cpp-version.log": {
+      "sha256": "62eb5fb5ee2a8b48f8de81ff95e2f40cffd5d11be248a993de50f3074458de35",
+      "bytes": 248
+    },
+    "target/native-method-guard-trial/final/receipts/nvcc-version.json": {
+      "sha256": "c04b4a9e28ce3b2705904b48e81efa23dd40b6de4a831a61fab4ae41a1e2ffdd",
+      "bytes": 15124
+    },
+    "target/native-method-guard-trial/final/receipts/nvcc-version.log": {
+      "sha256": "d039bce5999cd136f7ea930eee0408e108a8887b3ae7b0050de6071f20cd9817",
+      "bytes": 208
+    },
+    "target/native-method-guard-trial/final/receipts/rust-version.json": {
+      "sha256": "882c4882474ac7af2f0dbf51f6015b661e7d3d86cf4b10afdbf7de2707ac8c48",
+      "bytes": 15118
+    },
+    "target/native-method-guard-trial/final/receipts/rust-version.log": {
+      "sha256": "8f97c91e920ce0d02680e3d01eb87afa0c77290dcd5d19eb901ae194d4700d90",
+      "bytes": 196
+    },
+    "target/native-method-guard-trial/final/receipts/uv-version.json": {
+      "sha256": "b82a232c64538c8dd3b04c66f9ae64ed527f0bee34067db536b00332e342b9f6",
+      "bytes": 15089
+    },
+    "target/native-method-guard-trial/final/receipts/uv-version.log": {
+      "sha256": "ef0f6dd3867f9da1e62ea052b0b3c828019e8d16e31c10f9c800984106e77b7d",
+      "bytes": 38
+    },
+    "target/native-method-guard-trial/final/recipe-adaptations.md": {
+      "sha256": "332979cddf404d3669b6328ec3d56400a3324d7b3aafe9bd5d534964b36abe35",
+      "bytes": 4178
+    },
+    "target/native-method-guard-trial/final/recipe-changes.patch": {
+      "sha256": "93efa1776574998ed3b4683b3f7a6e4b1bfb3fcf7f46629e07dd70f6b0547e3e",
+      "bytes": 74625
+    },
+    "target/native-method-guard-trial/final/run.py": {
+      "sha256": "1644ac11b90c1027bc4fe7c0549f27ae49134095d447ff05661f60ba03eb62ad",
+      "bytes": 2988
+    },
+    "target/native-method-guard-trial/final/setup-complete.json": {
+      "sha256": "d7d517e43d458606f346f065868bd23830d9cba9c7e12a0871686ebeef931cdc",
+      "bytes": 232
+    },
+    "target/native-method-guard-trial/final/setup-console.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "target/native-method-guard-trial/final/setup-started.json": {
+      "sha256": "7ef94546a42b94ac47a0e2f3b2291c9d5764030634924510a97e3219e5c0ecb7",
+      "bytes": 629
+    },
+    "target/native-method-guard-trial/final/setup.py": {
+      "sha256": "eabe73d4574a41071b28db278489e5895a1255c18acba274f51385902cf72898",
+      "bytes": 7302
+    },
+    "target/native-method-guard-trial/final/summarize.py": {
+      "sha256": "a886e327e5edae165d2b35d280a034e89309557cfe29b454118d77663153aa17",
+      "bytes": 2566
+    },
+    "target/native-method-guard-trial/final/summary-console.log": {
+      "sha256": "997e361150544a04428c186c535b03a3ef55ae495f0e875fbcb8fc55dbc61d6b",
+      "bytes": 49
+    },
+    "target/native-method-guard-trial/final/summary.json": {
+      "sha256": "0d1e46e0e348b6148b7648684e4a378f26e56c09be519d56f0eec6e003392468",
+      "bytes": 90545
+    },
+    "target/native-method-guard-trial/final/toolchain-binding.json": {
+      "sha256": "57198f93eb25e6e00252b0df05bfa8daad5b0e07b95bf8fda8446236de9b6e76",
+      "bytes": 3788
+    },
+    "target/native-method-guard-trial/final/validation.py": {
+      "sha256": "72c09241b56434c8dcfd7e2c84ea81a545211c388f7f088e232fb96299d7900e",
+      "bytes": 5528
+    }
+  },
+  "omitted_local_bundles": [
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/312/C/source",
+      "source_manifest": "target/native-method-guard-trial/final/312/C/source-manifest.json",
+      "interpreter_manifest": "target/native-method-guard-trial/final/312/C/interpreter.json",
+      "wheel_and_installed_binding": "target/native-method-guard-trial/final/312/C/binding.json",
+      "wheels": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/312/C/wheels",
+      "cargo_target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/312/C/cargo-target",
+      "note": "Only explicitly selected target reports inside source are archived."
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/312/R/source",
+      "source_manifest": "target/native-method-guard-trial/final/312/R/source-manifest.json",
+      "interpreter_manifest": "target/native-method-guard-trial/final/312/R/interpreter.json",
+      "wheel_and_installed_binding": "target/native-method-guard-trial/final/312/R/binding.json",
+      "wheels": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/312/R/wheels",
+      "cargo_target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/312/R/cargo-target",
+      "note": "Only explicitly selected target reports inside source are archived."
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/312/T/source",
+      "source_manifest": "target/native-method-guard-trial/final/312/T/source-manifest.json",
+      "interpreter_manifest": "target/native-method-guard-trial/final/312/T/interpreter.json",
+      "wheel_and_installed_binding": "target/native-method-guard-trial/final/312/T/binding.json",
+      "wheels": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/312/T/wheels",
+      "cargo_target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/312/T/cargo-target",
+      "note": "Only explicitly selected target reports inside source are archived."
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/314/C/source",
+      "source_manifest": "target/native-method-guard-trial/final/314/C/source-manifest.json",
+      "interpreter_manifest": "target/native-method-guard-trial/final/314/C/interpreter.json",
+      "wheel_and_installed_binding": "target/native-method-guard-trial/final/314/C/binding.json",
+      "wheels": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/314/C/wheels",
+      "cargo_target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/314/C/cargo-target",
+      "note": "Only explicitly selected target reports inside source are archived."
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/314/R/source",
+      "source_manifest": "target/native-method-guard-trial/final/314/R/source-manifest.json",
+      "interpreter_manifest": "target/native-method-guard-trial/final/314/R/interpreter.json",
+      "wheel_and_installed_binding": "target/native-method-guard-trial/final/314/R/binding.json",
+      "wheels": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/314/R/wheels",
+      "cargo_target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/314/R/cargo-target",
+      "note": "Only explicitly selected target reports inside source are archived."
+    },
+    {
+      "source": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/314/T/source",
+      "source_manifest": "target/native-method-guard-trial/final/314/T/source-manifest.json",
+      "interpreter_manifest": "target/native-method-guard-trial/final/314/T/interpreter.json",
+      "wheel_and_installed_binding": "target/native-method-guard-trial/final/314/T/binding.json",
+      "wheels": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/314/T/wheels",
+      "cargo_target": "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/314/T/cargo-target",
+      "note": "Only explicitly selected target reports inside source are archived."
+    }
+  ],
+  "omitted_shared_setup_directories": [
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/exports",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/interpreters",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/cargo-home",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/uv-cache",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/setup-cache",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/command-caches",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/ccache",
+    "/data/users/bobren/a/pytorch-rs-burner/.burner/worktrees/agent_c3ca04c7/target/native-method-guard-trial/final/tmp"
+  ],
+  "omissions_note": "Source/interpreter/stdlib/dependency/wheel/native/cache bytes are not in this compact archive. Included commit/source manifests, interpreter inventories and wheel/installed bindings describe their actual identities. Full bundles remain local beneath the recorded current-worktree paths; those paths are not publicly durable. No historical development files were changed.",
+  "interpretation": "Two process legs are repetitions; calls are within-cell observations. No official score, cold compilation or general default-Inductor parity is claimed."
+}

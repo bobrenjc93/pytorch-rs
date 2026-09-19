@@ -225,7 +225,7 @@ class StructuredCache(unittest.TestCase):
 
     def snapshot(self, compiled):
         state = cache(compiled)
-        return ([(key, id(entry), tuple(entry.lowerings.items()), dict(entry.observations), entry.numerical_hint)
+        return ([(key, id(entry), tuple(entry.lowerings.items()), dict(entry.payload.observations), entry.payload.numerical_hint)
                  for key, entry in state.graphs.items()], list(state.executors.items()),
                 list(state.prepared.items()), state.prepared_bytes)
 
@@ -241,7 +241,7 @@ class StructuredCache(unittest.TestCase):
         for size in (3, 2, 257):
             compiled(native.ones(size))
         self.assertEqual(self.hints, [1, 2, 3, 3, 3])
-        self.assertEqual([entry.numerical_hint for entry in cache(compiled).graphs.values()], [1, 3])
+        self.assertEqual([entry.payload.numerical_hint for entry in cache(compiled).graphs.values()], [1, 3])
         self.assertEqual(len(cache(compiled).executors), 1)
         native.compiler.reset()
         compiled(native.ones(2))
@@ -293,12 +293,20 @@ class StructuredCache(unittest.TestCase):
             if type(owner) in (dict, OrderedDict, types.MappingProxyType):
                 pending.extend(owner.keys())
                 pending.extend(owner.values())
+            elif type(owner) in (frontend.Specialization, frontend.SpecializationPayload):
+                pending.extend(getattr(owner, name) for name in owner._fields)
             elif type(owner) in (tuple, list):
                 pending.extend(owner)
             elif dataclasses.is_dataclass(owner) or type(owner) is types.SimpleNamespace:
                 pending.extend(vars(owner).values())
             elif type(owner) is types.FunctionType and owner.__closure__:
                 pending.extend(cell.cell_contents for cell in owner.__closure__)
+        self.assertTrue(cache(compiled).graphs)
+        for entry in cache(compiled).graphs.values():
+            self.assertIn(id(entry), seen)
+            for record in (entry, entry.payload):
+                for name in record._fields:
+                    self.assertIn(id(getattr(record, name)), seen, name)
 
 
     def test_dict_order_duplicates_literal_types_and_equal_containers(self):
@@ -459,7 +467,7 @@ class StructuredHardware(unittest.TestCase):
             elif kind == 'dict':
                 pending.extend((value[key], child) for key, child in payload)
         prefix.with_suffix('.plan').write_text(generated.plan(
-            entry.numerical_hint, lowering.result.output_order,
+            entry.payload.numerical_hint, lowering.result.output_order,
             scalar_output=scalar_output))
 
     def test_joint_numerics_shared_signed_competing_products_and_order(self):

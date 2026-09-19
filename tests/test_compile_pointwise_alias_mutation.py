@@ -617,8 +617,12 @@ class AliasMutationHardware(unittest.TestCase):
         expansion.assert_called_once()
         np.testing.assert_array_equal(read_bits(current).view(np.float32),
                                       bits.view(np.float32) + np.float32(1))
-        self.assertIs(next(iter(cache(compiled).graphs.values())), entry)
-        self.assertIsNot(next(iter(entry.lowerings.values())), retained)
+        from tests.test_compile_pointwise_helpers import assert_replaced_shell
+        current = next(iter(cache(compiled).graphs.values()))
+        assert_replaced_shell(self, entry, current)
+        self.assertEqual(tuple(current.lowerings), tuple(entry.lowerings))
+        self.assertIs(next(iter(entry.lowerings.values())), retained)
+        self.assertIsNot(next(iter(current.lowerings.values())), retained)
 
     def test_inactive_unpack_keeps_whole_program_length_admission(self):
         fn = program('def f(x,s):\n if x.shape[0]<4:\n  return x.add_(1)\n'
@@ -649,6 +653,12 @@ class AliasMutationHardware(unittest.TestCase):
         with no_bodies(fn,helper):
             self.assertIs(compiled(x,[1.0],y),x)
         self.assertEqual(len(cache(compiled).graphs),1)
+        from tests.test_compile_pointwise_helpers import assert_replaced_shell
+        current = next(iter(cache(compiled).graphs.values()))
+        assert_replaced_shell(self, entry, current)
+        self.assertEqual(tuple(entry.lowerings), (old_abi,))
+        self.assertIs(current.lowerings[old_abi], old_lowering)
+        entry = current
         new_abi = next(key for key in entry.lowerings if key != old_abi)
         for invalid in ([1.0,1.5], [1.0,True], (1.0,1.5)):
             before,bits = StructuredCache.snapshot(self,compiled),read_bits(x)
@@ -659,16 +669,19 @@ class AliasMutationHardware(unittest.TestCase):
         for items in ([1.5,1.0], [1.0], (1.5,1.0), (1.0,)):
             with no_bodies(fn,helper):
                 self.assertIs(compiled(x,items,y),x)
+            entry = next(iter(cache(compiled).graphs.values()))
             self.assertIs(entry.lowerings[old_abi],old_lowering)
             # Later-ABI evidence must not be unioned into the original logical
             # entry: its already-admitted helper never selected anything in s.
             with no_bodies(fn,helper), patch.object(frontend,'lower',side_effect=AssertionError('old ABI reparsed')):
                 self.assertIs(compiled(x,[1.5],False),x)
+            entry = next(iter(cache(compiled).graphs.values()))
             self.assertIs(entry.lowerings[old_abi],old_lowering)
         current = entry.lowerings[new_abi]
         helper.__code__ = program('def f(a,s):\n return a.sin()').__code__
         with no_bodies(fn,helper), patch.object(frontend,'lower',side_effect=AssertionError('valid retained ABI reparsed')):
             self.assertIs(compiled(x,(1.0,),y),x)
+        entry = next(iter(cache(compiled).graphs.values()))
         self.assertIs(entry.lowerings[new_abi],current)
         self.assertFalse(cache(compiled).executors)
         self.assertFalse(cache(compiled).prepared)
@@ -729,7 +742,11 @@ class AliasMutationHardware(unittest.TestCase):
                     actual = compiled(x,items,current)
                 np.testing.assert_array_equal(read_bits(actual),expected)
                 self.assertEqual(len(cache(compiled).graphs),1)
-                self.assertIs(next(iter(cache(compiled).graphs.values())),entry)
+                from tests.test_compile_pointwise_helpers import assert_replaced_shell
+                committed = next(iter(cache(compiled).graphs.values()))
+                assert_replaced_shell(self, entry, committed)
+                self.assertEqual(tuple(committed.lowerings), tuple(entry.lowerings))
+                entry = committed
             before,bits = StructuredCache.snapshot(self,compiled),read_bits(x)
             with no_bodies(fn,helper), self.assertRaises(NotImplementedError):
                 compiled(x,[x,False],current)
@@ -746,7 +763,7 @@ class AliasMutationHardware(unittest.TestCase):
             compiled(x,[x],1.0)
             np.testing.assert_array_equal(read_bits(compiled(x,[x],2.0)).view(np.float32),np.full(6,2,dtype=np.float32))
         entry = next(reversed(cache(compiled).graphs.values()))
-        self.assertTrue(any(type(value) is frontend.RuntimeScalar for value in entry.values.values()))
+        self.assertTrue(any(type(value) is frontend.RuntimeScalar for value in entry.payload.values.values()))
         before,bits = StructuredCache.snapshot(self,compiled),read_bits(x)
         with no_bodies(fn,helper), self.assertRaises(NotImplementedError):
             compiled(x,[x,False],3.0)
@@ -755,7 +772,10 @@ class AliasMutationHardware(unittest.TestCase):
         with no_bodies(fn,helper):
             actual = compiled(x,(False,x),3.0)
         np.testing.assert_array_equal(read_bits(actual).view(np.float32),np.full(6,3,dtype=np.float32))
-        self.assertIs(next(reversed(cache(compiled).graphs.values())),entry)
+        from tests.test_compile_pointwise_helpers import assert_replaced_shell
+        committed = next(reversed(cache(compiled).graphs.values()))
+        assert_replaced_shell(self, entry, committed)
+        self.assertEqual(tuple(committed.lowerings), tuple(entry.lowerings))
 
     def test_retained_structure_does_not_own_caller_containers_or_tensors(self):
         helper = program('def f(a,s):\n return a.add_(0.137,alpha=s["items"][-1])')
@@ -783,12 +803,20 @@ class AliasMutationHardware(unittest.TestCase):
             if type(value) is dict:
                 pending.extend(value.keys())
                 pending.extend(value.values())
+            elif type(value) in (frontend.Specialization, frontend.SpecializationPayload):
+                pending.extend(getattr(value, name) for name in value._fields)
             elif type(value) in (list,tuple):
                 pending.extend(value)
             elif dataclasses.is_dataclass(value) or type(value) is types.SimpleNamespace:
                 pending.extend(vars(value).values())
             elif type(value) is types.FunctionType and value.__closure__:
                 pending.extend(cell.cell_contents for cell in value.__closure__)
+        self.assertTrue(cache(compiled).graphs)
+        for entry in cache(compiled).graphs.values():
+            self.assertIn(id(entry), seen)
+            for record in (entry, entry.payload):
+                for name in record._fields:
+                    self.assertIn(id(getattr(record, name)), seen, name)
 
     def test_literal_effect_results_inactive_calls_and_reset(self):
         for result in ('None','7','(7,9)'):

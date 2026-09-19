@@ -443,7 +443,9 @@ class SharedCacheGuards(unittest.TestCase):
         owner.executors = self.MutationDict(owner.executors)
         owner.prepared = self.MutationDict(owner.prepared)
         entry = next(iter(owner.graphs.values()))
-        entry.lowerings = self.MutationDict(entry.lowerings)
+        key = next(iter(owner.graphs))
+        entry = frontend.Specialization(entry.payload, self.MutationDict(entry.lowerings))
+        dict.__setitem__(owner.graphs, key, entry)
         before = self.ordered_contents(owner)
         with mock.patch.object(frontend, 'analyze', side_effect=AssertionError('warm analyze')), \
                 mock.patch.object(frontend, 'lower', side_effect=AssertionError('warm lower')):
@@ -497,6 +499,10 @@ class SharedCacheGuards(unittest.TestCase):
         first = next(iter(owner.graphs))
         entry = owner.graphs[first]
         compiled(False, x, other)
+        from tests.test_compile_pointwise_helpers import assert_replaced_shell
+        current = owner.graphs[first]
+        assert_replaced_shell(self, entry, current)
+        entry = current
         abi_a, abi_b = tuple(entry.lowerings)
         executable_a, executable_b = tuple(owner.executors)
         # Another logical specialization reuses A's executable, making it
@@ -508,10 +514,21 @@ class SharedCacheGuards(unittest.TestCase):
         owner.executors = self.MutationDict(owner.executors)
         compiled(False, x, 0.)
         self.assertEqual(tuple(owner.graphs), (second, first))
+        current = owner.graphs[first]
+        assert_replaced_shell(self, entry, current)
+        self.assertEqual(tuple(entry.lowerings), (abi_a, abi_b))
+        for abi, value in entry.lowerings.items():
+            self.assertIs(current.lowerings[abi], value)
+        entry = current
         self.assertEqual(tuple(entry.lowerings), (abi_b, abi_a))
         self.assertEqual(tuple(owner.executors), (executable_b, executable_a))
         self.assertEqual(owner.executors.mutations, [])
         compiled(other, x, False)
+        current = owner.graphs[first]
+        assert_replaced_shell(self, entry, current)
+        self.assertEqual(tuple(entry.lowerings), (abi_b, abi_a))
+        self.assertIs(current.lowerings[abi_a], entry.lowerings[abi_a])
+        entry = current
         abi_c, executable_c = next(reversed(entry.lowerings)), next(reversed(owner.executors))
         self.assertNotIn(abi_c, (abi_a, abi_b))
         self.assertNotIn(executable_c, (executable_a, executable_b))
@@ -622,7 +639,7 @@ class SharedCacheGuards(unittest.TestCase):
                 self.assertEqual(len(owner.graphs), 1)
                 self.assertEqual(len(owner.executors), 1)
                 frozen = next(iter(owner.graphs.values()))
-                scalar = next(v for v in frozen.values.values() if type(v) is float)
+                scalar = next(v for v in frozen.payload.values.values() if type(v) is float)
                 self.assertEqual(frontend.scalar_bits(scalar), frontend.scalar_bits(values[0]))
                 # NaN history promotes the next finite binding. Later NaNs hit
                 # that runtime graph, retaining their actual ABI bits.
@@ -745,10 +762,20 @@ class SharedCacheGuards(unittest.TestCase):
                     self.assertEqual(len(owner.graphs), 1)
                     current = next(iter(owner.graphs.values()))
                     if entry is None:
-                        entry = current
-                    self.assertIs(current, entry)
+                        logical_key = next(iter(owner.graphs))
+                    elif cycle == 1 and step == 0:
+                        # The last and first calls have the same tensor ABI.
+                        self.assertIs(current, entry)
+                        self.assertIs(owner.graphs, previous_root)
+                    else:
+                        from tests.test_compile_pointwise_helpers import assert_replaced_shell
+                        assert_replaced_shell(self, entry, current)
+                        self.assertEqual(next(iter(owner.graphs)), logical_key)
+                        self.assertEqual(len(entry.lowerings), 1)
+                    entry = current
+                    previous_root = owner.graphs
                     self.assertEqual(len(owner.executors), 1)
-                    self.assertEqual(len(entry.lowerings), 1)
+                    self.assertEqual(len(current.lowerings), 1)
         # Revisited ABIs require rebuilding evicted executables while the
         # original logical specialization remains selected throughout.
         self.assertGreater(self.compile_bridge.call_count, len(history))

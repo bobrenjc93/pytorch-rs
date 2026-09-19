@@ -37,7 +37,7 @@ def dispatched(compiled):
 def snapshot(compiled):
     state = cache(compiled)
     return (tuple(state.graphs.items()), tuple(state.executors.items()),
-            tuple((id(entry), tuple(entry.lowerings.items()), dict(entry.observations))
+            tuple((id(entry), tuple(entry.lowerings.items()), dict(entry.payload.observations))
                   for entry in state.graphs.values()))
 
 

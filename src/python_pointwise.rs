@@ -1,5 +1,5 @@
 //! Private typed JIT bridge; no arbitrary source strings or raw pointers accepted.
-use super::{CoreTensor, PyTensor, tensor_error};
+use super::{CoreTensor, PyTensor, PyTensorBase, tensor_error};
 use crate::{
     cuda::jit::Kernel,
     pointwise_ir::{Graph, Node},
@@ -13,6 +13,76 @@ use pyo3::{
 use std::sync::Arc;
 
 type Payload = (String, usize, usize, u64);
+
+#[pyfunction(name = "_pointwise_method_identity_mismatch")]
+#[allow(unsafe_code)] // GenericGetDict returns an owned namespace of a validated native heap type.
+pub(super) fn method_identity_mismatch<'py>(
+    table: &Bound<'py, PyAny>,
+    missing: &Bound<'py, PyAny>,
+) -> PyResult<Option<Bound<'py, PyString>>> {
+    let invalid = || PyTypeError::new_err("expected native owner and exact method identity tuples");
+    let rows = table.cast_exact::<PyTuple>().map_err(|_| invalid())?;
+    let py = table.py();
+    let tensor = py.get_type::<PyTensor>();
+    let base = py.get_type::<PyTensorBase>();
+    // Validate the whole supplied table before any namespace access. Indexed
+    // exact tuples and exact strings cannot dispatch user protocol callbacks.
+    for i in 0..rows.len() {
+        let row = rows.get_item(i)?;
+        let row = row.cast_exact::<PyTuple>().map_err(|_| invalid())?;
+        if row.len() != 2 {
+            return Err(invalid());
+        }
+        let owner = row.get_item(0)?;
+        if !owner.is(&tensor) && !owner.is(&base) {
+            return Err(invalid());
+        }
+        let bindings = row.get_item(1)?;
+        let bindings = bindings.cast_exact::<PyTuple>().map_err(|_| invalid())?;
+        for j in 0..bindings.len() {
+            let binding = bindings.get_item(j)?;
+            let binding = binding.cast_exact::<PyTuple>().map_err(|_| invalid())?;
+            if binding.len() != 2 || !binding.get_item(0)?.is_exact_instance_of::<PyString>() {
+                return Err(invalid());
+            }
+        }
+    }
+    for i in 0..rows.len() {
+        let row = rows.get_item(i)?.cast_into::<PyTuple>()?;
+        let owner = row.get_item(0)?;
+        let bindings = row.get_item(1)?.cast_into::<PyTuple>()?;
+        let mismatch =
+            pyo3::sync::critical_section::with_critical_section(&owner, || -> PyResult<_> {
+                // SAFETY: identity validation above admits only our initialized
+                // PyO3 heap types. In particular, static builtins have different
+                // dictionary storage and must never reach GenericGetDict. The
+                // stable ABI call returns a new reference or an exception.
+                let namespace = unsafe {
+                    Bound::from_owned_ptr_or_err(
+                        py,
+                        pyo3::ffi::PyObject_GenericGetDict(owner.as_ptr(), std::ptr::null_mut()),
+                    )?
+                };
+                let namespace = namespace.cast_exact::<PyDict>().map_err(|_| invalid())?;
+                for j in 0..bindings.len() {
+                    let binding = bindings.get_item(j)?.cast_into::<PyTuple>()?;
+                    let name = binding.get_item(0)?.cast_into::<PyString>()?;
+                    let expected = binding.get_item(1)?;
+                    // Owned optional lookup propagates errors and distinguishes
+                    // absence from a present None. Never bind or compare values.
+                    let current = namespace.get_item(&name)?;
+                    if !current.as_ref().unwrap_or(missing).is(&expected) {
+                        return Ok(Some(name));
+                    }
+                }
+                Ok(None)
+            })?;
+        if mismatch.is_some() {
+            return Ok(mismatch);
+        }
+    }
+    Ok(None)
+}
 
 #[pyfunction(name = "_pointwise_namespace_keys_exact")]
 #[allow(unsafe_code)] // Borrowed dict keys stay inside the callback-free critical section.

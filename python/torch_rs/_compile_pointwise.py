@@ -6,6 +6,7 @@ one native kernel; ordered input-rooted alias recipes construct views/effects.
 It deliberately has no graph breaks or eager fallback.
 """
 from dataclasses import dataclass, field
+from typing import NamedTuple
 import dis
 from itertools import islice
 import math
@@ -437,15 +438,13 @@ class ShapeGuards:
         return True
 
 
-@dataclass
-class Specialization:
-    """Frozen logical semantics with lowerings for concrete tensor operand ABIs."""
+class SpecializationPayload(NamedTuple):
+    """Shallow-frozen facts owned by one logical capture, shared by its entries."""
     # Scalars/operators are frozen here; tensor Values use the current filtered
     # ABI when creating or re-admitting a lowering. No tensor is retained.
     values: dict
     observed: tuple
     observations: dict
-    lowerings: dict
     # Immutable projections retain source semantics without repeating dependency
     # searches for each guard candidate. Tensor indices always come from the call.
     binding_checks: tuple = ()
@@ -456,6 +455,12 @@ class Specialization:
     # Non-guarding iteration hint from this successful specialization. Dynamic
     # shape hits retain its numerical partition without changing executable keys.
     numerical_hint: int = 1
+
+
+class Specialization(NamedTuple):
+    """Published shell retaining facts and semantic lowering admission history."""
+    payload: SpecializationPayload
+    lowerings: dict
 
 
 def _broadcast_elements(shapes):
@@ -541,8 +546,8 @@ def _shape_guards(program, graph, first, metadata, history, predicates=()):
     observations, guards, duck_strides = {}, [], {}
     for source, index in first.items():
         current = metadata[index][:5]
-        previous = [entry.observations[source] for key, entry in history.items()
-                    if key[0] is program.code and source in entry.observations]
+        previous = [entry.payload.observations[source] for key, entry in history.items()
+                    if key[0] is program.code and source in entry.payload.observations]
         guards.append((source, _tensor_guard(current, previous, duck_strides, source)))
         observations[source] = current
     # Graph topology supplies broadcast equalities and live iteration/buffer
@@ -590,8 +595,9 @@ def _select_specialization(program, resolved, tensors, metadata, graphs):
     for key, entry in reversed(graphs.items()):
         if key[0] is not program.code:
             continue
+        payload = entry.payload
         scalars = []
-        for source, expected in entry.binding_checks:
+        for source, expected in payload.binding_checks:
             current = resolved.get(source)
             if current is None:
                 break
@@ -606,20 +612,20 @@ def _select_specialization(program, resolved, tensors, metadata, graphs):
             # Source realization order defines aliases, not public slot order.
             # Tensor kind checks above precede every current operand lookup.
             first, aliases = [], []
-            for source in entry.tensor_sources:
+            for source in payload.tensor_sources:
                 tensor = tensors[values[source].index]
                 owner = next((i for i, previous in enumerate(first) if previous is tensor), None)
                 if owner is None:
                     owner = len(first)
                     first.append(tensor)
                 aliases.append(owner)
-            if any(resolved.get(source) is None for source in entry.data_sources):
+            if any(resolved.get(source) is None for source in payload.data_sources):
                 continue
             if tuple(aliases) != key[3]:
                 continue
             # Each candidate can project additional sources. Shape guards use
             # its realized tensor sources, whose kinds were checked above.
-            by_source = {s: metadata[values[s].index][:5] for s in entry.tensor_sources}
+            by_source = {s: metadata[values[s].index][:5] for s in payload.tensor_sources}
             if key[2].matches(by_source):
                 return key, entry, tuple(scalars)
     return None
@@ -1732,6 +1738,23 @@ def _prepared_entry_bytes(key, prepared, code_key):
             + key_bytes(key) + key_bytes(code_key) + 512)
 
 
+def _stage_recent(mapping, key, value, limit):
+    """Copy only changed logical maps; published maps remain immutable."""
+    newest = None
+    if mapping:
+        newest = next(reversed(mapping))
+        if newest == key and next(reversed(mapping.values())) is value:
+            return mapping
+    staged = mapping.copy()
+    # Overwriting the identical newest key preserves its identity and order.
+    if not mapping or newest is not key:
+        staged.pop(key, None)
+    staged[key] = value
+    while len(staged) > limit:
+        del staged[next(iter(staged))]
+    return staged
+
+
 def _publish_preparation(cache, key, prepared, retained_bytes, recompile_limit, code_key, executor, prepared_keys):
     """Called under the existing lock only after successful reconstruction."""
     # A prepared Arc must not retain a module whose executor was evicted. The
@@ -1775,13 +1798,9 @@ def implementation(model, recompile_limit):
         tensors, parameters = bind_arguments(args)
         if _ROOT.overrides._get_current_function_mode() is not None:
             unsupported("active __torch_function__ mode")
-        for cls, guards in _METHOD_GUARDS:
-            # Read the current namespace once per class, not per method. Keep
-            # every identity check, including operations unused by this body.
-            namespace = cls.__dict__
-            for name, expected in guards:
-                if namespace.get(name, _MISSING) is not expected:
-                    unsupported("patched Tensor operation binding: " + name)
+        mismatch = _native._pointwise_method_identity_mismatch(_METHOD_GUARDS, _MISSING)
+        if mismatch is not None:
+            unsupported("patched Tensor operation binding: " + mismatch)
         # The native bridge checks all metadata and storage bounds again on launch.
         metadata = _native._pointwise_admit_inputs(tensors)
         with cache.lock:
@@ -1821,18 +1840,20 @@ def implementation(model, recompile_limit):
                 observations.update((s, "scalar") for s in observed
                                     if type(static_values[s]) is float or type(static_values[s]) is int)
                 key = (program.code, bindings, guards, aliases)
-                entry = Specialization(
+                payload = SpecializationPayload(
                     {s: values[s] for s in observed if type(values[s]) is not InputTree},
-                    tuple(observed), observations, {}, bindings,
+                    tuple(observed), observations, bindings,
                     tuple(source for source in observed if type(values[source]) is Value),
                     tuple(data_sources), numerical_hint)
+                entry = Specialization(payload, {})
             else:
                 key, entry, scalars = selected
+                payload = entry.payload
                 # Ignored helper data still receives current admission on hits.
-                for source in entry.data_sources:
+                for source in payload.data_sources:
                     validate_data(static_values[source])
             abi = (len(tensors), input_ids,
-                   tuple(static_values[source].index for source in entry.tensor_sources))
+                   tuple(static_values[source].index for source in payload.tensor_sources))
             if selected is not None:
                 lowering = entry.lowerings.get(abi)
                 if lowering is None or any(
@@ -1841,7 +1862,7 @@ def implementation(model, recompile_limit):
                         for source, expected in lowering.structural_admission):
                     _, static_values = resolved.complete()
                     values = dict(static_values)
-                    values.update((s, v) for s, v in entry.values.items() if type(v) is not Value)
+                    values.update((s, v) for s, v in payload.values.items() if type(v) is not Value)
                     lowering = lower(program, values, len(tensors), input_ids, metadata=metadata)
             # Logical guards choose scalar semantics. Concrete executables still
             # specialize the full native ABI and exact broadcast address formula.
@@ -1850,7 +1871,6 @@ def implementation(model, recompile_limit):
             if lowering.operation_bindings:
                 validate_alias_bindings(lowering.operation_bindings)
             view_nodes = preflight_operations(lowering, static_values, metadata) if lowering.operations else ()
-            publications = [(entry.lowerings, abi, lowering), (cache.graphs, key, entry)]
             outputs = ()
             prepared = None
             if lowering.graph is not None:
@@ -1858,7 +1878,7 @@ def implementation(model, recompile_limit):
                 shapes = tuple(m[0] for m in metadata)
                 indexing_key = None if all(s == shapes[0] for s in shapes) else shapes
                 logical_code_key = (graph, metadata[0][4], indexing_key)
-                prepared_key = (logical_code_key, shapes, entry.numerical_hint, lowering.result.output_order)
+                prepared_key = (logical_code_key, shapes, payload.numerical_hint, lowering.result.output_order)
                 cached_preparation = cache.prepared.get(prepared_key)
                 if cached_preparation is not None:
                     prepared, retained_bytes, code_key, executor = cached_preparation
@@ -1867,7 +1887,7 @@ def implementation(model, recompile_limit):
                 if cached_preparation is None:
                     host = _native._pointwise_host_plan(
                         tensors, graph.nodes, graph.outputs,
-                        entry.numerical_hint, lowering.result.output_order)
+                        payload.numerical_hint, lowering.result.output_order)
                     code_key = host.executable_identity
                     executor = cache.executors.get(code_key)
                     if executor is None:
@@ -1883,7 +1903,6 @@ def implementation(model, recompile_limit):
                         unsupported("prepared executable owner mismatch")
                     retained_bytes = _prepared_entry_bytes(prepared_key, prepared, code_key)
                 outputs = prepared.run(tensors, scalars)
-                publications.insert(1, (cache.executors, code_key, executor))
             if lowering.active_operations:
                 views = _native._compile_trace_cuda_graph(tensors, view_nodes)
                 result = lowering.result.reconstruct(outputs, static_values, tensors, metadata, views)
@@ -1896,29 +1915,26 @@ def implementation(model, recompile_limit):
                 # including warm same-key owner replacement. Cleanup runs after
                 # publication so it sees the final executor owners and evictions.
                 prepared_keys = tuple(cache.prepared)
-            # Publish every cache level only after success. Executable/lowering
-            # eviction bounds retention without consuming logical slots.
-            for mapping, item_key, item in publications:
-                # Recency belongs to each map independently: a shared executor
-                # can already be newest while its logical entry/lowering is not.
-                if (mapping and next(reversed(mapping)) == item_key
-                        and next(reversed(mapping.values())) is item):
-                    continue
-                mapping.pop(item_key, None)
-                try:
-                    mapping[item_key] = item
-                except BaseException:
-                    if mapping is cache.executors:
-                        # A failed recency reinsertion can remove an owner.
-                        # Drop preparation retention without allocating a
-                        # repair index or taking the already-held lock again.
-                        cache.prepared.clear()
-                        cache.prepared_bytes = 0
-                    raise
-                while len(mapping) > recompile_limit:
-                    del mapping[next(iter(mapping))]
+            lowerings = _stage_recent(entry.lowerings, abi, lowering, recompile_limit)
+            if lowerings is not entry.lowerings:
+                entry = Specialization(payload, lowerings)
+            graphs = _stage_recent(cache.graphs, key, entry, recompile_limit)
             if lowering.graph is not None:
-                _publish_preparation(cache, prepared_key, prepared, retained_bytes, recompile_limit, code_key, executor, prepared_keys)
+                try:
+                    mapping = cache.executors
+                    # Executor recency is independent of logical recency.
+                    if not (mapping and next(reversed(mapping)) == code_key
+                            and next(reversed(mapping.values())) is executor):
+                        mapping.pop(code_key, None)
+                        mapping[code_key] = executor
+                    while len(mapping) > recompile_limit:
+                        del mapping[next(iter(mapping))]
+                    _publish_preparation(cache, prepared_key, prepared, retained_bytes, recompile_limit, code_key, executor, prepared_keys)
+                except BaseException:
+                    cache._clear_derived_locked()
+                    raise
+            # The sole logical commit follows every fallible publication step.
+            cache.graphs = graphs
             return result
 
     def compiled(*args, **kwargs):
