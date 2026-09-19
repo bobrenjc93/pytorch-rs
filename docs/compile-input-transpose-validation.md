@@ -1,11 +1,13 @@
 # Default input-rooted transpose validation
 
-**Current validation:** focused correctness checks captured on 2026-09-18 from
+**PR #2006 source validation:** focused correctness checks captured on 2026-09-18 from
 clean commit `320bbe35c8259fd150222b7323d528ab8f824482`, including retained-lowering
 structural admission and re-admission. A fresh locked release wheel was built
 from a Git export inside the worktree and installed in its own environment;
 914 exported files and wheel/RECORD/import identities were verified.
-The [default compiler guide](compile-pointwise-jit.md) defines the current capability.
+These source results do not validate the combined frontend; composite checks
+must exercise the integrated source separately. The [default compiler guide](compile-pointwise-jit.md)
+defines the current capability.
 
 | Check | Recorded result |
 | --- | --- |

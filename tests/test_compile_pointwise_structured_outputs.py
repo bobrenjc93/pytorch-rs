@@ -220,7 +220,8 @@ class StructuredCache(unittest.TestCase):
             return jit_tests.mock_pointwise_executor(run, metadata=metadata)
         self.codegen = self.stack.enter_context(patch.object(bridge, '_pointwise_compile', side_effect=compile_))
         self.host_plan = self.stack.enter_context(patch.object(
-            bridge, '_pointwise_host_plan', side_effect=jit_tests.mock_pointwise_host_plan))
+            bridge, '_pointwise_host_plan',
+            side_effect=lambda *args: jit_tests.mock_pointwise_host_plan(*args, metadata=metadata)))
 
     def snapshot(self, compiled):
         state = cache(compiled)

@@ -81,7 +81,7 @@ def mock_pointwise_executor(run, metadata=None, retained_bytes=0):
     return executor
 
 
-def mock_pointwise_host_plan(tensors, nodes, outputs, numerical_hint, output_order):
+def mock_pointwise_host_plan(tensors, nodes, outputs, numerical_hint, output_order, *, metadata=None):
     """Portable VM-domain fixture for the checked host-plan bridge.
 
     This deliberately does not model native Program emission. Tests which need
@@ -89,7 +89,8 @@ def mock_pointwise_host_plan(tensors, nodes, outputs, numerical_hint, output_ord
     Keeping compilation deferred makes hit/miss and publication checks exercise
     the same frontend boundary as the native bridge.
     """
-    metadata = tuple(bridge._compile_trace_tensor_metadata(tensor) for tensor in tensors)
+    read_metadata = metadata or bridge._compile_trace_tensor_metadata
+    metadata = tuple(read_metadata(tensor) for tensor in tensors)
     shapes = tuple(item[0] for item in metadata)
     indexing = None if all(shape == shapes[0] for shape in shapes) else shapes
     identity = ('mock-vm', tuple(nodes), tuple(outputs), metadata[0][4], indexing)

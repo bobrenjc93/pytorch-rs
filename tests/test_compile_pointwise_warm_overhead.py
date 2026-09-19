@@ -244,8 +244,9 @@ class WarmOverhead(unittest.TestCase):
                         return super().__iter__()
 
                 state.prepared = FailSnapshot(state.prepared)
-                # Distinct unused-input shapes miss the native executor without
-                # consuming logical specializations. Keep the same fault active.
+                # The mock host assigns distinct executable keys to unused-input
+                # shapes, unlike native direct-code sharing. This isolates
+                # capacity-increasing publication misses under the same fault.
                 misses = (1, 2, 4, 5, 6)
                 for size in misses:
                     with self.subTest(size=size):
@@ -366,42 +367,58 @@ class WarmOverheadHardware(unittest.TestCase):
     without_replay = prepared_tests.PreparedHardware.without_replay
 
     def test_public_call_eviction_preserves_current_inputs_outputs_and_reset(self):
-        fn = program('def f(unused,x):\n return [-x,x]')
+        fn = program('def f(y,x):\n return [y-x,x]')
         compiled = native.compile(fn)
-        reference = self.torch.compile(program('def f(unused,x):\n return [-x,x]', self.torch))
+        reference = self.torch.compile(program('def f(y,x):\n return [y-x,x]', self.torch))
         retained = []
         old_key = None
-        # The ignored input changes the native ABI/address formula while the
-        # used input keeps the same logical guard. Cross the default count bound.
-        for index, size in enumerate((None, *range(1, 10), None)):
+        distinct_keys = set()
+        # Changing an ignored shape cannot force native executable eviction:
+        # direct code shares identical Programs. These used broadcast operands
+        # change the actual address formula while retaining two logical entries.
+        for index, size in enumerate((1, *range(2, 11), 1)):
             values = [0.25 + index, -0.5 - index, 1. + index]
-            x = self.upload(values, (3,))
-            tx = self.upload(values, (3,), self.torch)
-            unused = False if size is None else self.upload([1.] * size, (size,))
-            tu = False if size is None else self.upload([1.] * size, (size,), self.torch)
-            output = self.without_replay(fn, compiled, (unused, x))
-            expected = reference(tu, tx)
+            x = self.upload(values, (3, 1))
+            tx = self.upload(values, (3, 1), self.torch)
+            y = self.upload([0.] * size, (size,))
+            ty = self.upload([0.] * size, (size,), self.torch)
+            output = self.without_replay(fn, compiled, (y, x))
+            expected = reference(ty, tx)
             self.compare(output[0], expected[0])
             self.assertIs(output[1], x)
-            self.assertTrue(all(output[0].data_ptr() != earlier[0].data_ptr() for earlier in retained))
-            retained.append(output)
-            for earlier_index, earlier in enumerate(retained):
+            self.assertTrue(all(output[0].data_ptr() != earlier[0].data_ptr()
+                                for _, earlier in retained))
+            retained.append((size, output))
+            for earlier_index, (earlier_size, earlier) in enumerate(retained):
                 self.assertEqual(earlier[0].cpu().tolist(),
-                                 [-0.25 - earlier_index, 0.5 + earlier_index, -1. - earlier_index])
+                                 [[value] * earlier_size for value in
+                                  (-0.25 - earlier_index, 0.5 + earlier_index, -1. - earlier_index)])
             state = cache(compiled)
+            selected_key = next(reversed(state.executors))
             if old_key is None:
-                old_key = next(iter(state.executors))
-            if size == 9:
+                old_key = selected_key
+            if index < 10:
+                self.assertNotIn(selected_key, distinct_keys)
+                distinct_keys.add(selected_key)
+            if size == 10:
                 self.assertNotIn(old_key, state.executors)
-            self.assertTrue(all(state.executors.get(value[2]) is value[3] for value in state.prepared.values()))
+                self.assertEqual(len(state.executors), 8)
+            self.assertLessEqual(len(state.graphs), 2)
+            self.assertLessEqual(len(state.executors), 8)
+            self.assertLessEqual(len(state.prepared), 8)
+            self.assertTrue(all(state.executors.get(value[2]) is value[3]
+                                for value in state.prepared.values()))
             self.assertEqual(state.prepared_bytes, sum(value[1] for value in state.prepared.values()))
+        self.assertEqual(len(distinct_keys), 10)
         native.compiler.reset()
+        self.assertFalse(state.graphs)
         self.assertFalse(state.executors)
         self.assertFalse(state.prepared)
         self.assertEqual(state.prepared_bytes, 0)
-        self.compare(compiled(False, x)[0], reference(False, tx)[0])
-        for index, earlier in enumerate(retained):
-            self.assertEqual(earlier[0].cpu().tolist(), [-0.25 - index, 0.5 + index, -1. - index])
+        self.compare(compiled(y, x)[0], reference(ty, tx)[0])
+        for index, (size, earlier) in enumerate(retained):
+            self.assertEqual(earlier[0].cpu().tolist(),
+                             [[value] * size for value in (-0.25 - index, 0.5 + index, -1. - index)])
 
 
 if __name__ == '__main__':

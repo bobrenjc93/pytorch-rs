@@ -84,7 +84,7 @@ class FrontendCrossings(unittest.TestCase):
         for unused, items, expected in histories:
             for _ in range(2):
                 self.admit.reset_mock()
-                # Fake preparation reads its explicit metadata adapter. Neither
+                # Fake host planning/preparation use their metadata adapter. Neither
                 # obsolete Python bridge entry point may be called by the frontend.
                 with patch.object(bridge, '_compile_trace_tensor_metadata', side_effect=AssertionError('frontend metadata')), \
                         patch.object(bridge, '_pointwise_validate_inputs', side_effect=AssertionError('frontend validation')):

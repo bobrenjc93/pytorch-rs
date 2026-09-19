@@ -581,6 +581,45 @@ class AliasMutationHardware(unittest.TestCase):
                     self.assertFalse(cache(compiled).executors)
                     self.assertFalse(cache(compiled).prepared)
 
+    def test_warm_inactive_nested_effect_projects_current_scalars_before_writes(self):
+        helper = program('def f(x,p):\n return x.add_(0.137,alpha=p["items"][-1])')
+        fn = program('def f(x,p):\n if x.shape[0]<4:\n'
+                     '  return x.add_(1)\n return helper(x,p)', helper=helper)
+        compiled = native.compile(fn)
+        x = native.ones(2,3).to('cuda:0')
+        compiled(x, {'items': [1.0]})
+        entry = next(iter(cache(compiled).graphs.values()))
+        retained = next(iter(entry.lowerings.values()))
+        for scalar, valid in ((1.0, True), (1.5, False), (True, False), (1.0, True)):
+            # Fresh storage and reordered/unobserved dict keys still project
+            # the retained inactive path; preflight sees its current scalar.
+            current = native.ones(2,3).to('cuda:0')
+            before = StructuredCache.snapshot(self, compiled)
+            bits = read_bits(current)
+            with self.subTest(scalar=scalar), no_bodies(fn, helper), \
+                    patch.object(frontend.BindingSource, 'child', side_effect=AssertionError('new source')), \
+                    patch.object(frontend._BindingResolution, 'complete', side_effect=AssertionError('full walk')), \
+                    patch.object(frontend, 'lower', side_effect=AssertionError('warm lowering')):
+                if valid:
+                    self.assertIs(compiled(current, {'unused': False, 'items': [scalar]}), current)
+                else:
+                    with self.assertRaises((NotImplementedError, RuntimeError)):
+                        compiled(current, {'unused': False, 'items': [scalar]})
+            expected = bits.view(np.float32) + np.float32(1) if valid else bits.view(np.float32)
+            np.testing.assert_array_equal(read_bits(current).view(np.float32), expected)
+            self.assertEqual(StructuredCache.snapshot(self, compiled), before)
+            self.assertIs(next(iter(entry.lowerings.values())), retained)
+        bits = read_bits(current)
+        complete = frontend._BindingResolution.complete
+        with no_bodies(fn, helper), patch.object(frontend._BindingResolution, 'complete',
+                autospec=True, side_effect=complete) as expansion:
+            self.assertIs(compiled(current, {'items': [False, 1.0]}), current)
+        expansion.assert_called_once()
+        np.testing.assert_array_equal(read_bits(current).view(np.float32),
+                                      bits.view(np.float32) + np.float32(1))
+        self.assertIs(next(iter(cache(compiled).graphs.values())), entry)
+        self.assertIsNot(next(iter(entry.lowerings.values())), retained)
+
     def test_inactive_unpack_keeps_whole_program_length_admission(self):
         fn = program('def f(x,s):\n if x.shape[0]<4:\n  return x.add_(1)\n'
                      ' a,b=s\n return x.add_(a,alpha=b)')

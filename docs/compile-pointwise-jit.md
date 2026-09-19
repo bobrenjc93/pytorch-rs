@@ -508,7 +508,7 @@ Defaults, closures, constants and directive presence are revalidated on every
 call. Helpers share root source realization, runtime scalar slots, SSA nodes and
 budgets: every call charges its full instruction count toward the 16384 expanded
 instruction limit, with the same 4096-node limit. Parsing is local to lowering;
-ordinary warm hits do not disassemble helpers. Neither Python body executes.
+matching retained-lowering reuse does not disassemble helpers. Neither Python body executes.
 Original-IR numerical admission, executor sharing, publication after reconstruction,
 LRU bounds and reset ownership remain unchanged.
 

@@ -26,7 +26,7 @@ addition, row sums, and [rank-2 matmul](docs/cuda-matmul.md) execute without Pyt
 | Unflatten bindings | [src/python_unflatten.rs](src/python_unflatten.rs), [src/python_tensor_shape.rs](src/python_tensor_shape.rs) | Top-level schema and override dispatch precede a direct call to shared Rust view construction and error translation. The Tensor method retains its own binding checks; neither path duplicates native view/autograd logic. |
 | Error translation | [src/tensor_error.rs](src/tensor_error.rs), [src/python_tensor_errors.rs](src/python_tensor_errors.rs) | `TensorError` is the native error vocabulary; Python bindings translate it to the closest Python exception class. |
 | Python package shell | [python/torch_rs/__init__.py](python/torch_rs/__init__.py) | Imports the native extension, exposes `_C`, patches package-level compatibility helpers, and binds Python submodules. |
-| Default CUDA pointwise JIT | [python/torch_rs/_compile_pointwise.py](python/torch_rs/_compile_pointwise.py), [src/pointwise_ir.rs](src/pointwise_ir.rs), [src/pointwise_lowering.rs](src/pointwise_lowering.rs), [src/cuda/jit.rs](src/cuda/jit.rs) | Static admission → typed float32 SSA → generated NVRTC/PTX fused kernel. [Exact subset and ownership](docs/compile-pointwise-jit.md); separate from eager capture and private benchmarks. |
+| Default CUDA compiler | [python/torch_rs/_compile_pointwise.py](python/torch_rs/_compile_pointwise.py), [src/pointwise_ir.rs](src/pointwise_ir.rs), [src/pointwise_lowering.rs](src/pointwise_lowering.rs), [src/cuda/jit.rs](src/cuda/jit.rs), [src/python_compile_cuda_graph.rs](src/python_compile_cuda_graph.rs) | One frontend admits current input snapshots and lowers bounded numerical graphs to native direct/VM executables. Input-rooted views and alias-only scalar mutation reuse the native graph bridge; alias-only programs need no numerical executable. [Exact subset and ownership](docs/compile-pointwise-jit.md); separate from explicit eager capture and private benchmarks. |
 | Compile bytecode frontend | [python/torch_rs/_compile_bytecode.py](python/torch_rs/_compile_bytecode.py) | Normalizes and validates the narrow CPython 3.10-3.14 straight-line bytecode subset used by public `torch.compile(..., backend="eager", fullgraph=True)` and no-break `fullgraph=False`, then emits operations through `CompileTraceRecorder`. It owns opcode compatibility only. |
 | Compile trace IR | [python/torch_rs/_compile_trace.py](python/torch_rs/_compile_trace.py) | Defines the private immutable `CompileTraceGraph`, Tensor proxy recording helpers, centralized layout and broadcast metadata planning, and native graph execution dispatch. It stays independent of CPython bytecode opcodes. |
 | Private CUDA benchmark lane | [python/torch_rs/_cuda_buffer.py](python/torch_rs/_cuda_buffer.py), [python/torch_rs/_cuda_benchmark_tensor.py](python/torch_rs/_cuda_benchmark_tensor.py), [python/torch_rs/_cuda_pointwise_kernel.py](python/torch_rs/_cuda_pointwise_kernel.py), [python/torch_rs/_cuda_pointwise_reduce_workload.py](python/torch_rs/_cuda_pointwise_reduce_workload.py) | Owns benchmark-only CUDA runtime probes, private buffers, synchronized metadata wrappers, H100 kernels, and the exact prepared-executor evidence path for the release benchmark. This lane is intentionally outside the native Rust tensor/device model and must not be expanded into general tensor semantics without first adding a real Rust-side backend/device abstraction. |
@@ -134,6 +134,11 @@ at most 256 KiB of staging and at most eight times the logical transfer size
 to avoid the copy engine's per-row cost. Large gaps are always skipped; no
 allocation or transfer grows with an arbitrary backing span. Packed outputs
 retain CPU clone's dimension ordering, including transposed and selected views.
+
+The operation-capture descriptions below refer to explicit `backend="eager"`.
+Ordinary `torch_rs.compile(fn)` has the separate bounded numerical and alias-only
+contracts in the [default compiler guide](docs/compile-pointwise-jit.md).
+
 CUDA addition accepts same-shape contiguous float32 inputs on one device,
 including offsets, scalars and empty tensors. Eager and compiled addition accept
 contiguous `(M, N)` and `(N,)` on that device in either operand order. The
@@ -144,8 +149,8 @@ nonunit alpha, concrete out, and autograd remain excluded. The compiler metadata
 planner admits the same bounded relation, derives singleton/empty output strides
 with its elementwise planner, and guards inputs before execution. Its private
 native bridge delegates independent validation to `Tensor::add`, sharing the
-eager kernel boundary. Compiled add syntax remains operator/positional method
-only; compiler alpha/out forms remain unsupported.
+eager kernel boundary. Eager capture accepts operator, positional method and
+positional native top-level add forms; compiler alpha/out forms remain unsupported.
 Native float32 CUDA ReLU uses integer compare/select on IEEE bits: negative
 non-NaN values become positive zero, while positive values and all NaN payloads
 remain unchanged. It shares `unary_pointwise`/`unary_output` bounds, ownership,
@@ -245,10 +250,10 @@ It multiplies contiguous device float32 storage directly, with round-to-nearest
 and no flush-to-zero. The shared unary storage helper owns allocation, bounds,
 device guards, completion, and failure cleanup for both multiplication and negation.
 Results are fresh, offset zero, and preserve the reference scalar operation
-stride ordering, including singleton dimensions. No compiler capture, tensor-tensor
-CUDA multiplication, out variants, or autograd support is added. See
-[validation](docs/cuda-mul-scalar-validation.md). Other CUDA arithmetic rejects
-at the operation boundary.
+stride ordering, including singleton dimensions. Explicit eager scalar-multiply
+[capture](docs/compile-cuda-mul-scalar-validation.md) reuses this kernel.
+Eager tensor-tensor CUDA multiplication, out variants and autograd remain
+unsupported. See [validation](docs/cuda-mul-scalar-validation.md).
 
 CUDA `contiguous()` preserves identity and metadata for already-contiguous
 float32 tensors without gradients, including scalar, empty and higher-rank
