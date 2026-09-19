@@ -270,7 +270,9 @@ and length; dict selection checks its type and the selected path, without guardi
 unrelated keys or insertion order. Each cached lowering retains its own container
 signatures and selected child paths, including inactive recipes. Shape reads
 retain tensor-source and minimum-rank admission, without guarding inactive
-dimensions. On a logical hit, a mismatch in the selected lowering's own admission
+dimensions. Scalar operations retain exact scalar-type and integer-range checks,
+including negated operands, without guarding inactive scalar values.
+On a logical hit, a mismatch in the selected lowering's own admission
 evidence re-admits that lowering before any write, using current inputs with
 that entry's frozen active semantics. Active observed structure changes can
 instead miss the logical guards and select or create another logical entry

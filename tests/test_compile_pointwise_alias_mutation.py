@@ -64,6 +64,93 @@ def check_inactive_shape_reads(test, make_tensor):
                 test.assertIs(compiled(x, y, False), x)
 
 
+def check_inactive_scalar_uses(test, make_tensor):
+    for expression in ('-p[0]', '-(-p[0])'):
+        for condition in ('<4', '>4'):
+            inactive = 'unused=' + expression + '\n return x'
+            if condition == '<4':
+                body = ' if x.shape[0]<4:\n  return x.add_(1)\n ' + inactive
+            else:
+                body = ' if x.shape[0]>4:\n  ' + inactive.replace('\n ', '\n  ') + '\n return x.add_(1)'
+            fn = program('def f(x,p):\n' + body)
+            compiled = native.compile(fn, recompile_limit=1)
+            x = make_tensor((3,))
+            with test.subTest(expression=expression, condition=condition), no_bodies(fn):
+                test.assertIs(compiled(x, [1.0]), x)
+                entry = next(iter(cache(compiled).graphs.values()))
+                with patch.object(frontend, 'lower', side_effect=AssertionError('inactive scalar value guarded')):
+                    for value in (-2.0, False, float('inf'), float('nan')):
+                        test.assertIs(compiled(x, [value]), x)
+                        test.assertIs(next(iter(cache(compiled).graphs.values())), entry)
+                for invalid in ([[1.0]], [(1.0,)], [{'v': 1.0}]):
+                    before = StructuredCache.snapshot(test, compiled)
+                    contents = x.cpu().tolist()
+                    with patch.object(bridge, '_compile_trace_cuda_graph',
+                                      side_effect=AssertionError('invalid scalar reached mutation bridge')):
+                        with test.assertRaisesRegex(NotImplementedError, 'constants must be exact'):
+                            compiled(x, invalid)
+                        with test.assertRaisesRegex(NotImplementedError, 'constants must be exact'):
+                            native.compile(fn)(x, invalid)
+                    test.assertEqual(x.cpu().tolist(), contents)
+                    test.assertEqual(StructuredCache.snapshot(test, compiled), before)
+                test.assertIs(compiled(x, [3.0]), x)
+
+
+def check_inactive_scalar_ranges(test, make_tensor):
+    for expression, invalid in (('-capture', 2**64), ('-(-capture)', 2**63 + 1),
+                                ('(-capture,)', 2**63 + 1)):
+        fn = program('def f(x):\n if x.shape[0]<4:\n  return x.add_(1)\n unused='
+                     + expression + '\n return x', capture=1)
+        compiled = native.compile(fn, recompile_limit=1)
+        x = make_tensor((3,))
+        with test.subTest(expression=expression), no_bodies(fn):
+            compiled(x)
+            with patch.object(frontend, 'lower', side_effect=AssertionError('inactive scalar value guarded')):
+                for value in (2, True, 1.25):
+                    fn.__globals__['capture'] = value
+                    test.assertIs(compiled(x), x)
+            before = StructuredCache.snapshot(test, compiled)
+            contents = x.cpu().tolist()
+            fn.__globals__['capture'] = invalid
+            with patch.object(bridge, '_compile_trace_cuda_graph',
+                              side_effect=AssertionError('invalid scalar range reached mutation bridge')):
+                with test.assertRaisesRegex(NotImplementedError, 'integer scalar is outside'):
+                    compiled(x)
+                with test.assertRaisesRegex(NotImplementedError, 'integer scalar is outside'):
+                    native.compile(fn)(x)
+            test.assertEqual(x.cpu().tolist(), contents)
+            test.assertEqual(StructuredCache.snapshot(test, compiled), before)
+            fn.__globals__['capture'] = -3
+            test.assertIs(compiled(x), x)
+
+
+def check_inactive_helper_data(test, make_tensor):
+    helper = program('def f(a,unused):\n return a')
+    fn = program('def f(x,p):\n if x.shape[0]<4:\n  return x.add_(1)\n'
+                 ' unused=helper(x,p[0])\n unused=helper(x,capture)\n return x',
+                 helper=helper, capture=1)
+    compiled = native.compile(fn, recompile_limit=1)
+    x = make_tensor((3,))
+    with no_bodies(fn, helper):
+        compiled(x, [1.0])
+        with patch.object(frontend, 'lower', side_effect=AssertionError('ignored data unnecessarily specialized')):
+            for value in (False, [1.0], {'v': (2.0,)}, 3.0):
+                test.assertIs(compiled(x, [value]), x)
+        before = StructuredCache.snapshot(test, compiled)
+        contents = x.cpu().tolist()
+        fn.__globals__['capture'] = 2**64
+        with patch.object(bridge, '_compile_trace_cuda_graph',
+                          side_effect=AssertionError('invalid helper data reached mutation bridge')):
+            with test.assertRaisesRegex(NotImplementedError, 'integer scalar is outside'):
+                compiled(x, [1.0])
+            with test.assertRaisesRegex(NotImplementedError, 'integer scalar is outside'):
+                native.compile(fn)(x, [1.0])
+        test.assertEqual(x.cpu().tolist(), contents)
+        test.assertEqual(StructuredCache.snapshot(test, compiled), before)
+        fn.__globals__['capture'] = 2
+        test.assertIs(compiled(x, [1.0]), x)
+
+
 class InactiveShapeAdmission(unittest.TestCase):
     setUp = StructuredCache.setUp
 
@@ -71,6 +158,41 @@ class InactiveShapeAdmission(unittest.TestCase):
         with patch.object(bridge, '_compile_trace_cuda_graph',
                           side_effect=lambda inputs, nodes: tuple(object() for _ in nodes)):
             check_inactive_shape_reads(self, lambda shape: native.ones(*shape))
+
+    def test_retained_scalar_uses_reject_before_mutation_bridge(self):
+        with patch.object(bridge, '_compile_trace_cuda_graph',
+                          side_effect=lambda inputs, nodes: tuple(object() for _ in nodes)):
+            check_inactive_scalar_uses(self, lambda shape: native.ones(*shape))
+
+    def test_retained_scalar_ranges_reject_before_mutation_bridge(self):
+        with patch.object(bridge, '_compile_trace_cuda_graph',
+                          side_effect=lambda inputs, nodes: tuple(object() for _ in nodes)):
+            check_inactive_scalar_ranges(self, lambda shape: native.ones(*shape))
+
+    def test_retained_helper_data_preserves_permissive_admission(self):
+        with patch.object(bridge, '_compile_trace_cuda_graph',
+                          side_effect=lambda inputs, nodes: tuple(object() for _ in nodes)):
+            check_inactive_helper_data(self, lambda shape: native.ones(*shape))
+
+    def test_retained_numerical_uses_keep_tensor_admission(self):
+        for expression in ('-p[0]', 'p[0].sin()', 'x+p[0]'):
+            fn = program('def f(x,p,z):\n if x.shape[0]<4:\n  return -x\n unused='
+                         + expression + '\n return -x')
+            compiled = native.compile(fn, recompile_limit=1)
+            x, y = native.ones(3), native.ones(3)
+            with self.subTest(expression=expression), no_bodies(fn):
+                compiled(x, [y], False)
+                before = StructuredCache.snapshot(self, compiled)
+                launches = len(self.launches)
+                # Preserve tensor arity while making the inactive operand invalid.
+                with self.assertRaises(NotImplementedError):
+                    compiled(x, [[1.0]], y)
+                with self.assertRaises(NotImplementedError):
+                    native.compile(fn)(x, [[1.0]], y)
+                self.assertEqual(len(self.launches), launches)
+                self.assertEqual(StructuredCache.snapshot(self, compiled), before)
+                with patch.object(frontend, 'lower', side_effect=AssertionError('inactive tensor shape guarded')):
+                    compiled(x, [native.ones(1, 3)], False)
 
 
 class AliasMutationAdmission(unittest.TestCase):
@@ -196,6 +318,15 @@ class AliasMutationHardware(unittest.TestCase):
 
     def test_retained_shape_reads_reject_without_device_writes(self):
         check_inactive_shape_reads(self, lambda shape: native.ones(*shape).to('cuda:0'))
+
+    def test_retained_scalar_uses_reject_without_device_writes(self):
+        check_inactive_scalar_uses(self, lambda shape: native.ones(*shape).to('cuda:0'))
+
+    def test_retained_scalar_ranges_reject_without_device_writes(self):
+        check_inactive_scalar_ranges(self, lambda shape: native.ones(*shape).to('cuda:0'))
+
+    def test_retained_helper_data_rejects_without_device_writes(self):
+        check_inactive_helper_data(self, lambda shape: native.ones(*shape).to('cuda:0'))
 
     def pair(self, source, **bindings):
         fn = program(source, **bindings)

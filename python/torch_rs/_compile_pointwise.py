@@ -269,6 +269,7 @@ class Lowering:
     active_operations: tuple = ()
     # Each concrete ABI may admit different inactive paths. None means child
     # presence only; tensor signatures contain (kind, slot, minimum rank).
+    # Scalar signatures record validation of the original/negated value.
     # These signatures retain no invocation-local owners or exact dimensions.
     structural_admission: tuple = ()
 
@@ -280,6 +281,22 @@ class Lowering:
             if expected is not None:
                 if expected[0] == "tensor":
                     if current != expected[:2] or len(metadata[current[1]][0]) < expected[2]:
+                        return False
+                elif expected[0] == "scalar":
+                    value = resolved.values[source]
+                    if not is_scalar(value):
+                        return False
+                    try:
+                        if expected[1] & 1:
+                            scalar_bits(value)
+                        if expected[1] & 2:
+                            scalar_bits(-value)
+                    except NotImplementedError:
+                        return False
+                elif expected[0] == "data":
+                    try:
+                        validate_data(resolved.values[source])
+                    except NotImplementedError:
                         return False
                 elif current != expected:
                     return False
@@ -1231,6 +1248,16 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
         # Validate without realizing a lazy root source. Ignored parameters must
         # not acquire guards, but cannot carry callable/module/higher-order data.
         validate_data(obj)
+        if type(obj) is BoundValue:
+            previous = structural_admission.get(obj.source)
+            if obj.numeric_unary or (previous is not None and previous[0] == "scalar"):
+                # Validate transformed integers too, without weakening an
+                # earlier scalar-use requirement at a later data boundary.
+                admit_scalar(obj)
+            elif previous is None:
+                # Ignored helper data can change between scalars and containers;
+                # its retained admission must remain as permissive as data().
+                structural_admission[obj.source] = ("data",)
         if data_sources is not None and type(obj) is BoundValue:
             data_sources.add(obj.source)
         return obj
@@ -1246,9 +1273,19 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
 
     def admit_tensor(source, value, minimum_rank=0):
         previous = structural_admission.get(source)
-        if previous is not None:
+        if previous is not None and previous[0] == "tensor":
             minimum_rank = max(minimum_rank, previous[2])
         structural_admission[source] = ("tensor", value.index, minimum_rank)
+
+    def admit_scalar(obj):
+        if type(obj) is BoundValue:
+            previous = structural_admission.get(obj.source)
+            checks = 2 if obj.negative else 1
+            if previous is not None and previous[0] == "scalar":
+                checks |= previous[1]
+            elif previous is not None and previous[0] == "data":
+                checks |= 1
+            structural_admission[obj.source] = ("scalar", checks)
 
     def container(obj):
         item = realize(obj)
@@ -1279,15 +1316,20 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
         return child(obj, item, index)
 
     def value(obj):
+        original = obj
         obj = realize(obj)
         if type(obj) is RuntimeScalar:
+            admit_scalar(original)
             if not obj.negative:
                 return Value(arity + obj.index, False)
             nodes.append(("scalar", obj.index, 1, 0))
             return Value(len(nodes) - 1, False)
         if isinstance(obj, Value):
+            if type(original) is BoundValue:
+                admit_tensor(original.source, obj)
             return obj
         bits = scalar_bits(obj)
+        admit_scalar(original)
         boolean = type(obj) is bool
         kind = "boolean" if boolean else "integer" if type(obj) is int else "constant"
         nodes.append((kind, 0, 0, int(obj) if boolean else bits))
@@ -1543,6 +1585,8 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                         unsupported("alias operations require an original input or input-rooted view")
                     stack.append(Call(arg, source))
                 elif isinstance(owner, Value) and owner.tensor and arg in (_UNARY | _BINARY):
+                    if type(original) is BoundValue:
+                        admit_tensor(original.source, owner)
                     stack.append(Call((_UNARY | _BINARY)[arg], owner, arg == "__rsub__"))
                 else:
                     unsupported("unsupported attribute: " + str(arg))
@@ -1555,11 +1599,15 @@ def lower(program, values, arity, input_ids=None, *, observed=None, data_sources
                     continue
                 operand = realize(original)
                 if type(operand) is RuntimeScalar:
+                    admit_scalar(original)
                     stack.append(RuntimeScalar(operand.index, not operand.negative))
                 elif isinstance(operand, Value):
+                    if type(original) is BoundValue:
+                        admit_tensor(original.source, operand)
                     stack.append(emit("neg", [operand]))
                 else:
                     scalar_bits(operand)
+                    admit_scalar(original)
                     # Keep the source when bool negation produces an exact int.
                     # Helpers/constructors must not turn runtime input leaves
                     # into constants eligible for metadata-only operations.
