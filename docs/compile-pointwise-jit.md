@@ -774,10 +774,10 @@ Wrapper locks serialize cache publication and reset.
 ## Validation and campaign evidence
 
 The [native method boundary record](diagnostics/native-method-guards/README.md)
-records the clean committed-source correctness gates and ordinary-call comparison,
-including slower controls, separately from historical development evidence. Its
-sibling-worktree provenance still requires replacement capture inside the
-composite; these results do not validate the composite checkout.
+records fresh composite-rooted builds, complete correctness gates and the fixed
+ordinary-call comparison at `e2dd9ec`, including slower controls and reference
+drift. Earlier source captures remain separate; no uniform speedup or
+current default-Inductor performance parity is claimed.
 
 The [committed-source direct-resource validation](diagnostics/direct-resources-validation-20260918.md)
 records fresh B/H/D public-call comparisons and focused regression checks.
