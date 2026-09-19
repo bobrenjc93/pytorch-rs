@@ -96,6 +96,59 @@ class InputContracts(unittest.TestCase):
 
 
 class InputAdmission(unittest.TestCase):
+    def test_mutable_children_are_admitted_from_one_snapshot(self):
+        x, y = native.ones(1), native.ones(1)
+        original_islice = frontend.islice
+        for kind in (list, dict):
+            with self.subTest(kind=kind):
+                root = [x, 0.5] if kind is list else {'x': x, 'gain': 0.5}
+
+                def changing(iterator, limit):
+                    yield from original_islice(iterator, limit)
+                    # Mutation after the snapshot must not change its owners,
+                    # scalar values or dictionary key/value correspondence.
+                    if kind is list:
+                        root[:] = [y, 1.5]
+                    else:
+                        root.clear()
+                        root.update({'new': y, 'other': 1.5})
+
+                with patch.object(frontend, 'islice', changing):
+                    tensors, parameters = frontend.bind_arguments((root,))
+                self.assertIs(tensors[0], x)
+                self.assertEqual(parameters[0].items, (frontend.Value(0), 0.5))
+                self.assertEqual(parameters[0].keys, () if kind is list else ('x', 'gain'))
+                tensors, parameters = frontend.bind_arguments((root,))
+                self.assertIs(tensors[0], y)
+                self.assertEqual(parameters[0].items, (frontend.Value(0), 1.5))
+                self.assertEqual(parameters[0].keys, () if kind is list else ('new', 'other'))
+
+    def test_dictionary_key_and_snapshot_size_errors_precede_child_admission(self):
+        x = native.ones(1)
+        # Even an earlier bad leaf is not inspected before all key types.
+        with self.assertRaisesRegex(NotImplementedError, 'keys must be exact strings'):
+            frontend.bind_arguments(({'bad': None, 1: x},))
+        original_islice = frontend.islice
+        for root in ([x, None], {'x': x, 'bad': None}):
+            def shorter(iterator, limit):
+                return original_islice(iterator, 1)
+            with patch.object(frontend, 'islice', shorter):
+                with self.assertRaisesRegex(NotImplementedError, 'container changed during admission'):
+                    frontend.bind_arguments((root,))
+
+    def test_tuple_and_dictionary_depth_bounds_include_unused_children(self):
+        x = native.ones(1)
+        for wrap in (lambda child: (child,), lambda child: {'child': child}):
+            tree = x
+            for _ in range(64):
+                tree = wrap(tree)
+            tensors, _ = frontend.bind_arguments((tree,))
+            self.assertIs(tensors[0], x)
+            with self.assertRaisesRegex(NotImplementedError, 'depth 64'):
+                frontend.bind_arguments((wrap(tree),))
+            with self.assertRaisesRegex(NotImplementedError, '4096 reference edges'):
+                frontend.bind_arguments(((x,) + (False,) * 4095,))
+
     def test_structured_restart_counts_the_flat_prefix_once(self):
         x, y = native.ones(1), native.ones(1)
         for second in (x, y):

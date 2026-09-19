@@ -891,7 +891,12 @@ def bind_arguments(args):
     # Discard the prefix so every root and Tensor occurrence is counted once.
     tensors = []
 
-    def leaf(arg):
+    seen, edges = set(), len(args)
+    if edges > 4096:
+        unsupported("input tree exceeds 4096 reference edges")
+
+    def snapshot(arg, depth):
+        nonlocal edges
         kind = type(arg)
         if kind is _TENSOR_TYPE:
             value = Value(len(tensors))
@@ -901,19 +906,10 @@ def bind_arguments(args):
             return value
         if kind is float or kind is bool:
             return arg
-        unsupported("default backend requires exact native CUDA float32 Tensor inputs "
-                    "and exact float/bool leaves in bounded exact tuple/list/dict trees; "
-                    "see docs/compile-pointwise-jit.md")
-
-    seen, edges = set(), len(args)
-    if edges > 4096:
-        unsupported("input tree exceeds 4096 reference edges")
-
-    def snapshot(arg, depth):
-        nonlocal edges
-        kind = type(arg)
         if kind is not tuple and kind is not list and kind is not dict:
-            return leaf(arg)
+            unsupported("default backend requires exact native CUDA float32 Tensor inputs "
+                        "and exact float/bool leaves in bounded exact tuple/list/dict trees; "
+                        "see docs/compile-pointwise-jit.md")
         if depth >= 64:
             unsupported("input tree exceeds container depth 64")
         if id(arg) in seen:
@@ -927,14 +923,18 @@ def bind_arguments(args):
             pairs = tuple(islice(arg.items(), 4097))
             if any(type(key) is not str for key, _ in pairs):
                 unsupported("input dict keys must be exact strings")
+            if len(pairs) != width:
+                unsupported("input container changed during admission")
             keys = tuple(key for key, _ in pairs)
-            children = tuple(value for _, value in pairs)
-        else:
-            keys, children = (), tuple(islice(arg, 4097))
+            # The pairs already own a consistent snapshot. Do not project a
+            # second temporary tuple of values before admitting its children.
+            return InputTree("dict", tuple(snapshot(value, depth + 1) for _, value in pairs), keys)
+        # An exact tuple is already immutable; only lists need a child snapshot.
+        children = arg if kind is tuple else tuple(islice(arg, 4097))
         # A concurrent growth cannot bypass the budget at expansion.
         if len(children) != width:
             unsupported("input container changed during admission")
-        return InputTree(kind.__name__, tuple(snapshot(child, depth + 1) for child in children), keys)
+        return InputTree(kind.__name__, tuple(snapshot(child, depth + 1) for child in children))
 
     parameters = tuple(snapshot(arg, 0) for arg in args)
     if len(tensors) not in (1, 2):
